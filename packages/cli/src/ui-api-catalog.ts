@@ -442,7 +442,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       .add("POST", "/api/map/edits", async ({ body }) => {
         const b = parse(Api.MapEditsRequest, body);
         const { checkMapEdits } = await import("./map-edits.js");
-        const { problems, callers } = await checkMapEdits(root, b.edits);
+        const { problems, callers, waitsOn } = await checkMapEdits(root, b.edits);
         if (problems.length)
           throw new HttpError(
             422,
@@ -453,14 +453,31 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         const { applyMapEdits } = await import("./catalog-build-commands.js");
         const n = b.edits.length;
         return asJob(`Apply ${n} change${n === 1 ? "" : "s"} to the map`, async () => {
+          const { lastBuildOf } = await import("./build-report.js");
+          const before = JSON.stringify((await lastBuildOf(root)) ?? null);
           let ran: Awaited<ReturnType<typeof applyMapEdits>> | undefined;
           const res = await captured(async (io) => {
             ran = await applyMapEdits(root, { edits: b.edits, by: ctx.user }, io);
             return ran.code;
           });
+          // Saved but the build refused (a large removal, a hand edit): its listing, which
+          // Set up › Scans › Catalog builds confirms in full width. Only this job's report.
+          let refused: unknown;
+          if (ran && !ran.built && ran.edits.every((x) => x.state === "saved")) {
+            const { lastBuildOf } = await import("./build-report.js");
+            const last = await lastBuildOf(root);
+            if (last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before)
+              refused = last.refused;
+          }
           return {
             ...res,
-            extra: { edits: ran?.edits ?? [], built: ran?.built ?? false, callers },
+            extra: {
+              edits: ran?.edits ?? [],
+              built: ran?.built ?? false,
+              callers,
+              waitsOn,
+              ...(refused ? { refused } : {}),
+            },
           };
         });
       })

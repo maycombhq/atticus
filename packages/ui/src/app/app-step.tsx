@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "../screens/know/common.js";
-import { ApplyAll, ApplyAndPropose, followJob, workChanged } from "./propose.js";
+import { ApplyAll, ApplyAndPropose, followJob, useResultsInPanel, workChanged } from "./propose.js";
 // Home's pending list offers it too; it lives beside Apply and Propose.
 export { ApplyAll };
 import { RunStep, stepArgs } from "./runstep.js";
@@ -162,6 +162,8 @@ export function AppStepFor({
 export function CallButton({ step }: { step: CallStep }) {
   const act = useAction();
   const [lines, setLines] = useState<string[]>();
+  // Beta.28: in a narrow panel the lines are the Console's, not stacked here.
+  const inPanel = useResultsInPanel();
   return (
     <div className="stack" style={{ gap: 6 }}>
       {step.say && (
@@ -196,7 +198,7 @@ export function CallButton({ step }: { step: CallStep }) {
         </button>
       </div>
       <Note note={act.note} />
-      {lines && lines.length > 0 && (
+      {!inPanel && lines && lines.length > 0 && (
         <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
           {lines.join("\n")}
         </pre>

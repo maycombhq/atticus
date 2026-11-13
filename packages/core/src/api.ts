@@ -2099,13 +2099,33 @@ export const MapEditAdd = z.discriminatedUnion("kind", [
 ]);
 export type MapEditAddT = z.infer<typeof MapEditAdd>;
 /**
- * 3.13.0: one change staged on the canvas. `delete` is Delete this link's (every Interface behind
- * the link and its two ends), `add` Declare a link…'s, and `redirect` the two together, one row.
+ * 3.13.0: a link added from a repo's box, exactly what Connect to… writes (POST /api/links/connect
+ * without `rule` and `preview`): the person's pairing of each of the repo's calls named with an
+ * API of the other box, one `link` line each in `facts/<from>.corrections.jsonl` (ADR 0174).
  */
-export const MapEdit = z.discriminatedUnion("kind", [
+export const MapEditPair = z.strictObject({
+  from: z.string().min(1).max(200),
+  /** The other box: a repo of the manifest or an outside system (Connect to…'s `to`). */
+  to: z
+    .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
+    .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
+  pairs: z
+    .array(z.object({ call: z.string().min(1), api: z.string().min(1) }))
+    .min(1)
+    .max(500),
+});
+export type MapEditPairT = z.infer<typeof MapEditPair>;
+/**
+ * 3.13.0: one change staged on the canvas. `delete` is Delete this link's (every Interface behind
+ * the link and its two ends); an add is Declare a link…'s (`add`, from a system's box) or Connect
+ * to…'s (`pair`, from a repo's box); `redirect` is a delete and an add together, one row.
+ */
+export const MapEdit = z.union([
   z.strictObject({ kind: z.literal("delete"), delete: LinkDeleteRequest }),
   z.strictObject({ kind: z.literal("add"), add: MapEditAdd }),
+  z.strictObject({ kind: z.literal("add"), pair: MapEditPair }),
   z.strictObject({ kind: z.literal("redirect"), delete: LinkDeleteRequest, add: MapEditAdd }),
+  z.strictObject({ kind: z.literal("redirect"), delete: LinkDeleteRequest, pair: MapEditPair }),
 ]);
 export type MapEditT = z.infer<typeof MapEdit>;
 /** 3.13.0: POST /api/map/edits, every change staged, applied together with one build. */
@@ -2120,9 +2140,10 @@ export type MapEditProblemT = z.infer<typeof MapEditProblem>;
 /**
  * 3.13.0: the result of POST /api/map/edits's job (GET /api/jobs/{id}'s `result`): its code and
  * lines, each change's outcome by its place (`saved`; `failed`, with why; `taken-back`, written
- * then removed because a later one failed; `not-tried`), whether the catalog was built, and the
- * caller repos the changes touch (each deleted link's caller's repo, each add's system's repos in
- * the manifests), for one Copilot Read it again.
+ * then removed because a later one failed; `not-tried`), whether the catalog was built, the
+ * caller repos the changes touch (each deleted link's caller's repo, each pairing's repo, each
+ * declaration's system's repos in the manifests) for one Copilot Read it again, the repos a new
+ * link still waits on, and a refused build's listing.
  */
 export const MapEditsResult = z.object({
   code: z.number().int(),
@@ -2137,6 +2158,16 @@ export const MapEditsResult = z.object({
   ),
   built: z.boolean(),
   callers: z.array(z.string()),
+  /**
+   * The repos a new link is joined through that aren't read from their facts yet (a pairing's
+   * other repo, a declared call's gateway): the link is drawn once they are. Callers are left out.
+   */
+  waitsOn: z.array(z.string()),
+  /**
+   * The build refused after the changes were saved (a large removal it lists, a hand edit): its
+   * listing, as Apply's job gives it, which Set up › Scans › Catalog builds confirms.
+   */
+  refused: BuildRefusalView.optional(),
 });
 export type MapEditsResultT = z.infer<typeof MapEditsResult>;
 /**

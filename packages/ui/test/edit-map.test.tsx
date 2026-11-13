@@ -7,10 +7,15 @@ import { RunsContext, type Ctx } from "../src/app/copilot-runs.js";
 import { JobFailed } from "../src/app/job.js";
 import { COPY } from "../src/copy.js";
 import { revealOf } from "../src/screens/architecture/Architecture.js";
+import { CATALOG_BUILDS_HREF, RefusalLink } from "../src/app/propose.js";
 import {
   AddLinkForm,
   addOf,
   applyStaged,
+  pairOf,
+  pairRowsForAdd,
+  pairRowsForRedirect,
+  PairRowsView,
   EditMapToggle,
   EditMapView,
   reReadAsk,
@@ -26,6 +31,7 @@ import {
   STAGED_LINK,
   unstage,
   withStaged,
+  type AddLink,
   type Staged,
   type StagedDelete,
 } from "../src/screens/architecture/edit-map.js";
@@ -85,18 +91,21 @@ const TOPIC: Api.MapEditAddT = {
   side: "listens",
 };
 
+/** Declare a link…'s add. */
+const D = (add: Api.MapEditAddT): AddLink => ({ by: "declare", add });
+
 /** Three deletes, two adds and a redirect, as the owner's example counts them. */
 function six(): Staged[] {
   let l: Staged[] = [];
   l = stage(l, { kind: "delete", delete: REFUNDS });
   l = stage(l, { kind: "delete", delete: { ...REFUNDS, link: "a", interfaces: ["if-a"] } });
   l = stage(l, { kind: "delete", delete: { ...REFUNDS, link: "b", interfaces: ["if-b"] } });
-  l = stage(l, { kind: "add", add: GET, fromBox: "system:northwind-pay" });
-  l = stage(l, { kind: "add", add: TOPIC });
+  l = stage(l, { kind: "add", link: D(GET), fromBox: "system:northwind-pay" });
+  l = stage(l, { kind: "add", link: D(TOPIC) });
   l = stage(l, {
     kind: "redirect",
     delete: PAYMENTS,
-    add: POST,
+    link: D(POST),
     fromBox: "system:northwind-pay",
     toBox: "component:northwind-pay-proxy",
   });
@@ -122,7 +131,7 @@ describe("staging changes (nothing saved)", () => {
     expect(l.filter((x) => x.kind !== "add" && x.delete.link === PAYMENTS.link)).toHaveLength(1);
     expect(stagedOf(l, PAYMENTS.link)?.kind).toBe("delete");
     // The same add twice is one.
-    expect(stage(l, { kind: "add", add: GET }).filter((x) => x.kind === "add")).toHaveLength(2);
+    expect(stage(l, { kind: "add", link: D(GET) }).filter((x) => x.kind === "add")).toHaveLength(2);
   });
 
   it("says each row in words, a lineless delete with its call", () => {
@@ -362,7 +371,7 @@ describe("the toggle and the link panel", () => {
         systems={[{ box: "system:northwind-pay", system: "northwind-pay", label: "Northwind Pay" }]}
         targets={[]}
         staged={[]}
-        redirect={PAYMENTS}
+        redirect={{ ...PAYMENTS, fromBox: "system:northwind-pay" }}
         onStage={noop}
         onCancel={noop}
       />,
@@ -382,7 +391,6 @@ describe("the list beside the canvas, and Apply my changes", () => {
         onApply={noop}
         onConfirm={noop}
         onBack={noop}
-        onAgain={noop}
       />
     );
     return html(ctx ? <RunsContext.Provider value={ctx}>{el}</RunsContext.Provider> : el);
@@ -418,39 +426,34 @@ describe("the list beside the canvas, and Apply my changes", () => {
     expect(page).toMatch(/<button[^>]*disabled[^>]*>Remove<\/button>/);
   });
 
-  it("says it is working, then each problem by its row, or each change's outcome", () => {
+  it("says it is working, then one status line, each problem or outcome on its own row", () => {
     const working = view({ state: "working" });
     expect(working).toContain(esc(E.working));
     expect(working).toContain('aria-busy="true"');
+    const l = six();
     const refused = view({
       state: "problems",
-      problems: [
-        {
-          row: "Add: harbor-nowhere calls GET /x",
-          message: "No system of the profiles is harbor-nowhere.",
-        },
-      ],
+      problems: [{ edit: 3, message: "No system of the profiles is harbor-nowhere." }],
     });
     expect(refused).toContain('role="alert"');
-    expect(refused).toContain(esc(E.problems));
-    expect(refused).toContain(
-      esc(
-        E.problemOf(
-          "Add: harbor-nowhere calls GET /x",
-          "No system of the profiles is harbor-nowhere.",
-        ),
-      ),
-    );
+    expect(refused).toContain(esc(E.problemsLine(1)));
+    // On the row it is of, under that row's words, not stacked under the list.
+    const row = refused.indexOf(esc(rowWords(l[3]!)));
+    const why = refused.indexOf(esc("No system of the profiles is harbor-nowhere."));
+    expect(row).toBeGreaterThan(0);
+    expect(why).toBeGreaterThan(row);
+    expect(why).toBeLessThan(refused.indexOf(esc(rowWords(l[4]!))));
     const failed = view({
       state: "failed",
-      text: "Nothing was built.",
-      outcomes: [{ row: "Redirect a → b to: c", state: E.outcome.failed!, message: "exists" }],
+      text: "Nothing was built. A long verify output…",
+      outcomes: [{ edit: 5, state: E.outcome.failed!, message: "exists" }],
     });
-    expect(failed).toContain(esc(E.failed("Nothing was built.")));
-    expect(failed).toContain(esc(E.outcomeOf("Redirect a → b to: c", "not saved", "exists")));
+    expect(failed).toContain(esc(E.failedLine));
+    expect(failed).toContain(esc("not saved, exists"));
+    expect(failed).not.toContain(esc("A long verify output"));
   });
 
-  it("once applied, offers Re-read the repos these touch as one Copilot run of their callers", () => {
+  it("once applied, one status line and one primary button: Re-read the repos these touch", () => {
     const ctx = {
       run: null,
       allowed: true,
@@ -461,35 +464,92 @@ describe("the list beside the canvas, and Apply my changes", () => {
       setConsoleOpen: noop,
       loadEarlier: noop,
     } as Ctx;
-    const page = view({ state: "done", n: 3, callers: ["northwind_pay_1-0"] }, [], ctx);
+    const page = view(
+      { state: "done", n: 3, callers: ["northwind_pay_1-0"], waitsOn: [] },
+      [],
+      ctx,
+    );
     expect(page).toContain(esc(E.done(3)));
-    expect(page).toContain(esc(E.reRead));
     expect(page).toContain(esc(E.reReadWhy("northwind_pay_1-0")));
+    expect(page.match(/class="btn primary"/g)).toHaveLength(1);
+    expect(page).toMatch(new RegExp(`class="btn primary"[^>]*>${esc(E.reRead)}<`));
+    expect(page.match(/role="status"/g)).toHaveLength(1);
     expect(reReadAsk(["northwind_pay_1-0"])).toEqual({
       kind: "repos",
       repos: ["northwind_pay_1-0"],
       force: true,
     });
+    // A new link that waits on another repo's facts says so in the same line.
+    const waits = view(
+      { state: "done", n: 1, callers: ["northwind_pay_1-0"], waitsOn: ["forge-checkout"] },
+      [],
+      ctx,
+    );
+    expect(waits).toContain(esc(E.doneWaits(1, "forge-checkout")));
     // No Copilot here: what to do instead, and no button.
-    const off = view({ state: "done", n: 1, callers: ["northwind_pay_1-0"] }, [], {
+    const off = view({ state: "done", n: 1, callers: ["northwind_pay_1-0"], waitsOn: [] }, [], {
       ...ctx,
       allowed: false,
     });
     expect(off).toContain(esc(E.reReadNoCopilot("northwind_pay_1-0")));
     expect(off).not.toContain(esc(E.reRead));
-    const none = view({ state: "done", n: 1, callers: [] }, [], ctx);
+    const none = view({ state: "done", n: 1, callers: [], waitsOn: [] }, [], ctx);
     expect(none).toContain(esc(E.reReadNone));
   });
 
-  it("Apply sends the list once and reads its 422, a failed job's outcomes and the callers", async () => {
+  it("saved with the build waiting: one line and Review the N removals, to Catalog builds", () => {
+    const refused = {
+      reasons: ["large-removals" as const],
+      message: "waits",
+      removals: [
+        { id: "if-a", kind: "Interface", path: "interface/if-a.yaml", reasons: ["curated"] },
+        { id: "if-b", kind: "Interface", path: "interface/if-b.yaml", reasons: ["curated"] },
+      ],
+      allowRemovals: 2,
+      command: "atticus catalog build --allow-removals 2",
+    } as unknown as Api.BuildRefusalViewT;
+    const page = view({ state: "saved", n: 2, refused }, []);
+    expect(page).toContain(esc(COPY.panelResults.waitsRemovals(2)));
+    expect(page).toMatch(
+      new RegExp(
+        `<a class="btn primary" href="${CATALOG_BUILDS_HREF}">${esc(COPY.panelResults.reviewRemovals(2))}</a>`,
+      ),
+    );
+    // No removal list or confirm here: that is the full-width page's.
+    expect(page).not.toContain("if-a");
+    expect(
+      html(
+        <RefusalLink
+          refused={
+            {
+              ...refused,
+              removals: [],
+              allowRemovals: undefined,
+            } as unknown as Api.BuildRefusalViewT
+          }
+        />,
+      ),
+    ).toContain(esc(COPY.panelResults.reviewBuild));
+  });
+
+  it("Apply sends the list once and reads its 422, a failed job's outcomes, a waiting build and the callers", async () => {
     const l = six();
     const sent: unknown[] = [];
     const done = await applyStaged(l, async (path, body) => {
       sent.push([path, body]);
-      return { code: 0, lines: [], result: { callers: ["northwind_pay_1-0"] } };
+      return {
+        code: 0,
+        lines: [],
+        result: { callers: ["northwind_pay_1-0"], waitsOn: ["forge-checkout"] },
+      };
     });
     expect(sent).toEqual([["/api/map/edits", requestOf(l)]]);
-    expect(done).toEqual({ state: "done", n: 6, callers: ["northwind_pay_1-0"] });
+    expect(done).toEqual({
+      state: "done",
+      n: 6,
+      callers: ["northwind_pay_1-0"],
+      waitsOn: ["forge-checkout"],
+    });
 
     const refused = await applyStaged(l, async () => {
       throw new ApiError({
@@ -501,18 +561,204 @@ describe("the list beside the canvas, and Apply my changes", () => {
     });
     expect(refused).toEqual({
       state: "problems",
-      problems: [{ row: rowWords(l[3]!), message: "No system of the profiles is northwind-pay." }],
+      problems: [{ edit: 3, message: "No system of the profiles is northwind-pay." }],
     });
 
     const failed = await applyStaged(l.slice(5), async () => {
       throw new JobFailed("Nothing was built.", ["Nothing was built."], undefined, 1, {
         edits: [{ edit: 0, kind: "redirect", state: "failed", message: "already declared" }],
+        built: false,
       });
     });
     expect(failed).toEqual({
       state: "failed",
       text: "Nothing was built.",
-      outcomes: [{ row: rowWords(l[5]!), state: "not saved", message: "already declared" }],
+      outcomes: [{ edit: 0, state: "not saved", message: "already declared" }],
     });
+
+    const waiting = await applyStaged(l.slice(0, 1), async () => {
+      throw new JobFailed("waits", ["waits"], undefined, 1, {
+        edits: [{ edit: 0, kind: "delete", state: "saved" }],
+        built: false,
+        refused: { reasons: ["large-removals"], message: "waits", command: "x" },
+      });
+    });
+    expect(waiting).toMatchObject({
+      state: "saved",
+      n: 1,
+      refused: { reasons: ["large-removals"] },
+    });
+  });
+});
+
+describe("adding and redirecting from a repo's box: Connect to…'s pairing", () => {
+  const FACTS = {
+    repo: "northwind_pay_1-0",
+    file: "facts/northwind_pay_1-0.jsonl",
+    present: true,
+    facts: [
+      ["call.get.refunds-id", "GET", "/refunds/{id}", 13],
+      ["call.post.refunds", "POST", "/refunds", 10],
+      ["call.get.payments-id", "GET", "/payments/{id}", 4],
+    ].map(([id, method, path, line]) => ({
+      id: id as string,
+      kind: "call",
+      label: `${method as string} ${path as string}`,
+      claim: { method: method as string, path: path as string },
+      cite: { file: "apiproxy/proxies/default.xml", line: line as number, value: "x" },
+      verified: "line" as const,
+      by: "assistant" as const,
+    })),
+    corrections: { file: "facts/northwind_pay_1-0.corrections.jsonl", count: 0, stale: [] },
+    questions: [],
+    verify: "atticus verify northwind_pay_1-0",
+    problems: [],
+  } as unknown as Api.RepoFactsViewT;
+  const APIS = [
+    {
+      id: "entry.get.refund-status-id",
+      kind: "entry" as const,
+      method: "GET",
+      path: "/refund-status/{id}",
+    },
+  ];
+  const LINELESS: StagedDelete = {
+    ...REFUNDS,
+    fromRepo: "northwind_pay_1-0",
+    callerLines: [],
+    shapes: [{ method: "GET", path: "/refunds/{}" }],
+  };
+
+  it("offers a lineless arrow's call by its method and path, and says the person picks it", () => {
+    const { rows, lineless } = pairRowsForRedirect(FACTS, LINELESS, APIS);
+    expect(lineless).toBe(true);
+    expect(rows[0]).toEqual({
+      call: "call.get.refunds-id",
+      label: "GET /refunds/{id}",
+      at: "apiproxy/proxies/default.xml:13",
+      api: "entry.get.refund-status-id",
+    });
+    expect(rows.slice(1).every((r) => r.api === "")).toBe(true);
+    expect(E.add.lineless("northwind_pay_1-0")).toContain("cites no line");
+    // A lined arrow's calls are its caller's lines.
+    const lined = pairRowsForRedirect(
+      FACTS,
+      { ...LINELESS, callerLines: ["apiproxy/proxies/default.xml:10"] },
+      APIS,
+    );
+    expect(lined.lineless).toBe(false);
+    expect(lined.rows[0]!.call).toBe("call.post.refunds");
+    expect(lined.rows[0]!.api).toBe("entry.get.refund-status-id");
+  });
+
+  it("stages the pairing as a redirect and sends exactly Connect to…'s pairs", () => {
+    const { rows } = pairRowsForRedirect(FACTS, LINELESS, APIS);
+    const pair = pairOf("northwind_pay_1-0", { repo: "forge-checkout" }, rows)!;
+    expect(pair).toEqual({
+      from: "northwind_pay_1-0",
+      to: { repo: "forge-checkout" },
+      pairs: [{ call: "call.get.refunds-id", api: "entry.get.refund-status-id" }],
+    });
+    expect(pairOf("northwind_pay_1-0", { repo: "forge-checkout" }, [])).toBeUndefined();
+    const l = stage([], {
+      kind: "redirect",
+      delete: LINELESS,
+      link: { by: "pair", pair, from: "Repo: northwind_pay_1-0", to: "Repo: forge-checkout" },
+      fromBox: REFUNDS.fromBox,
+      toBox: "component:payments-api",
+    });
+    expect(rowWords(l[0]!)).toBe(
+      "Redirect northwind-pay-proxy → refunds-api to: Repo: northwind_pay_1-0 → Repo: forge-checkout, 1 call paired",
+    );
+    expect(requestOf(l).edits[0]).toEqual({
+      kind: "redirect",
+      delete: { interfaces: ["if-lineless"], from: "northwind-pay-proxy", to: "refunds-api" },
+      pair,
+    });
+    // The same call paired again elsewhere is the same change.
+    expect(stage(l, { kind: "add", link: { by: "pair", pair, from: "a", to: "b" } })).toHaveLength(
+      1,
+    );
+  });
+
+  it("an add from a repo pairs its loose calls, each suggestion that is sure picked", () => {
+    const rows = pairRowsForAdd({
+      from: "forge-checkout",
+      to: { repo: "forge-refunds" },
+      toName: "forge-refunds",
+      calls: [
+        {
+          fact: "c1",
+          callType: "rest",
+          method: "GET",
+          path: "/refunds/{id}",
+          at: "A.java:3",
+          status: "left",
+          suggestion: { api: "e1", score: 1, why: "same-path" },
+          confident: true,
+        },
+        { fact: "c2", callType: "rest", path: "/x", at: "A.java:9", status: "left" },
+        {
+          fact: "c3",
+          callType: "rest",
+          path: "/y",
+          at: "A.java:12",
+          status: "paired",
+          paired: "e1",
+        },
+      ],
+      apis: [],
+    } as unknown as Api.LinkCandidatesViewT);
+    expect(rows.map((r) => [r.call, r.api])).toEqual([
+      ["c1", "e1"],
+      ["c2", ""],
+    ]);
+  });
+
+  it("names every call's API field, and a box with no repo can't be redirected by pairing", () => {
+    const page = html(
+      <PairRowsView
+        caption={E.add.redirectCalls("northwind_pay_1-0")}
+        rows={pairRowsForRedirect(FACTS, LINELESS, APIS).rows}
+        apis={APIS}
+        onPick={noop}
+      />,
+    );
+    expect(page).toContain("<fieldset");
+    expect(page).toContain(esc(E.add.redirectCalls("northwind_pay_1-0")));
+    for (const label of ["GET /refunds/{id}", "POST /refunds", "GET /payments/{id}"])
+      expect(page).toContain(`aria-label="${esc(E.add.callApi(label))}"`);
+    expect(page).toContain(esc(E.add.notPaired));
+    const fromSystem = html(
+      <AddLinkForm
+        systems={[
+          { box: "system:northwind-pay", system: "northwind-pay", label: "System: Northwind Pay" },
+        ]}
+        targets={[]}
+        staged={[]}
+        redirect={{ ...LINELESS, fromBox: "component:other" }}
+        onStage={noop}
+      />,
+    );
+    expect(fromSystem).toContain(esc(E.add.redirectNoRepo));
+    const fromRepo = html(
+      <AddLinkForm
+        systems={[
+          { box: "repo:forge-checkout", repo: "forge-checkout", label: "Repo: forge-checkout" },
+        ]}
+        targets={[
+          {
+            box: "repo:forge-refunds",
+            label: "Repo: forge-refunds",
+            link: { repo: "forge-refunds" },
+          },
+        ]}
+        staged={[]}
+        onStage={noop}
+      />,
+    );
+    expect(fromRepo).toContain(esc(E.add.pairIntro));
+    expect(fromRepo).toContain(esc(E.add.toPick));
+    expect(fromRepo).not.toContain(esc(E.add.kind));
   });
 });

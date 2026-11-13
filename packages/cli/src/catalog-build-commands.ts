@@ -1097,14 +1097,22 @@ export async function undeleteLink(
 
 type MapEditOutcome = Api.MapEditsResultT["edits"][number];
 
-const addWords = (a: Api.MapEditAddT) =>
-  a.kind === "call" ? `${a.system} calls ${a.route}` : `${a.system} ${a.side} ${a.topic}`;
+const addWords = (e: Api.MapEditT) => {
+  if ("pair" in e) {
+    const p = e.pair;
+    const n = p.pairs.length;
+    return `${p.from} → ${p.to.repo ?? p.to.system} (${n} call${n === 1 ? "" : "s"} paired)`;
+  }
+  if (!("add" in e)) return "";
+  const a = e.add;
+  return a.kind === "call" ? `${a.system} calls ${a.route}` : `${a.system} ${a.side} ${a.topic}`;
+};
 
 /** A staged change in words, as the job's lines and its result say it. */
 export function mapEditWords(e: Api.MapEditT): string {
   if (e.kind === "delete") return `delete ${e.delete.from} → ${e.delete.to}`;
-  if (e.kind === "add") return `add: ${addWords(e.add)}`;
-  return `redirect ${e.delete.from} → ${e.delete.to} to: ${addWords(e.add)}`;
+  if (e.kind === "add") return `add: ${addWords(e)}`;
+  return `redirect ${e.delete.from} → ${e.delete.to} to: ${addWords(e)}`;
 }
 
 /**
@@ -1155,7 +1163,20 @@ export async function applyMapEdits(
             targets.add(target);
           }
         }
-        if (e.kind !== "delete") {
+        if ("pair" in e) {
+          // Connect to…'s pairings, exactly its lines in the caller's corrections file.
+          const { pairingsOf, removeCorrectionLines } = await import("./ui-api-links.js");
+          const { appendLines } = await import("./file-lock.js");
+          const { correctionLine, factsDirOf } = await import("@maycombhq/core");
+          const p = await pairingsOf(root, e.pair, { by, at });
+          const lines = p.corrections.map(correctionLine);
+          await mkdir(factsDirOf(root), { recursive: true });
+          await appendLines(p.file, lines);
+          undo.push({ edit: i, run: () => removeCorrectionLines(p.file, lines) });
+          io.out(
+            `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
+          );
+        } else if ("add" in e) {
           const a = e.add;
           const res = await declareLink(
             root,

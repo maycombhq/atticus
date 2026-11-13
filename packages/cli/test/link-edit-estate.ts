@@ -51,6 +51,20 @@ const pathGuessed = () =>
     )
     .join("\n") + "\n";
 
+/** The checkout's own entry (invented), which no call reaches until a person pairs one. */
+export const REFUND_STATUS_ENTRY = "entry.get.refund-status-id";
+const REFUND_STATUS = `package forge.checkout;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/refund-status")
+public class RefundStatusController {
+  @GetMapping("/{id}")
+  public String get(@PathVariable String id) { return id; }
+}
+`;
+
 export interface LinkEstate {
   root: string;
   srv: RunningServer;
@@ -122,6 +136,37 @@ export async function linkEstate(prefix: string): Promise<LinkEstate> {
     cpSync(join(FIX, "repos", r), join(root, "workspace", r), { recursive: true });
     writeFileSync(join(root, "facts", `${r}.jsonl`), r === PROXY ? pathGuessed() : factsOf(r));
   }
+  // Beta.28: an entry of the checkout's own that no call reaches yet, for a redirect to land on.
+  const bridge = "src/main/java/forge/checkout/RefundStatusController.java";
+  mkdirSync(join(root, "workspace", "forge-checkout", "src/main/java/forge/checkout"), {
+    recursive: true,
+  });
+  writeFileSync(join(root, "workspace", "forge-checkout", bridge), REFUND_STATUS);
+  writeFileSync(
+    join(root, "facts", "forge-checkout.jsonl"),
+    factsOf("forge-checkout") +
+      JSON.stringify({
+        kind: "entry",
+        id: REFUND_STATUS_ENTRY,
+        repo: "forge-checkout",
+        commit: COMMIT["forge-checkout"],
+        entryType: "rest",
+        method: "GET",
+        path: "/refund-status/{id}",
+        handler: "RefundStatusController.get",
+        cite: {
+          file: bridge,
+          line: 8,
+          value: "/{id}",
+          quote: '@GetMapping("/{id}")',
+          with: [{ file: bridge, line: 6, value: "/refund-status" }],
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      }) +
+      "\n",
+  );
   for (const r of Object.keys(COMMIT)) await verify(r);
   // A beta.26 metarepo: no slots, and one path-guessed arrow that lost its caller's line.
   rmSync(join(root, "catalog", "sources"), { recursive: true, force: true });

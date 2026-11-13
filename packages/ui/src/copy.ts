@@ -5329,6 +5329,17 @@ export const COPY = {
     },
   },
   /**
+   * Beta.28 (the owner's feedback of 2026-11-12, 22:29): a step's result inside a narrow panel
+   * (the canvas's details): one status line, and the full-width place for the rest.
+   */
+  panelResults: {
+    waitsRemovals: (n: number) =>
+      `Saved. The catalog build waits for you to review ${n} removal${n === 1 ? "" : "s"} first.`,
+    waitsBuild: "Saved. The catalog build waits for you on Catalog builds.",
+    reviewRemovals: (n: number) => `Review the ${n} removal${n === 1 ? "" : "s"}`,
+    reviewBuild: "Review the build",
+  },
+  /**
    * Beta.28 (the owner's ask of 2026-11-12: "delete arrows and add arrows in one go and click a
    * button"): Edit the map. Changes are staged on the canvas, listed beside it, and applied
    * together with one catalog build; then the repos they touch can be read again.
@@ -5361,6 +5372,9 @@ export const COPY = {
       call: (system: string, route: string) => `${system} calls ${route}`,
       publishes: (system: string, topic: string) => `${system} publishes to ${topic}`,
       listens: (system: string, topic: string) => `${system} listens on ${topic}`,
+      pair: (from: string, to: string, n: number) =>
+        `${from} → ${to}, ${n} call${n === 1 ? "" : "s"} paired`,
+      pairShort: (n: number) => `${n} call${n === 1 ? "" : "s"} paired`,
     },
     remove: "Remove",
     removeOf: (row: string) => `Remove from your changes: ${row}`,
@@ -5392,6 +5406,26 @@ export const COPY = {
       cancel: "Cancel",
       empty: "Say the topic or the route first.",
       twice: "That link is in your changes already.",
+      /** From a repo's box: Connect to…'s pairing, the person's word for each call. */
+      pairIntro:
+        "What Connect to… writes: your word that each call picked goes to that API, one line each in the repo's corrections, with your name and the date. The call's fact stays as read.",
+      toPick: "To (a repo or an outside system)",
+      toPickNone: "Pick the box first",
+      loading: "Reading the calls and APIs…",
+      failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
+      calls: (from: string) => `${from}'s calls, each with the API it goes to`,
+      callApi: (call: string) => `The API ${call} goes to`,
+      notPaired: "Not this call",
+      noCalls: (from: string) =>
+        `${from} has no call left to pair with this box: every call of it joins something already. To move one, pick its arrow and use Redirect this link….`,
+      noApis: (to: string) =>
+        `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
+      pickOne: "Pick the API for at least one call.",
+      redirectCalls: (from: string) => `${from}'s calls this arrow is, each with where it goes now`,
+      lineless: (from: string) =>
+        `This arrow cites no line of ${from}'s, so the call it is isn't known from the map. Pick ${from}'s call it is (the ones with its method and path are picked for you); the pairing cites that call's own line.`,
+      redirectNoRepo:
+        "This arrow doesn't start in a repo's box, so its calls can't be paired again here. Delete it, then add the link from a system's box.",
     },
     apply: "Apply my changes",
     confirm: {
@@ -5403,20 +5437,21 @@ export const COPY = {
     },
     working: "Saving your changes and building the catalog…",
     failed: (why: string) => `Your changes weren't applied: ${why}`,
-    problems:
-      "These changes can't be made, so nothing was saved. Fix or remove them, then apply again:",
-    problemOf: (row: string, why: string) => `${row}: ${why}`,
-    outcomes: "What happened to each change:",
     outcome: {
       saved: "saved",
       failed: "not saved",
       "taken-back": "taken back",
       "not-tried": "not tried",
     } as Record<string, string>,
-    outcomeOf: (row: string, state: string, why?: string) =>
-      `${row}: ${state}${why ? `, ${why}` : ""}`,
     done: (n: number) =>
       `${n} change${n === 1 ? "" : "s"} applied and the catalog built. Propose them for review with the catalog's other changes.`,
+    /** `repos`: joined with ", ". */
+    doneWaits: (n: number, repos: string) =>
+      `${n} change${n === 1 ? "" : "s"} applied and the catalog built. The new links are drawn once ${repos} ${repos.includes(",") ? "are" : "is"} read from facts too (Map › Trust).`,
+    problemsLine: (n: number) =>
+      `${n} change${n === 1 ? "" : "s"} can't be made, so nothing was saved: each says why below.`,
+    failedLine:
+      "Your changes weren't applied and nothing was built: each says what happened below. The whole output is in the Console.",
     reRead: "Re-read the repos these touch",
     /** `repos`: the caller repos, joined with ", ". */
     reReadWhy: (repos: string) =>
@@ -5425,7 +5460,6 @@ export const COPY = {
       "None of these changes starts in a repo of the estate, so there is no repo to read again.",
     reReadNoCopilot: (repos: string) =>
       `Copilot can't run from the app here. Read ${repos} again with your assistant (/atticus-map <repo>).`,
-    again: "Edit more",
   },
   canvasTools: {
     types: "Types",

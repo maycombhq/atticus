@@ -6305,7 +6305,7 @@
                     "maxItems": 100,
                     "type": "array",
                     "items": {
-                      "oneOf": [
+                      "anyOf": [
                         {
                           "type": "object",
                           "properties": {
@@ -6432,6 +6432,72 @@
                           "properties": {
                             "kind": {
                               "type": "string",
+                              "const": "add"
+                            },
+                            "pair": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "pairs": {
+                                  "minItems": 1,
+                                  "maxItems": 500,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "call": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "api": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "call",
+                                      "api"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "pairs"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "pair"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
                               "const": "redirect"
                             },
                             "delete": {
@@ -6532,6 +6598,104 @@
                             "kind",
                             "delete",
                             "add"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "redirect"
+                            },
+                            "delete": {
+                              "type": "object",
+                              "properties": {
+                                "interfaces": {
+                                  "minItems": 1,
+                                  "maxItems": 500,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300
+                                  }
+                                },
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "interfaces",
+                                "from",
+                                "to"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "pair": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "pairs": {
+                                  "minItems": 1,
+                                  "maxItems": 500,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "call": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "api": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "call",
+                                      "api"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "pairs"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "delete",
+                            "pair"
                           ],
                           "additionalProperties": false
                         }
@@ -48177,6 +48341,263 @@
             "items": {
               "type": "string"
             }
+          },
+          "waitsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refused": {
+            "type": "object",
+            "properties": {
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "nothing-read",
+                    "empty",
+                    "unexplained-removals",
+                    "large-removals",
+                    "hand-edits",
+                    "not-upgraded"
+                  ]
+                }
+              },
+              "message": {
+                "type": "string"
+              },
+              "removals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unexplained": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "allowRemovals": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "changed",
+                        "added",
+                        "deleted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "how"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "discardEdits": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unread": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "command": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reasons",
+              "message",
+              "command"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -48184,7 +48605,8 @@
           "lines",
           "edits",
           "built",
-          "callers"
+          "callers",
+          "waitsOn"
         ],
         "additionalProperties": false
       },

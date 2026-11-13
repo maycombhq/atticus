@@ -443,9 +443,19 @@
   gap: 4px;
 }
 .edit-map-row {
+  gap: 2px;
+}
+.edit-map-line {
   gap: 8px;
   align-items: center;
   justify-content: space-between;
+}
+.edit-map-why {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.edit-map-call {
+  overflow-wrap: anywhere;
 }
 .edit-map-what {
   flex: 1 1 auto;

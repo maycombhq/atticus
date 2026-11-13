@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import {
   api,
@@ -30,6 +30,34 @@ export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
   const r = e.result?.refused as Api.BuildRefusalViewT | undefined;
   if (!r || !Array.isArray(r.reasons)) return undefined;
   return r.reasons.some((x) => x === "large-removals" || x === "hand-edits") ? r : undefined;
+}
+
+/**
+ * Beta.28 (the owner's feedback of 2026-11-12, 22:29: the canvas's side panel is too cramped for
+ * results): inside a narrow panel (the canvas's details), a step's result is one status line and
+ * one primary button. Its whole output is the job's Console entry (the bottom panel), and a
+ * refused build's removals and confirm are on Set up › Scans › Catalog builds, full width.
+ */
+export const ResultsInPanel = createContext(false);
+export const useResultsInPanel = () => useContext(ResultsInPanel);
+
+/** Where a refused build is reviewed and confirmed, full width. */
+export const CATALOG_BUILDS_HREF = "#/catalog-builds";
+
+/** A refused build in a narrow panel: one line, and the page that lists and confirms it. */
+export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
+  const R = COPY.panelResults;
+  const n = refused.removals?.length ?? refused.allowRemovals ?? 0;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="ev-say" role="status" style={{ margin: 0 }}>
+        {n ? R.waitsRemovals(n) : R.waitsBuild}
+      </p>
+      <a className="btn primary" href={CATALOG_BUILDS_HREF}>
+        {n ? R.reviewRemovals(n) : R.reviewBuild}
+      </a>
+    </div>
+  );
 }
 
 /** The plan a refusal's confirm sends back with its count (the list it showed), when it has one. */
@@ -88,6 +116,7 @@ export function ApplyAndPropose(p: {
   // ADR 0195 point 4: the build Apply ran refused (a large removal, a hand edit): its listing,
   // confirmed here with its counts, as a scan's is on Scans.
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
+  const inPanel = useResultsInPanel();
   /** Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed. */
   const applyWith = async (counts: {
     allowRemovals?: number;
@@ -149,16 +178,17 @@ export function ApplyAndPropose(p: {
             >
               {apply.busy ? P.applying : P.apply(p.repo)}
             </button>
-            {apply.busy && <ShowInConsole id={jobId} />}
+            {(apply.busy || (inPanel && applied)) && <ShowInConsole id={jobId} />}
           </div>
           <Note note={apply.note} />
-          {applied && applied.length > 0 && (
+          {!inPanel && applied && applied.length > 0 && (
             <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
               {applied.join("\n")}
             </pre>
           )}
           {next && <SyncFirst repos={next.repos} />}
-          {refused && (
+          {refused && inPanel && <RefusalLink refused={refused} />}
+          {refused && !inPanel && (
             <RefusalView
               refused={refused}
               confirmLabel={P.confirmApply}
@@ -435,6 +465,7 @@ export function ApplyAll({
 }) {
   const [own, setOwn] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
   const held = run ?? own;
+  const inPanel = useResultsInPanel();
   const start =
     onRun ??
     (() =>
@@ -448,10 +479,10 @@ export function ApplyAll({
         <button type="button" className="btn primary" disabled={held.running} onClick={start}>
           {held.running ? COPY.appStep.applyingAll : COPY.appStep.applyAll}
         </button>
-        {held.running && <ShowInConsole id={held.jobId} />}
+        {(held.running || (inPanel && held.lines)) && <ShowInConsole id={held.jobId} />}
       </div>
       <Note note={held.note} />
-      {held.lines && held.lines.length > 0 && (
+      {!inPanel && held.lines && held.lines.length > 0 && (
         <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
           {held.lines.join("\n")}
         </pre>
