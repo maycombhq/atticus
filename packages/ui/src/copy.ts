@@ -5294,6 +5294,183 @@ export const COPY = {
     corrected:
       "Correction saved as your word. The canvas was read again; the link moves once atticus verify --write has joined the caller's repo again.",
   },
+  /**
+   * Beta.28 (the owner's decision of 2026-11-12): Delete this link, on every link's panel, as
+   * simple as clicking delete; and the links deleted so, each with Bring back.
+   */
+  deleteLink: {
+    open: "Delete this link",
+    openOf: (from: string, to: string) => `Delete the link ${from} → ${to}`,
+    confirm: (from: string, to: string, n: number) =>
+      `Delete ${from} → ${to}, ${n} call${n === 1 ? "" : "s"}?`,
+    intro:
+      "Your decision is written to catalog/curated, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
+    yes: "Delete",
+    no: "Cancel",
+    reading: "Reading every call on this link…",
+    readFailed: (why: string) => `Couldn't read every call on this link: ${why}`,
+    /** The review of beta.28: nothing is deleted in part. */
+    partial: (all: number, read: number) =>
+      `only ${read} of its ${all} calls could be read, and a link is deleted whole or not at all. Open the box it starts in and pick the arrow there.`,
+    none: "it has no call to take away.",
+    mixed:
+      "it merges something that isn't a call (a use of a table, a loose end), which Delete can't take away: delete it from the box it starts in, where its calls are drawn apart.",
+    /** A topic's arrows are one call each way: deleting one takes the other too. */
+    also: (arrows: string) => `This also takes away ${arrows}: they are the same calls.`,
+    working: "Deleting the link and building the catalog…",
+    failed: (why: string) => `The link wasn't deleted: ${why}`,
+    done: (from: string, to: string) =>
+      `Deleted ${from} → ${to}. Bring it back below, or from Deleted links in the map's tools.`,
+    list: {
+      title: "Deleted links",
+      loading: "Reading the deleted links…",
+      failed: (why: string) => `The deleted links couldn't be read: ${why}`,
+      none: "No link was deleted on the canvas.",
+      item: (from: string, to: string, n: number) =>
+        `${from} → ${to}, ${n} call${n === 1 ? "" : "s"}`,
+      by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
+      back: "Bring back",
+      backOf: (from: string, to: string) => `Bring back the link ${from} → ${to}`,
+      backing: "Bringing it back and building the catalog…",
+      backDone: (from: string, to: string) => `${from} → ${to} is back on the map.`,
+      backFailed: (why: string) => `The link wasn't brought back: ${why}`,
+    },
+  },
+  /**
+   * Beta.28 (the owner's feedback of 2026-11-12, 22:29): a step's result inside a narrow panel
+   * (the canvas's details): one status line, and the full-width place for the rest.
+   */
+  panelResults: {
+    waitsRemovals: (n: number) =>
+      `Saved. The catalog build waits for you to review ${n} removal${n === 1 ? "" : "s"} first.`,
+    waitsBuild: "Saved. The catalog build waits for you on Catalog builds.",
+    reviewRemovals: (n: number) => `Review the ${n} removal${n === 1 ? "" : "s"}`,
+    reviewBuild: "Review the build",
+  },
+  /**
+   * Beta.28 (the owner's ask of 2026-11-12: "delete arrows and add arrows in one go and click a
+   * button"): Edit the map. Changes are staged on the canvas, listed beside it, and applied
+   * together with one catalog build; then the repos they touch can be read again.
+   */
+  editMap: {
+    toggle: "Edit the map",
+    toggleOf: (n: number) =>
+      n ? `Edit the map, ${n} change${n === 1 ? "" : "s"} not applied yet` : "Edit the map",
+    title: "Your changes to the map",
+    intro:
+      "Pick an arrow to delete or redirect it, or add a link below. Nothing is saved until Apply my changes, which saves them all and builds the catalog once.",
+    empty:
+      "No changes yet. Pick an arrow on the map to delete or redirect it, or add a link below.",
+    counts: (deleted: number, added: number, redirected: number) =>
+      [
+        deleted ? `${deleted} deleted` : "",
+        added ? `${added} added` : "",
+        redirected ? `${redirected} redirected` : "",
+      ]
+        .filter(Boolean)
+        .join(", "),
+    listLabel: "Changes not applied yet",
+    row: {
+      delete: (from: string, to: string, calls: number) =>
+        `Delete ${from} → ${to} (${calls} call${calls === 1 ? "" : "s"})`,
+      add: (what: string) => `Add: ${what}`,
+      redirect: (from: string, to: string, what: string) => `Redirect ${from} → ${to} to: ${what}`,
+      /** The other arrows the same calls draw, taken away with it. */
+      also: (arrows: string) => `, and with it ${arrows}`,
+    },
+    what: {
+      call: (system: string, route: string) => `${system} calls ${route}`,
+      publishes: (system: string, topic: string) => `${system} publishes to ${topic}`,
+      listens: (system: string, topic: string) => `${system} listens on ${topic}`,
+      pair: (from: string, to: string, n: number) =>
+        `${from} → ${to}, ${n} call${n === 1 ? "" : "s"} paired`,
+      pairShort: (n: number) => `${n} call${n === 1 ? "" : "s"} paired`,
+    },
+    remove: "Remove",
+    removeOf: (row: string) => `Remove from your changes: ${row}`,
+    /** On the canvas, in the arrow's label (words as well as the dashes: WCAG 1.4.1). */
+    onCanvas: { delete: "to delete", add: "to add" },
+    stage: {
+      delete: "Delete this link",
+      deleteOf: (from: string, to: string) => `Add to your changes: delete ${from} → ${to}`,
+      redirect: "Redirect this link…",
+      redirectOf: (from: string, to: string) => `Redirect ${from} → ${to}`,
+      staged: (row: string) => `In your changes: ${row}`,
+      reading: "Reading every call on this link…",
+      readFailed: (why: string) => `Couldn't read every call on this link: ${why}`,
+    },
+    add: {
+      title: "Add a link",
+      redirectTitle: (from: string, to: string) => `Redirect ${from} → ${to}`,
+      redirectIntro:
+        "The link is deleted and this one is added in its place, as one change. Say where it goes now.",
+      intro:
+        "What Declare a link… writes: your word in the profile that has the system, with your name and the date, drawn dashed.",
+      from: "From",
+      fromNone:
+        "No outside system is on the map to start a link from. Add one with Add to the picture first.",
+      kind: "What it does",
+      to: "Draw it to, until the map is built",
+      toNone: "Don't draw it yet",
+      stage: "Add to my changes",
+      cancel: "Cancel",
+      empty: "Say the topic or the route first.",
+      twice: "That link is in your changes already.",
+      /** From a repo's box: Connect to…'s pairing, the person's word for each call. */
+      pairIntro:
+        "What Connect to… writes: your word that each call picked goes to that API, one line each in the repo's corrections, with your name and the date. The call's fact stays as read.",
+      toPick: "To (a repo or an outside system)",
+      toPickNone: "Pick the box first",
+      loading: "Reading the calls and APIs…",
+      failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
+      calls: (from: string) => `${from}'s calls, each with the API it goes to`,
+      callApi: (call: string) => `The API ${call} goes to`,
+      notPaired: "Not this call",
+      noCalls: (from: string) =>
+        `${from} has no call left to pair with this box: every call of it joins something already. To move one, pick its arrow and use Redirect this link….`,
+      noApis: (to: string) =>
+        `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
+      pickOne: "Pick the API for at least one call.",
+      redirectCalls: (from: string) => `${from}'s calls this arrow is, each with where it goes now`,
+      lineless: (from: string) =>
+        `This arrow cites no line of ${from}'s, so the call it is isn't known from the map. Pick ${from}'s call it is (the ones with its method and path are picked for you); the pairing cites that call's own line.`,
+      redirectNoRepo:
+        "This arrow doesn't start in a repo's box, so its calls can't be paired again here. Delete it, then add the link from a system's box.",
+    },
+    apply: "Apply my changes",
+    confirm: {
+      title: (n: number) => `Apply ${n} change${n === 1 ? "" : "s"}?`,
+      intro:
+        "Each is saved for review (a delete in catalog/curated, an add in the profile, with your name and the date), then the catalog is built once with all of them.",
+      yes: "Apply them",
+      back: "Go back",
+    },
+    working: "Saving your changes and building the catalog…",
+    failed: (why: string) => `Your changes weren't applied: ${why}`,
+    outcome: {
+      saved: "saved",
+      failed: "not saved",
+      "taken-back": "taken back",
+      "not-tried": "not tried",
+    } as Record<string, string>,
+    done: (n: number) =>
+      `${n} change${n === 1 ? "" : "s"} applied and the catalog built. Propose them for review with the catalog's other changes.`,
+    /** `repos`: joined with ", ". */
+    doneWaits: (n: number, repos: string) =>
+      `${n} change${n === 1 ? "" : "s"} applied and the catalog built. The new links are drawn once ${repos} ${repos.includes(",") ? "are" : "is"} read from facts too (Map › Trust).`,
+    problemsLine: (n: number) =>
+      `${n} change${n === 1 ? "" : "s"} can't be made, so nothing was saved: each says why below.`,
+    failedLine:
+      "Your changes weren't applied and nothing was built: each says what happened below. The whole output is in the Console.",
+    reRead: "Re-read the repos these touch",
+    /** `repos`: the caller repos, joined with ", ". */
+    reReadWhy: (repos: string) =>
+      `Reads ${repos} whole again with Copilot, as one run, so their facts agree with your changes.`,
+    reReadNone:
+      "None of these changes starts in a repo of the estate, so there is no repo to read again.",
+    reReadNoCopilot: (repos: string) =>
+      `Copilot can't run from the app here. Read ${repos} again with your assistant (/atticus-map <repo>).`,
+  },
   canvasTools: {
     types: "Types",
     typesHint:
@@ -6235,7 +6412,7 @@ export const COPY = {
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: answer where ${n === 1 ? "it goes" : "they go"} or correct the proxy's forwarding from This link is wrong under ${n === 1 ? "its call" : "each"}, which changes that route for every caller.`,
       // Review of beta.27: links with no line of a caller's that no proxy's routing made.
       uncited: (n: number) =>
-        `${n} of these link${n === 1 ? " cites" : "s cite"} no line of the caller's, so there is no call to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: read the caller's repo again.`,
+        `${n} of these link${n === 1 ? " cites" : "s cite"} no line of the caller's, so there is no call to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: to take the arrow away, use Delete this link at the top of the link's panel.`,
       already:
         "Every one of these corrections is on file already, so nothing new was written. Apply them from Corrections to apply, at the top of the map.",
       skipped: (n: number) =>
@@ -6254,8 +6431,9 @@ export const COPY = {
     routingLink:
       "No line of a caller's cites this call: the link comes from a gateway proxy's routing, so there is no call here to correct. Where the proxy forwards it is set on the proxy, for every caller of the route, not this link alone: answer where it goes, or correct the proxy's forwarding at its line.",
     // Review of beta.27: no line of a caller's, and no proxy's routing (a built-in reader's link).
+    // Beta.28: what takes such an arrow away is Delete this link, in the link's panel head.
     uncitedLink:
-      "No line of the caller's is cited for this call, so there is no call here to correct yet. Read the caller's repo again: once its facts cite the call's line, This link is wrong corrects it.",
+      "No line of the caller's is cited for this call, so there is no call here to correct. To take the arrow away, use Delete this link at the top of the link's panel.",
     // Beta.27: a link a gateway proxy's routing made: what does correct it, as buttons.
     routing: {
       all: (n: number) =>

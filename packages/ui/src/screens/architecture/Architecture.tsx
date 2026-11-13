@@ -37,6 +37,26 @@ import {
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { ArrowWrong, LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { DeleteLink, DeletedLinks } from "./DeleteLink.js";
+import { ResultsInPanel } from "../../app/propose.js";
+import {
+  AddLinkForm,
+  EditMap,
+  EditMapToggle,
+  StageLink,
+  type FromChoice,
+  type ToChoice,
+} from "./EditMap.js";
+import {
+  keptAfterApply,
+  stage,
+  stagedOf,
+  STAGED_LINK,
+  unstage,
+  withStaged,
+  type Staged,
+  type StagedDelete,
+} from "./edit-map.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { EveryDependency } from "./EveryDependency.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
@@ -129,9 +149,12 @@ export function revealOf(o: {
   owning: string | undefined;
   pickedLink: { id: string } | undefined;
   pickedBox: string | undefined;
+  /** Beta.28: Edit the map turned on (its list is in the details). */
+  editing?: boolean;
 }): string {
   return [
     o.adding ? "add" : "",
+    o.editing ? "edit" : "",
     o.pickedBox ? `box:${o.pickedBox}` : "",
     o.connecting?.from ?? "",
     o.declaring?.system ?? "",
@@ -221,7 +244,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  // Beta.28: the link just deleted from its panel (what the panel says once it left the picture).
+  const [deletedLink, setDeletedLink] = useState<
+    { link: string; from: string; to: string; interfaces: ReadonlySet<string> } | undefined
+  >();
   const [corrected, setCorrected] = useState(false);
+  // Beta.28, Edit the map: on or off, the changes staged (kept while it is off, until applied or
+  // removed), and the arrow a redirect is said for.
+  const [editing, setEditing] = useState(false);
+  const [staged, setStaged] = useState<Staged[]>([]);
+  const [redirecting, setRedirecting] = useState<StagedDelete | undefined>();
   // Review round 46: a focus answer counts only if it is the newest asked, in this picture.
   const focusCall = useRef(latestCall()).current;
   const dropFocus = () => {
@@ -521,8 +553,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         ),
       };
     }
+    // Beta.28, Edit the map: the changes staged, drawn on the picture until applied.
+    if (staged.length) g = withStaged(g, staged);
     return g;
-  }, [whole, tools, propsOf, openQuestions]);
+  }, [whole, tools, propsOf, openQuestions, staged]);
   const radius = useMemo(
     () =>
       tools.radius && selected
@@ -599,6 +633,19 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       )
     : undefined;
   const boxes = connectChoices(views);
+  // Beta.28, Edit the map: the systems a link can be added from (Declare a link…'s), and the
+  // boxes a staged add can be drawn to.
+  const { fromChoices, toChoices } = editChoices(views);
+  // The review of beta.28: the other arrows the same Interfaces draw (a topic's other side: the
+  // publisher's arrow to it and its listener's from it are one call), said before a delete.
+  const alsoArrows = (ids: readonly string[], link: string): string[] => {
+    const these = new Set(ids);
+    const seen = new Map<string, string>();
+    for (const e of [...(focus?.edges ?? []), ...[...views.values()].flatMap((v) => v.edges)])
+      if (e.id !== link && (e.joins ?? []).some((j) => these.has(j.interface)))
+        seen.set(e.id, `${find(e.from)?.label ?? e.from} → ${find(e.to)?.label ?? e.to}`);
+    return [...seen.values()];
+  };
   const known = knownTargets(loaded);
   const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
   const under = (j: Api.HierJoinT) => (
@@ -653,7 +700,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     graph.boxes.length > 0 &&
     arrangement.state === "ready" &&
     arrangement.key === key;
-  const reveal = revealOf({ adding, connecting, declaring, owning, pickedLink, pickedBox });
+  const reveal = revealOf({
+    adding,
+    connecting,
+    declaring,
+    owning,
+    pickedLink,
+    pickedBox,
+    editing,
+  });
 
   return (
     <div className="bento">
@@ -704,6 +759,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             </nav>
           }
           onAdd={() => setAdding(true)}
+          edit={
+            <EditMapToggle
+              on={editing}
+              count={staged.length}
+              onToggle={() => {
+                setEditing((on) => !on);
+                setRedirecting(undefined);
+              }}
+            />
+          }
           tools={{
             open: toolsOpen,
             bodyId: `${uid}-tools`,
@@ -878,6 +943,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     })()
                   : {})}
                 {...(snapshot ? { snapshot } : {})}
+                onLinkBack={reloadViews}
                 onSnapshot={() => {
                   const snap = snapshotOf(whole, new Date().toLocaleTimeString());
                   setSnapshot(snap);
@@ -922,6 +988,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   onLaid={setLaid}
                   {...(radius ? { lit: radius } : {})}
                   onSelectLink={(id) => {
+                    // Beta.28: a staged add is drawn, not yet a link of the catalog.
+                    if (id.startsWith(STAGED_LINK)) return;
                     setPickedLink({ id, keyboard: false });
                     setCorrected(false);
                   }}
@@ -933,89 +1001,172 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     setConnecting(c);
                   }}
                   aside={
-                    <div className="stack">
-                      <h2 className="h">{WORDS.inspector}</h2>
-                      {pickedLink && (
-                        <LinkInspector
-                          key={pickedLink.id}
-                          link={pickedEdge}
-                          labelOf={(id) => find(id)?.label ?? id}
-                          under={under}
-                          above={above}
-                          contracts={findings}
-                          autoFocus={pickedLink.keyboard}
-                          onClose={() => setPickedLink(undefined)}
-                          onCorrected={() => {
-                            // The decisions reload themselves; the picture is read again here.
-                            reloadViews();
-                            setCorrected(true);
-                          }}
-                        />
-                      )}
-                      {sel ? (
-                        <Inspector
-                          node={sel}
-                          isCurrent={sel.id === current}
-                          onOpen={open}
-                          onFocus={showFocus}
-                          lens={lens}
-                          links={(focus?.edges ?? view.edges).filter(
-                            (e) => e.from === sel.id || e.to === sel.id,
-                          )}
-                          labelOf={(id) => find(id)?.label ?? id}
-                          under={under}
-                          above={above}
-                          contracts={findings}
-                          {...(boxOf(sel)?.repo
-                            ? {
-                                onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
-                                onOwner: () => setOwning(boxOf(sel)!.repo!),
-                              }
-                            : boxOf(sel)?.system
+                    // Beta.28: results here are one line and one button; the rest full width.
+                    <ResultsInPanel.Provider value={true}>
+                      <div className="stack">
+                        <h2 className="h">{WORDS.inspector}</h2>
+                        {editing && (
+                          <EditMap
+                            staged={staged}
+                            onRemove={(k) => setStaged((l) => unstage(l, k))}
+                            onApplied={(keys) => {
+                              setStaged((l) => keptAfterApply(l, keys));
+                              setRedirecting(undefined);
+                              reloadViews();
+                            }}
+                            add={
+                              <AddLinkForm
+                                key={redirecting?.link ?? "add"}
+                                systems={fromChoices}
+                                targets={toChoices}
+                                staged={staged}
+                                {...(redirecting
+                                  ? {
+                                      redirect: redirecting,
+                                      onCancel: () => setRedirecting(undefined),
+                                    }
+                                  : {})}
+                                onStage={(x) => {
+                                  setStaged((l) => stage(l, x));
+                                  setRedirecting(undefined);
+                                }}
+                              />
+                            }
+                          />
+                        )}
+                        {pickedLink && (
+                          <LinkInspector
+                            key={pickedLink.id}
+                            link={pickedEdge}
+                            labelOf={(id) => find(id)?.label ?? id}
+                            under={under}
+                            above={above}
+                            contracts={findings}
+                            autoFocus={pickedLink.keyboard}
+                            deleteLink={(l) =>
+                              editing ? (
+                                <StageLink
+                                  link={l}
+                                  fromRepo={boxOf(find(l.from))?.repo}
+                                  from={find(l.from)?.label ?? l.from}
+                                  to={find(l.to)?.label ?? l.to}
+                                  {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+                                  staged={stagedOf(staged, l.id)}
+                                  onStage={(x) => setStaged((list) => stage(list, x))}
+                                  onRedirect={setRedirecting}
+                                  onUnstage={(k) => setStaged((list) => unstage(list, k))}
+                                  alsoOf={(ids) => alsoArrows(ids, l.id)}
+                                />
+                              ) : (
+                                <DeleteLink
+                                  link={l}
+                                  alsoOf={(ids) => alsoArrows(ids, l.id)}
+                                  from={find(l.from)?.label ?? l.from}
+                                  to={find(l.to)?.label ?? l.to}
+                                  {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+                                  onDeleted={(d) => {
+                                    setDeletedLink({
+                                      link: l.id,
+                                      from: d.from,
+                                      to: d.to,
+                                      interfaces: new Set(d.interfaces),
+                                    });
+                                    reloadViews();
+                                  }}
+                                />
+                              )
+                            }
+                            {...(deletedLink?.link === pickedLink.id
                               ? {
-                                  onDeclare: () =>
-                                    setDeclaring({ system: boxOf(sel)!.system!, label: sel.label }),
+                                  gone: (
+                                    <div className="stack">
+                                      <p className="state" role="status">
+                                        {COPY.deleteLink.done(deletedLink.from, deletedLink.to)}
+                                      </p>
+                                      <DeletedLinks
+                                        only={deletedLink.interfaces}
+                                        onBack={reloadViews}
+                                      />
+                                    </div>
+                                  ),
                                 }
                               : {})}
-                          {...(!focus && graph.boxes.some((b) => b.id === sel.id)
-                            ? {
-                                here: {
-                                  open: inPlace.has(sel.id),
-                                  toggle: () => void toggleHere(sel.id),
-                                },
-                              }
-                            : {})}
-                        />
-                      ) : (
-                        <p>{WORDS.pick}</p>
-                      )}
-                      {connecting && (
-                        <ConnectPanel
-                          key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
-                          from={connecting.from}
-                          boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
-                          {...(connecting.initial ? { initial: connecting.initial } : {})}
-                          onClose={() => setConnecting(undefined)}
-                        />
-                      )}
-                      {declaring && (
-                        <DeclarePanel
-                          key={declaring.system}
-                          system={declaring.system}
-                          label={declaring.label}
-                          onClose={() => setDeclaring(undefined)}
-                        />
-                      )}
-                      {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
-                      {owning && (
-                        <OwnerPanel
-                          key={owning}
-                          repo={owning}
-                          onClose={() => setOwning(undefined)}
-                        />
-                      )}
-                      {watched && <WhatMoved moved={moved} />}
-                    </div>
+                            onClose={() => setPickedLink(undefined)}
+                            onCorrected={() => {
+                              // The decisions reload themselves; the picture is read again here.
+                              reloadViews();
+                              setCorrected(true);
+                            }}
+                          />
+                        )}
+                        {sel ? (
+                          <Inspector
+                            node={sel}
+                            isCurrent={sel.id === current}
+                            onOpen={open}
+                            onFocus={showFocus}
+                            lens={lens}
+                            links={(focus?.edges ?? view.edges).filter(
+                              (e) => e.from === sel.id || e.to === sel.id,
+                            )}
+                            labelOf={(id) => find(id)?.label ?? id}
+                            under={under}
+                            above={above}
+                            contracts={findings}
+                            {...(boxOf(sel)?.repo
+                              ? {
+                                  onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
+                                  onOwner: () => setOwning(boxOf(sel)!.repo!),
+                                }
+                              : boxOf(sel)?.system
+                                ? {
+                                    onDeclare: () =>
+                                      setDeclaring({
+                                        system: boxOf(sel)!.system!,
+                                        label: sel.label,
+                                      }),
+                                  }
+                                : {})}
+                            {...(!focus && graph.boxes.some((b) => b.id === sel.id)
+                              ? {
+                                  here: {
+                                    open: inPlace.has(sel.id),
+                                    toggle: () => void toggleHere(sel.id),
+                                  },
+                                }
+                              : {})}
+                          />
+                        ) : (
+                          <p>{WORDS.pick}</p>
+                        )}
+                        {connecting && (
+                          <ConnectPanel
+                            key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
+                            from={connecting.from}
+                            boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
+                            {...(connecting.initial ? { initial: connecting.initial } : {})}
+                            onClose={() => setConnecting(undefined)}
+                          />
+                        )}
+                        {declaring && (
+                          <DeclarePanel
+                            key={declaring.system}
+                            system={declaring.system}
+                            label={declaring.label}
+                            onClose={() => setDeclaring(undefined)}
+                          />
+                        )}
+                        {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
+                        {owning && (
+                          <OwnerPanel
+                            key={owning}
+                            repo={owning}
+                            onClose={() => setOwning(undefined)}
+                          />
+                        )}
+                        {watched && <WhatMoved moved={moved} />}
+                      </div>
+                    </ResultsInPanel.Provider>
                   }
                   asideBeside
                   reveal={reveal}
@@ -1143,6 +1294,31 @@ export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
     return { repo: n.properties.repo };
   if (n.kind === "system" && n.id.startsWith("system:")) return { system: n.id.slice(7) };
   return undefined;
+}
+
+/**
+ * Beta.28, Edit the map: the boxes of the views loaded a link can be added from (a system's of
+ * the profiles, as Declare a link… is offered on; a repo's or a component's of one, as Connect
+ * to… is), and every repo, component and system box a staged
+ * add can be drawn to, once each, by label.
+ */
+export function editChoices(views: Views): { fromChoices: FromChoice[]; toChoices: ToChoice[] } {
+  const from = new Map<string, FromChoice>();
+  const to = new Map<string, ToChoice>();
+  for (const v of views.values())
+    for (const n of [v.node, ...v.children, ...v.outside]) {
+      if (n.kind !== "repo" && n.kind !== "system" && n.kind !== "component") continue;
+      const label = `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`;
+      // Connect to…'s other box: a repo (a component's, a system's only one) or an outside system.
+      const drawn = drawnBoxOf(n);
+      to.set(n.id, { box: n.id, label, ...(drawn ? { link: drawn } : {}) });
+      const b = boxOf(n);
+      if (n.kind === "system" && b?.system) from.set(n.id, { box: n.id, system: b.system, label });
+      else if (b?.repo) from.set(n.id, { box: n.id, repo: b.repo, label });
+    }
+  const byLabel = <T extends { label: string }>(m: Map<string, T>) =>
+    [...m.values()].sort((x, y) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0));
+  return { fromChoices: byLabel(from), toChoices: byLabel(to) };
 }
 
 /**

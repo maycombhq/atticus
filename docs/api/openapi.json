@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.12.0",
+    "version": "3.13.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -6059,6 +6059,698 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/delete": {
+      "post": {
+        "operationId": "deleteLink",
+        "summary": "3.13.0 (beta.28): Delete this link as a local job: a curated suppress of each Interface named (the decision atticus catalog edits --curate writes for a deleted file), in catalog/curated/curateddecision/, then atticus catalog build. 404 when one isn't an Interface of the catalog now",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "interfaces": {
+                    "minItems": 1,
+                    "maxItems": 5000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    }
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "to": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "interfaces",
+                  "from",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines it printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/deleted": {
+      "get": {
+        "operationId": "getDeletedLinks",
+        "summary": "3.13.0 (beta.28): the links deleted on the canvas, each with its curated suppresses. Reads files only",
+        "tags": [
+          "scans"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedLinksView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/deleted/undo": {
+      "post": {
+        "operationId": "undeleteLink",
+        "summary": "3.13.0 (beta.28): Bring back a deleted link as a local job: its decisions removed, then atticus catalog build. 404 when one isn't a link deleted on the canvas",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decisions": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{0,120}$"
+                    }
+                  }
+                },
+                "required": [
+                  "decisions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is the code and the lines it printed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/map/edits": {
+      "post": {
+        "operationId": "applyMapEdits",
+        "summary": "3.13.0 (beta.28): Edit the map's Apply my changes as a local job: every change staged on the canvas checked first (422 with problems by place, nothing written), then each delete's curated suppresses and each add's declaration written, then atticus catalog build once. A write that fails takes back those before it and builds nothing. Its job's result is MapEditsResult",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "edits": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "delete"
+                            },
+                            "delete": {
+                              "type": "object",
+                              "properties": {
+                                "interfaces": {
+                                  "maxItems": 5000,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300
+                                  }
+                                },
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "interfaces",
+                                "from",
+                                "to"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "delete"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "add"
+                            },
+                            "add": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "topic"
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "topic": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    "side": {
+                                      "type": "string",
+                                      "enum": [
+                                        "publishes",
+                                        "listens"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "system",
+                                    "topic",
+                                    "side"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "call"
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "route": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "system",
+                                    "route"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "add"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "add"
+                            },
+                            "pair": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "pairs": {
+                                  "minItems": 1,
+                                  "maxItems": 500,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "call": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "api": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "call",
+                                      "api"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "pairs"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "pair"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "redirect"
+                            },
+                            "delete": {
+                              "type": "object",
+                              "properties": {
+                                "interfaces": {
+                                  "maxItems": 5000,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300
+                                  }
+                                },
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "interfaces",
+                                "from",
+                                "to"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "add": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "topic"
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "topic": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    "side": {
+                                      "type": "string",
+                                      "enum": [
+                                        "publishes",
+                                        "listens"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "system",
+                                    "topic",
+                                    "side"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "call"
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "route": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "system",
+                                    "route"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "delete",
+                            "add"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "redirect"
+                            },
+                            "delete": {
+                              "type": "object",
+                              "properties": {
+                                "interfaces": {
+                                  "maxItems": 5000,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300
+                                  }
+                                },
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "interfaces",
+                                "from",
+                                "to"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "pair": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "to": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "pairs": {
+                                  "minItems": 1,
+                                  "maxItems": 500,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "call": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "api": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "call",
+                                      "api"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "pairs"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "delete",
+                            "pair"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "edits"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its job's result is MapEditsResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27746,6 +28438,27 @@
           },
           "code": {
             "type": "string"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "edit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "edit",
+                "message"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -47495,6 +48208,408 @@
         "required": [
           "files",
           "plan"
+        ],
+        "additionalProperties": false
+      },
+      "DeletedLinksView": {
+        "type": "object",
+        "properties": {
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "calls": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "gone": {
+                  "type": "boolean"
+                },
+                "decisions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": "string"
+                      },
+                      "gone": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "target",
+                      "file"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "from",
+                "to",
+                "calls",
+                "by",
+                "at",
+                "decisions"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "additionalProperties": false
+      },
+      "MapEditsResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "edit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "delete",
+                    "add",
+                    "redirect"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "saved",
+                    "failed",
+                    "taken-back",
+                    "not-tried"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "edit",
+                "kind",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "built": {
+            "type": "boolean"
+          },
+          "callers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "waitsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refused": {
+            "type": "object",
+            "properties": {
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "nothing-read",
+                    "empty",
+                    "unexplained-removals",
+                    "large-removals",
+                    "hand-edits",
+                    "not-upgraded"
+                  ]
+                }
+              },
+              "message": {
+                "type": "string"
+              },
+              "removals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unexplained": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "allowRemovals": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "changed",
+                        "added",
+                        "deleted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "how"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "discardEdits": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unread": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "command": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reasons",
+              "message",
+              "command"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "lines",
+          "edits",
+          "built",
+          "callers",
+          "waitsOn"
         ],
         "additionalProperties": false
       },

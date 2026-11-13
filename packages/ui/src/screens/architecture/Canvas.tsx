@@ -356,7 +356,9 @@ function LinkView(p: EdgeProps<LinkEdge>) {
   const ai = !word && !!d.link.ai;
   // ADR 0192: a build dependency, never a call: dash-dot, its label "depends on" in words.
   const dep = !!d.link.dependency;
-  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${word ? "word" : ""} ${ai ? "ai" : ""} ${dep ? "dep" : ""} ${d.picked ? "picked" : ""}`;
+  // Beta.28, Edit the map: a change staged on it, drawn and said (WCAG 1.4.1).
+  const st = d.link.staged ? `staged-${d.link.staged}` : "";
+  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${word ? "word" : ""} ${ai ? "ai" : ""} ${dep ? "dep" : ""} ${d.picked ? "picked" : ""} ${st}`;
   return (
     <>
       <BaseEdge
@@ -367,11 +369,12 @@ function LinkView(p: EdgeProps<LinkEdge>) {
       />
       <EdgeLabelRenderer>
         <div
-          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${ai ? "ai" : ""} ${dep ? "dep" : ""} ${d.picked ? "picked" : ""}`}
+          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${ai ? "ai" : ""} ${dep ? "dep" : ""} ${d.picked ? "picked" : ""} ${st}`}
           style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
         >
           {d.link.gaps.length > 0 && <span aria-hidden="true">⚠ </span>}
           {d.link.label}
+          {d.link.staged && <span> · {COPY.editMap.onCanvas[d.link.staged]}</span>}
           {d.link.gaps.length > 0 && (
             <span className="sr"> ({WORDS.gapsOn(d.link.gaps.length)})</span>
           )}

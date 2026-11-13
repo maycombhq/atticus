@@ -5,12 +5,15 @@ import {
   acquireLock,
   catalogDirOf,
   cmpText,
+  declareLink,
   deserializeRecord,
   LockHeldError,
   parseRecord,
   recordPath,
   serializeRecord,
+  undeclareLink,
   writeFileAtomic,
+  type Api,
   type CatalogRecord,
 } from "@maycombhq/core";
 import {
@@ -152,6 +155,8 @@ export async function catalogBuild(
     discardEdits?: number;
     /** The app's: GET /api/build's `pending.plan` the confirm is of, checked under the lock. */
     plan?: string;
+    /** Beta.28: the caller holds the scan's lock already (it wrote what this builds). */
+    held?: boolean;
   },
   io: Output,
 ): Promise<number> {
@@ -196,7 +201,7 @@ export async function catalogBuild(
       if (!o.json) io.err(`${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
     return r.guard.refused ? 1 : 0;
   };
-  const code = o.check ? await run() : await locked(root, command, io, run);
+  const code = o.check || o.held ? await run() : await locked(root, command, io, run);
   return code;
 }
 
@@ -761,39 +766,22 @@ export async function catalogEdits(
       }
       // A record made curated before (an earlier curate of it): that decision stays its author's,
       // untouched, and this edit is a decision of its own that applies after it.
-      const placed = await decisionFor(
-        curatedDir,
-        slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
-        p.decision,
+      const w = await writeDecision(root, curatedDir, p.decision, {
+        idBase: `cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`,
+        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
+        by,
         at,
-      );
-      if ("keep" in placed) {
-        kept.push({
-          path: p.path,
-          decision: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}`,
-        });
+      });
+      if ("kept" in w) {
+        kept.push({ path: p.path, decision: w.kept });
         curated.push(p.path);
         continue;
       }
-      const record = parseRecord({
-        kind: "CuratedDecision",
-        id: placed.id,
-        schemaVersion: 2,
-        status: "current",
-        confidence: "asserted",
-        ...p.decision,
-        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
-        by,
-        at: placed.at,
-      });
-      if (!record.ok) {
-        left.push({ path: p.path, why: record.issues.map((i) => i.message).join("; ") });
+      if ("problem" in w) {
+        left.push({ path: p.path, why: w.problem });
         continue;
       }
-      const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
-      await mkdir(dirname(full), { recursive: true });
-      await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
-      written.push(posix(relative(root, full)));
+      written.push(w.written);
       curated.push(p.path);
     }
     if (o.dropFields !== undefined && !confirmed)
@@ -850,6 +838,39 @@ const pick = (p: EditPlan) => ({
 });
 
 /**
+ * One curated decision written to `catalog/curated/curateddecision/` as `edits --curate` writes
+ * it (and, beta.28, Delete this link on the canvas and Edit the map): its id and time from `decisionFor`, the
+ * record checked against C1 and written canonical. The same suppress already there is `kept`
+ * (its file, nothing written).
+ */
+async function writeDecision(
+  root: string,
+  curatedDir: string,
+  decision: Record<string, unknown>,
+  o: { idBase: string; reason: string; by: string; at: string },
+): Promise<{ written: string; id: string } | { kept: string } | { problem: string }> {
+  const placed = await decisionFor(curatedDir, slug(o.idBase), decision, o.at);
+  if ("keep" in placed)
+    return { kept: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}` };
+  const record = parseRecord({
+    kind: "CuratedDecision",
+    id: placed.id,
+    schemaVersion: 2,
+    status: "current",
+    confidence: "asserted",
+    ...decision,
+    reason: o.reason,
+    by: o.by,
+    at: placed.at,
+  });
+  if (!record.ok) return { problem: record.issues.map((i) => i.message).join("; ") };
+  const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
+  await mkdir(dirname(full), { recursive: true });
+  await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
+  return { written: posix(relative(root, full)), id: placed.id };
+}
+
+/**
  * Where `edits --curate` puts a decision, and when it says it was made. Every decision already
  * in `catalog/curated` is its author's and is never written over: a second curate of a record
  * (another person's, or the same person's later) is a decision of its own, under the first free
@@ -894,4 +915,464 @@ async function decisionFor(
   const fileOf = (x: string) => join(dir, `${x}.yaml`);
   if (!existsSync(fileOf(id))) return { id, at };
   for (let n = 2; ; n++) if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, at };
+}
+
+// ------------------------------------------------------------ Delete this link (beta.28)
+
+/** The id every decision Delete this link writes starts with (then the Interface's id). */
+export const LINK_DELETE_PREFIX = "cd-link-delete-";
+
+/**
+ * The reason a Delete this link decision says; `deletedLinks` reads the link back from it. The
+ * two ends are quoted (a name may hold " → "), and `group` names the one delete it is of, so two
+ * deletes written at the same second are two links.
+ */
+const linkDeleteReason = (from: string, to: string, n: number, group: string) =>
+  `Deleted on the canvas: the link ${JSON.stringify(from)} → ${JSON.stringify(to)} (${n} call${n === 1 ? "" : "s"}) [${group}].`;
+const LINK_DELETE_REASON =
+  /^Deleted on the canvas: the link ("(?:[^"\\]|\\.)*") → ("(?:[^"\\]|\\.)*") \((\d+) calls?\) \[([a-z0-9-]+)\]\.$/;
+/** The reason as the first cut wrote it (unquoted ends, no group). */
+const LINK_DELETE_REASON_0 = /^Deleted on the canvas: the link (.+) → (.+) \((\d+) calls?\)\.$/;
+
+function linkOfReason(reason: string): { from: string; to: string; calls: number; group?: string } {
+  const m = LINK_DELETE_REASON.exec(reason);
+  if (m) {
+    try {
+      return {
+        from: JSON.parse(m[1]!) as string,
+        to: JSON.parse(m[2]!) as string,
+        calls: Number(m[3]),
+        group: m[4]!,
+      };
+    } catch {
+      // Read as the first cut's below.
+    }
+  }
+  const o = LINK_DELETE_REASON_0.exec(reason);
+  return o ? { from: o[1]!, to: o[2]!, calls: Number(o[3]) } : { from: "", to: "", calls: 0 };
+}
+
+const decisionDirOf = (root: string) => join(catalogDirOf(root), "curated", "curateddecision");
+
+/** A decision Delete this link wrote, still current: an unscoped suppress of its id prefix. */
+function isLinkDelete(d: Record<string, unknown> | undefined): boolean {
+  return (
+    d?.kind === "CuratedDecision" &&
+    typeof d.id === "string" &&
+    d.id.startsWith(LINK_DELETE_PREFIX) &&
+    d.action === "suppress" &&
+    d.status === "current" &&
+    (d.value ?? null) === null
+  );
+}
+
+interface DeletedLink {
+  from: string;
+  to: string;
+  calls: number;
+  by: string;
+  at: string;
+  /** Beta.28 review: no Interface of it would be drawn now even without the suppress. */
+  gone?: boolean;
+  decisions: { id: string; target: string; file: string; gone?: boolean }[];
+}
+
+/**
+ * The links deleted on the canvas (GET /api/links/deleted): each Delete's decisions, one per
+ * Interface behind the link, grouped by the delete they were written for, newest first. With
+ * `suppressed` (the ids the build's curated suppresses take away now), a decision whose
+ * Interface the build no longer makes says `gone`, and a link all of whose are.
+ */
+export async function deletedLinks(
+  root: string,
+  o: { suppressed?: ReadonlySet<string> } = {},
+): Promise<{ links: DeletedLink[] }> {
+  const dir = decisionDirOf(root);
+  const rel = posix(relative(root, dir));
+  const groups = new Map<string, DeletedLink>();
+  for (const n of (await readdir(dir).catch(() => [] as string[])).sort(cmpText)) {
+    if (!n.endsWith(".yaml")) continue;
+    const p = deserializeRecord(await readFile(join(dir, n), "utf8").catch(() => ""));
+    const d = p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+    if (!d || !isLinkDelete(d)) continue;
+    const m = linkOfReason(String(d.reason ?? ""));
+    const by = String(d.by ?? "");
+    const at = String(d.at ?? "");
+    const key = m.group ? `g\u0000${m.group}` : `${String(d.reason)}\u0000${by}\u0000${at}`;
+    const g = groups.get(key) ?? { from: m.from, to: m.to, calls: m.calls, by, at, decisions: [] };
+    const target = String(d.target);
+    g.decisions.push({
+      id: String(d.id),
+      target,
+      file: `${rel}/${n}`,
+      ...(o.suppressed && !o.suppressed.has(target) ? { gone: true } : {}),
+    });
+    groups.set(key, g);
+  }
+  const links = [...groups.values()]
+    .map((l) => (l.decisions.every((x) => x.gone) && o.suppressed ? { ...l, gone: true } : l))
+    .sort((a, b) =>
+      a.at === b.at ? cmpText(`${a.from}>${a.to}`, `${b.from}>${b.to}`) : a.at < b.at ? 1 : -1,
+    );
+  return { links };
+}
+
+/** The ids the build's curated suppresses take away now (a build in memory, nothing written). */
+export async function suppressedNow(root: string): Promise<Set<string>> {
+  const r = await buildAndWrite(root, { command: "atticus catalog build", check: true });
+  return new Set(r.build.curated.suppressed);
+}
+
+/**
+ * The build after a Delete, a Bring back or Edit the map, run under the lock the writes hold
+ * (beta.28 review: no other writer slips in between). The removals this run's own suppresses
+ * explain (`targets`) are what the person confirmed (the confirm listed the links and their
+ * calls), so a build that waits only for them is confirmed with their count, as Catalog builds
+ * would; any other removal (a teammate's suppress from a pull, say) leaves the build's own
+ * refusal, said in its lines and listed on Catalog builds (nothing written).
+ */
+export async function buildAfterDecisions(
+  root: string,
+  targets: ReadonlySet<string>,
+  io: Output,
+  o: {
+    /** The build's inputs this run wrote (`org-pack` for a declaration), as removals name them. */
+    inputs?: ReadonlySet<string>;
+    /** What the build would have removed before this run wrote anything: never this run's. */
+    pending?: ReadonlySet<string>;
+  } = {},
+): Promise<number> {
+  const command = "atticus catalog build";
+  const listed = await buildAndWrite(root, { command, check: true });
+  const r = listed.guard.refused;
+  const removals = listed.guard.removals;
+  const byInput = (x: (typeof removals)[number]) =>
+    !o.pending?.has(x.id) &&
+    x.reasons.every((k) => k === "input") &&
+    x.explainedBy.every((w) => {
+      const m = /^an input changed \((.+)\)$/.exec(w);
+      return !!m && !!o.inputs?.has(m[1]!);
+    });
+  const ours =
+    !!r &&
+    r.reasons.length === 1 &&
+    r.reasons[0] === "large-removals" &&
+    removals.length > 0 &&
+    removals.every((x) => targets.has(x.id) || byInput(x));
+  return catalogBuild(
+    root,
+    {
+      ...(ours ? { allowRemovals: removals.length, plan: buildPlanOf(listed.guard) } : {}),
+      held: true,
+    },
+    io,
+  );
+}
+
+/**
+ * Delete this link (beta.28, the owner's decision of 2026-11-12): Edit the map's delete alone.
+ * Every id must be an Interface the catalog has now.
+ */
+export async function deleteLink(
+  root: string,
+  o: { interfaces: readonly string[]; from: string; to: string; by?: string; now?: Date },
+  io: Output,
+): Promise<number> {
+  const r = await applyMapEdits(
+    root,
+    {
+      edits: [
+        { kind: "delete", delete: { interfaces: [...o.interfaces], from: o.from, to: o.to } },
+      ],
+      ...(o.by ? { by: o.by } : {}),
+      ...(o.now ? { now: o.now } : {}),
+      what: "Delete this link",
+    },
+    io,
+  );
+  return r.code;
+}
+
+/** Bring back a deleted link: its Delete's decisions removed, then the build, under one lock. */
+export async function undeleteLink(
+  root: string,
+  o: { decisions: readonly string[] },
+  io: Output,
+): Promise<number> {
+  const dir = decisionDirOf(root);
+  return locked(root, "Bring back the link", io, async () => {
+    const targets = new Set<string>();
+    const files: { path: string; target: string }[] = [];
+    for (const id of new Set(o.decisions)) {
+      const path = join(dir, `${id}.yaml`);
+      const p = deserializeRecord(await readFile(path, "utf8").catch(() => ""));
+      const d = p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+      if (!isLinkDelete(d) || d!.id !== id) {
+        io.err(`${id} isn't a link deleted on the canvas: nothing removed.`);
+        return 1;
+      }
+      files.push({ path, target: String(d!.target) });
+    }
+    for (const f of files) {
+      await rm(f.path, { force: true });
+      targets.add(f.target);
+      io.out(`Removed ${posix(relative(root, f.path))}: Interface/${f.target} is drawn again.`);
+    }
+    return buildAfterDecisions(root, targets, io);
+  });
+}
+
+// ------------------------------------------------------------ Edit the map (beta.28)
+
+type MapEditOutcome = Api.MapEditsResultT["edits"][number];
+
+const addWords = (e: Api.MapEditT) => {
+  if ("pair" in e) {
+    const p = e.pair;
+    const n = p.pairs.length;
+    return `${p.from} → ${p.to.repo ?? p.to.system} (${n} call${n === 1 ? "" : "s"} paired)`;
+  }
+  if (!("add" in e)) return "";
+  const a = e.add;
+  return a.kind === "call" ? `${a.system} calls ${a.route}` : `${a.system} ${a.side} ${a.topic}`;
+};
+
+/** A staged change in words, as the job's lines and its result say it. */
+export function mapEditWords(e: Api.MapEditT): string {
+  if (e.kind === "delete") return `delete ${e.delete.from} → ${e.delete.to}`;
+  if (e.kind === "add") return `add: ${addWords(e)}`;
+  return `redirect ${e.delete.from} → ${e.delete.to} to: ${addWords(e)}`;
+}
+
+/** Test hooks: run under the lock once the changes are written, just before the build. */
+export const mapEditHooks: { beforeBuild?: () => Promise<void> } = {};
+
+/**
+ * Edit the map's Apply my changes (beta.28, the owner's ask of 2026-11-12: "delete arrows and add
+ * arrows in one go and click a button"): every change staged on the canvas, checked already by
+ * POST /api/map/edits, written and then built once, all under the scan's lock. A delete is Delete
+ * this link's curated suppress of each Interface, except one a person declared on the canvas,
+ * whose declaration is withdrawn instead (only its lines); an add is Declare a link…'s line in the
+ * profile or Connect to…'s pairing in the repo's corrections; a redirect is both. Each file's bytes
+ * are kept before its first write: a write that fails puts back every file still as this run
+ * wrote it (a new file is removed), says each change's outcome and builds nothing.
+ */
+export async function applyMapEdits(
+  root: string,
+  o: { edits: readonly Api.MapEditT[]; by?: string; now?: Date; what?: string },
+  io: Output,
+): Promise<{ code: number; edits: MapEditOutcome[]; built: boolean }> {
+  const outcomes: MapEditOutcome[] = o.edits.map((e, edit) => ({
+    edit,
+    kind: e.kind,
+    state: "not-tried",
+  }));
+  const n = o.edits.length;
+  let built = false;
+  const code = await locked(root, o.what ?? "Edit the map", io, async () => {
+    const by = o.by ?? (await gitUser(root)).handle;
+    const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const stamp = at.replace(/\D/g, "").slice(0, 14);
+    const { correctionLine, factsDirOf } = await import("@maycombhq/core");
+    const records = (
+      await (
+        await import("@maycombhq/scanner")
+      ).readCatalog(join(catalogDirOf(root), "generated"), { fresh: true })
+    ).records;
+    const byId = new Map(records.map((r) => [r.id, r] as const));
+    const targets = new Set<string>();
+    // What the build would remove before this run writes anything (a teammate's pulled change):
+    // never confirmed as this run's.
+    const pending = new Set(
+      (
+        await buildAndWrite(root, { command: "atticus catalog build", check: true })
+      ).guard.removals.map((x) => x.id),
+    );
+    const inputs = new Set<string>();
+    // Each file this run writes: its bytes before the first write (null: it wasn't there), what
+    // this run last wrote to it, and the changes that wrote it.
+    const files = new Map<
+      string,
+      { before: string | null; wrote: string | null; edits: Set<number> }
+    >();
+    const read = (f: string) => readFile(f, "utf8").catch(() => null);
+    const before = async (f: string, i: number, known?: string | null) => {
+      const x = files.get(f) ?? {
+        before: known !== undefined ? known : await read(f),
+        wrote: null,
+        edits: new Set<number>(),
+      };
+      x.edits.add(i);
+      files.set(f, x);
+    };
+    const after = async (f: string) => {
+      files.get(f)!.wrote = await read(f);
+    };
+    for (const [i, e] of o.edits.entries()) {
+      const said = `Change ${i + 1} of ${n}, ${mapEditWords(e)}`;
+      try {
+        if (e.kind !== "add") {
+          const d = e.delete;
+          const ids = [...new Set(d.interfaces)];
+          const group = `d-${stamp}-${i + 1}`;
+          const reason = linkDeleteReason(d.from, d.to, ids.length, group);
+          for (const target of ids) {
+            // A link a person declared on the canvas: the declaration goes, not a suppress of it.
+            const decl = await canvasDeclarationOf(root, byId.get(target));
+            if (decl) {
+              const profile = await declarationFile(root, decl.system);
+              if (profile) await before(profile, i);
+              const res = await undeclareLink(root, decl);
+              if (profile) await after(profile);
+              inputs.add("org-pack");
+              io.out(
+                `${said}: withdrew ${decl.value} from ${decl.system}'s declarations in ${res.rel}.`,
+              );
+              targets.add(target);
+              continue;
+            }
+            const w = await writeDecision(
+              root,
+              join(catalogDirOf(root), "curated"),
+              { action: "suppress", target, value: null },
+              { idBase: `${LINK_DELETE_PREFIX}${target}`, reason, by, at },
+            );
+            if ("problem" in w) throw new Error(`Interface/${target}: ${w.problem}`);
+            if ("written" in w) {
+              const file = join(root, ...w.written.split("/"));
+              await before(file, i, null);
+              await after(file);
+              io.out(`${said}: wrote ${w.written}, the person's suppress of Interface/${target}.`);
+            } else io.out(`${said}: ${w.kept} suppresses Interface/${target} already.`);
+            targets.add(target);
+          }
+        }
+        if ("pair" in e) {
+          // Connect to…'s pairings, exactly its lines in the caller's corrections file.
+          const { pairingsOf } = await import("./ui-api-links.js");
+          const { appendLines } = await import("./file-lock.js");
+          const p = await pairingsOf(root, e.pair, { by, at });
+          const lines = p.corrections.map(correctionLine);
+          await mkdir(factsDirOf(root), { recursive: true });
+          await before(p.file, i);
+          await appendLines(p.file, lines);
+          await after(p.file);
+          inputs.add(p.rel);
+          io.out(
+            `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
+          );
+        } else if ("add" in e) {
+          const a = e.add;
+          const d =
+            a.kind === "call"
+              ? ({ kind: "call", system: a.system, route: a.route } as const)
+              : ({ kind: "topic", system: a.system, topic: a.topic, side: a.side } as const);
+          const look = await declareLink(root, d, { by, at, preview: true });
+          const profile = join(root, ...look.rel.split("/"));
+          await before(profile, i);
+          const res = await declareLink(root, d, { by, at });
+          await after(profile);
+          inputs.add("org-pack");
+          io.out(`${said}: declared in ${res.rel}.`);
+        }
+        outcomes[i]!.state = "saved";
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        outcomes[i] = { ...outcomes[i]!, state: "failed", message: why };
+        io.err(`${said}: not saved: ${why}`);
+        // Every file put back as it was before this run, while it is still as this run left it.
+        const kept = new Set<number>();
+        const changedSince: string[] = [];
+        for (const [f, x] of files) {
+          const now = await read(f);
+          if (now !== x.wrote && !(x.wrote === null && now === x.before)) {
+            changedSince.push(posix(relative(root, f)));
+            for (const k of x.edits) kept.add(k);
+            continue;
+          }
+          if (x.before === null) await rm(f, { force: true });
+          else await writeFileAtomic(f, x.before);
+        }
+        // A change before it that wrote nothing (its suppresses were on file already) leaves
+        // nothing behind either.
+        for (let k = 0; k < i; k++)
+          if (outcomes[k]!.state === "saved")
+            outcomes[k] = { ...outcomes[k]!, state: "taken-back" };
+        for (const k of new Set([...files.values()].flatMap((x) => [...x.edits]))) {
+          if (k === i) continue;
+          outcomes[k] = kept.has(k)
+            ? {
+                ...outcomes[k]!,
+                state: "saved",
+                message: `couldn't be taken back: ${changedSince.join(", ")} changed since`,
+              }
+            : { ...outcomes[k]!, state: "taken-back" };
+        }
+        io.err(
+          changedSince.length
+            ? `Nothing was built. ${changedSince.join(", ")} changed while this ran, so ${kept.size === 1 ? "one change" : `${kept.size} changes`} written there couldn't be taken back: look at ${changedSince.length === 1 ? "it" : "them"}, then fix change ${i + 1} (or remove it from your changes) and apply again.`
+            : `Nothing was built. Every change written before it was taken back, each file as it was; fix change ${i + 1} (or remove it from your changes) and apply again.`,
+        );
+        return 1;
+      }
+    }
+    io.out(`${n} change${n === 1 ? "" : "s"} saved. Building the catalog once, with all of them.`);
+    await mapEditHooks.beforeBuild?.();
+    const c = await buildAfterDecisions(root, targets, io, { inputs, pending });
+    built = c === 0;
+    if (c !== 0)
+      io.err(
+        "The changes are saved; the catalog is built with them once the build above is confirmed on Set up › Scans › Catalog builds.",
+      );
+    return c;
+  });
+  // The lock was held: nothing tried.
+  if (outcomes.every((x) => x.state === "not-tried") && code !== 0)
+    io.err("Nothing was saved and nothing was built.");
+  return { code, edits: outcomes, built };
+}
+
+/**
+ * The declaration on the canvas (who and when on its line) an Interface is drawn from, if any: a
+ * gateway route its system declared it calls (`declared-caller`, by method and path or by the
+ * route as served), or a topic a system declared it publishes or listens on. A declaration a
+ * person wrote by hand isn't one: the link is suppressed instead, and the file is theirs.
+ */
+export async function canvasDeclarationOf(
+  root: string,
+  r: CatalogRecord | undefined,
+): Promise<{ kind: "topic" | "call"; system: string; value: string } | undefined> {
+  if (r?.kind !== "Interface") return undefined;
+  if (!r.evidence.some((e) => e.source === "manual")) return undefined;
+  const { declaredOf } = await import("@maycombhq/core");
+  const norm = (p: string) =>
+    p
+      .replace(/\{[^}]*\}/g, "{}")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+  const flags = (r as { flags?: string[] }).flags ?? [];
+  if (flags.includes("declared-caller")) {
+    const list = (await declaredOf(root, r.from)).list.filter((x) => x.kind === "call" && x.by);
+    const route = `${(r.method ?? "").toUpperCase()} ${norm(r.normalizedPath)}`;
+    const these = list.filter((x) => {
+      const [m, ...rest] = x.value.trim().split(/\s+/);
+      return `${(m ?? "").toUpperCase()} ${norm(rest.join(" "))}` === route;
+    });
+    return these.length === 1
+      ? { kind: "call", system: r.from, value: these[0]!.value }
+      : undefined;
+  }
+  for (const system of [r.from, r.to]) {
+    const list = (await declaredOf(root, system)).list.filter((x) => x.kind === "topic" && x.by);
+    const these = list.filter((x) => x.value === r.normalizedPath);
+    if (these.length === 1) return { kind: "topic", system, value: these[0]!.value };
+  }
+  return undefined;
+}
+
+/** The profile file a system's declarations are in, from the metarepo's root. */
+async function declarationFile(root: string, system: string): Promise<string | undefined> {
+  const { declaredOf } = await import("@maycombhq/core");
+  const rel = (await declaredOf(root, system)).rel;
+  return rel ? join(root, ...rel.split("/")) : undefined;
 }

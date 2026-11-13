@@ -29,13 +29,13 @@ import {
   proxyRepos,
   routingActions,
   tickedOf,
-  uncitedRepos,
   type Join,
   type LinkFix,
   type Moved,
   type Prediction,
 } from "./links.js";
 import "./link-panel.css";
+import { canDelete } from "./DeleteLink.js";
 
 /**
  * Why is this linked (ADR 0135, C1): each call merged into a link on the estate canvas, how
@@ -351,6 +351,10 @@ export function LinkInspector(p: {
   onCorrected?: (r: Api.CorrectDecisionResultT) => void;
   /** Move the focus to the heading when it opens (picked from the keyboard). */
   autoFocus?: boolean;
+  /** Beta.28: Delete this link, in the head beside Close (none on a build dependency). */
+  deleteLink?: (link: Api.HierEdgeT) => ReactNode;
+  /** Beta.28: what the panel says once the link left the picture, in place of `gone`. */
+  gone?: ReactNode;
 }) {
   const A = COPY.canvasAi;
   const D = COPY.decisions;
@@ -381,14 +385,17 @@ export function LinkInspector(p: {
             </p>
           )}
         </div>
+        {p.link && canDelete(p.link) && p.deleteLink?.(p.link)}
         <button type="button" className="btn li-close" onClick={p.onClose}>
           {A.close}
         </button>
       </header>
       {!p.link ? (
-        <p className="state" role="status">
-          {A.gone}
-        </p>
+        (p.gone ?? (
+          <p className="state" role="status">
+            {A.gone}
+          </p>
+        ))
       ) : (
         <>
           {/* Each AI call's chip, run and Correct are on the call, below. */}
@@ -962,23 +969,15 @@ const routingCommands = (repos: readonly string[]) => [
 
 /**
  * Review of beta.27: a link with no line of a caller's that no proxy's routing made (a built-in
- * reader's): what it is (`say`), and the caller's repo read again (every repo when none is named).
+ * reader's): what it is (`say`), and (beta.28) that Delete this link takes the arrow away.
  */
-function UncitedNote(p: { joins: readonly Join[]; say: string }) {
-  const repos = uncitedRepos(p.joins);
+function UncitedNote(p: { say: string }) {
+  // Beta.28: no read again to offer: what takes the arrow away is Delete this link.
   return (
     <div className="li-route-left stack">
       <p className="ev-say li-note" style={{ margin: 0 }}>
         {p.say}
       </p>
-      <TerminalBlock
-        commands={
-          repos.length
-            ? repos.map((r) => `atticus verify ${r} --write`)
-            : ["atticus verify --all --write"]
-        }
-        open
-      />
     </div>
   );
 }
@@ -1190,7 +1189,7 @@ export function LinkWrong(p: {
             />
           </div>
         ) : !line ? (
-          <UncitedNote joins={[p.join]} say={W.uncitedLink} />
+          <UncitedNote say={W.uncitedLink} />
         ) : (
           <LinkWrongForm
             join={p.join}
@@ -1312,9 +1311,7 @@ export function ArrowWrongForm(p: {
           {A.missing(found.missing.length)} {A.noCalls}
         </p>
       )}
-      {uncitedJoins.length > 0 && (
-        <UncitedNote joins={uncitedJoins} say={A.uncited(uncitedJoins.length)} />
-      )}
+      {uncitedJoins.length > 0 && <UncitedNote say={A.uncited(uncitedJoins.length)} />}
       {routingJoins.length > 0 && <RoutingActions joins={routingJoins} of={proxyOf} />}
     </div>
   );

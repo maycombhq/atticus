@@ -596,8 +596,18 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   one edited by hand refuses the run, 409 code `assistant-files-edited`). A run's view carries
  *   `problems`: a repo the run stopped on after two Copilot sessions added nothing, with what
  *   verify rejected and why. Additive only.
+ * 3.13.0 (beta.28, the owner's decisions of 2026-11-12): Delete this link on the canvas. POST
+ *   /api/links/delete writes a curated suppress (`{ action: suppress, target: <Interface id>,
+ *   value: null }`, as `atticus catalog edits --curate` writes for a deleted generated file) of
+ *   every Interface behind a link, then builds, as one local job; GET /api/links/deleted lists the
+ *   links deleted so, and POST /api/links/deleted/undo removes one's decisions and builds again.
+ *   Edit the map: POST /api/map/edits takes the changes staged on the canvas (deletes as above,
+ *   adds as POST /api/declared-links writes them, redirects as both), checks them all (422 with
+ *   `problems` by place, nothing written), writes them, then builds once, as one local job whose
+ *   result is `MapEditsResult` (with the caller repos they touch). A problem may carry
+ *   `problems`. Additive only.
  */
-export const API_VERSION = "3.12.0";
+export const API_VERSION = "3.13.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -631,6 +641,13 @@ export const Problem = z.object({
    * apart (an owner question's send: 409 `being-sent` or `already-sent`).
    */
   code: z.string().optional(),
+  /**
+   * 3.13.0 (beta.28): a 422 of POST /api/map/edits: each staged change that can't be made, by its
+   * place in the list (from 0), with why. Nothing was written.
+   */
+  problems: z
+    .array(z.object({ edit: z.number().int().nonnegative(), message: z.string() }))
+    .optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);
@@ -2027,6 +2044,151 @@ export const CatalogPruneRequest = z.strictObject({
   /** GET /api/build/prune's `plan`. */
   plan: z.string().regex(/^[0-9a-f]{64}$/),
 });
+/**
+ * 3.13.0 (beta.28, the owner's decision of 2026-11-12): Delete this link on the canvas. POST
+ * /api/links/delete takes every Interface behind a link (GET /api/graph/edge-calls when the view
+ * lists fewer) and its two ends' names, as the inline confirm listed them.
+ */
+export const LinkDeleteRequest = z.strictObject({
+  interfaces: z.array(z.string().min(1).max(300)).min(1).max(5000),
+  from: z.string().min(1).max(200),
+  to: z.string().min(1).max(200),
+});
+export type LinkDeleteRequestT = z.infer<typeof LinkDeleteRequest>;
+/** 3.13.0: GET /api/links/deleted, the links deleted on the canvas, each with its decisions. */
+export const DeletedLinksView = z.object({
+  links: z.array(
+    z.object({
+      from: z.string(),
+      to: z.string(),
+      /** How many calls the link had when it was deleted. */
+      calls: z.number().int().nonnegative(),
+      by: z.string(),
+      at: z.string(),
+      /** No Interface of it would be drawn now even without the suppress (its code moved on). */
+      gone: z.boolean().optional(),
+      /** One curated suppress per Interface, in catalog/curated/curateddecision/. */
+      decisions: z.array(
+        z.object({
+          id: z.string(),
+          target: z.string(),
+          file: z.string(),
+          /** The build no longer makes this Interface: the suppress takes nothing away. */
+          gone: z.boolean().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+export type DeletedLinksViewT = z.infer<typeof DeletedLinksView>;
+/** 3.13.0: POST /api/links/deleted/undo, Bring back: the decisions of one deleted link. */
+export const LinkUndeleteRequest = z.strictObject({
+  decisions: z
+    .array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,120}$/))
+    .min(1)
+    .max(500),
+});
+export type LinkUndeleteRequestT = z.infer<typeof LinkUndeleteRequest>;
+/**
+ * 3.13.0 (beta.28, Edit the map): a link added on the canvas, exactly what Declare a link… writes
+ * (POST /api/declared-links, without `preview`): a topic the system publishes or listens on, or a
+ * gateway route it calls, in the profile that has the system.
+ */
+export const MapEditAdd = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("topic"),
+    system: z.string().min(1).max(200),
+    topic: z.string().min(1).max(300),
+    side: z.enum(["publishes", "listens"]),
+  }),
+  z.strictObject({
+    kind: z.literal("call"),
+    system: z.string().min(1).max(200),
+    route: z.string().min(1).max(300),
+  }),
+]);
+export type MapEditAddT = z.infer<typeof MapEditAdd>;
+/**
+ * 3.13.0: a link added from a repo's box, exactly what Connect to… writes (POST /api/links/connect
+ * without `rule` and `preview`): the person's pairing of each of the repo's calls named with an
+ * API of the other box, one `link` line each in `facts/<from>.corrections.jsonl` (ADR 0174).
+ */
+export const MapEditPair = z.strictObject({
+  from: z.string().min(1).max(200),
+  /** The other box: a repo of the manifest or an outside system (Connect to…'s `to`). */
+  to: z
+    .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
+    .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
+  pairs: z
+    .array(z.object({ call: z.string().min(1), api: z.string().min(1) }))
+    .min(1)
+    .max(500),
+});
+export type MapEditPairT = z.infer<typeof MapEditPair>;
+/**
+ * 3.13.0: one change staged on the canvas. `delete` is Delete this link's (every Interface behind
+ * the link and its two ends); an add is Declare a link…'s (`add`, from a system's box) or Connect
+ * to…'s (`pair`, from a repo's box); `redirect` is a delete and an add together, one row.
+ */
+/**
+ * 3.13.0: an arrow taken away, as Delete this link takes it: every Interface behind it (an empty
+ * list is said as the change's problem, by its place) and its two ends.
+ */
+export const MapEditDelete = z.strictObject({
+  interfaces: z.array(z.string().min(1).max(300)).max(5000),
+  from: z.string().min(1).max(200),
+  to: z.string().min(1).max(200),
+});
+export const MapEdit = z.union([
+  z.strictObject({ kind: z.literal("delete"), delete: MapEditDelete }),
+  z.strictObject({ kind: z.literal("add"), add: MapEditAdd }),
+  z.strictObject({ kind: z.literal("add"), pair: MapEditPair }),
+  z.strictObject({ kind: z.literal("redirect"), delete: MapEditDelete, add: MapEditAdd }),
+  z.strictObject({ kind: z.literal("redirect"), delete: MapEditDelete, pair: MapEditPair }),
+]);
+export type MapEditT = z.infer<typeof MapEdit>;
+/** 3.13.0: POST /api/map/edits, every change staged, applied together with one build. */
+export const MapEditsRequest = z.strictObject({ edits: z.array(MapEdit).min(1).max(100) });
+export type MapEditsRequestT = z.infer<typeof MapEditsRequest>;
+/** 3.13.0: a 422 of POST /api/map/edits: each change that can't be made, by its place (from 0). */
+export const MapEditProblem = z.object({
+  edit: z.number().int().nonnegative(),
+  message: z.string(),
+});
+export type MapEditProblemT = z.infer<typeof MapEditProblem>;
+/**
+ * 3.13.0: the result of POST /api/map/edits's job (GET /api/jobs/{id}'s `result`): its code and
+ * lines, each change's outcome by its place (`saved`; `failed`, with why; `taken-back`, written
+ * then removed because a later one failed; `not-tried`), whether the catalog was built, the
+ * caller repos the changes touch (each deleted link's caller's repo, each pairing's repo, each
+ * declaration's system's repos in the manifests) for one Copilot Read it again, the repos a new
+ * link still waits on, and a refused build's listing.
+ */
+export const MapEditsResult = z.object({
+  code: z.number().int(),
+  lines: z.array(z.string()),
+  edits: z.array(
+    z.object({
+      edit: z.number().int().nonnegative(),
+      kind: z.enum(["delete", "add", "redirect"]),
+      state: z.enum(["saved", "failed", "taken-back", "not-tried"]),
+      message: z.string().optional(),
+    }),
+  ),
+  built: z.boolean(),
+  callers: z.array(z.string()),
+  /**
+   * The repos a new link is joined through that aren't read from their facts yet (a pairing's
+   * other repo, a declared call's gateway): the link is drawn once they are. Callers are left out.
+   */
+  waitsOn: z.array(z.string()),
+  /**
+   * The build refused after the changes were saved (a large removal it lists, a hand edit): its
+   * listing, as Apply's job gives it, which Set up › Scans › Catalog builds confirms.
+   */
+  refused: BuildRefusalView.optional(),
+});
+export type MapEditsResultT = z.infer<typeof MapEditsResult>;
 /**
  * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
  * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
@@ -7411,6 +7573,60 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409],
     },
   },
+  "/api/links/delete": {
+    post: {
+      id: "deleteLink",
+      summary:
+        "3.13.0 (beta.28): Delete this link as a local job: a curated suppress of each Interface named (the decision atticus catalog edits --curate writes for a deleted file), in catalog/curated/curateddecision/, then atticus catalog build. 404 when one isn't an Interface of the catalog now",
+      tag: "scans",
+      body: LinkDeleteRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines it printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/links/deleted": {
+    get: {
+      id: "getDeletedLinks",
+      summary:
+        "3.13.0 (beta.28): the links deleted on the canvas, each with its curated suppresses. Reads files only",
+      tag: "scans",
+      ok: { status: 200, schema: "DeletedLinksView", description: "OK" },
+    },
+  },
+  "/api/links/deleted/undo": {
+    post: {
+      id: "undeleteLink",
+      summary:
+        "3.13.0 (beta.28): Bring back a deleted link as a local job: its decisions removed, then atticus catalog build. 404 when one isn't a link deleted on the canvas",
+      tag: "scans",
+      body: LinkUndeleteRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines it printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/map/edits": {
+    post: {
+      id: "applyMapEdits",
+      summary:
+        "3.13.0 (beta.28): Edit the map's Apply my changes as a local job: every change staged on the canvas checked first (422 with problems by place, nothing written), then each delete's curated suppresses and each add's declaration written, then atticus catalog build once. A write that fails takes back those before it and builds nothing. Its job's result is MapEditsResult",
+      tag: "scans",
+      body: MapEditsRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is MapEditsResult",
+      },
+      errors: [400, 409, 422],
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -9606,6 +9822,8 @@ export function openApiDocument(): Record<string, unknown> {
     CatalogBuildView,
     CatalogUndoView,
     CatalogPruneView,
+    DeletedLinksView,
+    MapEditsResult,
     CatalogUpgradeView,
     CrossCheckPromoteView,
     FreshView,

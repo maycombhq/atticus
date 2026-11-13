@@ -136,6 +136,11 @@ export interface CanvasLink {
    * drawn dash-dot, its label in words.
    */
   dependency?: boolean;
+  /**
+   * Beta.28, Edit the map: a change staged on it, not applied yet: `delete` (dimmed and struck,
+   * a delete or a redirect of it) or `add` (dashed, a link to add). Said in words in its label.
+   */
+  staged?: "delete" | "add";
 }
 
 /** What a link of this type is called, in words: the edge type, or the copy's for one that has it. */

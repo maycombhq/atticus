@@ -26,6 +26,8 @@ interface Ran {
   code: number;
   out: string[];
   err: string[];
+  /** Beta.28: more for the job's result (Edit the map's `edits`, `built` and `callers`). */
+  extra?: Record<string, unknown>;
 }
 
 /** Starts a local job (ui-api.ts's, one at a time with Apply, Propose and Bring in). */

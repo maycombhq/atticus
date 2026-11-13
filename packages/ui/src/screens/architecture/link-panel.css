@@ -373,3 +373,100 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Beta.28: Delete this link in the head, beside Close; its confirm under the head. */
+.li-head {
+  flex-wrap: wrap;
+}
+.li-head-name {
+  flex: 1 1 12em;
+}
+.li-delete {
+  display: contents;
+}
+.li .btn.li-delete-open {
+  flex: none;
+  height: 28px;
+}
+.li-delete-confirm {
+  order: 3;
+  flex: 1 1 100%;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.li-delete-ask {
+  font-weight: 600;
+}
+.li .btn.li-close {
+  order: 2;
+}
+
+/*
+ * Beta.28, Edit the map: a change staged on the canvas, not applied yet. An arrow to delete is
+ * dimmed and struck (its label too), one to add dashed as a person's word; each label says which
+ * in words as well (WCAG 1.4.1).
+ */
+.react-flow__edge-path.arch-link.staged-delete,
+.arch-link.staged-delete {
+  stroke: var(--muted);
+  stroke-dasharray: 2 3;
+  opacity: 0.55;
+}
+.arch-link-label.staged-delete {
+  text-decoration: line-through;
+  opacity: 0.75;
+  border: 1px dashed var(--muted);
+}
+.react-flow__edge-path.arch-link.staged-add,
+.arch-link.staged-add {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.arch-link-label.staged-add {
+  border: 1px dashed var(--accent);
+}
+.arch-edit-count {
+  margin-left: 6px;
+}
+.edit-map {
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.edit-map-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+}
+.edit-map-row {
+  gap: 2px;
+}
+.edit-map-line {
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.edit-map-why {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.edit-map-call {
+  overflow-wrap: anywhere;
+}
+.edit-map-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.edit-map-confirm {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.edit-map-add {
+  gap: 6px;
+}

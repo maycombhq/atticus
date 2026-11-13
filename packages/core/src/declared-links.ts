@@ -140,14 +140,18 @@ export async function declareLink(
   return { rel, changes, written: true };
 }
 
-/** Undo: remove a declared topic or call from the system's list, exactly that one. */
+/**
+ * Undo: remove a declared topic or call from the system's list, exactly that one. Beta.28 (the
+ * review of Edit the map): only that item's lines go (and the list's key when it was the last),
+ * every other byte of the profile as it was: its comments, its flow lists, its version.
+ */
 export async function undeclareLink(
   root: string,
   d: { kind: "topic" | "call"; system: string; value: string },
 ): Promise<{ rel: string; changes: LineChange[] }> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
-  const { path, rel, raw, text, eol, doc, node } = found;
+  const { path, rel, raw, text, eol, node } = found;
   const list = node.get(d.kind === "topic" ? "topics" : "calls");
   // Only what a person declared from the canvas (its comment says who and when): a line written
   // by hand in the profile is changed there, never by Undo.
@@ -165,10 +169,59 @@ export async function undeclareLink(
       "not-found",
       `${rel} has no ${d.value} declared from the canvas under ${d.system} (removed already, or written by hand there).`,
     );
-  list.items.splice(i, 1);
-  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const after = withoutItem(
+    text,
+    list.items[i] as { range?: [number, number, number] | null },
+    list.items.length === 1,
+  );
+  const check = after === undefined ? undefined : Profile.safeParse(parseDocument(after).toJS());
+  if (after === undefined || !check?.success)
+    throw new DeclareError(
+      "invalid",
+      `${rel}: the declaration of ${d.value} isn't laid out as Declare writes it, so Atticus leaves the file alone: remove it there by hand.`,
+    );
   await writeFileIfUnchanged(path, raw, inEol(after, eol));
   return { rel, changes: changedLines(text, after) };
+}
+
+/**
+ * The text without one block-sequence item: from its line's start (its `- ` indicator) through
+ * every line indented under it (its own comment, the keys of a map), and the list's key line when
+ * it was the only item. Undefined when the item isn't on lines of its own (a flow list).
+ */
+function withoutItem(
+  text: string,
+  item: { range?: [number, number, number] | null },
+  last: boolean,
+): string | undefined {
+  const at = item.range?.[0];
+  if (at === undefined) return undefined;
+  const lines = text.split("\n");
+  let pos = 0;
+  let first = -1;
+  for (let n = 0; n < lines.length; n++) {
+    if (at >= pos && at <= pos + lines[n]!.length) {
+      first = n;
+      break;
+    }
+    pos += lines[n]!.length + 1;
+  }
+  if (first < 0) return undefined;
+  const dash = /^(\s*)- /.exec(lines[first]!);
+  if (!dash) return undefined;
+  const col = dash[1]!.length;
+  let end = first + 1;
+  while (end < lines.length) {
+    const l = lines[end]!;
+    const indent = /^\s*/.exec(l)![0].length;
+    if (l.trim() && indent <= col) break;
+    if (!l.trim()) break;
+    end++;
+  }
+  let from = first;
+  // The last item: its list's key goes too (`calls:` alone on the line above).
+  if (last && first > 0 && /^\s*(topics|calls):\s*$/.test(lines[first - 1]!)) from = first - 1;
+  return [...lines.slice(0, from), ...lines.slice(end)].join("\n");
 }
 
 /** A system's declarations, with who and when where the canvas wrote them. */

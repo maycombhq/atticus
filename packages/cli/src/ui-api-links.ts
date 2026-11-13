@@ -205,6 +205,72 @@ export async function candidatesOf(
   return { view, facts: c.facts };
 }
 
+/**
+ * The person's pairings Connect to… writes (ADR 0174): one `link` correction per pair, each on
+ * the call's cited line, to B's API. Refused (an HttpError, nothing written) when A has no such
+ * call, its facts aren't verified yet, or B has no such API. Beta.28: Edit the map's adds and
+ * redirects from a repo's box write exactly these lines too.
+ */
+export async function pairingsOf(
+  root: string,
+  req: { from: string; to: Api.LinkBoxT; pairs: readonly { call: string; api: string }[] },
+  o: { by: string; at: string },
+): Promise<{ corrections: FactCorrection[]; rel: string; file: string; target: string }> {
+  const { from, to, pairs } = req;
+  const c = await context(root, from, to);
+  const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
+  const apis = new Map(c.b.apis.map((a) => [a.id, a]));
+  const corrections: FactCorrection[] = [];
+  for (const p of pairs) {
+    const f = calls.get(p.call);
+    if (!f)
+      throw c.estate.unverified.includes(from)
+        ? conflict(`${from}'s facts aren't all verified yet: atticus verify ${from} first.`)
+        : notFound(`${from} has no call ${p.call} on record.`);
+    const api = apis.get(p.api);
+    if (!api) throw notFound(`${c.b.name} has no API ${p.api} on record.`);
+    corrections.push(
+      FactCorrection.parse({
+        schemaVersion: 1,
+        fact: f.id,
+        target: { kind: "call", file: f.cite.file, line: f.cite.line, value: f.cite.value },
+        action: "link",
+        link: {
+          ...(to.repo ? { repo: to.repo } : { system: to.system }),
+          ...(api.kind !== "operation" ? { entry: api.id } : {}),
+          ...(api.method ? { method: api.method } : {}),
+          path: api.path,
+        },
+        by: o.by,
+        at: o.at,
+      }),
+    );
+  }
+  return {
+    corrections,
+    rel: `${factsRelOf(root)}/${from}.corrections.jsonl`,
+    file: join(factsDirOf(root), `${from}.corrections.jsonl`),
+    target: to.repo ?? to.system!,
+  };
+}
+
+/**
+ * Take back lines a write appended to a corrections file, each exactly once (Edit the map, when
+ * a later change can't be written). Other lines, and the file's line endings, are kept.
+ */
+export async function removeCorrectionLines(file: string, lines: readonly string[]): Promise<void> {
+  await withSharedFileLock(file, async () => {
+    const text = await readFile(file, "utf8").catch(() => undefined);
+    if (text === undefined) return;
+    const all = text.split(/\r?\n/);
+    for (const l of lines) {
+      const i = all.lastIndexOf(l);
+      if (i >= 0) all.splice(i, 1);
+    }
+    await writeFileAtomic(file, all.join(/\r\n/.test(text) ? "\r\n" : "\n"));
+  });
+}
+
 export function uiLinkRoutes(
   r: Router,
   ctx: ServerContext,
@@ -229,36 +295,12 @@ export function uiLinkRoutes(
         const { from, to, pairs, rule, preview } = b.data;
         if (!pairs.length && !rule)
           throw badRequest("Pick at least one pair, or the rule for all.");
-        const c = await context(ctx.root, from, to);
-        const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
-        const apis = new Map(c.b.apis.map((a) => [a.id, a]));
         const at = now().toISOString();
-        const corrections: FactCorrection[] = [];
-        for (const p of pairs) {
-          const f = calls.get(p.call);
-          if (!f)
-            throw c.estate.unverified.includes(from)
-              ? conflict(`${from}'s facts aren't all verified yet: atticus verify ${from} first.`)
-              : notFound(`${from} has no call ${p.call} on record.`);
-          const api = apis.get(p.api);
-          if (!api) throw notFound(`${c.b.name} has no API ${p.api} on record.`);
-          corrections.push(
-            FactCorrection.parse({
-              schemaVersion: 1,
-              fact: f.id,
-              target: { kind: "call", file: f.cite.file, line: f.cite.line, value: f.cite.value },
-              action: "link",
-              link: {
-                ...(to.repo ? { repo: to.repo } : { system: to.system }),
-                ...(api.kind !== "operation" ? { entry: api.id } : {}),
-                ...(api.method ? { method: api.method } : {}),
-                path: api.path,
-              },
-              by: ctx.user,
-              at,
-            }),
-          );
-        }
+        const { corrections } = await pairingsOf(
+          ctx.root,
+          { from, to, pairs },
+          { by: ctx.user, at },
+        );
         let ruleOut: Api.ConnectLinksResultT["rule"];
         const q = rule ? await openRuleQuestion(ctx.root, from) : undefined;
         if (rule && !q)
