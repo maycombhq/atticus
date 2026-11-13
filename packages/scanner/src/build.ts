@@ -2075,16 +2075,6 @@ export async function guardBuild(
           }
         }
       }
-      // Only the estate's slots as a whole changed: a join with another repo no longer forms.
-      // Only a record a join derives can rest on another repo's slot: an arrow, a loose end, a
-      // feature or a term traced through several repos, or an id two repos' records collided on
-      // (evidence from more than one). Any other record comes from its own repo's slot, so this
-      // explains nothing of it (the review: it explained every removal).
-      const joinDerived = !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
-      if (estate && !why.size && joinDerived) {
-        why.add("another repo's slot changed (a join with it)");
-        kinds.add("slot");
-      }
       for (const repo of new Set([...repos, ...(r ? endsGone(r, oldEnds, liveNow) : [])]))
         if (repoGone(repo)) {
           const archived = b.listed.includes(repo);
@@ -2118,6 +2108,19 @@ export async function guardBuild(
             ? `a guess no complete read backs: ${decidingCallWords(left.call)}`
             : `its caller's facts place the call elsewhere: ${decidingCallWords(left.call)}`,
         );
+        kinds.add("slot");
+      }
+      // Only the estate's slots as a whole changed: a join with another repo no longer forms.
+      // Only a record a join derives can rest on another repo's slot: an arrow, a loose end, a
+      // feature or a term traced through several repos, or an id two repos' records collided on
+      // (evidence from more than one). Any other record comes from its own repo's slot, so this
+      // explains nothing of it (the review: it explained every removal).
+      // Beta.28.1 (seed 1423954245): an input that changed too (a curated decision of another
+      // record, pending) or the build is true of every record, so neither stands in for the
+      // join's slot; a manifest entry, a curated decision of its own or another slot does.
+      const joinDerived = !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
+      if (estate && ![...kinds].some((k) => k !== "input" && k !== "build") && joinDerived) {
+        why.add("another repo's slot changed (a join with it)");
         kinds.add("slot");
       }
       // beta.28: what the removal is to this record, first, beside what changed (true of every

@@ -1,0 +1,61 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: discard-edits reports Unresolved/unresolved.ledger-api.on-forge-payments-changed removed by \"input\", but what changed is slot. A pending curated suppress's input change pre-empted the join's slot reason (beta.28.1).",
+  "seed": 1423954245,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.payments.changed"]
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [],
+          "publishes": ["forge.payments.changed"],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    },
+    {
+      "t": "curate",
+      "action": "suppress",
+      "pick": 0
+    },
+    {
+      "t": "scan-not-cloned",
+      "slot": 0
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "change"
+    }
+  ]
+}
