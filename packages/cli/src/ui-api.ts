@@ -217,6 +217,8 @@ async function run(
       err.push(l);
       printToCurrent(l);
     },
+    // Beta.28.1: progress goes to the Console as it runs, never into the job's result.
+    progress: (l) => printToCurrent(l),
   });
   return { code, out, err };
 }

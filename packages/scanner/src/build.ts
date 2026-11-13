@@ -678,8 +678,33 @@ function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
  *
  * Nothing the build wrote is read back as an input: build.json is read only by the guards.
  */
-export async function buildCatalog(i: BuildInputs): Promise<Build> {
+/**
+ * Beta.28.1 ("nothing slow runs silently"): the build's passes in their order, as `onPass` names
+ * them, so a command says where a long build is (`Building the catalog: pass 2 of 8, ...`).
+ */
+export const BUILD_PASSES = [
+  "each repo's source",
+  "the framework models and the estate join",
+  "the merge, intake, features and the glossary",
+  "link evidence and shared maps",
+  "the legacy records",
+  "the curated decisions",
+  "each repo's flows and loose calls",
+  "the record files and build.json",
+] as const;
+
+/**
+ * Told as the build starts each pass (1-based, of BUILD_PASSES.length), and awaited: the caller
+ * prints it, lets the line out and may stop the build there by throwing (nothing is written by
+ * the build). It only listens: the build is the same with it or without it.
+ */
+export interface BuildProgress {
+  onPass?: (pass: number, of: number, what: string) => void | Promise<void>;
+}
+
+export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {}): Promise<Build> {
   const { op, root } = i;
+  const pass = async (n: number) => progress.onPass?.(n, BUILD_PASSES.length, BUILD_PASSES[n - 1]!);
   // The build cache (point 9): a build of the same inputs is the last build, kept whole; else
   // the last build's record texts are kept for the records that didn't change. A build with
   // federated catalogs isn't kept (their folders are read outside the inputs).
@@ -712,6 +737,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const live = new Set(repos.map((r) => r.id));
 
   // ---- 1. per repo, one source
+  await pass(1);
   const sources: RepoSource[] = [];
   const readerRecords: CatalogRecord[] = [];
   const legacyRecords: CatalogRecord[] = [];
@@ -784,6 +810,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   contracts.sort((a, b) => cmpText(`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`));
 
   // ---- 2. framework models, then the estate join over every facts slot at once
+  await pass(2);
   const frameworks = await usableFrameworks(op, problems);
   let projection: FactsEstateProjection | undefined;
   let code: CatalogRecord[];
@@ -794,6 +821,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   } else code = applyPipelineModels(readerRecords, frameworks);
 
   // ---- 3. the merge, intake, features, federation, the glossary
+  await pass(3);
   const read = new Set(factRepos.filter((x) => x.facts.length > 0).map((x) => x.repo));
   const mergeInput = (records: CatalogRecord[]) =>
     estateMergeInput(op, estateRepos(op), [...records].sort(byKindId), undefined, read);
@@ -878,6 +906,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   records = [...glossary.records, ...fedRecords];
 
   // ---- 4. link evidence and shared maps, before the curated decisions (point 2.4)
+  await pass(4);
   let linkEvidence: LinkEvidenceResult | undefined;
   let shared: SharedJoinResult | undefined;
   if (projection) {
@@ -901,6 +930,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   }
 
   // ---- 5. the legacy records, as they are, until a current source takes over (point 6)
+  await pass(5);
   const retired: RetiredJoin[] = [];
   let legacyJoins: string | undefined;
   /** The joins joins.json still holds after this build (its retired ones out). */
@@ -1210,6 +1240,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   );
 
   // ---- 6. the curated decisions, once, last
+  await pass(6);
   // A decision changes or suppresses a record the build makes; it never adds one (ADR 0195
   // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
   // refused by applyCurated like any other protected field.
@@ -1235,6 +1266,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
 
   // ---- per fact repo: flows, loose calls, the join about it
+  await pass(7);
   const facts = new Map<string, FactsRepoBuild>();
   if (projection && afterFacts) {
     const loose = new Map(out.filter((r) => r.kind === "Unresolved").map((r) => [r.id, r]));
@@ -1259,6 +1291,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   }
 
   // ---- the files and build.json
+  await pass(8);
   const files = new Map<string, string>();
   /** Each file's record, by the hash of its JSON: what the cache keeps its text by. */
   const textKeys = new Map<string, string>();
@@ -2721,10 +2754,22 @@ export async function buildAndWrite(
      * lock, so no writer comes between this check and the write.
      */
     expect?: (listed: GuardResult) => boolean;
+    /**
+     * Beta.28.1: told each step as it starts (`build` when it builds, then `check`: the files on
+     * disk read, `guard`, and `write` with the files it writes, last before anything is written),
+     * and awaited. Throwing from it stops there; at `write` nothing is written yet. It only
+     * listens. `onPass` is the build's own (BuildProgress).
+     */
+    onStep?: (s: {
+      step: "build" | "check" | "guard" | "write";
+      files?: number;
+    }) => void | Promise<void>;
+    onPass?: BuildProgress["onPass"];
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
   const undoDir = buildUndoDirOf(root, pack.stateDir);
+  if (!o.build) await o.onStep?.({ step: "build" });
   const build =
     o.build ??
     (await buildCatalog(
@@ -2737,9 +2782,11 @@ export async function buildAndWrite(
         ...i,
         slots: await withFactsWrites(root, slotsAfter(root, i.slots, o.slots ?? [])),
       })),
+      o.onPass ? { onPass: o.onPass } : {},
     ));
   // The target's record files and build.json, read once for the guards, the report and the
   // write, and the build.json this build writes, serialized once (ADR 0195 point 9).
+  await o.onStep?.({ step: "check" });
   const target = o.target ?? baselineTarget(root);
   const onDisk = await hashFiles(target.generated);
   const manifestOnDisk = await readText(target.manifest);
@@ -2750,6 +2797,7 @@ export async function buildAndWrite(
       hitManifestText(build, target.manifest, manifestOnDisk) ??
       serializeBuildManifest(manifestAt(build, target)),
   };
+  await o.onStep?.({ step: "guard" });
   const guard = await guardBuild(build, {
     undoDir,
     command: o.command,
@@ -2807,6 +2855,7 @@ export async function buildAndWrite(
     await writeBuildReport(undoDir, report);
     return { build, guard };
   }
+  await o.onStep?.({ step: "write", files: build.files.size });
   let write: WriteResult;
   try {
     write = await writeBuiltCatalog(build, {

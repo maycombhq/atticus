@@ -5,6 +5,7 @@ import { parse, stringify } from "yaml";
 import {
   acquireLock,
   catalogDirOf,
+  currentSignal,
   factsDirOf,
   factsRelOf,
   isAdopted,
@@ -105,6 +106,7 @@ import {
 } from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
 import { writeRepoSpecs } from "./contract-check-files.js";
+import { writeProgress } from "./write-progress.js";
 
 /**
  * The map (ADR 0124, A3b): a repo's verified facts written into the catalog everything
@@ -508,12 +510,21 @@ export async function projectFactsIntoCatalog(
      * place elsewhere").
      */
     readComplete?: boolean;
+    /**
+     * Beta.28.1: told each step as it starts (the estate's facts read, the build's passes, the
+     * comparison), and awaited: the write's and the preview's progress (`writeProgress`), which
+     * may stop the work there. It only listens.
+     */
+    step?: (what: string) => Promise<void>;
   } = {},
 ) {
+  const step = given.step ?? (() => Promise.resolve());
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
   const cacheOpts = given.cache === false ? {} : { cacheRoot: root };
+  if (!given.existing) await step("Loading the catalog");
   const existing =
     given.existing ?? (await readCatalog(join(catalogDirOf(root), "generated"), cacheOpts)).records;
+  await step("Reading the questions and the estate's facts");
   const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
   const answered = everyTarget.filter((q) => q.repo === repo);
   const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
@@ -533,12 +544,19 @@ export async function projectFactsIntoCatalog(
     contracts: contracts && contracts.entries.length ? contracts : null,
     ...(given.readComplete ? { readComplete: true } : {}),
   });
+  await step("Reading the build's inputs");
   const inputs = await loadBuildInputs(root, { op });
-  const build = await buildCatalog({
-    ...inputs,
-    slots: await withSlotWrites(root, inputs.slots, snap),
-    ...(given.extraPairs ? { extraPairs: new Map([[repo, given.extraPairs]]) } : {}),
-  });
+  const build = await buildCatalog(
+    {
+      ...inputs,
+      slots: await withSlotWrites(root, inputs.slots, snap),
+      ...(given.extraPairs ? { extraPairs: new Map([[repo, given.extraPairs]]) } : {}),
+    },
+    given.step
+      ? { onPass: (n, of, what) => step(`Building the catalog: pass ${n} of ${of} (${what})`) }
+      : {},
+  );
+  await step("Comparing the build with the catalog on file");
   const mine = build.facts.get(repo);
   const result = {
     records: build.records,
@@ -632,12 +650,24 @@ export async function writeFactsIntoCatalog(
     }
     throw e;
   }
+  // Beta.28.1 (the owner's field report 1): each step of the write is said as it starts, with
+  // the time so far and a heartbeat, so a long write never looks stuck; Stop (the job's signal)
+  // is heard between steps until the catalog is being written.
+  const signal = currentSignal();
+  const progress = writeProgress((l) => (io.progress ?? io.err)(l), {
+    title: "The write",
+    ...(signal ? { signal } : {}),
+  });
   try {
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
+    await progress.step("Loading the catalog");
     const existing = await readCatalog(generated, { cacheRoot: root });
+    progress.say(
+      `The catalog on file: ${existing.records.length.toLocaleString("en-US")} records.`,
+    );
     // ADR 0133: a prototype's facts are kept and compared with the estate, never written into
     // the catalog, its specs or its map, and nothing is asked about its calls.
     if (isPrototypeRepo(op, repo)) {
@@ -661,6 +691,7 @@ export async function writeFactsIntoCatalog(
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit; kept beside its facts and
     // in the snapshot's meta, written only once the build passes its guards.
+    await progress.step("Reading the repo's contract files");
     const contracts = await repoContractsOf(root, repo, o.dir, facts, (n) => io.err(n));
     const snapshotCommit = o.commit ?? snapshotCommitOf(facts);
     const {
@@ -682,6 +713,7 @@ export async function writeFactsIntoCatalog(
       contracts,
       commit: snapshotCommit,
       ...(o.readComplete ? { readComplete: true } : {}),
+      step: (what) => progress.step(what),
     });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
@@ -699,6 +731,19 @@ export async function writeFactsIntoCatalog(
       ...(o.plan !== undefined
         ? { expect: (listed: BuildAndWrite["guard"]) => buildPlanOf(listed) === o.plan }
         : {}),
+      onStep: async (s) => {
+        if (s.step === "check")
+          await progress.step("Reading the catalog's files to check the build");
+        else if (s.step === "guard") await progress.step("Checking the build's guards");
+        else if (s.step === "write") {
+          // The last point Stop is heard: from here the catalog, its contracts and specs are
+          // written whole.
+          await progress.step(
+            `Writing the catalog (${(s.files ?? 0).toLocaleString("en-US")} record files)`,
+          );
+          progress.commit();
+        }
+      },
     });
     // The app's confirm of a list that changed meanwhile: nothing written, and what the build
     // lists now (its own plan with it) for the page to show.
@@ -709,7 +754,9 @@ export async function writeFactsIntoCatalog(
       return undefined;
     }
     // ADR 0151, 0164: the contract companion and this repo's specs, kept beside its facts.
+    await progress.step("Writing contracts");
     await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
+    await progress.step("Writing specs");
     await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const w = built.write!;
     const snapshot = {
@@ -740,6 +787,7 @@ export async function writeFactsIntoCatalog(
       );
       return false;
     });
+    await progress.step("Writing the flows");
     const spec = await readRepoSpec(root, repo, { cacheRoot: root });
     const ids = new Set(flows.map((f) => f.id));
     for (const f of spec.flows)
@@ -770,6 +818,7 @@ export async function writeFactsIntoCatalog(
     });
 
     // Calls nothing joins: a host no repo lists (ADR 0088), or no target and no host (ADR 0078).
+    await progress.step("Asking about the calls nothing joins");
     const at = (o.now ?? new Date()).toISOString();
     const hosts = await askHosts(root, result.records, { command: o.command, rerun, now: o.now });
     const loose = new Set(result.unresolved.map((u) => u.factId));
@@ -1033,7 +1082,9 @@ export async function writeFactsIntoCatalog(
     if (sharedAbout) for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
     await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
     for (const l of lines) io.out(l);
+    await progress.step("Rendering the map");
     const map = await renderRepoMap(root, repo, io);
+    progress.end();
     return {
       written,
       flows: flowPaths,
@@ -1052,6 +1103,7 @@ export async function writeFactsIntoCatalog(
       })),
     };
   } finally {
+    progress.end();
     await lock.release();
   }
 }

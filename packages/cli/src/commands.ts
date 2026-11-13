@@ -24,6 +24,12 @@ export interface Output {
    * the printed words.
    */
   report?(fact: StepFact): void;
+  /**
+   * Beta.28.1: a progress line of long work (Apply's write stage: "Building the catalog: pass 2
+   * of 8…"), never part of the step's result. The app's job sends it to the Console only; left
+   * out, it is an `err` line (a terminal's standard error, the run log).
+   */
+  progress?(line: string): void;
 }
 
 /** One fact a step reports as data (Output.report). */
