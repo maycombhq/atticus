@@ -10,7 +10,9 @@ import {
   type WriteResult,
 } from "@maycombhq/assistant-files";
 import {
+  AcpServerGoneError,
   AcpSetupError,
+  STOPPED_BY_PERSON,
   AcpSignInError,
   currentPromptLimit,
   type AiRequest,
@@ -1202,6 +1204,20 @@ function capped(inner: AiRuntime, o: MapAllOptions, spent: Totals["spent"]): AiR
   };
 }
 
+/** `p`, or sooner once `signal` is aborted. */
+function untilStopped(p: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return p;
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((res) => {
+    const done = () => {
+      signal.removeEventListener("abort", done);
+      res();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    p.then(done, done);
+  });
+}
+
 export async function mapAllCommand(
   root: string,
   o: MapAllOptions,
@@ -1212,9 +1228,24 @@ export async function mapAllCommand(
     io.err(notMetarepo(root));
     return 2;
   }
-  const clock: Clock = deps.clock ?? {
+  const given: Clock = deps.clock ?? {
     now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    // beta.28 review: the timer goes when the run is stopped, not when it would have rung.
+    sleep: (ms) =>
+      new Promise((r) => {
+        const t = setTimeout(done, ms);
+        function done() {
+          clearTimeout(t);
+          deps.signal?.removeEventListener("abort", done);
+          r();
+        }
+        deps.signal?.addEventListener("abort", done, { once: true });
+      }),
+  };
+  // beta.28: a stop (Ctrl+C, Stop in the app) ends a wait at once, not when the sleep would.
+  const clock: Clock = {
+    now: () => given.now(),
+    sleep: (ms) => untilStopped(given.sleep(ms), deps.signal),
   };
   const op = await loadOrgPack(orgPackDirOf(root));
   const lim = await limitFor(root, op, o.maxTokens);
@@ -1415,6 +1446,8 @@ export async function mapAllCommand(
   let quit = false;
   let capHit = false;
   let signIn = false;
+  // beta.28: Copilot's server ended on its own: the run stops, failed.
+  let serverGone = false;
   let runtime: AiRuntime | undefined;
   const items = plan.items;
   for (const [n, item] of items.entries()) {
@@ -1511,7 +1544,7 @@ export async function mapAllCommand(
   }
   await save();
   await summary(interrupted);
-  return signIn ? 1 : 0;
+  return signIn || serverGone ? 1 : 0;
 
   // ------------------------------------------------------------ one part, read by Copilot
 
@@ -2001,6 +2034,27 @@ export async function mapAllCommand(
         // Its own context or the server's limit ran out (max_tokens, refusal): not a turn ended.
         else if (r.stopReason !== "end_turn") ended = { how: "short", why: r.stopReason };
       } catch (e) {
+        // beta.28 review: a console's Ctrl+C can end the server a moment before the signal is
+        // heard here: looked at again shortly before the server is taken to have ended alone.
+        if (e instanceof AcpServerGoneError && !stopped())
+          await new Promise((res) => setTimeout(res, 100));
+        if (e instanceof AcpServerGoneError && stopped()) {
+          io.out(`The session ended (${STOPPED_BY_PERSON}).`);
+          emit({ type: "session.end", repo: item.repo, ended: STOPPED_BY_PERSON });
+          break;
+        }
+        if (e instanceof AcpServerGoneError) {
+          // beta.28: field report: no Copilot process was left and the run waited on. The next
+          // part's server may end the same way: the run stops here, failed, saying so.
+          io.err(
+            `${e.message} The run stops here; ${resumeAs} carries on once Copilot runs again.`,
+          );
+          emit({ type: "session.end", repo: item.repo, ended: "failed", failed: e.message });
+          serverGone = true;
+          ps.state = "incomplete";
+          await save();
+          return "quit";
+        }
         if (e instanceof AcpSetupError) {
           // beta.17: the same for every part: stop here rather than try each part twice.
           io.err(`${e.message} The run stops here; ${resumeAs} carries on once it is put right.`);

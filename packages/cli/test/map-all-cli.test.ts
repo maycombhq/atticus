@@ -489,6 +489,33 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     expect(readFileSync(join(root, ".atticus", ".gitignore"), "utf8")).toContain("map-all/");
   });
 
+  it("beta.28: a stop during a wait ends the wait at once, not when the sleep would end", async () => {
+    const { root } = ledgerEstate();
+    const ac = new AbortController();
+    // A clock whose sleep never ends on its own: only the stop can end the wait.
+    let slept = 0;
+    const clock: Clock = {
+      now: () => Date.parse("2026-11-01T09:00:00Z"),
+      sleep: () => {
+        if (++slept === 1) setTimeout(() => ac.abort(), 20);
+        return new Promise<void>(() => {});
+      },
+    };
+    const o = io();
+    expect(
+      await mapAllCommand(
+        root,
+        { maxTokens: LIMIT, mode: "copilot" },
+        o.io,
+        deps(clock, { signal: ac.signal }),
+      ),
+    ).toBe(0);
+    expect(slept).toBe(1);
+    expect(o.text()).toContain(
+      "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
+    );
+  });
+
   it("reminds every ten minutes while it waits, and s skips a part, listed with its command", async () => {
     const { root } = ledgerEstate();
     const clock = fakeClock();

@@ -310,6 +310,29 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     );
   });
 
+  it("beta.28: Copilot ending on its own stops the run as failed, saying so, with no session after it", async () => {
+    const { root } = ledgerEstate();
+    const m = scripted(root, {
+      sessions: [{ steps: [{ tool: "Reading" }, { exit: 1 }] }, { steps: [{ say: "never" }] }],
+    });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const o = io();
+    const events: MapAllEvent[] = [];
+    const code = await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp" }, o.io, {
+      acp: runner,
+      onEvent: (e) => events.push(e),
+    });
+    expect(code).toBe(1);
+    expect(o.text()).toMatch(
+      /ERR The Copilot language server ended on its own during the session \(the Copilot language server ended \(1\)\).* The run stops here; atticus map --all --max-tokens 100000 carries on once Copilot runs again\./,
+    );
+    expect(m.log().filter((e) => e.event === "session").length).toBe(1);
+    expect(events.find((e) => e.type === "session.end")).toMatchObject({ ended: "failed" });
+    expect((await readMapAllState(root))?.repos["forge-ledger"]?.parts["1"]?.state).toBe(
+      "incomplete",
+    );
+  });
+
   it("Ctrl+C cancels the session under way and stops cleanly, to resume later", async () => {
     const { root } = ledgerEstate();
     const m = scripted(root, {

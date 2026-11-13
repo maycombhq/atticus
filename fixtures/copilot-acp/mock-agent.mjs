@@ -19,6 +19,12 @@
 //                                                      session/request_permission
 //   { "sleep": <ms> }
 //   { "stop": "<stopReason>" }                         ends the turn with that reason
+//   { "exit": <code> }                                 the process ends there, answering nothing
+//   { "kill": "<signal>" }                             the process sends itself that signal
+// A session may have "exitAfter": true: the process ends just after it answers its first prompt
+// (a server that ends between turns).
+// "startMs" in the script: how long the process waits before it answers `initialize` (a slow
+// start, so a test can stop a run before its session opens).
 // A session may have "then": [[steps], ...]: the steps of its second prompt, third, and so on, in
 // the same session (a prompt past them plays none).
 // A path may start with ${cwd} (the session's folder); a relative path is taken under it.
@@ -130,6 +136,14 @@ async function play(steps) {
       log({ event: "permission", kind: p.kind, title: p.title, outcome: r.result?.outcome });
     } else if (s.sleep !== undefined) await sleep(s.sleep);
     else if (s.stop !== undefined) return s.stop;
+    else if (s.kill !== undefined) {
+      log({ event: "kill", signal: s.kill });
+      process.kill(process.pid, s.kill);
+      await sleep(5000);
+    } else if (s.exit !== undefined) {
+      log({ event: "exit", code: s.exit });
+      process.exit(s.exit);
+    }
   }
   return cancelled ? "cancelled" : "end_turn";
 }
@@ -146,6 +160,10 @@ rl.on("line", async (line) => {
   }
   const { id, method, params } = m;
   if (method === "initialize") {
+    if (script.startMs) {
+      log({ event: "starting" });
+      await sleep(script.startMs);
+    }
     log({ event: "initialize", params, acpSession: process.env.ATTICUS_ACP_SESSION ?? null });
     send({
       id,
@@ -194,6 +212,10 @@ rl.on("line", async (line) => {
     const stopReason = await play(steps);
     log({ event: "stop", stopReason });
     send({ id, result: { stopReason, usage: { inputTokens: 1200, outputTokens: 300 } } });
+    if (sess?.exitAfter) {
+      log({ event: "exit", code: 0 });
+      setTimeout(() => process.exit(0), 20);
+    }
   } else if (method === "session/cancel") {
     cancelled = true;
     log({ event: "cancel" });

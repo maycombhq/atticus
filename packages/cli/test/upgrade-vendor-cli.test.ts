@@ -181,10 +181,15 @@ describe("upgrading a beta.26 catalog with an arrow to an inferred vendor compon
     expect(after[`component/${BY_LABEL}.yaml`]).toBeUndefined();
     expect(after[`interface/${was.id}.yaml`]).toBeDefined();
     expect((record(after[`interface/${was.id}.yaml`]!) as Iface).to).toBe("northwind-pay");
-    // Said: each removal with why, and the arrow's move in the links.
+    // Said: each removal with why (beta.28: what it is to that record first), and the arrow's
+    // move in the links.
     const why = `${PROXY} is built from its facts snapshot now`;
-    expect(v.said).toContain(`removed Interface/${arrow.id}: ${why}`);
-    expect(v.said).toContain(`removed Component/${BY_LABEL}: ${why}`);
+    expect(v.said).toContain(
+      `removed Interface/${arrow.id}: its call goes to northwind-pay now (Interface/${was.id}); ${why}`,
+    );
+    expect(v.said).toContain(
+      `removed Component/${BY_LABEL}: no fact of ${PROXY}'s read makes it; ${why}`,
+    );
     expect(v.said).toContain(
       "+ northwind-accounts-proxy → northwind-pay GET /api/v1/accounts/balances",
     );

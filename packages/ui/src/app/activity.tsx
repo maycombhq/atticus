@@ -13,7 +13,14 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
-import { CopilotRunTabs, matching, RunStrip, TAB_LINES, useCopilotRuns } from "./copilot-runs.js";
+import {
+  CopilotRunTabs,
+  matching,
+  RunStrip,
+  scrolledUp,
+  TAB_LINES,
+  useCopilotRuns,
+} from "./copilot-runs.js";
 
 /**
  * ADR 0187: the Console. Everything Atticus is doing or did lately on this metarepo, wherever it
@@ -579,10 +586,14 @@ export function LogView(p: {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const log = useRef<HTMLPreElement>(null);
+  const top = useRef(0);
   const all = p.lines?.lines ?? [];
   const shown = useMemo(() => matching(all, q), [all, q]);
   useEffect(() => {
-    if (follow && log.current) log.current.scrollTop = log.current.scrollHeight;
+    if (follow && log.current) {
+      log.current.scrollTop = log.current.scrollHeight;
+      top.current = log.current.scrollTop;
+    }
   }, [shown.length, follow, p.entry.id]);
   const saidCopied = (v: "yes" | "failed") => {
     setCopied(v);
@@ -650,6 +661,11 @@ export function LogView(p: {
           aria-busy={p.state === "loading"}
           aria-label={titleOf(p.entry)}
           tabIndex={0}
+          onScroll={(e) => {
+            // beta.28: scrolling up to read earlier lines stops following the end.
+            if (follow && scrolledUp(top.current, e.currentTarget)) setFollow(false);
+            top.current = e.currentTarget.scrollTop;
+          }}
         >
           {p.state === "loading" && !p.lines
             ? T.linesLoading

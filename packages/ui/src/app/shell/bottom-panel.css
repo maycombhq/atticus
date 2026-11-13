@@ -166,6 +166,22 @@
   flex: 1;
   min-height: 3em;
   max-height: none;
+  overflow-y: auto;
+}
+/* beta.28: a Copilot run's tabs and log sit in two boxes of their own: each a column that fills
+   what is left of the panel and can shrink, so the log, not the panel, scrolls (it had no
+   scrollbar, its lines cut off below). */
+.bp-panel-console .run-console-copilot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.bp-panel-console .run-console-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 .bp-panel-console .run-console-tabs + * {
   min-height: 0;

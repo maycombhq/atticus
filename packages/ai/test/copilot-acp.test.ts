@@ -5,7 +5,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { AgentDefinition, Runtime } from "@maycombhq/core";
 import { killTree } from "../src/copilot-acp.js";
 import {
+  AcpServerGoneError,
   AcpSignInError,
+  endedByCtrlC,
   atticusArgvOf,
   carryOnPrompt,
   buildContextPack,
@@ -309,6 +311,113 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     });
     expect(c.stopReason).toBe("cancelled");
     expect(m.log().filter((e) => e.event === "cancel").length).toBe(2);
+  });
+
+  it("beta.28: a Stop before the session opens ends it at once, and no prompt is sent", async () => {
+    // Field report: Stop while Copilot was still starting waited for the session to open, then
+    // sent the prompt anyway and waited ten seconds more for the agent to say it was cancelled.
+    const m = metarepo({ startMs: 20_000, sessions: [{ steps: [{ sleep: 20_000 }] }] });
+    const ac = new AbortController();
+    const wait = setInterval(() => {
+      if (m.log().some((e) => e.event === "starting")) {
+        clearInterval(wait);
+        ac.abort();
+      }
+    }, 20);
+    const t0 = Date.now();
+    const said: string[] = [];
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      signal: ac.signal,
+      onProgress: (l) => said.push(l),
+    });
+    clearInterval(wait);
+    expect(Date.now() - t0).toBeLessThan(8_000);
+    expect(r).toMatchObject({ stopReason: "cancelled", stopped: "stopped (Ctrl+C)" });
+    expect(said).toContain("  Stopping the session: stopped (Ctrl+C).");
+    expect(m.log().some((e) => e.event === "prompt")).toBe(false);
+  });
+
+  it("beta.28: a signal already stopped starts no server at all", async () => {
+    const m = metarepo({ sessions: [{ steps: [{ say: "never" }] }] });
+    const ac = new AbortController();
+    ac.abort();
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      signal: ac.signal,
+    });
+    expect(r).toMatchObject({ stopReason: "cancelled", stopped: "stopped (Ctrl+C)" });
+    expect(m.log()).toEqual([]);
+  });
+
+  it("beta.28: the server ending on its own mid-turn fails the session as gone, at once", async () => {
+    const m = metarepo({ sessions: [{ steps: [{ tool: "Reading" }, { exit: 3 }] }] });
+    const t0 = Date.now();
+    const e = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+    }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(AcpServerGoneError);
+    expect((e as Error).message).toMatch(
+      /^The Copilot language server ended on its own during the session \(the Copilot language server ended \(3\)\)/,
+    );
+    expect(Date.now() - t0).toBeLessThan(8_000);
+  });
+
+  it("beta.28 review: a server ended by Ctrl+C (SIGINT, or Windows' STATUS_CONTROL_C_EXIT) is the person's stop", async () => {
+    expect(endedByCtrlC({ code: 3221225786, signal: null })).toBe(true);
+    expect(endedByCtrlC({ code: -1073741510, signal: null })).toBe(true);
+    expect(endedByCtrlC({ code: null, signal: "SIGINT" })).toBe(true);
+    expect(endedByCtrlC({ code: 1, signal: null })).toBe(false);
+    expect(endedByCtrlC(undefined)).toBe(false);
+    const m = metarepo({ sessions: [{ steps: [{ tool: "Reading" }, { kill: "SIGINT" }] }] });
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+    });
+    expect(r).toMatchObject({ stopReason: "cancelled", stopped: "stopped (Ctrl+C)" });
+  });
+
+  it("beta.28 review: a server that ends between turns ends the session, not fails it", async () => {
+    // It answered its turn, then ended: what it wrote is verified by the step, as any session's.
+    const m = metarepo({ sessions: [{ exitAfter: true, steps: [{ say: "Done." }] }] });
+    let asked = 0;
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      followUp: async () => {
+        asked++;
+        // The step reads what the session wrote meanwhile; the server ends.
+        await new Promise((res) => setTimeout(res, 400));
+        return "verify rejected 1 line: fix it";
+      },
+    });
+    expect(asked).toBe(1);
+    expect(r.stopReason).toBe("end_turn");
+    expect(r.stopped).toBeUndefined();
+    expect(m.log().filter((e) => e.event === "prompt").length).toBe(1);
   });
 
   it("tells a session that ended over a refusal why, and lets it carry on (beta.16)", async () => {
