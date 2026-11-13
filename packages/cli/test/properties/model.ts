@@ -123,6 +123,9 @@ export const endpointKey = (component: string, method: string, path: string) =>
 export const arrowKey = (from: string, to: string, method: string, path: string) =>
   `${from}|${to}|${method}|${path}`;
 
+/** Kinds the whole-catalog passes derive from every repo's records (features, terms). */
+const WHOLE_CATALOG: ReadonlySet<string> = new Set(["Capability", "GlossaryTerm"]);
+
 export class Model {
   repos: RepoState[];
   readers = new Map<number, Observation>();
@@ -322,6 +325,9 @@ export class Model {
    * source (its slot changed since the upgrade). A curated decision or an answer changes no
    * slot, so it retires nothing by itself. A record with no evidence names no repo: any repo
    * read afresh may derive it; it too must be in the catalog written, as its derived record.
+   * So may a feature or a term (beta.28, seed 1400958621): the whole-catalog passes derive them
+   * from every repo's records, so any repo read afresh may derive one whatever repos its
+   * evidence names.
    * `kept` and `written` hold `<Kind>/<id>`.
    */
   retire(kept: ReadonlySet<string>, written: ReadonlySet<string>): LegacyJoin[] {
@@ -348,7 +354,10 @@ export class Model {
         (took &&
           (j.arrow
             ? derivable.has(j.arrow.key)
-            : (j.repos.length ? j.repos : this.live().map((r) => r.slot)).some(fresh))) ||
+            : (j.repos.length && !WHOLE_CATALOG.has(j.kind)
+                ? j.repos
+                : this.live().map((r) => r.slot)
+              ).some(fresh))) ||
         this.unjoinedMayLeave(j);
       if (kept.has(`${j.kind}/${j.id}`) || !live.has(j)) stay.push(j);
       else if (may) continue;
