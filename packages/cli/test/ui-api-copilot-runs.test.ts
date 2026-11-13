@@ -238,6 +238,53 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     }
   });
 
+  it("beta.28: Stop ends the run's view within its grace even when the work doesn't end", async () => {
+    // Field report: Stop, then "running" for 50 minutes. Whatever the work is waiting on, the
+    // person's Stop is the run's end: it says stopped, and what the work does after is not news.
+    let finish: (() => void) | undefined;
+    let heard = false;
+    const stuck = await startServer({
+      root: await metarepo(RUNTIME_ACP),
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, {
+          flushMs: 1,
+          assistantFiles: current0,
+          stopGraceMs: 50,
+          start: async (_o, io, deps) => {
+            deps.signal?.addEventListener("abort", () => (heard = true));
+            io.out("waiting on something that never ends");
+            await new Promise<void>((res) => (finish = res));
+            io.out("the work ended at last");
+            return 0;
+          },
+        }),
+    });
+    try {
+      const r = await call(stuck, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
+      const id = String(r.body.runId);
+      await until(async () => !!finish);
+      expect((await call(stuck, "POST", `/api/copilot-runs/${id}/stop`)).status).toBe(200);
+      await until(async () => (await current(stuck)).run?.state === "stopped");
+      expect(heard).toBe(true);
+      const run = (await current(stuck)).run!;
+      expect(run.tabs[0]!.lines).toContain(
+        "The run didn't end within a few seconds of Stop: it is ended here. Whatever it was still waiting on is cut off, and nothing more it does is shown.",
+      );
+      expect(run.tabs[0]!.lines.at(-1)).toBe("Stopped. The next run carries on from here.");
+      // The work ending later changes nothing: the run stays stopped, said once.
+      finish!();
+      await new Promise((res) => setTimeout(res, 50));
+      const after = (await current(stuck)).run!;
+      expect(after.state).toBe("stopped");
+      expect(after.tabs[0]!.lines.filter((l) => l.startsWith("Stopped.")).length).toBe(1);
+      expect(after.tabs[0]!.lines).not.toContain("the work ended at last");
+    } finally {
+      finish?.();
+      await stuck.close();
+    }
+  });
+
   it("starts only one of two asks that come at once (a double click, or two windows)", async () => {
     const [x, y] = await Promise.all([
       call(srv, "POST", "/api/copilot-runs", { kind: "gaps", ...LIMIT }),

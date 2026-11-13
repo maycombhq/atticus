@@ -1,4 +1,4 @@
-import { Api, currentSignal, loadOrgPack, orgPackDirOf, copilotAcpOf } from "@maycombhq/core";
+import { Api, loadOrgPack, orgPackDirOf, copilotAcpOf } from "@maycombhq/core";
 import {
   badRequest,
   conflict,
@@ -40,6 +40,17 @@ const defaultStarter =
       makeAcp: async () => (await import("./copilot-acp-steps.js")).acpStepRunner(root),
     });
   };
+
+/**
+ * beta.28: how long after Stop the run's view waits for its work to end. A session's own stop
+ * takes up to about seven seconds (five for the agent to say so, two for the server to close);
+ * past this the view ends the run as stopped whatever the work is still waiting on.
+ */
+const STOP_GRACE_MS = 15_000;
+
+/** beta.28: said when the work didn't end within the grace after Stop. */
+const CUT_OFF =
+  "The run didn't end within a few seconds of Stop: it is ended here. Whatever it was still waiting on is cut off, and nothing more it does is shown.";
 
 /** The lines of each tab a poll of the current run gets. */
 const TAIL = 200;
@@ -118,15 +129,20 @@ export function uiCopilotRunRoutes(
     now?: () => Date;
     flushMs?: number;
     assistantFiles?: AssistantFilesCheck;
+    /** beta.28: the most Stop waits for the run's work to end before the run is ended. */
+    stopGraceMs?: number;
   } = {},
 ): Router {
   const start = deps.start ?? defaultStarter(ctx.root);
   const check = deps.assistantFiles ?? defaultCheck;
   const now = deps.now ?? (() => new Date());
   const flushMs = deps.flushMs ?? 100;
+  const stopGraceMs = deps.stopGraceMs ?? STOP_GRACE_MS;
   let run: CopilotRun | undefined;
   let allowed: { at: number; v: Here } | undefined;
   let seq = 0;
+  // beta.28: the grace each stopped run has for its work to end.
+  const stopTimers = new Map<CopilotRun, ReturnType<typeof setTimeout>>();
   // A start under way (between its checks and the run being set): a second waits its turn.
   let starting = false;
 
@@ -256,36 +272,44 @@ export function uiCopilotRunRoutes(
         const job = ctx.jobs.start(
           "step",
           async (c) => {
+            // beta.28: once the run is ended (Stop's grace ran out), what its work still says
+            // is no longer the run's.
+            const live = () => me.view.state === "running";
             const io: Output = {
-              out: (l) => queue(me.line(l)),
+              out: (l) => {
+                if (live()) queue(me.line(l));
+              },
               err: (l) => {
+                if (!live()) return;
                 lastErr = l;
                 queue(me.line(l));
               },
             };
             const onEvent = (e: MapAllEvent) => {
+              if (!live()) return;
               for (const n of me.event(e)) queue(n);
               const p = me.view.progress;
               c.progress(p.repoIndex, p.repos, p.session ?? p.repo ?? "Planning");
               state();
             };
-            const signal = currentSignal();
+            // beta.28: the job's own signal, given to its work, rather than the one its async
+            // context carries: Stop reaches the run however the work was started.
+            const signal = c.signal;
             let code: number;
             try {
-              code = await start(optionsOf(b.data), io, {
-                ...(signal ? { signal } : {}),
-                onEvent,
-              });
+              code = await start(optionsOf(b.data), io, { signal, onEvent });
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              queue(me.finish(signal?.aborted ? "stopped" : "failed", now().toISOString(), msg));
+              if (!live()) return { errors: [msg] };
+              queue(me.finish(signal.aborted ? "stopped" : "failed", now().toISOString(), msg));
               flush();
               state();
               // Repos read before it failed were written: the pages read the facts again.
               ctx.events.publish({ type: "file.changed", path: "facts" });
               return { errors: [msg] };
             }
-            const stopped = signal?.aborted === true;
+            if (!live()) return { result: { code, runId } };
+            const stopped = signal.aborted;
             queue(
               me.finish(
                 stopped ? "stopped" : code === 0 ? "done" : "failed",
@@ -325,9 +349,25 @@ export function uiCopilotRunRoutes(
           throw conflict(
             `${params.runId} has already ${run.view.state === "done" ? "finished" : run.view.state}.`,
           );
-        ctx.jobs.cancel(run.view.jobId);
-        queue(run.line("Stopping: the session under way is cancelled..."));
-        return { status: 200, body: structuredClone(run.view) };
+        const r0 = run;
+        ctx.jobs.cancel(r0.view.jobId);
+        queue(r0.line("Stopping: the session under way is cancelled..."));
+        // beta.28: field report: Stop, then "running" for 50 minutes. The person's Stop is the
+        // run's end: if its work hasn't ended within the grace, the run is ended here, stopped.
+        if (!stopTimers.has(r0)) {
+          const t = setTimeout(() => {
+            stopTimers.delete(r0);
+            if (r0.view.state !== "running") return;
+            queue(r0.line(CUT_OFF));
+            queue(r0.finish("stopped", now().toISOString()));
+            flush();
+            if (run === r0) state();
+            ctx.events.publish({ type: "file.changed", path: "facts" });
+          }, stopGraceMs);
+          t.unref?.();
+          stopTimers.set(r0, t);
+        }
+        return { status: 200, body: structuredClone(r0.view) };
       })
   );
 }

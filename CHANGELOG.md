@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28 (unreleased)
+
+### Fixed
+
+- **Stop ends a Copilot run from the app within seconds, in every phase.** A Stop while Copilot was still starting waited for its session to open and then sent the prompt anyway; now nothing more is asked and the run says stopped at once. A stopped session is given five seconds (not ten) to say so before its server is ended, a wait in `map --all` ends at the stop rather than when its sleep would, and the run's work gets the job's own signal. Whatever the work is still waiting on, the app ends the run as stopped 15 seconds after Stop, saying so. Copilot's server ending on its own during a session now ends the run as failed, saying why, instead of trying the part again in a new session and finishing as done.
+
 ## 2.0.0-beta.27.1 (2026-11-12)
 
 ### Fixed

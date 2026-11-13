@@ -438,6 +438,21 @@ export class AcpSetupError extends RuntimeError {
   }
 }
 
+/**
+ * beta.28: the server ended on its own while a session was under way (it crashed, or something
+ * else ended it): no answer will come, so the run stops on it, saying so, rather than wait or try
+ * the next part in a server that may end the same way.
+ */
+export class AcpServerGoneError extends RuntimeError {
+  constructor(message: string) {
+    super(message);
+    this.name = "AcpServerGoneError";
+  }
+}
+
+/** Why a session was cancelled when the person stopped it (Ctrl+C, or Stop in the app). */
+export const STOPPED_BY_PERSON = "stopped (Ctrl+C)";
+
 export interface AcpSessionOptions {
   /** runtime.yaml's copilotAcp.command. */
   command: string;
@@ -521,6 +536,9 @@ export const ACP_OFFERED = [
   "session/request_permission",
 ];
 
+/** beta.28: what a wait raced against a cancel gives when the cancel came first. */
+const CUT: unique symbol = Symbol("cut");
+
 const withTimeout = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
   new Promise<T>((res, rej) => {
     const t = setTimeout(
@@ -556,6 +574,20 @@ const signInLines = (stderr: string) =>
  */
 export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionResult> {
   const { command, args } = commandLineOf(o.command);
+  const named: RunAssistant = { name: basename(command).replace(/\.(cmd|exe)$/i, "") };
+  // beta.28: stopped before it began: no server is started, nothing is asked.
+  if (o.signal?.aborted) {
+    o.onProgress?.(`  Stopping the session: ${STOPPED_BY_PERSON}.`);
+    return {
+      stopReason: "cancelled",
+      stopped: STOPPED_BY_PERSON,
+      assistant: named,
+      text: "",
+      toolCalls: [],
+      refused: [],
+      agentToolCalls: 0,
+    };
+  }
   const server = (o.spawn ?? spawnAcpServer)({
     command,
     args,
@@ -622,9 +654,21 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
   let tn = 0;
 
   const box: { client?: AcpClient } = {};
+  // beta.28: what a wait for the server races, so a Stop while it starts (initialize, a new
+  // session, the model) or between turns ends the session at once instead of after it.
+  let heard: () => void = () => {};
+  const cancelled = new Promise<typeof CUT>((r) => (heard = () => r(CUT)));
+  const orCut = <T>(p: Promise<T>): Promise<T | typeof CUT> => {
+    p.catch(() => undefined);
+    return Promise.race([p, cancelled]);
+  };
+  // beta.28: the server ended (on its own, unless Atticus closed it after the session).
+  let gone: string | undefined;
+  server.transport.onClose((why) => (gone ??= why));
   const cancel = (why: string) => {
     if (cancelWhy) return;
     cancelWhy = why;
+    heard();
     flush();
     say(`  Stopping the session: ${why}.`);
     if (sessionId) box.client?.cancel(sessionId);
@@ -774,18 +818,36 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
   );
   box.client = client;
 
-  const onAbort = () => cancel("stopped (Ctrl+C)");
+  const onAbort = () => cancel(STOPPED_BY_PERSON);
   o.signal?.addEventListener("abort", onAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** beta.28: the session cut before its prompt was answered: nothing more is asked. */
+  const cut = (assistant: RunAssistant, model?: string): AcpSessionResult => {
+    flush();
+    return {
+      stopReason: "cancelled",
+      stopped: cancelWhy ?? STOPPED_BY_PERSON,
+      ...(model ? { model } : {}),
+      assistant,
+      text,
+      toolCalls: calls,
+      refused,
+      agentToolCalls: agentCalls,
+    };
+  };
   try {
     let init;
     try {
-      await server.started;
-      init = await withTimeout(
-        client.initialize({ name: "atticus", version: o.clientVersion ?? "2" }),
-        60_000,
-        "The Copilot language server's initialize",
+      if ((await orCut(server.started)) === CUT) return cut(named);
+      const i = await orCut(
+        withTimeout(
+          client.initialize({ name: "atticus", version: o.clientVersion ?? "2" }),
+          60_000,
+          "The Copilot language server's initialize",
+        ),
       );
+      if (i === CUT) return cut(named);
+      init = i;
     } catch (e) {
       throw new AcpSetupError(
         `Atticus couldn't start the Copilot language server (${o.command}): ${firstLine(e)}${tail(server.stderr())}. Check copilotAcp.command in runtime.yaml, and that ${command} --help lists --acp.`,
@@ -800,7 +862,11 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     };
     let ns;
     try {
-      ns = await withTimeout(client.newSession(o.cwd), 120_000, "Opening a Copilot session");
+      const n = await orCut(
+        withTimeout(client.newSession(o.cwd), 120_000, "Opening a Copilot session"),
+      );
+      if (n === CUT) return cut(assistant);
+      ns = n;
     } catch (e) {
       if (isAuthRequired(e)) {
         await new Promise((r) => setTimeout(r, 150));
@@ -816,13 +882,14 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
         throw new AcpSetupError(
           `The Copilot language server doesn't offer the model ${o.model} (it offers ${offered.join(", ") || "no list"}): change copilotAcp.model in runtime.yaml, or leave it out for Copilot's own.`,
         );
-      await client.setModel(sessionId, o.model);
+      if ((await orCut(client.setModel(sessionId, o.model))) === CUT) return cut(assistant, model);
       model = o.model;
     }
     say(
       `  Copilot session open (${assistant.name}${assistant.version ? ` ${assistant.version}` : ""}${model ? `, ${model}` : ""}).`,
     );
-    if (o.signal?.aborted) cancel("stopped (Ctrl+C)");
+    if (o.signal?.aborted) cancel(STOPPED_BY_PERSON);
+    if (cancelWhy) return cut(assistant, model);
     timer = setTimeout(() => cancel("timeout"), o.timeoutMs ?? 30 * 60_000);
     // beta.16: Copilot ends its turn when a permission is refused ("Operation cancelled by
     // user"), often with the step half done. While it ended right after a refusal, it is told why
@@ -837,21 +904,39 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     // (followUp) leaves a refusal its MAX_NUDGES.
     let nudge = 0;
     for (;;) {
+      // beta.28: cancelled between turns (while the step had more to say): nothing more is asked.
+      if (cancelWhy) {
+        answer = { stopReason: "cancelled" };
+        break;
+      }
       const before = refused.length;
       const asked = client.prompt(sessionId, prompt);
       try {
         answer = await new Promise((res, rej) => {
           asked.then(res, rej);
-          // Once cancelled, the agent has ten seconds to say so before the server is ended.
+          // Once cancelled, the agent has a few seconds to say so before the server is ended:
+          // five when the person stopped it, ten for the time or the tool calls.
           const watch = setInterval(() => {
             if (!cancelWhy) return;
             clearInterval(watch);
-            setTimeout(() => res({ stopReason: "cancelled" }), 10_000);
+            setTimeout(
+              () => res({ stopReason: "cancelled" }),
+              cancelWhy === STOPPED_BY_PERSON ? 5_000 : 10_000,
+            );
           }, 50);
           asked.finally(() => clearInterval(watch)).catch(() => undefined);
         });
       } catch (e) {
         if (isAuthRequired(e)) throw signInError(e, init, server.stderr());
+        // Cancelled, and the server ended with it: the session was stopped, not failed.
+        if (cancelWhy) {
+          answer = { stopReason: "cancelled" };
+          break;
+        }
+        if (gone)
+          throw new AcpServerGoneError(
+            `The Copilot language server ended on its own during the session (${gone})${tail(server.stderr())}. Nothing more can come from it: Copilot may have crashed, been signed out or been ended by something else.`,
+          );
         throw new RuntimeError(
           `The Copilot session failed: ${firstLine(e)}${tail(server.stderr())}`,
         );

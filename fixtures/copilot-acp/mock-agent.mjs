@@ -19,6 +19,9 @@
 //                                                      session/request_permission
 //   { "sleep": <ms> }
 //   { "stop": "<stopReason>" }                         ends the turn with that reason
+//   { "exit": <code> }                                 the process ends there, answering nothing
+// "startMs" in the script: how long the process waits before it answers `initialize` (a slow
+// start, so a test can stop a run before its session opens).
 // A session may have "then": [[steps], ...]: the steps of its second prompt, third, and so on, in
 // the same session (a prompt past them plays none).
 // A path may start with ${cwd} (the session's folder); a relative path is taken under it.
@@ -130,6 +133,10 @@ async function play(steps) {
       log({ event: "permission", kind: p.kind, title: p.title, outcome: r.result?.outcome });
     } else if (s.sleep !== undefined) await sleep(s.sleep);
     else if (s.stop !== undefined) return s.stop;
+    else if (s.exit !== undefined) {
+      log({ event: "exit", code: s.exit });
+      process.exit(s.exit);
+    }
   }
   return cancelled ? "cancelled" : "end_turn";
 }
@@ -146,6 +153,10 @@ rl.on("line", async (line) => {
   }
   const { id, method, params } = m;
   if (method === "initialize") {
+    if (script.startMs) {
+      log({ event: "starting" });
+      await sleep(script.startMs);
+    }
     log({ event: "initialize", params, acpSession: process.env.ATTICUS_ACP_SESSION ?? null });
     send({
       id,
