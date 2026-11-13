@@ -29,6 +29,16 @@ export interface BigEstateOptions {
   /** Repos (the first ones) given a checkout under workspace/. */
   checkouts?: number;
   seed?: number;
+  /**
+   * Gateway proxy repos (field report 2's estate, as fixtures/gateway-facts/policy-tokens): proxy
+   * g is a repo of its own on the one gateway host, fronting service g's first `routes` entries
+   * under the base path `/svc-NN/1.0`, its target URL a deploy token its config.json sets per
+   * environment (prod to the service's host). Half of the calls to a fronted service go through
+   * the gateway's host. None by default.
+   */
+  gateways?: number;
+  /** Routes per gateway proxy. */
+  routes?: number;
 }
 
 export const BIG_COMMIT = "1111aaa";
@@ -64,6 +74,9 @@ const ANNOTATION: Record<string, string> = {
 const pad = (n: number) => String(n).padStart(2, "0");
 export const bigRepoId = (r: number) => `forge-svc-${pad(r)}`;
 const hostOf = (r: number) => `${bigRepoId(r)}.forge.example`;
+export const bigGatewayId = (g: number) => `forge-gw-${pad(g)}`;
+const GATEWAY_HOST = "gw.forge.example";
+const basePathOf = (g: number) => `/svc-${pad(g)}/1.0`;
 const entryPath = (r: number, k: number) =>
   `/v1/${NOUNS[(r + k) % NOUNS.length]}s/{id}/${NOUNS[(r * 3 + k * 7) % NOUNS.length]}-${k}`;
 
@@ -92,7 +105,7 @@ function cited(files: Files, file: string, text: string): { file: string; line: 
 /** One repo's facts, and the lines its checkout holds for them. */
 export function bigRepoFacts(
   r: number,
-  o: Required<Omit<BigEstateOptions, "checkouts" | "seed">> & { seed: number },
+  o: ReturnType<typeof defaults>,
   /** A change: the repo's facts as of its n-th edit (0: as generated). */
   edit = 0,
 ): { facts: Fact[]; files: Files } {
@@ -151,6 +164,14 @@ export function bigRepoFacts(
       host = hostOf(to);
       path = entryPath(to, e);
       method = METHODS[e % 4]!;
+      // Through the gateway: a route of the proxy that fronts the service (no draw without
+      // gateways, so an estate without them is the one it always was).
+      if (to < o.gateways && rnd() < 0.5) {
+        const k = e % o.routes;
+        host = GATEWAY_HOST;
+        path = basePathOf(to) + entryPath(to, k);
+        method = METHODS[k % 4]!;
+      }
     } else if (kind < 0.95) {
       host = `api.northwind-pay.example`;
       path = `/v2/${NOUNS[k % NOUNS.length]}s/{id}`;
@@ -218,7 +239,72 @@ const defaults = (o: BigEstateOptions) => ({
   tables: o.tables ?? 40,
   settings: o.settings ?? 300,
   seed: o.seed ?? 1,
+  gateways: Math.min(o.gateways ?? 0, o.repos ?? 60),
+  routes: Math.min(o.routes ?? 40, o.entries ?? 360),
 });
+
+/** Gateway proxy g's facts: its routes, each forwarding to the deploy token, and the token. */
+export function bigGatewayFacts(g: number, o: ReturnType<typeof defaults>): Fact[] {
+  const repo = bigGatewayId(g);
+  const files: Files = new Map();
+  const facts: Fact[] = [];
+  const base = { repo, commit: BIG_COMMIT, verified: "line", by: "assistant", conf: "declared" };
+  const push = (f: Record<string, unknown>) => facts.push({ ...base, ...f } as unknown as Fact);
+  const basePath = basePathOf(g);
+  const bp = cited(files, "apiproxy/proxies/default.xml", `<BasePath>${basePath}</BasePath>`);
+  const token = "@targetUrl@";
+  const te = cited(files, "apiproxy/targets/TE-Service.xml", `<URL>${token}</URL>`);
+  for (let k = 0; k < o.routes; k++) {
+    const method = METHODS[k % 4]!;
+    const suffix = entryPath(g, k);
+    const cond = `<Condition>(proxy.pathsuffix MatchesPath "${suffix.replace(/\{id\}/g, "*")}") and (request.verb = "${method}")</Condition>`;
+    const c = cited(files, "apiproxy/proxies/default.xml", cond);
+    const cite = { ...c, value: suffix.replace(/\{id\}/g, "*"), quote: cond };
+    push({
+      kind: "entry",
+      id: `r-${k}`,
+      entryType: "rest",
+      method,
+      path: basePath + suffix,
+      handler: `${repo}/Route${k}`,
+      cite: { ...cite, with: [{ file: bp.file, line: bp.line, value: basePath }] },
+    });
+    push({
+      kind: "call",
+      id: `f-${k}`,
+      callType: "rest",
+      method,
+      path: suffix,
+      host: token,
+      from: `r-${k}`,
+      cite: { ...cite, with: [{ file: te.file, line: te.line, value: token }] },
+    });
+  }
+  for (const env of ["dv", "qa", "prod"]) {
+    const url = `https://${env === "prod" ? "" : `${env}-`}${hostOf(g)}`;
+    const e = cited(files, "config.json", `"name": "${env}",`);
+    const n = cited(files, "config.json", `"name": "${token}",`);
+    const v = cited(files, "config.json", `"value": "${url}"`);
+    push({
+      kind: "config",
+      id: `t-${env}`,
+      settingKind: "config",
+      key: token,
+      value: url,
+      env,
+      cite: {
+        ...v,
+        value: url,
+        quote: `"value": "${url}"`,
+        with: [
+          { file: n.file, line: n.line, value: token },
+          { file: e.file, line: e.line, value: env },
+        ],
+      },
+    });
+  }
+  return facts;
+}
 
 /** The metarepo (under `dir`), every repo's facts in its snapshot and its working file. */
 export async function makeBigEstate(
@@ -245,11 +331,37 @@ export async function makeBigEstate(
         `    system: ${id}`,
         `    hosts: [${hostOf(r)}]`,
       ]),
+      ...Array.from({ length: o.gateways }, (_, g) => [
+        `  - id: ${bigGatewayId(g)}`,
+        `    url: https://git.example.test/forge/${bigGatewayId(g)}.git`,
+        "    type: gateway",
+        "    owner: team-platform",
+        "    system: platform",
+        `    hosts: [${GATEWAY_HOST}]`,
+      ]).flat(),
       "",
     ].join("\n"),
   );
   for (let r = 0; r < o.repos; r++) await writeBigRepo(root, r, o, 0, r < (given.checkouts ?? 2));
-  return { root, options: o, repos };
+  for (let g = 0; g < o.gateways; g++) {
+    const facts = bigGatewayFacts(g, o);
+    await writeFile(
+      join(factsDirOf(root), `${bigGatewayId(g)}.jsonl`),
+      facts.map((f) => JSON.stringify(f)).join("\n") + "\n",
+    );
+    for (const w of factsSnapshotWrites(root, bigGatewayId(g), facts, {
+      commit: BIG_COMMIT,
+      contracts: null,
+    })) {
+      await mkdir(dirname(w.path), { recursive: true });
+      await writeFile(w.path, w.text!);
+    }
+  }
+  return {
+    root,
+    options: o,
+    repos: [...repos, ...Array.from({ length: o.gateways }, (_, g) => bigGatewayId(g))],
+  };
 }
 
 /**

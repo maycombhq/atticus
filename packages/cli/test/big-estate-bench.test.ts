@@ -10,7 +10,7 @@ import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
-import { bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { bigGatewayId, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
 
 /**
  * The benchmark of field report 6 (beta.28.1): not part of `pnpm check`. Run it with
@@ -22,6 +22,10 @@ import { bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
  */
 const ON = !!process.env.ATTICUS_BENCH;
 const N = Number(process.env.ATTICUS_BENCH_REPOS ?? 60);
+/** ATTICUS_BENCH_GATEWAYS: gateway proxy repos (big-estate.ts `gateways`), none by default. */
+const G = Number(process.env.ATTICUS_BENCH_GATEWAYS ?? 0);
+/** ATTICUS_BENCH_WRITES=0: the cold build and the reads only, no write of a changed repo. */
+const WRITES = process.env.ATTICUS_BENCH_WRITES !== "0";
 const say = (l: string) => console.log(`bench ${l}`);
 const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(0, 200)}`) };
 
@@ -69,7 +73,7 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     if (!existsSync(join(root, "catalog", "sources", "build.json"))) {
       await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
-      const made = await timed("generate", () => makeBigEstate(dir, { repos: N }));
+      const made = await timed("generate", () => makeBigEstate(dir, { repos: N, gateways: G }));
       options = made.options;
       const cold = await timed("cold build (catalog build)", () =>
         buildAndWrite(root, { command: "atticus catalog build" }),
@@ -84,10 +88,12 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     // Two changes of one repo, each `verify <repo> --write`'s catalog write: the first after
     // the code changed (an upgrade: the build cache's texts are another version's), the second
     // as every write after it.
-    for (const [edit, label] of [
-      [first, "first write after an upgrade"],
-      [first + 1, "write"],
-    ] as const) {
+    for (const [edit, label] of WRITES
+      ? ([
+          [first, "first write after an upgrade"],
+          [first + 1, "write"],
+        ] as const)
+      : []) {
       const facts = await writeBigRepo(root, r, options, edit, true, false);
       say(`edit ${edit} of ${repo}: ${facts.length} facts`);
       const w = await timed(`verify ${repo} --write, the catalog (${label})`, () =>
@@ -113,6 +119,11 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     await timed("Connect panel read (again)", () =>
       candidatesOf(root, repo, { repo: bigRepoId(2) }),
     );
+    // The repo's calls through the gateway's host, to a proxy that fronts another service.
+    if (G > 1)
+      await timed("Connect panel read (a gateway proxy)", () =>
+        candidatesOf(root, repo, { repo: bigGatewayId(G - 1) }),
+      );
     await timed("pairing preview", () => verifyWritePreview(root, repo));
   }, 3_600_000);
 });
@@ -125,5 +136,7 @@ async function makeOptions() {
     tables: 40,
     settings: 300,
     seed: 1,
+    gateways: Math.min(G, N),
+    routes: 40,
   };
 }

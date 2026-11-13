@@ -14,7 +14,14 @@ import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
-import { BIG_COMMIT, bigRepoFacts, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import {
+  BIG_COMMIT,
+  bigGatewayId,
+  bigRepoFacts,
+  bigRepoId,
+  makeBigEstate,
+  writeBigRepo,
+} from "./big-estate.js";
 
 /**
  * beta.28.1, field report 6: `verify <repo> --write` of one changed repo, the Connect panel's
@@ -42,7 +49,8 @@ let options: Awaited<ReturnType<typeof makeBigEstate>>["options"];
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "atticus-big-speed-"));
-  const made = await makeBigEstate(dir, { repos: REPOS, checkouts: 2 });
+  // With gateway proxies on one host (field report 2's estate): 6 of the 12 services fronted.
+  const made = await makeBigEstate(dir, { repos: REPOS, checkouts: 2, gateways: 6 });
   root = made.root;
   options = made.options;
   const cold = await buildAndWrite(root, { command: "atticus catalog build" });
@@ -95,6 +103,11 @@ describe(`one repo changed on a ${REPOS}-repo estate (beta.28.1)`, () => {
     );
     expect(c.value.view.calls.length).toBeGreaterThan(0);
     expect(c.s).toBeLessThan(CONNECT_CPU_S);
+    // Its calls through the gateway's host, to a proxy fronting another service.
+    const g = await cpu("Connect panel read (a gateway proxy)", () =>
+      candidatesOf(root, repo, { repo: bigGatewayId(5) }),
+    );
+    expect(g.s).toBeLessThan(CONNECT_CPU_S);
     await writeBigRepo(root, 1, options, 3, true, false);
     const p = await cpu("pairing preview", () => verifyWritePreview(root, repo));
     expect(p.value?.preview?.catalog?.files.length).toBeGreaterThan(0);
