@@ -245,23 +245,26 @@ export interface PairRow {
   api: string;
   /** 3.14: the box a call with an arrow already goes to now (a row to move here). */
   joins?: string;
+  /** 3.14: who paired it with that box: pairing it here replaces their word, said. */
+  pairedBy?: string;
 }
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
 
-/** An add's rows: the repo's calls that join nothing yet (Connect to…'s), its suggestion picked. */
+/**
+ * An add's rows: the repo's loose calls as Connect to… lists them (no arrow drawn, asked, left,
+ * outside to a box nothing draws), each sure suggestion picked. A call with an arrow already is
+ * `movableRowsForAdd`'s, and one going to this box already is no row (nothing to pair).
+ */
 export function pairRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
-  return (
-    c.calls
-      // A call with an arrow already is moved by Redirect this link…, not added again (3.14).
-      .filter((x) => x.status !== "paired" && x.status !== "joined")
-      .map((x) => ({
-        call: x.fact,
-        label: `${x.method ? `${x.method} ` : ""}${x.path}`,
-        at: x.at,
-        api: x.confident && x.suggestion ? x.suggestion.api : "",
-      }))
-  );
+  return c.calls
+    .filter((x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here")
+    .map((x) => ({
+      call: x.fact,
+      label: `${x.method ? `${x.method} ` : ""}${x.path}`,
+      at: x.at,
+      api: x.confident && x.suggestion ? x.suggestion.api : "",
+    }));
 }
 
 /**
@@ -278,6 +281,7 @@ export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       api: "",
       // Always set: it marks the row as one to move ("" when the box isn't known).
       joins: x.joins ?? "",
+      ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
     }));
 }
 
@@ -394,7 +398,12 @@ export function PairRowsView(p: {
         <div key={r.call} className="stack" style={{ gap: 2 }}>
           <label htmlFor={`${id}-${i}`} className="edit-map-call">
             <span className="mono">{r.label}</span> <span className="hud">{r.at}</span>
-            {r.joins && <span className="hud"> · {E.add.joinsNow(r.joins)}</span>}
+            {r.joins && (
+              <span className="hud">
+                {" · "}
+                {r.pairedBy ? E.add.pairedWith(r.pairedBy, r.joins) : E.add.joinsNow(r.joins)}
+              </span>
+            )}
           </label>
           <select
             id={`${id}-${i}`}
@@ -493,7 +502,7 @@ function PairFields(p: {
       {(() => {
         const loose = new Set(
           cands.data.calls
-            .filter((x) => x.status !== "paired" && x.status !== "joined")
+            .filter((x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here")
             .map((x) => x.fact),
         );
         const moved = drawsAnother(p.rows, loose, p.redirect);

@@ -67,7 +67,7 @@ export function initialPicks(v: Api.LinkCandidatesViewT): {
   const ticked = new Set<string>();
   for (const c of v.calls) {
     // A call with an arrow already is moved only when the person picks it (field report 4).
-    if (c.status === "paired" || c.status === "joined") continue;
+    if (c.status === "paired" || c.status === "joined" || c.status === "here") continue;
     if (c.suggestion) {
       picked[c.fact] = c.suggestion.api;
       // Only the confident ones start ticked: the rest a person looks at (Tick all suggested).
@@ -199,9 +199,14 @@ export function Pairing(p: {
     setTicked(i.ticked);
   }, [v]);
   const loose = useMemo(
-    () => v?.calls.filter((c) => c.status !== "paired" && c.status !== "joined") ?? [],
+    () =>
+      v?.calls.filter(
+        (c) => c.status !== "paired" && c.status !== "joined" && c.status !== "here",
+      ) ?? [],
     [v],
   );
+  // The review of beta.28.1 (S2): the calls that go to this box already, said, never paired again.
+  const here = useMemo(() => v?.calls.filter((c) => c.status === "here") ?? [], [v]);
   // Beta.28.1 (field report 4): the calls with an arrow already, to move to this box.
   const movable = useMemo(() => v?.calls.filter((c) => c.status === "joined") ?? [], [v]);
   const [find, setFind] = useState("");
@@ -327,7 +332,9 @@ export function Pairing(p: {
         ) : c.status === "outside" && c.joins && c.joins !== p.box.system ? (
           <span className="box-why">{C.outsideWhy(c.joins)}</span>
         ) : c.status === "joined" && c.joins ? (
-          <span className="box-why">{C.joinsNow(c.joins)}</span>
+          <span className="box-why">
+            {c.pairedBy ? C.pairedWith(c.pairedBy, c.joins) : C.joinsNow(c.joins)}
+          </span>
         ) : (
           c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>
         )}
@@ -373,6 +380,12 @@ export function Pairing(p: {
         {c.suggestion && picked[c.fact] === c.suggestion.api && (
           <span className="box-why">{C.suggested(C.why[c.suggestion.why]!)}</span>
         )}
+        {/* N3: a person's word is replaced only knowingly. */}
+        {c.pairedBy && c.joins && picked[c.fact] && ticked.has(c.fact) && (
+          <span className="box-why" role="note">
+            {C.replacesPairing(c.pairedBy, c.joins, d.toName)}
+          </span>
+        )}
       </li>
     );
   };
@@ -405,10 +418,14 @@ export function Pairing(p: {
           <Cmd text={d.noApis.command} />
         </div>
       )}
+      {!d.noCalls && !d.calls.length && <p className="ev-say">{C.noJoinable(d.from)}</p>}
       {!d.noCalls && !loose.length && movable.length > 0 && (
         <p className="ev-say">{C.noLoose(linkedWords(movable))}</p>
       )}
-      {!d.noCalls && !loose.length && !movable.length && d.calls.length > 0 && (
+      {!d.noCalls && !loose.length && !movable.length && here.length > 0 && (
+        <p className="ev-say">{C.allHere(d.toName)}</p>
+      )}
+      {!d.noCalls && !loose.length && !movable.length && !here.length && d.calls.length > 0 && (
         <p className="ev-say">{C.allPaired(d.toName)}</p>
       )}
       {loose.length > 0 && d.apis.length > 0 && (
@@ -470,6 +487,28 @@ export function Pairing(p: {
           </p>
           <ul className="box-calls" aria-labelledby={`${callsId}-m`}>
             {movable.map(row)}
+          </ul>
+        </details>
+      )}
+      {here.length > 0 && (
+        <details className="stack">
+          <summary className="hud">{C.hereTitle(d.toName, here.length)}</summary>
+          <ul className="box-calls">
+            {here.map((c) => {
+              const api = d.apis.find((a) => a.id === c.now);
+              return (
+                <li key={c.fact} className="box-call">
+                  <span className="box-path">
+                    {c.method && <span className="box-method">{c.method}</span>}
+                    <code className="mono">{c.path}</code>
+                  </span>
+                  <span className="box-at mono">{c.at}</span>
+                  <span className="box-why">
+                    {C.hereWhy(api ? `${api.method ?? ""} ${api.path}`.trim() : d.toName)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </details>
       )}

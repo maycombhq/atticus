@@ -263,6 +263,52 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
     expect(initialPicks(undrawn).picked).toEqual({ "call.get.instruments-ping": "e-ping" });
   });
 
+  it("says a call going here already, with its API, and never offers to pair it (S2)", () => {
+    const here = {
+      ...joined,
+      calls: [
+        { ...joined.calls[0]!, status: "here" as const, joins: "forge-instruments", now: "e-ping" },
+      ],
+    };
+    expect(initialPicks(here)).toEqual({ picked: {}, ticked: new Set() });
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing from="forge_instruments_1-0" box={box} cands={{ state: "ready", data: here }} />,
+      ),
+    );
+    expect(out).toContain(C.allHere("forge-instruments"));
+    expect(out).toContain(C.hereTitle("forge-instruments", 1));
+    expect(out).toContain(C.hereWhy("GET /instruments/ping"));
+    expect(out).not.toContain(`aria-label="${C.col.api}: GET /instruments/ping"`);
+    expect(out).not.toContain(C.preview);
+  });
+
+  it("says who paired a call with another box, and warns before replacing their word (N3)", () => {
+    const by = {
+      ...joined,
+      calls: [{ ...joined.calls[0]!, pairedBy: "sam" }],
+    };
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing from="forge_instruments_1-0" box={box} cands={{ state: "ready", data: by }} />,
+      ),
+    );
+    expect(out).toContain(C.pairedWith("sam", "forge-ledger"));
+    // The warning comes with a pick: the panel starts with none for a call with an arrow.
+    expect(out).not.toContain(C.replacesPairing("sam", "forge-ledger", "forge-instruments"));
+    expect(C.replacesPairing("sam", "forge-ledger", "forge-instruments")).toContain("replaces");
+  });
+
+  it("says so when the repo has calls on record and none Connect pairs (N1)", () => {
+    const none = { ...joined, calls: [] };
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing from="forge_instruments_1-0" box={box} cands={{ state: "ready", data: none }} />,
+      ),
+    );
+    expect(out).toContain(C.noJoinable("forge_instruments_1-0"));
+  });
+
   it("names each box the calls go to, with how many", () => {
     expect(
       linkedWords([

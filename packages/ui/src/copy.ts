@@ -5443,6 +5443,8 @@ export const COPY = {
       moveCaption: (from: string, to: string) =>
         `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
       joinsNow: (box: string) => `goes to ${box} now`,
+      pairedWith: (by: string, box: string) =>
+        `paired by a person (${by}) with ${box}: pairing it here replaces their word`,
       noApis: (to: string) =>
         `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
       pickOne: "Pick the API for at least one call.",
@@ -5748,6 +5750,18 @@ export const COPY = {
     /** Where a call goes now (a joined, undrawn or outside call). */
     joinsNow: (box: string) => `goes to ${box} now`,
     undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,
+    /** The review of beta.28.1 (N3): a call a person paired with the box it goes to now. */
+    pairedWith: (by: string, box: string) => `paired by a person (${by}) with ${box}`,
+    replacesPairing: (by: string, box: string, to: string) =>
+      `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${box} goes.`,
+    /** S2: calls with an arrow to this very box, never paired again. */
+    hereTitle: (to: string, n: number) => `Going to ${to} already (${n})`,
+    hereWhy: (api: string) => `goes here already, to ${api}: nothing to pair`,
+    allHere: (to: string) =>
+      `Every call of this repo goes to ${to} already, with an arrow: nothing to pair. To change which API one goes to, pick its arrow and use This link is wrong.`,
+    /** N1: the repo has calls on record, and none Connect pairs. */
+    noJoinable: (from: string) =>
+      `None of ${from}'s calls on record is one Connect to… pairs (a REST, SOAP, gRPC or GraphQL call): its topics, queues and tables are linked from what its code reads. To say one the code can't show, use Declare a link….`,
     outsideWhy: (target: string) => `left outside the estate, to ${target}, which no box draws`,
     calls: "Calls that join nothing",
     caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
@@ -5770,6 +5784,7 @@ export const COPY = {
       paired: "paired by a person",
       joined: "has an arrow",
       undrawn: "no arrow drawn",
+      here: "goes here already",
     } as Record<string, string>,
     why: {
       "same-path": "same path",

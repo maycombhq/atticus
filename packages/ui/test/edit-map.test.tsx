@@ -850,6 +850,17 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
           joins: "forge-ledger",
         },
         { fact: "c3", callType: "rest", path: "/y", at: "x:1", status: "paired", paired: "e1" },
+        // Going to this box already: no row at all (S2).
+        { fact: "c4", callType: "rest", path: "/z", at: "x:2", status: "here", now: "e1" },
+        {
+          fact: "c5",
+          callType: "rest",
+          path: "/w",
+          at: "x:3",
+          status: "joined",
+          joins: "forge-risk",
+          pairedBy: "sam",
+        },
       ],
       apis: [{ id: "e1", kind: "route", method: "GET", path: "/instruments/ping" }],
     } as unknown as Api.LinkCandidatesViewT;
@@ -864,6 +875,7 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
         api: "",
         joins: "forge-ledger",
       },
+      { call: "c5", label: "/w", at: "x:3", api: "", joins: "forge-risk", pairedBy: "sam" },
     ]);
     const page = html(
       <MoveCallsView
@@ -877,7 +889,9 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     );
     expect(page).toContain("<details");
     expect(page).toContain(" open");
-    expect(page).toContain(esc(E.add.moveTitle(1)));
+    expect(page).toContain(esc(E.add.moveTitle(2)));
+    // N3: who paired it with the other box, and that pairing here replaces their word.
+    expect(page).toContain(esc(E.add.pairedWith("sam", "forge-risk")));
     expect(page).toContain(esc(E.add.moveCaption("forge_instruments_1-0", "forge-instruments")));
     expect(page).toContain(esc(E.add.joinsNow("forge-ledger")));
     expect(page).toContain(`aria-label="${esc(E.add.callApi("GET /instruments/ping"))}"`);
