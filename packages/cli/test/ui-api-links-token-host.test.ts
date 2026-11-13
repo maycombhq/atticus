@@ -221,6 +221,24 @@ describe("Declare a link… from a box no System of the profiles is (field repor
     expect(again.created).toBeUndefined();
   });
 
+  it("takes the System away again with its last declaration's Undo, and says so (S3)", async () => {
+    const profile = join(root, "org-pack", "profiles", "forge", "profile.yaml");
+    expect(readFileSync(profile, "utf8")).toMatch(
+      new RegExp(`- id: ${SERVICE} # added from the canvas by pat on \\d{4}-\\d{2}-\\d{2}`),
+    );
+    const r = await call("/api/declared-links/undo", "POST", {
+      kind: "call",
+      system: SERVICE,
+      value: "GET /forge/instruments/v1/ping",
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(Api.FileChangeResult.parse(r.body).removed).toEqual({
+      system: SERVICE,
+      file: "org-pack/profiles/forge/profile.yaml",
+    });
+    expect(readFileSync(profile, "utf8")).not.toContain(`id: ${SERVICE}`);
+  });
+
   it("still refuses a system no profile has and no repo of the manifest is drawn in", async () => {
     const r = await call("/api/declared-links", "POST", {
       kind: "call",

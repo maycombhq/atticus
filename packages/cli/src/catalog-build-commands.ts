@@ -1268,6 +1268,11 @@ export async function applyMapEdits(
               io.out(
                 `${said}: withdrew ${decl.value} from ${decl.system}'s declarations in ${res.rel}.`,
               );
+              // S3: the System the canvas added for it goes with its last declaration.
+              if (res.removed)
+                io.out(
+                  `${said}: took away the system ${res.removed} from ${res.rel} (added from the canvas, and nothing is declared on it now).`,
+                );
               targets.add(target);
               continue;
             }

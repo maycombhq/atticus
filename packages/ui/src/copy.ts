@@ -5603,6 +5603,9 @@ export const COPY = {
   },
   corrections: {
     title: "Corrections and declarations",
+    /** The review of beta.28.1 (S3): a System added from the canvas goes with its last declaration. */
+    removedSystem: (system: string, file: string) =>
+      `${system} was added from the canvas for its declarations, and none is left: it is taken out of ${file} too.`,
     show: "Show the corrections",
     loading: "Reading the corrections…",
     failed: (why: string) => `The corrections couldn't be read: ${why}`,

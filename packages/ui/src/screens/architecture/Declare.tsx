@@ -47,6 +47,16 @@ export function CreatedNote(p: { created?: Api.FileChangeResultT["created"]; wri
   );
 }
 
+/** S3: the System the canvas added, taken away with its last declaration (Undo), said. */
+export function RemovedNote(p: { removed?: Api.FileChangeResultT["removed"] }) {
+  if (!p.removed) return null;
+  return (
+    <p className="ev-say" role="status">
+      {K.removedSystem(p.removed.system, p.removed.file)}
+    </p>
+  );
+}
+
 /** A request built from the form, or none when it lacks the topic or the route. */
 export function declareBody(
   system: string,
@@ -214,7 +224,9 @@ export function CorrectionsList(p: {
 }) {
   const [busy, setBusy] = useState<number | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [done, setDone] = useState<{ verify: string; commit: string } | undefined>();
+  const [done, setDone] = useState<
+    { verify: string; commit: string; removed?: Api.FileChangeResultT["removed"] } | undefined
+  >();
   const undo =
     p.undo ??
     ((u: Api.BoxCorrectionsT["items"][number]["undo"]) =>
@@ -263,7 +275,11 @@ export function CorrectionsList(p: {
                   setError(undefined);
                   undo(x.undo)
                     .then((r) => {
-                      setDone({ verify: r.verify, commit: r.commit });
+                      setDone({
+                        verify: r.verify,
+                        commit: r.commit,
+                        ...("removed" in r && r.removed ? { removed: r.removed } : {}),
+                      });
                       p.of.reload?.();
                     })
                     .catch((e: unknown) => setError(errorOf(e)))
@@ -281,6 +297,7 @@ export function CorrectionsList(p: {
           {error}
         </p>
       )}
+      {done && <RemovedNote removed={done.removed} />}
       {done && <WrittenNext said={K.undone} verify={done.verify} commit={done.commit} />}
     </div>
   );

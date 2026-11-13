@@ -220,6 +220,7 @@ export function uiDeclaredRoutes(
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
             commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${b.data.system}: a declaration undone`)}"`,
+            ...(res.removed ? { removed: { system: res.removed, file: res.rel } } : {}),
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {

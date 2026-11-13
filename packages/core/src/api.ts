@@ -615,7 +615,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   409); one a person paired with the box it goes to says who (`pairedBy`). POST
  *   /api/declared-links (and Edit the map's adds) from a box no System of the profiles is (a repo
  *   the manifest lists with no System) adds that System to the repo's profile first, and says so
- *   (`created`). Additive only.
+ *   (`created`), and Undo of its last declaration takes that System away again (`removed`).
+ *   Additive only.
  */
 export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
@@ -5828,6 +5829,11 @@ export const FileChangeResult = z.object({
    * repo the manifest lists with no System): the person is told it was added, and where.
    */
   created: z.object({ system: z.string(), file: z.string() }).optional(),
+  /**
+   * 3.14: the System the canvas added for a declaration, taken away with its last one (Undo):
+   * the person is told it went, and from where.
+   */
+  removed: z.object({ system: z.string(), file: z.string() }).optional(),
 });
 /**
  * ADR 0179: a stroke drawn on the canvas for a change (a call, a topic, a table, a step removed

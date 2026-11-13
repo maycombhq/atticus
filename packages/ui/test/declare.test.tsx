@@ -4,6 +4,7 @@ import { COPY } from "../src/copy.js";
 import {
   AddBoxForm,
   CreatedNote,
+  RemovedNote,
   CorrectionsList,
   declareBody,
   DeclarePanel,
@@ -57,6 +58,11 @@ describe("declaring from a box no System of the profiles is (beta.28.1, field re
     expect(after).toContain(COPY.declare.created(created.system, created.file));
     expect(after).toContain('role="status"');
     expect(renderToStaticMarkup(<CreatedNote written />)).toBe("");
+    // Undo of its last declaration takes it away again, said (S3).
+    expect(un(renderToStaticMarkup(<RemovedNote removed={created} />))).toContain(
+      COPY.corrections.removedSystem(created.system, created.file),
+    );
+    expect(renderToStaticMarkup(<RemovedNote />)).toBe("");
   });
 });
 
