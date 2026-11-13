@@ -18,6 +18,8 @@ import {
   trapTab,
   MINIMAP_FROM,
   neighbourhood,
+  nextAsideWidth,
+  ASIDE_WIDTH,
   panBy,
   searchNodes,
   ViewerToolbar,
@@ -259,6 +261,41 @@ describe("the viewer's controls", () => {
     expect(full).toContain(esc(V.fullScreenOn));
     // In full screen the stage fills the frame by CSS, not a fixed height.
     expect(full).not.toContain('style="height:640px"');
+  });
+});
+
+describe("the details beside the picture can be made wider (beta.28)", () => {
+  it("has a labelled handle to drag or step with keys, and a button to widen it at once", () => {
+    const out = html(
+      <DiagramFrame
+        title="Estate"
+        full={false}
+        height={640}
+        toolbar={<span />}
+        aside={<p>inspector</p>}
+        asideBeside
+        onKeyAction={noop}
+      >
+        <div className="arch-canvas" />
+      </DiagramFrame>,
+    );
+    expect(out).toContain('role="separator"');
+    expect(out).toContain('aria-orientation="vertical"');
+    expect(out).toContain(`aria-label="${esc(V.resizeDetails)}"`);
+    expect(out).toContain(`aria-valuemin="${ASIDE_WIDTH.min}"`);
+    expect(out).toContain(esc(V.widenDetails));
+  });
+
+  it("steps with the arrow keys, Home and End, never past its bounds", () => {
+    const max = 900;
+    // The details are at the right: Left widens them, Right narrows them.
+    expect(nextAsideWidth(340, "ArrowLeft", max)).toBe(340 + ASIDE_WIDTH.step);
+    expect(nextAsideWidth(340, "ArrowRight", max)).toBe(340 - ASIDE_WIDTH.step);
+    expect(nextAsideWidth(340, "Home", max)).toBe(ASIDE_WIDTH.min);
+    expect(nextAsideWidth(340, "End", max)).toBe(max);
+    expect(nextAsideWidth(ASIDE_WIDTH.min, "ArrowRight", max)).toBe(ASIDE_WIDTH.min);
+    expect(nextAsideWidth(max, "ArrowLeft", max)).toBe(max);
+    expect(nextAsideWidth(340, "Enter", max)).toBeUndefined();
   });
 });
 

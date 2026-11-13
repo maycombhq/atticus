@@ -13,6 +13,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Changed
 
+- **The details beside the Map can be made wider.** A handle between the picture and the details is dragged, or stepped with the arrow keys (Home and End for the narrowest and widest; a double-click puts it back), and **Wider details** widens them at once to about 60% of the picture's frame. The width is remembered on this browser.
 - **A call that cites no line of its caller's points to Delete this link.** This link is wrong (and All calls on this arrow are wrong) said to read the caller's repo again, with its command, for a call with no caller's line to correct; it now says that Delete this link, at the top of the link's panel, takes the arrow away. The per-call corrections are as they were.
 
 ### Fixed

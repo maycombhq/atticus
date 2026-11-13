@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -21,6 +22,50 @@ import { COPY } from "../copy.js";
  */
 
 const T = COPY.viewer;
+
+/**
+ * Beta.28 (the owner: "the panel is too cramped"): the details beside the picture can be made
+ * wider, by a handle between them and the picture (dragged, or stepped with the arrow keys) or at
+ * once by a button. Widths in px; the picture always keeps `keep` of the stage.
+ */
+export const ASIDE_WIDTH = { min: 280, step: 40, wide: 0.6, keep: 240 } as const;
+const ASIDE_KEY = "atticus.detailsWidth";
+
+/** The width a key gives the details (they are at the right: Left widens), or undefined. */
+export function nextAsideWidth(w: number, key: string, max: number): number | undefined {
+  const clamp = (x: number) =>
+    Math.min(Math.max(x, ASIDE_WIDTH.min), Math.max(max, ASIDE_WIDTH.min));
+  switch (key) {
+    case "ArrowLeft":
+      return clamp(w + ASIDE_WIDTH.step);
+    case "ArrowRight":
+      return clamp(w - ASIDE_WIDTH.step);
+    case "Home":
+      return clamp(ASIDE_WIDTH.min);
+    case "End":
+      return clamp(max);
+    default:
+      return undefined;
+  }
+}
+
+/** The width this viewer last chose (a per-viewer convenience: none, or a bad one, is none). */
+function savedAsideWidth(): number | undefined {
+  try {
+    const n = Number(globalThis.localStorage?.getItem(ASIDE_KEY));
+    return Number.isFinite(n) && n >= ASIDE_WIDTH.min ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function saveAsideWidth(n: number | undefined): void {
+  try {
+    if (n === undefined) globalThis.localStorage?.removeItem(ASIDE_KEY);
+    else globalThis.localStorage?.setItem(ASIDE_KEY, String(Math.round(n)));
+  } catch {
+    // Storage blocked: the width lasts as long as the page.
+  }
+}
 
 export interface Viewport {
   x: number;
@@ -577,6 +622,50 @@ export function DiagramFrame(p: {
 }) {
   const [open, setOpen] = useState(() => !(p.asideIdle && narrowWindow()));
   const asideId = useId();
+  // Beta.28: the details' width beside the picture (undefined: the stylesheet's own).
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const [asideW, setAsideW] = useState<number | undefined>(undefined);
+  useEffect(() => setAsideW(savedAsideWidth()), []);
+  const maxAside = () =>
+    Math.max(
+      ASIDE_WIDTH.min,
+      (stageRef.current?.getBoundingClientRect().width ?? 0) - ASIDE_WIDTH.keep,
+    );
+  const currentAside = () =>
+    asideW ?? asideRef.current?.getBoundingClientRect().width ?? ASIDE_WIDTH.min;
+  const chooseAside = (n: number | undefined) => {
+    setAsideW(n);
+    saveAsideWidth(n);
+  };
+  const wideNow = asideW !== undefined && asideW >= maxAside() * ASIDE_WIDTH.wide - 1;
+  const onHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const n = nextAsideWidth(currentAside(), e.key, maxAside());
+    if (n === undefined) return;
+    e.preventDefault();
+    e.stopPropagation();
+    chooseAside(n);
+  };
+  const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const right = stage.getBoundingClientRect().right;
+      const max = maxAside();
+      chooseAside(Math.min(Math.max(right - ev.clientX, ASIDE_WIDTH.min), max));
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  };
   const own = useRef<HTMLDivElement | null>(null);
   const ref = p.frameRef ?? own;
   // Beta.27: the keys line wraps in a narrow frame; the picture gives it the room it takes, so
@@ -683,6 +772,7 @@ export function DiagramFrame(p: {
         </p>
       )}
       <div
+        ref={stageRef}
         className={`viewer-stage${p.aside && p.asideBeside ? " beside" : ""}`}
         style={p.full ? undefined : { height: stageHeight(p.height, keysH) }}
       >
@@ -701,7 +791,39 @@ export function DiagramFrame(p: {
                 {T.showDetails}
               </button>
             )}
-            <aside id={asideId} className="viewer-aside" aria-label={T.details} hidden={!shown}>
+            {shown && (
+              <div
+                role="separator"
+                tabIndex={0}
+                className="viewer-aside-resize"
+                aria-orientation="vertical"
+                aria-controls={asideId}
+                aria-label={T.resizeDetails}
+                aria-valuemin={ASIDE_WIDTH.min}
+                aria-valuenow={Math.round(asideW ?? ASIDE_WIDTH.min)}
+                onKeyDown={onHandleKey}
+                onPointerDown={onHandleDown}
+                onDoubleClick={() => chooseAside(undefined)}
+              />
+            )}
+            <aside
+              id={asideId}
+              ref={asideRef}
+              className="viewer-aside"
+              aria-label={T.details}
+              hidden={!shown}
+              style={asideW === undefined ? undefined : { flexBasis: `${asideW}px` }}
+            >
+              <button
+                type="button"
+                className="btn viewer-btn viewer-aside-widen"
+                aria-pressed={wideNow}
+                onClick={() =>
+                  chooseAside(wideNow ? undefined : Math.round(maxAside() * ASIDE_WIDTH.wide))
+                }
+              >
+                {wideNow ? T.narrowDetails : T.widenDetails}
+              </button>
               <button
                 ref={closeRef}
                 type="button"
