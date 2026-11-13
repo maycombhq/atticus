@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   addProfileSystem,
   Api,
+  cmpText,
   declaredOf,
   declareLink,
   DeclareError,
@@ -64,8 +65,23 @@ export function systemToCreate(
 ): { platform: string; owner?: string } | undefined {
   if (op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === system)))
     return undefined;
-  const r = estateRepos(op).find((x) => (x.system ?? factIdPart(x.id)) === system);
-  return r ? { platform: r.platform, ...(r.owner ? { owner: r.owner } : {}) } : undefined;
+  // The review (N4): the same pick whatever order the profiles load in. A platform with a profile
+  // to add it to first, then by platform and repo id; its owner only when the platform's repos
+  // drawn in it agree on one.
+  const hasProfile = new Set(op.profiles.filter((p) => !!p.profile).map((p) => p.platform));
+  const drawn = estateRepos(op)
+    .filter((x) => (x.system ?? factIdPart(x.id)) === system)
+    .sort(
+      (a, b) =>
+        Number(hasProfile.has(b.platform)) - Number(hasProfile.has(a.platform)) ||
+        cmpText(a.platform, b.platform) ||
+        cmpText(a.id, b.id),
+    );
+  const r = drawn[0];
+  if (!r) return undefined;
+  const owners = new Set(drawn.filter((x) => x.platform === r.platform).map((x) => x.owner));
+  const owner = owners.size === 1 ? [...owners][0] : undefined;
+  return { platform: r.platform, ...(owner ? { owner } : {}) };
 }
 
 export function uiDeclaredRoutes(

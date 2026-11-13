@@ -324,3 +324,20 @@ describe("a System added from the canvas (the review of beta.28.1, S3)", () => {
     expect(await readFile(file, "utf8")).toContain("id: forge-instruments");
   });
 });
+
+describe("a System to add where its platform has no profile yet (the review of beta.28.1, N4)", () => {
+  it("writes nothing, and says exactly which file to add", async () => {
+    const root = await metarepo();
+    await mkdir(join(root, "org-pack/profiles/harbor"), { recursive: true });
+    const d = { kind: "call" as const, system: "harbor-ledger", route: "GET /x" };
+    const err = await declareLink(root, d, {
+      by: "pat",
+      at,
+      create: { platform: "harbor" },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DeclareError);
+    expect((err as DeclareError).message).toBe(
+      "harbor-ledger is drawn for a repo of the harbor platform, which has no profile yet: add org-pack/profiles/harbor/profile.yaml (schemaVersion: 1, platform: harbor, a name, systems: []), then declare the link again; Atticus adds harbor-ledger to it then.",
+    );
+  });
+});

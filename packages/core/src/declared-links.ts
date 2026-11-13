@@ -193,9 +193,14 @@ async function newSystemNode(
   const f = (await profilesOf(root)).find((x) =>
     x.rel.endsWith(`/profiles/${create.platform}/profile.yaml`),
   );
-  if (!f) return undefined;
-  const raw = await readFile(f.path, "utf8").catch(() => undefined);
-  if (raw === undefined) return undefined;
+  // N4: a platform with no profile yet is no dead end: the person is told the file to add.
+  const rel = `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/profiles/${create.platform}/profile.yaml`;
+  const raw = f ? await readFile(f.path, "utf8").catch(() => undefined) : undefined;
+  if (!f || raw === undefined)
+    throw new DeclareError(
+      "not-found",
+      `${system} is drawn for a repo of the ${create.platform} platform, which has no profile yet: add ${rel} (schemaVersion: 1, platform: ${create.platform}, a name, systems: []), then declare the link again; Atticus adds ${system} to it then.`,
+    );
   const eol = eolOf(raw);
   const disk = lfOnly(raw);
   const doc = parseDocument(disk);
