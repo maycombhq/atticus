@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { serializeRecord, type CatalogRecord } from "@maycombhq/core";
 import { parseLegacyJoins, parseReadersSlot } from "@maycombhq/scanner";
+import { parse as parseYaml } from "yaml";
 import { main } from "../src/main.js";
 
 /**
@@ -534,6 +536,86 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const again = await run(["catalog", "build", "--root", root]);
       expect(again.code).toBe(1);
       expect(again.out + again.err).toContain(`changed: catalog/generated/endpoint/${file}`);
+    },
+    T,
+  );
+
+  it(
+    "a legacy join to a repo removed from the manifests leaves with it, whether or not prune took its orphaned slot first (seed 1403991699)",
+    async () => {
+      // Beta.28.1: the build knew a legacy arrow's callee repo only from that repo's readers
+      // slot, so once prune removed the orphaned slot the arrow stayed, its callee gone. The
+      // orphaned slot is "not built from" (ADR 0195 point 4): the joins slot's own inputs say
+      // which repos had a slot at the upgrade, so an end no slot names now is one of theirs.
+      const root = await beta26();
+      const ledgerApis = new Set(
+        Object.entries(generated(root))
+          .filter(([p, t]) => p.startsWith("component/") && /^repo: forge-ledger$/m.test(t))
+          .map(([p]) => p.slice("component/".length, -".yaml".length)),
+      );
+      expect(ledgerApis.size).toBeGreaterThan(0);
+      // Beta.26 adopted arrows from a caller's read alone (the callee's code cited nowhere): its
+      // arrows to the ledger keep only their callers' evidence, so no evidence names the ledger.
+      const { writeFileSync } = await import("node:fs");
+      for (const [p, t] of Object.entries(generated(root))) {
+        if (!p.startsWith("interface/")) continue;
+        if (![...ledgerApis].some((c) => new RegExp(`^(from|to): ${c}$`, "m").test(t))) continue;
+        const r = parseYaml(t) as { evidence: { repo?: string }[] };
+        const kept = r.evidence.filter((e) => e.repo !== "forge-ledger");
+        if (!kept.length) continue;
+        writeFileSync(
+          join(root, "catalog/generated", p),
+          serializeRecord({ ...r, evidence: kept } as unknown as CatalogRecord),
+        );
+      }
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      const joins = parseLegacyJoins(sources(root)["legacy/joins.json"]!);
+      expect(joins.ok).toBe(true);
+      const toLedger = (rs: { kind: string; id: string }[]) =>
+        rs
+          .filter((r) => {
+            const x = r as { kind: string; from?: string; to?: string };
+            return (
+              x.kind === "Interface" && (ledgerApis.has(x.from ?? "") || ledgerApis.has(x.to ?? ""))
+            );
+          })
+          .map((r) => `Interface/${r.id}`)
+          .sort();
+      const joined = joins.ok ? toLedger(joins.slot.records) : [];
+      expect(joined.length, "the fixture has a legacy join with forge-ledger").toBeGreaterThan(0);
+      const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+      writeFileSync(
+        manifest,
+        readFileSync(manifest, "utf8").replace(/^ {2}- id: forge-ledger\n(?: {4}.*\n|\n)*/m, ""),
+      );
+      const listed = async () => {
+        const b = await run(["catalog", "build", "--root", root, "--json"]);
+        expect(b.code).toBe(1);
+        const r = JSON.parse(b.out) as {
+          refused: { allowRemovals: number; removals: { kind: string; id: string }[] };
+        };
+        return r.refused;
+      };
+      const before = await listed();
+      const removedBefore = before.removals.map((x) => `${x.kind}/${x.id}`).sort();
+      for (const j of joined) expect(removedBefore).toContain(j);
+      expect((await run(["catalog", "prune", "--root", root, "--yes"])).code).toBe(0);
+      expect(existsSync(join(root, "catalog/sources/readers/forge-ledger.json"))).toBe(false);
+      const after = await listed();
+      expect(after.removals.map((x) => `${x.kind}/${x.id}`).sort()).toEqual(removedBefore);
+      const ok = await run([
+        "catalog",
+        "build",
+        "--root",
+        root,
+        "--allow-removals",
+        String(after.allowRemovals),
+      ]);
+      expect(ok.code, ok.out + ok.err).toBe(0);
+      for (const [p, t] of Object.entries(generated(root)))
+        if (p.startsWith("interface/"))
+          for (const c of ledgerApis)
+            expect(t, p).not.toMatch(new RegExp(`^(from|to): ${c}$`, "m"));
     },
     T,
   );

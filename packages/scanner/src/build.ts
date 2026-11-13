@@ -651,6 +651,38 @@ function endsGone(r: CatalogRecord, ends: Map<string, string[]>, live: Set<strin
   return [...new Set(out)].sort(cmpText);
 }
 
+/**
+ * `ends` with each end of a legacy arrow that no slot names now, and no record holds, given the
+ * repos it can be of: those the upgrade had a readers or facts slot of (the joins slot's
+ * `inputs`) and that have none now. Its own slot gone (a prune of an orphaned slot), the end is
+ * one of theirs.
+ */
+function withUnslottedEnds(
+  ends: Map<string, string[]>,
+  legacy: readonly CatalogRecord[],
+  /** The ids of the records this build and the legacy slots hold: no repo's end to lose. */
+  held: ReadonlySet<string>,
+  inputs: Readonly<Record<string, string>>,
+  slots: BuildSlots,
+): Map<string, string[]> {
+  const unslotted = new Set<string>();
+  for (const path of Object.keys(inputs)) {
+    const m = /^catalog\/sources\/(?:readers\/(.+)\.json|facts\/(.+)\.jsonl)$/.exec(path);
+    const repo = m?.[1] ?? m?.[2];
+    if (repo && !slots.readers.has(repo) && !slots.facts.has(repo)) unslotted.add(repo);
+  }
+  if (!unslotted.size) return ends;
+  const repos = [...unslotted].sort(cmpText);
+  const out = new Map(ends);
+  for (const r of legacy) {
+    if (r.kind !== "Interface") continue;
+    const x = r as unknown as { from?: string; to?: string };
+    for (const end of [x.from, x.to])
+      if (end && !out.has(end) && !held.has(end)) out.set(end, repos);
+  }
+  return out;
+}
+
 /** One repo's slot files on disk, relative to the root (for prune and the orphan report). */
 function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
   const out: string[] = [];
@@ -918,6 +950,21 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     ...legacyAll,
     ...[...i.slots.readers.values()].flatMap((x) => ("slot" in x ? x.slot.records : [])),
   ]);
+  // Beta.28.1 (seed 1403991699): an orphaned slot is not built from (point 4) and prune may take
+  // it, so a legacy arrow's end can't rest on it alone. An end no slot names now, and no record
+  // of this build or the legacy slots holds (a profile's system is one), is a component
+  // or system of a repo the upgrade had a slot of (the joins slot's `inputs`) and has none now:
+  // when every such repo is gone (removed from the manifests or archived), the arrow leaves with
+  // them, through the removal guard; when one may be live (unread for now), it stays (point 6).
+  const goneEnds = legacySlot
+    ? withUnslottedEnds(
+        ends,
+        [...legacyAll, ...legacySlot.slot.records],
+        new Set([...records, ...legacyAll].map((r) => r.id)),
+        legacySlot.slot.inputs,
+        i.slots,
+      )
+    : ends;
   // Beta.27 (a user's Map), narrowed by its review and as the owner approved it on 2026-11-12
   // (ADR 0195 addendum "a legacy join its caller's facts place elsewhere"): an adopted call
   // arrow (never a topic's or a queue's) leaves without being derived only when the facts read
@@ -1133,7 +1180,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       if (!derivedKeys.has(key)) byKey.delete(key);
       continue;
     }
-    if (!endsGone(r, ends, live).length) byKey.set(key, r);
+    if (!endsGone(r, goneEnds, live).length) byKey.set(key, r);
     else if (!derivedKeys.has(key)) byKey.delete(key);
   }
   if (legacySlot) {
@@ -1152,7 +1199,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       const key = `${r.kind}/${r.id}`;
       const derived = byKey.get(key);
       const gone =
-        repoOfEvidence(r).some((x) => !live.has(x)) || endsGone(r, ends, live).length > 0;
+        repoOfEvidence(r).some((x) => !live.has(x)) || endsGone(r, goneEnds, live).length > 0;
       if (gone) {
         // One of its repos was removed or archived: it leaves, through the removal guard.
         keep.push(r);
@@ -1201,7 +1248,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   );
   records = [...byKey.values()].filter(
     (r) =>
-      !(legacySlot && isLegacyGone(r, legacySlotKeys, live, ends)) &&
+      !(legacySlot && isLegacyGone(r, legacySlotKeys, live, goneEnds)) &&
       !(
         foldedNow.has(r.id) &&
         legacyKeys.has(`${r.kind}/${r.id}`) &&
