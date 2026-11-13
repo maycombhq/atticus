@@ -373,3 +373,32 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Beta.27.1: Delete this link in the head, beside Close; its confirm under the head. */
+.li-head {
+  flex-wrap: wrap;
+}
+.li-head-name {
+  flex: 1 1 12em;
+}
+.li-delete {
+  display: contents;
+}
+.li .btn.li-delete-open {
+  flex: none;
+  height: 28px;
+}
+.li-delete-confirm {
+  order: 3;
+  flex: 1 1 100%;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.li-delete-ask {
+  font-weight: 600;
+}
+.li .btn.li-close {
+  order: 2;
+}

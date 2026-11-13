@@ -2,6 +2,17 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.27.1 (Unreleased)
+
+### Added
+
+- **Delete this link (the owner's decision of 2026-11-12: "an arrow for an architect must be as simple as clicking delete").** Every link's panel on the estate canvas has **Delete this link** beside Close, for any link of calls: lined or lineless, derived from facts or adopted from a catalog before the slots (`catalog/sources/legacy/joins.json`). One click and a small confirm naming the link and its calls ("A → B, 3 calls?"); Delete writes the person's curated suppress of each Interface behind the link (`{ action: suppress, target: <Interface id>, value: null }` in `catalog/curated/curateddecision/`, the decision `atticus catalog edits --curate` writes for a deleted generated file, by the same code) and builds the catalog, as one local job whose lines are its Console entry; the arrow is gone once the picture is read again. A build that waits only for the removals the suppresses explain is confirmed with their count; any other refusal is said, the decisions kept for the next build. **Deleted links** (in the map's tools, and in the panel just after a delete) lists each with who and when and **Bring back**, which removes its decisions and builds again.
+- **Local API 3.13.0 (additive, C4).** `POST /api/links/delete` (`LinkDeleteRequest`: the Interfaces, the link's two ends; 404 when one isn't an Interface of the catalog now), `GET /api/links/deleted` (`DeletedLinksView`) and `POST /api/links/deleted/undo` (`LinkUndeleteRequest`); both writes are local jobs (202 `JobAccepted`).
+
+### Changed
+
+- **A call that cites no line of its caller's points to Delete this link.** This link is wrong (and All calls on this arrow are wrong) said to read the caller's repo again, with its command, for a call with no caller's line to correct; it now says that Delete this link, at the top of the link's panel, takes the arrow away. The per-call corrections are as they were.
+
 ## 2.0.0-beta.27 (2026-11-12)
 
 ### Added

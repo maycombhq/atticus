@@ -8,6 +8,7 @@ import { SplitCounts } from "../../app/decisions.js";
 import { takesText } from "../../app/ui.js";
 import { linkCounts, type CanvasGraph, type CanvasLink, type LinkBy } from "./model.js";
 import { WORDS } from "./words.js";
+import { DeletedLinks } from "./DeleteLink.js";
 import {
   LAYERS,
   inbox,
@@ -137,6 +138,8 @@ export function CanvasTools(p: {
    * `bodyId`): nothing while closed, its own close button (and Esc) while open.
    */
   drawer?: { open: boolean; bodyId: string; onClose(): void };
+  /** Beta.27.1: a deleted link brought back (the picture is read again). */
+  onLinkBack?(): void;
 }) {
   const id = useId();
   const [ownOpen, setOpen] = useState(false);
@@ -534,6 +537,9 @@ export function CanvasTools(p: {
               </p>
             )}
           </div>
+
+          {/* Beta.27.1: the links deleted on the canvas, each with Bring back. */}
+          <DeletedLinks {...(p.onLinkBack ? { onBack: p.onLinkBack } : {})} />
 
           <div className="stack">
             <h4 className="hud">{T.export}</h4>

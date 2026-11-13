@@ -761,39 +761,22 @@ export async function catalogEdits(
       }
       // A record made curated before (an earlier curate of it): that decision stays its author's,
       // untouched, and this edit is a decision of its own that applies after it.
-      const placed = await decisionFor(
-        curatedDir,
-        slug(`cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`),
-        p.decision,
+      const w = await writeDecision(root, curatedDir, p.decision, {
+        idBase: `cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`,
+        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
+        by,
         at,
-      );
-      if ("keep" in placed) {
-        kept.push({
-          path: p.path,
-          decision: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}`,
-        });
+      });
+      if ("kept" in w) {
+        kept.push({ path: p.path, decision: w.kept });
         curated.push(p.path);
         continue;
       }
-      const record = parseRecord({
-        kind: "CuratedDecision",
-        id: placed.id,
-        schemaVersion: 2,
-        status: "current",
-        confidence: "asserted",
-        ...p.decision,
-        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
-        by,
-        at: placed.at,
-      });
-      if (!record.ok) {
-        left.push({ path: p.path, why: record.issues.map((i) => i.message).join("; ") });
+      if ("problem" in w) {
+        left.push({ path: p.path, why: w.problem });
         continue;
       }
-      const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
-      await mkdir(dirname(full), { recursive: true });
-      await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
-      written.push(posix(relative(root, full)));
+      written.push(w.written);
       curated.push(p.path);
     }
     if (o.dropFields !== undefined && !confirmed)
@@ -850,6 +833,39 @@ const pick = (p: EditPlan) => ({
 });
 
 /**
+ * One curated decision written to `catalog/curated/curateddecision/` as `edits --curate` writes
+ * it (and, beta.27.1, Delete this link on the canvas): its id and time from `decisionFor`, the
+ * record checked against C1 and written canonical. The same suppress already there is `kept`
+ * (its file, nothing written).
+ */
+async function writeDecision(
+  root: string,
+  curatedDir: string,
+  decision: Record<string, unknown>,
+  o: { idBase: string; reason: string; by: string; at: string },
+): Promise<{ written: string; id: string } | { kept: string } | { problem: string }> {
+  const placed = await decisionFor(curatedDir, slug(o.idBase), decision, o.at);
+  if ("keep" in placed)
+    return { kept: `${posix(relative(root, curatedDir))}/curateddecision/${placed.keep}` };
+  const record = parseRecord({
+    kind: "CuratedDecision",
+    id: placed.id,
+    schemaVersion: 2,
+    status: "current",
+    confidence: "asserted",
+    ...decision,
+    reason: o.reason,
+    by: o.by,
+    at: placed.at,
+  });
+  if (!record.ok) return { problem: record.issues.map((i) => i.message).join("; ") };
+  const full = join(curatedDir, ...recordPath(record.record as CatalogRecord).split("/"));
+  await mkdir(dirname(full), { recursive: true });
+  await writeFileAtomic(full, serializeRecord(record.record as CatalogRecord));
+  return { written: posix(relative(root, full)), id: placed.id };
+}
+
+/**
  * Where `edits --curate` puts a decision, and when it says it was made. Every decision already
  * in `catalog/curated` is its author's and is never written over: a second curate of a record
  * (another person's, or the same person's later) is a decision of its own, under the first free
@@ -894,4 +910,178 @@ async function decisionFor(
   const fileOf = (x: string) => join(dir, `${x}.yaml`);
   if (!existsSync(fileOf(id))) return { id, at };
   for (let n = 2; ; n++) if (!existsSync(fileOf(`${id}-${n}`))) return { id: `${id}-${n}`, at };
+}
+
+// ------------------------------------------------------------ Delete this link (beta.27.1)
+
+/** The id every decision Delete this link writes starts with (then the Interface's id). */
+export const LINK_DELETE_PREFIX = "cd-link-delete-";
+
+/** The reason a Delete this link decision says; `deletedLinks` reads the link back from it. */
+const linkDeleteReason = (from: string, to: string, n: number) =>
+  `Deleted on the canvas: the link ${from} → ${to} (${n} call${n === 1 ? "" : "s"}).`;
+const LINK_DELETE_REASON = /^Deleted on the canvas: the link (.+) → (.+) \((\d+) calls?\)\.$/;
+
+const decisionDirOf = (root: string) => join(catalogDirOf(root), "curated", "curateddecision");
+
+/** A decision Delete this link wrote, still current: an unscoped suppress of its id prefix. */
+function isLinkDelete(d: Record<string, unknown> | undefined): boolean {
+  return (
+    d?.kind === "CuratedDecision" &&
+    typeof d.id === "string" &&
+    d.id.startsWith(LINK_DELETE_PREFIX) &&
+    d.action === "suppress" &&
+    d.status === "current" &&
+    (d.value ?? null) === null
+  );
+}
+
+/**
+ * The links deleted on the canvas (GET /api/links/deleted): each Delete's decisions, one per
+ * Interface behind the link, grouped as they were written (the same link, by and time), newest
+ * first.
+ */
+export async function deletedLinks(root: string): Promise<{
+  links: {
+    from: string;
+    to: string;
+    calls: number;
+    by: string;
+    at: string;
+    decisions: { id: string; target: string; file: string }[];
+  }[];
+}> {
+  const dir = decisionDirOf(root);
+  const rel = posix(relative(root, dir));
+  const groups = new Map<
+    string,
+    {
+      from: string;
+      to: string;
+      calls: number;
+      by: string;
+      at: string;
+      decisions: { id: string; target: string; file: string }[];
+    }
+  >();
+  for (const n of (await readdir(dir).catch(() => [] as string[])).sort(cmpText)) {
+    if (!n.endsWith(".yaml")) continue;
+    const p = deserializeRecord(await readFile(join(dir, n), "utf8").catch(() => ""));
+    const d = p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+    if (!d || !isLinkDelete(d)) continue;
+    const m = LINK_DELETE_REASON.exec(String(d.reason ?? ""));
+    const by = String(d.by ?? "");
+    const at = String(d.at ?? "");
+    const key = `${String(d.reason)}\u0000${by}\u0000${at}`;
+    const g = groups.get(key) ?? {
+      from: m?.[1] ?? "",
+      to: m?.[2] ?? "",
+      calls: m ? Number(m[3]) : 0,
+      by,
+      at,
+      decisions: [],
+    };
+    g.decisions.push({ id: String(d.id), target: String(d.target), file: `${rel}/${n}` });
+    groups.set(key, g);
+  }
+  const links = [...groups.values()].sort((a, b) =>
+    a.at === b.at ? cmpText(`${a.from}>${a.to}`, `${b.from}>${b.to}`) : a.at < b.at ? 1 : -1,
+  );
+  return { links };
+}
+
+/**
+ * The build after a Delete or a Bring back: the removals a Delete's suppresses explain are what
+ * the person confirmed (the inline confirm listed the link and its calls), so a build that waits
+ * only for them to be confirmed is confirmed with their count, as Catalog builds would; any other
+ * refusal is the build's own, said in its lines (nothing written).
+ */
+async function buildAfterDecisions(root: string, targets: ReadonlySet<string>, io: Output) {
+  const command = "atticus catalog build";
+  const listed = await buildAndWrite(root, { command, check: true });
+  const r = listed.guard.refused;
+  const removals = listed.guard.removals;
+  const ours =
+    !!r &&
+    r.reasons.length === 1 &&
+    r.reasons[0] === "large-removals" &&
+    removals.length > 0 &&
+    removals.every((x) => x.reasons.includes("curated") || targets.has(x.id));
+  return catalogBuild(
+    root,
+    ours ? { allowRemovals: removals.length, plan: buildPlanOf(listed.guard) } : {},
+    io,
+  );
+}
+
+/**
+ * Delete this link (beta.27.1, the owner's decision of 2026-11-12): the person's suppress of every
+ * Interface behind a link of the canvas, lined or lineless, derived or adopted, written as the
+ * curated decision a deleted generated file becomes (`edits --curate`), then the build. Every id
+ * must be an Interface the catalog has now.
+ */
+export async function deleteLink(
+  root: string,
+  o: { interfaces: readonly string[]; from: string; to: string; by?: string; now?: Date },
+  io: Output,
+): Promise<number> {
+  const ids = [...new Set(o.interfaces)];
+  const wrote = await locked(root, "Delete this link", io, async () => {
+    const by = o.by ?? (await gitUser(root)).handle;
+    const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const reason = linkDeleteReason(o.from, o.to, ids.length);
+    for (const target of ids) {
+      const w = await writeDecision(
+        root,
+        join(catalogDirOf(root), "curated"),
+        { action: "suppress", target, value: null },
+        { idBase: `${LINK_DELETE_PREFIX}${target}`, reason, by, at },
+      );
+      if ("problem" in w) {
+        io.err(`Interface/${target}: not deleted: ${w.problem}.`);
+        return 1;
+      }
+      if ("kept" in w) io.out(`Interface/${target}: ${w.kept} suppresses it already.`);
+      else io.out(`Wrote ${w.written}: the person's suppress of Interface/${target}.`);
+    }
+    return 0;
+  });
+  if (wrote !== 0) return wrote;
+  const code = await buildAfterDecisions(root, new Set(ids), io);
+  if (code !== 0)
+    io.err(
+      "The decisions are written; the catalog is built with them once the build above goes through (Catalog builds).",
+    );
+  return code;
+}
+
+/** Bring back a deleted link: its Delete's decisions removed, then the build. */
+export async function undeleteLink(
+  root: string,
+  o: { decisions: readonly string[] },
+  io: Output,
+): Promise<number> {
+  const dir = decisionDirOf(root);
+  const targets = new Set<string>();
+  const removed = await locked(root, "Bring back the link", io, async () => {
+    const files: { path: string; target: string }[] = [];
+    for (const id of new Set(o.decisions)) {
+      const path = join(dir, `${id}.yaml`);
+      const p = deserializeRecord(await readFile(path, "utf8").catch(() => ""));
+      const d = p.ok ? (p.record as unknown as Record<string, unknown>) : undefined;
+      if (!isLinkDelete(d) || d!.id !== id) {
+        io.err(`${id} isn't a link deleted on the canvas: nothing removed.`);
+        return 1;
+      }
+      files.push({ path, target: String(d!.target) });
+    }
+    for (const f of files) {
+      await rm(f.path, { force: true });
+      targets.add(f.target);
+      io.out(`Removed ${posix(relative(root, f.path))}: Interface/${f.target} is drawn again.`);
+    }
+    return 0;
+  });
+  if (removed !== 0) return removed;
+  return buildAfterDecisions(root, targets, io);
 }

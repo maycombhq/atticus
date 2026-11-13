@@ -5294,6 +5294,40 @@ export const COPY = {
     corrected:
       "Correction saved as your word. The canvas was read again; the link moves once atticus verify --write has joined the caller's repo again.",
   },
+  /**
+   * Beta.27.1 (the owner's decision of 2026-11-12): Delete this link, on every link's panel, as
+   * simple as clicking delete; and the links deleted so, each with Bring back.
+   */
+  deleteLink: {
+    open: "Delete this link",
+    openOf: (from: string, to: string) => `Delete the link ${from} → ${to}`,
+    confirm: (from: string, to: string, n: number) =>
+      `Delete ${from} → ${to}, ${n} call${n === 1 ? "" : "s"}?`,
+    intro:
+      "Your decision is written to catalog/curated, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
+    yes: "Delete",
+    no: "Cancel",
+    reading: "Reading every call on this link…",
+    readFailed: (why: string) => `Couldn't read every call on this link: ${why}`,
+    working: "Deleting the link and building the catalog…",
+    failed: (why: string) => `The link wasn't deleted: ${why}`,
+    done: (from: string, to: string) =>
+      `Deleted ${from} → ${to}. Bring it back below, or from Deleted links in the map's tools.`,
+    list: {
+      title: "Deleted links",
+      loading: "Reading the deleted links…",
+      failed: (why: string) => `The deleted links couldn't be read: ${why}`,
+      none: "No link was deleted on the canvas.",
+      item: (from: string, to: string, n: number) =>
+        `${from} → ${to}, ${n} call${n === 1 ? "" : "s"}`,
+      by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
+      back: "Bring back",
+      backOf: (from: string, to: string) => `Bring back the link ${from} → ${to}`,
+      backing: "Bringing it back and building the catalog…",
+      backDone: (from: string, to: string) => `${from} → ${to} is back on the map.`,
+      backFailed: (why: string) => `The link wasn't brought back: ${why}`,
+    },
+  },
   canvasTools: {
     types: "Types",
     typesHint:
@@ -6235,7 +6269,7 @@ export const COPY = {
         `${n} of these link${n === 1 ? " comes" : "s come"} from a gateway proxy's routing, with no line of a caller's to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: answer where ${n === 1 ? "it goes" : "they go"} or correct the proxy's forwarding from This link is wrong under ${n === 1 ? "its call" : "each"}, which changes that route for every caller.`,
       // Review of beta.27: links with no line of a caller's that no proxy's routing made.
       uncited: (n: number) =>
-        `${n} of these link${n === 1 ? " cites" : "s cite"} no line of the caller's, so there is no call to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: read the caller's repo again.`,
+        `${n} of these link${n === 1 ? " cites" : "s cite"} no line of the caller's, so there is no call to correct, and ${n === 1 ? "is" : "are"} left as ${n === 1 ? "it is" : "they are"}: to take the arrow away, use Delete this link at the top of the link's panel.`,
       already:
         "Every one of these corrections is on file already, so nothing new was written. Apply them from Corrections to apply, at the top of the map.",
       skipped: (n: number) =>
@@ -6254,8 +6288,9 @@ export const COPY = {
     routingLink:
       "No line of a caller's cites this call: the link comes from a gateway proxy's routing, so there is no call here to correct. Where the proxy forwards it is set on the proxy, for every caller of the route, not this link alone: answer where it goes, or correct the proxy's forwarding at its line.",
     // Review of beta.27: no line of a caller's, and no proxy's routing (a built-in reader's link).
+    // Beta.27.1: what takes such an arrow away is Delete this link, in the link's panel head.
     uncitedLink:
-      "No line of the caller's is cited for this call, so there is no call here to correct yet. Read the caller's repo again: once its facts cite the call's line, This link is wrong corrects it.",
+      "No line of the caller's is cited for this call, so there is no call here to correct. To take the arrow away, use Delete this link at the top of the link's panel.",
     // Beta.27: a link a gateway proxy's routing made: what does correct it, as buttons.
     routing: {
       all: (n: number) =>

@@ -596,8 +596,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   one edited by hand refuses the run, 409 code `assistant-files-edited`). A run's view carries
  *   `problems`: a repo the run stopped on after two Copilot sessions added nothing, with what
  *   verify rejected and why. Additive only.
+ * 3.13.0 (beta.27.1, the owner's decision of 2026-11-12): Delete this link on the canvas. POST
+ *   /api/links/delete writes a curated suppress (`{ action: suppress, target: <Interface id>,
+ *   value: null }`, as `atticus catalog edits --curate` writes for a deleted generated file) of
+ *   every Interface behind a link, then builds, as one local job; GET /api/links/deleted lists the
+ *   links deleted so, and POST /api/links/deleted/undo removes one's decisions and builds again.
+ *   Additive only.
  */
-export const API_VERSION = "3.12.0";
+export const API_VERSION = "3.13.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2027,6 +2033,41 @@ export const CatalogPruneRequest = z.strictObject({
   /** GET /api/build/prune's `plan`. */
   plan: z.string().regex(/^[0-9a-f]{64}$/),
 });
+/**
+ * 3.13.0 (beta.27.1, the owner's decision of 2026-11-12): Delete this link on the canvas. POST
+ * /api/links/delete takes every Interface behind a link (GET /api/graph/edge-calls when the view
+ * lists fewer) and its two ends' names, as the inline confirm listed them.
+ */
+export const LinkDeleteRequest = z.strictObject({
+  interfaces: z.array(z.string().min(1).max(300)).min(1).max(500),
+  from: z.string().min(1).max(200),
+  to: z.string().min(1).max(200),
+});
+export type LinkDeleteRequestT = z.infer<typeof LinkDeleteRequest>;
+/** 3.13.0: GET /api/links/deleted, the links deleted on the canvas, each with its decisions. */
+export const DeletedLinksView = z.object({
+  links: z.array(
+    z.object({
+      from: z.string(),
+      to: z.string(),
+      /** How many calls the link had when it was deleted. */
+      calls: z.number().int().nonnegative(),
+      by: z.string(),
+      at: z.string(),
+      /** One curated suppress per Interface, in catalog/curated/curateddecision/. */
+      decisions: z.array(z.object({ id: z.string(), target: z.string(), file: z.string() })),
+    }),
+  ),
+});
+export type DeletedLinksViewT = z.infer<typeof DeletedLinksView>;
+/** 3.13.0: POST /api/links/deleted/undo, Bring back: the decisions of one deleted link. */
+export const LinkUndeleteRequest = z.strictObject({
+  decisions: z
+    .array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,120}$/))
+    .min(1)
+    .max(500),
+});
+export type LinkUndeleteRequestT = z.infer<typeof LinkUndeleteRequest>;
 /**
  * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
  * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
@@ -7411,6 +7452,45 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409],
     },
   },
+  "/api/links/delete": {
+    post: {
+      id: "deleteLink",
+      summary:
+        "3.13.0 (beta.27.1): Delete this link as a local job: a curated suppress of each Interface named (the decision atticus catalog edits --curate writes for a deleted file), in catalog/curated/curateddecision/, then atticus catalog build. 404 when one isn't an Interface of the catalog now",
+      tag: "scans",
+      body: LinkDeleteRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines it printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/links/deleted": {
+    get: {
+      id: "getDeletedLinks",
+      summary:
+        "3.13.0 (beta.27.1): the links deleted on the canvas, each with its curated suppresses. Reads files only",
+      tag: "scans",
+      ok: { status: 200, schema: "DeletedLinksView", description: "OK" },
+    },
+  },
+  "/api/links/deleted/undo": {
+    post: {
+      id: "undeleteLink",
+      summary:
+        "3.13.0 (beta.27.1): Bring back a deleted link as a local job: its decisions removed, then atticus catalog build. 404 when one isn't a link deleted on the canvas",
+      tag: "scans",
+      body: LinkUndeleteRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines it printed",
+      },
+      errors: [400, 404, 409],
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -9606,6 +9686,7 @@ export function openApiDocument(): Record<string, unknown> {
     CatalogBuildView,
     CatalogUndoView,
     CatalogPruneView,
+    DeletedLinksView,
     CatalogUpgradeView,
     CrossCheckPromoteView,
     FreshView,

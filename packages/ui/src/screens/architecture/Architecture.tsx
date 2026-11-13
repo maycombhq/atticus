@@ -37,6 +37,7 @@ import {
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { ArrowWrong, LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { DeleteLink, DeletedLinks } from "./DeleteLink.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { EveryDependency } from "./EveryDependency.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
@@ -221,6 +222,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  // Beta.27.1: the link just deleted from its panel (what the panel says once it left the picture).
+  const [deletedLink, setDeletedLink] = useState<
+    { link: string; from: string; to: string; interfaces: ReadonlySet<string> } | undefined
+  >();
   const [corrected, setCorrected] = useState(false);
   // Review round 46: a focus answer counts only if it is the newest asked, in this picture.
   const focusCall = useRef(latestCall()).current;
@@ -878,6 +883,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     })()
                   : {})}
                 {...(snapshot ? { snapshot } : {})}
+                onLinkBack={reloadViews}
                 onSnapshot={() => {
                   const snap = snapshotOf(whole, new Date().toLocaleTimeString());
                   setSnapshot(snap);
@@ -944,6 +950,38 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                           above={above}
                           contracts={findings}
                           autoFocus={pickedLink.keyboard}
+                          deleteLink={(l) => (
+                            <DeleteLink
+                              link={l}
+                              from={find(l.from)?.label ?? l.from}
+                              to={find(l.to)?.label ?? l.to}
+                              {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+                              onDeleted={(d) => {
+                                setDeletedLink({
+                                  link: l.id,
+                                  from: d.from,
+                                  to: d.to,
+                                  interfaces: new Set(d.interfaces),
+                                });
+                                reloadViews();
+                              }}
+                            />
+                          )}
+                          {...(deletedLink?.link === pickedLink.id
+                            ? {
+                                gone: (
+                                  <div className="stack">
+                                    <p className="state" role="status">
+                                      {COPY.deleteLink.done(deletedLink.from, deletedLink.to)}
+                                    </p>
+                                    <DeletedLinks
+                                      only={deletedLink.interfaces}
+                                      onBack={reloadViews}
+                                    />
+                                  </div>
+                                ),
+                              }
+                            : {})}
                           onClose={() => setPickedLink(undefined)}
                           onCorrected={() => {
                             // The decisions reload themselves; the picture is read again here.

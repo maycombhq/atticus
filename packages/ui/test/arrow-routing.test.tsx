@@ -223,7 +223,8 @@ describe("a link that cites no line of a caller's but is no proxy's routing", ()
     expect(callerLine(JOIN)).toEqual({ repo: "forge-web", at: "src/accounts.service.ts:21" });
   });
 
-  it("This link is wrong says no caller's line is cited, with the read again, no proxy's actions", () => {
+  // Beta.27.1: it points to Delete this link in the panel's head, not to a read again.
+  it("This link is wrong says no caller's line is cited, points to Delete this link, no proxy's actions", () => {
     for (const join of [READER, NO_LINE]) {
       const page = html(
         <EvidenceContext.Provider value={staticEvidence(ready(views))}>
@@ -235,24 +236,25 @@ describe("a link that cites no line of a caller's but is no proxy's routing", ()
       expect(page).not.toContain(esc(R.answer));
       expect(page).not.toContain(esc(R.forwarding));
       expect(page).not.toContain('type="submit"');
-      expect(page).toContain(esc(R.terminal));
-      expect(page).toContain("atticus verify forge-web --write");
+      expect(W.uncitedLink).toContain(COPY.deleteLink.open);
+      expect(page).not.toContain("atticus verify forge-web --write");
       expect(page).not.toContain("atticus questions");
     }
   });
 
-  it("the arrow says so, and gives the read again when no repo is named", () => {
+  it("the arrow says so, and points to Delete this link, with or without a repo named", () => {
     const page = html(<ArrowWrongForm link={edge([READER])} viewOf={viewOf} known={[]} />);
     expect(page).not.toContain(esc(W.arrow.open));
     expect(page).not.toContain('type="submit"');
     expect(page).toContain(esc(W.arrow.uncited(1)));
     expect(page).not.toContain(esc(R.all(1)));
-    expect(page).toContain("atticus verify forge-web --write");
+    expect(W.arrow.uncited(1)).toContain(COPY.deleteLink.open);
+    expect(page).not.toContain("atticus verify forge-web --write");
     const nameless = html(
       <ArrowWrongForm link={edge([{ ...ROUTE, hops: [] }])} viewOf={viewOf} known={[]} startOpen />,
     );
     expect(nameless).toContain(esc(W.arrow.uncited(1)));
-    expect(nameless).toContain("atticus verify --all --write");
+    expect(nameless).not.toContain("atticus verify --all --write");
     expect(nameless).not.toContain(esc(R.none));
   });
 
