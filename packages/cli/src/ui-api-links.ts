@@ -318,27 +318,54 @@ export async function candidatesOf(
 export async function pairingsOf(
   root: string,
   req: { from: string; to: Api.LinkBoxT; pairs: readonly { call: string; api: string }[] },
-  o: { by: string; at: string },
-): Promise<{ corrections: FactCorrection[]; rel: string; file: string; target: string }> {
+  o: {
+    by: string;
+    at: string;
+    /**
+     * A pair the call has already (an arrow to that very API, or a person's pairing with it):
+     * `refuse` (Connect to…, 409) or `skip` (Edit the map: a staged change a terminal's write
+     * made redundant meanwhile is a no-op, said in `skipped`, never a failed batch).
+     */
+    redundant?: "refuse" | "skip";
+  },
+): Promise<{
+  corrections: FactCorrection[];
+  rel: string;
+  file: string;
+  target: string;
+  /** The pairs left out as redundant (`redundant: "skip"`), each with why, in words. */
+  skipped: { call: string; api: string; said: string }[];
+}> {
   const { from, to, pairs } = req;
   const c = await context(root, from, to);
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
-  // The review of beta.28.1 (S2): a call that goes to that very API with an arrow already would
-  // be a redundant line: refused, nothing written.
-  const here = pairs.length
+  // The review of beta.28.1 (S2, and its re-review): a call that goes to that very API already
+  // (an arrow to it, or a person's pairing with it) would be a redundant line. Only that API:
+  // where the API an arrow goes to isn't known (an arrow the catalog draws, not the join), any
+  // pairing is allowed.
+  const already = pairs.length
     ? new Map(
-        (await candidatesIn(root, from, to, c)).calls
-          .filter((x) => x.status === "here")
-          .map((x) => [x.fact, x.now] as const),
+        (await candidatesIn(root, from, to, c)).calls.flatMap((x) =>
+          x.status === "here" && x.now
+            ? [[x.fact, x.now] as const]
+            : x.status === "paired" && x.paired
+              ? [[x.fact, x.paired] as const]
+              : [],
+        ),
       )
-    : new Map<string, string | undefined>();
+    : new Map<string, string>();
+  const skipped: { call: string; api: string; said: string }[] = [];
   for (const p of pairs) {
-    if (here.has(p.call) && (here.get(p.call) === undefined || here.get(p.call) === p.api))
-      throw conflict(
-        `${p.call} goes to ${c.b.name}'s ${p.api} already, with an arrow: there is nothing to pair.`,
-      );
+    if (already.get(p.call) === p.api) {
+      const said = `${p.call} goes to ${p.api} of ${c.b.name} already: nothing to write for it.`;
+      if (o.redundant === "skip") {
+        skipped.push({ call: p.call, api: p.api, said });
+        continue;
+      }
+      throw conflict(`${said} Pick another API of ${c.b.name} for it, or leave it.`);
+    }
     const f = calls.get(p.call);
     if (!f)
       throw c.estate.unverified.includes(from)
@@ -368,6 +395,7 @@ export async function pairingsOf(
     rel: `${factsRelOf(root)}/${from}.corrections.jsonl`,
     file: join(factsDirOf(root), `${from}.corrections.jsonl`),
     target: to.repo ?? to.system!,
+    skipped,
   };
 }
 

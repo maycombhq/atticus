@@ -77,7 +77,11 @@ export async function checkMapEdits(
         staged.add(key);
       }
       try {
-        const made = await pairingsOf(root, p, { by: "preview", at: new Date(0).toISOString() });
+        const made = await pairingsOf(root, p, {
+          by: "preview",
+          at: new Date(0).toISOString(),
+          redundant: "skip",
+        });
         // A lined arrow's redirect pairs the calls the arrow is: each pair's call cites one of
         // the deleted Interfaces' caller lines (a lineless arrow's are the person's pick).
         if (e.kind === "redirect") {

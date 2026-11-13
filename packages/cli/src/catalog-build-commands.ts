@@ -1295,25 +1295,31 @@ export async function applyMapEdits(
           // Connect to…'s pairings, exactly its lines in the caller's corrections file.
           const { pairingsOf } = await import("./ui-api-links.js");
           const { appendLines } = await import("./file-lock.js");
-          const p = await pairingsOf(root, e.pair, { by, at });
+          // The re-review of beta.28.1: a pair a terminal's write made redundant meanwhile is a
+          // no-op, said, never a failed batch.
+          const p = await pairingsOf(root, e.pair, { by, at, redundant: "skip" });
+          for (const x of p.skipped) io.out(`${said}: ${x.said}`);
           const lines = p.corrections.map(correctionLine);
-          await mkdir(factsDirOf(root), { recursive: true });
-          const appended = await appendLines(p.file, lines);
-          const x = files.get(p.file);
-          if (x?.how === "append") {
-            x.lines.push(...lines);
-            x.edits.add(i);
-          } else
-            files.set(p.file, {
-              how: "append",
-              lines: [...lines],
-              edits: new Set([i]),
-              ...(appended.before === null ? { created: true as const } : {}),
-            });
-          inputs.add(p.rel);
-          io.out(
-            `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
-          );
+          if (lines.length) {
+            await mkdir(factsDirOf(root), { recursive: true });
+            const appended = await appendLines(p.file, lines);
+            const x = files.get(p.file);
+            if (x?.how === "append") {
+              x.lines.push(...lines);
+              x.edits.add(i);
+            } else
+              files.set(p.file, {
+                how: "append",
+                lines: [...lines],
+                edits: new Set([i]),
+                ...(appended.before === null ? { created: true as const } : {}),
+              });
+            inputs.add(p.rel);
+          }
+          if (lines.length)
+            io.out(
+              `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
+            );
         } else if ("add" in e) {
           const a = e.add;
           const d =
