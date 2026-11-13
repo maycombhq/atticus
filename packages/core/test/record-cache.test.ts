@@ -85,6 +85,39 @@ describe("parses kept between runs", () => {
     expect(out[1]).toEqual({ rel: "b.yaml", value: "ok b" });
   });
 
+  it("with keep false, reads the parses kept and writes none (a preview, beta.28.1)", async () => {
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    await writeFile(join(dir, "b.yaml"), "ok b\n");
+    await read(dir, ["a.yaml", "b.yaml"], counting().parse, root);
+    const [memo] = await readdir(join(root, ".atticus", "cache"));
+    const kept = await readFile(join(root, ".atticus", "cache", memo!), "utf8");
+    await writeFile(join(dir, "a.yaml"), "ok a changed\n");
+    const look = (c: ReturnType<typeof counting>) =>
+      readParsedFiles<string>({
+        dir,
+        files: ["a.yaml", "b.yaml"],
+        name: "test",
+        version: "1",
+        parse: c.parse,
+        cacheRoot: root,
+        keep: false,
+      });
+    for (const _ of [1, 2]) {
+      const c = counting();
+      expect(await look(c)).toEqual([
+        { rel: "a.yaml", value: "ok a changed" },
+        { rel: "b.yaml", value: "ok b" },
+      ]);
+      // Only the changed file is parsed, every time: its parse isn't kept.
+      expect(c.parsed).toEqual(["a.yaml"]);
+    }
+    expect(await readFile(join(root, ".atticus", "cache", memo!), "utf8")).toBe(kept);
+    expect(await readdir(join(root, ".atticus", "cache"))).toEqual([memo]);
+  });
+
   it("writes nothing, and keeps nothing, when the caller names no root", async () => {
     // A read of someone else's metarepo: Atticus was asked to read it, so it writes nothing
     // into it, not even a cache of its own (ADR 0119 addendum, hard rule 6).

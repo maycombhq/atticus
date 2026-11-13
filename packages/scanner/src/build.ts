@@ -1741,7 +1741,9 @@ function buildManifestOfText(
 type DiskFiles = Map<string, { sha: string; text: string }>;
 
 async function hashFiles(dir: string): Promise<DiskFiles> {
-  const out = new Map<string, { sha: string; text: string }>();
+  // The paths first, in the walk's order; then the files read many at once (beta.28.1: one at
+  // a time, 100,000 record files took 15 s) and put in the map in that order.
+  const paths: string[] = [];
   async function walk(d: string, rel: string) {
     let entries;
     try {
@@ -1752,15 +1754,27 @@ async function hashFiles(dir: string): Promise<DiskFiles> {
     for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(join(d, e.name), r);
-      else if (/\.ya?ml$/.test(e.name)) {
-        const text = (await readFile(join(d, e.name), "utf8")).replace(/\r\n?/g, "\n");
-        out.set(r, { sha: sha(text), text });
-      }
+      else if (/\.ya?ml$/.test(e.name)) paths.push(r);
     }
   }
   await walk(dir, "");
+  const texts = new Array<string>(paths.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(READ_AT_ONCE, paths.length) }, async () => {
+      for (let k = next++; k < paths.length; k = next++)
+        texts[k] = (await readFile(join(dir, ...paths[k]!.split("/")), "utf8")).replace(
+          /\r\n?/g,
+          "\n",
+        );
+    }),
+  );
+  const out = new Map<string, { sha: string; text: string }>();
+  paths.forEach((r, k) => out.set(r, { sha: sha(texts[k]!), text: texts[k]! }));
   return out;
 }
+/** How many files a build reads at once (a few dozen: well under any open-files limit). */
+const READ_AT_ONCE = 32;
 
 /** Where a command writes (the baseline's catalog, or a branch's beside it). */
 export interface CatalogTarget {
@@ -1830,6 +1844,7 @@ export async function guardBuild(
     manifests?: { onDisk: string | undefined; mine: string };
   },
 ): Promise<GuardResult> {
+  const mark = phaseClock("guards: ");
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
@@ -1837,6 +1852,7 @@ export async function guardBuild(
     ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)
     : await readBuildManifest(target.manifest);
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
+  mark("build.json read");
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
   const again = (flag: string) => `${o.command} ${flag}`;
@@ -1896,6 +1912,7 @@ export async function guardBuild(
     if (o.discardEdits !== undefined)
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
   }
+  mark("hand edits");
   const discardCount = before ? onDisk.size : edits.length;
   const beforeEdits: HandEdit[] = [...onDisk.keys()].map((p) => ({
     path: `${genRel}/${p}`,
@@ -1919,6 +1936,7 @@ export async function guardBuild(
       const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
       for (const r of cat.records) oldRecords.set(recordPath(r), r);
     }
+    mark("last build's records read");
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
     // Each repo's slot files as this build read them, with their hashes.
     const slotNow = new Map<string, { path: string; sha256: string }[]>();
@@ -2119,6 +2137,7 @@ export async function guardBuild(
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
     }
+    mark("removals explained");
     // The records each repo had in the last build, for the share.
     const had = new Map<string, number>();
     for (const r of oldRecords.values())

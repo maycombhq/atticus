@@ -41,8 +41,13 @@ export function forgetCatalogs(): void {
  */
 export async function readCatalog(
   dir: string,
-  o: { cacheRoot?: string; fresh?: boolean } = {},
+  /**
+   * `keep: false` reads the parses kept under `cacheRoot` and writes none (a preview): it
+   * neither uses nor fills this process's kept copy.
+   */
+  o: { cacheRoot?: string; fresh?: boolean; keep?: boolean } = {},
 ): Promise<CatalogRead> {
+  if (o.keep === false) return readCatalogFiles(dir, o.cacheRoot, false);
   if (!keeping) return readCatalogFiles(dir, o.cacheRoot);
   const key = resolve(dir);
   if (o.fresh) {
@@ -66,7 +71,11 @@ export async function readCatalog(
  */
 const CATALOG_CACHE_VERSION = `c1@${SCHEMA_VERSION}`;
 
-async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<CatalogRead> {
+async function readCatalogFiles(
+  dir: string,
+  cacheRoot?: string,
+  keep?: boolean,
+): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
   const files: string[] = [];
@@ -92,6 +101,7 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
     name: "catalog",
     version: CATALOG_CACHE_VERSION,
     cacheRoot,
+    ...(keep === false ? { keep } : {}),
     parse: (text) => {
       const r = deserializeRecord(text);
       return r.ok

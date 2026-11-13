@@ -34,6 +34,7 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
   if (session) {
     session.connect();
     await session.post("Profiler.enable");
+    await session.post("Profiler.setSamplingInterval", { interval: 5000 });
     await session.post("Profiler.start");
   }
   const t = performance.now();
@@ -75,19 +76,27 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     } else options = (await makeOptions())!;
     const r = 1;
     const repo = bigRepoId(r);
-    const edit = Number(process.env.ATTICUS_BENCH_EDIT ?? Date.now() % 90) + 1;
-    const facts = await writeBigRepo(root, r, options, edit, true, false);
-    say(`edit ${edit} of ${repo}: ${facts.length} facts`);
-    const w = await timed(`verify ${repo} --write (the catalog write)`, () =>
-      writeFactsIntoCatalog(
-        root,
-        repo,
-        facts,
-        { dir: join(root, "workspace", repo), command: `atticus verify ${repo} --write` },
-        quiet,
-      ),
-    );
-    say(`  written: ${JSON.stringify(w?.written)}`);
+    const first = Number(process.env.ATTICUS_BENCH_EDIT ?? Date.now() % 90) + 1;
+    // Two changes of one repo, each `verify <repo> --write`'s catalog write: the first after
+    // the code changed (an upgrade: the build cache's texts are another version's), the second
+    // as every write after it.
+    for (const [edit, label] of [
+      [first, "first write after an upgrade"],
+      [first + 1, "write"],
+    ] as const) {
+      const facts = await writeBigRepo(root, r, options, edit, true, false);
+      say(`edit ${edit} of ${repo}: ${facts.length} facts`);
+      const w = await timed(`verify ${repo} --write, the catalog (${label})`, () =>
+        writeFactsIntoCatalog(
+          root,
+          repo,
+          facts,
+          { dir: join(root, "workspace", repo), command: `atticus verify ${repo} --write` },
+          quiet,
+        ),
+      );
+      say(`  written: ${JSON.stringify(w?.written)}`);
+    }
     const op = await loadOrgPack(orgPackDirOf(root));
     const estate = await timed("estateFacts", () => estateFacts(root, op, ""));
     await timed("estateJoinOf (pure)", async () =>

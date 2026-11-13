@@ -104,6 +104,11 @@ export async function readParsedFiles<T>(o: {
   parse: (text: string, rel: string) => ParseOutcome<T>;
   /** The root of the metarepo this run is working in; none means no cache (read-only). */
   cacheRoot?: string;
+  /**
+   * False: the parses kept under `cacheRoot` are read, and nothing is written there (a preview,
+   * which writes nothing: beta.28.1, it parsed a 100,000-record catalog from its files).
+   */
+  keep?: boolean;
 }): Promise<Parsed<T>[]> {
   const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
   const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
@@ -140,7 +145,7 @@ export async function readParsedFiles<T>(o: {
   });
   const changed = read.length > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
-  if (memo && changed) await writeMemo(memo, o.version, o.dir, fresh);
+  if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);
   return o.files.map((rel) => {
     const e = fresh.get(rel)!;
     return {

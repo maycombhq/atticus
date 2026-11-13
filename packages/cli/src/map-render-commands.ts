@@ -511,7 +511,9 @@ export async function projectFactsIntoCatalog(
   } = {},
 ) {
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
-  const cacheOpts = given.cache === false ? {} : { cacheRoot: root };
+  // A preview reads the parses kept on disk and keeps none (beta.28.1: without them it parsed
+  // every record file, 40 s at 100,000 records).
+  const cacheOpts = given.cache === false ? { cacheRoot: root, keep: false } : { cacheRoot: root };
   const existing =
     given.existing ?? (await readCatalog(join(catalogDirOf(root), "generated"), cacheOpts)).records;
   const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
