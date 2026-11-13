@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
 import {
@@ -10,6 +10,7 @@ import {
   applySharedMaps,
   catalogDirOf,
   cmpText,
+  deserializeRecord,
   evidenceDirOf,
   evidenceRelOf,
   factIdPart,
@@ -83,7 +84,13 @@ import {
   targetsFromAnswers,
 } from "./facts-catalog.js";
 import { pairsOfText } from "./facts-scan.js";
-import { forgetCatalogs, readCatalog, writeCatalog } from "./files.js";
+import {
+  forgetCatalogs,
+  readCatalog,
+  sortCatalogRecords,
+  writeCatalog,
+  type CatalogFilesRead,
+} from "./files.js";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { joinAnswerQuestions, joinAnswerQuestionsOf } from "./join-host-questions.js";
 import {
@@ -1737,8 +1744,27 @@ function buildManifestOfText(
 }
 
 /** Every record file under a catalog folder, with the hash of its bytes (line endings aside). */
-/** A catalog folder's record files, by path under it: their text (LF) and its hash. */
-type DiskFiles = Map<string, { sha: string; text: string }>;
+/**
+ * A catalog folder's record files, by path under it: their text (LF) and its hash, and the
+ * size and time (ms, floored) the file had when it was read (none: not known).
+ */
+type DiskFiles = Map<string, { sha: string; text: string; size?: number; mtimeMs?: number }>;
+
+/**
+ * Whether a read of the folder (`readCatalogWithFiles`) found every record file `onDisk` holds,
+ * and no other, each with the size and time it has there: then a read of the files again would
+ * get each record from the parse cache that read filled (it keys a parse by them), so that read's
+ * records are what it would give (beta.28.1: the guards and the map read 97,000 files again).
+ */
+function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: DiskFiles): boolean {
+  if (!read || read.dir !== resolve(dir) || read.files.size !== onDisk.size) return false;
+  for (const [p, f] of onDisk) {
+    const r = read.files.get(p);
+    if (!r || f.size === undefined || r.size < 0) return false;
+    if (r.size !== f.size || r.mtimeMs !== f.mtimeMs) return false;
+  }
+  return true;
+}
 
 async function hashFiles(dir: string): Promise<DiskFiles> {
   // The paths first, in the walk's order; then the files read many at once (beta.28.1: one at
@@ -1759,18 +1785,25 @@ async function hashFiles(dir: string): Promise<DiskFiles> {
   }
   await walk(dir, "");
   const texts = new Array<string>(paths.length);
+  const stats = new Array<{ size: number; mtimeMs: number }>(paths.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(READ_AT_ONCE, paths.length) }, async () => {
-      for (let k = next++; k < paths.length; k = next++)
-        texts[k] = (await readFile(join(dir, ...paths[k]!.split("/")), "utf8")).replace(
-          /\r\n?/g,
-          "\n",
-        );
+      for (let k = next++; k < paths.length; k = next++) {
+        // Its size and time from the open file, as readFile itself looks them up.
+        const fh = await open(join(dir, ...paths[k]!.split("/")), "r");
+        try {
+          const s = await fh.stat();
+          stats[k] = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+          texts[k] = (await fh.readFile("utf8")).replace(/\r\n?/g, "\n");
+        } finally {
+          await fh.close();
+        }
+      }
     }),
   );
-  const out = new Map<string, { sha: string; text: string }>();
-  paths.forEach((r, k) => out.set(r, { sha: sha(texts[k]!), text: texts[k]! }));
+  const out: DiskFiles = new Map();
+  paths.forEach((r, k) => out.set(r, { sha: sha(texts[k]!), text: texts[k]!, ...stats[k]! }));
   return out;
 }
 /** How many files a build reads at once (a few dozen: well under any open-files limit). */
@@ -1842,6 +1875,11 @@ export async function guardBuild(
     onDisk?: DiskFiles;
     /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
     manifests?: { onDisk: string | undefined; mine: string };
+    /**
+     * The target's records as the caller read them (under its lock), used in place of a read
+     * of the files again when every file still has the size and time it had (`sameFilesAs`).
+     */
+    lastRead?: CatalogFilesRead;
   },
 ): Promise<GuardResult> {
   const mark = phaseClock("guards: ");
@@ -1853,6 +1891,11 @@ export async function guardBuild(
     : await readBuildManifest(target.manifest);
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   mark("build.json read");
+  /** The target's records now: the caller's read where it still holds, else read again. */
+  const lastRecords = async (): Promise<readonly CatalogRecord[]> =>
+    sameFilesAs(o.lastRead, target.generated, onDisk)
+      ? o.lastRead!.records
+      : (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records;
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
   const again = (flag: string) => `${o.command} ${flag}`;
@@ -1933,8 +1976,7 @@ export async function guardBuild(
       return !b.files.has(p) && onDisk.has(p);
     });
     if (removing) {
-      const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
-      for (const r of cat.records) oldRecords.set(recordPath(r), r);
+      for (const r of await lastRecords()) oldRecords.set(recordPath(r), r);
     }
     mark("last build's records read");
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
@@ -2184,12 +2226,7 @@ export async function guardBuild(
   // ---- no empty catalog over a full one
   const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
   const emptyNow = !b.records.some(fromCode) && b.listed.length > 0;
-  const hadCode =
-    emptyNow && last.manifest
-      ? (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records.some(
-          fromCode,
-        )
-      : false;
+  const hadCode = emptyNow && last.manifest ? (await lastRecords()).some(fromCode) : false;
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
@@ -2721,6 +2758,11 @@ export interface BuildAndWrite {
   guard: GuardResult;
   /** Undefined when refused, or with `check`. */
   write?: WriteResult;
+  /**
+   * After a write, with `read`: catalog/generated's records as `readCatalog` reads them, where
+   * that read still matched the files (beta.28.1: so the caller doesn't read 97,000 files again).
+   */
+  catalog?: CatalogRecord[];
   /** With `check`: whether catalog/generated is what the slots build. */
   upToDate?: boolean;
   /**
@@ -2761,6 +2803,12 @@ export async function buildAndWrite(
      * lock, so no writer comes between this check and the write.
      */
     expect?: (listed: GuardResult) => boolean;
+    /**
+     * The target's records as the caller read them under its lock (`readCatalogWithFiles`): the
+     * guards use them, and the result's `catalog` is worked out from them, where every file
+     * still has the size and time that read found (beta.28.1: one read of the catalog a write).
+     */
+    read?: CatalogFilesRead;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
@@ -2798,6 +2846,7 @@ export async function buildAndWrite(
     command: o.command,
     onDisk,
     manifests,
+    ...(o.read ? { lastRead: o.read } : {}),
     ...(o.target ? { target: o.target } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
@@ -2813,6 +2862,7 @@ export async function buildAndWrite(
           command: o.command,
           onDisk,
           manifests,
+          ...(o.read ? { lastRead: o.read } : {}),
           ...(o.target ? { target: o.target } : {}),
         })
       : guard;
@@ -2884,7 +2934,35 @@ export async function buildAndWrite(
     ...(write.undo !== undefined ? { undo: write.undo } : {}),
     ...(write.discarded.length ? { discarded: write.discarded } : {}),
   });
-  return { build, guard, write };
+  const catalog = catalogAfterWrite(build, target, onDisk, o.read);
+  return { build, guard, write, ...(catalog ? { catalog } : {}) };
+}
+
+/**
+ * The target's records after the write, as `readCatalog` would read them, from the caller's read
+ * (`buildAndWrite`'s `read`): the write leaves exactly the build's files there, so a file it
+ * left as it was is the record that read had (its size and time unchanged), and a file it wrote
+ * is the parse of the text it wrote. Undefined when that read doesn't match the files.
+ */
+function catalogAfterWrite(
+  b: Build,
+  target: CatalogTarget,
+  onDisk: DiskFiles,
+  read: CatalogFilesRead | undefined,
+): CatalogRecord[] | undefined {
+  if (!sameFilesAs(read, target.generated, onDisk)) return undefined;
+  const out: CatalogRecord[] = [];
+  for (const [p, text] of b.files) {
+    // writeCatalog's own test of a file it leaves as it is.
+    if (onDisk.get(p)?.text.replace(/\r\n?/g, "\n") === text) {
+      const r = read!.files.get(p)!.record;
+      if (r) out.push(r);
+      continue;
+    }
+    const r = deserializeRecord(text);
+    if (r.ok) out.push(r.record);
+  }
+  return sortCatalogRecords(out);
 }
 
 /** A record file a build adds or changes, as its report lists it. */

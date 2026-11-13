@@ -1,11 +1,18 @@
-import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { catalogDirOf } from "@maycombhq/core";
-import { buildAndWrite, buildCacheHooks, forgetSerializedTexts } from "@maycombhq/scanner";
-import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
-import { bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { catalogDirOf, mapDirOf } from "@maycombhq/core";
+import {
+  buildAndWrite,
+  buildCacheHooks,
+  factsSnapshotWrites,
+  forgetSerializedTexts,
+  readCatalog,
+  readCatalogWithFiles,
+} from "@maycombhq/scanner";
+import { mapRenderCommand, writeFactsIntoCatalog } from "../src/map-render-commands.js";
+import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
 
 /**
  * beta.28.1, field report 6: a write of one changed repo builds from the build cache (the last
@@ -118,6 +125,64 @@ describe("one repo changed: the catalog is the bytes a build from scratch makes 
         const scratch = await fromScratch(root);
         expect(differences(now, scratch), `step ${step}, ${repo}`).toEqual([]);
         expect(now.size).toBeGreaterThan(100);
+        // The map the write rendered from its own read is the map rendered from the files.
+        const map = await filesOf(join(mapDirOf(root), repo));
+        expect(map.size).toBeGreaterThan(0);
+        const quiet = { out: () => undefined, err: () => undefined };
+        expect(await mapRenderCommand(root, repo, {}, quiet)).toBe(0);
+        expect(differences(map, await filesOf(join(mapDirOf(root), repo))), "map").toEqual([]);
       }
     }, 600_000);
+});
+
+/**
+ * beta.28.1: a write reads the catalog once (`readCatalogWithFiles`), and `buildAndWrite` uses
+ * that read for the guards and for the catalog it says the write left, where every file still
+ * has the size and time the read found; where one doesn't, it reads the files again.
+ */
+describe("one read of the catalog a write (beta.28.1)", () => {
+  it("guards the same, and says the catalog a read of the files gives", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-big-read-"));
+    made.push(dir);
+    const { root, options } = await makeBigEstate(dir, {
+      repos: 4,
+      entries: 40,
+      calls: 30,
+      tables: 6,
+      settings: 30,
+      checkouts: 4,
+    });
+    expect((await buildAndWrite(root, { command: "atticus catalog build" })).guard.refused).toBe(
+      undefined,
+    );
+    const generated = join(catalogDirOf(root), "generated");
+    const slotsFor = async (edit: number) => {
+      const repo = bigRepoId(1);
+      const facts = await writeBigRepo(root, 1, options, edit, true, false);
+      return factsSnapshotWrites(root, repo, facts, { commit: BIG_COMMIT, contracts: null });
+    };
+    const command = "atticus verify forge-svc-01 --write";
+    for (const edit of [3, 4]) {
+      const slots = await slotsFor(edit);
+      const read = await readCatalogWithFiles(generated, { cacheRoot: root });
+      const withRead = await buildAndWrite(root, { command, slots, read, check: true });
+      const without = await buildAndWrite(root, { command, slots, check: true });
+      expect(withRead.guard).toEqual(without.guard);
+      // A change of one repo removes some of its records: the guard read the last build's.
+      expect(withRead.guard.removals.length).toBeGreaterThan(0);
+      const w = await buildAndWrite(root, { command, slots, read });
+      expect(w.guard.refused).toBeUndefined();
+      expect(w.catalog).toBeDefined();
+      expect(w.catalog).toEqual((await readCatalog(generated, { fresh: true })).records);
+    }
+    // A file touched after the read: nothing of the read is used, and the write says no catalog.
+    const slots = await slotsFor(5);
+    const read = await readCatalogWithFiles(generated, { cacheRoot: root });
+    const [some] = [...read.files.keys()];
+    const later = new Date(Date.now() + 5_000);
+    await utimes(join(generated, ...some!.split("/")), later, later);
+    const w = await buildAndWrite(root, { command, slots, read });
+    expect(w.guard.refused).toBeUndefined();
+    expect(w.catalog).toBeUndefined();
+  }, 600_000);
 });

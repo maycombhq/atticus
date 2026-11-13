@@ -29,6 +29,9 @@ export interface Parsed<T> {
   rel: string;
   value?: T;
   problem?: string;
+  /** With `withStats`: the file's size and time (ms, floored) as this read found them (-1: none). */
+  size?: number;
+  mtimeMs?: number;
 }
 
 /** What a caller's parse says about one file. */
@@ -109,6 +112,8 @@ export async function readParsedFiles<T>(o: {
    * which writes nothing: beta.28.1, it parsed a 100,000-record catalog from its files).
    */
   keep?: boolean;
+  /** Each file's size and time with its parse (beta.28.1: a write matches them to its own read). */
+  withStats?: boolean;
 }): Promise<Parsed<T>[]> {
   const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
   const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
@@ -146,11 +151,12 @@ export async function readParsedFiles<T>(o: {
   const changed = read.length > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
   if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);
-  return o.files.map((rel) => {
+  return o.files.map((rel, i) => {
     const e = fresh.get(rel)!;
     return {
       rel,
       ...(e.problem === undefined ? { value: e.value as T } : { problem: e.problem }),
+      ...(o.withStats ? { size: stats[i]?.size ?? -1, mtimeMs: stats[i]?.mtimeMs ?? -1 } : {}),
     };
   });
 }

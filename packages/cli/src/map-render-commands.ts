@@ -71,6 +71,7 @@ import {
   joinHostQuestionDrafts,
   staleJoinHostQuestions,
   readCatalog,
+  readCatalogWithFiles,
   ruledTargets,
   splitTargetGroups,
   staleTargetQuestions,
@@ -639,7 +640,9 @@ export async function writeFactsIntoCatalog(
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
-    const existing = await readCatalog(generated, { cacheRoot: root });
+    // beta.28.1: read once; the guards and the map use this read where every file is still as
+    // it found them (each file's size and time), and read the files again where one isn't.
+    const existing = await readCatalogWithFiles(generated, { cacheRoot: root });
     // ADR 0133: a prototype's facts are kept and compared with the estate, never written into
     // the catalog, its specs or its map, and nothing is asked about its calls.
     if (isPrototypeRepo(op, repo)) {
@@ -696,6 +699,7 @@ export async function writeFactsIntoCatalog(
       command: rerun,
       build,
       slots: snap,
+      read: existing,
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined
@@ -1035,7 +1039,7 @@ export async function writeFactsIntoCatalog(
     if (sharedAbout) for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
     await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
     for (const l of lines) io.out(l);
-    const map = await renderRepoMap(root, repo, io);
+    const map = await renderRepoMap(root, repo, io, built.catalog);
     return {
       written,
       flows: flowPaths,
@@ -1115,9 +1119,12 @@ async function renderRepoMap(
   root: string,
   repo: string,
   io: Output,
+  /** catalog/generated's records as the write left them, when it knows them (beta.28.1). */
+  after?: readonly CatalogRecord[],
 ): Promise<string[] | undefined> {
-  const records = (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }))
-    .records;
+  const records =
+    after ??
+    (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records;
   const spec = await readRepoSpec(root, repo, { cacheRoot: root });
   const ofRepo = records.some((r) => r.kind === "Component" && r.repo === repo);
   if (!ofRepo && spec.flows.length === 0) {
