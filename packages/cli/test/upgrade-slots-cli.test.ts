@@ -729,7 +729,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       for (const [p] of dangling) {
         const id = p.slice("interface/".length, -".yaml".length);
         const x = r.refused?.removals.find((y) => y.kind === "Interface" && y.id === id);
-          console.log("B2", id, JSON.stringify(x), JSON.stringify(r.refused?.reasons));
+        console.log("B2", id, JSON.stringify(x), JSON.stringify(r.refused?.reasons));
         expect(x?.explainedBy, id).toContain("forge-ledger isn't in the manifests any more");
       }
       if (r.refused?.allowRemovals !== undefined)
