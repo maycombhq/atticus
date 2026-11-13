@@ -606,8 +606,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `problems` by place, nothing written), writes them, then builds once, as one local job whose
  *   result is `MapEditsResult` (with the caller repos they touch). A problem may carry
  *   `problems`. Additive only.
+ * 3.14.0 (beta.28.1, field report 5): Apply (POST /api/facts/{repo}/apply) writes the kept facts
+ *   with the rejected ones left out (`verify --write` exit 3): its job ends done, code 0, and
+ *   its result (`FactsApplyResult`) carries `leftOut`, how many facts were left out, beside the
+ *   lines naming each with the file to fix it in. Additive only.
  */
-export const API_VERSION = "3.13.0";
+export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2191,6 +2195,20 @@ export const MapEditsResult = z.object({
   refused: BuildRefusalView.optional(),
 });
 export type MapEditsResultT = z.infer<typeof MapEditsResult>;
+/**
+ * 3.14.0: the result of POST /api/facts/{repo}/apply's job (GET /api/jobs/{id}'s `result`): its
+ * code and the lines verify printed; `refused`, the listing of a build that waits for a confirm;
+ * `leftOut` (beta.28.1), how many rejected facts the write left out (the lines name each); `next`,
+ * a step to take first (Sync the repos).
+ */
+export const FactsApplyResult = z.object({
+  code: z.number().int(),
+  lines: z.array(z.string()),
+  refused: BuildRefusalView.optional(),
+  leftOut: z.number().int().positive().optional(),
+  next: z.unknown().optional(),
+});
+export type FactsApplyResultT = z.infer<typeof FactsApplyResult>;
 /**
  * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
  * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
@@ -7799,14 +7817,15 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "applyFacts",
       summary:
-        "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction; 3.12.0: with the counts that confirm a refused build",
+        "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction; 3.12.0: with the counts that confirm a refused build; 3.14.0: a rejected fact is left out and the rest written (leftOut in the result)",
       tag: "workspace",
       params: [p("repo")],
       body: FactsApplyRequest,
       ok: {
         status: 202,
         schema: "JobAccepted",
-        description: "Started: its job's result is the code and the lines verify printed",
+        description:
+          "Started: its job's result is FactsApplyResult: the code and the lines verify printed, a refused build's listing, and (3.14.0) leftOut, how many rejected facts the write left out",
       },
       // 2.68.0: 409 while another local step (Apply, Propose, Bring in) runs.
       errors: [400, 409],
@@ -9826,6 +9845,7 @@ export function openApiDocument(): Record<string, unknown> {
     CatalogPruneView,
     DeletedLinksView,
     MapEditsResult,
+    FactsApplyResult,
     CatalogUpgradeView,
     CrossCheckPromoteView,
     FreshView,

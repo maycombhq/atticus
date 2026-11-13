@@ -11,7 +11,7 @@ Specification version 0.1.0.
 | Workspace files   | 3      |
 | Change state file | 1      |
 | Executor protocol | 1      |
-| Local API         | 3.13.0 |
+| Local API         | 3.14.0 |
 
 ## Plugins
 
