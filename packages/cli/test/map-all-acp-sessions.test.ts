@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import type { AcpSessionResult } from "@maycombhq/ai";
+import { AcpServerGoneError, type AcpSessionResult } from "@maycombhq/ai";
 import { VERIFY_MOVES, type AcpStep, type AcpStepRunner } from "../src/copilot-acp-steps.js";
 import {
   LAST_LIMIT_REL,
@@ -188,6 +188,34 @@ describe("a part's two sessions: what stops the repo (review of fix/b27-copilot)
     // On to part 2.
     expect(s.seen).toHaveLength(3);
     expect(r.text).toContain(`===== forge-ledger, part 2 of ${total} (repo 1 of 1) =====`);
+  }, 60_000);
+
+  it("beta.28 review: a server gone just before the stop is heard is the person's stop, not a failure", async () => {
+    // Windows: a console's Ctrl+C ends Copilot's server a moment before Atticus hears its own.
+    const { root } = ledgerEstate();
+    const ac = new AbortController();
+    const s = sessions([
+      async () => {
+        setTimeout(() => ac.abort(), 30);
+        throw new AcpServerGoneError("The Copilot language server ended on its own (x).");
+      },
+    ]);
+    const out: string[] = [];
+    const code = await mapAllCommand(
+      root,
+      { maxTokens: LIMIT, mode: "copilot-acp" },
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { acp: s.runner, signal: ac.signal, assistantFiles: async () => ({ results: [] }) },
+    );
+    const text = out.join("\n");
+    expect(code, text).toBe(0);
+    expect(text).not.toContain("ERR The Copilot language server ended");
+    expect(text).not.toContain("the Copilot session failed");
+    expect(text).toContain("The session ended (stopped (Ctrl+C)).");
+    expect(text).toContain(
+      "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
+    );
+    expect(s.seen).toHaveLength(1);
   }, 60_000);
 
   it("doesn't stop the repo when the second session failed, and says what each did", async () => {

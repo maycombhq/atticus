@@ -48,9 +48,31 @@ const defaultStarter =
  */
 const STOP_GRACE_MS = 15_000;
 
-/** beta.28: said when the work didn't end within the grace after Stop. */
-const CUT_OFF =
-  "The run didn't end within a few seconds of Stop: it is ended here. Whatever it was still waiting on is cut off, and nothing more it does is shown.";
+/** beta.28: said when the work didn't end within the grace after Stop, with where it was. */
+const cutOff = (phase: string) =>
+  `The run didn't end within a few seconds of Stop, so it is shown stopped here; it was last ${phase}. Its work is still ending: a new run can start once it has.`;
+
+/** beta.28: said once the work of a run shown stopped has really ended. */
+const WORK_ENDED = "The stopped run's work has ended: a new run can start.";
+
+/** beta.28: where a run's work was, from the last thing it said it did. */
+function phaseOf(e: MapAllEvent | undefined): string {
+  switch (e?.type) {
+    case undefined:
+    case "plan":
+      return "planning the run";
+    case "repo":
+      return `starting ${e.repo}`;
+    case "session":
+      return `in a Copilot session (${e.repo}, ${e.label})`;
+    case "session.end":
+      return `verifying and saving what a session of ${e.repo} wrote`;
+    case "verify":
+      return `saving where the run stands after verifying ${e.repo}`;
+    case "repo.stopped":
+      return `stopping its read of ${e.repo}`;
+  }
+}
 
 /** The lines of each tab a poll of the current run gets. */
 const TAIL = 200;
@@ -143,6 +165,10 @@ export function uiCopilotRunRoutes(
   let seq = 0;
   // beta.28: the grace each stopped run has for its work to end.
   const stopTimers = new Map<CopilotRun, ReturnType<typeof setTimeout>>();
+  // beta.28: where each run's work was last (its last event), said when Stop's grace runs out.
+  const lastEvent = new Map<CopilotRun, MapAllEvent>();
+  // beta.28: a run shown stopped whose work hasn't ended yet: no new run writes beside it.
+  let ending: CopilotRun | undefined;
   // A start under way (between its checks and the run being set): a second waits its turn.
   let starting = false;
 
@@ -208,6 +234,10 @@ export function uiCopilotRunRoutes(
         if (run?.view.state === "running")
           throw conflict(
             `A Copilot run is under way (${run.view.runId}, started ${run.view.startedAt}): stop it, or wait for it to finish.`,
+          );
+        if (ending)
+          throw conflict(
+            `The stopped run ${ending.view.runId} is still ending its work (it was last ${phaseOf(lastEvent.get(ending))}): a new run can start once it has.`,
           );
         if (starting)
           throw conflict("A Copilot run is starting: wait for it, then stop it if need be.");
@@ -287,6 +317,7 @@ export function uiCopilotRunRoutes(
             };
             const onEvent = (e: MapAllEvent) => {
               if (!live()) return;
+              lastEvent.set(me, e);
               for (const n of me.event(e)) queue(n);
               const p = me.view.progress;
               c.progress(p.repoIndex, p.repos, p.session ?? p.repo ?? "Planning");
@@ -295,12 +326,26 @@ export function uiCopilotRunRoutes(
             // beta.28: the job's own signal, given to its work, rather than the one its async
             // context carries: Stop reaches the run however the work was started.
             const signal = c.signal;
+            // beta.28: the work of a run already shown stopped has ended: said, and the pages
+            // told (its late writes too), and a new run may start.
+            const ended = () => {
+              if (ending === me) ending = undefined;
+              lastEvent.delete(me);
+              queue(me.line(WORK_ENDED));
+              flush();
+              if (run === me) state();
+              ctx.events.publish({ type: "file.changed", path: "facts" });
+            };
             let code: number;
             try {
               code = await start(optionsOf(b.data), io, { signal, onEvent });
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              if (!live()) return { errors: [msg] };
+              if (!live()) {
+                ended();
+                return { errors: [msg] };
+              }
+              lastEvent.delete(me);
               queue(me.finish(signal.aborted ? "stopped" : "failed", now().toISOString(), msg));
               flush();
               state();
@@ -308,7 +353,11 @@ export function uiCopilotRunRoutes(
               ctx.events.publish({ type: "file.changed", path: "facts" });
               return { errors: [msg] };
             }
-            if (!live()) return { result: { code, runId } };
+            if (!live()) {
+              ended();
+              return { result: { code, runId } };
+            }
+            lastEvent.delete(me);
             const stopped = signal.aborted;
             queue(
               me.finish(
@@ -358,8 +407,10 @@ export function uiCopilotRunRoutes(
           const t = setTimeout(() => {
             stopTimers.delete(r0);
             if (r0.view.state !== "running") return;
-            queue(r0.line(CUT_OFF));
+            // Shown stopped, its work still ending: said as it is, and no new run until it ends.
+            ending = r0;
             queue(r0.finish("stopped", now().toISOString()));
+            queue(r0.line(cutOff(phaseOf(lastEvent.get(r0)))));
             flush();
             if (run === r0) state();
             ctx.events.publish({ type: "file.changed", path: "facts" });

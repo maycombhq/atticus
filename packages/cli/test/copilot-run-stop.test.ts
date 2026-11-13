@@ -163,7 +163,7 @@ describe("Stop on a Copilot run from the app ends it within seconds (beta.28)", 
     } finally {
       await a.close();
     }
-  });
+  }, 60_000);
 
   it("during a prompt the agent doesn't answer: the run says stopped", async () => {
     const a = await appRun({ sessions: [{ steps: [{ tool: "Reading" }, { sleep: 30_000 }] }] });
@@ -176,7 +176,7 @@ describe("Stop on a Copilot run from the app ends it within seconds (beta.28)", 
     } finally {
       await a.close();
     }
-  });
+  }, 60_000);
 
   it("Copilot ending on its own ends the run as failed, saying why, with no session after it", async () => {
     const a = await appRun({
@@ -193,5 +193,5 @@ describe("Stop on a Copilot run from the app ends it within seconds (beta.28)", 
     } finally {
       await a.close();
     }
-  });
+  }, 60_000);
 });

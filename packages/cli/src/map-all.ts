@@ -12,6 +12,7 @@ import {
 import {
   AcpServerGoneError,
   AcpSetupError,
+  STOPPED_BY_PERSON,
   AcpSignInError,
   currentPromptLimit,
   type AiRequest,
@@ -1229,7 +1230,17 @@ export async function mapAllCommand(
   }
   const given: Clock = deps.clock ?? {
     now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    // beta.28 review: the timer goes when the run is stopped, not when it would have rung.
+    sleep: (ms) =>
+      new Promise((r) => {
+        const t = setTimeout(done, ms);
+        function done() {
+          clearTimeout(t);
+          deps.signal?.removeEventListener("abort", done);
+          r();
+        }
+        deps.signal?.addEventListener("abort", done, { once: true });
+      }),
   };
   // beta.28: a stop (Ctrl+C, Stop in the app) ends a wait at once, not when the sleep would.
   const clock: Clock = {
@@ -2023,7 +2034,16 @@ export async function mapAllCommand(
         // Its own context or the server's limit ran out (max_tokens, refusal): not a turn ended.
         else if (r.stopReason !== "end_turn") ended = { how: "short", why: r.stopReason };
       } catch (e) {
-        if (e instanceof AcpServerGoneError && !stopped()) {
+        // beta.28 review: a console's Ctrl+C can end the server a moment before the signal is
+        // heard here: looked at again shortly before the server is taken to have ended alone.
+        if (e instanceof AcpServerGoneError && !stopped())
+          await new Promise((res) => setTimeout(res, 100));
+        if (e instanceof AcpServerGoneError && stopped()) {
+          io.out(`The session ended (${STOPPED_BY_PERSON}).`);
+          emit({ type: "session.end", repo: item.repo, ended: STOPPED_BY_PERSON });
+          break;
+        }
+        if (e instanceof AcpServerGoneError) {
           // beta.28: field report: no Copilot process was left and the run waited on. The next
           // part's server may end the same way: the run stops here, failed, saying so.
           io.err(

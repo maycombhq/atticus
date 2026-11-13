@@ -7,6 +7,7 @@ import { killTree } from "../src/copilot-acp.js";
 import {
   AcpServerGoneError,
   AcpSignInError,
+  endedByCtrlC,
   atticusArgvOf,
   carryOnPrompt,
   buildContextPack,
@@ -375,6 +376,48 @@ describe("the Copilot ACP session (ADR 0171)", () => {
       /^The Copilot language server ended on its own during the session \(the Copilot language server ended \(3\)\)/,
     );
     expect(Date.now() - t0).toBeLessThan(8_000);
+  });
+
+  it("beta.28 review: a server ended by Ctrl+C (SIGINT, or Windows' STATUS_CONTROL_C_EXIT) is the person's stop", async () => {
+    expect(endedByCtrlC({ code: 3221225786, signal: null })).toBe(true);
+    expect(endedByCtrlC({ code: -1073741510, signal: null })).toBe(true);
+    expect(endedByCtrlC({ code: null, signal: "SIGINT" })).toBe(true);
+    expect(endedByCtrlC({ code: 1, signal: null })).toBe(false);
+    expect(endedByCtrlC(undefined)).toBe(false);
+    const m = metarepo({ sessions: [{ steps: [{ tool: "Reading" }, { kill: "SIGINT" }] }] });
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+    });
+    expect(r).toMatchObject({ stopReason: "cancelled", stopped: "stopped (Ctrl+C)" });
+  });
+
+  it("beta.28 review: a server that ends between turns ends the session, not fails it", async () => {
+    // It answered its turn, then ended: what it wrote is verified by the step, as any session's.
+    const m = metarepo({ sessions: [{ exitAfter: true, steps: [{ say: "Done." }] }] });
+    let asked = 0;
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      followUp: async () => {
+        asked++;
+        // The step reads what the session wrote meanwhile; the server ends.
+        await new Promise((res) => setTimeout(res, 400));
+        return "verify rejected 1 line: fix it";
+      },
+    });
+    expect(asked).toBe(1);
+    expect(r.stopReason).toBe("end_turn");
+    expect(r.stopped).toBeUndefined();
+    expect(m.log().filter((e) => e.event === "prompt").length).toBe(1);
   });
 
   it("tells a session that ended over a refusal why, and lets it carry on (beta.16)", async () => {

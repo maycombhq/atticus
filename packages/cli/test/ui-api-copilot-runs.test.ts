@@ -238,11 +238,13 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     }
   });
 
-  it("beta.28: Stop ends the run's view within its grace even when the work doesn't end", async () => {
+  it("beta.28: Stop ends the run's view within its grace; a new run waits, named, until the work really ends", async () => {
     // Field report: Stop, then "running" for 50 minutes. Whatever the work is waiting on, the
-    // person's Stop is the run's end: it says stopped, and what the work does after is not news.
+    // person's Stop ends the run's view; the work still ending keeps a second run from writing
+    // facts beside it, and says so, until it has ended.
     let finish: (() => void) | undefined;
     let heard = false;
+    let starts = 0;
     const stuck = await startServer({
       root: await metarepo(RUNTIME_ACP),
       port: 0,
@@ -252,7 +254,16 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
           assistantFiles: current0,
           stopGraceMs: 50,
           start: async (_o, io, deps) => {
+            if (++starts > 1) return 0;
             deps.signal?.addEventListener("abort", () => (heard = true));
+            deps.onEvent?.({ type: "repo", repo: "forge-ledger", index: 1, total: 1, why: "x" });
+            deps.onEvent?.({
+              type: "session",
+              repo: "forge-ledger",
+              label: "part 1 of 6",
+              line: "/atticus-map forge-ledger --part 1",
+              attempt: 0,
+            });
             io.out("waiting on something that never ends");
             await new Promise<void>((res) => (finish = res));
             io.out("the work ended at last");
@@ -260,6 +271,8 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
           },
         }),
     });
+    const seen: Record<string, unknown>[] = [];
+    stuck.events.listen((e) => seen.push(e as Record<string, unknown>));
     try {
       const r = await call(stuck, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
       const id = String(r.body.runId);
@@ -268,17 +281,34 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
       await until(async () => (await current(stuck)).run?.state === "stopped");
       expect(heard).toBe(true);
       const run = (await current(stuck)).run!;
-      expect(run.tabs[0]!.lines).toContain(
-        "The run didn't end within a few seconds of Stop: it is ended here. Whatever it was still waiting on is cut off, and nothing more it does is shown.",
+      // Said as it is: the work is still ending, where it was, and when a new run can start.
+      expect(run.tabs[0]!.lines.at(-1)).toBe(
+        "The run didn't end within a few seconds of Stop, so it is shown stopped here; it was last in a Copilot session (forge-ledger, part 1 of 6). Its work is still ending: a new run can start once it has.",
       );
-      expect(run.tabs[0]!.lines.at(-1)).toBe("Stopped. The next run carries on from here.");
-      // The work ending later changes nothing: the run stays stopped, said once.
+      // A new run waits for it, and the refusal names the stopped run.
+      const again = await call(stuck, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
+      expect(again.status).toBe(409);
+      expect(String(again.body.detail)).toBe(
+        `The stopped run ${id} is still ending its work (it was last in a Copilot session (forge-ledger, part 1 of 6)): a new run can start once it has.`,
+      );
+      // The work ends: said, the state and the facts published, and a new run starts.
+      const before = seen.length;
       finish!();
-      await new Promise((res) => setTimeout(res, 50));
+      await until(async () =>
+        (await current(stuck)).run!.tabs[0]!.lines.includes(
+          "The stopped run's work has ended: a new run can start.",
+        ),
+      );
       const after = (await current(stuck)).run!;
       expect(after.state).toBe("stopped");
-      expect(after.tabs[0]!.lines.filter((l) => l.startsWith("Stopped.")).length).toBe(1);
       expect(after.tabs[0]!.lines).not.toContain("the work ended at last");
+      const late = seen.slice(before);
+      expect(late.some((e) => e.type === "copilot-run.state")).toBe(true);
+      expect(late.some((e) => e.type === "file.changed" && e.path === "facts")).toBe(true);
+      await until(async () => {
+        const n = await call(stuck, "POST", "/api/copilot-runs", { kind: "stale", ...LIMIT });
+        return n.status === 202;
+      });
     } finally {
       finish?.();
       await stuck.close();

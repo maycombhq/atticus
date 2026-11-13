@@ -270,6 +270,17 @@ export interface AcpServer {
   close(): Promise<void>;
   /** Rejects when the program couldn't be started at all. */
   started: Promise<void>;
+  /** beta.28 review: how the process ended, once it has (its exit code or signal). */
+  exited?(): { code: number | null; signal: string | null } | undefined;
+}
+
+/**
+ * beta.28 review: whether a server ended the way Ctrl+C ends a process: by SIGINT, or on Windows
+ * with STATUS_CONTROL_C_EXIT (0xC000013A, as an unsigned or a signed exit code). A console's
+ * Ctrl+C reaches the server too, sometimes before Atticus hears its own: the person's stop.
+ */
+export function endedByCtrlC(e: { code: number | null; signal: string | null } | undefined) {
+  return !!e && (e.signal === "SIGINT" || e.code === 0xc000013a || e.code === -1073741510);
 }
 
 /** Starts the server; tests can pass their own. */
@@ -345,9 +356,11 @@ export const spawnAcpServer: AcpSpawner = (o) => {
     failed(e);
     close(`the Copilot language server couldn't be run: ${e.message}`);
   });
-  child.on("exit", (code, signal) =>
-    close(`the Copilot language server ended (${code ?? signal ?? "no code"})`),
-  );
+  let exit: { code: number | null; signal: string | null } | undefined;
+  child.on("exit", (code, signal) => {
+    exit = { code, signal };
+    close(`the Copilot language server ended (${code ?? signal ?? "no code"})`);
+  });
   for (const s of [child.stdin, child.stdout, child.stderr]) s?.on("error", () => undefined);
   child.stderr?.setEncoding("utf8").on("data", (d: string) => {
     err = (err + d).slice(-64_000);
@@ -358,6 +371,7 @@ export const spawnAcpServer: AcpSpawner = (o) => {
   return {
     started,
     stderr: () => err,
+    exited: () => exit,
     transport: {
       send: (t) => {
         if (!closed) child.stdin?.write(`${t}\n`);
@@ -903,31 +917,52 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     // Review of fix/b27-copilot: counted only when a nudge is sent, so a follow-up turn
     // (followUp) leaves a refusal its MAX_NUDGES.
     let nudge = 0;
+    let turns = 0;
     for (;;) {
       // beta.28: cancelled between turns (while the step had more to say): nothing more is asked.
       if (cancelWhy) {
         answer = { stopReason: "cancelled" };
         break;
       }
+      // beta.28 review: the server ended after a turn it answered: the session ended there, and
+      // the step verifies what it wrote; there is no one left to tell more.
+      if (gone && turns > 0) break;
       const before = refused.length;
       const asked = client.prompt(sessionId, prompt);
+      turns++;
       try {
         answer = await new Promise((res, rej) => {
           asked.then(res, rej);
           // Once cancelled, the agent has a few seconds to say so before the server is ended:
           // five when the person stopped it, ten for the time or the tool calls.
+          let grace: ReturnType<typeof setTimeout> | undefined;
           const watch = setInterval(() => {
             if (!cancelWhy) return;
             clearInterval(watch);
-            setTimeout(
+            grace = setTimeout(
               () => res({ stopReason: "cancelled" }),
               cancelWhy === STOPPED_BY_PERSON ? 5_000 : 10_000,
             );
           }, 50);
-          asked.finally(() => clearInterval(watch)).catch(() => undefined);
+          asked
+            .finally(() => {
+              clearInterval(watch);
+              clearTimeout(grace);
+            })
+            .catch(() => undefined);
         });
       } catch (e) {
         if (isAuthRequired(e)) throw signInError(e, init, server.stderr());
+        // beta.28 review: a console's Ctrl+C reaches the server too, and may end it before the
+        // signal is heard here: ended by Ctrl+C, or the signal heard a moment later, it is the
+        // person's stop.
+        if (gone && !cancelWhy) {
+          if (endedByCtrlC(server.exited?.())) cancel(STOPPED_BY_PERSON);
+          else {
+            await new Promise((res) => setTimeout(res, 100));
+            if (o.signal?.aborted) cancel(STOPPED_BY_PERSON);
+          }
+        }
         // Cancelled, and the server ended with it: the session was stopped, not failed.
         if (cancelWhy) {
           answer = { stopReason: "cancelled" };
