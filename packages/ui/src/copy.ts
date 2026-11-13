@@ -5434,7 +5434,15 @@ export const COPY = {
       callApi: (call: string) => `The API ${call} goes to`,
       notPaired: "Not this call",
       noCalls: (from: string) =>
-        `${from} has no call left to pair with this box: every call of it joins something already. To move one, pick its arrow and use Redirect this link….`,
+        `${from} has no call left to pair with this box: each is paired by a person already. Undo one from its line in the corrections to pair it again.`,
+      /** Beta.28.1 (field report 4): the calls with an arrow already, to move to this box. */
+      moveTitle: (n: number) =>
+        n === 1
+          ? "Move a call here (1 has an arrow already)"
+          : `Move a call here (${n} have an arrow already)`,
+      moveCaption: (from: string, to: string) =>
+        `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
+      joinsNow: (box: string) => `goes to ${box} now`,
       noApis: (to: string) =>
         `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
       pickOne: "Pick the API for at least one call.",
