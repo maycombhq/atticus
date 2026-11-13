@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { acquireLock, LockHeldError, parseRecord, serializeRecord } from "@maycombhq/core";
+import { TOO_LATE } from "@maycombhq/server";
 import { listHooks, mapEditHooks } from "../src/catalog-build-commands.js";
 import { linkEstate, PROXY, type Iface, type LinkEstate } from "./link-edit-estate.js";
 
@@ -81,6 +82,36 @@ describe("Edit the map, the review of beta.28", () => {
     // Byte for byte as the hand left it (its flow lists, its comments), and no decision left.
     expect(readFileSync(PROFILE(), "utf8")).toBe(hand);
     expect(decisions()).toEqual([]);
+    writeFileSync(PROFILE(), base);
+  }, 240_000);
+
+  it("a Stop not heard before the writes start is too late: a later failure is failed, not stopped", async () => {
+    // Beta.28.1 (the re-review): the commit point is before the first write, so the job never
+    // ends "Stopped" with files written and taken back.
+    const base = readFileSync(PROFILE(), "utf8");
+    const hand = base.replace(
+      "    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n",
+      `    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]\n    calls:\n      - { route: ${POST} } # by hand\n`,
+    );
+    listHooks.afterList = async () => writeFileSync(PROFILE(), hand);
+    let stopped = "";
+    mapEditHooks.beforeWrite = async (i) => {
+      if (i !== 0) return;
+      const j = e.srv.jobs.list().find((x) => x.state === "running");
+      if (j && e.srv.jobs.cancel(j.id)) stopped = j.id;
+    };
+    const failed = await e.job("/api/map/edits", {
+      edits: [
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: GET } },
+        { kind: "add", add: { kind: "call", system: "northwind-pay", route: POST } },
+      ],
+    });
+    mapEditHooks.beforeWrite = undefined;
+    listHooks.afterList = undefined;
+    expect(stopped).not.toBe("");
+    expect(failed.state).toBe("failed");
+    expect(e.srv.jobs.linesOf(stopped)?.lines).toContain(TOO_LATE);
+    expect(readFileSync(PROFILE(), "utf8")).toBe(hand);
     writeFileSync(PROFILE(), base);
   }, 240_000);
 

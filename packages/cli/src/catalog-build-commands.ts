@@ -1245,6 +1245,10 @@ export async function applyMapEdits(
           edits: new Set([i]),
         });
     };
+    // Beta.28.1 (the re-review): the writes start here, so a Stop from here is too late: the job
+    // ends as its writes and its build do (saying the Stop came too late), never "stopped" with
+    // its changes saved or taken back.
+    commitCurrent();
     for (const [i, e] of o.edits.entries()) {
       const said = `Change ${i + 1} of ${n}, ${mapEditWords(e)}`;
       try {
@@ -1376,9 +1380,6 @@ export async function applyMapEdits(
       }
     }
     io.out(`${n} change${n === 1 ? "" : "s"} saved. Building the catalog once, with all of them.`);
-    // Beta.28.1 (the review): the changes are written, so a Stop from here is too late: the job
-    // ends done (saying so), never "stopped" with its changes saved.
-    commitCurrent();
     await mapEditHooks.beforeBuild?.();
     const c = await buildAfterDecisions(root, targets, io, { inputs, pending });
     built = c === 0;
