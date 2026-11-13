@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
@@ -10,6 +11,7 @@ import {
   RunStrip,
   RunWithCopilot,
   mergePolled,
+  scrolledUp,
   TAB_LINES,
   withLines,
   withSpan,
@@ -241,5 +243,51 @@ describe("the strip and the Console", () => {
 
   it("draws nothing without a run (the Console says what ran, ADR 0187)", () => {
     expect(html(ctx({ run: null }), <CopilotRunTabs />)).toBe("");
+  });
+});
+
+describe("the Console's log scrolls (beta.28)", () => {
+  // Field report: during a run the log box in the panel at the foot had no scrollbar, so the
+  // earlier lines couldn't be reached and the run looked stuck.
+  const css = readFileSync(new URL("../src/app/shell/bottom-panel.css", import.meta.url), "utf8");
+  const rule = (sel: string) => {
+    const at = css.indexOf(`${sel} {`);
+    expect(at, sel).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  it("bounds the log inside the panel, each box between them a flex column that can shrink", () => {
+    const out = html(ctx(), <CopilotRunTabs />);
+    expect(out).toMatch(/<div class="run-console-copilot">/);
+    expect(out).toMatch(/role="tabpanel" id="run-console-log" class="run-console-panel"/);
+    expect(out).toMatch(/<pre class="run-console-log" role="log"/);
+    for (const sel of [
+      ".bp-panel-console .run-console-copilot",
+      ".bp-panel-console .run-console-panel",
+    ]) {
+      const r = rule(sel);
+      expect(r).toMatch(/display: flex;/);
+      expect(r).toMatch(/flex-direction: column;/);
+      expect(r).toMatch(/flex: 1;/);
+      expect(r).toMatch(/min-height: 0;/);
+    }
+    const log = rule(".bp-panel-console .run-console-log");
+    expect(log).toMatch(/overflow-y: auto;/);
+    expect(log).toMatch(/min-height: 3em;/);
+  });
+
+  it("stops following once the person scrolls up, not when lines are added or a search shrinks it", () => {
+    const el = (scrollTop: number, scrollHeight = 1000, clientHeight = 200) => ({
+      scrollTop,
+      scrollHeight,
+      clientHeight,
+    });
+    // Scrolled up from the end: stop following.
+    expect(scrolledUp(800, el(500))).toBe(true);
+    // At the end (Atticus put it there), or lines added below: still following.
+    expect(scrolledUp(800, el(800))).toBe(false);
+    expect(scrolledUp(800, el(800, 1400))).toBe(false);
+    // A search left fewer lines: the box clamped to its new end, still the end.
+    expect(scrolledUp(800, el(300, 500))).toBe(false);
   });
 });

@@ -727,6 +727,23 @@ export function matching(lines: string[], q: string): string[] {
   });
 }
 
+/** What a log box's scroll is: where it is, how tall its lines are and how much shows. */
+export interface LogScroll {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+}
+
+/**
+ * beta.28: whether the person scrolled a log up from where it was (`before`), away from its end:
+ * then it stops following the end. Lines added below, or a search that leaves fewer (the box
+ * clamped to its new end), are not a scroll up.
+ */
+export function scrolledUp(before: number, el: LogScroll): boolean {
+  const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  return el.scrollTop < before - 1 && !atEnd;
+}
+
 /**
  * A Copilot run's tabs in the Console (ADR 0173, inside ADR 0187's Console): the run's tab first,
  * then one per session, following the newest unless the person picks one.
@@ -745,6 +762,7 @@ export function CopilotRunTabs() {
     copiedTimer.current = setTimeout(() => setCopied(undefined), 2000);
   };
   const log = useRef<HTMLPreElement>(null);
+  const top = useRef(0);
   const run = c?.run;
   const tabs = run?.tabs ?? [];
   const shown = tabs.find((t) => t.id === tab) ?? tabs[0];
@@ -762,7 +780,10 @@ export function CopilotRunTabs() {
   }, [last, follow]);
   const lines = useMemo(() => (shown ? matching(shown.lines, q) : []), [shown, q]);
   useEffect(() => {
-    if (follow && log.current) log.current.scrollTop = log.current.scrollHeight;
+    if (follow && log.current) {
+      log.current.scrollTop = log.current.scrollHeight;
+      top.current = log.current.scrollTop;
+    }
   }, [lines.length, follow, tab]);
   if (!c || !run) return null;
   const onTabsKey = (e: KeyboardEvent) => {
@@ -853,6 +874,7 @@ export function CopilotRunTabs() {
       <div
         role="tabpanel"
         id="run-console-log"
+        className="run-console-panel"
         aria-labelledby={`console-tab-${shown?.id ?? "run"}`}
       >
         {shown && shown.from > 0 && (
@@ -869,7 +891,18 @@ export function CopilotRunTabs() {
             )}
           </p>
         )}
-        <pre ref={log} className="run-console-log" role="log" aria-live="off" tabIndex={0}>
+        <pre
+          ref={log}
+          className="run-console-log"
+          role="log"
+          aria-live="off"
+          tabIndex={0}
+          onScroll={(e) => {
+            // beta.28: scrolling up to read earlier lines stops following the end.
+            if (follow && scrolledUp(top.current, e.currentTarget)) setFollow(false);
+            top.current = e.currentTarget.scrollTop;
+          }}
+        >
           {lines.length ? lines.join("\n") : q ? T.console.noMatch(q) : T.console.noLines}
         </pre>
       </div>
