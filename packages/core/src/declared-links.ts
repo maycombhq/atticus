@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
@@ -86,9 +87,20 @@ async function systemNode(
 
 const COMMENT = /^\s*(publishes|listens)?\s*,?\s*declared by (.+?) on (\d{4}-\d{2}-\d{2})/;
 /** The comment a System added from the canvas carries on its id (the review of beta.28.1, S3). */
-const ADDED = /^\s*added from the canvas by (.+?) on (\d{4}-\d{2}-\d{2})/;
-export const addedComment = (by: string, at: string) =>
-  ` added from the canvas by ${by} on ${at.slice(0, 10)}`;
+const ADDED = /^\s*added from the canvas by (.+?) on (\d{4}-\d{2}-\d{2}) \(#([0-9a-f]{8})\)\s*$/;
+/**
+ * The re-review of beta.28.1: a short hash of the System as the canvas added it, in its comment,
+ * so Undo takes it away only while it is still exactly that (no field a person changed since).
+ */
+export const addedHash = (s: Record<string, unknown>): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(["id", "name", "boundary", "owner", "aliases"].map((k) => [k, s[k] ?? null])),
+    )
+    .digest("hex")
+    .slice(0, 8);
+export const addedComment = (by: string, at: string, hash: string) =>
+  ` added from the canvas by ${by} on ${at.slice(0, 10)} (#${hash})`;
 
 /** The comment a declaration carries: which side, who and when. */
 export const declaredComment = (by: string, at: string, side?: "publishes" | "listens") =>
@@ -212,16 +224,17 @@ async function newSystemNode(
   if (!isSeq(seq)) return undefined;
   // An empty `systems: []` opens out into a block list, as a hand-written profile has.
   if (seq.items.length === 0) seq.flow = false;
-  const added = doc.createNode({
+  const fields = {
     id: system,
     name: create.name ?? system,
     boundary: "product",
     ...(create.owner ? { owner: create.owner } : {}),
     aliases: [],
-  }) as YAMLMap;
-  // Who added it and when, on its id's line, as a declaration says it (S3).
+  };
+  const added = doc.createNode(fields) as YAMLMap;
+  // Who added it and when, on its id's line, as a declaration says it (S3), with its hash.
   const id = added.items[0]!.value as { comment?: string | null };
-  id.comment = addedComment(who.by, who.at);
+  id.comment = addedComment(who.by, who.at, addedHash(fields));
   seq.add(added);
   const text = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
   const again = parseDocument(text);
@@ -240,6 +253,10 @@ async function newSystemNode(
 export async function undeclareLink(
   root: string,
   d: { kind: "topic" | "call"; system: string; value: string },
+  o: {
+    /** A pairing or an answer names the system: a System the canvas added for it stays. */
+    inUse?: boolean;
+  } = {},
 ): Promise<{
   rel: string;
   changes: LineChange[];
@@ -276,7 +293,7 @@ export async function undeclareLink(
   // S3: a System the canvas added for a declaration goes with its last one, when nothing was
   // written under it since (no topic or call left, no alias, no key it wasn't added with).
   let removed: string | undefined;
-  if (after !== undefined && list.items.length === 1) {
+  if (after !== undefined && list.items.length === 1 && !o.inUse) {
     const again = parseDocument(after);
     const systems = again.get("systems");
     const at = isSeq(systems)
@@ -291,7 +308,16 @@ export async function undeclareLink(
       const plain =
         keys.every((k) => ["id", "name", "boundary", "owner", "aliases"].includes(k)) &&
         (aliases === undefined || (isSeq(aliases) && aliases.items.length === 0));
-      if (ADDED.test(idNode?.comment ?? "") && plain) {
+      // Exactly as added: its fields hash to its comment's, and no comment but that one in its
+      // lines (a person's note is a change too).
+      const hash = ADDED.exec(idNode?.comment ?? "")?.[3];
+      const [from, , end] = (sys as { range?: [number, number, number] | null }).range ?? [];
+      const own = from !== undefined && end !== undefined ? after.slice(from, end) : "";
+      const untouched =
+        !!hash &&
+        addedHash(sys.toJS(again) as Record<string, unknown>) === hash &&
+        (own.match(/(^|\s)#(\s|$)/gm) ?? []).length === 1;
+      if (untouched && plain) {
         const without = withoutItem(
           after,
           sys as { range?: [number, number, number] | null },

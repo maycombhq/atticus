@@ -224,8 +224,39 @@ describe("Declare a link… from a box no System of the profiles is (field repor
   it("takes the System away again with its last declaration's Undo, and says so (S3)", async () => {
     const profile = join(root, "org-pack", "profiles", "forge", "profile.yaml");
     expect(readFileSync(profile, "utf8")).toMatch(
-      new RegExp(`- id: ${SERVICE} # added from the canvas by pat on \\d{4}-\\d{2}-\\d{2}`),
+      new RegExp(
+        `- id: ${SERVICE} # added from the canvas by pat on \\d{4}-\\d{2}-\\d{2} \\(#[0-9a-f]{8}\\)`,
+      ),
     );
+    // The re-review: while a person's pairing names the System, it stays.
+    const corr = join(root, "facts", `${PROXY}.corrections.jsonl`);
+    const was = readFileSync(corr, "utf8");
+    const line = JSON.parse(was.split("\n").filter(Boolean)[0]!) as {
+      fact: string;
+      link: Record<string, unknown>;
+    };
+    const toSystem = {
+      ...line,
+      fact: "call.get.instruments-ping",
+      link: { system: SERVICE, method: "GET", path: "/forge/instruments/v1/ping" },
+    };
+    writeFileSync(corr, `${was}${JSON.stringify(toSystem)}\n`);
+    const kept = await call("/api/declared-links/undo", "POST", {
+      kind: "call",
+      system: SERVICE,
+      value: "GET /forge/instruments/v1/ping",
+    });
+    expect(kept.status, JSON.stringify(kept.body)).toBe(200);
+    expect(Api.FileChangeResult.parse(kept.body).removed).toBeUndefined();
+    expect(readFileSync(profile, "utf8")).toContain(`id: ${SERVICE}`);
+    // The pairing taken back and the declaration made again: its Undo takes the System away.
+    writeFileSync(corr, was);
+    const again = await call("/api/declared-links", "POST", {
+      kind: "call",
+      system: SERVICE,
+      route: "GET /forge/instruments/v1/ping",
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
     const r = await call("/api/declared-links/undo", "POST", {
       kind: "call",
       system: SERVICE,

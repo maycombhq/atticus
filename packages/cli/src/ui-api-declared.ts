@@ -18,7 +18,7 @@ import {
   type FactCorrection,
   type OrgPack,
 } from "@maycombhq/core";
-import { estateRepos, targetPicker } from "@maycombhq/scanner";
+import { estateFacts, estateRepos, targetPicker } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -82,6 +82,20 @@ export function systemToCreate(
   const owners = new Set(drawn.filter((x) => x.platform === r.platform).map((x) => x.owner));
   const owner = owners.size === 1 ? [...owners][0] : undefined;
   return { platform: r.platform, ...(owner ? { owner } : {}) };
+}
+
+/**
+ * The re-review of beta.28.1: whether a person's pairing (a `link` correction to it) or an
+ * answer (a target question's) names the system, by its id or its name's slug: a System the
+ * canvas added is then kept when its last declaration goes.
+ */
+export async function systemInUse(root: string, op: OrgPack, system: string): Promise<boolean> {
+  const est = await estateFacts(root, op, "");
+  const is = (v: string | undefined) => !!v && (v === system || factIdPart(v) === system);
+  return (
+    Object.values(est.pairs).some((m) => Object.values(m).some((x) => !x.none && is(x.system))) ||
+    Object.values(est.targets).some((m) => Object.values(m).some(is))
+  );
 }
 
 export function uiDeclaredRoutes(
@@ -227,7 +241,10 @@ export function uiDeclaredRoutes(
       const b = Api.UndeclareLinkRequest.safeParse(body ?? {});
       if (!b.success) throw badRequest("Say which declaration: { kind, system, value }.");
       try {
-        const res = await undeclareLink(ctx.root, b.data);
+        const op = await loadOrgPack(orgPackDirOf(ctx.root));
+        const res = await undeclareLink(ctx.root, b.data, {
+          inUse: await systemInUse(ctx.root, op, b.data.system),
+        });
         ctx.events.publish({ type: "file.changed", path: res.rel });
         return {
           status: 200,

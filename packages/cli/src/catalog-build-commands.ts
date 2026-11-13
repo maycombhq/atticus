@@ -1260,7 +1260,10 @@ export async function applyMapEdits(
             // A link a person declared on the canvas: the declaration goes, not a suppress of it.
             const decl = await canvasDeclarationOf(root, byId.get(target));
             if (decl) {
-              const res = await undeclareLink(root, decl);
+              const { systemInUse } = await import("./ui-api-declared.js");
+              const res = await undeclareLink(root, decl, {
+                inUse: await systemInUse(root, await loadOrgPack(orgPackDirOf(root)), decl.system),
+              });
               replaced(join(root, ...res.rel.split("/")), i, res);
               // The build names the org pack as one input: a teammate's change to it pending
               // before this run is never confirmed (`pending`).
