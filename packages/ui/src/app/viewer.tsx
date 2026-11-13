@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
@@ -49,10 +50,24 @@ export function nextAsideWidth(w: number, key: string, max: number): number | un
   }
 }
 
+/** The width a drag to `clientX` gives the details, the stage's right edge at `right`. */
+export function dragAsideWidth(right: number, clientX: number, max: number): number {
+  return Math.min(Math.max(right - clientX, ASIDE_WIDTH.min), Math.max(max, ASIDE_WIDTH.min));
+}
+
+/** Whether a width chosen is the wide one Wider details gives (a stage `stageW` wide). */
+export function isWideAside(w: number | undefined, stageW: number): boolean {
+  return w !== undefined && stageW > 0 && w >= (stageW - ASIDE_WIDTH.keep) * ASIDE_WIDTH.wide - 1;
+}
+
 /** The width this viewer last chose (a per-viewer convenience: none, or a bad one, is none). */
-function savedAsideWidth(): number | undefined {
+export function savedAsideWidth(
+  store: Storage | undefined = globalThis.localStorage,
+): number | undefined {
   try {
-    const n = Number(globalThis.localStorage?.getItem(ASIDE_KEY));
+    const raw = store?.getItem(ASIDE_KEY);
+    if (raw === null || raw === undefined || raw === "") return undefined;
+    const n = Number(raw);
     return Number.isFinite(n) && n >= ASIDE_WIDTH.min ? n : undefined;
   } catch {
     return undefined;
@@ -627,37 +642,54 @@ export function DiagramFrame(p: {
   const asideRef = useRef<HTMLElement | null>(null);
   const [asideW, setAsideW] = useState<number | undefined>(undefined);
   useEffect(() => setAsideW(savedAsideWidth()), []);
-  const maxAside = () =>
-    Math.max(
-      ASIDE_WIDTH.min,
-      (stageRef.current?.getBoundingClientRect().width ?? 0) - ASIDE_WIDTH.keep,
-    );
-  const currentAside = () =>
-    asideW ?? asideRef.current?.getBoundingClientRect().width ?? ASIDE_WIDTH.min;
+  // Measured, not read in render (the review): the stage's width and the details' own.
+  const [stageW, setStageW] = useState(0);
+  const [shownW, setShownW] = useState<number>(ASIDE_WIDTH.min);
+  useEffect(() => {
+    const stage = stageRef.current;
+    const aside = asideRef.current;
+    if (!stage || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      setStageW(Math.round(stage.getBoundingClientRect().width));
+      if (aside && !aside.hidden) setShownW(Math.round(aside.getBoundingClientRect().width));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(stage);
+    if (aside) ro.observe(aside);
+    return () => ro.disconnect();
+  }, []);
+  const maxAside = Math.max(ASIDE_WIDTH.min, stageW - ASIDE_WIDTH.keep);
   const chooseAside = (n: number | undefined) => {
     setAsideW(n);
     saveAsideWidth(n);
   };
-  const wideNow = asideW !== undefined && asideW >= maxAside() * ASIDE_WIDTH.wide - 1;
+  const wideNow = isWideAside(asideW, stageW);
   const onHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const n = nextAsideWidth(currentAside(), e.key, maxAside());
-    if (n === undefined) return;
+    const n = nextAsideWidth(asideW ?? shownW, e.key, maxAside);
+    if (n === undefined) {
+      // Up and Down on the handle don't pan the picture behind it either.
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.stopPropagation();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     chooseAside(n);
   };
   const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const stage = stageRef.current;
-    if (!stage) return;
+    if (!stage || e.button !== 0) return;
     e.preventDefault();
     const handle = e.currentTarget;
     handle.setPointerCapture?.(e.pointerId);
+    let last: number | undefined;
     const move = (ev: PointerEvent) => {
-      const right = stage.getBoundingClientRect().right;
-      const max = maxAside();
-      chooseAside(Math.min(Math.max(right - ev.clientX, ASIDE_WIDTH.min), max));
+      const box = stage.getBoundingClientRect();
+      last = dragAsideWidth(box.right, ev.clientX, box.width - ASIDE_WIDTH.keep);
+      setAsideW(last);
     };
     const up = () => {
+      if (last !== undefined) saveAsideWidth(last);
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", up);
       handle.removeEventListener("pointercancel", up);
@@ -800,7 +832,9 @@ export function DiagramFrame(p: {
                 aria-controls={asideId}
                 aria-label={T.resizeDetails}
                 aria-valuemin={ASIDE_WIDTH.min}
-                aria-valuenow={Math.round(asideW ?? ASIDE_WIDTH.min)}
+                aria-valuemax={maxAside}
+                aria-valuenow={Math.round(asideW ?? shownW)}
+                aria-valuetext={`${Math.round(asideW ?? shownW)} px`}
                 onKeyDown={onHandleKey}
                 onPointerDown={onHandleDown}
                 onDoubleClick={() => chooseAside(undefined)}
@@ -812,30 +846,36 @@ export function DiagramFrame(p: {
               className="viewer-aside"
               aria-label={T.details}
               hidden={!shown}
-              style={asideW === undefined ? undefined : { flexBasis: `${asideW}px` }}
+              style={
+                asideW === undefined
+                  ? undefined
+                  : ({ "--aside-w": `${Math.round(asideW)}px` } as CSSProperties)
+              }
             >
-              <button
-                type="button"
-                className="btn viewer-btn viewer-aside-widen"
-                aria-pressed={wideNow}
-                onClick={() =>
-                  chooseAside(wideNow ? undefined : Math.round(maxAside() * ASIDE_WIDTH.wide))
-                }
-              >
-                {wideNow ? T.narrowDetails : T.widenDetails}
-              </button>
-              <button
-                ref={closeRef}
-                type="button"
-                className="btn viewer-btn viewer-aside-close"
-                aria-expanded={true}
-                aria-controls={asideId}
-                aria-label={T.hideDetails}
-                title={T.hideDetails}
-                onClick={() => toggle(false)}
-              >
-                <Icon d={ICON.close} />
-              </button>
+              <div className="viewer-aside-head">
+                <button
+                  type="button"
+                  className="btn viewer-btn viewer-aside-widen"
+                  aria-pressed={wideNow}
+                  onClick={() =>
+                    chooseAside(wideNow ? undefined : Math.round(maxAside * ASIDE_WIDTH.wide))
+                  }
+                >
+                  {T.widenDetails}
+                </button>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  className="btn viewer-btn viewer-aside-close"
+                  aria-expanded={true}
+                  aria-controls={asideId}
+                  aria-label={T.hideDetails}
+                  title={T.hideDetails}
+                  onClick={() => toggle(false)}
+                >
+                  <Icon d={ICON.close} />
+                </button>
+              </div>
               {p.aside}
             </aside>
           </>

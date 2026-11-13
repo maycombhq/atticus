@@ -20,6 +20,9 @@ import {
   neighbourhood,
   nextAsideWidth,
   ASIDE_WIDTH,
+  dragAsideWidth,
+  isWideAside,
+  savedAsideWidth,
   panBy,
   searchNodes,
   ViewerToolbar,
@@ -283,7 +286,55 @@ describe("the details beside the picture can be made wider (beta.28)", () => {
     expect(out).toContain('aria-orientation="vertical"');
     expect(out).toContain(`aria-label="${esc(V.resizeDetails)}"`);
     expect(out).toContain(`aria-valuemin="${ASIDE_WIDTH.min}"`);
+    expect(out).toContain("aria-valuemax=");
     expect(out).toContain(esc(V.widenDetails));
+    // A toggle button: one name, its state in aria-pressed (the review).
+    expect(out).toContain('aria-pressed="false"');
+    expect(out).not.toContain(esc("Narrower details"));
+    // The header row keeps Wider details then the close button, in the order they are seen.
+    expect(out.indexOf(esc(V.widenDetails))).toBeLessThan(
+      out.indexOf(esc(V.hideDetails), out.indexOf('class="viewer-aside"')),
+    );
+  });
+
+  it("has no handle and no Wider details where the details lie over the picture", () => {
+    const out = html(
+      <DiagramFrame
+        title="Flow"
+        full={false}
+        height={640}
+        toolbar={<span />}
+        aside={<p>inspector</p>}
+        onKeyAction={noop}
+      >
+        <div className="arch-canvas" />
+      </DiagramFrame>,
+    );
+    expect(out).not.toContain('role="separator"');
+    expect(out).not.toContain(esc(V.widenDetails));
+  });
+
+  it("drags from the stage's right edge, within its bounds, and knows when it is wide", () => {
+    expect(dragAsideWidth(1000, 600, 760)).toBe(400);
+    expect(dragAsideWidth(1000, 950, 760)).toBe(ASIDE_WIDTH.min);
+    expect(dragAsideWidth(1000, 100, 760)).toBe(760);
+    expect(isWideAside(600, 1000)).toBe(true);
+    expect(isWideAside(340, 1000)).toBe(false);
+    expect(isWideAside(undefined, 1000)).toBe(false);
+  });
+
+  it("reads a saved width only when it is a width, and never throws", () => {
+    const store = (v: string | null) => ({ getItem: () => v }) as unknown as Storage;
+    expect(savedAsideWidth(store("420"))).toBe(420);
+    expect(savedAsideWidth(store("abc"))).toBeUndefined();
+    expect(savedAsideWidth(store("12"))).toBeUndefined();
+    expect(savedAsideWidth(store(null))).toBeUndefined();
+    const broken = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    } as unknown as Storage;
+    expect(savedAsideWidth(broken)).toBeUndefined();
   });
 
   it("steps with the arrow keys, Home and End, never past its bounds", () => {

@@ -4933,7 +4933,6 @@ export const COPY = {
     /** Beta.28: the details beside the picture made wider, by a handle or at once. */
     resizeDetails: "Width of the details: drag, or use the arrow keys",
     widenDetails: "Wider details",
-    narrowDetails: "Narrower details",
     /** Beta.26: the map's one bar of controls, and its legend folded over a corner. */
     mapControls: "Map controls",
     legend: "Legend",
