@@ -86,8 +86,11 @@ describe("connect two boxes (ADR 0174, G1)", () => {
         why: "names-alike",
       },
     });
-    // A call the join already ties to the gateway isn't loose.
-    expect(v.calls.some((c) => c.fact === "call.post.partners-northwind-charges")).toBe(false);
+    // A call the join already ties to the gateway isn't loose: it is listed to move (3.14), with
+    // where it goes now, and never picked for the person.
+    const tied = v.calls.find((c) => c.fact === "call.post.partners-northwind-charges");
+    expect(tied?.status).toBe("joined");
+    expect(tied?.joins).toBe("forge-partner-gateway");
     expect(v.noCalls).toBeUndefined();
   });
 
