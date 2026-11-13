@@ -43,6 +43,10 @@ export async function checkMapEdits(
   for (const [edit, e] of edits.entries()) {
     const said: string[] = [];
     const theirs = new Set<string>();
+    if (e.kind !== "add" && !e.delete.interfaces.length)
+      said.push(
+        `The arrow ${e.delete.from} → ${e.delete.to} names no call to take away: it isn't one of calls, or not every call on it was read. Pick it again.`,
+      );
     if (e.kind !== "add") {
       const missing = e.delete.interfaces.filter((id) => byId.get(id)?.kind !== "Interface");
       if (missing.length)

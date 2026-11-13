@@ -12,7 +12,6 @@ import {
   linkBasis,
   proxyRepos,
   routingActions,
-  uncitedRepos,
 } from "../src/screens/architecture/links.js";
 import {
   ArrowWrongForm,
@@ -212,8 +211,6 @@ describe("a link that cites no line of a caller's but is no proxy's routing", ()
     const found = arrowCalls([READER, ROUTE], viewOf);
     expect(found.uncited).toEqual(["if-reader"]);
     expect(found.routing).toEqual(["if-route-get"]);
-    expect(uncitedRepos([READER, NO_LINE, ROUTE])).toEqual(["forge-web"]);
-    expect(uncitedRepos([{ ...READER, other: [] }])).toEqual([]);
   });
 
   it("tests a caller's line the same way everywhere: a line without its number is none", () => {

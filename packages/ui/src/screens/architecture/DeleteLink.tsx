@@ -47,6 +47,8 @@ export function DeleteLinkView(p: {
   onCancel(): void;
   onConfirm(): void;
   job?: string | undefined;
+  /** The review of beta.28: the other arrows the same calls draw (a topic's other side). */
+  also?: readonly string[] | undefined;
   /** The opener and the confirm's Delete, for the focus (WCAG 2.4.3). */
   opener?: { current: HTMLButtonElement | null };
   yes?: { current: HTMLButtonElement | null };
@@ -85,6 +87,11 @@ export function DeleteLinkView(p: {
               <p id={`${id}-q`} className="li-delete-ask" style={{ margin: 0 }}>
                 {D.confirm(p.from, p.to, n)}
               </p>
+              {p.also && p.also.length > 0 && (
+                <p className="ev-say" style={{ margin: 0 }}>
+                  {D.also(p.also.join(", "))}
+                </p>
+              )}
               <p className="ev-say" style={{ margin: 0 }}>
                 {D.intro}
               </p>
@@ -131,20 +138,44 @@ export function DeleteLinkView(p: {
   );
 }
 
+/** An Interface record's id (core's `interfaceId`): a join of anything else isn't a call. */
+const INTERFACE_ID = /^if-[0-9a-f]{16}$/;
+
+/**
+ * Whether a link can be deleted here: it is an arrow of calls (an Interface behind every join it
+ * lists), not a build dependency, a use of a table or a loose end only.
+ */
+export function canDelete(link: Api.HierEdgeT): boolean {
+  const joins = link.joins ?? [];
+  return (
+    link.type !== "depends-on" &&
+    joins.length > 0 &&
+    joins.every((j) => INTERFACE_ID.test(j.interface))
+  );
+}
+
 /**
  * Every Interface behind a link: the view's joins, or (beta.24 review) every call merged into it
  * from GET /api/graph/edge-calls when the view lists fewer than it has. A lineless link's are
- * there too: an Interface needs no caller's line to be deleted.
+ * there too: an Interface needs no caller's line to be deleted. The review of beta.28: refused
+ * (nothing deleted in part) when not every call can be read, when the arrow merges something
+ * that isn't a call, or when it has none.
  */
 export async function linkInterfaces(
   link: Api.HierEdgeT,
   callsPath?: string,
   get: (path: string) => Promise<Api.GraphEdgeCallsViewT> = (path) => api(path),
 ): Promise<string[]> {
-  const shown = (link.joins ?? []).map((j) => j.interface);
-  if (link.count <= shown.length || !callsPath) return [...new Set(shown)];
-  const all = await get(callsPath);
-  return [...new Set(all.joins.map((j) => j.interface))];
+  const shown = link.joins ?? [];
+  let joins: readonly Api.HierJoinT[] = shown;
+  if (link.count > shown.length) {
+    if (!callsPath) throw new Error(D.partial(link.count, shown.length));
+    joins = (await get(callsPath)).joins;
+    if (joins.length < link.count) throw new Error(D.partial(link.count, joins.length));
+  }
+  if (!joins.length) throw new Error(D.none);
+  if (!joins.every((j) => INTERFACE_ID.test(j.interface))) throw new Error(D.mixed);
+  return [...new Set(joins.map((j) => j.interface))];
 }
 
 /** Delete this link, with its state: every Interface on the link, then the job. */
@@ -156,6 +187,8 @@ export function DeleteLink(p: {
   callsPath?: string;
   /** The link's decisions are written and the catalog built: the picture is read again. */
   onDeleted(d: { from: string; to: string; interfaces: readonly string[] }): void;
+  /** The other arrows these Interfaces draw (a topic's other side), said in the confirm. */
+  alsoOf?: (interfaces: readonly string[]) => string[];
 }) {
   const [now, setNow] = useState<DeleteState>({ state: "idle" });
   const [job, setJob] = useState<string | undefined>();
@@ -198,6 +231,7 @@ export function DeleteLink(p: {
       count={p.link.count}
       now={now}
       job={job}
+      also={"interfaces" in now && now.interfaces ? p.alsoOf?.(now.interfaces) : undefined}
       opener={opener}
       yes={yes}
       onOpen={() => void open()}

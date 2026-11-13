@@ -35,6 +35,7 @@ import {
   type Prediction,
 } from "./links.js";
 import "./link-panel.css";
+import { canDelete } from "./DeleteLink.js";
 
 /**
  * Why is this linked (ADR 0135, C1): each call merged into a link on the estate canvas, how
@@ -384,7 +385,7 @@ export function LinkInspector(p: {
             </p>
           )}
         </div>
-        {p.link && p.link.type !== "depends-on" && p.deleteLink?.(p.link)}
+        {p.link && canDelete(p.link) && p.deleteLink?.(p.link)}
         <button type="button" className="btn li-close" onClick={p.onClose}>
           {A.close}
         </button>

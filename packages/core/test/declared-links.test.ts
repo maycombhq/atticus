@@ -111,6 +111,68 @@ describe("declared links (ADR 0174, G3)", () => {
   });
 });
 
+describe("undoing a declaration byte for byte (beta.28 review)", () => {
+  // A profile as people write it: flow lists, comments, version 1, a hand-written call kept.
+  const HAND = `# The Forge profile (invented).
+schemaVersion: 1
+platform: forge
+name: Forge
+systems:
+  - { id: ledger, name: Ledger, boundary: product, aliases: [] }
+  - id: northwind-pay
+    name: Northwind Pay
+    boundary: vendor
+    aliases: [api.northwind-pay.example, devapi.northwind-pay.example]
+    calls:
+      - { route: GET /partners/northwind/status } # written by hand
+      - route: POST /partners/northwind/webhooks
+        # declared by pat on 2026-11-06
+environments: [dv, qa, prod]
+`;
+  const write = async (text: string) => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-undeclare-"));
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    await writeFile(join(root, "org-pack/profiles/forge/profile.yaml"), text);
+    return { root, file: join(root, "org-pack/profiles/forge/profile.yaml") };
+  };
+
+  it("removes only the declaration's lines, every other byte as it was", async () => {
+    const { root, file } = await write(HAND);
+    await undeclareLink(root, {
+      kind: "call",
+      system: "northwind-pay",
+      value: "POST /partners/northwind/webhooks",
+    });
+    expect(await readFile(file, "utf8")).toBe(
+      HAND.replace(
+        "      - route: POST /partners/northwind/webhooks\n        # declared by pat on 2026-11-06\n",
+        "",
+      ),
+    );
+  });
+
+  it("removes the list's key with its last item, and keeps CRLF", async () => {
+    const one = HAND.replace(
+      "      - { route: GET /partners/northwind/status } # written by hand\n",
+      "",
+    );
+    const { root, file } = await write(one.replace(/\n/g, "\r\n"));
+    await undeclareLink(root, {
+      kind: "call",
+      system: "northwind-pay",
+      value: "POST /partners/northwind/webhooks",
+    });
+    expect(await readFile(file, "utf8")).toBe(
+      one
+        .replace(
+          "    calls:\n      - route: POST /partners/northwind/webhooks\n        # declared by pat on 2026-11-06\n",
+          "",
+        )
+        .replace(/\n/g, "\r\n"),
+    );
+  });
+});
+
 describe("the preview's line diff", () => {
   it("pairs what changed, and leaves out what didn't", async () => {
     const { changedLines } = await import("../src/index.js");

@@ -48,6 +48,7 @@ import {
   type ToChoice,
 } from "./EditMap.js";
 import {
+  keptAfterApply,
   stage,
   stagedOf,
   STAGED_LINK,
@@ -635,6 +636,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // Beta.28, Edit the map: the systems a link can be added from (Declare a link…'s), and the
   // boxes a staged add can be drawn to.
   const { fromChoices, toChoices } = editChoices(views);
+  // The review of beta.28: the other arrows the same Interfaces draw (a topic's other side: the
+  // publisher's arrow to it and its listener's from it are one call), said before a delete.
+  const alsoArrows = (ids: readonly string[], link: string): string[] => {
+    const these = new Set(ids);
+    const seen = new Map<string, string>();
+    for (const e of [...(focus?.edges ?? []), ...[...views.values()].flatMap((v) => v.edges)])
+      if (e.id !== link && (e.joins ?? []).some((j) => these.has(j.interface)))
+        seen.set(e.id, `${find(e.from)?.label ?? e.from} → ${find(e.to)?.label ?? e.to}`);
+    return [...seen.values()];
+  };
   const known = knownTargets(loaded);
   const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
   const under = (j: Api.HierJoinT) => (
@@ -998,8 +1009,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                           <EditMap
                             staged={staged}
                             onRemove={(k) => setStaged((l) => unstage(l, k))}
-                            onApplied={() => {
-                              setStaged([]);
+                            onApplied={(keys) => {
+                              setStaged((l) => keptAfterApply(l, keys));
                               setRedirecting(undefined);
                               reloadViews();
                             }}
@@ -1044,10 +1055,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                                   onStage={(x) => setStaged((list) => stage(list, x))}
                                   onRedirect={setRedirecting}
                                   onUnstage={(k) => setStaged((list) => unstage(list, k))}
+                                  alsoOf={(ids) => alsoArrows(ids, l.id)}
                                 />
                               ) : (
                                 <DeleteLink
                                   link={l}
+                                  alsoOf={(ids) => alsoArrows(ids, l.id)}
                                   from={find(l.from)?.label ?? l.from}
                                   to={find(l.to)?.label ?? l.to}
                                   {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}

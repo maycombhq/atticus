@@ -418,8 +418,15 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         );
       })
       .add("GET", "/api/links/deleted", async () => {
-        const { deletedLinks } = await import("./catalog-build-commands.js");
-        return { status: 200, body: Api.DeletedLinksView.parse(await deletedLinks(root)) };
+        const { deletedLinks, suppressedNow } = await import("./catalog-build-commands.js");
+        // The review of beta.28: a link whose Interfaces the build no longer makes says so.
+        const suppressed = await suppressedNow(root).catch(() => undefined);
+        return {
+          status: 200,
+          body: Api.DeletedLinksView.parse(
+            await deletedLinks(root, suppressed ? { suppressed } : {}),
+          ),
+        };
       })
       .add("POST", "/api/links/deleted/undo", async ({ body }) => {
         const b = parse(Api.LinkUndeleteRequest, body);

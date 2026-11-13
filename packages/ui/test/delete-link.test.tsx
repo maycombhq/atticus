@@ -28,7 +28,7 @@ const esc = (s: string) =>
     .replace(/'/g, "&#x27;");
 
 const CALL: Api.HierJoinT = {
-  interface: "if-0a1b",
+  interface: "if-0a1b2c3d4e5f6071",
   from: "northwind-pay-proxy",
   to: "refunds-api",
   how: "path",
@@ -176,7 +176,7 @@ describe("Deleted links, with Bring back", () => {
     decisions: [
       {
         id: "cd-link-delete-if-0a1b",
-        target: "if-0a1b",
+        target: "if-0a1b2c3d4e5f6071",
         file: "catalog/curated/curateddecision/cd-link-delete-if-0a1b.yaml",
       },
     ],

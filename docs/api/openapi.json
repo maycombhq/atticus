@@ -6086,7 +6086,7 @@
                 "properties": {
                   "interfaces": {
                     "minItems": 1,
-                    "maxItems": 500,
+                    "maxItems": 5000,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -6317,8 +6317,7 @@
                               "type": "object",
                               "properties": {
                                 "interfaces": {
-                                  "minItems": 1,
-                                  "maxItems": 500,
+                                  "maxItems": 5000,
                                   "type": "array",
                                   "items": {
                                     "type": "string",
@@ -6504,8 +6503,7 @@
                               "type": "object",
                               "properties": {
                                 "interfaces": {
-                                  "minItems": 1,
-                                  "maxItems": 500,
+                                  "maxItems": 5000,
                                   "type": "array",
                                   "items": {
                                     "type": "string",
@@ -6612,8 +6610,7 @@
                               "type": "object",
                               "properties": {
                                 "interfaces": {
-                                  "minItems": 1,
-                                  "maxItems": 500,
+                                  "maxItems": 5000,
                                   "type": "array",
                                   "items": {
                                     "type": "string",
@@ -48239,6 +48236,9 @@
                 "at": {
                   "type": "string"
                 },
+                "gone": {
+                  "type": "boolean"
+                },
                 "decisions": {
                   "type": "array",
                   "items": {
@@ -48252,6 +48252,9 @@
                       },
                       "file": {
                         "type": "string"
+                      },
+                      "gone": {
+                        "type": "boolean"
                       }
                     },
                     "required": [

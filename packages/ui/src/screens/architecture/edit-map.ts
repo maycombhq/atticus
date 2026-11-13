@@ -30,6 +30,8 @@ export interface StagedDelete {
   callerLines?: readonly string[];
   /** Its calls as the view lists them (method and path), to offer a lineless arrow's call. */
   shapes?: readonly { method?: string; path?: string }[];
+  /** The other arrows the same calls draw (a topic's other side), taken away with it. */
+  also?: readonly string[];
 }
 
 /**
@@ -80,10 +82,12 @@ export function addWords(l: AddLink): string {
 
 /** A staged change in words, as the list and the confirm say it. */
 export function rowWords(s: Staged): string {
+  const also =
+    s.kind !== "add" && s.delete.also?.length ? E.row.also(s.delete.also.join(", ")) : "";
   if (s.kind === "delete")
-    return E.row.delete(s.delete.from, s.delete.to, s.delete.interfaces.length);
+    return E.row.delete(s.delete.from, s.delete.to, s.delete.interfaces.length) + also;
   if (s.kind === "add") return E.row.add(addWords(s.link));
-  return E.row.redirect(s.delete.from, s.delete.to, addWords(s.link));
+  return E.row.redirect(s.delete.from, s.delete.to, addWords(s.link)) + also;
 }
 
 /**
@@ -114,6 +118,14 @@ export function stage(list: readonly Staged[], s: Unkeyed): Staged[] {
 
 export const unstage = (list: readonly Staged[], key: string): Staged[] =>
   list.filter((x) => x.key !== key);
+
+/**
+ * The list once an Apply saved `applied` (built, or its build waiting on Catalog builds): those
+ * are off it, never staged again (a second Apply would refuse every add as on file already); a
+ * change staged while it ran stays.
+ */
+export const keptAfterApply = (list: readonly Staged[], applied: ReadonlySet<string>): Staged[] =>
+  list.filter((x) => !applied.has(x.key));
 
 /** How many of each, for the list's head ("3 deleted, 2 added, 1 redirected"). */
 export function stagedCounts(list: readonly Staged[]): {

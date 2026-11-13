@@ -178,18 +178,6 @@ export const isRoutingLink = (j: Join): boolean =>
 export const isUncitedLink = (j: Join): boolean =>
   j.how !== "declared" && !j.dependency && callerLines(j).length === 0 && !isRoutingLink(j);
 
-/**
- * Review of beta.27: the repos to read again for the uncited links among `joins`: those their
- * caller's evidence names, else the evidence placed at neither end (a built-in reader's).
- */
-export const uncitedRepos = (joins: readonly Join[]): string[] => [
-  ...new Set(
-    joins
-      .filter(isUncitedLink)
-      .flatMap((j) => [...j.caller, ...j.other].flatMap((e) => (e.repo ? [e.repo] : []))),
-  ),
-];
-
 /** The proxy repos whose facts a routing link's actions read: its hops' own lines'. */
 export const proxyRepos = (joins: readonly Join[]): string[] => [
   ...new Set(joins.filter(isRoutingLink).flatMap((j) => hopLines(j).map((l) => l.repo))),

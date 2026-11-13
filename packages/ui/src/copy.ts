@@ -5309,6 +5309,14 @@ export const COPY = {
     no: "Cancel",
     reading: "Reading every call on this link…",
     readFailed: (why: string) => `Couldn't read every call on this link: ${why}`,
+    /** The review of beta.28: nothing is deleted in part. */
+    partial: (all: number, read: number) =>
+      `only ${read} of its ${all} calls could be read, and a link is deleted whole or not at all. Open the box it starts in and pick the arrow there.`,
+    none: "it has no call to take away.",
+    mixed:
+      "it merges something that isn't a call (a use of a table, a loose end), which Delete can't take away: delete it from the box it starts in, where its calls are drawn apart.",
+    /** A topic's arrows are one call each way: deleting one takes the other too. */
+    also: (arrows: string) => `This also takes away ${arrows}: they are the same calls.`,
     working: "Deleting the link and building the catalog…",
     failed: (why: string) => `The link wasn't deleted: ${why}`,
     done: (from: string, to: string) =>
@@ -5367,6 +5375,8 @@ export const COPY = {
         `Delete ${from} → ${to} (${calls} call${calls === 1 ? "" : "s"})`,
       add: (what: string) => `Add: ${what}`,
       redirect: (from: string, to: string, what: string) => `Redirect ${from} → ${to} to: ${what}`,
+      /** The other arrows the same calls draw, taken away with it. */
+      also: (arrows: string) => `, and with it ${arrows}`,
     },
     what: {
       call: (system: string, route: string) => `${system} calls ${route}`,

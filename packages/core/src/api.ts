@@ -2050,7 +2050,7 @@ export const CatalogPruneRequest = z.strictObject({
  * lists fewer) and its two ends' names, as the inline confirm listed them.
  */
 export const LinkDeleteRequest = z.strictObject({
-  interfaces: z.array(z.string().min(1).max(300)).min(1).max(500),
+  interfaces: z.array(z.string().min(1).max(300)).min(1).max(5000),
   from: z.string().min(1).max(200),
   to: z.string().min(1).max(200),
 });
@@ -2065,8 +2065,18 @@ export const DeletedLinksView = z.object({
       calls: z.number().int().nonnegative(),
       by: z.string(),
       at: z.string(),
+      /** No Interface of it would be drawn now even without the suppress (its code moved on). */
+      gone: z.boolean().optional(),
       /** One curated suppress per Interface, in catalog/curated/curateddecision/. */
-      decisions: z.array(z.object({ id: z.string(), target: z.string(), file: z.string() })),
+      decisions: z.array(
+        z.object({
+          id: z.string(),
+          target: z.string(),
+          file: z.string(),
+          /** The build no longer makes this Interface: the suppress takes nothing away. */
+          gone: z.boolean().optional(),
+        }),
+      ),
     }),
   ),
 });
@@ -2120,12 +2130,21 @@ export type MapEditPairT = z.infer<typeof MapEditPair>;
  * the link and its two ends); an add is Declare a link…'s (`add`, from a system's box) or Connect
  * to…'s (`pair`, from a repo's box); `redirect` is a delete and an add together, one row.
  */
+/**
+ * 3.13.0: an arrow taken away, as Delete this link takes it: every Interface behind it (an empty
+ * list is said as the change's problem, by its place) and its two ends.
+ */
+export const MapEditDelete = z.strictObject({
+  interfaces: z.array(z.string().min(1).max(300)).max(5000),
+  from: z.string().min(1).max(200),
+  to: z.string().min(1).max(200),
+});
 export const MapEdit = z.union([
-  z.strictObject({ kind: z.literal("delete"), delete: LinkDeleteRequest }),
+  z.strictObject({ kind: z.literal("delete"), delete: MapEditDelete }),
   z.strictObject({ kind: z.literal("add"), add: MapEditAdd }),
   z.strictObject({ kind: z.literal("add"), pair: MapEditPair }),
-  z.strictObject({ kind: z.literal("redirect"), delete: LinkDeleteRequest, add: MapEditAdd }),
-  z.strictObject({ kind: z.literal("redirect"), delete: LinkDeleteRequest, pair: MapEditPair }),
+  z.strictObject({ kind: z.literal("redirect"), delete: MapEditDelete, add: MapEditAdd }),
+  z.strictObject({ kind: z.literal("redirect"), delete: MapEditDelete, pair: MapEditPair }),
 ]);
 export type MapEditT = z.infer<typeof MapEdit>;
 /** 3.13.0: POST /api/map/edits, every change staged, applied together with one build. */

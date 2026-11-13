@@ -24,6 +24,7 @@ import {
 } from "../src/screens/architecture/EditMap.js";
 import {
   countsWords,
+  keptAfterApply,
   requestOf,
   rowWords,
   stage,
@@ -36,7 +37,11 @@ import {
   type StagedDelete,
 } from "../src/screens/architecture/edit-map.js";
 import type { CanvasGraph } from "../src/screens/architecture/model.js";
-import { linkInterfaces } from "../src/screens/architecture/DeleteLink.js";
+import {
+  canDelete,
+  DeleteLinkView,
+  linkInterfaces,
+} from "../src/screens/architecture/DeleteLink.js";
 
 /**
  * Beta.28, Edit the map (the owner's ask of 2026-11-12: "delete arrows and add arrows in one go
@@ -64,7 +69,7 @@ const REFUNDS: StagedDelete = {
   from: "northwind-pay-proxy",
   to: "refunds-api",
   // A lineless arrow: its Interface cites no line of its caller's, and is deleted all the same.
-  interfaces: ["if-lineless"],
+  interfaces: ["if-1111111111111111"],
 };
 const PAYMENTS: StagedDelete = {
   link: "calls:component:northwind-pay-proxy>component:payments-api",
@@ -156,7 +161,11 @@ describe("staging changes (nothing saved)", () => {
     ]);
     expect(body.edits[0]).toEqual({
       kind: "delete",
-      delete: { interfaces: ["if-lineless"], from: "northwind-pay-proxy", to: "refunds-api" },
+      delete: {
+        interfaces: ["if-1111111111111111"],
+        from: "northwind-pay-proxy",
+        to: "refunds-api",
+      },
     });
     expect(body.edits[5]).toEqual({
       kind: "redirect",
@@ -176,7 +185,19 @@ describe("staging changes (nothing saved)", () => {
     expect(addOf("harbor-ledger", "publishes", "")).toBeUndefined();
   });
 
-  it("reads every Interface behind an arrow, even when its view lists fewer, lineless ones too", async () => {
+  it("reads every Interface behind an arrow, lineless ones too, and never deletes in part", async () => {
+    const join = {
+      interface: "if-1111111111111111",
+      from: "northwind-pay-proxy",
+      to: "refunds-api",
+      how: "path" as const,
+      gateway: false,
+      verified: false,
+      caller: [],
+      callee: [],
+      hops: [],
+      other: [],
+    };
     const link: Api.HierEdgeT = {
       id: REFUNDS.link,
       from: REFUNDS.fromBox,
@@ -186,28 +207,65 @@ describe("staging changes (nothing saved)", () => {
       state: "current",
       gaps: [],
       evidence: [],
-      joins: [
-        {
-          interface: "if-lineless",
-          from: "northwind-pay-proxy",
-          to: "refunds-api",
-          how: "path",
-          gateway: false,
-          verified: false,
-          caller: [],
-          callee: [],
-          hops: [],
-          other: [],
-        },
-      ],
+      joins: [join],
     };
-    expect(await linkInterfaces({ ...link, count: 1 })).toEqual(["if-lineless"]);
+    expect(await linkInterfaces({ ...link, count: 1 })).toEqual(["if-1111111111111111"]);
+    const second = { ...join, interface: "if-2222222222222222" };
     const all = await linkInterfaces(link, "/api/graph/edge-calls?edge=x", async () => ({
       edge: link.id,
       count: 2,
-      joins: [...link.joins!, { ...link.joins![0]!, interface: "if-second" }],
+      joins: [join, second],
     }));
-    expect(all).toEqual(["if-lineless", "if-second"]);
+    expect(all).toEqual(["if-1111111111111111", "if-2222222222222222"]);
+    // More calls than the view lists and no way to read them all: refused, not cut short.
+    await expect(linkInterfaces(link)).rejects.toThrow(COPY.deleteLink.partial(2, 1));
+    await expect(
+      linkInterfaces(link, "/x", async () => ({ edge: link.id, count: 2, joins: [join] })),
+    ).rejects.toThrow(COPY.deleteLink.partial(2, 1));
+    // An arrow that merges a use of a table (no Interface behind it), or nothing at all.
+    await expect(
+      linkInterfaces({ ...link, count: 2, joins: [join, { ...join, interface: "table:ledger" }] }),
+    ).rejects.toThrow(COPY.deleteLink.mixed);
+    await expect(linkInterfaces({ ...link, count: 1, joins: [] })).rejects.toThrow(
+      COPY.deleteLink.partial(1, 0),
+    );
+    // Delete is offered only on an arrow of calls.
+    expect(canDelete({ ...link, count: 1 })).toBe(true);
+    expect(canDelete({ ...link, joins: [] })).toBe(false);
+    expect(canDelete({ ...link, type: "depends-on" })).toBe(false);
+    expect(
+      canDelete({ ...link, type: "reads", joins: [{ ...join, interface: "table:ledger" }] }),
+    ).toBe(false);
+  });
+
+  it("says the other arrows the same calls draw (a topic's other side), in the row and the confirm", () => {
+    const l = stage([], {
+      kind: "delete",
+      delete: { ...REFUNDS, also: ["forge.refunds → forge-ledger"] },
+    });
+    expect(rowWords(l[0]!)).toBe(
+      "Delete northwind-pay-proxy → refunds-api (1 call), and with it forge.refunds → forge-ledger",
+    );
+    const page = html(
+      <DeleteLinkView
+        from="forge-refunds"
+        to="forge.refunds"
+        count={1}
+        now={{ state: "confirm", interfaces: ["if-1111111111111111"] }}
+        also={["forge.refunds → forge-ledger"]}
+        onOpen={noop}
+        onCancel={noop}
+        onConfirm={noop}
+      />,
+    );
+    expect(page).toContain(esc(COPY.deleteLink.also("forge.refunds → forge-ledger")));
+  });
+
+  it("takes only the saved changes off the list: one staged while Apply ran stays", () => {
+    const l = six();
+    const saved = new Set(l.slice(0, 4).map((x) => x.key));
+    expect(keptAfterApply(l, saved).map((x) => x.key)).toEqual(l.slice(4).map((x) => x.key));
+    expect(keptAfterApply(l, new Set(l.map((x) => x.key)))).toEqual([]);
   });
 });
 
@@ -672,7 +730,11 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     );
     expect(requestOf(l).edits[0]).toEqual({
       kind: "redirect",
-      delete: { interfaces: ["if-lineless"], from: "northwind-pay-proxy", to: "refunds-api" },
+      delete: {
+        interfaces: ["if-1111111111111111"],
+        from: "northwind-pay-proxy",
+        to: "refunds-api",
+      },
       pair,
     });
     // The same call paired again elsewhere is the same change.

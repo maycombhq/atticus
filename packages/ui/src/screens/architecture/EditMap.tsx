@@ -133,6 +133,8 @@ export function StageLink(p: {
   onStage(s: Unkeyed): void;
   onRedirect(d: StagedDelete): void;
   onUnstage(key: string): void;
+  /** The other arrows these Interfaces draw (a topic's other side). */
+  alsoOf?: (interfaces: readonly string[]) => string[];
 }) {
   const [now, setNow] = useState<StageState>({ state: "idle" });
   const read = async (then: (d: StagedDelete) => void) => {
@@ -140,7 +142,9 @@ export function StageLink(p: {
     try {
       const interfaces = await linkInterfaces(p.link, p.callsPath);
       setNow({ state: "idle" });
-      then(stagedDeleteOf(p.link, p.from, p.to, interfaces, p.fromRepo));
+      const d = stagedDeleteOf(p.link, p.from, p.to, interfaces, p.fromRepo);
+      const also = p.alsoOf?.(interfaces) ?? [];
+      then(also.length ? { ...d, also } : d);
     } catch (e) {
       setNow({ state: "error", text: whyNot(e) });
     }
@@ -736,9 +740,16 @@ export function EditMapView(p: {
   const a = p.apply;
   const yes = useRef<HTMLButtonElement | null>(null);
   const applyBtn = useRef<HTMLButtonElement | null>(null);
-  // The confirm takes the focus on its yes; Go back gives it to Apply (WCAG 2.4.3).
+  const head = useRef<HTMLHeadingElement | null>(null);
+  // WCAG 2.4.3: the confirm takes the focus on its yes; Go back gives it to Apply once it is
+  // drawn again; after the yes, and when the job ends, the heading has it (its status follows).
+  const was = useRef(a.state);
   useEffect(() => {
+    const before = was.current;
+    was.current = a.state;
     if (a.state === "confirm") yes.current?.focus();
+    else if (before === "confirm" && a.state === "idle") applyBtn.current?.focus();
+    else if (before === "confirm" || before === "working") head.current?.focus();
   }, [a.state]);
   const n = p.staged.length;
   const busy = a.state === "working";
@@ -750,7 +761,7 @@ export function EditMapView(p: {
       said.set(x.edit, x.message ? `${x.state}, ${x.message}` : x.state);
   return (
     <section className="stack edit-map" aria-labelledby={`${id}-t`}>
-      <h3 id={`${id}-t`} className="h" style={{ margin: 0 }}>
+      <h3 id={`${id}-t`} ref={head} tabIndex={-1} className="h" style={{ margin: 0 }}>
         {E.title}
       </h3>
       {a.state === "done" ? (
@@ -823,14 +834,7 @@ export function EditMapView(p: {
                 <button type="button" className="btn primary" ref={yes} onClick={p.onConfirm}>
                   {E.confirm.yes}
                 </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    p.onBack();
-                    applyBtn.current?.focus();
-                  }}
-                >
+                <button type="button" className="btn" onClick={p.onBack}>
                   {E.confirm.back}
                 </button>
               </div>
@@ -855,6 +859,14 @@ export function EditMapView(p: {
               {E.working}
             </p>
           )}
+          {a.state === "saved" &&
+            (a.refused ? (
+              <RefusalLink refused={a.refused} />
+            ) : (
+              <p className="ev-say" role="status" style={{ margin: 0 }}>
+                {COPY.panelResults.waitsBuild}
+              </p>
+            ))}
           {a.state === "problems" && (
             <p className="state error" role="alert" style={{ margin: 0 }}>
               {E.problemsLine(a.problems.length)}
@@ -876,8 +888,11 @@ export function EditMapView(p: {
 export function EditMap(p: {
   staged: readonly Staged[];
   onRemove(key: string): void;
-  /** Applied: the list is emptied and the picture read again. */
-  onApplied(): void;
+  /**
+   * Saved (built, or the build waiting on Catalog builds): the keys of the changes it saved, to
+   * take off the list (a change staged meanwhile stays), and the picture is read again.
+   */
+  onApplied(keys: ReadonlySet<string>): void;
   add?: ReactNode;
 }) {
   const [apply, setApply] = useState<ApplyState>({ state: "idle" });
@@ -902,10 +917,10 @@ export function EditMap(p: {
       onBack={() => setApply({ state: "idle" })}
       onConfirm={() => {
         setApply({ state: "working" });
+        const keys = new Set(p.staged.map((x) => x.key));
         void applyStaged(p.staged, followJob, setJob).then((s) => {
           setApply(s);
-          // Saved (built, or the build waiting on Catalog builds): the list is done with.
-          if (s.state === "done" || s.state === "saved") p.onApplied();
+          if (s.state === "done" || s.state === "saved") p.onApplied(keys);
         });
       }}
     />
