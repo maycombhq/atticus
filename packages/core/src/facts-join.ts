@@ -1007,6 +1007,12 @@ interface Node {
  * and a template's `{{name}}` (Mustache, Jinja, a CI variable). A Helm expression (`{{ .Values.x
  * }}`) names no setting by itself and isn't one.
  */
+/**
+ * The re-review of beta.28.1: a build or deploy token that is the whole host of a value (`@x@`,
+ * `https://@x@/v1`, `@x@:8443`), never one that is only part of it (`api-@env@.forge.internal`).
+ */
+const WHOLE_HOST_TOKEN = /^(?:[a-z][a-z0-9+.-]*:\/\/)?@[A-Za-z_][A-Za-z0-9_.-]*@(?:[/:?#]|$)/i;
+
 const TOKEN_FORMS: readonly RegExp[] = [
   /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
   /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
@@ -1226,7 +1232,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const tokenBehind = (raw: string | undefined, owner: Node, depth = 0): string | undefined => {
     const v = raw?.trim();
     if (!v) return undefined;
-    if (TOKEN_FORMS[0]!.test(v)) return v;
+    if (WHOLE_HOST_TOKEN.test(v)) return v;
     const p = placeholderIn(v);
     if (!p || depth >= MAX_PLACEHOLDER_DEPTH) return undefined;
     for (const s of configsByName.get(settingNameKey(p.name)) ?? []) {
@@ -2648,7 +2654,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         ...keyed.map((t) => t.fact.value ?? t.fact.source),
         ...cands.map((x) => x.value),
         tokenBehind(f.base, call),
-      ].find((v): v is string => !!v && TOKEN_FORMS[0]!.test(v));
+      ].find((v): v is string => !!v && WHOLE_HOST_TOKEN.test(v));
       if (namesHost && (forwarding || deployToken)) {
         // A gateway forwards to the host its target names, never to whichever service serves the
         // path: a host nothing resolves is asked about (beta.27: a token only its `<URL>` part

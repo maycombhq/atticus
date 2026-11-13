@@ -291,6 +291,35 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     }
   });
 
+  // The re-review: only a token that is the whole host is one nothing says the host of; a host
+  // a token is only part of (`limits-@env@.apps.forge.internal`) is no deploy token's.
+  it("takes a token for the host only when it is the whole host", () => {
+    const at = (host: string) =>
+      joinFacts({
+        repos: [
+          { repo: "forge-web", facts: [getLimit({ host })] },
+          { ...limits, hosts: [] },
+        ],
+      });
+    for (const host of [
+      "@forgeLimitsUrl@",
+      "https://@forgeLimitsUrl@/v1",
+      "@forgeLimitsUrl@:8443",
+    ]) {
+      const out = at(host);
+      expect(out.joins, host).toEqual([]);
+      expect(
+        out.asks.map((a) => a.reason),
+        host,
+      ).toEqual(["unknown-host"]);
+    }
+    // A host a token is only part of keeps the rule before beta.28.1: a placeholder host
+    // nothing resolves, joined by its path (a guess, shown so), not this question.
+    const part = at("limits-@env@.apps.forge.internal");
+    expect(part.asks).toEqual([]);
+    expect(part.joins.map((j) => j.entry.fact)).toEqual(["e-get-limit"]);
+  });
+
   it("reads a call's path written as a setting, from the repo's application.properties", () => {
     // `@Value("${forge-remote.uris.download-limit}")` as the path, the base a config key: the
     // path the settings give it joins, as if written in the code. A whole URL gives the host too.

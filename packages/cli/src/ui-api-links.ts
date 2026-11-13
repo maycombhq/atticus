@@ -174,7 +174,8 @@ export function boxesOf(query: URLSearchParams): { from: string; to: Api.LinkBox
 
 /**
  * Beta.28.1 (field report 4, the review's S4): which of A's calls the canvas draws, from the
- * built catalog: an Interface current in it (generated or curated) whose id is the join's, or
+ * built catalog: an Interface current in it (the curated one over a generated one of the same
+ * id) whose id is the join's, or
  * whose caller's evidence cites the call's line (a call placed outside included), and that no
  * current suppress of a person's takes away (Delete this link's, whatever its id, `-2` too).
  * Before any catalog is built nothing can be said, and undefined says so: every join counts as
@@ -220,7 +221,10 @@ export async function drawnOf(
   }
   const ids = new Set<string>();
   const lines = new Map<string, string>();
-  for (const r of [...gen, ...cur]) {
+  // The re-review: a curated Interface stands over a generated one of the same id.
+  const byId = new Map<string, CatalogRecord>();
+  for (const r of [...gen, ...cur]) if (r.kind === "Interface") byId.set(r.id, r);
+  for (const r of byId.values()) {
     if (r.kind !== "Interface" || suppressed.has(r.id)) continue;
     if (((r as { status?: string }).status ?? "current") !== "current") continue;
     ids.add(r.id);

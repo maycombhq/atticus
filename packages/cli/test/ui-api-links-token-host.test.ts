@@ -182,6 +182,19 @@ describe("Connect to… from a proxy whose target host is a token (field report 
     }
     rmSync(file);
     forgetCatalogs();
+    // The re-review: a curated Interface of the same id stands over the generated one: retired
+    // there, the arrow isn't drawn, whatever the generated file says.
+    const cdir = join(root, "catalog", "curated", "interface");
+    mkdirSync(cdir, { recursive: true });
+    const curated = join(cdir, `${one.id}.yaml`);
+    const retired = { ...one, status: "retired" as const };
+    expect(parseRecord(retired).ok, JSON.stringify(parseRecord(retired))).toBe(true);
+    writeFileSync(curated, serializeRecord(retired as CatalogRecord));
+    forgetCatalogs();
+    expect([(await ping()).status]).toEqual(["undrawn"]);
+    rmSync(curated);
+    forgetCatalogs();
+    expect([(await ping()).status]).toEqual(["joined"]);
   });
 });
 
