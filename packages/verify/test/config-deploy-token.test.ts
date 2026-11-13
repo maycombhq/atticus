@@ -20,6 +20,12 @@ const ENV = "deploy/prod.env";
 const CI = "ci/deploy.yml";
 const MVN = "ci/release.sh";
 const BUNDLE = "gateway/config.json";
+const VALUES = "deploy/values.yml";
+const ENV2 = "deploy/staging.env";
+const MVN2 = "ci/build.sh";
+const TEST_RES = "src/test/resources/test.env";
+const SECRET = "deploy/secrets/prod.env";
+const BUNDLE2 = "gateway2/config.json";
 const FILES: Record<string, string> = {
   [Y]: [
     "forge-ledger:", // 1
@@ -28,6 +34,7 @@ const FILES: Record<string, string> = {
     "    region: ${LEDGER_REGION:north-1}", // 4
     "    pool: ${LEDGER_POOL}", // 5
     '    owner: "@FORGE_SCHEMA_OWNER@"', // 6
+    "    size: ${ledger.pool}", // 7
   ].join("\n"),
   [P]: ["forge-ledger.datasource.default_schema=@FORGE_SCHEMA@"].join("\n"),
   [POM]: [
@@ -41,6 +48,30 @@ const FILES: Record<string, string> = {
   [ENV]: ["LEDGER_POOL=12", "FORGE_SCHEMA_OWNER=northwind_ops"].join("\n"),
   [CI]: ["variables:", "  LEDGER_POOL: 24"].join("\n"),
   [MVN]: ["mvn -B package -DFORGE_SCHEMA=ledger_release"].join("\n"),
+  // The review of beta.28.1 (S1-S3): where a `with` line may set a token.
+  [VALUES]: [
+    "other:", // 1
+    "  LEDGER_POOL: 99", // 2
+    "LEDGER_POOL: 31", // 3
+    "ledger:", // 4
+    "  pool: 5", // 5
+    "  extra:", // 6
+    "    pool: 77", // 7
+  ].join("\n"),
+  [ENV2]: ["  LEDGER_POOL=44", "export LEDGER_POOL=45"].join("\n"),
+  [MVN2]: [
+    "mvn -DFORGE_SCHEMA=ledger_release -B package",
+    "mvn -DFORGE_SCHEMA='ledger release' -B package",
+  ].join("\n"),
+  [TEST_RES]: ["LEDGER_POOL=13"].join("\n"),
+  [SECRET]: ["LEDGER_POOL=14"].join("\n"),
+  [BUNDLE2]: [
+    "{", // 1
+    '  "name": "@FORGE_SCHEMA@",', // 2
+    '  "value": "ledger_top",', // 3
+    '  "nested": { "name": "inner", "value": "ledger_nested" }', // 4
+    "}", // 5
+  ].join("\n"),
   [BUNDLE]: [
     "{", // 1
     '  "configurations": [', // 2
@@ -203,6 +234,82 @@ describe("a deploy token's value is verified where it is set", () => {
           }),
         )
       ).map((x) => x.code),
+    ).toEqual(["claim-not-on-line"]);
+  });
+});
+
+describe("where a `with` line may set a token (the review of beta.28.1)", () => {
+  const codes = async (f: Fact) => (await run(f)).map((x) => x.code);
+  it("S1: in YAML the key's whole dotted path names the token; a key nested under another parent doesn't", async () => {
+    const pool = (line: number, value: string) =>
+      cfg(`config.v${line}`, "forge-ledger.datasource.pool", value, Y, 5, {
+        with: [part(VALUES, line, value)],
+      });
+    expect(await codes(pool(2, "99"))).toEqual(["claim-not-on-line"]);
+    expect(await codes(pool(3, "31"))).toEqual([]);
+    const size = (line: number, value: string) =>
+      cfg(`config.s${line}`, "forge-ledger.datasource.size", value, Y, 7, {
+        with: [part(VALUES, line, value)],
+      });
+    expect(await codes(size(5, "5"))).toEqual([]);
+    expect(await codes(size(7, "77"))).toEqual(["claim-not-on-line"]);
+    // A CI file's variables block still sets it (ci/deploy.yml: `variables:` then `LEDGER_POOL: 24`).
+    expect(
+      await codes(
+        cfg("config.ci2", "forge-ledger.datasource.pool", "24", Y, 5, {
+          with: [part(CI, 2, "24")],
+        }),
+      ),
+    ).toEqual([]);
+  });
+  it("S1: outside YAML a NAME= line sets it only from its start (`export` allowed)", async () => {
+    const pool = (line: number, value: string) =>
+      cfg(`config.e${line}`, "forge-ledger.datasource.pool", value, Y, 5, {
+        with: [part(ENV2, line, value)],
+      });
+    expect(await codes(pool(1, "44"))).toEqual(["claim-not-on-line"]);
+    expect(await codes(pool(2, "45"))).toEqual([]);
+  });
+  it("S2: a -D flag's value is one shell word, quoted or not, with more flags after it", async () => {
+    expect(
+      await codes(
+        cfg("config.m1", KEY, "ledger_release", Y, 3, { with: [part(MVN2, 1, "ledger_release")] }),
+      ),
+    ).toEqual([]);
+    expect(
+      await codes(
+        cfg("config.m2", KEY, "ledger release", Y, 3, { with: [part(MVN2, 2, "ledger release")] }),
+      ),
+    ).toEqual([]);
+    expect(
+      await codes(
+        cfg("config.m3", KEY, "ledger_release -B package", Y, 3, {
+          with: [part(MVN2, 1, "ledger_release -B package")],
+        }),
+      ),
+    ).toEqual(["claim-not-on-line"]);
+  });
+  it("S3: a test's resources or a secret file never set a token", async () => {
+    const pool = (file: string, value: string) =>
+      cfg(`config.${value}`, "forge-ledger.datasource.pool", value, Y, 5, {
+        with: [part(file, 1, value)],
+      });
+    expect(await codes(pool(TEST_RES, "13"))).toEqual(["claim-not-on-line"]);
+    // A secret file isn't read at all (verify refuses citing it); the token isn't set by it.
+    expect((await run(pool(SECRET, "14"))).length).toBeGreaterThan(0);
+  });
+  it("a config.json token's value is the object's own, not a nested object's", async () => {
+    const at = (line: number, value: string) =>
+      cfg(`config.b${line}`, KEY, value, Y, 3, { with: [part(BUNDLE2, line, value)] });
+    expect(await codes(at(3, "ledger_top"))).toEqual([]);
+    expect(await codes(at(4, "ledger_nested"))).toEqual(["claim-not-on-line"]);
+    // Cited on the token object's own line, a nested object's value still isn't its own.
+    expect(
+      await codes(
+        cfg("config.b2n", KEY, "ledger_nested", Y, 3, {
+          with: [part(BUNDLE2, 2, "ledger_nested")],
+        }),
+      ),
     ).toEqual(["claim-not-on-line"]);
   });
 });

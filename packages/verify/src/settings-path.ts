@@ -1,4 +1,4 @@
-import { DEFAULT_GATEWAY_BUNDLE_FOLDERS } from "@maycombhq/core";
+import { DEFAULT_GATEWAY_BUNDLE_FOLDERS, isSecretPath } from "@maycombhq/core";
 import { isCommentLine } from "./skipped.js";
 
 /**
@@ -396,33 +396,70 @@ export function deployToken(v: string): DeployToken | undefined {
 
 /**
  * Whether the part's line sets the token `name` to a value `same` accepts: a build file's
- * `<name>value</name>`, a `name=value` / `name: value` line (`export name=…`, `-Dname=…`), or
- * a bundle config.json's token object named `@name@` (or `name`) whose `"value"` it is.
+ * `<name>value</name>`, a `-Dname=value` flag (one shell word, quoted or not), a YAML key whose
+ * whole dotted path is `name` (in a CI file, a variable under `variables:` or `env:` too), a
+ * `name=value` / `name: value` line from its start (`export name=…`), or a bundle config.json's
+ * token object named `@name@` (or `name`) whose own `"value"` it is. The review of beta.28.1: a
+ * test's resources or a secret file never set one (`notSource`).
  */
 function setsToken(
   p: Part,
   name: string,
   same: (v: string | undefined) => boolean,
   linesOf: (path: string) => readonly string[] | undefined,
+  notSource: (path: string) => boolean,
 ): boolean {
+  if (notSource(p.file)) return false;
   const lines = linesOf(p.file);
   const l = lines?.[p.line - 1];
   if (!lines || l === undefined) return false;
   const n = escape(name);
   const xml = new RegExp(`<${n}>([^<]*)</${n}>`).exec(l);
   if (xml) return same(xml[1]!.trim());
-  const kv = new RegExp(`(?:^\\s*(?:export\\s+)?|-D)["']?${n}["']?\\s*[:=]\\s*(.*)$`).exec(l);
+  const flag = new RegExp(`(?:^|\\s)-D${n}=("[^"]*"|'[^']*'|\\S+)`).exec(l);
+  if (flag) return same(flag[1]!.replace(/^(["'])(.*)\1$/, "$2"));
+  if (/\.ya?ml$/i.test(p.file)) {
+    const path = yamlPathAt(lines, p.line);
+    const kv = /^\s*["']?[^"':#]+["']?\s*:\s*(.*)$/.exec(l);
+    if (!path || !kv) return false;
+    const own = path.join(".") === name;
+    // A CI file's variables (`variables:`, `env:`) are set by their own name at any depth.
+    const ci =
+      CI_FILE.test(p.file) &&
+      path[path.length - 1] === name &&
+      path.slice(0, -1).some((x) => /^(variables|env|environment|vars)$/i.test(x));
+    return (own || ci) && same(yamlScalar(kv[1]!));
+  }
+  const kv = new RegExp(`^(?:export\\s+)?["']?${n}["']?\\s*[:=]\\s*(.*)$`).exec(l);
   if (kv) return same(yamlScalar(kv[1]!.replace(/,\s*$/, "")));
   if (/(^|\/)config\.json$/i.test(p.file)) {
-    const obj = jsonFrames(lines)
+    const frames = jsonFrames(lines);
+    const obj = frames
       .filter((x) => x.type === "{" && x.start <= p.line && x.end >= p.line)
       .sort((a, b) => b.start - a.start)[0];
     if (obj?.name === undefined) return false;
     if (obj.name.trim().replace(/^@(.+)@$/, "$1") !== name) return false;
-    return lines.slice(obj.start - 1, obj.end).some((x) => same(jsonValueOn(x)));
+    // Only the object's own members: a nested container's lines (and its `"value"`) aren't.
+    const inner = frames.filter((x) => x !== obj && x.start >= obj.start && x.end <= obj.end);
+    return lines.slice(obj.start - 1, obj.end).some((x, i) => {
+      const at = obj.start + i;
+      const v = inner.some((c) => c.start <= at && c.end >= at)
+        ? undefined
+        : jsonValueOn(at === obj.start ? x.replace(/^[^{]*\{/, "") : x);
+      return same(v);
+    });
   }
   return false;
 }
+
+/** A CI or deploy pipeline file, whose `variables:` / `env:` set tokens by their own name. */
+const CI_FILE =
+  /(^|\/)(\.gitlab-ci\.ya?ml|\.github\/workflows\/[^/]+|azure-pipelines[^/]*\.ya?ml|bitbucket-pipelines\.ya?ml|\.circleci\/[^/]+|ci\/[^/]+\.ya?ml|[^/]*pipeline[^/]*\.ya?ml)$/i;
+
+/** The review of beta.28.1: a test's resources or fixtures, and secret files, set no token. */
+export const notTokenSource = (path: string): boolean =>
+  isSecretPath(path) ||
+  /(^|\/)(src\/test|src\/it|tests?|__tests__|fixtures?|testdata)\//i.test(path.replace(/\\/g, "/"));
 
 /**
  * Why a config fact's key or value doesn't hold on its line, or undefined when it does: the
@@ -443,6 +480,8 @@ export function configLineProblem(
   linesOf: (path: string) => readonly string[] | undefined,
   listed: () => readonly string[],
   bundleFolders: readonly string[] = DEFAULT_GATEWAY_BUNDLE_FOLDERS,
+  /** Files a `with` line may not set a deploy token from (a test's, a fixture's, a secret's). */
+  notSource: (path: string) => boolean = notTokenSource,
 ): string | undefined {
   const lines = linesOf(f.cite.file);
   if (!lines) return undefined;
@@ -463,7 +502,8 @@ export function configLineProblem(
   // `{ "name": "@NAME@", "value": … }`), or a placeholder's own default.
   const tokenProblem = (tok: DeployToken, key: string): string | undefined => {
     if (tok.fallback !== undefined && same(tok.fallback)) return undefined;
-    if ((f.cite.with ?? []).some((p) => setsToken(p, tok.name, same, linesOf))) return undefined;
+    if ((f.cite.with ?? []).some((p) => setsToken(p, tok.name, same, linesOf, notSource)))
+      return undefined;
     return `${where} sets ${key} to the token ${tok.written}; claim the token, or cite where ${tok.written} is set in \`with\` (the build property, deploy or CI line that sets ${tok.name})`;
   };
 

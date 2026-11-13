@@ -56,7 +56,7 @@ import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
 import { isConfigFile, liveSecretsIn, type SecretLine } from "./secrets.js";
-import { configLineProblem, helperBuildsKey } from "./settings-path.js";
+import { configLineProblem, helperBuildsKey, notTokenSource } from "./settings-path.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
@@ -1328,7 +1328,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // line does (its YAML parents, its properties key, its token object); the join puts the
     // value into the catalog.
     if (f.kind === "config" && !found.has(f.id)) {
-      const bad = configLineProblem(f, linesOf, listed, rules.gatewayBundleFolders);
+      const bad = configLineProblem(
+        f,
+        linesOf,
+        listed,
+        rules.gatewayBundleFolders,
+        (p) => notTokenSource(p) || testFileOf(rules, p),
+      );
       if (bad) problem(f, "claim-not-on-line", `${label}: ${bad}`);
     }
     // Beta.25 review: a secret past the schema (a reader that skipped it) is refused here too.
