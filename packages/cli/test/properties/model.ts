@@ -123,9 +123,6 @@ export const endpointKey = (component: string, method: string, path: string) =>
 export const arrowKey = (from: string, to: string, method: string, path: string) =>
   `${from}|${to}|${method}|${path}`;
 
-/** Kinds the whole-catalog passes derive from every repo's records (features, terms). */
-const WHOLE_CATALOG: ReadonlySet<string> = new Set(["Capability", "GlossaryTerm"]);
-
 export class Model {
   repos: RepoState[];
   readers = new Map<number, Observation>();
@@ -303,6 +300,19 @@ export class Model {
   }
 
   /**
+   * The slots a legacy join's derived record comes from: the repos the record written names
+   * (as the build's `repoOfEvidence(derived)`), else the legacy copy's own, else every live repo.
+   */
+  comesFrom(j: LegacyJoin, from: ReadonlyMap<string, readonly string[]>): number[] {
+    const names = from.get(`${j.kind}/${j.id}`);
+    if (names?.length) {
+      const slots = this.repos.filter((r) => names.includes(r.id)).map((r) => r.slot);
+      if (slots.length) return slots;
+    }
+    return j.repos.length ? j.repos : this.live().map((r) => r.slot);
+  }
+
+  /**
    * The legacy joins a written build retired (ADR 0195 point 6: once a slot or input the derived
    * record comes from has changed since the upgrade, the derived record takes the id and the
    * legacy copy leaves joins.json). `kept` is the ids joins.json still holds after the write.
@@ -325,12 +335,19 @@ export class Model {
    * source (its slot changed since the upgrade). A curated decision or an answer changes no
    * slot, so it retires nothing by itself. A record with no evidence names no repo: any repo
    * read afresh may derive it; it too must be in the catalog written, as its derived record.
-   * So may a feature or a term (beta.28, seed 1400958621): the whole-catalog passes derive them
-   * from every repo's records, so any repo read afresh may derive one whatever repos its
-   * evidence names.
+   * What a derived record comes from is the repos ITS evidence names, as the build reads it
+   * (`repoOfEvidence(derived)`), not the legacy copy's (beta.28, seed 1400958621: a term the
+   * glossary pass derives again from the whole catalog may name a repo its legacy copy didn't).
+   * `from` maps each record written to the repo ids its evidence names; a join a person's
+   * decision took out, not written, falls back to the legacy copy's repos.
    * `kept` and `written` hold `<Kind>/<id>`.
    */
-  retire(kept: ReadonlySet<string>, written: ReadonlySet<string>): LegacyJoin[] {
+  retire(
+    kept: ReadonlySet<string>,
+    written: ReadonlySet<string>,
+    /** Each record written (`<Kind>/<id>`): the repo ids its evidence names. */
+    from: ReadonlyMap<string, readonly string[]> = new Map(),
+  ): LegacyJoin[] {
     const derivable = this.arrows(false).derived;
     const fresh = (slot: number) => {
       const s = this.source(slot);
@@ -351,13 +368,7 @@ export class Model {
     for (const j of this.legacyJoins) {
       const took = written.has(`${j.kind}/${j.id}`) || decided.has(j.id);
       const may =
-        (took &&
-          (j.arrow
-            ? derivable.has(j.arrow.key)
-            : (j.repos.length && !WHOLE_CATALOG.has(j.kind)
-                ? j.repos
-                : this.live().map((r) => r.slot)
-              ).some(fresh))) ||
+        (took && (j.arrow ? derivable.has(j.arrow.key) : this.comesFrom(j, from).some(fresh))) ||
         this.unjoinedMayLeave(j);
       if (kept.has(`${j.kind}/${j.id}`) || !live.has(j)) stay.push(j);
       else if (may) continue;

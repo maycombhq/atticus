@@ -273,8 +273,22 @@ export class Cmd implements fc.AsyncCommand<Ctx, World> {
           // a joins.json that doesn't parse retires nothing here; the slot checks say so
         }
       else kept = new Set();
-      const written = new Set([...records(after.generated).values()].map(recId));
-      const wrong = m.retire(kept, written);
+      const recs = [...records(after.generated).values()];
+      const written = new Set(recs.map(recId));
+      // Beta.28 (seed 1400958621): what each record written comes from, by its own evidence.
+      const from = new Map(
+        recs.map((r) => [
+          recId(r),
+          [
+            ...new Set(
+              ((r as { evidence?: { repo?: string }[] }).evidence ?? []).flatMap((e) =>
+                e.repo ? [e.repo] : [],
+              ),
+            ),
+          ],
+        ]),
+      );
+      const wrong = m.retire(kept, written, from);
       if (wrong.length && ctx.enabled.has("links-are-live"))
         throw new InvariantError(
           "links-are-live",
