@@ -263,6 +263,32 @@ describe("Apply confirms exactly the list its refusal showed (POST /api/facts/{r
   );
 });
 
+describe("an Apply that leaves rejected facts out is applied, with their count (beta.28.1)", () => {
+  it(
+    "its job ends done, code 0, with leftOut and a line naming each fact left out",
+    async () => {
+      const root = await metarepo();
+      const { job } = await serve(root);
+      const first = await job(APPLY);
+      const refused = first.result!.refused!;
+      const ok = await job(APPLY, { allowRemovals: refused.allowRemovals, plan: refused.plan });
+      expect(ok.result!.code, ok.result!.lines.join("\n")).toBe(0);
+      expect((ok.result as { leftOut?: number }).leftOut).toBeUndefined();
+      // One fact verify rejects, added to the read: the rest is written, it is left out.
+      const bad = readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!;
+      const facts = join(root, "facts", "forge-ledger.jsonl");
+      writeFileSync(facts, readFileSync(facts, "utf8") + bad + "\n");
+      const id = (JSON.parse(bad) as { id: string }).id;
+      const left = await job(APPLY);
+      expect(left.state).toBe("done");
+      expect(left.result!.code, left.result!.lines.join("\n")).toBe(0);
+      expect((left.result as { leftOut?: number }).leftOut).toBe(1);
+      expect(left.result!.lines.join("\n")).toMatch(new RegExp(`left out: ${id} \\(`));
+    },
+    T,
+  );
+});
+
 describe("a scan's confirm sends the plan of the refusal it confirms (POST /api/scan)", () => {
   it(
     "a count needs the plan, and a plan that isn't the latest refused scan's starts no scan",

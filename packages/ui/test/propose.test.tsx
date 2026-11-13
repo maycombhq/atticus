@@ -8,6 +8,10 @@ vi.mock("react", async () => {
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
 const calls: { path: string; body?: unknown }[] = [];
+const flashed: { text: string }[] = [];
+vi.mock("../src/app/flash.js", () => ({
+  flash: (f: { text: string } | undefined) => void (f && flashed.push(f)),
+}));
 vi.mock("../src/api/client.js", async () => ({
   ...(await vi.importActual<object>("../src/api/client.js")),
   api: async (path: string, o?: { body?: unknown }) => {
@@ -120,6 +124,22 @@ vi.mock("../src/api/client.js", async () => ({
       return { state: "done", errors: [], result: { code: 0, lines: ["Wrote catalog/curated/"] } };
     if (path === "/api/jobs/job-7")
       return { state: "done", errors: [], result: { code: 0, lines: ["forge-small: applied"] } };
+    // Beta.28.1: an Apply that wrote with rejected facts left out (verify's exit 3).
+    if (path === "/api/facts/forge-leftout/apply") return { jobId: "job-10" };
+    if (path === "/api/jobs/job-10")
+      return {
+        state: "done",
+        errors: [],
+        result: {
+          code: 0,
+          leftOut: 2,
+          lines: [
+            "Applied to forge-leftout with 2 facts left out (rejected; none was in the catalog before):",
+            "  left out: f-1 (no-quote): fix it in facts/forge-leftout.jsonl, reading src/A.java:3 again",
+            "  left out: f-2 (no-quote): fix it in facts/forge-leftout.jsonl, reading src/B.java:9 again",
+          ],
+        },
+      };
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
     if (path.endsWith("/apply")) return { jobId: "job-1" };
     if (path === "/api/propose") return { jobId: "job-2" };
@@ -371,4 +391,38 @@ it("Discard on an Apply's refusal sends the refusal's plan with the count", asyn
     { path: "/api/facts/forge-edited/apply", body: {} },
     { path: "/api/facts/forge-edited/apply", body: { discardEdits: 1, plan: "b".repeat(64) } },
   ]);
+});
+
+it("an Apply that left rejected facts out says it applied, and how many it left out, with their lines", async () => {
+  const m = mount(ApplyAndPropose as never, { scope: "answers", repo: "forge-leftout" } as never);
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-leftout"),
+  )!;
+  (btn.props.onClick as () => void)();
+  await tick();
+  await tick();
+  m.render();
+  // The Note is its own component: what it is given is what it says.
+  const note = () =>
+    all(m.tree).find((e) => (e.props as { note?: unknown } | undefined)?.note !== undefined)?.props
+      .note as { ok: boolean; text: string } | undefined;
+  expect(note()).toEqual({ ok: true, text: P.appliedLeftOut("forge-leftout", 2) });
+  expect(text(m.tree)).toContain("left out: f-1");
+  expect(P.appliedLeftOut("forge-leftout", 1)).toMatch(/1 fact left out/);
+});
+
+it("a correction's Apply that left facts out says so in its flash too", async () => {
+  const m = mount(
+    ApplyAndPropose as never,
+    { scope: "corrections", repo: "forge-leftout" } as never,
+  );
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-leftout"),
+  )!;
+  flashed.length = 0;
+  (btn.props.onClick as () => void)();
+  await tick();
+  await tick();
+  m.render();
+  expect(flashed.map((f) => f.text)).toEqual([P.appliedFlashLeftOut("forge-leftout", 2)]);
 });
