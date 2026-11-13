@@ -87,6 +87,8 @@ export function MapBar(p: {
   status?: ReactNode;
   /** The place at the bar's right where the canvas puts its own controls. */
   viewSlot?: Ref<HTMLDivElement>;
+  /** Beta.28: Edit the map's toggle, before the tools. */
+  edit?: ReactNode;
 }) {
   const t = p.tools;
   return (
@@ -108,6 +110,7 @@ export function MapBar(p: {
       {p.crumbs}
       <div className="arch-bar-tools">
         <IconButton label={COPY.addBox.open} icon="add" onClick={p.onAdd} />
+        {p.edit}
         <button
           ref={t.buttonRef}
           type="button"

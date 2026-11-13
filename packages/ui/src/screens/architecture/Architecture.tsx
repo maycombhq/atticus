@@ -37,6 +37,24 @@ import {
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { ArrowWrong, LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { DeleteLink, DeletedLinks } from "./DeleteLink.js";
+import {
+  AddLinkForm,
+  EditMap,
+  EditMapToggle,
+  StageLink,
+  type FromChoice,
+  type ToChoice,
+} from "./EditMap.js";
+import {
+  stage,
+  stagedOf,
+  STAGED_LINK,
+  unstage,
+  withStaged,
+  type Staged,
+  type StagedDelete,
+} from "./edit-map.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { EveryDependency } from "./EveryDependency.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
@@ -129,9 +147,12 @@ export function revealOf(o: {
   owning: string | undefined;
   pickedLink: { id: string } | undefined;
   pickedBox: string | undefined;
+  /** Beta.28: Edit the map turned on (its list is in the details). */
+  editing?: boolean;
 }): string {
   return [
     o.adding ? "add" : "",
+    o.editing ? "edit" : "",
     o.pickedBox ? `box:${o.pickedBox}` : "",
     o.connecting?.from ?? "",
     o.declaring?.system ?? "",
@@ -221,7 +242,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  // Beta.28: the link just deleted from its panel (what the panel says once it left the picture).
+  const [deletedLink, setDeletedLink] = useState<
+    { link: string; from: string; to: string; interfaces: ReadonlySet<string> } | undefined
+  >();
   const [corrected, setCorrected] = useState(false);
+  // Beta.28, Edit the map: on or off, the changes staged (kept while it is off, until applied or
+  // removed), and the arrow a redirect is said for.
+  const [editing, setEditing] = useState(false);
+  const [staged, setStaged] = useState<Staged[]>([]);
+  const [redirecting, setRedirecting] = useState<StagedDelete | undefined>();
   // Review round 46: a focus answer counts only if it is the newest asked, in this picture.
   const focusCall = useRef(latestCall()).current;
   const dropFocus = () => {
@@ -521,8 +551,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         ),
       };
     }
+    // Beta.28, Edit the map: the changes staged, drawn on the picture until applied.
+    if (staged.length) g = withStaged(g, staged);
     return g;
-  }, [whole, tools, propsOf, openQuestions]);
+  }, [whole, tools, propsOf, openQuestions, staged]);
   const radius = useMemo(
     () =>
       tools.radius && selected
@@ -599,6 +631,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       )
     : undefined;
   const boxes = connectChoices(views);
+  // Beta.28, Edit the map: the systems a link can be added from (Declare a link…'s), and the
+  // boxes a staged add can be drawn to.
+  const { fromChoices, toChoices } = editChoices(views);
   const known = knownTargets(loaded);
   const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
   const under = (j: Api.HierJoinT) => (
@@ -653,7 +688,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     graph.boxes.length > 0 &&
     arrangement.state === "ready" &&
     arrangement.key === key;
-  const reveal = revealOf({ adding, connecting, declaring, owning, pickedLink, pickedBox });
+  const reveal = revealOf({
+    adding,
+    connecting,
+    declaring,
+    owning,
+    pickedLink,
+    pickedBox,
+    editing,
+  });
 
   return (
     <div className="bento">
@@ -704,6 +747,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             </nav>
           }
           onAdd={() => setAdding(true)}
+          edit={
+            <EditMapToggle
+              on={editing}
+              count={staged.length}
+              onToggle={() => {
+                setEditing((on) => !on);
+                setRedirecting(undefined);
+              }}
+            />
+          }
           tools={{
             open: toolsOpen,
             bodyId: `${uid}-tools`,
@@ -878,6 +931,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     })()
                   : {})}
                 {...(snapshot ? { snapshot } : {})}
+                onLinkBack={reloadViews}
                 onSnapshot={() => {
                   const snap = snapshotOf(whole, new Date().toLocaleTimeString());
                   setSnapshot(snap);
@@ -922,6 +976,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   onLaid={setLaid}
                   {...(radius ? { lit: radius } : {})}
                   onSelectLink={(id) => {
+                    // Beta.28: a staged add is drawn, not yet a link of the catalog.
+                    if (id.startsWith(STAGED_LINK)) return;
                     setPickedLink({ id, keyboard: false });
                     setCorrected(false);
                   }}
@@ -935,6 +991,35 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   aside={
                     <div className="stack">
                       <h2 className="h">{WORDS.inspector}</h2>
+                      {editing && (
+                        <EditMap
+                          staged={staged}
+                          onRemove={(k) => setStaged((l) => unstage(l, k))}
+                          onApplied={() => {
+                            setStaged([]);
+                            setRedirecting(undefined);
+                            reloadViews();
+                          }}
+                          add={
+                            <AddLinkForm
+                              key={redirecting?.link ?? "add"}
+                              systems={fromChoices}
+                              targets={toChoices}
+                              staged={staged}
+                              {...(redirecting
+                                ? {
+                                    redirect: redirecting,
+                                    onCancel: () => setRedirecting(undefined),
+                                  }
+                                : {})}
+                              onStage={(x) => {
+                                setStaged((l) => stage(l, x));
+                                setRedirecting(undefined);
+                              }}
+                            />
+                          }
+                        />
+                      )}
                       {pickedLink && (
                         <LinkInspector
                           key={pickedLink.id}
@@ -944,6 +1029,51 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                           above={above}
                           contracts={findings}
                           autoFocus={pickedLink.keyboard}
+                          deleteLink={(l) =>
+                            editing ? (
+                              <StageLink
+                                link={l}
+                                from={find(l.from)?.label ?? l.from}
+                                to={find(l.to)?.label ?? l.to}
+                                {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+                                staged={stagedOf(staged, l.id)}
+                                onStage={(x) => setStaged((list) => stage(list, x))}
+                                onRedirect={setRedirecting}
+                                onUnstage={(k) => setStaged((list) => unstage(list, k))}
+                              />
+                            ) : (
+                              <DeleteLink
+                                link={l}
+                                from={find(l.from)?.label ?? l.from}
+                                to={find(l.to)?.label ?? l.to}
+                                {...(callsPath(l) ? { callsPath: callsPath(l)! } : {})}
+                                onDeleted={(d) => {
+                                  setDeletedLink({
+                                    link: l.id,
+                                    from: d.from,
+                                    to: d.to,
+                                    interfaces: new Set(d.interfaces),
+                                  });
+                                  reloadViews();
+                                }}
+                              />
+                            )
+                          }
+                          {...(deletedLink?.link === pickedLink.id
+                            ? {
+                                gone: (
+                                  <div className="stack">
+                                    <p className="state" role="status">
+                                      {COPY.deleteLink.done(deletedLink.from, deletedLink.to)}
+                                    </p>
+                                    <DeletedLinks
+                                      only={deletedLink.interfaces}
+                                      onBack={reloadViews}
+                                    />
+                                  </div>
+                                ),
+                              }
+                            : {})}
                           onClose={() => setPickedLink(undefined)}
                           onCorrected={() => {
                             // The decisions reload themselves; the picture is read again here.
@@ -1143,6 +1273,27 @@ export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
     return { repo: n.properties.repo };
   if (n.kind === "system" && n.id.startsWith("system:")) return { system: n.id.slice(7) };
   return undefined;
+}
+
+/**
+ * Beta.28, Edit the map: the boxes of the views loaded a link can be added from (a system's of
+ * the profiles, every box Declare a link… is offered on), and every repo, component and system box a staged
+ * add can be drawn to, once each, by label.
+ */
+export function editChoices(views: Views): { fromChoices: FromChoice[]; toChoices: ToChoice[] } {
+  const from = new Map<string, FromChoice>();
+  const to = new Map<string, ToChoice>();
+  for (const v of views.values())
+    for (const n of [v.node, ...v.children, ...v.outside]) {
+      if (n.kind !== "repo" && n.kind !== "system" && n.kind !== "component") continue;
+      to.set(n.id, { box: n.id, label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}` });
+      const b = boxOf(n);
+      if (n.kind === "system" && b?.system)
+        from.set(n.id, { box: n.id, system: b.system, label: n.label });
+    }
+  const byLabel = <T extends { label: string }>(m: Map<string, T>) =>
+    [...m.values()].sort((x, y) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0));
+  return { fromChoices: byLabel(from), toChoices: byLabel(to) };
 }
 
 /**

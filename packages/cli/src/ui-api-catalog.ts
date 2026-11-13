@@ -1,8 +1,10 @@
-import { Api, headFromFiles, isAdopted } from "@maycombhq/core";
-import { promotedStates, readCrossCheck } from "@maycombhq/scanner";
+import { join } from "node:path";
+import { Api, catalogDirOf, headFromFiles, isAdopted } from "@maycombhq/core";
+import { promotedStates, readCatalog, readCrossCheck } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
+  HttpError,
   intParam,
   notFound,
   type Router,
@@ -115,275 +117,352 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
     if (!REPO.test(repo)) throw badRequest("repo is a repo id, as the manifests name it.");
     return repo;
   };
-  return r
-    .add("GET", "/api/crosscheck", async () => {
-      const v = await readCrossCheck(root);
-      const repos = await Promise.all(
-        v.repos.map(async (x) => {
-          const head = await headOf(root, x.repo);
-          return { ...x, items: [], ...(head ? { head } : {}) };
-        }),
-      );
-      return { status: 200, body: Api.CrossCheckView.parse({ ...v, repos }) };
-    })
-    .add("GET", "/api/crosscheck/{repo}", async ({ params }) => {
-      const repo = repoOf(params);
-      const v = await readCrossCheck(root, { repo });
-      const one = v.repos[0];
-      if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
-      const head = await headOf(root, repo);
-      // Each readers-only item a person promoted: verified on its line, not yet, or rejected.
-      const promoted = await promotedStates(
-        root,
-        repo,
-        one.items.filter((i) => i.state === "readers-only").map((i) => i.key),
-      );
-      const { readersValueSha } = await import("./crosscheck-commands.js");
-      const items = one.items.map((i) => {
-        const p = i.state === "readers-only" ? promoted.get(i.key) : undefined;
-        const sha =
-          i.state === "readers-only" || i.state === "disagree"
-            ? { readersSha256: readersValueSha(i.readers?.value) }
-            : {};
-        return { ...i, ...sha, ...(p ? { promoted: p } : {}) };
-      });
-      return {
-        status: 200,
-        body: Api.RepoCrossCheck.parse({ ...one, items, ...(head ? { head } : {}) }),
-      };
-    })
-    .add("GET", "/api/crosscheck/{repo}/promote", async ({ params, query }) => {
-      const repo = repoOf(params);
-      const key = (query.get("key") ?? "").trim();
-      if (!key || key.length > 500)
-        throw badRequest("key is the item's key, as the cross-check names it.");
-      const v = await readCrossCheck(root, { repo });
-      if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
-      const { planPromote } = await import("@maycombhq/scanner");
-      const { checkoutLineOf } = await import("./crosscheck-commands.js");
-      const { next: _next, ...plan } = await planPromote(root, repo, key, {
-        lineOf: checkoutLineOf(root, repo),
-      });
-      void _next;
-      return { status: 200, body: Api.CrossCheckPromoteView.parse(plan) };
-    })
-    .add("POST", "/api/crosscheck/{repo}/promote", async ({ params, body }) => {
-      const repo = repoOf(params);
-      const b = parse(Api.CrossCheckPromoteRequest, body);
-      const v = await readCrossCheck(root, { repo });
-      if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
-      const { planPromote } = await import("@maycombhq/scanner");
-      const { catalogCrossCheck, checkoutLineOf } = await import("./crosscheck-commands.js");
-      const plan = await planPromote(root, repo, b.key, { lineOf: checkoutLineOf(root, repo) });
-      if (!plan.can)
-        throw conflict(`${b.key} can't be promoted now: ${plan.why}. Nothing written.`);
-      if (plan.sha256 !== b.sha256)
-        throw conflict(
-          `The fact promoting ${b.key} writes isn't the one the page showed any more. Nothing written: look at it again.`,
+  return (
+    r
+      .add("GET", "/api/crosscheck", async () => {
+        const v = await readCrossCheck(root);
+        const repos = await Promise.all(
+          v.repos.map(async (x) => {
+            const head = await headOf(root, x.repo);
+            return { ...x, items: [], ...(head ? { head } : {}) };
+          }),
         );
-      const { verifyCommand } = await import("./verify-commands.js");
-      // The person's fact, then the verifier on it: one job, both commands' lines in the Console.
-      return asJob(`Promote on ${repo}`, () =>
-        captured(async (io) => {
-          const code = await catalogCrossCheck(
-            root,
-            { repo, promote: b.key, expect: b.sha256 },
-            io,
-          );
-          // The promote's own refusal is said as such (PROMOTE_REFUSED), not as verify's.
-          if (code !== 0) return PROMOTE_REFUSED;
-          return verifyCommand(root, repo, { write: false, verbose: false, json: false }, io);
-        }),
-      );
-    })
-    .add("POST", "/api/crosscheck/{repo}/dismiss", async ({ params, body }) => {
-      const repo = repoOf(params);
-      const b = parse(Api.CrossCheckDismissRequest, body);
-      const v = await readCrossCheck(root, { repo });
-      const one = v.repos[0];
-      if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
-      const { catalogCrossCheck, readersValueSha } = await import("./crosscheck-commands.js");
-      // The key is checked before a job starts (the review): an item to dismiss, at the value
-      // the page showed, or a dismissal to take back.
-      const item = one.items.find((i) => i.key === b.key);
-      if (b.undo) {
-        if (!item?.dismissed) throw notFound(`${b.key} isn't dismissed on ${repo}.`);
-      } else {
-        if (!item || item.state === "agree" || item.state === "facts-only")
-          throw notFound(`${b.key} isn't an item the readers found or disagree on, on ${repo}.`);
-        if (b.sha256 === undefined)
-          throw badRequest("sha256 is the item's readersSha256, as the page showed it.");
-        if (readersValueSha(item.readers?.value) !== b.sha256)
+        return { status: 200, body: Api.CrossCheckView.parse({ ...v, repos }) };
+      })
+      .add("GET", "/api/crosscheck/{repo}", async ({ params }) => {
+        const repo = repoOf(params);
+        const v = await readCrossCheck(root, { repo });
+        const one = v.repos[0];
+        if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
+        const head = await headOf(root, repo);
+        // Each readers-only item a person promoted: verified on its line, not yet, or rejected.
+        const promoted = await promotedStates(
+          root,
+          repo,
+          one.items.filter((i) => i.state === "readers-only").map((i) => i.key),
+        );
+        const { readersValueSha } = await import("./crosscheck-commands.js");
+        const items = one.items.map((i) => {
+          const p = i.state === "readers-only" ? promoted.get(i.key) : undefined;
+          const sha =
+            i.state === "readers-only" || i.state === "disagree"
+              ? { readersSha256: readersValueSha(i.readers?.value) }
+              : {};
+          return { ...i, ...sha, ...(p ? { promoted: p } : {}) };
+        });
+        return {
+          status: 200,
+          body: Api.RepoCrossCheck.parse({ ...one, items, ...(head ? { head } : {}) }),
+        };
+      })
+      .add("GET", "/api/crosscheck/{repo}/promote", async ({ params, query }) => {
+        const repo = repoOf(params);
+        const key = (query.get("key") ?? "").trim();
+        if (!key || key.length > 500)
+          throw badRequest("key is the item's key, as the cross-check names it.");
+        const v = await readCrossCheck(root, { repo });
+        if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
+        const { planPromote } = await import("@maycombhq/scanner");
+        const { checkoutLineOf } = await import("./crosscheck-commands.js");
+        const { next: _next, ...plan } = await planPromote(root, repo, key, {
+          lineOf: checkoutLineOf(root, repo),
+        });
+        void _next;
+        return { status: 200, body: Api.CrossCheckPromoteView.parse(plan) };
+      })
+      .add("POST", "/api/crosscheck/{repo}/promote", async ({ params, body }) => {
+        const repo = repoOf(params);
+        const b = parse(Api.CrossCheckPromoteRequest, body);
+        const v = await readCrossCheck(root, { repo });
+        if (!v.repos[0]) throw notFound(`${repo} isn't a repo the manifests list.`);
+        const { planPromote } = await import("@maycombhq/scanner");
+        const { catalogCrossCheck, checkoutLineOf } = await import("./crosscheck-commands.js");
+        const plan = await planPromote(root, repo, b.key, { lineOf: checkoutLineOf(root, repo) });
+        if (!plan.can)
+          throw conflict(`${b.key} can't be promoted now: ${plan.why}. Nothing written.`);
+        if (plan.sha256 !== b.sha256)
           throw conflict(
-            `The readers say another value for ${b.key} than the page showed. Nothing written: look at it again.`,
+            `The fact promoting ${b.key} writes isn't the one the page showed any more. Nothing written: look at it again.`,
           );
-      }
-      return asJob(b.undo ? `List again on ${repo}` : `Dismiss on ${repo}`, () =>
-        captured((io) =>
-          catalogCrossCheck(
-            root,
-            {
-              repo,
-              ...(b.undo ? { undismiss: b.key } : { dismiss: b.key, expect: b.sha256! }),
-            },
-            io,
-          ),
-        ),
-      );
-    })
-    .add("GET", "/api/build", async () => {
-      return { status: 200, body: Api.CatalogBuildView.parse(await buildViewNow()) };
-    })
-    .add("POST", "/api/build", async ({ body }) => {
-      const b = parse(Api.CatalogBuildRequest, body);
-      // The review (S2): a confirm is of the list shown. Built again in memory and guarded
-      // (buildAndWrite with check), and run only when it lists what the page listed.
-      const counted = b.allowRemovals !== undefined || b.discardEdits !== undefined;
-      if (counted && b.plan === undefined)
-        throw badRequest("plan is GET /api/build's pending.plan for the list being confirmed.");
-      if (b.plan !== undefined) {
-        const { catalogBuildView } = await import("./build-report.js");
-        if ((await catalogBuildView(root)).pending.plan !== b.plan)
-          throw conflict(
-            "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
-          );
-      }
-      const { catalogBuild } = await import("./catalog-build-commands.js");
-      const flags = [
-        ...(b.allowRemovals !== undefined ? [`--allow-removals ${b.allowRemovals}`] : []),
-        ...(b.discardEdits !== undefined ? [`--discard-edits ${b.discardEdits}`] : []),
-      ];
-      // The plan is checked again under the command's lock (as upgrade --yes checks its own):
-      // a writer between this check and the job writes nothing the page didn't list.
-      return asJob(["atticus catalog build", ...flags].join(" "), () =>
-        captured((io) =>
-          catalogBuild(
-            root,
-            {
-              ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
-              ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
-              ...(b.plan !== undefined ? { plan: b.plan } : {}),
-            },
-            io,
-          ),
-        ),
-      );
-    })
-    .add("POST", "/api/build/edits/curate", async ({ body }) => {
-      const b = parse(Api.CatalogEditsRequest, body);
-      const { catalogBuildView } = await import("./build-report.js");
-      const view = await catalogBuildView(root);
-      const now = view.pending.refused;
-      const edits = now?.reasons.includes("hand-edits") ? (now.edits ?? []) : [];
-      if (edits.length !== b.count || view.pending.plan !== b.plan)
-        throw conflict(
-          edits.length !== b.count
-            ? `The page listed ${b.count} hand ${b.count === 1 ? "edit" : "edits"}; there ${edits.length === 1 ? "is" : "are"} ${edits.length} now. Nothing was made curated: look at the list again.`
-            : "The hand edits aren't the ones the page listed any more. Nothing was made curated: look at the list again.",
-        );
-      const { catalogBuild, catalogEdits } = await import("./catalog-build-commands.js");
-      // Keep the edits: each made a curated decision, then the build with them (which writes
-      // what the edited files hold, so nothing is overwritten), in one job.
-      return asJob("Make the hand edits curated, then build", () =>
-        captured(async (io) => {
-          const code = await catalogEdits(root, { curate: true, by: ctx.user, plan: b.plan }, io);
-          return code === 0 ? catalogBuild(root, {}, io) : code;
-        }),
-      );
-    })
-    .add("GET", "/api/build/undo", async ({ query }) => {
-      const n = intParam(query, "n", 1, 1_000_000);
-      const { catalogUndoView } = await import("./build-report.js");
-      return {
-        status: 200,
-        body: Api.CatalogUndoView.parse(await catalogUndoView(root, n)),
-      };
-    })
-    .add("POST", "/api/build/undo", async ({ body }) => {
-      const b = parse(Api.CatalogUndoRequest, body);
-      const { catalogUndoView } = await import("./build-report.js");
-      const v = await catalogUndoView(root, b.n);
-      if (!v.plan) throw conflict(v.problem ?? `There are fewer than ${b.n} builds to undo here.`);
-      if (v.plan.files.length !== b.files)
-        throw conflict(
-          `The page listed ${b.files} ${b.files === 1 ? "file" : "files"} to put back; taking back the ${b.n === 1 ? "latest build" : `${b.n} latest builds`} puts back ${v.plan.files.length} now. Nothing was undone: look at the list again.`,
-        );
-      if (v.plan.hash !== b.plan)
-        throw conflict(
-          "The builds to take back or their files aren't the ones the page listed any more. Nothing was undone: look at the list again.",
-        );
-      const { catalogUndo } = await import("./catalog-build-commands.js");
-      return asJob(`atticus catalog undo ${b.n} --yes`, () =>
-        captured((io) => catalogUndo(root, { n: b.n, yes: true, plan: b.plan }, io)),
-      );
-    })
-    .add("GET", "/api/build/prune", async () => {
-      const { catalogPruneView } = await import("./build-report.js");
-      return {
-        status: 200,
-        body: Api.CatalogPruneView.parse(await catalogPruneView(root)),
-      };
-    })
-    .add("POST", "/api/build/prune", async ({ body }) => {
-      const b = parse(Api.CatalogPruneRequest, body);
-      const { catalogPruneView } = await import("./build-report.js");
-      const v = await catalogPruneView(root);
-      if (v.files.length !== b.count)
-        throw conflict(
-          `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to remove; there ${v.files.length === 1 ? "is" : "are"} ${v.files.length} now. Nothing was removed: look at the list again.`,
-        );
-      if (v.plan !== b.plan)
-        throw conflict(
-          "The files to remove aren't the ones the page listed any more. Nothing was removed: look at the list again.",
-        );
-      const { catalogPrune } = await import("./catalog-build-commands.js");
-      return asJob("atticus catalog prune --yes", () =>
-        captured((io) => catalogPrune(root, { yes: true, plan: b.plan }, io)),
-      );
-    })
-    .add("GET", "/api/build/upgrade", async () => {
-      const { catalogUpgradeView } = await import("./build-report.js");
-      return { status: 200, body: Api.CatalogUpgradeView.parse(await catalogUpgradeView(root)) };
-    })
-    .add("POST", "/api/build/upgrade", async ({ body }) => {
-      const b = parse(Api.CatalogUpgradeRequest, body);
-      const { catalogUpgradeView } = await import("./build-report.js");
-      const v = await catalogUpgradeView(root);
-      if (!v.pending) throw conflict("Nothing to upgrade: catalog/sources is here already.");
-      // The other steps may change an input the slots record, and would make the files written
-      // differ from the ones listed: they run first (Run the upgrade, POST /api/upgrade).
-      if (v.others.length)
-        throw conflict(
-          `Other upgrade steps wait first (${v.others.map((s) => s.summary).join("; ")}): run the upgrade (Run the upgrade, on Home or on Catalog builds) first, then look at this list again. Nothing written.`,
-        );
-      // A first build that changes the catalog is accepted with the count of its changes, as
-      // `atticus upgrade --yes --accept-changes <n>` names it; any other count writes nothing.
-      const accept = v.acceptChanges;
-      if (accept > 0 && b.acceptChanges !== accept)
-        throw conflict(
-          b.acceptChanges === undefined
-            ? `The first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently: accept exactly ${accept === 1 ? "it" : "these"} with their count first. Nothing written.`
-            : `The page accepted ${b.acceptChanges} ${b.acceptChanges === 1 ? "change" : "changes"}; the first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently now. Nothing written: look at the list again.`,
-        );
-      if (accept === 0 && b.acceptChanges !== undefined)
-        throw conflict(
-          "The first build changes nothing now, so there is nothing to accept. Nothing written: look at the list again.",
-        );
-      if (v.writes.length !== b.count || v.plan !== b.plan)
-        throw conflict(
-          `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to write; the upgrade writes ${v.writes.length === b.count ? "other files" : `${v.writes.length}`} now. Nothing written: look at the list again.`,
-        );
-      const { upgradeCommand } = await import("./upgrade.js");
-      return asJob(
-        accept ? `atticus upgrade --yes --accept-changes ${accept}` : "atticus upgrade --yes",
-        () =>
-          captured((io) =>
-            upgradeCommand(
+        const { verifyCommand } = await import("./verify-commands.js");
+        // The person's fact, then the verifier on it: one job, both commands' lines in the Console.
+        return asJob(`Promote on ${repo}`, () =>
+          captured(async (io) => {
+            const code = await catalogCrossCheck(
               root,
-              { by: ctx.user, yes: true, ...(accept ? { acceptChanges: accept } : {}) },
+              { repo, promote: b.key, expect: b.sha256 },
+              io,
+            );
+            // The promote's own refusal is said as such (PROMOTE_REFUSED), not as verify's.
+            if (code !== 0) return PROMOTE_REFUSED;
+            return verifyCommand(root, repo, { write: false, verbose: false, json: false }, io);
+          }),
+        );
+      })
+      .add("POST", "/api/crosscheck/{repo}/dismiss", async ({ params, body }) => {
+        const repo = repoOf(params);
+        const b = parse(Api.CrossCheckDismissRequest, body);
+        const v = await readCrossCheck(root, { repo });
+        const one = v.repos[0];
+        if (!one) throw notFound(`${repo} isn't a repo the manifests list.`);
+        const { catalogCrossCheck, readersValueSha } = await import("./crosscheck-commands.js");
+        // The key is checked before a job starts (the review): an item to dismiss, at the value
+        // the page showed, or a dismissal to take back.
+        const item = one.items.find((i) => i.key === b.key);
+        if (b.undo) {
+          if (!item?.dismissed) throw notFound(`${b.key} isn't dismissed on ${repo}.`);
+        } else {
+          if (!item || item.state === "agree" || item.state === "facts-only")
+            throw notFound(`${b.key} isn't an item the readers found or disagree on, on ${repo}.`);
+          if (b.sha256 === undefined)
+            throw badRequest("sha256 is the item's readersSha256, as the page showed it.");
+          if (readersValueSha(item.readers?.value) !== b.sha256)
+            throw conflict(
+              `The readers say another value for ${b.key} than the page showed. Nothing written: look at it again.`,
+            );
+        }
+        return asJob(b.undo ? `List again on ${repo}` : `Dismiss on ${repo}`, () =>
+          captured((io) =>
+            catalogCrossCheck(
+              root,
+              {
+                repo,
+                ...(b.undo ? { undismiss: b.key } : { dismiss: b.key, expect: b.sha256! }),
+              },
               io,
             ),
           ),
-      );
-    });
+        );
+      })
+      .add("GET", "/api/build", async () => {
+        return { status: 200, body: Api.CatalogBuildView.parse(await buildViewNow()) };
+      })
+      .add("POST", "/api/build", async ({ body }) => {
+        const b = parse(Api.CatalogBuildRequest, body);
+        // The review (S2): a confirm is of the list shown. Built again in memory and guarded
+        // (buildAndWrite with check), and run only when it lists what the page listed.
+        const counted = b.allowRemovals !== undefined || b.discardEdits !== undefined;
+        if (counted && b.plan === undefined)
+          throw badRequest("plan is GET /api/build's pending.plan for the list being confirmed.");
+        if (b.plan !== undefined) {
+          const { catalogBuildView } = await import("./build-report.js");
+          if ((await catalogBuildView(root)).pending.plan !== b.plan)
+            throw conflict(
+              "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
+            );
+        }
+        const { catalogBuild } = await import("./catalog-build-commands.js");
+        const flags = [
+          ...(b.allowRemovals !== undefined ? [`--allow-removals ${b.allowRemovals}`] : []),
+          ...(b.discardEdits !== undefined ? [`--discard-edits ${b.discardEdits}`] : []),
+        ];
+        // The plan is checked again under the command's lock (as upgrade --yes checks its own):
+        // a writer between this check and the job writes nothing the page didn't list.
+        return asJob(["atticus catalog build", ...flags].join(" "), () =>
+          captured((io) =>
+            catalogBuild(
+              root,
+              {
+                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+                ...(b.plan !== undefined ? { plan: b.plan } : {}),
+              },
+              io,
+            ),
+          ),
+        );
+      })
+      .add("POST", "/api/build/edits/curate", async ({ body }) => {
+        const b = parse(Api.CatalogEditsRequest, body);
+        const { catalogBuildView } = await import("./build-report.js");
+        const view = await catalogBuildView(root);
+        const now = view.pending.refused;
+        const edits = now?.reasons.includes("hand-edits") ? (now.edits ?? []) : [];
+        if (edits.length !== b.count || view.pending.plan !== b.plan)
+          throw conflict(
+            edits.length !== b.count
+              ? `The page listed ${b.count} hand ${b.count === 1 ? "edit" : "edits"}; there ${edits.length === 1 ? "is" : "are"} ${edits.length} now. Nothing was made curated: look at the list again.`
+              : "The hand edits aren't the ones the page listed any more. Nothing was made curated: look at the list again.",
+          );
+        const { catalogBuild, catalogEdits } = await import("./catalog-build-commands.js");
+        // Keep the edits: each made a curated decision, then the build with them (which writes
+        // what the edited files hold, so nothing is overwritten), in one job.
+        return asJob("Make the hand edits curated, then build", () =>
+          captured(async (io) => {
+            const code = await catalogEdits(root, { curate: true, by: ctx.user, plan: b.plan }, io);
+            return code === 0 ? catalogBuild(root, {}, io) : code;
+          }),
+        );
+      })
+      .add("GET", "/api/build/undo", async ({ query }) => {
+        const n = intParam(query, "n", 1, 1_000_000);
+        const { catalogUndoView } = await import("./build-report.js");
+        return {
+          status: 200,
+          body: Api.CatalogUndoView.parse(await catalogUndoView(root, n)),
+        };
+      })
+      .add("POST", "/api/build/undo", async ({ body }) => {
+        const b = parse(Api.CatalogUndoRequest, body);
+        const { catalogUndoView } = await import("./build-report.js");
+        const v = await catalogUndoView(root, b.n);
+        if (!v.plan)
+          throw conflict(v.problem ?? `There are fewer than ${b.n} builds to undo here.`);
+        if (v.plan.files.length !== b.files)
+          throw conflict(
+            `The page listed ${b.files} ${b.files === 1 ? "file" : "files"} to put back; taking back the ${b.n === 1 ? "latest build" : `${b.n} latest builds`} puts back ${v.plan.files.length} now. Nothing was undone: look at the list again.`,
+          );
+        if (v.plan.hash !== b.plan)
+          throw conflict(
+            "The builds to take back or their files aren't the ones the page listed any more. Nothing was undone: look at the list again.",
+          );
+        const { catalogUndo } = await import("./catalog-build-commands.js");
+        return asJob(`atticus catalog undo ${b.n} --yes`, () =>
+          captured((io) => catalogUndo(root, { n: b.n, yes: true, plan: b.plan }, io)),
+        );
+      })
+      .add("GET", "/api/build/prune", async () => {
+        const { catalogPruneView } = await import("./build-report.js");
+        return {
+          status: 200,
+          body: Api.CatalogPruneView.parse(await catalogPruneView(root)),
+        };
+      })
+      .add("POST", "/api/build/prune", async ({ body }) => {
+        const b = parse(Api.CatalogPruneRequest, body);
+        const { catalogPruneView } = await import("./build-report.js");
+        const v = await catalogPruneView(root);
+        if (v.files.length !== b.count)
+          throw conflict(
+            `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to remove; there ${v.files.length === 1 ? "is" : "are"} ${v.files.length} now. Nothing was removed: look at the list again.`,
+          );
+        if (v.plan !== b.plan)
+          throw conflict(
+            "The files to remove aren't the ones the page listed any more. Nothing was removed: look at the list again.",
+          );
+        const { catalogPrune } = await import("./catalog-build-commands.js");
+        return asJob("atticus catalog prune --yes", () =>
+          captured((io) => catalogPrune(root, { yes: true, plan: b.plan }, io)),
+        );
+      })
+      .add("GET", "/api/build/upgrade", async () => {
+        const { catalogUpgradeView } = await import("./build-report.js");
+        return { status: 200, body: Api.CatalogUpgradeView.parse(await catalogUpgradeView(root)) };
+      })
+      .add("POST", "/api/build/upgrade", async ({ body }) => {
+        const b = parse(Api.CatalogUpgradeRequest, body);
+        const { catalogUpgradeView } = await import("./build-report.js");
+        const v = await catalogUpgradeView(root);
+        if (!v.pending) throw conflict("Nothing to upgrade: catalog/sources is here already.");
+        // The other steps may change an input the slots record, and would make the files written
+        // differ from the ones listed: they run first (Run the upgrade, POST /api/upgrade).
+        if (v.others.length)
+          throw conflict(
+            `Other upgrade steps wait first (${v.others.map((s) => s.summary).join("; ")}): run the upgrade (Run the upgrade, on Home or on Catalog builds) first, then look at this list again. Nothing written.`,
+          );
+        // A first build that changes the catalog is accepted with the count of its changes, as
+        // `atticus upgrade --yes --accept-changes <n>` names it; any other count writes nothing.
+        const accept = v.acceptChanges;
+        if (accept > 0 && b.acceptChanges !== accept)
+          throw conflict(
+            b.acceptChanges === undefined
+              ? `The first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently: accept exactly ${accept === 1 ? "it" : "these"} with their count first. Nothing written.`
+              : `The page accepted ${b.acceptChanges} ${b.acceptChanges === 1 ? "change" : "changes"}; the first build gives ${accept} record ${accept === 1 ? "file" : "files"} differently now. Nothing written: look at the list again.`,
+          );
+        if (accept === 0 && b.acceptChanges !== undefined)
+          throw conflict(
+            "The first build changes nothing now, so there is nothing to accept. Nothing written: look at the list again.",
+          );
+        if (v.writes.length !== b.count || v.plan !== b.plan)
+          throw conflict(
+            `The page listed ${b.count} ${b.count === 1 ? "file" : "files"} to write; the upgrade writes ${v.writes.length === b.count ? "other files" : `${v.writes.length}`} now. Nothing written: look at the list again.`,
+          );
+        const { upgradeCommand } = await import("./upgrade.js");
+        return asJob(
+          accept ? `atticus upgrade --yes --accept-changes ${accept}` : "atticus upgrade --yes",
+          () =>
+            captured((io) =>
+              upgradeCommand(
+                root,
+                { by: ctx.user, yes: true, ...(accept ? { acceptChanges: accept } : {}) },
+                io,
+              ),
+            ),
+        );
+      })
+      // Beta.28 (C4 3.13.0, the owner's decision of 2026-11-12): Delete this link on the canvas,
+      // for any link of Interfaces, lined or lineless, derived or adopted: the person's curated
+      // suppress of each, then the build, as one local job (its lines in the Console).
+      .add("POST", "/api/links/delete", async ({ body }) => {
+        const b = parse(Api.LinkDeleteRequest, body);
+        // Each id an Interface the catalog has now (checked again by the build: one gone is said).
+        const now = new Set(
+          (await readCatalog(join(catalogDirOf(root), "generated"), { fresh: true })).records
+            .filter((x) => x.kind === "Interface")
+            .map((x) => x.id),
+        );
+        const missing = b.interfaces.filter((id) => !now.has(id));
+        if (missing.length)
+          throw notFound(
+            `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` and ${missing.length - 5} more` : ""} ${missing.length === 1 ? "isn't an Interface" : "aren't Interfaces"} of the catalog now: the link may be gone already. Nothing written.`,
+          );
+        const { deleteLink } = await import("./catalog-build-commands.js");
+        return asJob(`Delete the link ${b.from} → ${b.to}`, () =>
+          captured((io) =>
+            deleteLink(
+              root,
+              { interfaces: b.interfaces, from: b.from, to: b.to, by: ctx.user },
+              io,
+            ),
+          ),
+        );
+      })
+      .add("GET", "/api/links/deleted", async () => {
+        const { deletedLinks } = await import("./catalog-build-commands.js");
+        return { status: 200, body: Api.DeletedLinksView.parse(await deletedLinks(root)) };
+      })
+      .add("POST", "/api/links/deleted/undo", async ({ body }) => {
+        const b = parse(Api.LinkUndeleteRequest, body);
+        const { deletedLinks, undeleteLink } = await import("./catalog-build-commands.js");
+        const v = await deletedLinks(root);
+        const held = new Map(v.links.flatMap((l) => l.decisions.map((d) => [d.id, l] as const)));
+        const missing = b.decisions.filter((id) => !held.has(id));
+        if (missing.length)
+          throw notFound(
+            `${missing.slice(0, 5).join(", ")} ${missing.length === 1 ? "isn't a link" : "aren't links"} deleted on the canvas. Nothing removed.`,
+          );
+        const l = held.get(b.decisions[0]!)!;
+        return asJob(`Bring back the link ${l.from} → ${l.to}`, () =>
+          captured((io) => undeleteLink(root, { decisions: b.decisions }, io)),
+        );
+      })
+      // Beta.28 (C4 3.13.0, the owner's ask of 2026-11-12): Edit the map's Apply my changes. Every
+      // staged change is checked first: one that can't be made is said by its place and nothing is
+      // written. Then all are written and the catalog built once, as one local job.
+      .add("POST", "/api/map/edits", async ({ body }) => {
+        const b = parse(Api.MapEditsRequest, body);
+        const { checkMapEdits } = await import("./map-edits.js");
+        const { problems, callers } = await checkMapEdits(root, b.edits);
+        if (problems.length)
+          throw new HttpError(
+            422,
+            "Some changes can't be made",
+            `${problems.length} of the ${b.edits.length} changes can't be made: ${problems.map((p) => `change ${p.edit + 1}: ${p.message}`).join(" ")} Nothing was written.`,
+            { problems },
+          );
+        const { applyMapEdits } = await import("./catalog-build-commands.js");
+        const n = b.edits.length;
+        return asJob(`Apply ${n} change${n === 1 ? "" : "s"} to the map`, async () => {
+          let ran: Awaited<ReturnType<typeof applyMapEdits>> | undefined;
+          const res = await captured(async (io) => {
+            ran = await applyMapEdits(root, { edits: b.edits, by: ctx.user }, io);
+            return ran.code;
+          });
+          return {
+            ...res,
+            extra: { edits: ran?.edits ?? [], built: ran?.built ?? false, callers },
+          };
+        });
+      })
+  );
 }

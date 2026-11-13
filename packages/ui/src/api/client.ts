@@ -23,6 +23,8 @@ export interface Problem {
   written?: { repo: string; file: string }[];
   /** API 3.12.0: which refusal of its status it is (a send's 409: being-sent, already-sent). */
   code?: string;
+  /** API 3.13.0 (beta.28): POST /api/map/edits's 422, each change that can't be made by its place. */
+  problems?: { edit: number; message: string }[];
 }
 
 export class ApiError extends Error {
