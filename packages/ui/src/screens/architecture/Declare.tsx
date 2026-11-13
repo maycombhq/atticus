@@ -29,6 +29,24 @@ function Cmds({ r, label }: { r: Api.FileChangeResultT; label: string }) {
   return <WrittenNext said={label} verify={r.verify} commit={r.commit} />;
 }
 
+/**
+ * Beta.28.1 (field report 4): the System a declaration adds to a profile first, for a box no
+ * profile had: said before it is written, and once it is.
+ */
+export function CreatedNote(p: { created?: Api.FileChangeResultT["created"]; written: boolean }) {
+  if (!p.created) return null;
+  const { system, file } = p.created;
+  return p.written ? (
+    <p className="ev-say" role="status">
+      {D.created(system, file)}
+    </p>
+  ) : (
+    <p className="ev-say" role="note">
+      {D.willCreate(system, file)}
+    </p>
+  );
+}
+
 /** A request built from the form, or none when it lacks the topic or the route. */
 export function declareBody(
   system: string,
@@ -151,8 +169,18 @@ export function DeclarePanel(p: {
           {busy === "write" ? D.writing : D.confirm}
         </button>
       </div>
-      {preview && previewed === asked && <Diff r={preview} />}
-      {written && <Cmds r={written} label={D.written} />}
+      {preview && previewed === asked && (
+        <>
+          <CreatedNote created={preview.created} written={false} />
+          <Diff r={preview} />
+        </>
+      )}
+      {written && (
+        <>
+          <CreatedNote created={written.created} written />
+          <Cmds r={written} label={D.written} />
+        </>
+      )}
     </section>
   );
 }

@@ -5593,6 +5593,11 @@ export const COPY = {
     empty: "Say the topic or the route first.",
     close: "Close",
     copy: "Copy the command",
+    /** Beta.28.1 (field report 4): a repo the manifest lists with no System of the profiles. */
+    willCreate: (system: string, file: string) =>
+      `No profile has ${system} as a System yet, so writing this adds it to ${file} first (a person's word, for review), then declares the link on it.`,
+    created: (system: string, file: string) =>
+      `Added ${system} as a System in ${file} first, then declared the link on it.`,
   },
   corrections: {
     title: "Corrections and declarations",
