@@ -519,6 +519,10 @@ async function rename(
       r.id = to;
       for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
         if (obs?.id === from) obs.id = to;
+      // The rename rewrites joins.json's evidence too: new objects, so an undo's copy keeps the old.
+      m.legacyJoins = m.legacyJoins.map((j) =>
+        j.ids?.includes(from) ? { ...j, ids: j.ids.map((x) => (x === from ? to : x)) } : j,
+      );
       m.changes.slots.add(r.slot);
     },
   };
@@ -1075,12 +1079,18 @@ export async function act(
                   to: b.slot,
                 },
                 repos: slots,
+                ids: repos.filter((x) => slotOfRepo.has(x)),
                 // No code line at its caller's end (beta.27.2, the review): only a complete read
                 // of its caller may let it leave without being derived.
                 ...(callerLined(rec) ? {} : { lineless: true as const }),
               });
             else if (repos.length !== 1)
-              m.legacyJoins.push({ kind: rec.kind, id: rec.id, repos: slots });
+              m.legacyJoins.push({
+                kind: rec.kind,
+                id: rec.id,
+                repos: slots,
+                ids: repos.filter((x) => slotOfRepo.has(x)),
+              });
           }
           m.beta26 = false;
         },

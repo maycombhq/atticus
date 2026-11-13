@@ -1,0 +1,52 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: after confirm-removals the catalog's cross-repo arrows aren't what the model says the build makes: missing payments-api|ledger-api|EVENT|forge.payments.changed. An undone rename leaves the ledger's slot, and the legacy join citing it, under the old id the manifests no longer list: the join leaves with the repo's records (ADR 0195 point 7); the model kept it by slot (beta.28.1).",
+  "seed": 1444173979,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.payments.changed"]
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": ["forge.payments.changed"],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "rename",
+      "slot": 0,
+      "fail": false
+    },
+    {
+      "t": "undo",
+      "n": 0,
+      "yes": true,
+      "back": false
+    },
+    {
+      "t": "verify-live",
+      "slot": 0
+    }
+  ]
+}
