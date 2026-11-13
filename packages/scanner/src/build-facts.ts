@@ -303,9 +303,28 @@ export function factsEstateAfterMerge(
   p: FactsEstateProjection,
 ): { records: CatalogRecord[]; repos: Map<string, FactsRepoAfterMerge> } {
   const remap = new Map(p.remap);
-  const endpoints = merged.filter(
-    (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> => r.kind === "Endpoint",
-  );
+  // Indexes in place of a search of the whole estate for each record (beta.28.1: at 60 repos the
+  // searches were most of a build). Each keeps the first record in `merged` order its key fits,
+  // which is what the search found.
+  const firstBy = <T>(m: Map<string, T>, k: string, v: T) => {
+    if (!m.has(k)) m.set(k, v);
+  };
+  const restAt = new Map<string, Extract<CatalogRecord, { kind: "Endpoint" }>>();
+  const endpointById = new Map<string, Extract<CatalogRecord, { kind: "Endpoint" }>>();
+  const endpointAt = new Map<string, Extract<CatalogRecord, { kind: "Endpoint" }>>();
+  const ifaceAt = new Map<string, Extract<CatalogRecord, { kind: "Interface" }>>();
+  const evKey = (from: unknown, repo: unknown, path: unknown, line: unknown) =>
+    JSON.stringify([from ?? null, repo ?? null, path ?? null, line ?? null]);
+  for (const r of merged) {
+    if (r.kind === "Endpoint") {
+      if (r.endpointType === "rest")
+        firstBy(restAt, JSON.stringify([r.component, r.method ?? "", r.normalizedPath ?? null]), r);
+      firstBy(endpointById, r.id, r);
+      firstBy(endpointAt, JSON.stringify([r.endpointType, r.pathOrTopic ?? null]), r);
+    } else if (r.kind === "Interface")
+      for (const e of r.evidence as Ev[])
+        firstBy(ifaceAt, evKey(r.from, e.repo, e.path, e.line), r);
+  }
   const stillLoose = new Set(merged.filter((r) => r.kind === "Unresolved").map((r) => r.id));
   const joinedTo = new Map<string, Map<string, string>>();
   for (const [repo, x] of p.per) {
@@ -313,33 +332,26 @@ export function factsEstateAfterMerge(
       if (r.kind !== "Endpoint") continue;
       const hit =
         r.endpointType === "rest"
-          ? endpoints.find(
-              (e) =>
-                e.endpointType === "rest" &&
-                e.component === r.component &&
-                (e.method ?? "") === (r.method ?? "") &&
-                e.normalizedPath === normalizePath(r.normalizedPath ?? r.pathOrTopic),
+          ? restAt.get(
+              JSON.stringify([
+                r.component,
+                r.method ?? "",
+                normalizePath(r.normalizedPath ?? r.pathOrTopic),
+              ]),
             )
-          : (endpoints.find((e) => e.id === r.id) ??
-            endpoints.find(
-              (e) => e.endpointType === r.endpointType && e.pathOrTopic === r.pathOrTopic,
-            ));
+          : (endpointById.get(r.id) ??
+            endpointAt.get(JSON.stringify([r.endpointType, r.pathOrTopic ?? null])));
       if (hit && hit.id !== r.id) remap.set(r.id, hit.id);
     }
     const to = new Map<string, string>();
+    const newById = new Map<string, CatalogRecord>();
+    for (const r of x.newRecords) firstBy(newById, r.id, r);
     for (const [id] of x.looseFact) {
       if (stillLoose.has(id)) continue;
-      const rec = x.newRecords.find((r) => r.id === id);
+      const rec = newById.get(id);
       if (!rec) continue;
       const at = (rec.evidence as Ev[])[0];
-      const iface = merged.find(
-        (r) =>
-          r.kind === "Interface" &&
-          r.from === (rec as { owner?: string }).owner &&
-          (r.evidence as Ev[]).some(
-            (e) => e.repo === repo && e.path === at?.path && e.line === at?.line,
-          ),
-      ) as Extract<CatalogRecord, { kind: "Interface" }> | undefined;
+      const iface = ifaceAt.get(evKey((rec as { owner?: string }).owner, repo, at?.path, at?.line));
       if (iface) {
         remap.set(id, iface.id);
         to.set(id, iface.to);

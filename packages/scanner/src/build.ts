@@ -124,6 +124,7 @@ import {
   type LegacyJoinsSlotT,
   type ReadersSlotT,
 } from "./slots.js";
+import { phaseClock } from "./build-phases.js";
 
 /**
  * The build (ADR 0195 point 2): `catalog/generated` made from the source slots and the build
@@ -413,6 +414,7 @@ export async function loadBuildInputs(
     questions?: readonly Question[];
   } = {},
 ): Promise<BuildInputs> {
+  const mark = phaseClock("inputs: ");
   forgetKeptReads();
   const pack = await packOf(root);
   const orgPackDir = o.orgPackDir ?? pack.orgPackDir;
@@ -420,8 +422,10 @@ export async function loadBuildInputs(
   const op = o.op ?? (await loadOrgPack(orgPackDir));
   const problems: string[] = [];
   await loadReadersTrust(stateDir);
+  mark("org pack");
   const onDisk = await readSlots(root);
   const slots = o.slots ? o.slots(onDisk) : onDisk;
+  mark("read slots");
   const curatedDir = o.curatedDir ?? curatedDirOf(root, op);
   const curated = o.curated
     ? { records: o.curated, problems: [] }
@@ -488,6 +492,7 @@ export async function loadBuildInputs(
   put(relOf(root, proposals), await treeHash(proposals));
   for (const f of federated)
     put(`federated/${f.id}`, await treeHash(f.dir, (r) => r.startsWith(".") || r === "workspace"));
+  mark("the other inputs");
   return {
     root,
     op,
@@ -680,6 +685,7 @@ function slotFilesOf(root: string, slots: BuildSlots, repo: string): string[] {
  */
 export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const { op, root } = i;
+  const mark = phaseClock("build: ");
   // The build cache (point 9): a build of the same inputs is the last build, kept whole; else
   // the last build's record texts are kept for the records that didn't change. A build with
   // federated catalogs isn't kept (their folders are read outside the inputs).
@@ -693,6 +699,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
         wikis: op.sources.wikis,
       });
   const kept = await loadKept<Build>(i.stateDir, cacheKey?.key);
+  mark("cache key and lookup");
   if (kept.hit) return kept.hit;
   const problems: ScanProblem[] = [];
   const notes: string[] = [];
@@ -783,14 +790,18 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   // A contract file is read in the facts' order of their companions (`<repo>.contracts.yaml`).
   contracts.sort((a, b) => cmpText(`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`));
 
+  mark("1 sources");
   // ---- 2. framework models, then the estate join over every facts slot at once
   const frameworks = await usableFrameworks(op, problems);
   let projection: FactsEstateProjection | undefined;
   let code: CatalogRecord[];
   if (factRepos.length) {
     projection = factsEstateRecords(op, factRepos);
+    mark("2 facts projection and estate join");
     code = applyPipelineModels([...readerRecords, ...projection.records], frameworks);
+    mark("2 framework models");
     code = withFactsEstateJoins(code, op, projection);
+    mark("2 joins applied");
   } else code = applyPipelineModels(readerRecords, frameworks);
 
   // ---- 3. the merge, intake, features, federation, the glossary
@@ -798,6 +809,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   const mergeInput = (records: CatalogRecord[]) =>
     estateMergeInput(op, estateRepos(op), [...records].sort(byKindId), undefined, read);
   let merged = mergeCatalog(mergeInput(code));
+  mark("3 merge");
   let inputs: ScanInputsResult | undefined;
   if (i.inputsDir !== null) {
     inputs = await scanInputs({
@@ -813,6 +825,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
     if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
   }
+  mark("3 intake");
   let records = withoutHeardListeners(merged.records, projection);
   let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;
   if (projection) {
@@ -846,6 +859,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     decisions: i.curated.records,
     proposalsDir,
   });
+  mark("3 features");
   for (const p of found.problems)
     problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
   let federated: FederatedContribution[] | undefined;
@@ -874,6 +888,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     proposalsDir,
     orgPackDir: i.orgPackDir,
   });
+  mark("3 federation and glossary");
   notes.push(...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`));
   records = [...glossary.records, ...fedRecords];
 
@@ -900,6 +915,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     records = shared ? applySharedMaps(records, shared, systems) : stripSharedMaps(records);
   }
 
+  mark("4 link evidence and shared maps");
   // ---- 5. the legacy records, as they are, until a current source takes over (point 6)
   const retired: RetiredJoin[] = [];
   let legacyJoins: string | undefined;
@@ -1209,6 +1225,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       ),
   );
 
+  mark("5 legacy");
   // ---- 6. the curated decisions, once, last
   // A decision changes or suppresses a record the build makes; it never adds one (ADR 0195
   // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
@@ -1233,6 +1250,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
       message: `invalid record: ${inv.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
     });
   const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
+  mark("6 curated");
 
   // ---- per fact repo: flows, loose calls, the join about it
   const facts = new Map<string, FactsRepoBuild>();
@@ -1258,6 +1276,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     }
   }
 
+  mark("per repo");
   // ---- the files and build.json
   const files = new Map<string, string>();
   /** Each file's record, by the hash of its JSON: what the cache keeps its text by. */
@@ -1279,6 +1298,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
     legacyJoins !== undefined ? sha(legacyJoins) : legacySlot ? legacySlot.sha : undefined,
     legacyKept ?? [],
   );
+  mark("files and build.json");
   const stats = {
     records: out.length,
     interfaces: out.filter((r) => r.kind === "Interface").length,
@@ -1332,6 +1352,7 @@ export async function buildCatalog(i: BuildInputs): Promise<Build> {
   // while they ran may be in the build or not, so the build is no build of either.
   if (cacheKey && (await cacheKey.unchanged()))
     stageKept(build, i.stateDir, cacheKey.key, textKeys);
+  mark("kept");
   return build;
 }
 
@@ -2725,6 +2746,7 @@ export async function buildAndWrite(
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
   const undoDir = buildUndoDirOf(root, pack.stateDir);
+  const mark = phaseClock("write: ");
   const build =
     o.build ??
     (await buildCatalog(
@@ -2740,8 +2762,10 @@ export async function buildAndWrite(
     ));
   // The target's record files and build.json, read once for the guards, the report and the
   // write, and the build.json this build writes, serialized once (ADR 0195 point 9).
+  mark("build");
   const target = o.target ?? baselineTarget(root);
   const onDisk = await hashFiles(target.generated);
+  mark("hash catalog on disk");
   const manifestOnDisk = await readText(target.manifest);
   const manifests = {
     onDisk: manifestOnDisk,
@@ -2759,6 +2783,7 @@ export async function buildAndWrite(
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
   });
+  mark("guards");
   // The confirm's list worked out again here, under the caller's lock: the guard as a refusal
   // would list it (no counts), compared with what the page showed.
   if (o.expect && !o.check) {
@@ -2798,11 +2823,13 @@ export async function buildAndWrite(
     target: o.target ?? baselineTarget(root),
     ...(o.now ? { now: o.now } : {}),
   });
+  mark("report");
   // The build cache keeps what these inputs build, written or refused (point 9).
   await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
     path: target.manifest,
     text: manifests.mine,
   });
+  mark("keep build");
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
     return { build, guard };
@@ -2828,6 +2855,7 @@ export async function buildAndWrite(
     }).catch(() => undefined);
     throw e;
   }
+  mark("write catalog");
   const changedNothing = write.written === 0 && write.removed === 0 && write.slots.length === 0;
   await writeBuildReport(undoDir, {
     ...report,
