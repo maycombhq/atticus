@@ -182,3 +182,67 @@ describe("a partial write refused still points at the facts to fix (N2)", () => 
     T,
   );
 });
+
+describe("a pairing on a fact left out says it waits (F5)", () => {
+  it(
+    "a call left out because the entry it names was rejected: its pairing waits on that entry",
+    async () => {
+      // No Apply before: no earlier copy of the call is kept, so its pairing isn't drawn.
+      const root = await metarepo();
+      const facts = join(root, "facts", "forge-ledger.jsonl");
+      const lines = readFileSync(facts, "utf8").split("\n").filter(Boolean);
+      // The entry the notify call is made from, cited on a line past the file's end.
+      const broken = lines.map((l) => {
+        const f = JSON.parse(l) as { id: string; cite: { line: number } };
+        return f.id === "e-post-entry"
+          ? JSON.stringify({ ...f, cite: { ...f.cite, line: 900 } })
+          : l;
+      });
+      writeFileSync(facts, broken.join("\n") + "\n");
+      const notify = JSON.parse(lines.find((l) => l.includes('"id":"c-notify"'))!) as {
+        cite: { file: string; line: number; value: string };
+      };
+      writeFileSync(
+        join(root, "facts", "forge-ledger.corrections.jsonl"),
+        JSON.stringify({
+          schemaVersion: 1,
+          fact: "c-notify",
+          target: {
+            kind: "call",
+            file: notify.cite.file,
+            line: notify.cite.line,
+            value: notify.cite.value,
+          },
+          action: "link",
+          link: { repo: "forge-payments", method: "POST", path: "/notify" },
+          by: "pat",
+          at: "2026-11-14T10:00:00Z",
+        }) + "\n",
+      );
+      const said: string[] = [];
+      const code = await confirmed(
+        (x, allowRemovals) =>
+          verifyCommand(
+            root,
+            "forge-ledger",
+            {
+              commit: "0123abc",
+              dir: dirOf(root),
+              write: true,
+              ...(allowRemovals !== undefined ? { allowRemovals } : {}),
+            },
+            x,
+          ),
+        { out: (l) => said.push(l), err: (l) => said.push(l) },
+      );
+      const text = said.join("\n");
+      expect(code, text).toBe(3);
+      expect(text).not.toMatch(/isn't a correction/);
+      expect(text).toMatch(/left out: c-notify \(ref-rejected\)/);
+      expect(text).toContain(
+        "Your pairing of c-notify waits on e-post-entry being put back (fix it in facts/forge-ledger.jsonl).",
+      );
+    },
+    T,
+  );
+});

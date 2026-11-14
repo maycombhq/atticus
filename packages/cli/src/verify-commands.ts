@@ -45,6 +45,7 @@ import {
   leftOutLines,
   leftOutOf,
   leftOutRefusedLines,
+  pairingWaitLines,
   type LeftOutFact,
 } from "./verify-left-out.js";
 
@@ -821,6 +822,14 @@ export async function verifyCommand(
       { facts: `${rel}/${repo}.jsonl`, rejected: rejectedFile },
       SHOWN,
       qProblems.length + reviewedBad.length,
+    ))
+      io.out(l);
+    // F5: a person's pairing of a call left out waits on the fact to put back, said.
+    for (const l of pairingWaitLines(
+      partial.leftOut,
+      report.rejected,
+      new Set(corrections.corrections.filter((c) => c.action === "link").map((c) => c.fact)),
+      `${rel}/${repo}.jsonl`,
     ))
       io.out(l);
     o.onLeftOut?.(partial.leftOut);

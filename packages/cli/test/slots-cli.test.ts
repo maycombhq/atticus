@@ -597,6 +597,24 @@ describe("verify --write writes the facts snapshot only when it succeeds (ADR 01
         .trim()
         .split("\n")
         .map((l) => (JSON.parse(l) as { id: string }).id);
+      // The hunt of beta.28.1 (F1): with a fact read at another commit, the write is refused
+      // whole, the snapshot as it was; without it, the rest is written (exit 3).
+      expect(
+        await verifyCommand(
+          root,
+          "forge-ledger",
+          { commit: "0123abc", dir, write: true },
+          capture().io,
+        ),
+      ).toBe(1);
+      expect(snapshot(root)).toEqual(s);
+      await writeFile(
+        join(root, "facts", "forge-ledger.jsonl"),
+        (await readFile(join(root, "facts", "forge-ledger.jsonl"), "utf8"))
+          .split("\n")
+          .filter((l) => !l.includes('"id":"rt-wrong-commit"'))
+          .join("\n"),
+      );
       expect(
         await verifyCommand(
           root,

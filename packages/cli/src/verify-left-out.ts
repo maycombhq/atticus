@@ -152,3 +152,39 @@ export function leftOutRefusedLines(
     `Fix them from ${files.rejected} and run atticus verify ${repo} --write again.`,
   ];
 }
+
+/**
+ * The hunt of beta.28.1 (F5): a person's pairing (a `link` correction) of a call left out isn't
+ * drawn until the call is back. Its line names the fact to put back first: the call itself, or,
+ * when the call was left out for naming a rejected fact (`ref-rejected`), the fact that started
+ * it.
+ */
+export function pairingWaitLines(
+  leftOut: readonly LeftOutFact[],
+  rejected: VerifyReport["rejected"],
+  pairedCalls: ReadonlySet<string>,
+  factsFile: string,
+): string[] {
+  const byId = new Map(rejected.map((r) => [r.fact.id, r] as const));
+  const cause = (id: string): string => {
+    const seen = new Set<string>();
+    let at = id;
+    for (;;) {
+      seen.add(at);
+      const r = byId.get(at);
+      if (r?.code !== "ref-rejected") return at;
+      const next = factRefs(r.fact).find((x) => byId.has(x.id) && !seen.has(x.id));
+      if (!next) return at;
+      at = next.id;
+    }
+  };
+  return (
+    leftOut
+      // An earlier copy kept in its place keeps its pairing drawn.
+      .filter((l) => pairedCalls.has(l.id) && !l.kept)
+      .map(
+        (l) =>
+          `Your pairing of ${l.id} waits on ${cause(l.id)} being put back (fix it in ${factsFile}).`,
+      )
+  );
+}
