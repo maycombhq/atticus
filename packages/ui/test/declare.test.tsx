@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import {
   AddBoxForm,
+  CreatedNote,
+  RemovedNote,
   CorrectionsList,
   declareBody,
   DeclarePanel,
@@ -43,6 +45,24 @@ describe("declaring a link", () => {
     expect(out).toContain("<legend");
     expect(out).toContain(COPY.declare.kinds.listens);
     expect(out).toMatch(/<label for="[^"]+" class="hud">Topic or queue/);
+  });
+});
+
+describe("declaring from a box no System of the profiles is (beta.28.1, field report 4)", () => {
+  const created = { system: "forge-instruments", file: "org-pack/profiles/forge/profile.yaml" };
+  it("says the System is added first, before writing and once written, and nothing otherwise", () => {
+    const before = un(renderToStaticMarkup(<CreatedNote created={created} written={false} />));
+    expect(before).toContain(COPY.declare.willCreate(created.system, created.file));
+    expect(before).toContain('role="note"');
+    const after = un(renderToStaticMarkup(<CreatedNote created={created} written />));
+    expect(after).toContain(COPY.declare.created(created.system, created.file));
+    expect(after).toContain('role="status"');
+    expect(renderToStaticMarkup(<CreatedNote written />)).toBe("");
+    // Undo of its last declaration takes it away again, said (S3).
+    expect(un(renderToStaticMarkup(<RemovedNote removed={created} />))).toContain(
+      COPY.corrections.removedSystem(created.system, created.file),
+    );
+    expect(renderToStaticMarkup(<RemovedNote />)).toBe("");
   });
 });
 

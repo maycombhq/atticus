@@ -1,8 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
   answerQuestion,
+  catalogDirOf,
   currentSignal,
   correctionLine,
   factsDirOf,
@@ -21,10 +22,11 @@ import {
   writeFileAtomic,
   questionsRelOf,
   type CandidateApi,
+  type CatalogRecord,
   type Fact,
 } from "@maycombhq/core";
 import { readVendorSpec } from "@maycombhq/intake";
-import { estateFacts, estateRepos, outsideProfileSystems } from "@maycombhq/scanner";
+import { estateFacts, estateRepos, outsideProfileSystems, readCatalog } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -265,6 +267,119 @@ export function boxesOf(query: URLSearchParams): { from: string; to: Api.LinkBox
   return { from, to };
 }
 
+/**
+ * Beta.28.1 (field report 4, the review's S4): which of A's calls the canvas draws, from the
+ * built catalog: an Interface current in it (the curated one over a generated one of the same
+ * id) whose id is the join's, or
+ * whose caller's evidence cites the call's line (a call placed outside included), and that no
+ * current suppress of a person's takes away (Delete this link's, whatever its id, `-2` too).
+ * Before any catalog is built nothing can be said, and undefined says so: every join counts as
+ * drawn (the first build draws them). A join of a call to its own component is never drawn
+ * (linkCandidates says so).
+ */
+export async function drawnOf(
+  root: string,
+  from: string,
+  facts: readonly Fact[],
+): Promise<
+  | {
+      join: (j: { interface: string; call: { at: string } }) => boolean;
+      outside: (target: string, call: string) => boolean;
+      /** The box a call's arrow goes to, for one the join doesn't place. */
+      to: (call: string) => string | undefined;
+    }
+  | undefined
+> {
+  const dir = catalogDirOf(root);
+  const built = await access(join(dir, "generated")).then(
+    () => true,
+    () => false,
+  );
+  if (!built) return undefined;
+  const read = (d: string) =>
+    readCatalog(join(dir, d), { cacheRoot: root }).then(
+      (c) => c.records,
+      () => [] as CatalogRecord[],
+    );
+  const [gen, cur] = await Promise.all([read("generated"), read("curated")]);
+  const suppressed = new Set<string>();
+  for (const r of cur) {
+    const d = r as unknown as Record<string, unknown>;
+    if (
+      d.kind === "CuratedDecision" &&
+      d.action === "suppress" &&
+      (d.status ?? "current") === "current" &&
+      (d.value ?? null) === null &&
+      typeof d.target === "string"
+    )
+      suppressed.add(d.target);
+  }
+  const ids = new Set<string>();
+  const lines = new Map<string, string>();
+  // The re-review: a curated Interface stands over a generated one of the same id.
+  const byId = new Map<string, CatalogRecord>();
+  for (const r of [...gen, ...cur]) if (r.kind === "Interface") byId.set(r.id, r);
+  for (const r of byId.values()) {
+    if (r.kind !== "Interface" || suppressed.has(r.id)) continue;
+    if (((r as { status?: string }).status ?? "current") !== "current") continue;
+    ids.add(r.id);
+    for (const e of r.evidence ?? [])
+      if (e.repo === from && e.side !== "callee" && e.path && e.line !== undefined) {
+        const k = `${e.path}:${e.line}`;
+        // The first by id, so the box said is the same on every read.
+        if (!lines.has(k)) lines.set(k, (r as { to: string }).to);
+      }
+  }
+  const at = new Map(
+    facts.flatMap((f) => (f.kind === "call" ? [[f.id, `${f.cite.file}:${f.cite.line}`]] : [])),
+  );
+  return {
+    join: (j) => ids.has(j.interface) || lines.has(j.call.at),
+    outside: (_t, call) => {
+      const a = at.get(call);
+      return !!a && lines.has(a);
+    },
+    to: (call) => {
+      const a = at.get(call);
+      return a ? lines.get(a) : undefined;
+    },
+  };
+}
+
+/**
+ * What the canvas draws in the box connected to: a repo and its component, or a system's repos
+ * (the manifest's system; a repo with none is drawn in a system of its own id) and theirs.
+ */
+function inBoxOf(op: Awaited<ReturnType<typeof loadOrgPack>>, to: Api.LinkBoxT) {
+  const repos = estateRepos(op).filter((r) =>
+    to.repo ? r.id === to.repo : (r.system ?? r.id) === to.system,
+  );
+  const names = new Set(repos.flatMap((r) => [r.id, ...(r.component ? [r.component] : [])]));
+  return (name: string) => names.has(name);
+}
+
+async function candidatesIn(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  c: Awaited<ReturnType<typeof context>>,
+) {
+  const drawn = await drawnOf(root, from, c.facts);
+  const inBox = inBoxOf(c.op, to);
+  return linkCandidates({
+    from,
+    facts: c.facts,
+    // Asked with the join (context's default).
+    join: c.join!,
+    apis: c.b.apis,
+    pairs: c.pairs,
+    to,
+    settings: settingsOf(c.facts),
+    ...(drawn ? { drawn: drawn.join, drawnOutside: drawn.outside, drawnTo: drawn.to } : {}),
+    inBox,
+  });
+}
+
 /** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
 export async function candidatesOf(
   root: string,
@@ -274,18 +389,11 @@ export async function candidatesOf(
 ): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
   const c = await context(root, from, to, s);
   await s.step(`Matching ${from}'s calls with them`);
-  const cands = linkCandidates({
-    from,
-    facts: c.facts,
-    // Asked with the join (context's default).
-    join: c.join!,
-    apis: c.b.apis,
-    pairs: c.pairs,
-    to,
-    settings: settingsOf(c.facts),
-  });
+  const cands = await candidatesIn(root, from, to, c);
   const q = await openRuleQuestion(root, from);
-  const loose = cands.calls.filter((x) => x.status !== "paired").length;
+  const loose = cands.calls.filter(
+    (x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here",
+  ).length;
   const view: Api.LinkCandidatesViewT = {
     from,
     to,
@@ -312,16 +420,59 @@ export async function candidatesOf(
 export async function pairingsOf(
   root: string,
   req: { from: string; to: Api.LinkBoxT; pairs: readonly { call: string; api: string }[] },
-  o: { by: string; at: string; steps?: LinkSteps },
-): Promise<{ corrections: FactCorrection[]; rel: string; file: string; target: string }> {
+  o: {
+    by: string;
+    at: string;
+    steps?: LinkSteps;
+    /**
+     * A pair the call has already (an arrow to that very API, or a person's pairing with it):
+     * `refuse` (Connect to…, 409) or `skip` (Edit the map: a staged change a terminal's write
+     * made redundant meanwhile is a no-op, said in `skipped`, never a failed batch).
+     */
+    redundant?: "refuse" | "skip";
+  },
+): Promise<{
+  corrections: FactCorrection[];
+  rel: string;
+  file: string;
+  target: string;
+  /** The pairs left out as redundant (`redundant: "skip"`), each with why, in words. */
+  skipped: { call: string; api: string; said: string }[];
+}> {
   const { from, to, pairs } = req;
-  // Beta.28.1: a pairing needs A's calls and B's APIs, never the estate's join (Edit the map's
-  // Apply checked every pairing with a whole-estate join it then threw away).
-  const c = await context(root, from, to, o.steps, { join: false });
+  // Beta.28.1: a pairing needs A's calls and B's APIs, and the estate's join only to tell a
+  // redundant pair (below: a call that goes to that very API already); with no pairs it is not
+  // worked out. The join is kept on file per stamp and shared while under way, so Edit the map's
+  // several pairings work it out once.
+  const c = await context(root, from, to, o.steps, { join: pairs.length > 0 });
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
+  // The review of beta.28.1 (S2, and its re-review): a call that goes to that very API already
+  // (an arrow to it, or a person's pairing with it) would be a redundant line. Only that API:
+  // where the API an arrow goes to isn't known (an arrow the catalog draws, not the join), any
+  // pairing is allowed.
+  const already = pairs.length
+    ? new Map(
+        (await candidatesIn(root, from, to, c)).calls.flatMap((x) =>
+          x.status === "here" && x.now
+            ? [[x.fact, x.now] as const]
+            : x.status === "paired" && x.paired
+              ? [[x.fact, x.paired] as const]
+              : [],
+        ),
+      )
+    : new Map<string, string>();
+  const skipped: { call: string; api: string; said: string }[] = [];
   for (const p of pairs) {
+    if (already.get(p.call) === p.api) {
+      const said = `${p.call} goes to ${p.api} of ${c.b.name} already: nothing to write for it.`;
+      if (o.redundant === "skip") {
+        skipped.push({ call: p.call, api: p.api, said });
+        continue;
+      }
+      throw conflict(`${said} Pick another API of ${c.b.name} for it, or leave it.`);
+    }
     const f = calls.get(p.call);
     if (!f)
       throw c.estate.unverified.includes(from)
@@ -351,6 +502,7 @@ export async function pairingsOf(
     rel: `${factsRelOf(root)}/${from}.corrections.jsonl`,
     file: join(factsDirOf(root), `${from}.corrections.jsonl`),
     target: to.repo ?? to.system!,
+    skipped,
   };
 }
 

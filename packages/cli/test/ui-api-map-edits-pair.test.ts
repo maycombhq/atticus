@@ -179,4 +179,31 @@ describe("Edit the map from a repo's box: Connect to…'s pairing (beta.28)", ()
     // Its caller's line is the call's own.
     expect(drawn[0]!.evidence.some((x) => x.side === "caller")).toBe(true);
   }, 300_000);
+
+  it("skips a staged pairing a call already has, saying so, and Connect to… refuses it (the re-review of beta.28.1)", async () => {
+    const cands = (await e.call(`/api/links/candidates?from=${PROXY}&to=forge-checkout`)).body
+      .calls as { fact: string; status: string; now?: string }[];
+    expect(cands.find((c) => c.fact === CALL)).toMatchObject({
+      status: "paired",
+      paired: REFUND_STATUS_ENTRY,
+    });
+    const pair = {
+      from: PROXY,
+      to: { repo: "forge-checkout" },
+      pairs: [{ call: CALL, api: REFUND_STATUS_ENTRY }],
+    };
+    const before = correctionsText();
+    const ended = await e.job("/api/map/edits", { edits: [{ kind: "add", pair }] });
+    expect(ended.state, JSON.stringify(ended)).toBe("done");
+    expect(ended.result?.code, ended.result?.lines.join("\n")).toBe(0);
+    expect(correctionsText()).toBe(before);
+    expect(ended.result?.lines.join("\n")).toContain(
+      `${CALL} goes to ${REFUND_STATUS_ENTRY} of forge-checkout already: nothing to write for it.`,
+    );
+    // Connect to…: a redundant line is refused, naming the API it goes to.
+    const r = await e.call("/api/links/connect", "POST", { ...pair, preview: true });
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+    expect(JSON.stringify(r.body)).toContain(REFUND_STATUS_ENTRY);
+    expect(correctionsText()).toBe(before);
+  }, 240_000);
 });

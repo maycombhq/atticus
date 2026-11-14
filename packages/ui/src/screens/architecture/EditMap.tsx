@@ -244,20 +244,69 @@ export interface PairRow {
   label: string;
   at: string;
   api: string;
+  /** 3.14: the box a call with an arrow already goes to now (a row to move here). */
+  joins?: string;
+  /** 3.14: who paired it with that box: pairing it here replaces their word, said. */
+  pairedBy?: string;
 }
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
 
-/** An add's rows: the repo's calls that join nothing yet (Connect to…'s), its suggestion picked. */
+/**
+ * An add's rows: the repo's loose calls as Connect to… lists them (no arrow drawn, asked, left,
+ * outside to a box nothing draws), each sure suggestion picked. A call with an arrow already is
+ * `movableRowsForAdd`'s, and one going to this box already is no row (nothing to pair).
+ */
 export function pairRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
   return c.calls
-    .filter((x) => x.status !== "paired")
+    .filter((x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here")
     .map((x) => ({
       call: x.fact,
       label: `${x.method ? `${x.method} ` : ""}${x.path}`,
       at: x.at,
       api: x.confident && x.suggestion ? x.suggestion.api : "",
     }));
+}
+
+/**
+ * Beta.28.1 (field report 4): an add's calls with an arrow already, to move here. Never picked
+ * for the person; adding from a box never dead-ends while the repo has a call.
+ */
+export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
+  return c.calls
+    .filter((x) => x.status === "joined")
+    .map((x) => ({
+      call: x.fact,
+      label: `${x.method ? `${x.method} ` : ""}${x.path}`,
+      at: x.at,
+      api: "",
+      // Always set: it marks the row as one to move ("" when the box isn't known).
+      joins: x.joins ?? "",
+      ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
+    }));
+}
+
+/** The calls to move here, folded under their title; nothing when there are none. */
+export function MoveCallsView(p: {
+  fromLabel: string;
+  toName: string;
+  rows: readonly PairRow[];
+  apis: readonly Api.LinkCandidatesViewT["apis"][number][];
+  open: boolean;
+  onPick(call: string, api: string): void;
+}) {
+  if (!p.rows.length) return null;
+  return (
+    <details className="stack" open={p.open}>
+      <summary className="hud">{E.add.moveTitle(p.rows.length)}</summary>
+      <PairRowsView
+        caption={E.add.moveCaption(p.fromLabel, p.toName)}
+        rows={p.rows}
+        apis={p.apis}
+        onPick={p.onPick}
+      />
+    </details>
+  );
 }
 
 /**
@@ -350,6 +399,12 @@ export function PairRowsView(p: {
         <div key={r.call} className="stack" style={{ gap: 2 }}>
           <label htmlFor={`${id}-${i}`} className="edit-map-call">
             <span className="mono">{r.label}</span> <span className="hud">{r.at}</span>
+            {r.joins && (
+              <span className="hud">
+                {" · "}
+                {r.pairedBy ? E.add.pairedWith(r.pairedBy, r.joins) : E.add.joinsNow(r.joins)}
+              </span>
+            )}
           </label>
           <select
             id={`${id}-${i}`}
@@ -396,7 +451,10 @@ function PairFields(p: {
     ? p.redirect && facts.state === "ready" && cands.state === "ready"
       ? pairRowsForRedirect(facts.data, p.redirect, cands.data.apis)
       : cands.state === "ready"
-        ? { rows: pairRowsForAdd(cands.data), lineless: false }
+        ? {
+            rows: [...pairRowsForAdd(cands.data), ...movableRowsForAdd(cands.data)],
+            lineless: false,
+          }
         : undefined
     : undefined;
   const key = ready ? `${p.from}>${p.to.box}` : "";
@@ -455,7 +513,9 @@ function PairFields(p: {
       )}
       {(() => {
         const loose = new Set(
-          cands.data.calls.filter((x) => x.status !== "paired").map((x) => x.fact),
+          cands.data.calls
+            .filter((x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here")
+            .map((x) => x.fact),
         );
         const moved = drawsAnother(p.rows, loose, p.redirect);
         return moved.length ? (
@@ -464,17 +524,36 @@ function PairFields(p: {
           </p>
         ) : null;
       })()}
-      <PairRowsView
-        caption={p.redirect ? E.add.redirectCalls(p.fromLabel) : E.add.calls(p.fromLabel)}
-        rows={p.rows}
-        apis={cands.data.apis}
-        onPick={(call, api) =>
+      {(() => {
+        const pick = (call: string, api: string) =>
           p.onPairs(
             p.rows.map((r) => (r.call === call ? { ...r, api } : r)),
             cands.data.apis.length,
-          )
-        }
-      />
+          );
+        // An add lists its loose calls, then the ones with an arrow to move here (field report 4).
+        const move = p.redirect ? [] : p.rows.filter((r) => r.joins !== undefined);
+        const loose = p.redirect ? p.rows : p.rows.filter((r) => r.joins === undefined);
+        return (
+          <>
+            {loose.length > 0 && (
+              <PairRowsView
+                caption={p.redirect ? E.add.redirectCalls(p.fromLabel) : E.add.calls(p.fromLabel)}
+                rows={loose}
+                apis={cands.data.apis}
+                onPick={pick}
+              />
+            )}
+            <MoveCallsView
+              fromLabel={p.fromLabel}
+              toName={cands.data.toName}
+              rows={move}
+              apis={cands.data.apis}
+              open={!loose.length}
+              onPick={pick}
+            />
+          </>
+        );
+      })()}
     </>
   );
 }

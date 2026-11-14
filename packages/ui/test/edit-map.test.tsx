@@ -20,6 +20,8 @@ import {
   applyStaged,
   drawsAnother,
   pairOf,
+  movableRowsForAdd,
+  MoveCallsView,
   pairRowsForAdd,
   pairRowsForRedirect,
   PairRowsView,
@@ -819,6 +821,88 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
       ["c1", "e1"],
       ["c2", ""],
     ]);
+  });
+
+  it("never dead-ends: an add lists the calls with an arrow already, to move here (field report 4)", () => {
+    const cands = {
+      from: "forge_instruments_1-0",
+      to: { repo: "forge-instruments" },
+      toName: "forge-instruments",
+      calls: [
+        {
+          fact: "c1",
+          callType: "rest",
+          method: "GET",
+          path: "/instruments/ping",
+          at: "apiproxy/proxies/default.xml:10",
+          status: "joined",
+          joins: "forge-ledger",
+          suggestion: { api: "e1", score: 1, why: "same-path" },
+          confident: true,
+        },
+        {
+          fact: "c2",
+          callType: "rest",
+          method: "POST",
+          path: "/instruments",
+          at: "apiproxy/proxies/default.xml:13",
+          status: "undrawn",
+          joins: "forge-ledger",
+        },
+        { fact: "c3", callType: "rest", path: "/y", at: "x:1", status: "paired", paired: "e1" },
+        // Going to this box already: no row at all (S2).
+        { fact: "c4", callType: "rest", path: "/z", at: "x:2", status: "here", now: "e1" },
+        {
+          fact: "c5",
+          callType: "rest",
+          path: "/w",
+          at: "x:3",
+          status: "joined",
+          joins: "forge-risk",
+          pairedBy: "sam",
+        },
+      ],
+      apis: [{ id: "e1", kind: "route", method: "GET", path: "/instruments/ping" }],
+    } as unknown as Api.LinkCandidatesViewT;
+    // A call with no arrow drawn is loose; one with an arrow is offered to move, never picked.
+    expect(pairRowsForAdd(cands).map((r) => r.call)).toEqual(["c2"]);
+    const move = movableRowsForAdd(cands);
+    expect(move).toEqual([
+      {
+        call: "c1",
+        label: "GET /instruments/ping",
+        at: "apiproxy/proxies/default.xml:10",
+        api: "",
+        joins: "forge-ledger",
+      },
+      { call: "c5", label: "/w", at: "x:3", api: "", joins: "forge-risk", pairedBy: "sam" },
+    ]);
+    const page = html(
+      <MoveCallsView
+        fromLabel="forge_instruments_1-0"
+        toName="forge-instruments"
+        rows={move}
+        apis={cands.apis}
+        open
+        onPick={noop}
+      />,
+    );
+    expect(page).toContain("<details");
+    expect(page).toContain(" open");
+    expect(page).toContain(esc(E.add.moveTitle(2)));
+    // N3: who paired it with the other box, and that pairing here replaces their word.
+    expect(page).toContain(esc(E.add.pairedWith("sam", "forge-risk")));
+    expect(page).toContain(esc(E.add.moveCaption("forge_instruments_1-0", "forge-instruments")));
+    expect(page).toContain(esc(E.add.joinsNow("forge-ledger")));
+    expect(page).toContain(`aria-label="${esc(E.add.callApi("GET /instruments/ping"))}"`);
+    // Nothing to move: nothing shown.
+    expect(
+      html(
+        <MoveCallsView fromLabel="a" toName="b" rows={[]} apis={[]} open={false} onPick={noop} />,
+      ),
+    ).toBe("");
+    // Said only when no call is left at all: each is paired by a person.
+    expect(E.add.noCalls("forge_instruments_1-0")).toContain("paired by a person");
   });
 
   it("names every call's API field, and a box with no repo can't be redirected by pairing", () => {

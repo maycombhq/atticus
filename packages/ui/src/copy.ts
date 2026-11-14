@@ -5446,7 +5446,17 @@ export const COPY = {
       callApi: (call: string) => `The API ${call} goes to`,
       notPaired: "Not this call",
       noCalls: (from: string) =>
-        `${from} has no call left to pair with this box: every call of it joins something already. To move one, pick its arrow and use Redirect this link….`,
+        `${from} has no call left to pair with this box: each is paired by a person already. Undo one from its line in the corrections to pair it again.`,
+      /** Beta.28.1 (field report 4): the calls with an arrow already, to move to this box. */
+      moveTitle: (n: number) =>
+        n === 1
+          ? "Move a call here (1 has an arrow already)"
+          : `Move a call here (${n} have an arrow already)`,
+      moveCaption: (from: string, to: string) =>
+        `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
+      joinsNow: (box: string) => `goes to ${box} now`,
+      pairedWith: (by: string, box: string) =>
+        `paired by a person (${by}) with ${box}: pairing it here replaces their word`,
       noApis: (to: string) =>
         `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
       pickOne: "Pick the API for at least one call.",
@@ -5597,9 +5607,17 @@ export const COPY = {
     empty: "Say the topic or the route first.",
     close: "Close",
     copy: "Copy the command",
+    /** Beta.28.1 (field report 4): a repo the manifest lists with no System of the profiles. */
+    willCreate: (system: string, file: string) =>
+      `No profile has ${system} as a System yet, so writing this adds it to ${file} first (a person's word, for review), then declares the link on it.`,
+    created: (system: string, file: string) =>
+      `Added ${system} as a System in ${file} first, then declared the link on it.`,
   },
   corrections: {
     title: "Corrections and declarations",
+    /** The review of beta.28.1 (S3): a System added from the canvas goes with its last declaration. */
+    removedSystem: (system: string, file: string) =>
+      `${system} was added from the canvas for its declarations, and none is left: it is taken out of ${file} too.`,
     show: "Show the corrections",
     loading: "Reading the corrections…",
     failed: (why: string) => `The corrections couldn't be read: ${why}`,
@@ -5699,7 +5717,7 @@ export const COPY = {
     dropSameRepo:
       "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
     intro:
-      "Pair this repo's calls that join nothing with the other box's APIs. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
+      "Pair this repo's calls that have no arrow with the other box's APIs, or move one that has. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
     pickBox: "The other box",
     pickBoxNone: "Pick a repo or a system",
     loading: "Reading the calls and APIs…",
@@ -5727,7 +5745,39 @@ export const COPY = {
         `${name}'s facts are read but not all verified, so its APIs aren't on the map yet. Verify them first:`,
       "no-spec": (name: string) => `${name} has no spec on file. Add its OpenAPI file:`,
     } as Record<string, (name: string) => string>,
-    noLoose: "Every call of this repo joins something already: nothing loose to pair.",
+    /**
+     * Beta.28.1 (field report 4): said only when every call has an arrow drawn, with where they
+     * go; each is still listed below, to move here.
+     */
+    noLoose: (where: string) =>
+      `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
+    allPaired: (to: string) =>
+      `Every call of this repo is paired with ${to} by a person already: undo one from its line in the corrections to pair it again.`,
+    /** One box the calls go to now, and how many: `forge-ledger (3)`. */
+    linkedTo: (box: string, n: number) => `${box} (${n})`,
+    /** The calls that have an arrow elsewhere, to move to this box. */
+    moveTitle: (n: number) =>
+      n === 1
+        ? "Move a call here (1 has an arrow already)"
+        : `Move a call here (${n} have an arrow already)`,
+    moveCaption: (from: string, to: string) =>
+      `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
+    /** Where a call goes now (a joined, undrawn or outside call). */
+    joinsNow: (box: string) => `goes to ${box} now`,
+    undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,
+    /** The review of beta.28.1 (N3): a call a person paired with the box it goes to now. */
+    pairedWith: (by: string, box: string) => `paired by a person (${by}) with ${box}`,
+    replacesPairing: (by: string, box: string, to: string) =>
+      `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${box} goes.`,
+    /** S2: calls with an arrow to this very box, never paired again. */
+    hereTitle: (to: string, n: number) => `Going to ${to} already (${n})`,
+    hereWhy: (api: string) => `goes here already, to ${api}: nothing to pair`,
+    allHere: (to: string) =>
+      `Every call of this repo goes to ${to} already, with an arrow: nothing to pair. To change which API one goes to, pick its arrow and use This link is wrong.`,
+    /** N1: the repo has calls on record, and none Connect pairs. */
+    noJoinable: (from: string) =>
+      `None of ${from}'s calls on record is one Connect to… pairs (a REST, SOAP, gRPC or GraphQL call): its topics, queues and tables are linked from what its code reads. To say one the code can't show, use Declare a link….`,
+    outsideWhy: (target: string) => `left outside the estate, to ${target}, which no box draws`,
     calls: "Calls that join nothing",
     caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
     col: { pick: "Pair", call: "Call", line: "Line", status: "Now", api: "API" },
@@ -5747,6 +5797,9 @@ export const COPY = {
       outside: "outside",
       unresolved: "not joined",
       paired: "paired by a person",
+      joined: "has an arrow",
+      undrawn: "no arrow drawn",
+      here: "goes here already",
     } as Record<string, string>,
     why: {
       "same-path": "same path",

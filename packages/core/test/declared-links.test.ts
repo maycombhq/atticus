@@ -264,3 +264,135 @@ describe("declaring in a Windows checkout", () => {
     expect(after.startsWith(crlf.split("    boundary: vendor")[0]!)).toBe(true);
   });
 });
+
+describe("a System added from the canvas (the review of beta.28.1, S3)", () => {
+  const create = { platform: "forge", owner: "team-instruments" };
+  const call = (route: string) => ({ kind: "call" as const, system: "forge-instruments", route });
+
+  it("says who added it and when, and goes again with its last declaration", async () => {
+    const root = await metarepo();
+    const file = join(root, "org-pack/profiles/forge/profile.yaml");
+    const one = await declareLink(root, call("GET /forge/instruments/v1/ping"), {
+      by: "pat",
+      at,
+      create,
+    });
+    expect(one.created).toBe("forge-instruments");
+    const text = await readFile(file, "utf8");
+    expect(text).toMatch(
+      /- id: forge-instruments # added from the canvas by pat on 2026-11-06 \(#[0-9a-f]{8}\)\n/,
+    );
+    await declareLink(root, call("POST /forge/instruments/v1"), { by: "sam", at, create });
+    // One of its two declarations taken back: the System stays.
+    await undeclareLink(root, {
+      kind: "call",
+      system: "forge-instruments",
+      value: "GET /forge/instruments/v1/ping",
+    });
+    expect(await readFile(file, "utf8")).toContain("id: forge-instruments");
+    // Its last: the System the canvas added goes too, and the profile is as it was.
+    const last = await undeclareLink(root, {
+      kind: "call",
+      system: "forge-instruments",
+      value: "POST /forge/instruments/v1",
+    });
+    expect(last.removed).toBe("forge-instruments");
+    expect(await readFile(file, "utf8")).toBe(PROFILE);
+  });
+
+  // The re-review: any hand edit since it was added keeps it (its name, boundary, owner, a
+  // person's comment), and so does a pairing or an answer that names it.
+  for (const [what, edit] of [
+    ["its name", (t: string) => t.replace("name: forge-instruments", "name: Forge instruments")],
+    [
+      "its boundary",
+      (t: string) =>
+        t.replace(
+          "    boundary: product\n    owner: team-instruments",
+          "    boundary: internal\n    owner: team-instruments",
+        ),
+    ],
+    ["its owner", (t: string) => t.replace("owner: team-instruments", "owner: team-platform")],
+    [
+      "a person's comment",
+      (t: string) =>
+        t.replace(
+          "    boundary: product\n    owner: team-instruments",
+          "    boundary: product # ours\n    owner: team-instruments",
+        ),
+    ],
+  ] as const)
+    it(`keeps a System the canvas added once a person changed ${what}`, async () => {
+      const root = await metarepo();
+      const file = join(root, "org-pack/profiles/forge/profile.yaml");
+      await declareLink(root, call("GET /ping"), { by: "pat", at, create });
+      const was = await readFile(file, "utf8");
+      const now = edit(was);
+      expect(now, what).not.toBe(was);
+      await writeFile(file, now);
+      const r = await undeclareLink(root, {
+        kind: "call",
+        system: "forge-instruments",
+        value: "GET /ping",
+      });
+      expect(r.removed, what).toBeUndefined();
+      expect(await readFile(file, "utf8")).toContain("id: forge-instruments");
+    });
+
+  it("keeps a System the canvas added that a pairing or an answer names", async () => {
+    const root = await metarepo();
+    await declareLink(root, call("GET /ping"), { by: "pat", at, create });
+    const r = await undeclareLink(
+      root,
+      { kind: "call", system: "forge-instruments", value: "GET /ping" },
+      { inUse: true },
+    );
+    expect(r.removed).toBeUndefined();
+    expect(await readFile(join(root, "org-pack/profiles/forge/profile.yaml"), "utf8")).toContain(
+      "id: forge-instruments",
+    );
+  });
+
+  it("keeps a System written by hand when its last declaration goes", async () => {
+    const root = await metarepo();
+    const file = join(root, "org-pack/profiles/forge/profile.yaml");
+    await declareLink(root, { kind: "call", system: "ledger", route: "GET /x" }, { by: "pat", at });
+    const r = await undeclareLink(root, { kind: "call", system: "ledger", value: "GET /x" });
+    expect(r.removed).toBeUndefined();
+    expect(await readFile(file, "utf8")).toBe(PROFILE);
+  });
+
+  it("keeps a System the canvas added once a person wrote more under it by hand", async () => {
+    const root = await metarepo();
+    const file = join(root, "org-pack/profiles/forge/profile.yaml");
+    await declareLink(root, call("GET /ping"), { by: "pat", at, create });
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace("    aliases: []", "    aliases: [instruments]"),
+    );
+    const r = await undeclareLink(root, {
+      kind: "call",
+      system: "forge-instruments",
+      value: "GET /ping",
+    });
+    expect(r.removed).toBeUndefined();
+    expect(await readFile(file, "utf8")).toContain("id: forge-instruments");
+  });
+});
+
+describe("a System to add where its platform has no profile yet (the review of beta.28.1, N4)", () => {
+  it("writes nothing, and says exactly which file to add", async () => {
+    const root = await metarepo();
+    await mkdir(join(root, "org-pack/profiles/harbor"), { recursive: true });
+    const d = { kind: "call" as const, system: "harbor-ledger", route: "GET /x" };
+    const err = await declareLink(root, d, {
+      by: "pat",
+      at,
+      create: { platform: "harbor" },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DeclareError);
+    expect((err as DeclareError).message).toBe(
+      "harbor-ledger is drawn for a repo of the harbor platform, which has no profile yet: add org-pack/profiles/harbor/profile.yaml (schemaVersion: 1, platform: harbor, a name, systems: []), then declare the link again; Atticus adds harbor-ledger to it then.",
+    );
+  });
+});

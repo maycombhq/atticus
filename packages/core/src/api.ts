@@ -613,6 +613,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `answer` is the answer the request gives without `job` (or `problem`, refused). Without
  *   `job`, both answer as before. GET /api/facts/{repo}/preview takes `job=1` the same way (the
  *   panel after a correction). Additive only.
+ *   Also in 3.14.0 (beta.28.1, field report 4): connecting two boxes never dead-ends. GET
+ *   /api/links/candidates lists every call of A: one that has an arrow drawn is `joined` (with
+ *   `joins`, the box it goes to), to move from the same panel; one the join ties to something no
+ *   arrow is drawn for is `undrawn`, as loose as one that joins nothing; one placed outside to a
+ *   target no box draws is listed `outside` with `joins`, where before it was left out; one with
+ *   an arrow to this very box is `here` (`now`, its API: a pairing with that API is refused,
+ *   409); one a person paired with the box it goes to says who (`pairedBy`). POST
+ *   /api/declared-links (and Edit the map's adds) from a box no System of the profiles is (a repo
+ *   the manifest lists with no System) adds that System to the repo's profile first, and says so
+ *   (`created`), and Undo of its last declaration takes that System away again (`removed`).
+ *   Additive only.
  */
 export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
@@ -5216,9 +5227,30 @@ export const CandidateCallView = z.object({
   method: z.string().optional(),
   path: z.string(),
   at: z.string(),
-  status: z.enum(["asked", "missed", "left", "outside", "unresolved", "paired"]),
+  /**
+   * 3.14: `joined`, a call with an arrow drawn already, listed so it can be moved to this box;
+   * `undrawn`, a call the join ties to something no arrow is drawn for, as loose as any;
+   * `here`, a call with an arrow to this very box (`now` its API), never suggested again.
+   */
+  status: z.enum([
+    "asked",
+    "missed",
+    "left",
+    "outside",
+    "unresolved",
+    "paired",
+    "joined",
+    "undrawn",
+    "here",
+  ]),
   why: z.string().optional(),
   paired: z.string().optional(),
+  /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
+  joins: z.string().optional(),
+  /** 3.14: for `here`, the API of this box the call goes to now. */
+  now: z.string().optional(),
+  /** 3.14: who paired the call with the box it goes to now, when a person did. */
+  pairedBy: z.string().optional(),
   suggestion: CandidateSuggestion.optional(),
   /** 2.57: the APIs it most likely is, best first, at most three. */
   suggestions: z.array(CandidateSuggestion).max(3).optional(),
@@ -5804,6 +5836,16 @@ export const FileChangeResult = z.object({
   files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
   verify: z.string(),
   commit: z.string(),
+  /**
+   * 3.14: the System added to a profile first, for a declaration from a box no profile had (a
+   * repo the manifest lists with no System): the person is told it was added, and where.
+   */
+  created: z.object({ system: z.string(), file: z.string() }).optional(),
+  /**
+   * 3.14: the System the canvas added for a declaration, taken away with its last one (Undo):
+   * the person is told it went, and from where.
+   */
+  removed: z.object({ system: z.string(), file: z.string() }).optional(),
 });
 /**
  * ADR 0179: a stroke drawn on the canvas for a change (a call, a topic, a table, a step removed

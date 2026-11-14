@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
@@ -85,6 +86,21 @@ async function systemNode(
 }
 
 const COMMENT = /^\s*(publishes|listens)?\s*,?\s*declared by (.+?) on (\d{4}-\d{2}-\d{2})/;
+/** The comment a System added from the canvas carries on its id (the review of beta.28.1, S3). */
+const ADDED = /^\s*added from the canvas by (.+?) on (\d{4}-\d{2}-\d{2}) \(#([0-9a-f]{8})\)\s*$/;
+/**
+ * The re-review of beta.28.1: a short hash of the System as the canvas added it, in its comment,
+ * so Undo takes it away only while it is still exactly that (no field a person changed since).
+ */
+export const addedHash = (s: Record<string, unknown>): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(["id", "name", "boundary", "owner", "aliases"].map((k) => [k, s[k] ?? null])),
+    )
+    .digest("hex")
+    .slice(0, 8);
+export const addedComment = (by: string, at: string, hash: string) =>
+  ` added from the canvas by ${by} on ${at.slice(0, 10)} (#${hash})`;
 
 /** The comment a declaration carries: which side, who and when. */
 export const declaredComment = (by: string, at: string, side?: "publishes" | "listens") =>
@@ -97,7 +113,18 @@ export const declaredComment = (by: string, at: string, side?: "publishes" | "li
 export async function declareLink(
   root: string,
   d: Declared,
-  o: { by: string; at: string; preview?: boolean },
+  o: {
+    by: string;
+    at: string;
+    preview?: boolean;
+    /**
+     * Beta.28.1 (field report 4): a system no profile has yet, which the canvas draws for a repo
+     * the manifest lists with no System of the profiles (the box takes the repo's id, or the
+     * manifest's `system`): added to its platform's profile in the same write, so a person
+     * declaring a link from that box never has to make the System first.
+     */
+    create?: { platform: string; name?: string; owner?: string };
+  },
 ): Promise<{
   rel: string;
   changes: LineChange[];
@@ -106,8 +133,17 @@ export async function declareLink(
   before: string;
   /** The bytes it wrote (what a take-back expects to find). */
   wrote?: string;
+  /** Beta.28.1: the system added to the profile first (`create`), when it had none. */
+  created?: string;
 }> {
-  const found = await systemNode(root, d.system);
+  const found:
+    | (NonNullable<Awaited<ReturnType<typeof systemNode>>> & {
+        created?: true;
+        disk?: string;
+      })
+    | undefined =
+    (await systemNode(root, d.system)) ??
+    (await newSystemNode(root, d.system, o.create, { by: o.by, at: o.at }));
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol } = found;
   const doc = parseDocument(d.kind === "topic" ? migrateProfileText(text).text : text);
@@ -142,11 +178,71 @@ export async function declareLink(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  const changes = changedLines(text, after);
-  if (o.preview) return { rel, changes, written: false, before: raw };
+  // Against the file as it is on disk: a system added first is one of the lines it changes.
+  const changes = changedLines(found.created ? found.disk! : text, after);
+  const created = found.created ? { created: d.system } : {};
+  if (o.preview) return { rel, changes, written: false, before: raw, ...created };
   const wrote = inEol(after, eol);
   await writeFileIfUnchanged(path, raw, wrote);
-  return { rel, changes, written: true, before: raw, wrote };
+  return { rel, changes, written: true, before: raw, wrote, ...created };
+}
+
+/**
+ * The profile of `create.platform` with the system added at the end of its systems (a product
+ * system of the estate, its owner the repo's), as `systemNode` gives one; nothing is written
+ * here. Undefined without `create`, or when that platform has no profile folder.
+ */
+async function newSystemNode(
+  root: string,
+  system: string,
+  create: { platform: string; name?: string; owner?: string } | undefined,
+  who: { by: string; at: string },
+): Promise<
+  | (NonNullable<Awaited<ReturnType<typeof systemNode>>> & { created: true; disk: string })
+  | undefined
+> {
+  if (!create) return undefined;
+  const f = (await profilesOf(root)).find((x) =>
+    x.rel.endsWith(`/profiles/${create.platform}/profile.yaml`),
+  );
+  // N4: a platform with no profile yet is no dead end: the person is told the file to add.
+  const rel = `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/profiles/${create.platform}/profile.yaml`;
+  const raw = f ? await readFile(f.path, "utf8").catch(() => undefined) : undefined;
+  if (!f || raw === undefined)
+    throw new DeclareError(
+      "not-found",
+      `${system} is drawn for a repo of the ${create.platform} platform, which has no profile yet: add ${rel} (schemaVersion: 1, platform: ${create.platform}, a name, systems: []), then declare the link again; Atticus adds ${system} to it then.`,
+    );
+  const eol = eolOf(raw);
+  const disk = lfOnly(raw);
+  const doc = parseDocument(disk);
+  let seq = doc.get("systems");
+  if (!isSeq(seq)) {
+    doc.set("systems", doc.createNode([]));
+    seq = doc.get("systems");
+  }
+  if (!isSeq(seq)) return undefined;
+  // An empty `systems: []` opens out into a block list, as a hand-written profile has.
+  if (seq.items.length === 0) seq.flow = false;
+  const fields = {
+    id: system,
+    name: create.name ?? system,
+    boundary: "product",
+    ...(create.owner ? { owner: create.owner } : {}),
+    aliases: [],
+  };
+  const added = doc.createNode(fields) as YAMLMap;
+  // Who added it and when, on its id's line, as a declaration says it (S3), with its hash.
+  const id = added.items[0]!.value as { comment?: string | null };
+  id.comment = addedComment(who.by, who.at, addedHash(fields));
+  seq.add(added);
+  const text = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const again = parseDocument(text);
+  const node = (again.get("systems") as { items: unknown[] }).items.find(
+    (x) => isMap(x) && x.get("id") === system,
+  );
+  if (!isMap(node)) return undefined;
+  return { ...f, raw, text, eol, doc: again, node, created: true, disk };
 }
 
 /**
@@ -157,7 +253,18 @@ export async function declareLink(
 export async function undeclareLink(
   root: string,
   d: { kind: "topic" | "call"; system: string; value: string },
-): Promise<{ rel: string; changes: LineChange[]; before: string; wrote: string }> {
+  o: {
+    /** A pairing or an answer names the system: a System the canvas added for it stays. */
+    inUse?: boolean;
+  } = {},
+): Promise<{
+  rel: string;
+  changes: LineChange[];
+  before: string;
+  wrote: string;
+  /** S3: the System the canvas added, taken away with its last declaration. */
+  removed?: string;
+}> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, raw, text, eol, node } = found;
@@ -178,11 +285,51 @@ export async function undeclareLink(
       "not-found",
       `${rel} has no ${d.value} declared from the canvas under ${d.system} (removed already, or written by hand there).`,
     );
-  const after = withoutItem(
+  let after = withoutItem(
     text,
     list.items[i] as { range?: [number, number, number] | null },
     list.items.length === 1,
   );
+  // S3: a System the canvas added for a declaration goes with its last one, when nothing was
+  // written under it since (no topic or call left, no alias, no key it wasn't added with).
+  let removed: string | undefined;
+  if (after !== undefined && list.items.length === 1 && !o.inUse) {
+    const again = parseDocument(after);
+    const systems = again.get("systems");
+    const at = isSeq(systems)
+      ? systems.items.findIndex((x) => isMap(x) && x.get("id") === d.system)
+      : -1;
+    const sys = isSeq(systems) ? systems.items[at] : undefined;
+    if (isSeq(systems) && isMap(sys) && systems.items.length > 1) {
+      const idNode = sys.items.find((p) => isScalar(p.key) && p.key.value === "id")?.value as
+        { comment?: string | null } | undefined;
+      const keys = sys.items.map((p) => (isScalar(p.key) ? String(p.key.value) : ""));
+      const aliases = sys.get("aliases");
+      const plain =
+        keys.every((k) => ["id", "name", "boundary", "owner", "aliases"].includes(k)) &&
+        (aliases === undefined || (isSeq(aliases) && aliases.items.length === 0));
+      // Exactly as added: its fields hash to its comment's, and no comment but that one in its
+      // lines (a person's note is a change too).
+      const hash = ADDED.exec(idNode?.comment ?? "")?.[3];
+      const [from, , end] = (sys as { range?: [number, number, number] | null }).range ?? [];
+      const own = from !== undefined && end !== undefined ? after.slice(from, end) : "";
+      const untouched =
+        !!hash &&
+        addedHash(sys.toJS(again) as Record<string, unknown>) === hash &&
+        (own.match(/(^|\s)#(\s|$)/gm) ?? []).length === 1;
+      if (untouched && plain) {
+        const without = withoutItem(
+          after,
+          sys as { range?: [number, number, number] | null },
+          false,
+        );
+        if (without !== undefined && Profile.safeParse(parseDocument(without).toJS()).success) {
+          after = without;
+          removed = d.system;
+        }
+      }
+    }
+  }
   const check = after === undefined ? undefined : Profile.safeParse(parseDocument(after).toJS());
   if (after === undefined || !check?.success)
     throw new DeclareError(
@@ -191,7 +338,13 @@ export async function undeclareLink(
     );
   const wrote = inEol(after, eol);
   await writeFileIfUnchanged(path, raw, wrote);
-  return { rel, changes: changedLines(text, after), before: raw, wrote };
+  return {
+    rel,
+    changes: changedLines(text, after),
+    before: raw,
+    wrote,
+    ...(removed ? { removed } : {}),
+  };
 }
 
 /**

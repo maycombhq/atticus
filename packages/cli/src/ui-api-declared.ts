@@ -3,9 +3,11 @@ import { join } from "node:path";
 import {
   addProfileSystem,
   Api,
+  cmpText,
   declaredOf,
   declareLink,
   DeclareError,
+  factIdPart,
   factsDirOf,
   factsRelOf,
   FileChangedError,
@@ -14,8 +16,9 @@ import {
   parseCorrections,
   undeclareLink,
   type FactCorrection,
+  type OrgPack,
 } from "@maycombhq/core";
-import { estateRepos, targetPicker } from "@maycombhq/scanner";
+import { estateFacts, estateRepos, targetPicker } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -49,6 +52,51 @@ const says = (c: FactCorrection): string => {
     .join(", ");
   return `${what}: ${[set, c.line ? `line ${c.line}` : ""].filter(Boolean).join(", ")}`;
 };
+
+/**
+ * Beta.28.1 (field report 4): the System a declaration from this box needs added first, when no
+ * profile has it: the box the canvas draws for a repo the manifest lists with no System of the
+ * profiles (its id the manifest's `system`, else the repo's), in that repo's platform's profile,
+ * owned by the repo's team. Undefined for a system a profile has, or one no repo is drawn in.
+ */
+export function systemToCreate(
+  op: OrgPack,
+  system: string,
+): { platform: string; owner?: string } | undefined {
+  if (op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === system)))
+    return undefined;
+  // The review (N4): the same pick whatever order the profiles load in. A platform with a profile
+  // to add it to first, then by platform and repo id; its owner only when the platform's repos
+  // drawn in it agree on one.
+  const hasProfile = new Set(op.profiles.filter((p) => !!p.profile).map((p) => p.platform));
+  const drawn = estateRepos(op)
+    .filter((x) => (x.system ?? factIdPart(x.id)) === system)
+    .sort(
+      (a, b) =>
+        Number(hasProfile.has(b.platform)) - Number(hasProfile.has(a.platform)) ||
+        cmpText(a.platform, b.platform) ||
+        cmpText(a.id, b.id),
+    );
+  const r = drawn[0];
+  if (!r) return undefined;
+  const owners = new Set(drawn.filter((x) => x.platform === r.platform).map((x) => x.owner));
+  const owner = owners.size === 1 ? [...owners][0] : undefined;
+  return { platform: r.platform, ...(owner ? { owner } : {}) };
+}
+
+/**
+ * The re-review of beta.28.1: whether a person's pairing (a `link` correction to it) or an
+ * answer (a target question's) names the system, by its id or its name's slug: a System the
+ * canvas added is then kept when its last declaration goes.
+ */
+export async function systemInUse(root: string, op: OrgPack, system: string): Promise<boolean> {
+  const est = await estateFacts(root, op, "");
+  const is = (v: string | undefined) => !!v && (v === system || factIdPart(v) === system);
+  return (
+    Object.values(est.pairs).some((m) => Object.values(m).some((x) => !x.none && is(x.system))) ||
+    Object.values(est.targets).some((m) => Object.values(m).some(is))
+  );
+}
 
 export function uiDeclaredRoutes(
   r: Router,
@@ -166,10 +214,12 @@ export function uiDeclaredRoutes(
         );
       try {
         const { preview, ...d } = b.data;
+        const create = systemToCreate(op, d.system);
         const res = await declareLink(ctx.root, d, {
           by: ctx.user,
           at: now().toISOString(),
           ...(preview ? { preview } : {}),
+          ...(create ? { create } : {}),
         });
         if (res.written) ctx.events.publish({ type: "file.changed", path: res.rel });
         const what = d.kind === "topic" ? `${d.side} ${d.topic}` : `calls ${d.route}`;
@@ -178,6 +228,7 @@ export function uiDeclaredRoutes(
           body: {
             written: res.written,
             files: [{ file: res.rel, changes: res.changes }],
+            ...(res.created ? { created: { system: res.created, file: res.rel } } : {}),
             verify: "atticus verify --all --write",
             commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
           } satisfies Api.FileChangeResultT,
@@ -190,7 +241,10 @@ export function uiDeclaredRoutes(
       const b = Api.UndeclareLinkRequest.safeParse(body ?? {});
       if (!b.success) throw badRequest("Say which declaration: { kind, system, value }.");
       try {
-        const res = await undeclareLink(ctx.root, b.data);
+        const op = await loadOrgPack(orgPackDirOf(ctx.root));
+        const res = await undeclareLink(ctx.root, b.data, {
+          inUse: await systemInUse(ctx.root, op, b.data.system),
+        });
         ctx.events.publish({ type: "file.changed", path: res.rel });
         return {
           status: 200,
@@ -199,6 +253,7 @@ export function uiDeclaredRoutes(
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
             commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${b.data.system}: a declaration undone`)}"`,
+            ...(res.removed ? { removed: { system: res.removed, file: res.rel } } : {}),
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {

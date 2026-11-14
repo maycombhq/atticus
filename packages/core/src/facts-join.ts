@@ -1007,6 +1007,12 @@ interface Node {
  * and a template's `{{name}}` (Mustache, Jinja, a CI variable). A Helm expression (`{{ .Values.x
  * }}`) names no setting by itself and isn't one.
  */
+/**
+ * The re-review of beta.28.1: a build or deploy token that is the whole host of a value (`@x@`,
+ * `https://@x@/v1`, `@x@:8443`), never one that is only part of it (`api-@env@.forge.internal`).
+ */
+const WHOLE_HOST_TOKEN = /^(?:[a-z][a-z0-9+.-]*:\/\/)?@[A-Za-z_][A-Za-z0-9_.-]*@(?:[/:?#]|$)/i;
+
 const TOKEN_FORMS: readonly RegExp[] = [
   /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
   /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
@@ -1259,6 +1265,24 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
    * say), each with the config facts it went through; a placeholder nothing sets takes its
    * Spring default. A value nothing resolves gives none; a ring of placeholders ends.
    */
+  /**
+   * Beta.28.1 (the review of field report 4, S1): the build or deploy token (`@name@`) a value
+   * comes to through the settings its placeholders name for the owner, unset (resolve drops it):
+   * `${forge.limits.url}` -> `forge.limits.url: "@forgeLimitsUrl@"`. Undefined when none does.
+   */
+  const tokenBehind = (raw: string | undefined, owner: Node, depth = 0): string | undefined => {
+    const v = raw?.trim();
+    if (!v) return undefined;
+    if (WHOLE_HOST_TOKEN.test(v)) return v;
+    const p = placeholderIn(v);
+    if (!p || depth >= MAX_PLACEHOLDER_DEPTH) return undefined;
+    for (const s of configsByName.get(settingNameKey(p.name)) ?? []) {
+      if (!setsFor(s, owner)) continue;
+      const t = tokenBehind(s.fact.value ?? s.fact.source, owner, depth + 1);
+      if (t) return t;
+    }
+    return undefined;
+  };
   const resolve = (
     raw: string | undefined,
     owner: Node,
@@ -2660,11 +2684,24 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
       }
       const forwarding = isForwarding(call);
       const namesHost = !!(f.host || f.base || token);
-      if (forwarding && namesHost) {
+      // Beta.28.1 (field report 4): a host written as a build or deploy token (`@name@`, set by
+      // Maven filtering or a gateway's deploy step) that nothing sets is asked about too, in any
+      // repo: no file the join reads says where it goes, so a path guess would be an arrow no
+      // line cites (the owner's direction: arrows come from a cited line or a person).
+      // The review (S1): written on the call's host or base, or as the value of the setting its
+      // base names (`forge.limits.url: "@forgeLimitsUrl@"` in a Spring yml), however reached.
+      const deployToken = [
+        f.host,
+        f.base,
+        ...keyed.map((t) => t.fact.value ?? t.fact.source),
+        ...cands.map((x) => x.value),
+        tokenBehind(f.base, call),
+      ].find((v): v is string => !!v && WHOLE_HOST_TOKEN.test(v));
+      if (namesHost && (forwarding || deployToken)) {
         // A gateway forwards to the host its target names, never to whichever service serves the
         // path: a host nothing resolves is asked about (beta.27: a token only its `<URL>` part
         // writes too; it was joined by its path before, a guess, and nothing was asked).
-        const named = (f.host ?? f.base ?? token)!;
+        const named = forwarding ? (f.host ?? f.base ?? token)! : (f.host ?? deployToken!);
         asks.push({
           call: end(call),
           reason: "unknown-host",

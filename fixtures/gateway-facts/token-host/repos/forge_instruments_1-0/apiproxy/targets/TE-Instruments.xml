@@ -1,0 +1,5 @@
+<TargetEndpoint name="TE-Instruments">
+  <HTTPTargetConnection>
+    <URL>@forgeTargetUrl@/forge-instruments/1.0/instruments</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -1,0 +1,17 @@
+# Invented Forge repos (see fixtures/gateway-facts/token-host/README.md): an Apigee proxy bundle
+# that is its own repo, whose target URL's host is a deploy token nothing in the estate sets, and
+# the Spring Boot service behind it, listed here only: no System of the profile names it.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge_instruments_1-0
+    url: https://git.forge.example/forge/forge_instruments_1-0.git
+    type: gateway
+    owner: team-platform
+    component: instruments-proxy
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-instruments
+    url: https://git.forge.example/forge/forge-instruments.git
+    type: spring-boot
+    owner: team-instruments

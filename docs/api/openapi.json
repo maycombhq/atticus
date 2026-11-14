@@ -40600,13 +40600,25 @@
                     "left",
                     "outside",
                     "unresolved",
-                    "paired"
+                    "paired",
+                    "joined",
+                    "undrawn",
+                    "here"
                   ]
                 },
                 "why": {
                   "type": "string"
                 },
                 "paired": {
+                  "type": "string"
+                },
+                "joins": {
+                  "type": "string"
+                },
+                "now": {
+                  "type": "string"
+                },
+                "pairedBy": {
                   "type": "string"
                 },
                 "suggestion": {
@@ -42704,6 +42716,38 @@
           },
           "commit": {
             "type": "string"
+          },
+          "created": {
+            "type": "object",
+            "properties": {
+              "system": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "system",
+              "file"
+            ],
+            "additionalProperties": false
+          },
+          "removed": {
+            "type": "object",
+            "properties": {
+              "system": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "system",
+              "file"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

@@ -8,7 +8,9 @@ import {
   commitCurrent,
   declareLink,
   deserializeRecord,
+  loadOrgPack,
   LockHeldError,
+  orgPackDirOf,
   parseRecord,
   recordPath,
   serializeRecord,
@@ -1263,7 +1265,10 @@ export async function applyMapEdits(
             // A link a person declared on the canvas: the declaration goes, not a suppress of it.
             const decl = await canvasDeclarationOf(root, byId.get(target));
             if (decl) {
-              const res = await undeclareLink(root, decl);
+              const { systemInUse } = await import("./ui-api-declared.js");
+              const res = await undeclareLink(root, decl, {
+                inUse: await systemInUse(root, await loadOrgPack(orgPackDirOf(root)), decl.system),
+              });
               replaced(join(root, ...res.rel.split("/")), i, res);
               // The build names the org pack as one input: a teammate's change to it pending
               // before this run is never confirmed (`pending`).
@@ -1271,6 +1276,11 @@ export async function applyMapEdits(
               io.out(
                 `${said}: withdrew ${decl.value} from ${decl.system}'s declarations in ${res.rel}.`,
               );
+              // S3: the System the canvas added for it goes with its last declaration.
+              if (res.removed)
+                io.out(
+                  `${said}: took away the system ${res.removed} from ${res.rel} (added from the canvas, and nothing is declared on it now).`,
+                );
               targets.add(target);
               continue;
             }
@@ -1293,34 +1303,47 @@ export async function applyMapEdits(
           // Connect to…'s pairings, exactly its lines in the caller's corrections file.
           const { pairingsOf } = await import("./ui-api-links.js");
           const { appendLines } = await import("./file-lock.js");
-          const p = await pairingsOf(root, e.pair, { by, at });
+          // The re-review of beta.28.1: a pair a terminal's write made redundant meanwhile is a
+          // no-op, said, never a failed batch.
+          const p = await pairingsOf(root, e.pair, { by, at, redundant: "skip" });
+          for (const x of p.skipped) io.out(`${said}: ${x.said}`);
           const lines = p.corrections.map(correctionLine);
-          await mkdir(factsDirOf(root), { recursive: true });
-          const appended = await appendLines(p.file, lines);
-          const x = files.get(p.file);
-          if (x?.how === "append") {
-            x.lines.push(...lines);
-            x.edits.add(i);
-          } else
-            files.set(p.file, {
-              how: "append",
-              lines: [...lines],
-              edits: new Set([i]),
-              ...(appended.before === null ? { created: true as const } : {}),
-            });
-          inputs.add(p.rel);
-          io.out(
-            `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
-          );
+          if (lines.length) {
+            await mkdir(factsDirOf(root), { recursive: true });
+            const appended = await appendLines(p.file, lines);
+            const x = files.get(p.file);
+            if (x?.how === "append") {
+              x.lines.push(...lines);
+              x.edits.add(i);
+            } else
+              files.set(p.file, {
+                how: "append",
+                lines: [...lines],
+                edits: new Set([i]),
+                ...(appended.before === null ? { created: true as const } : {}),
+              });
+            inputs.add(p.rel);
+          }
+          if (lines.length)
+            io.out(
+              `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
+            );
         } else if ("add" in e) {
           const a = e.add;
           const d =
             a.kind === "call"
               ? ({ kind: "call", system: a.system, route: a.route } as const)
               : ({ kind: "topic", system: a.system, topic: a.topic, side: a.side } as const);
-          const res = await declareLink(root, d, { by, at });
+          const { systemToCreate } = await import("./ui-api-declared.js");
+          const create = systemToCreate(await loadOrgPack(orgPackDirOf(root)), a.system);
+          const res = await declareLink(root, d, { by, at, ...(create ? { create } : {}) });
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
+          // Beta.28.1: a box no System of the profiles was gets one first, said.
+          if (res.created)
+            io.out(
+              `${said}: added the system ${res.created} to ${res.rel} (no profile had it), for the link to be declared on.`,
+            );
           io.out(`${said}: declared in ${res.rel}.`);
         }
         outcomes[i]!.state = "saved";
