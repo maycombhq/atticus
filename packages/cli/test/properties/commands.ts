@@ -496,12 +496,17 @@ async function verify(
   });
   if (!write) return { outcome, expect: { kind: "neutral" } };
   const facts = { code: r.code, commit: r.commit, id: r.id };
+  // The hunt of beta.28.1 (F1, seed 1548203660): a read whose every fact is rejected is refused
+  // as before, never written as a read of nothing: the broken fact of a read whose code gives
+  // no fact, or the one fact a later read breaks.
+  const kept = renderFacts(r.base, r.id, r.code, r.commit).trim().split("\n").filter(Boolean);
+  const noneKept = later !== undefined ? kept.length === 1 : !ok && kept.length === 0;
   return {
     outcome,
     confirm,
     // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
     // fact it adds was never accepted, so the catalog is the clean read's.
-    expect: { kind: "succeed" },
+    expect: noneKept ? { kind: "refuse" } : { kind: "succeed" },
     rerun: d,
     onSuccess: () => {
       const was = m.facts.get(r.slot);
