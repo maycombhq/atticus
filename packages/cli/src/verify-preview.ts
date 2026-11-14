@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import {
+  catalogDirOf,
   factsDirOf,
   factsRelOf,
   headFromFiles,
@@ -247,7 +248,16 @@ export async function verifyWritePreview(
   const onDisk = await readFile(companion, "utf8").catch(() => undefined);
   const next = contracts.entries.length ? stringify(contracts, { lineWidth: 0 }) : undefined;
   if (onDisk !== next) files.push(`${rel}/${repo}.contracts.yaml`);
+  // The catalog on file read once, with each file's size and time (no read cache kept): the
+  // projection compares with it, and the guards below use it where every file is still as read.
+  await step("Loading the catalog");
+  const { readCatalogWithFiles } = await import("@maycombhq/scanner");
+  const onFile = await readCatalogWithFiles(join(catalogDirOf(root), "generated"), {
+    cacheRoot: root,
+    keep: false,
+  });
   const p = await projectFactsIntoCatalog(root, repo, report.accepted, {
+    existing: onFile.records,
     ...(op ? { op } : {}),
     contracts,
     cache: false,
@@ -280,21 +290,37 @@ export async function verifyWritePreview(
     if (m?.replace(/\r\n?/g, "\n") !== serializeBuildManifest(p.build.manifest))
       files.push(posixRel(root, buildManifestPath(root)));
   }
-  // Beta.28.1 (field hunt G1, the re-review): whether the Apply will wait for a confirm of its
-  // removals, by the guard's own limits (`overRemovalLimits`), from the records this preview has
-  // already: no second read or hash of the catalog's files (that took 33 CPU s at 30 repos).
-  const { removalsToConfirm } = await import("@maycombhq/scanner");
-  const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
-  const gone = new Set(p.diff.removed.map(k));
-  const made = new Set(p.diff.added.map(k));
-  const waits = removalsToConfirm(
-    p.existing,
-    p.existing.filter((r) => gone.has(k(r))),
-    p.result.records.filter((r) => made.has(k(r))),
-  );
+  // Beta.28.1 (field hunt G1, its re-reviews): whether the Apply will wait for a person's
+  // confirm, as its own guards say it: the build guarded against the catalog's files as on disk
+  // (the removals of what the last build wrote, the files changed by hand), nothing written and
+  // no read cache kept; the read above stands in for a second read while the files are as read.
+  await step("Checking the build's guards");
+  const { buildAndWrite } = await import("@maycombhq/scanner");
+  const checked = await buildAndWrite(root, {
+    command: `atticus verify ${repo} --write`,
+    build: p.build,
+    slots: p.snap,
+    check: true,
+    read: onFile,
+    keepNoReads: true,
+  });
+  const refused = checked.guard.refused;
+  const waits = refused?.reasons.includes("large-removals") ? refused.allowRemovals : undefined;
+  const edits =
+    refused && (refused.reasons.includes("hand-edits") || refused.reasons.includes("not-upgraded"))
+      ? refused.discardEdits
+      : undefined;
   const confirm =
-    waits !== undefined
-      ? { removals: waits, command: `atticus verify ${repo} --write --allow-removals ${waits}` }
+    waits !== undefined || edits !== undefined
+      ? {
+          ...(waits !== undefined ? { removals: waits } : {}),
+          ...(edits !== undefined ? { edits } : {}),
+          command: [
+            `atticus verify ${repo} --write`,
+            ...(waits !== undefined ? [`--allow-removals ${waits}`] : []),
+            ...(edits !== undefined ? [`--discard-edits ${edits}`] : []),
+          ].join(" "),
+        }
       : undefined;
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))

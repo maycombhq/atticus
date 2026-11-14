@@ -6282,6 +6282,9 @@ export const COPY = {
     // Beta.28.1 (field hunt G1): the Apply's build removes more than the guard lets through.
     confirm: (n: number, button: string) =>
       `Apply will wait for you to confirm: its build removes ${n} ${n === 1 ? "record" : "records"}, more than the removal guard lets through unasked. Apply lists ${n === 1 ? "it" : "them"}, each with why; confirm there with ${button}.`,
+    // The re-review of G1: files under catalog/generated changed by hand stop the Apply first.
+    confirmEdits: (n: number, button: string) =>
+      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it a curated decision" : "them curated decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     confirmCommand: "Or confirm from a terminal",
     stale: (ids: string) =>
       `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,

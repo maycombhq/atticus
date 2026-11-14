@@ -1,4 +1,12 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -132,6 +140,75 @@ describe("a person's pairing and the removal guard (field hunt G1)", () => {
       );
     } finally {
       writeFileSync(file, was);
+    }
+  });
+
+  it("over the limit, the preview's confirm is what Apply asks, and its command writes", async () => {
+    const file = join(root, "facts", `${PROXY}.jsonl`);
+    const was = readFileSync(file, "utf8");
+    writeFileSync(
+      file,
+      was
+        .split("\n")
+        .filter((l) => !l.includes("instruments-id"))
+        .join("\n"),
+    );
+    try {
+      const some = pairs.filter((x) => !x.call.includes("instruments-id"));
+      const p = await call("/api/links/connect", "POST", {
+        from: PROXY,
+        to: { repo: SERVICE },
+        pairs: some,
+        preview: true,
+      });
+      const pv = Api.VerifyPreviewView.parse(Api.ConnectLinksResult.parse(p.body).preview).preview;
+      const out: string[] = [];
+      const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) };
+      // The pairing as a preview's extra: on file only for this check, then taken back.
+      const corr = join(root, "facts", `${PROXY}.corrections.jsonl`);
+      const lines = Api.ConnectLinksResult.parse(p.body).lines;
+      writeFileSync(corr, lines.map((l) => `${l}\n`).join(""));
+      try {
+        expect(await verifyCommand(root, PROXY, { ...opts(PROXY), write: false }, io)).toBe(0);
+        const refused = await verifyCommand(root, PROXY, opts(PROXY), io);
+        expect(refused).not.toBe(0);
+        const n = Number(/--allow-removals (\d+)\./.exec(out.join("\n"))?.[1]);
+        expect(pv?.confirm?.removals).toBe(n);
+        expect(pv?.confirm?.command).toBe(`atticus verify ${PROXY} --write --allow-removals ${n}`);
+      } finally {
+        rmSync(corr, { force: true });
+      }
+    } finally {
+      writeFileSync(file, was);
+    }
+  });
+
+  it("says Apply will stop for hand edits, and asks no removal confirm Apply wouldn't", async () => {
+    const dir = join(root, "catalog", "generated", "endpoint");
+    const one = readdirSync(dir).filter((n) => n.endsWith(".yaml"))[0]!;
+    const id = one.replace(/\.yaml$/, "");
+    const text = readFileSync(join(dir, one), "utf8");
+    const made = ["-hand-a", "-hand-b", "-hand-c"].map((x) => join(dir, `${id}${x}.yaml`));
+    for (const [i, f] of made.entries())
+      writeFileSync(
+        f,
+        text.replace(`id: ${id}`, `id: ${id}${["-hand-a", "-hand-b", "-hand-c"][i]}`),
+      );
+    try {
+      const p = await call("/api/links/connect", "POST", {
+        from: PROXY,
+        to: { repo: SERVICE },
+        pairs,
+        preview: true,
+      });
+      expect(p.status, JSON.stringify(p.body)).toBe(200);
+      const pv = Api.VerifyPreviewView.parse(Api.ConnectLinksResult.parse(p.body).preview).preview;
+      // Hand-added files aren't the build's to remove: no removals to confirm, three edits.
+      expect(pv?.confirm?.removals).toBeUndefined();
+      expect(pv?.confirm?.edits).toBe(3);
+      expect(pv?.confirm?.command).toBe(`atticus verify ${PROXY} --write --discard-edits 3`);
+    } finally {
+      for (const f of made) rmSync(f, { force: true });
     }
   });
 

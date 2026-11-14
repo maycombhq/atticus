@@ -165,5 +165,17 @@ describe("what happens after a correction (C4)", () => {
     expect(out).toContain(esc(N.confirm(6, `“${COPY.propose.confirmApply(6)}”`)));
     expect(out).toContain('role="status"');
     expect(out).toContain(`aria-label="${esc(N.copy(`${N.confirmCommand}: ${cmd}`))}"`);
+    expect(out).not.toContain(esc(N.confirmEdits(3, `“${COPY.catalogBuild.confirmDiscard(3)}”`)));
+  });
+
+  it("says when the Apply will stop first for hand edits, with the command (G1's re-review)", () => {
+    const cmd = "atticus verify forge-payments --write --discard-edits 3";
+    const out = panel({
+      state: "ready",
+      data: { ...VIEW, preview: { ...VIEW.preview!, confirm: { edits: 3, command: cmd } } },
+    });
+    expect(out).toContain(esc(N.confirmEdits(3, `“${COPY.catalogBuild.confirmDiscard(3)}”`)));
+    expect(out).not.toContain(esc(N.confirm(3, `“${COPY.propose.confirmApply(3)}”`)));
+    expect(out).toContain(esc(cmd));
   });
 });

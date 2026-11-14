@@ -87,10 +87,11 @@ export interface CatalogFilesRead extends CatalogRead {
  */
 export async function readCatalogWithFiles(
   dir: string,
-  o: { cacheRoot?: string } = {},
+  /** `keep: false`: keep no read cache (a preview's, which writes nothing). */
+  o: { cacheRoot?: string; keep?: boolean } = {},
 ): Promise<CatalogFilesRead> {
   const files = new Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>();
-  const read = await readCatalogFiles(dir, o.cacheRoot, undefined, files);
+  const read = await readCatalogFiles(dir, o.cacheRoot, o.keep, files);
   return { ...read, dir: resolve(dir), files };
 }
 

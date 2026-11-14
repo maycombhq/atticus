@@ -2758,11 +2758,18 @@ export const VerifyPreviewView = z.object({
       /** The checkout's HEAD is past the facts' commit: verify reads the changed files' facts again. */
       headMoved: z.object({ head: z.string(), commit: z.string() }).optional(),
       /**
-       * 3.14.0 (beta.28.1): the Apply will wait for a person's confirm, since its build removes
-       * more than the guard's limit (ADR 0195 point 4): how many removals it lists, and the
-       * command that confirms exactly them. Absent when the Apply writes without one.
+       * 3.14.0 (beta.28.1): the Apply will wait for a person's confirm (ADR 0195 point 4): its
+       * build removes more than the guard's limit (`removals`, how many it lists), or files under
+       * catalog/generated were changed by hand (`edits`, how many), and the command that
+       * confirms exactly them. Absent when the Apply writes without one.
        */
-      confirm: z.object({ removals: z.number().int(), command: z.string() }).optional(),
+      confirm: z
+        .object({
+          removals: z.number().int().optional(),
+          edits: z.number().int().optional(),
+          command: z.string(),
+        })
+        .optional(),
       /** Corrections on file that meet no fact in this read (kept, applied when it is read again). */
       staleCorrections: z.array(z.string()),
     })

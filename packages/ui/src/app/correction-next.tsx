@@ -95,9 +95,19 @@ function PreviewBody({ v }: { v: Preview }) {
       )}
       {p.confirm && (
         <>
-          <p role="status" className="ev-say">
-            {N.confirm(p.confirm.removals, `“${COPY.propose.confirmApply(p.confirm.removals)}”`)}
-          </p>
+          {p.confirm.edits !== undefined && (
+            <p role="status" className="ev-say">
+              {N.confirmEdits(
+                p.confirm.edits,
+                `“${COPY.catalogBuild.confirmDiscard(p.confirm.edits)}”`,
+              )}
+            </p>
+          )}
+          {p.confirm.removals !== undefined && (
+            <p role="status" className="ev-say">
+              {N.confirm(p.confirm.removals, `“${COPY.propose.confirmApply(p.confirm.removals)}”`)}
+            </p>
+          )}
           <Cmd text={p.confirm.command} label={N.confirmCommand} />
         </>
       )}

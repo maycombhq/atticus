@@ -51792,12 +51792,16 @@
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991
                   },
+                  "edits": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "command": {
                     "type": "string"
                   }
                 },
                 "required": [
-                  "removals",
                   "command"
                 ],
                 "additionalProperties": false
