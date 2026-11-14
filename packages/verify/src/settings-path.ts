@@ -511,7 +511,12 @@ export function configLineProblem(
     if (tok.fallback !== undefined && same(tok.fallback)) return undefined;
     if ((f.cite.with ?? []).some((p) => setsToken(p, tok.name, same, linesOf, notSource)))
       return undefined;
-    return `${where} sets ${key} to the token ${tok.written}; claim the token, or cite where ${tok.written} is set in \`with\` (the build property, deploy or CI line that sets ${tok.name})`;
+    // The hunt of beta.28.1: a `with` line refused for where it is, said as such.
+    const refused = (f.cite.with ?? []).filter((p) => notSource(p.file));
+    const why = refused.length
+      ? ` (${refused.map((p) => `${p.file}:${p.line}`).join(", ")} ${refused.length === 1 ? "is" : "are"} a test's resource, a fixture or a secret file: ${refused.length === 1 ? "it sets" : "they set"} no token for the app)`
+      : "";
+    return `${where} sets ${key} to the token ${tok.written}; claim the token, or cite where ${tok.written} is set in \`with\` (the build property, deploy or CI line that sets ${tok.name})${why}`;
   };
 
   // a deploy tool's token: `{ "xpath": "<key>", "value": "<value>" }` in a bundle's config.json
