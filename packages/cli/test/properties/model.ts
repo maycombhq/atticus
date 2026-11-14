@@ -89,6 +89,12 @@ export interface LegacyJoin {
   /** The slots of the repos its evidence names (none for a record with no evidence). */
   repos: number[];
   /**
+   * Beta.28.1 (seed 1444173979): the repo ids its evidence names, as joins.json cites them. A
+   * rename rewrites them; an undone rename puts back the old ids, which no manifest lists then
+   * (point 7: the slots come back, not the inputs), so the join leaves with that repo's records.
+   */
+  ids?: string[];
+  /**
    * An arrow that cites no code line at its caller's end (a beta.26 write took it off): no file
    * to check a read reached, so only a complete read of the caller tells it is gone.
    */
@@ -223,7 +229,8 @@ export class Model {
         !gone.has(j.id) &&
         (j.arrow
           ? this.isLive(j.arrow.from) && this.isLive(j.arrow.to)
-          : j.repos.every((s) => this.isLive(s))),
+          : j.repos.every((s) => this.isLive(s))) &&
+        (j.ids ?? []).every((id) => this.live().some((r) => r.id === id)),
     );
   }
 

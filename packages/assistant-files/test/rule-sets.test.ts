@@ -21,7 +21,7 @@ describe("the rule sets a read records (ADR 0167)", () => {
     expect(FACT_RULES_HASH).toBe(createHash("sha256").update(FACT_RULES).digest("hex"));
     // The same pin as map.test.ts: tagging the parts changed no word of the rules.
     expect(FACT_RULES_HASH).toBe(
-      "0c980bb1dfeb420b845a28198535c197cf3ede53204aa4488da0d911928defb0",
+      "28cd55d4c135e1d90dc5977d4a1e4c4cfb9be61380d1ab43f88a021259cbff62",
     );
     expect(ruleSetsNow()).toEqual([...RULE_SETS]);
     expect(rulesNow()).toEqual({ hash: FACT_RULES_HASH, sets: [...RULE_SETS] });

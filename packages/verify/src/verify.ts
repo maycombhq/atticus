@@ -56,7 +56,7 @@ import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
 import { isConfigFile, liveSecretsIn, type SecretLine } from "./secrets.js";
-import { configLineProblem, helperBuildsKey } from "./settings-path.js";
+import { configLineProblem, helperBuildsKey, notTokenSource } from "./settings-path.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
@@ -870,7 +870,8 @@ export function staleMessage(f: Fact, s: StaleCite, commit: string): string {
   return `${f.kind} ${f.id} cites ${s.file}, which was ${how} since commit ${f.commit}; read it again at ${commit}, then ${then}`;
 }
 
-function refsOf(f: Fact): { field: string; id: string }[] {
+/** The ids of other facts a fact names (a call's `from`, a flow's steps…), each with its field. */
+export function factRefs(f: Fact): { field: string; id: string }[] {
   const out: { field: string; id: string }[] = [];
   const add = (field: string, id: string | undefined) => {
     if (id !== undefined) out.push({ field, id });
@@ -1327,7 +1328,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // line does (its YAML parents, its properties key, its token object); the join puts the
     // value into the catalog.
     if (f.kind === "config" && !found.has(f.id)) {
-      const bad = configLineProblem(f, linesOf, listed, rules.gatewayBundleFolders);
+      const bad = configLineProblem(
+        f,
+        linesOf,
+        listed,
+        rules.gatewayBundleFolders,
+        (p) => notTokenSource(p) || testFileOf(rules, p),
+      );
       if (bad) problem(f, "claim-not-on-line", `${label}: ${bad}`);
     }
     // Beta.25 review: a secret past the schema (a reader that skipped it) is refused here too.
@@ -1607,7 +1614,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const ids = new Set(facts.map((f) => f.id));
   for (const f of facts) {
     if (other.has(f.id)) continue;
-    for (const d of refsOf(f).filter((r) => !ids.has(r.id)))
+    for (const d of factRefs(f).filter((r) => !ids.has(r.id)))
       problem(
         f,
         "dangling-ref",
@@ -1697,7 +1704,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     changed = false;
     for (const f of facts) {
       if (rejected.has(f.id)) continue;
-      const r = refsOf(f).find((x) => rejected.has(x.id));
+      const r = factRefs(f).find((x) => rejected.has(x.id));
       if (r) {
         const quiet = quietFact(f, lineAt);
         rejected.set(f.id, {

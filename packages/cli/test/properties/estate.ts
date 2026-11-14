@@ -310,7 +310,7 @@ export async function writeRead(
   repo: string,
   code: Code,
   commit: string,
-  o: { broken?: boolean } = {},
+  o: { broken?: boolean; later?: number } = {},
 ): Promise<void> {
   await mkdir(join(root, "facts"), { recursive: true });
   await writeFile(join(root, "facts", `${repo}.jsonl`), renderFacts(b, repo, code, commit, o));
@@ -330,7 +330,7 @@ export function renderFacts(
   repo: string,
   code: Code,
   commit: string,
-  o: { broken?: boolean } = {},
+  o: { broken?: boolean; later?: number } = {},
 ): string {
   const { at } = renderCode(b, code);
   const cite = (k: string, value: string) => {
@@ -398,6 +398,13 @@ export function renderFacts(
       cite: { file: "README.md", line: 1, value: "/not-there", quote: `# ${b.id}` },
       ...tail,
     });
+  }
+  if (o.later !== undefined && facts.length) {
+    // An accepted fact read again on a line that doesn't say it (the README's first): rejected.
+    const i = o.later % facts.length;
+    const f = facts[i]!;
+    const v = (f.cite as { value: string }).value;
+    facts[i] = { ...f, cite: { file: "README.md", line: 1, value: v, quote: `# ${b.id}` } };
   }
   return facts.map((f) => JSON.stringify(f)).join("\n") + (facts.length ? "\n" : "");
 }

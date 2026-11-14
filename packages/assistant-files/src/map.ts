@@ -441,6 +441,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["deploy", "config"],
+      text: "A setting written as a deploy token (`@NAME@`) claims the token, or the value a line in `cite.with` sets NAME to.",
+    },
+    {
+      when: ["deploy", "config"],
       text: "A value from one environment's file (`appsettings.Production.json`, `values-prod.yaml`, a release transform) has that environment in `env`.",
     },
     {

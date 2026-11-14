@@ -4987,6 +4987,9 @@ export const COPY = {
     apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
     applying: "Applying…",
     applied: (repo: string) => `Applied: ${repo}'s facts are checked again and in the catalog.`,
+    /** Beta.28.1: Apply wrote the kept facts and left the rejected ones out (listed below it). */
+    appliedLeftOut: (repo: string, n: number) =>
+      `Applied, ${n} ${n === 1 ? "fact" : "facts"} left out: ${repo}'s other facts are in the catalog. Each fact left out is listed below with the file to fix it in.`,
     applyFailed: "Verify found problems; they are listed above.",
     /** Round 41: the server refused to start it (another local step runs, say). */
     notStarted: (why: string) => `It didn't start: ${why}`,
@@ -5006,6 +5009,8 @@ export const COPY = {
     cancel: "Not now",
     appliedFlash: (repo: string) =>
       `Applied the correction to ${repo}'s map. It waits on Home to be proposed for review.`,
+    appliedFlashLeftOut: (repo: string, n: number) =>
+      `Applied the correction to ${repo}'s map, ${n} ${n === 1 ? "fact" : "facts"} left out (Apply lists ${n === 1 ? "it" : "them"} with the file to fix). It waits on Home to be proposed for review.`,
     /** ADR 0195 point 4: Apply's build refused; it waits for the person's confirm, listed here. */
     applyWaits: (repo: string) =>
       `Nothing applied to ${repo}'s map yet: its build waits for you to confirm what it lists.`,

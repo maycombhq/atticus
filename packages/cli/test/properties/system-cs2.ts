@@ -158,9 +158,14 @@ export const cs2Writers: CatalogSystem = {
     const report = reportOf(r.out) as Report & { written?: { removed?: Removed[] } };
     if (!o.write) return { ...r, wrote: false, refused: false };
     // Facts rejected: refused, but by no guard (the facts aren't the build's to judge).
+    // Beta.28.1: exit 3 wrote, with the rejected facts left out.
     const rejected = !report.refused && r.code !== 0 && report.written === undefined;
     const removed = report.written?.removed;
-    const out = outcome(r, { ...report, ...(removed ? { removed } : {}) }, r.code === 0);
+    const out = outcome(
+      r,
+      { ...report, ...(removed ? { removed } : {}) },
+      r.code === 0 || (r.code === 3 && report.written !== undefined),
+    );
     return rejected ? { ...out, wrote: false, refused: true } : out;
   },
   async rename(root, from, to, o) {

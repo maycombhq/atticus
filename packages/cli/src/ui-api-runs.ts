@@ -17,6 +17,7 @@ import { trackedLocal } from "./ui-api-activity.js";
 import { requireConfirmedModel } from "./model-address.js";
 import { listRuns, runTranscript } from "./runs-view.js";
 import { syncNextOf } from "./sync-next.js";
+import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
 
 /**
  * ADR 0106: the model runs, read from .runs/ only. What each run was asked (its prompt), what came
@@ -163,8 +164,9 @@ export function uiModelRunRoutes(
               );
               raw.push(...v.out, ...v.err);
               errs.push(...v.err);
-              code = v.code;
-              if (v.code === 0) applied = repo;
+              // Beta.28.1: exit 3 wrote, with rejected facts left out (its lines name them).
+              code = v.code === APPLIED_WITH_LEFT_OUT ? 0 : v.code;
+              if (code === 0) applied = repo;
               ctx.events.publish({ type: "file.changed", path: "." });
             }
             c.progress(1, 1, code === 0 ? "Done" : "Stopped");

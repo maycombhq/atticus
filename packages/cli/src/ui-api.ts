@@ -84,6 +84,7 @@ import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
 import { syncNextOf } from "./sync-next.js";
 import { changeNextStep } from "./cockpit.js";
+import { APPLIED_WITH_LEFT_OUT, LEFT_OUT_LINE } from "./verify-left-out.js";
 import { changeProblems, missingChangeWords } from "./change-problems.js";
 import {
   markCheckedByApp,
@@ -882,6 +883,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ),
           );
           if (ran.code === 0) return ran;
+          // Beta.28.1: written, with rejected facts left out (exit 3): the Apply is done, and its
+          // lines name each fact left out and the file to fix it in.
+          if (ran.code === APPLIED_WITH_LEFT_OUT)
+            return {
+              ...ran,
+              code: 0,
+              // The count the app's Apply says ("Applied, N facts left out"), its lines below it.
+              extra: { leftOut: ran.out.filter((l) => LEFT_OUT_LINE.test(l)).length },
+            };
           // The build this Apply ran refused (a large removal, a hand edit): its listing, which
           // the app's confirm step shows and confirms with its counts. Only this job's report.
           const last = await lastBuildOf(root);

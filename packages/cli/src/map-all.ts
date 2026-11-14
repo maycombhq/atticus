@@ -1409,7 +1409,14 @@ export async function mapAllCommand(
   const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
     const c = captured();
     try {
-      await verifyCommand(root, item.repo, { commit: item.commit, write: true, json: true }, c);
+      // The review of beta.28.1 (S6): a read in progress is written only whole, so a retry of
+      // a part that still has rejections builds nothing; the run writes once none is left.
+      await verifyCommand(
+        root,
+        item.repo,
+        { commit: item.commit, write: true, whole: true, json: true },
+        c,
+      );
     } catch (e) {
       // beta.18: one repo's verify failing never ends the run: said, and the part is left to
       // carry on later.
@@ -1438,7 +1445,7 @@ export async function mapAllCommand(
       open: v.questions?.open ?? 0,
     });
     io.out(
-      `${item.repo}: ${plural(v.accepted, "fact")} kept, ${v.rejected} rejected; coverage ${Math.round(v.coverage.ratio * 100)}% (${v.coverage.unknown.length} files no fact cites yet)${links ? `; links +${links.added.length} -${links.removed.length}` : ""}; ${plural(v.questions?.open ?? 0, "question")} open. ${v.rejected ? `Nothing written to the catalog until the rejected facts are fixed (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : v.written ? "Written to the catalog." : ""}`.trimEnd(),
+      `${item.repo}: ${plural(v.accepted, "fact")} kept, ${v.rejected} rejected; coverage ${Math.round(v.coverage.ratio * 100)}% (${v.coverage.unknown.length} files no fact cites yet)${links ? `; links +${links.added.length} -${links.removed.length}` : ""}; ${plural(v.questions?.open ?? 0, "question")} open. ${v.rejected && !v.written ? `Nothing written to the catalog until the rejected facts are fixed (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : v.written ? (v.rejected ? `Written to the catalog with the rejected facts left out (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : "Written to the catalog.") : ""}`.trimEnd(),
     );
     return v;
   };

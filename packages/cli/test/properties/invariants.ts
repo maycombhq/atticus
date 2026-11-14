@@ -456,7 +456,8 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     if (s.outcome.refused) return whole("refused");
     if (s.expect?.kind === "dry") return whole("was a dry run");
     if (s.expect?.kind === "neutral") return whole(`observed nothing (${b0.t})`);
-    if (b0.t === "verify-write" && !b0.ok) return whole("had facts rejected");
+    // Beta.28.1: a verify --write with facts rejected writes the rest (the rejected fact left
+    // out), so it is no failure that must leave the catalog whole.
     if (SCANS.has(b0.t) && s.outcome.wrote) {
       for (const slot of s.unobserved ?? []) {
         const ids = idsOf(s.m, slot);

@@ -378,13 +378,14 @@ export const EXAMPLES: Example[] = [
   },
   seq(
     "failure-neutrality",
-    "a reader failing, a repo not cloned, a refused verify --write, a cancelled scan, a scan that read nothing and a rename whose slots don't read or whose write stops part way leave what they couldn't read as it was",
+    "a reader failing, a repo not cloned, a cancelled scan, a scan that read nothing and a rename whose slots don't read or whose write stops part way leave what they couldn't read as it was",
     [
       { t: "scan" },
       { t: "change-code", slot: 0, code: ledgerMore },
       { t: "scan-reader-fails", slot: 0 },
       { t: "scan-not-cloned", slot: 0 },
-      { t: "verify-write", slot: 0, ok: false },
+      // Beta.28.1: a read with a rejected fact no longer refuses --write (it writes the rest), so
+      // it is no failure to stay neutral through; map-render-cli.test.ts pins what it leaves.
       { t: "scan-cancelled" },
       { t: "scan-nothing" },
       { t: "rename", slot: 0, fail: true },
@@ -415,6 +416,16 @@ export const EXAMPLES: Example[] = [
         endpoint("ledger-api", "POST", "/entries"),
       ),
     ],
+  ),
+  seq(
+    "readers-never-destroy-facts",
+    "a fact of the ledger's accepted read, cited on a wrong line in its next read, is left out and its earlier copy stands in: the ledger keeps GET /accounts (beta.28.1)",
+    [
+      { t: "scan" },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "verify-write", slot: 0, ok: true, later: 0 },
+    ],
+    [byAssistant("the ledger's GET /accounts", getAccounts)],
   ),
   seq(
     "curation-survives",

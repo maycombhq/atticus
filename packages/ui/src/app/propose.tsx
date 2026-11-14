@@ -117,6 +117,16 @@ export interface Plan {
   applyFirst?: string[];
 }
 
+/** Beta.28.1: how many rejected facts an Apply's job left out (verify's exit 3), or 0. */
+function leftOutOf(result: Record<string, unknown> | undefined): number {
+  const n = result?.leftOut;
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** What Apply says once it wrote: how many facts it left out, when it left any. */
+const appliedNote = (repo: string) => (leftOut: number) =>
+  leftOut ? P.appliedLeftOut(repo, leftOut) : P.applied(repo);
+
 /**
  * ADR 0183: the steps after an answer, a correction or an audit, run from the app. Apply runs
  * `atticus verify <repo> --write`; Propose for review shows the files, the branch and the title,
@@ -138,13 +148,16 @@ export function ApplyAndPropose(p: {
   // confirmed here with its counts, as a scan's is on Scans.
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
   const inPanel = useResultsInPanel();
-  /** Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed. */
+  /**
+   * Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed.
+   * Beta.28.1: answers how many rejected facts it left out (it wrote the rest).
+   */
   const applyWith = async (counts: {
     allowRemovals?: number;
     discardEdits?: number;
     /** The review of beta.27: the plan of the list the refusal showed, sent with its count. */
     plan?: string;
-  }) => {
+  }): Promise<number> => {
     setNext(undefined);
     try {
       const r = await followJob(
@@ -155,10 +168,16 @@ export function ApplyAndPropose(p: {
       );
       setRefused(undefined);
       setApplied(r.lines);
+      const leftOut = leftOutOf(r.result);
       // A correction's Apply can take its panel away (the fact it was on goes):
       // what happened, and where to propose it, stays on the page.
       if (p.scope === "corrections")
-        flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
+        flash({
+          text: leftOut ? P.appliedFlashLeftOut(p.repo!, leftOut) : P.appliedFlash(p.repo!),
+          href: "#/home",
+          link: P.toHome,
+        });
+      return leftOut;
     } catch (e) {
       // Round 41: a refusal to start (409: another local step runs) is the server's
       // own words, not verify's problems; nothing ran.
@@ -195,7 +214,7 @@ export function ApplyAndPropose(p: {
               type="button"
               className="btn primary"
               disabled={apply.busy}
-              onClick={() => void apply.run(() => applyWith({}), P.applied(p.repo!))}
+              onClick={() => void apply.run(() => applyWith({}), appliedNote(p.repo!))}
             >
               {apply.busy ? P.applying : P.apply(p.repo)}
             </button>
@@ -210,7 +229,7 @@ export function ApplyAndPropose(p: {
               onAllowRemovals: (n) =>
                 apply.run(
                   () => applyWith({ allowRemovals: n, ...planOf(refused) }),
-                  P.applied(p.repo!),
+                  appliedNote(p.repo!),
                 ),
               onCurate: async (n) => {
                 await curateListedEdits(refused, n, P.editsChanged);
@@ -221,7 +240,7 @@ export function ApplyAndPropose(p: {
               onDiscard: (n) =>
                 apply.run(
                   () => applyWith({ discardEdits: n, ...planOf(refused) }),
-                  P.applied(p.repo!),
+                  appliedNote(p.repo!),
                 ),
             })}
         </div>

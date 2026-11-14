@@ -20,6 +20,7 @@ import {
   resolve,
   sketchArb,
   writeManifest,
+  renderFacts,
   writeRead,
   type Code,
   type Sketch,
@@ -73,7 +74,12 @@ export type Desc =
   | { t: "scan-nothing" }
   /** A commit in the repo: its code as a sketch (generated) or as written (the examples). */
   | { t: "change-code"; slot: number; sketch?: Sketch; code?: Code }
-  | { t: "verify-write"; slot: number; ok: boolean }
+  /**
+   * `verify <repo> --write`; `ok: false` adds a fact the code doesn't hold. `later` (beta.28.1,
+   * the review): the read accepted last time again, with its fact at `later` (mod its count)
+   * cited on a line that doesn't say it: rejected now, its earlier copy stands in, nothing goes.
+   */
+  | { t: "verify-write"; slot: number; ok: boolean; later?: number }
   | { t: "verify-live"; slot: number }
   /** A person answers which repo serves a repo's legacy host: another repo, the repo itself, or none. */
   | { t: "answer"; host: number; to: number | "self" | "none" }
@@ -464,7 +470,17 @@ async function verify(
   const r = live(m, d.slot);
   if (!r) return undefined;
   const ok = d.t === "verify-live" || d.ok;
-  await writeRead(w.root, r.base, r.id, r.code, r.commit, { broken: !ok });
+  const later = d.t === "verify-write" ? d.later : undefined;
+  if (later !== undefined) {
+    // Only a read accepted before, at this commit and under this id, and with a fact to break.
+    const was = m.facts.get(r.slot);
+    if (!was || was.commit !== r.commit || was.id !== r.id) return undefined;
+    if (!renderFacts(r.base, r.id, r.code, r.commit).trim()) return undefined;
+  }
+  await writeRead(w.root, r.base, r.id, r.code, r.commit, {
+    broken: !ok,
+    ...(later !== undefined ? { later } : {}),
+  });
   const write = d.t === "verify-write";
   const outcome = await sut().verify(w.root, r.id, {
     write,
@@ -476,10 +492,11 @@ async function verify(
   return {
     outcome,
     confirm,
-    expect: ok ? { kind: "succeed" } : { kind: "refuse" },
+    // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
+    // fact it adds was never accepted, so the catalog is the clean read's.
+    expect: { kind: "succeed" },
     rerun: d,
     onSuccess: () => {
-      if (!ok) return;
       const was = m.facts.get(r.slot);
       if (!was || was.commit !== facts.commit || was.id !== facts.id) m.changes.slots.add(r.slot);
       m.facts.set(r.slot, facts);
@@ -518,6 +535,10 @@ async function rename(
       r.id = to;
       for (const obs of [m.readers.get(r.slot), m.facts.get(r.slot)])
         if (obs?.id === from) obs.id = to;
+      // The rename rewrites joins.json's evidence too: new objects, so an undo's copy keeps the old.
+      m.legacyJoins = m.legacyJoins.map((j) =>
+        j.ids?.includes(from) ? { ...j, ids: j.ids.map((x) => (x === from ? to : x)) } : j,
+      );
       m.changes.slots.add(r.slot);
     },
   };
@@ -1074,12 +1095,18 @@ export async function act(
                   to: b.slot,
                 },
                 repos: slots,
+                ids: repos.filter((x) => slotOfRepo.has(x)),
                 // No code line at its caller's end (beta.27.2, the review): only a complete read
                 // of its caller may let it leave without being derived.
                 ...(callerLined(rec) ? {} : { lineless: true as const }),
               });
             else if (repos.length !== 1)
-              m.legacyJoins.push({ kind: rec.kind, id: rec.id, repos: slots });
+              m.legacyJoins.push({
+                kind: rec.kind,
+                id: rec.id,
+                repos: slots,
+                ids: repos.filter((x) => slotOfRepo.has(x)),
+              });
           }
           m.beta26 = false;
         },
@@ -1145,6 +1172,17 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
     d(fc.constant({ t: "scan-nothing" })),
     ...times(3, d(fc.record({ t: fc.constant("change-code" as const), slot, sketch: sketchArb }))),
     ...times(3, d(fc.record({ t: fc.constant("verify-write" as const), slot, ok: fc.boolean() }))),
+    ...times(
+      2,
+      d(
+        fc.record({
+          t: fc.constant("verify-write" as const),
+          slot,
+          ok: fc.constant(true),
+          later: fc.nat(8),
+        }),
+      ),
+    ),
     d(fc.record({ t: fc.constant("verify-live" as const), slot })),
     ...times(
       2,

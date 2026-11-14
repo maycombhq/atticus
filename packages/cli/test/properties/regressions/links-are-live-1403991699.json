@@ -1,0 +1,51 @@
+{
+  "invariant": "links-are-live",
+  "note": "links-are-live: after confirm-removals the arrow if-221d7c27d2d751e8 (payments-api|ledger-api|GET|/accounts) doesn't follow from the current observations: allowed none. A legacy join's callee repo was known only from its orphaned readers slot, which prune removed (beta.28.1).",
+  "seed": 1403991699,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "remove",
+      "slot": 0
+    },
+    {
+      "t": "prune",
+      "yes": true
+    }
+  ]
+}

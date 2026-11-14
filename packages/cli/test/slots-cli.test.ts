@@ -572,7 +572,9 @@ describe("verify --write writes the facts snapshot only when it succeeds (ADR 01
       ).toBe(0);
       const s = snapshot(root);
       const catalog = files(generated(root));
-      // The live file gains facts that are rejected: --write refuses, in words and in --json.
+      // The live file gains facts that are rejected. A --write that takes only a whole read
+      // (`whole`, map --all's) refuses, in words and in --json; beta.28.1's --write writes the
+      // rest (exit 3), the rejected facts never in the snapshot.
       await writeFile(
         join(root, "facts", "forge-ledger.jsonl"),
         readFileSync(join(root, "facts", "forge-ledger.jsonl"), "utf8") +
@@ -584,13 +586,27 @@ describe("verify --write writes the facts snapshot only when it succeeds (ADR 01
           await verifyCommand(
             root,
             "forge-ledger",
-            { commit: "0123abc", dir, write: true, ...(json ? { json: true } : {}) },
+            { commit: "0123abc", dir, write: true, whole: true, ...(json ? { json: true } : {}) },
             c.io,
           ),
         ).toBe(1);
         expect(snapshot(root)).toEqual(s);
         expect(files(generated(root))).toEqual(catalog);
       }
+      const redteam = readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => (JSON.parse(l) as { id: string }).id);
+      expect(
+        await verifyCommand(
+          root,
+          "forge-ledger",
+          { commit: "0123abc", dir, write: true },
+          capture().io,
+        ),
+      ).toBe(3);
+      const held = snapshot(root)["forge-ledger.jsonl"]!;
+      for (const id of redteam) expect(held).not.toContain(`"id":"${id}"`);
       // A live edit checked without --write: the snapshot stays until --write succeeds.
       await writeFile(
         join(root, "facts", "forge-ledger.jsonl"),

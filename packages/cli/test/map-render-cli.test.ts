@@ -20,11 +20,19 @@ import {
   parseRecord,
   serializeRecord,
   type CatalogRecord,
+  type Fact,
   type FactsJoinResult,
 } from "@maycombhq/core";
 import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
+import { factRefs } from "@maycombhq/verify";
 import { main } from "../src/main.js";
-import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
+import {
+  joinLines,
+  linkChanges,
+  linkLines,
+  mapRenderCommand,
+  writeFactsIntoCatalog,
+} from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
 import { writeProgressHooks } from "../src/write-progress.js";
 
@@ -532,17 +540,31 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(o.out.join("\n")).toMatch(/No catalog changes/);
   });
 
-  it("writes nothing to the catalog while a fact is rejected", async () => {
+  // Beta.28.1 (field report 5): one rejected fact no longer blocks the rest. The kept facts are
+  // written exactly as a read without the rejected ones would write them, each rejected fact
+  // named with the file to fix, and the exit code (3) tells a written Apply from a failure.
+  it("writes the kept facts and leaves the rejected ones out, naming each (exit 3)", async () => {
+    const clean = await metarepo();
+    expect(await write(clean)).toBe(0);
     const root = await metarepo(
       readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
         readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8"),
     );
-    const before = files(join(root, "catalog", "generated"));
     const o = io();
-    expect(await write(root, o)).toBe(1);
-    expect(o.err.join("\n")).toMatch(/Nothing written: 11 facts were rejected/);
-    expect(files(join(root, "catalog", "generated"))).toEqual(before);
-    expect(existsSync(join(root, "map"))).toBe(false);
+    expect(await write(root, o)).toBe(3);
+    const said = o.out.join("\n");
+    expect(said).toMatch(
+      /Applied to forge-ledger with 11 facts left out \(rejected; none was in the catalog before\)/,
+    );
+    expect(said).toMatch(
+      /left out: rt-no-file \([a-z-]+\): fix it in facts\/forge-ledger\.jsonl, reading src\/main\/java\/forge\/ledger\/AdminController\.java:10 again/,
+    );
+    expect(o.err.join("\n")).not.toMatch(/Nothing written/);
+    // The catalog is what the kept facts alone make.
+    expect(files(join(root, "catalog", "generated"))).toEqual(
+      files(join(clean, "catalog", "generated")),
+    );
+    expect(existsSync(join(root, "map"))).toBe(true);
   });
 
   // Beta.26: a refused --write wrote nothing to the catalog but rewrote the facts file with only
@@ -556,11 +578,10 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const factsFile = join(root, "facts", "forge-ledger.jsonl");
     const bytes = readFileSync(factsFile);
     const o = io();
-    expect(await write(root, o)).toBe(1);
+    expect(await write(root, o)).toBe(3);
+    // The rejected facts stay in the facts file to be fixed; the kept ones went to the catalog.
     expect(readFileSync(factsFile).equals(bytes)).toBe(true);
-    expect(o.err.join("\n")).toMatch(
-      /Nothing written: 11 facts were rejected, so facts\/forge-ledger\.jsonl and the catalog are left as they were/,
-    );
+    expect(o.out.join("\n")).toMatch(/with 11 facts left out/);
     // What to fix is still written, and the verify report.
     expect(readFileSync(join(root, "facts", "forge-ledger.rejected.jsonl"), "utf8")).toMatch(
       /"code":/,
@@ -580,11 +601,174 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
         },
         j.io,
       ),
-    ).toBe(1);
+    ).toBe(3);
     expect(readFileSync(factsFile).equals(bytes)).toBe(true);
-    // So no build takes the half-read repo: a refused --write takes no facts snapshot (ADR 0195),
-    // and only a snapshot reaches the catalog.
-    expect(existsSync(join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"))).toBe(false);
+    const report = JSON.parse(j.out.join("\n")) as {
+      written?: unknown;
+      leftOut?: { id: string; file: string; line: number; kept: boolean }[];
+    };
+    expect(report.written).toBeDefined();
+    expect(report.leftOut?.map((l) => l.id)).toContain("rt-no-file");
+    expect(report.leftOut?.every((l) => !l.kept)).toBe(true);
+    // The snapshot holds the kept facts only: no rejected fact reaches the catalog.
+    const snap = readFileSync(
+      join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"),
+      "utf8",
+    );
+    expect(snap).not.toMatch(/"id":"rt-/);
+  });
+
+  it("a line that isn't a fact still refuses the write: nothing says what it backed", async () => {
+    const root = await metarepo(
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") + '{"kind":"entry"}\n',
+    );
+    const before = files(join(root, "catalog", "generated"));
+    const o = io();
+    expect(await write(root, o)).toBe(1);
+    expect(o.err.join("\n")).toMatch(/Nothing written: some lines of the read were refused/);
+    expect(files(join(root, "catalog", "generated"))).toEqual(before);
+  });
+
+  // Beta.28.1, the safety half: a fact the last Apply accepted, now rejected (its line moved, a
+  // slip of the reader), never takes its records away: its accepted copy is written again.
+  it("a fact accepted before and rejected now keeps what it backed; dropping it would remove it", async () => {
+    const good = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8");
+    const root = await metarepo(good);
+    expect(await write(root)).toBe(0);
+    const generated = join(root, "catalog", "generated");
+    const before = files(generated);
+    const backs = Object.keys(before).filter((k) =>
+      before[k]!.includes("/accounts/{accountId}/entries"),
+    );
+    expect(backs.length).toBeGreaterThan(0);
+    // The same fact cited on a line that doesn't write it: rejected.
+    const lines = good.trim().split("\n");
+    const at = lines.findIndex((l) => l.includes('"id":"e-post-entry"'));
+    lines[at] = lines[at]!.replace('"line":22', '"line":3');
+    writeFileSync(join(root, "facts", "forge-ledger.jsonl"), lines.join("\n") + "\n");
+    const o = io();
+    expect(await write(root, o)).toBe(3);
+    expect(o.out.join("\n")).toMatch(
+      /left out: e-post-entry \([a-z-]+\): fix it in facts\/forge-ledger\.jsonl, reading src\/main\/java\/forge\/ledger\/EntryController\.java:3 again \(its earlier copy stays in the catalog\)/,
+    );
+    expect(files(generated)).toEqual(before);
+    // The contrast: the same fact gone from the read (no rejection) is a removal the build makes.
+    writeFileSync(
+      join(root, "facts", "forge-ledger.jsonl"),
+      lines.filter((_, i) => i !== at).join("\n") + "\n",
+    );
+    const gone = io();
+    const code = await write(root, gone);
+    const after = files(generated);
+    // Its dependants are rejected for naming it. Their earlier copies aren't written back (the
+    // review of beta.28.1: they'd name a fact the snapshot no longer holds), so what they backed
+    // goes with the endpoint, and each one's line names the fact it lost, not its own source line.
+    expect(code, gone.out.join("\n") + gone.err.join("\n")).toBe(3);
+    expect(after["endpoint/ledger-api.post-entry.yaml"]).toBeUndefined();
+    expect(gone.out.join("\n")).toMatch(/removed Endpoint\/ledger-api\.post-entry/);
+    const said = gone.out.join("\n");
+    expect(said).toMatch(
+      /left out: \S+ \(dangling-ref\): it names e-post-entry, which the read no longer has/,
+    );
+    expect(said).not.toMatch(/\(dangling-ref\): fix it in .* again/);
+    expect(said).not.toMatch(/its earlier copy stays/);
+    // The snapshot names no fact it doesn't hold.
+    const snap = readFileSync(
+      join(root, "catalog", "sources", "facts", "forge-ledger.jsonl"),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Fact);
+    const held = new Set(snap.map((f) => f.id));
+    expect(
+      snap.flatMap((f) =>
+        factRefs(f)
+          .filter((r) => !held.has(r.id))
+          .map((r) => `${f.id}->${r.id}`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("--write with `whole` (map --all's reads in progress) refuses while a fact is rejected, building nothing (the review's S6)", async () => {
+    const root = await metarepo();
+    expect(await write(root)).toBe(0);
+    const bad = readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!;
+    const facts = join(root, "facts", "forge-ledger.jsonl");
+    writeFileSync(facts, readFileSync(facts, "utf8") + bad + "\n");
+    const was = {
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+      facts: readFileSync(facts, "utf8"),
+    };
+    const o = io();
+    const code = await verifyCommand(
+      root,
+      "forge-ledger",
+      {
+        commit: "0123abc",
+        dir: join(root, "workspace", "forge-ledger"),
+        write: true,
+        whole: true,
+      },
+      o.io,
+    );
+    expect(code).toBe(1);
+    expect(o.out.join("\n")).not.toMatch(/^Applied to/m);
+    expect({
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+      facts: readFileSync(facts, "utf8"),
+    }).toEqual(was);
+    // Without it, the same read writes with the fact left out.
+    expect(await write(root)).toBe(3);
+  });
+
+  it("a reviewed line refused, with no fact rejected, still refuses --write and writes nothing (the review's S4)", async () => {
+    const root = await metarepo();
+    expect(await write(root)).toBe(0);
+    const before = {
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+    };
+    writeFileSync(
+      join(root, "facts", "forge-ledger.reviewed.jsonl"),
+      `${JSON.stringify({ path: "src/main/java/forge/ledger/NotThere.java", why: "nothing to record" })}\n`,
+    );
+    const o = io();
+    const code = await write(root, o);
+    const said = o.out.join("\n") + o.err.join("\n");
+    expect(said).toMatch(/reviewed/);
+    expect(code, said).toBe(1);
+    expect(said).not.toMatch(/^Applied to/m);
+    expect({
+      generated: files(join(root, "catalog", "generated")),
+      sources: files(join(root, "catalog", "sources")),
+    }).toEqual(before);
+  });
+
+  it("the spec header names the snapshot's commit, not the oldest commit among its facts (the review's nit)", async () => {
+    const root = await metarepo();
+    const p = parseFacts(readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8"));
+    if (!p.ok) throw new Error("bad facts");
+    // An earlier copy written back from an older read carries its own commit.
+    const facts = p.facts.map((f, i) => (i === 0 ? { ...f, commit: "0000aaa" } : f));
+    const o = io();
+    await writeFactsIntoCatalog(
+      root,
+      "forge-ledger",
+      facts,
+      {
+        dir: join(root, "workspace", "forge-ledger"),
+        command: "atticus verify forge-ledger --write",
+        commit: "0123abc",
+        allowRemovals: 1,
+      },
+      o.io,
+    );
+    expect(readFileSync(join(root, "specs", "forge-ledger", "spec.yaml"), "utf8")).toMatch(
+      /^commit: 0123abc$/m,
+    );
   });
 
   it("plain verify (no --write) still keeps the kept facts and moves the rejected ones out (A3b)", async () => {
@@ -638,8 +822,8 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") + bad + "\n",
     );
     const o = io();
-    expect(await write(root, o)).toBe(1);
-    expect(o.err.join("\n")).toMatch(/Nothing written: 1 fact was rejected/);
+    expect(await write(root, o)).toBe(3);
+    expect(o.out.join("\n")).toMatch(/with 1 fact left out/);
     const f = JSON.parse(bad) as {
       id: string;
       kind: string;
@@ -662,22 +846,23 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(await write(root, again), again.err.join("\n")).toBe(0);
   });
 
-  it("rejects a call-out step that names no call at verify, before anything is written (B-fixes)", async () => {
+  it("rejects a call-out step that names no call at verify, and leaves its flow out (B-fixes)", async () => {
     // The B-stories-bench run: three flows' call-out steps named no call; the verifier kept them,
     // and --write wrote the catalog, then couldn't write the flows. Now the verifier rejects such
-    // a flow, saying what to fix, and --write writes nothing until it is fixed.
+    // a flow, saying what to fix; since beta.28.1 --write writes the rest and leaves it out.
     const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
       '"ref":"c-fx-rate",',
       "",
     );
     const root = await metarepo(facts);
     const o = io();
-    expect(await write(root, o)).toBe(1);
+    expect(await write(root, o)).toBe(3);
     const said = [...o.out, ...o.err].join("\n");
     expect(said).toMatch(/w-post-entry/);
     expect(said).toMatch(/step 2 is a call-out that names no fact/);
-    expect(said).toMatch(/Nothing written: /);
-    expect(existsSync(join(root, "specs", "forge-ledger"))).toBe(false);
+    expect(said).toMatch(/left out: w-post-entry/);
+    const specs = files(join(root, "specs", "forge-ledger"));
+    expect(Object.values(specs).some((t) => t.includes("w-post-entry"))).toBe(false);
   });
 
   it("without --write, only checks: the catalog and the map aren't touched", async () => {

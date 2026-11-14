@@ -816,7 +816,10 @@ export async function writeFactsIntoCatalog(
         const text = await readFile(join(o.dir, ...p.split("/")), "utf8").catch(() => undefined);
         if (text !== undefined) files[p] = specFileHash(text);
       }
-    const commit = facts.map((f) => f.commit).sort()[0];
+    // The review of beta.28.1: the snapshot's commit (an earlier copy written back keeps its own
+    // older one, so the smallest among the facts may be no commit this read was of).
+    const commit =
+      snapshotCommit !== "unknown" ? snapshotCommit : facts.map((f) => f.commit).sort()[0];
     const kept = spec.flows.filter((f) => f.template !== FACTS_TEMPLATE).map((f) => f.id);
     const header = spec.header;
     await writeSpecHeader(root, {

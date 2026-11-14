@@ -503,7 +503,17 @@ function participant(
           [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(Boolean),
         ),
       );
-      if (r.code === 0 && !write)
+      // Beta.28.1: exit 3 wrote the kept facts and left the rejected ones out (listed above).
+      if (write && r.code === 3) {
+        stream.markdown(
+          "\nApplied: the kept facts are in the catalog; the facts left out are listed above, each with the file to fix it in.\n",
+        );
+        stream.button({
+          command: "workbench.action.chat.open",
+          arguments: [{ query: `@atticus /map ${repo}` }],
+          title: "Send the left-out facts back to the assistant",
+        });
+      } else if (r.code === 0 && !write)
         stream.button({
           command: "workbench.action.chat.open",
           arguments: [{ query: `@atticus /verify ${repo} --write` }],
