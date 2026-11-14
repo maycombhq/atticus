@@ -93,6 +93,14 @@ function PreviewBody({ v }: { v: Preview }) {
           {N.catalog(p.catalog.added, p.catalog.changed, p.catalog.removed, p.catalog.evidenceOnly)}
         </p>
       )}
+      {p.confirm && (
+        <>
+          <p role="status" className="ev-say">
+            {N.confirm(p.confirm.removals)}
+          </p>
+          <Cmd text={p.confirm.command} label={N.confirmCommand} />
+        </>
+      )}
       {p.staleCorrections.length > 0 && (
         <p className="ev-say">{N.stale(p.staleCorrections.join(", "))}</p>
       )}

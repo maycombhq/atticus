@@ -6279,6 +6279,10 @@ export const COPY = {
     noLinkChange: "No link changes.",
     catalog: (added: number, changed: number, removed: number, evidence: number) =>
       `Catalog records: ${added} added, ${changed} changed, ${removed} removed, ${evidence} with only their evidence changed.`,
+    // Beta.28.1 (field hunt G1): the Apply's build removes more than the guard lets through.
+    confirm: (n: number) =>
+      `Apply will wait for you to confirm: its build removes ${n} ${n === 1 ? "record" : "records"}, more than the removal guard lets through unasked. Apply lists ${n === 1 ? "it" : "them"}, each with why, for you to confirm.`,
+    confirmCommand: "Confirm from a terminal",
     stale: (ids: string) =>
       `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,
   },

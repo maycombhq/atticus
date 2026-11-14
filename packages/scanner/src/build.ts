@@ -1713,6 +1713,34 @@ export function rekeyedWords(
   return out;
 }
 
+/** Each line a record cites, as `<repo>\u0000<path>\u0000<line>`. */
+function evidenceLines(r: CatalogRecord): string[] {
+  const out: string[] = [];
+  for (const e of r.evidence as { repo?: string; path?: string; line?: number }[])
+    if (e.repo && e.path && e.line !== undefined)
+      out.push(`${e.repo}\u0000${e.path}\u0000${e.line}`);
+  return out;
+}
+
+/**
+ * Beta.28.1 (field hunt G1): the arrow this build adds for a loose end's call, as
+ * `Interface/<id>`: exactly one added arrow, from the loose end's owner, cites a line the loose
+ * end cites. A loose end with no line, no owner, or more than one such arrow says nothing.
+ */
+function joinedArrowOf(
+  r: CatalogRecord,
+  addedAt: ReadonlyMap<string, readonly CatalogRecord[]>,
+): string | undefined {
+  if (r.kind !== "Unresolved") return undefined;
+  const owner = (r as unknown as { owner?: string }).owner;
+  if (!owner) return undefined;
+  const ids = new Set<string>();
+  for (const k of evidenceLines(r))
+    for (const x of addedAt.get(k) ?? [])
+      if ((x as unknown as { from?: string }).from === owner) ids.add(x.id);
+  return ids.size === 1 ? `Interface/${[...ids][0]}` : undefined;
+}
+
 /** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
 const JOIN_DERIVED = new Set(["Interface", "Unresolved", "Capability", "GlossaryTerm"]);
 
@@ -2065,6 +2093,8 @@ export async function guardBuild(
   // ---- removals: what the last build wrote and this one wouldn't
   const removals: Removal[] = [];
   const unexplained: Removal[] = [];
+  /** The removals that are a loose end this build joins (G1): listed, never counted to a limit. */
+  const joinedLooseEnds = new Set<string>();
   if (last.manifest) {
     const nowSources = new Set<string>();
     for (const f of b.manifest.files)
@@ -2142,6 +2172,17 @@ export async function guardBuild(
     // what each is, so a removal can say what comes back in its place; and their count by repo.
     // Components first: an arrow or an endpoint is compared through the component's new id.
     const addedNow = b.records.filter((x) => !lastTails.has(recordPath(x)));
+    // Beta.28.1 (field hunt G1): the arrows this build adds, by each line they cite: a loose end
+    // (Unresolved) citing a line an added arrow cites, of the same caller, is that call joined
+    // now (a person's pairing, an answer), not a loss.
+    const addedArrowsAt = new Map<string, CatalogRecord[]>();
+    for (const x of addedNow)
+      if (x.kind === "Interface")
+        for (const k of new Set(evidenceLines(x))) {
+          const l = addedArrowsAt.get(k);
+          if (l) l.push(x);
+          else addedArrowsAt.set(k, [x]);
+        }
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2267,9 +2308,12 @@ export async function guardBuild(
       // record of the repo): the same thing back under another id, or no fact of the repo's read
       // that makes it. Only for a removal something explains already: never a bug's excuse.
       const own: string[] = [];
+      let joinedNow: string | undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
+        joinedNow = back ? undefined : joinedArrowOf(r, addedArrowsAt);
         if (back) own.push(back);
+        else if (joinedNow) own.push(`joined now (${joinedNow})`);
         // Only where the repo's read changed and nothing else is why: not a removal an answer,
         // a curated decision or a call the join placed elsewhere makes, nor one a join derives.
         else if (!kinds.has("curated") && !left?.call && !JOIN_DERIVED.has(r.kind))
@@ -2287,6 +2331,7 @@ export async function guardBuild(
         reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
+      if (joinedNow && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
     }
     mark("removals explained");
     // The records each repo had in the last build, for the share.
@@ -2303,11 +2348,13 @@ export async function guardBuild(
         ...(unexplained.length > 20 ? [`  and ${unexplained.length - 20} more`] : []),
       );
     }
+    // A loose end joined now is the join's own result: it counts toward neither limit.
+    const counted = removals.filter((x) => !joinedLooseEnds.has(x.path));
     const gone = new Map<string, number>();
-    for (const x of removals) for (const repo of x.repos) gone.set(repo, (gone.get(repo) ?? 0) + 1);
+    for (const x of counted) for (const repo of x.repos) gone.set(repo, (gone.get(repo) ?? 0) + 1);
     const big = [...gone].filter(([repo, n]) => n > (had.get(repo) ?? 0) * REMOVAL_LIMITS.share);
     if (
-      (big.length || removals.length > REMOVAL_LIMITS.count) &&
+      (big.length || counted.length > REMOVAL_LIMITS.count) &&
       o.allowRemovals !== removals.length
     ) {
       reasons.push("large-removals");

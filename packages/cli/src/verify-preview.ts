@@ -280,6 +280,23 @@ export async function verifyWritePreview(
     if (m?.replace(/\r\n?/g, "\n") !== serializeBuildManifest(p.build.manifest))
       files.push(posixRel(root, buildManifestPath(root)));
   }
+  // Beta.28.1 (field hunt G1): the build's guards as the Apply will run them, nothing written:
+  // whether the Apply waits for a confirm of its removals, and the count that confirms them.
+  await step("Checking the build's guards");
+  const { buildAndWrite } = await import("@maycombhq/scanner");
+  const checked = await buildAndWrite(root, {
+    command: `atticus verify ${repo} --write`,
+    build: p.build,
+    slots: p.snap,
+    check: true,
+  });
+  const waits = checked.guard.refused?.reasons.includes("large-removals")
+    ? checked.guard.refused.allowRemovals
+    : undefined;
+  const confirm =
+    waits !== undefined
+      ? { removals: waits, command: `atticus verify ${repo} --write --allow-removals ${waits}` }
+      : undefined;
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))
     files.push(specRelOf(root, repo));
@@ -364,6 +381,7 @@ export async function verifyWritePreview(
         moved,
       },
       ...(headMoved ? { headMoved } : {}),
+      ...(confirm ? { confirm } : {}),
       staleCorrections,
     },
   };
