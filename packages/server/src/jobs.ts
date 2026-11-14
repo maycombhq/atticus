@@ -239,6 +239,15 @@ export class JobManager {
       p.from += drop;
     }
     this.tell({ type: "lines", job, at, lines, ...(o?.now ? { now: true } : {}) });
+    // The hunt of beta.28.1: a progress line (`now`: a step as it starts, a heartbeat) is what
+    // the job is doing now, so its progress message follows it (Apply's write, step by step);
+    // a job stopping keeps saying "Stopping…".
+    const last = lines.at(-1);
+    if (o?.now && last && job.state === "running" && !job.stopping) {
+      job.progress = { ...job.progress, message: last };
+      this.publish({ type: "job.progress", jobId: job.id, ...job.progress });
+      this.tell({ type: "state", job });
+    }
   }
 
   /** Tell a job's recorder, never failing the job (a recorder that throws is dropped). */

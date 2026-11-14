@@ -272,6 +272,23 @@ describe("JobManager commit", () => {
     expect(ok.progress).toMatchObject({ done: 1, total: 1 });
   });
 
+  it("a progress line is the job's progress message; a plain line isn't", async () => {
+    const jobs = new JobManager(() => undefined);
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    const job = jobs.start("work", async (c) => {
+      c.progress(0, 1, "Applying to forge-ledger");
+      c.line("forge-ledger: 17 facts kept, 0 rejected");
+      c.line("Building the catalog: pass 2 of 8… (4 s in)", { now: true });
+      await held;
+      return {};
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)!.progress.message).toBe("Building the catalog: pass 2 of 8… (4 s in)");
+    go();
+    await jobs.settle(job.id);
+  });
+
   it("closing the app past a job's commit says no Stop after its record ended", async () => {
     const recorded: string[] = [];
     const jobs = new JobManager(() => undefined, undefined, {
