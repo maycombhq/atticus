@@ -201,6 +201,15 @@ interface Ran {
   extra?: Record<string, unknown>;
 }
 
+/**
+ * A guard's refusal as a job's progress message: its first sentence of its first line only (the
+ * listing of what it would remove stays in the Console and the job's lines).
+ */
+export function firstSentenceOf(text: string): string {
+  const line = text.split(/\r?\n/)[0]!.trim();
+  return /^.*?[.!?](?=\s|$)/.exec(line)?.[0] ?? line;
+}
+
 async function run(
   f: (io: Output) => Promise<number>,
   /** A command asked for --json keeps its JSON out of the Console (the job says it in words). */
@@ -698,7 +707,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         c.progress(
           1,
           1,
-          res.code === 0 ? "Done" : typeof refusal === "string" ? `Refused: ${refusal}` : "Failed",
+          res.code === 0
+            ? "Done"
+            : typeof refusal === "string"
+              ? `Refused: ${firstSentenceOf(refusal)}`
+              : "Failed",
         );
         ctx.events.publish({ type: "file.changed", path: "." });
         // Review of beta.23 (ADR 0188): in the app's words (its buttons, not the commands to

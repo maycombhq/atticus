@@ -498,7 +498,7 @@ export async function verifyCommand(
   // so a half-fixed read never replaces the repo's records.
   const n = report.rejected.length;
   const whyWhole = otherCommit
-    ? ` (${otherCommit === 1 ? "1 fact was" : `${otherCommit} facts were`} read at another commit than ${commit ?? "this clone's"}: read ${repo} again at it with atticus map ${repo}, then Apply)`
+    ? ` (${otherCommit === 1 ? "1 fact was" : `${otherCommit} facts were`} read at another commit than ${commit ? commit.slice(0, 12) : "this clone's"}: read ${repo} again at this commit with atticus map ${repo}, then Apply)`
     : n && noneKept
       ? " (every fact of the read was rejected, so nothing of it would be written)"
       : "";

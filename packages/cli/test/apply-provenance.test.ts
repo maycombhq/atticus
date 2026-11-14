@@ -102,9 +102,17 @@ describe("an Apply never stamps a commit its facts weren't verified at (F1)", ()
       expect(await write(root, "fedcba9", o)).toBe(1);
       const said = [...o.out, ...o.err].join("\n");
       expect(said).toMatch(/Nothing written/);
-      expect(said).toMatch(/read at another commit than fedcba9: read forge-ledger again at it/);
+      expect(said).toMatch(
+        /read at another commit than fedcba9: read forge-ledger again at this commit/,
+      );
       expect(said).not.toMatch(/left out: /);
       expect(catalog(root)).toEqual(before);
+      // A full sha is said as its first 12 characters.
+      const long = io();
+      expect(await write(root, "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12", long)).toBe(1);
+      const longSaid = [...long.out, ...long.err].join("\n");
+      expect(longSaid).toContain("read at another commit than ab12cd34ef56: read forge-ledger");
+      expect(longSaid).not.toContain("than ab12cd34ef56ab12cd34");
       const meta = JSON.parse(
         readFileSync(join(root, "catalog", "sources", "facts", "forge-ledger.meta.json"), "utf8"),
       ) as { commit: string };

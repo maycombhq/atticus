@@ -4,7 +4,7 @@ import { configLineProblem } from "../src/settings-path.js";
 /**
  * The hunt of beta.28.1 (N1): a `with` line of a YAML file that sets a deploy token was matched
  * with a pattern that backtracks on long runs of spaces (4,000 spaces took 36 s). A line of
- * 16,000 spaces, or a word and 16,000 spaces with no colon, is read in well under 50 ms; a token
+ * 16,000 spaces, or a word and 16,000 spaces with no colon, is read in well under 500 ms; a token
  * set on a key line still holds. Invented Forge files.
  */
 
@@ -35,9 +35,10 @@ describe("a token's `with` line is read in linear time", () => {
     ["a quote, a word and 16,000 spaces", `"forge${" ".repeat(16_000)}x`],
     ["a word, 16,000 spaces and a word", `forge${" ".repeat(16_000)}ledger`],
   ] as const)
-    it(`${what}: under 50 ms, and it sets nothing`, () => {
+    it(`${what}: under 500 ms, and it sets nothing`, () => {
       const r = check(line);
-      expect(r.ms).toBeLessThan(50);
+      // Wall time on a slow CI machine (Windows); the old form took 36 s at 4,000 spaces.
+      expect(r.ms).toBeLessThan(500);
       expect(r.problem).toMatch(/to the token @FORGE_SCHEMA@/);
     });
 

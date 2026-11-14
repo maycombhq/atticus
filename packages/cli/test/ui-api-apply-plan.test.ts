@@ -275,7 +275,13 @@ describe("a local job's end in words (the hunt of beta.28.1)", () => {
         result: { lines: string[]; refused: { message: string } };
       };
       expect(first.result.refused).toBeDefined();
-      expect(first.progress.message).toBe(`Refused: ${first.result.refused.message}`);
+      const { firstSentenceOf } = await import("../src/ui-api.js");
+      expect(first.progress.message).toBe(
+        `Refused: ${firstSentenceOf(first.result.refused.message)}`,
+      );
+      // One sentence, never the guard's listing of what it would remove.
+      expect(first.progress.message).not.toContain("\n");
+      expect(first.progress.message.length).toBeLessThan(first.result.refused.message.length);
       expect(first.progress.message).not.toBe("Stopped");
       // Not every line the verify printed: only those it said as errors.
       expect(first.errors.length).toBeGreaterThan(0);
