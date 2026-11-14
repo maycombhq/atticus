@@ -434,11 +434,24 @@ export function preparedLine(repo: string, prompt: string): string {
   return `Read ${prompt} and do exactly what it says. Atticus has prepared it: run no other atticus command (not assistant-files, not map). When the facts are written, run \`atticus verify ${repo}\` by itself, with no pipe or redirection; if you can't run commands here, just stop when the facts are written: Atticus verifies them.`;
 }
 
-/** What one call of a command printed, kept instead of shown. */
-function captured(): Output & { lines: string[]; errs: string[] } {
+/**
+ * What one call of a command printed, kept instead of shown. The hunt of beta.28.1 (S2): its
+ * progress lines (a write's steps and heartbeats) go on to the run's own progress (a terminal's
+ * standard error without it), never into its errors, so "verify didn't run: <first error>"
+ * never quotes one; with no run to send them to, they are dropped.
+ */
+export function capturedStep(outer?: Output): Output & { lines: string[]; errs: string[] } {
   const lines: string[] = [];
   const errs: string[] = [];
-  return { lines, errs, out: (l) => lines.push(l), err: (l) => errs.push(l) };
+  return {
+    lines,
+    errs,
+    out: (l) => lines.push(l),
+    err: (l) => errs.push(l),
+    progress: (l) => {
+      if (outer) (outer.progress ?? outer.err)(l);
+    },
+  };
 }
 
 /** The last JSON object a command printed. */
@@ -489,7 +502,7 @@ async function partsOf(
   /** ADR 0170 (--force): every part is read again, but those this run's state has done. */
   force?: { done: ReadonlySet<number> },
 ): Promise<{ parts: PlanPart[]; total: number; tokens: number; batches?: number } | string> {
-  const io = captured();
+  const io = capturedStep();
   const code = await mapCommand(
     root,
     repo,
@@ -1407,7 +1420,7 @@ export async function mapAllCommand(
 
   /** What `atticus verify <repo> --write` runs, said in one paragraph. */
   const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
-    const c = captured();
+    const c = capturedStep(io);
     try {
       // The review of beta.28.1 (S6): a read in progress is written only whole, so a retry of
       // a part that still has rejections builds nothing; the run writes once none is left.
@@ -1535,7 +1548,7 @@ export async function mapAllCommand(
     const repos = await factsRepos(root);
     let passed = 0;
     for (const repo of repos) {
-      const c = captured();
+      const c = capturedStep(io);
       const code = await verifyCommand(root, repo, { write: true, json: true }, c);
       const v = jsonOf<VerifyJson>(c.lines);
       if (code === 0) passed++;
@@ -1801,7 +1814,7 @@ export async function mapAllCommand(
     const v = await verifyStep(item);
     if (!v) return undefined;
     const parted = item.total > 1;
-    const c = captured();
+    const c = capturedStep(io);
     const code = await mapCommand(
       root,
       item.repo,
@@ -1838,7 +1851,7 @@ export async function mapAllCommand(
     // beta.15: the session's prompt is written here, so the chat runs no `atticus map` (nor the
     // workspace check) itself: a chat whose terminal won't open, or whose shell Atticus refuses,
     // has only files to read and write.
-    const c = captured();
+    const c = capturedStep(io);
     const code = await mapCommand(
       root,
       item.repo,
@@ -1860,10 +1873,10 @@ export async function mapAllCommand(
 
   /** The gaps pass's line, its prompt planned first; undefined when there are no gaps left. */
   async function gapsLine(item: PlanItem): Promise<string | undefined> {
-    const plain = captured();
+    const plain = capturedStep(io);
     // verify first, so the gaps are the ones left now (map --gaps refuses an older report).
     await verifyCommand(root, item.repo, { commit: item.commit, json: true }, plain);
-    const c = captured();
+    const c = capturedStep(io);
     const code = await mapCommand(
       root,
       item.repo,

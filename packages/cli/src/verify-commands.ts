@@ -235,7 +235,13 @@ export async function factsRepos(root: string): Promise<string[]> {
  */
 export async function verifyAllCommand(
   root: string,
-  o: Omit<VerifyCommandOptions, "dir">,
+  o: Omit<VerifyCommandOptions, "dir" | "onLeftOut"> & {
+    /**
+     * Each repo's own outcome as it ends: its exit code and, for a write with rejected facts
+     * left out (exit 3), how many (the hunt of beta.28.1, S2: the app's Apply to every repo).
+     */
+    onRepo?: (repo: string, code: number, leftOut: number) => void;
+  },
   io: Output,
 ): Promise<number> {
   const repos = await factsRepos(root);
@@ -246,8 +252,16 @@ export async function verifyAllCommand(
     return 2;
   }
   const failed: string[] = [];
+  const { onRepo, ...each } = o;
   for (const repo of repos) {
-    const code = await verifyCommand(root, repo, o, io);
+    let leftOut = 0;
+    const code = await verifyCommand(
+      root,
+      repo,
+      { ...each, onLeftOut: (l) => (leftOut = l.length) },
+      io,
+    );
+    onRepo?.(repo, code, leftOut);
     if (code !== 0) failed.push(repo);
   }
   const passed = repos.length - failed.length;

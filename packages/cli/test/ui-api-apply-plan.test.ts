@@ -313,6 +313,46 @@ describe("an Apply that leaves rejected facts out is applied, with their count (
   );
 });
 
+describe("Apply to every repo that leaves facts out is applied (the hunt of beta.28.1, S2)", () => {
+  it(
+    "its job ends done with the facts left out counted, and no progress line in its result",
+    async () => {
+      const { writeProgressHooks } = await import("../src/write-progress.js");
+      writeProgressHooks.quietMs = 0;
+      try {
+        const root = await metarepo();
+        const { job } = await serve(root);
+        const first = await job(APPLY);
+        const refused = first.result!.refused!;
+        const ok = await job(APPLY, { allowRemovals: refused.allowRemovals, plan: refused.plan });
+        expect(ok.result!.code, ok.result!.lines.join("\n")).toBe(0);
+        const bad = JSON.parse(
+          readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!,
+        ) as { id: string };
+        const facts = join(root, "facts", "forge-ledger.jsonl");
+        const seven = Array.from({ length: 7 }, (_, i) =>
+          JSON.stringify({ ...bad, id: `${bad.id}-${i + 1}` }),
+        );
+        writeFileSync(facts, readFileSync(facts, "utf8") + seven.join("\n") + "\n");
+        const all = (await job("/api/facts/apply-all")) as Awaited<ReturnType<typeof job>> & {
+          errors?: string[];
+        };
+        expect(all.state, all.result?.lines.join("\n")).toBe("done");
+        expect(all.result!.code).toBe(0);
+        const r = all.result as { leftOut?: number; leftOutRepos?: number };
+        expect(r.leftOut).toBe(7);
+        expect(r.leftOutRepos).toBe(1);
+        // The write's steps went to the Console only, never into the result or its errors.
+        const said = [...all.result!.lines, ...(all.errors ?? [])].join("\n");
+        expect(said).not.toMatch(/Loading the catalog…/);
+      } finally {
+        delete writeProgressHooks.quietMs;
+      }
+    },
+    T,
+  );
+});
+
 describe("a scan's confirm sends the plan of the refusal it confirms (POST /api/scan)", () => {
   it(
     "a count needs the plan, and a plan that isn't the latest refused scan's starts no scan",

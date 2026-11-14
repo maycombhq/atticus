@@ -140,6 +140,14 @@ vi.mock("../src/api/client.js", async () => ({
           ],
         },
       };
+    // The hunt of beta.28.1 (S2): Apply to every repo that wrote, leaving facts out in two.
+    if (path === "/api/facts/apply-all") return { jobId: "job-11" };
+    if (path === "/api/jobs/job-11")
+      return {
+        state: "done",
+        errors: [],
+        result: { code: 0, leftOut: 7, leftOutRepos: 2, lines: ["Verified 3 repos: 1 passed."] },
+      };
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
     if (path.endsWith("/apply")) return { jobId: "job-1" };
     if (path === "/api/propose") return { jobId: "job-2" };
@@ -186,7 +194,8 @@ vi.mock("../src/api/client.js", async () => ({
   },
 }));
 const { COPY } = await import("../src/copy.js");
-const { ApplyAndPropose, onWorkChanged, Propose } = await import("../src/app/propose.js");
+const { ApplyAndPropose, onWorkChanged, Propose, runApplyAll } =
+  await import("../src/app/propose.js");
 const P = COPY.propose;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -425,4 +434,16 @@ it("a correction's Apply that left facts out says so in its flash too", async ()
   await tick();
   m.render();
   expect(flashed.map((f) => f.text)).toEqual([P.appliedFlashLeftOut("forge-leftout", 2)]);
+});
+
+it("Apply to every repo that left facts out says it applied, and how many in how many repos (S2)", async () => {
+  let held: { note?: { ok: boolean; text: string } } = {};
+  const set = (s: unknown) => {
+    held =
+      typeof s === "function" ? (s as (w: typeof held) => typeof held)(held) : (s as typeof held);
+  };
+  expect(await runApplyAll(set as never)).toBe(true);
+  expect(held.note).toEqual({ ok: true, text: COPY.appStep.appliedAllLeftOut(7, 2) });
+  expect(COPY.appStep.appliedAllLeftOut(7, 2)).toMatch(/7 facts left out in 2 repos/);
+  expect(COPY.appStep.appliedAllLeftOut(1, 1)).toMatch(/1 fact left out in 1 repo\b/);
 });
