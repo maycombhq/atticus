@@ -226,8 +226,8 @@ function editedGone(s: Step): Set<string> {
  * more than 200 in one build. What is above them, in words.
  */
 /**
- * Beta.28.1 (field hunt G1): the loose ends (Unresolved) the step removed that its build joins:
- * exactly one arrow the step added, from the loose end's owner, cites a line the loose end cites.
+ * Beta.28.1 (field hunt G1): the loose ends (Unresolved) the step removed that a person's pairing
+ * joins: exactly one arrow the step added (`joined-by-person`), from the loose end's owner, cites a line the loose end cites.
  * The guard counts none of them toward its limits (they are still listed with the removals).
  */
 function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
@@ -240,7 +240,11 @@ function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
   const before = new Set([...records(s.before.generated).values()].map(recId));
   const at = new Map<string, Cited[]>();
   for (const r of records(s.after.generated).values() as unknown as Iterable<Cited>)
-    if (r.kind === "Interface" && !before.has(recId(r)))
+    if (
+      r.kind === "Interface" &&
+      !before.has(recId(r)) &&
+      ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person")
+    )
       for (const k of new Set(lines(r))) at.set(k, [...(at.get(k) ?? []), r]);
   const out = new Set<string>();
   for (const [id, r] of gone as unknown as Map<string, Cited>) {

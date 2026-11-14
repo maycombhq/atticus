@@ -289,6 +289,7 @@ export async function verifyWritePreview(
     build: p.build,
     slots: p.snap,
     check: true,
+    keepNoReads: true,
   });
   const waits = checked.guard.refused?.reasons.includes("large-removals")
     ? checked.guard.refused.allowRemovals

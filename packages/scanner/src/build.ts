@@ -1723,9 +1723,9 @@ function evidenceLines(r: CatalogRecord): string[] {
 }
 
 /**
- * Beta.28.1 (field hunt G1): the arrow this build adds for a loose end's call, as
- * `Interface/<id>`: exactly one added arrow, from the loose end's owner, cites a line the loose
- * end cites. A loose end with no line, no owner, or more than one such arrow says nothing.
+ * Beta.28.1 (field hunt G1): the arrow a person's pairing joins that this build adds for a loose
+ * end's call, as `Interface/<id>`: exactly one such added arrow (flagged `joined-by-person`), from
+ * the loose end's owner, cites a line the loose end cites. A loose end with no line, no owner, or more than one such arrow says nothing.
  */
 function joinedArrowOf(
   r: CatalogRecord,
@@ -2008,6 +2008,8 @@ export async function guardBuild(
      * of the files again when every file still has the size and time it had (`sameFilesAs`).
      */
     lastRead?: CatalogFilesRead;
+    /** Beta.28.1: a preview's guard keeps no read cache of the catalog (it writes nothing). */
+    keepNoReads?: boolean;
   },
 ): Promise<GuardResult> {
   const mark = phaseClock("guards: ");
@@ -2023,7 +2025,13 @@ export async function guardBuild(
   const lastRecords = async (): Promise<readonly CatalogRecord[]> =>
     sameFilesAs(o.lastRead, target.generated, onDisk)
       ? o.lastRead!.records
-      : (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records;
+      : (
+          await readCatalog(target.generated, {
+            cacheRoot: root,
+            fresh: true,
+            ...(o.keepNoReads ? { keep: false } : {}),
+          })
+        ).records;
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
   const again = (flag: string) => `${o.command} ${flag}`;
@@ -2172,12 +2180,13 @@ export async function guardBuild(
     // what each is, so a removal can say what comes back in its place; and their count by repo.
     // Components first: an arrow or an endpoint is compared through the component's new id.
     const addedNow = b.records.filter((x) => !lastTails.has(recordPath(x)));
-    // Beta.28.1 (field hunt G1): the arrows this build adds, by each line they cite: a loose end
-    // (Unresolved) citing a line an added arrow cites, of the same caller, is that call joined
-    // now (a person's pairing, an answer), not a loss.
+    // Beta.28.1 (field hunt G1): the arrows a person's pairing joins that this build adds, by
+    // each line they cite: a loose end (Unresolved) citing a line such an arrow cites, of the same
+    // caller, is that call joined now by the person, not a loss. An answer's join (words that may
+    // make a box nobody meant) still goes through the limits.
     const addedArrowsAt = new Map<string, CatalogRecord[]>();
     for (const x of addedNow)
-      if (x.kind === "Interface")
+      if (x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"))
         for (const k of new Set(evidenceLines(x))) {
           const l = addedArrowsAt.get(k);
           if (l) l.push(x);
@@ -3013,6 +3022,8 @@ export async function buildAndWrite(
      * still has the size and time that read found (beta.28.1: one read of the catalog a write).
      */
     read?: CatalogFilesRead;
+    /** Beta.28.1: with `check`, keep no read cache of the catalog either (a preview's). */
+    keepNoReads?: boolean;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
@@ -3058,6 +3069,7 @@ export async function buildAndWrite(
     ...(o.target ? { target: o.target } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+    ...(o.keepNoReads ? { keepNoReads: true } : {}),
   });
   mark("guards");
   // The confirm's list worked out again here, under the caller's lock: the guard as a refusal
