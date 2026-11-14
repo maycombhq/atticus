@@ -49,6 +49,9 @@ export async function captured(f: (io: Output) => Promise<number>): Promise<Ran>
       err.push(l);
       printToCurrent(l);
     },
+    // Beta.28.1 (field hunt G2): a step's progress (a build pass by pass) goes to the job's
+    // Console only, never into the lines or errors the job answers with.
+    progress: (l) => printToCurrent(l),
   });
   return { code, out, err };
 }

@@ -45,6 +45,7 @@ import {
 import { gitUser } from "@maycombhq/workspace";
 import { buildPlanOf, pageChanged, prunePlanHash, undoPlanHash } from "./build-report.js";
 import type { Output } from "./commands.js";
+import { catalogBuildProgress } from "./write-progress.js";
 
 /**
  * The build's own commands (ADR 0195, ticket CS2): `atticus catalog build [--check]` makes
@@ -165,22 +166,36 @@ export async function catalogBuild(
 ): Promise<number> {
   const command = "atticus catalog build";
   const run = async () => {
+    // G2: each step said as it starts, with a heartbeat, and Stop heard until the write.
+    const { progress, hooks } = catalogBuildProgress(io);
+    try {
+      return await steps(hooks, progress);
+    } finally {
+      progress.end();
+    }
+  };
+  const steps = async (
+    hooks: ReturnType<typeof catalogBuildProgress>["hooks"],
+    progress: ReturnType<typeof catalogBuildProgress>["progress"],
+  ) => {
     // The app's confirm: the build guarded as the page listed it (no counts), and written only
     // when it lists what the page did; the same build is then written, with the counts.
     let build: BuildAndWrite["build"] | undefined;
     if (o.plan !== undefined && !o.check) {
-      const listed = await buildAndWrite(root, { command, check: true });
+      const listed = await buildAndWrite(root, { command, check: true, ...hooks });
       if (buildPlanOf(listed.guard) !== o.plan)
         return refuseChanged(io, o.json, pageChanged("what the build would remove or discard"));
       build = listed.build;
     }
     const r = await buildAndWrite(root, {
       command,
+      ...hooks,
       ...(build ? { build } : {}),
       ...(o.check ? { check: true } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
     });
+    if (!o.check && !r.guard.refused && !r.changed) progress.end({ done: true });
     if (o.check) {
       if (o.json)
         io.out(JSON.stringify({ upToDate: r.upToDate, sources: r.build.sources }, null, 2));
@@ -1059,7 +1074,11 @@ export async function buildAfterDecisions(
   } = {},
 ): Promise<number> {
   const command = "atticus catalog build";
-  const listed = await buildAndWrite(root, { command, check: true });
+  // G2: this build's steps said too (the check before the write), with Stop.
+  const { progress, hooks } = catalogBuildProgress(io);
+  const listed = await buildAndWrite(root, { command, check: true, ...hooks }).finally(() =>
+    progress.end(),
+  );
   const r = listed.guard.refused;
   const removals = listed.guard.removals;
   const byInput = (x: (typeof removals)[number]) =>
