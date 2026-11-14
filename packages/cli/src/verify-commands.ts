@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   factsDirOf,
   factsRelOf,
@@ -44,6 +44,7 @@ import {
   APPLIED_WITH_LEFT_OUT,
   leftOutLines,
   leftOutOf,
+  leftOutRefusedLines,
   type LeftOutFact,
 } from "./verify-left-out.js";
 
@@ -349,7 +350,14 @@ export async function verifyCommand(
     io.err(noCheckoutLine(repo));
     return 2;
   }
-  const commit = o.commit ?? (await headOf(dir));
+  // The hunt of beta.28.1 (F1): a clone with no .git of its own (a copy under workspace/) has no
+  // commit to tell; git would answer the metarepo's HEAD, a commit its facts were never read at.
+  const ownGit = dir === root || existsSync(join(dir, ".git"));
+  if (!o.commit && !ownGit)
+    io.err(
+      `Atticus can't tell ${repo}'s commit: ${relative(root, dir).replace(/\\/g, "/")} has no .git of its own (a copy, not a clone), so its facts are checked at no commit. Sync the repos to clone it again.`,
+    );
+  const commit = o.commit ?? (ownGit ? await headOf(dir) : undefined);
   const source = dirSource(dir);
   // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
   // where every file they cite is unchanged since, and read again where one changed.
@@ -434,8 +442,17 @@ export async function verifyCommand(
   // refuse the write: nothing says what they backed. The review of beta.28.1 (S4): so do
   // questions or reviewed lines refused with no fact rejected, as before; with facts left out,
   // they are said beside them.
+  // The hunt of beta.28.1 (F1): never a partial write under a commit its facts weren't read at:
+  // a fact rejected as read at another commit, or every fact rejected, refuses it as before.
+  const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").length;
+  const noneKept = report.accepted.length === 0;
   const leftOut =
-    keepFacts && !o.whole && badLines.length === 0 && report.rejected.length > 0
+    keepFacts &&
+    !o.whole &&
+    badLines.length === 0 &&
+    report.rejected.length > 0 &&
+    !otherCommit &&
+    !noneKept
       ? await leftOutOf(root, repo, report)
       : undefined;
   const partial = leftOut?.ok ? leftOut : undefined;
@@ -479,7 +496,22 @@ export async function verifyCommand(
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
   const n = report.rejected.length;
-  const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  const whyWhole = otherCommit
+    ? ` (${otherCommit === 1 ? "1 fact was" : `${otherCommit} facts were`} read at another commit than ${commit ?? "this clone's"}: read ${repo} again at it with atticus map ${repo}, then Apply)`
+    : n && noneKept
+      ? " (every fact of the read was rejected, so nothing of it would be written)"
+      : "";
+  const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected${whyWhole}` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  // N2: a partial write refused (guards, the lock) says the facts it would have left out.
+  const refusedLeftOut = () =>
+    partial
+      ? leftOutRefusedLines(
+          repo,
+          partial.leftOut,
+          { facts: `${rel}/${repo}.jsonl`, rejected: `${rel}/${repo}.rejected.jsonl` },
+          SHOWN,
+        )
+      : [];
   if (o.json) {
     let written;
     let refusedBuild: unknown;
@@ -501,6 +533,7 @@ export async function verifyCommand(
         },
         { ...io, out: () => undefined },
       );
+      if (!written) for (const l of refusedLeftOut()) io.err(l);
       if (!written && !refusedBuild) return 1;
     } else if (o.write) io.err(rejectedNote);
     io.out(
@@ -793,5 +826,6 @@ export async function verifyCommand(
     o.onLeftOut?.(partial.leftOut);
     return APPLIED_WITH_LEFT_OUT;
   }
+  if (!written) for (const l of refusedLeftOut()) io.err(l);
   return written ? 0 : 1;
 }

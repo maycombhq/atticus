@@ -106,13 +106,7 @@ export function leftOutLines(
   const out = [
     `Applied to ${repo} with ${n} ${n === 1 ? "fact" : "facts"} left out (rejected; ${kept ? `${kept} kept as the last Apply wrote ${kept === 1 ? "it" : "them"}, so nothing ${kept === 1 ? "it backs is" : "they back is"} removed` : leftOut.some((l) => l.had && l.lost?.length) ? "none kept: a fact one names is gone, so what they back is removed with it" : "none was in the catalog before"}):`,
   ];
-  for (const l of leftOut.slice(0, shown))
-    out.push(
-      l.lost?.length
-        ? `  left out: ${l.id} (${l.code}): it names ${l.lost.map((x) => `${x.id}, which ${x.leftOut ? "is left out too" : "the read no longer has"}`).join("; and ")}: put ${l.lost.length === 1 ? "it" : "them"} back or drop ${l.id} in ${files.facts}`
-        : `  left out: ${l.id} (${l.code}): fix it in ${files.facts}, reading ${l.file}:${l.line} again${l.kept ? " (its earlier copy stays in the catalog)" : ""}`,
-    );
-  if (n > shown) out.push(`  ... and ${n - shown} more (all in ${files.rejected})`);
+  out.push(...leftOutItems(leftOut, files, shown));
   if (alsoRefused)
     out.push(
       `  ${alsoRefused} ${alsoRefused === 1 ? "question or reviewed line was" : "questions or reviewed lines were"} refused too (listed above, each with why in ${files.rejected}).`,
@@ -121,4 +115,40 @@ export function leftOutLines(
     `Each one's reason is in ${files.rejected}. Fix them and run atticus verify ${repo} --write again to put them in.`,
   );
   return out;
+}
+
+/** One line for each of the first `shown` facts left out, and how many more there are. */
+function leftOutItems(
+  leftOut: readonly LeftOutFact[],
+  files: { facts: string; rejected: string },
+  shown: number,
+): string[] {
+  const out = leftOut
+    .slice(0, shown)
+    .map((l) =>
+      l.lost?.length
+        ? `  left out: ${l.id} (${l.code}): it names ${l.lost.map((x) => `${x.id}, which ${x.leftOut ? "is left out too" : "the read no longer has"}`).join("; and ")}: put ${l.lost.length === 1 ? "it" : "them"} back or drop ${l.id} in ${files.facts}`
+        : `  left out: ${l.id} (${l.code}): fix it in ${files.facts}, reading ${l.file}:${l.line} again${l.kept ? " (its earlier copy stays in the catalog)" : ""}`,
+    );
+  if (leftOut.length > shown)
+    out.push(`  ... and ${leftOut.length - shown} more (all in ${files.rejected})`);
+  return out;
+}
+
+/**
+ * The hunt of beta.28.1 (N2): a write that would have left facts out and was then refused (the
+ * build's guards, the scan's lock) wrote nothing; the facts to fix are said all the same.
+ */
+export function leftOutRefusedLines(
+  repo: string,
+  leftOut: readonly LeftOutFact[],
+  files: { facts: string; rejected: string },
+  shown: number,
+): string[] {
+  const n = leftOut.length;
+  return [
+    `Not applied to ${repo}; besides why, ${n} ${n === 1 ? "fact was" : "facts were"} rejected and would be left out:`,
+    ...leftOutItems(leftOut, files, shown),
+    `Fix them from ${files.rejected} and run atticus verify ${repo} --write again.`,
+  ];
 }
