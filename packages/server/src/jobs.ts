@@ -365,6 +365,11 @@ export class JobManager {
         if (end.length) line(end.join("\n"));
       }
       if (job.state === "cancelled") line(STOPPED);
+      // The hunt of beta.28.1: its last word is how it ended: "Stopped." for a stop (never the
+      // "Stopping…" it said while stopping), and a job done is done of every step it counted.
+      if (job.state === "cancelled") job.progress = { ...job.progress, message: STOPPED };
+      else if (job.state === "done" && job.progress.done < job.progress.total)
+        job.progress = { ...job.progress, done: job.progress.total };
       delete job.stopping;
       job.finishedAt = this.now().toISOString();
       ofKind.delete(id);

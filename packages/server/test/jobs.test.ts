@@ -250,6 +250,28 @@ describe("JobManager commit", () => {
     await jobs.settle(job.id);
   });
 
+  it("a stopped job ends saying Stopped, not Stopping…; a done one is done of all its steps", async () => {
+    const jobs = new JobManager(() => undefined);
+    const stopped = jobs.start("work", async (c) => {
+      c.progress(0, 2, "Reading the estate's facts");
+      for (let i = 0; i < 100; i++) {
+        throwIfCancelled();
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    jobs.cancel(stopped.id);
+    const end = await jobs.settle(stopped.id);
+    expect(end.state).toBe("cancelled");
+    expect(end.progress.message).toBe("Stopped.");
+    const done = jobs.start("work", async (c) => {
+      c.progress(0, 1, "Joining the estate's calls and APIs");
+      return {};
+    });
+    const ok = await jobs.settle(done.id);
+    expect(ok.progress).toMatchObject({ done: 1, total: 1 });
+  });
+
   it("closing the app past a job's commit says no Stop after its record ended", async () => {
     const recorded: string[] = [];
     const jobs = new JobManager(() => undefined, undefined, {
