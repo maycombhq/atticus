@@ -204,10 +204,17 @@ function pathScore(
     const same = a.filter((x, i) => !isWild(x) && x === b[i]).length;
     return { score: (0.55 + 0.2 * (lits ? same / lits : 1)) * k, why: "parameter" };
   }
-  const tail = (long: string[], short: string[]) =>
-    short.length > 0 &&
-    long.length > short.length &&
-    short.every((x, i) => eq(x, long[long.length - short.length + i]!));
+  // Beta.28.1 (field hunt G3): one path the other's tail only where they share a literal there
+  // (a resource's name): variables lining up with anything, or the version segment alone, make
+  // every API of the box a "prefix" of `/v1/fees/{id}`, all at the confident score.
+  const tail = (long: string[], short: string[]) => {
+    if (!short.length || long.length <= short.length) return false;
+    const at = long.length - short.length;
+    return (
+      short.every((x, i) => eq(x, long[at + i]!)) &&
+      short.some((x, i) => !isWild(x) && !/^v\d+$/.test(x) && x === long[at + i])
+    );
+  };
   if (shaped && (tail(b, a) || tail(a, b))) return { score: 0.85 * k, why: "prefix" };
   const wa = wordsOf(call.path);
   const wb = wordsOf(api.path);

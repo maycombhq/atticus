@@ -133,6 +133,73 @@ describe("how likely a call is an API", () => {
   });
 });
 
+describe("a prefix match needs a shared literal (field hunt G3)", () => {
+  // The field's shape: a call `GET /v1/fees/{id}` beside APIs that share only the version.
+  const fees = { method: "GET", path: "/v1/fees/{id}" };
+  const others = [
+    "/v1/balances/{id}/transfer-0",
+    "/v1/balances/{id}/transfer-100",
+    "/v1/audits/{id}/audit-13",
+  ];
+
+  it("is no prefix where only variables line up, or only the version segment is shared", () => {
+    for (const path of others)
+      expect(pairScore(fees, { method: "GET", path })?.why, path).not.toBe("prefix");
+    expect(pairScore(fees, { method: "GET", path: "/v1/{id}/{x}/{y}" })?.why).not.toBe("prefix");
+    // A real tail: the call's resource and its variable, under a gateway's own prefix.
+    expect(pairScore(fees, { method: "GET", path: "/gw/v1/fees/{feeId}" })).toEqual({
+      score: 0.85,
+      why: "prefix",
+    });
+  });
+
+  it("still matches Spring's leading variables ({name:regex}) by the rest of the path", () => {
+    expect(
+      pairScore(
+        { method: "GET", path: "/forge-instruments/1.0/instruments/ping" },
+        { method: "GET", path: "/{moduleName:.+}/{moduleApiVersion:.+}/instruments/ping" },
+      ),
+    ).toEqual({ score: 0.9, why: "prefix" });
+  });
+
+  it("never pre-ticks a call whose best suggestions tie, and suggests none of them", () => {
+    const c = linkCandidates({
+      from: "forge-fees",
+      facts: [
+        {
+          kind: "call",
+          id: "c-fee",
+          repo: "forge-fees",
+          commit: "c0ffee1",
+          callType: "rest",
+          method: "GET",
+          path: "/v1/fees/{id}",
+          cite: {
+            file: "src/Fees.java",
+            line: 3,
+            value: "/v1/fees/{id}",
+            quote: '"/v1/fees/{id}"',
+          },
+          verified: "line",
+          by: "assistant",
+          conf: "declared",
+        } as never,
+      ],
+      join: { joins: [], asks: [], misses: [], outside: [], left: [] } as never,
+      apis: [...others, "/gw/fees/{a}", "/edge/fees/{b}"].map((path, i) => ({
+        id: `e-${i}`,
+        method: "GET",
+        path,
+      })),
+      to: { repo: "forge-gw" },
+    });
+    const call = c.calls.find((x) => x.fact === "c-fee")!;
+    expect(call.confident).toBeUndefined();
+    expect(call.suggestion).toBeUndefined();
+    expect(call.suggestions?.map((s) => s.api).sort()).toEqual(["e-3", "e-4"]);
+  });
+});
+
 describe("the candidates of two boxes", () => {
   it("lists A's loose calls with what the join said, B's APIs, and a suggestion for each", () => {
     const join = joinFacts({ repos, explain: true });
