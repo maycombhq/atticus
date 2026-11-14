@@ -92,9 +92,6 @@ export async function leftOutOf(
   return { ok: true, facts: [...report.accepted, ...back], leftOut };
 }
 
-/** One fact's line among those `leftOutLines` says (the app counts them). */
-export const LEFT_OUT_LINE = /^ {2}left out: /;
-
 /** The lines a written `verify --write` says of the facts it left out, each with its file. */
 export function leftOutLines(
   repo: string,

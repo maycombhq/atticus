@@ -84,7 +84,7 @@ import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
 import { syncNextOf } from "./sync-next.js";
 import { changeNextStep } from "./cockpit.js";
-import { APPLIED_WITH_LEFT_OUT, LEFT_OUT_LINE } from "./verify-left-out.js";
+import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
 import { changeProblems, missingChangeWords } from "./change-problems.js";
 import {
   markCheckedByApp,
@@ -867,6 +867,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         return asJob(`Applying to ${repo}`, async () => {
           const { lastBuildOf } = await import("./build-report.js");
           const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+          // The hunt of beta.28.1 (S1): the count of facts left out, told by verify itself; its
+          // lines show only the first few.
+          let leftOut = 0;
           const ran = await run((io) =>
             verifyCommand(
               root,
@@ -875,6 +878,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 write: true,
                 verbose: false,
                 json: false,
+                onLeftOut: (l) => (leftOut = l.length),
                 ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
                 ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
                 ...(b.plan !== undefined ? { plan: b.plan } : {}),
@@ -890,7 +894,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               ...ran,
               code: 0,
               // The count the app's Apply says ("Applied, N facts left out"), its lines below it.
-              extra: { leftOut: ran.out.filter((l) => LEFT_OUT_LINE.test(l)).length },
+              extra: { leftOut },
             };
           // The build this Apply ran refused (a large removal, a hand edit): its listing, which
           // the app's confirm step shows and confirms with its counts. Only this job's report.

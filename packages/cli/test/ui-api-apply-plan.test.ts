@@ -287,6 +287,30 @@ describe("an Apply that leaves rejected facts out is applied, with their count (
     },
     T,
   );
+
+  it(
+    "12 facts left out are counted 12, not the 5 lines shown (the hunt of beta.28.1, S1)",
+    async () => {
+      const root = await metarepo();
+      const { job } = await serve(root);
+      const first = await job(APPLY);
+      const refused = first.result!.refused!;
+      const ok = await job(APPLY, { allowRemovals: refused.allowRemovals, plan: refused.plan });
+      expect(ok.result!.code, ok.result!.lines.join("\n")).toBe(0);
+      const bad = JSON.parse(
+        readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!,
+      ) as { id: string };
+      const facts = join(root, "facts", "forge-ledger.jsonl");
+      const twelve = Array.from({ length: 12 }, (_, i) =>
+        JSON.stringify({ ...bad, id: `${bad.id}-${i + 1}` }),
+      );
+      writeFileSync(facts, readFileSync(facts, "utf8") + twelve.join("\n") + "\n");
+      const left = await job(APPLY);
+      expect(left.result!.code, left.result!.lines.join("\n")).toBe(0);
+      expect((left.result as { leftOut?: number }).leftOut).toBe(12);
+    },
+    T,
+  );
 });
 
 describe("a scan's confirm sends the plan of the refusal it confirms (POST /api/scan)", () => {

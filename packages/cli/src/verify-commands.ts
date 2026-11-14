@@ -40,7 +40,12 @@ import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 import { noCheckoutLine } from "./sync-next.js";
-import { APPLIED_WITH_LEFT_OUT, leftOutLines, leftOutOf } from "./verify-left-out.js";
+import {
+  APPLIED_WITH_LEFT_OUT,
+  leftOutLines,
+  leftOutOf,
+  type LeftOutFact,
+} from "./verify-left-out.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -106,6 +111,12 @@ export interface VerifyCommandOptions {
    * message. Past it the command stops with words, rather than being killed without any.
    */
   ceilingBytes?: number;
+  /**
+   * Told the facts a written `--write` left out (exit 3), all of them: the app's Apply counts
+   * them from here, never from the lines printed, which show only the first few (the hunt of
+   * beta.28.1, S1).
+   */
+  onLeftOut?: (leftOut: readonly LeftOutFact[]) => void;
 }
 
 /**
@@ -500,7 +511,10 @@ export async function verifyCommand(
       ),
     );
     if (refusedBuild) return 1;
-    if (written && partial) return APPLIED_WITH_LEFT_OUT;
+    if (written && partial) {
+      o.onLeftOut?.(partial.leftOut);
+      return APPLIED_WITH_LEFT_OUT;
+    }
     return failed ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
@@ -762,6 +776,7 @@ export async function verifyCommand(
       qProblems.length + reviewedBad.length,
     ))
       io.out(l);
+    o.onLeftOut?.(partial.leftOut);
     return APPLIED_WITH_LEFT_OUT;
   }
   return written ? 0 : 1;
