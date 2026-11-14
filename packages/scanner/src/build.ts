@@ -621,10 +621,10 @@ export interface Build {
     /** The record ids a current alias decision folds into its target (a removal it explains). */
     folded?: string[];
     /**
-     * Beta.28.1: the features `foldsAway` left out, folded into a feature that couldn't take
-     * them (one the overlay alone keeps), and the problems of the aliases that did it.
+     * Beta.28.1: the features `foldsAway` left out, folded into a feature only the legacy
+     * overlay keeps, and the aliases that did it.
      */
-    stranded?: { id: string; into: string; detected: boolean; problems: string[] }[];
+    stranded?: { id: string; into: string; decisions: string[] }[];
     problems: CuratedProblem[];
   };
   /** Curated decisions whose target isn't in the build: kept in catalog/curated, applied when it returns. */
@@ -668,7 +668,11 @@ function endReposOf(records: Iterable<CatalogRecord>): Map<string, string[]> {
  * The repos at an arrow's ends whose every repo is gone (removed from the manifests or archived),
  * by the ends' component or system ids: a legacy join with one of them leaves (point 6).
  */
-function endsGone(r: CatalogRecord, ends: Map<string, string[]>, live: Set<string>): string[] {
+export function endsGone(
+  r: CatalogRecord,
+  ends: Map<string, string[]>,
+  live: Set<string>,
+): string[] {
   if (r.kind !== "Interface") return [];
   const x = r as unknown as { from?: string; to?: string };
   const out: string[] = [];
@@ -701,11 +705,12 @@ export function withUnslottedEnds(
   }
   if (!unslotted.size) return { ends, guessed: [] };
   const repos = [...unslotted].sort(cmpText);
-  // Beta.28.1 (seed 1542546636, and its review): an end is of the repos the evidence of every
-  // arrow naming it agrees on, on its side (the caller's for `from`, the callee's for `to`); an
-  // arrow with no evidence on that side says nothing of it. When none says anything, or they
-  // disagree, it may be of any of them: a guess, which the removal words as one.
-  const agreed = new Map<string, string[] | undefined>();
+  // Beta.28.1 (seed 1542546636, and its reviews): an end is of the repos the arrows naming it
+  // name on its side (the caller's for `from`, the callee's for `to`), all of them: an end of
+  // several repos (a system's id) stays while one of them may be live, whichever arrow named it
+  // (point 6). An arrow with no evidence on that side may be of any of them. An end of more
+  // than one repo is a guess, which the removal words as one.
+  const named = new Map<string, Set<string>>();
   for (const r of legacy) {
     if (r.kind !== "Interface") continue;
     const x = r as unknown as { from?: string; to?: string };
@@ -714,22 +719,21 @@ export function withUnslottedEnds(
       [x.to, "callee"],
     ] as const) {
       if (!end || ends.has(end) || held.has(end)) continue;
-      const named = new Set(
+      const own = new Set(
         (r.evidence ?? []).filter((e) => e.side === side && e.repo).map((e) => e.repo!),
       );
-      const mine = repos.filter((repo) => named.has(repo));
-      const was = agreed.get(end);
-      if (!mine.length) {
-        if (!agreed.has(end)) agreed.set(end, undefined);
-      } else agreed.set(end, was === undefined ? mine : was.filter((repo) => mine.includes(repo)));
+      const mine = repos.filter((repo) => own.has(repo));
+      const acc = named.get(end) ?? new Set<string>();
+      for (const repo of mine.length ? mine : repos) acc.add(repo);
+      named.set(end, acc);
     }
   }
   const out = new Map(ends);
   const guessed: string[] = [];
-  for (const [end, mine] of agreed) {
-    const known = mine?.length ? mine : undefined;
-    out.set(end, known ?? repos);
-    if (!known && repos.length > 1) guessed.push(end);
+  for (const [end, acc] of named) {
+    const mine = repos.filter((repo) => acc.has(repo));
+    out.set(end, mine);
+    if (mine.length > 1) guessed.push(end);
   }
   return { ends: out, guessed: guessed.sort(cmpText) };
 }
@@ -750,7 +754,7 @@ export function endGoneWords(
     const names = gone.map((g) => g.repo);
     return {
       words: [
-        `its end is of ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}, each archived or removed`,
+        `its end is of ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}, each archived or out of the manifests`,
       ],
       kinds,
     };
@@ -774,44 +778,55 @@ export function foldsAway(
   aliases: readonly { id: string; target: string; value: unknown }[],
   kept: ReadonlySet<string>,
   detected: ReadonlySet<string>,
-): Map<string, { into: string; detected: boolean; decisions: string[] }> {
+): Map<string, { into: string; decisions: string[] }> {
   const into = new Map<string, { target: string; decision: string }[]>();
   for (const d of aliases)
     for (const v of Array.isArray(d.value) ? d.value : [d.value])
       if (typeof v === "string" && v.startsWith("feature.") && v !== d.target)
         into.set(v, [...(into.get(v) ?? []), { target: d.target, decision: d.id }]);
-  const out = new Map<string, { into: string; detected: boolean; decisions: string[] }>();
-  /** Where `id` ends up: the first kept feature no alias folds, along the chain. */
+  /**
+   * Where `id` ends up: along the chain, the last feature the catalog keeps (one an alias folds
+   * on into a feature in no record stays itself). Undefined when no kept feature takes it.
+   */
+  // A feature on a cycle of aliases folds into nothing here (which one stays isn't said).
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set<string>();
+    const todo = [from];
+    while (todo.length) {
+      for (const x of into.get(todo.pop()!) ?? []) {
+        if (x.target === to) return true;
+        if (!seen.has(x.target)) {
+          seen.add(x.target);
+          todo.push(x.target);
+        }
+      }
+    }
+    return false;
+  };
+  const cyclic = new Set([...into.keys()].filter((id) => reaches(id, id)));
   const resolve = (id: string, seen: Set<string>): { to: string; via: string[] } | undefined => {
     for (const x of [...(into.get(id) ?? [])].sort((a, b) => cmpText(a.decision, b.decision))) {
-      if (seen.has(x.target)) continue;
-      if (!into.has(x.target)) {
-        if (kept.has(x.target)) return { to: x.target, via: [x.decision] };
-        continue;
-      }
-      const next = resolve(x.target, new Set([...seen, x.target]));
+      if (seen.has(x.target) || cyclic.has(x.target)) continue;
+      const next = into.has(x.target) ? resolve(x.target, new Set([...seen, x.target])) : undefined;
       if (next) return { to: next.to, via: [x.decision, ...next.via] };
+      if (kept.has(x.target)) return { to: x.target, via: [x.decision] };
     }
     return undefined;
   };
+  const out = new Map<string, { into: string; decisions: string[] }>();
   for (const id of [...into.keys()].sort(cmpText)) {
-    if (!kept.has(id)) continue;
+    if (!kept.has(id) || cyclic.has(id)) continue;
     const r = resolve(id, new Set([id]));
-    if (r) out.set(id, { into: r.to, detected: detected.has(r.to), decisions: r.via });
+    // Only into a feature the pass didn't detect: what the pass left beside a detected one (an
+    // alias of an alias it applied in another order) is the pass's, as with no legacy records.
+    if (r && !detected.has(r.to)) out.set(id, { into: r.to, decisions: r.via });
   }
   return out;
 }
 
 /** What a removal says of a feature `foldsAway` left out: where its entry points went (nowhere). */
-export function foldWords(s: {
-  into: string;
-  detected: boolean;
-  problems: readonly string[];
-}): string {
-  const head = s.detected
-    ? `folded by an alias into ${s.into}, which couldn't take it`
-    : `folded by an alias into a feature that isn't detected now (${s.into})`;
-  return `${head}: its entry points are in no feature${s.problems.length ? ` (${s.problems.join("; ")})` : ""}`;
+export function foldWords(s: { into: string; decisions: readonly string[] }): string {
+  return `folded by ${s.decisions.join(" and ")} into ${s.into}, which isn't a detected feature now: its entry points are in no feature (remove the alias, or point it at a detected feature)`;
 }
 
 /** One repo's slot files on disk, relative to the root (for prune and the orphan report). */
@@ -1455,14 +1470,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     new Set(overlaid.filter((r) => r.kind === "Capability").map((r) => r.id)),
     detectedNow,
   );
-  const stranded = [...away].map(([id, x]) => ({
-    id,
-    into: x.into,
-    detected: x.detected,
-    problems: found.problems
-      .filter((p) => x.decisions.includes(p.decision))
-      .map((p) => `${p.decision}: ${p.message}`),
-  }));
+  const stranded = [...away].map(([id, x]) => ({ id, ...x }));
   records = overlaid.filter((r) => !(r.kind === "Capability" && away.has(r.id)));
 
   mark("5 legacy");
