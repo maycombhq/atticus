@@ -10,7 +10,9 @@ import {
   factsSlotOf,
   factsSnapshotWrites,
   loadBuildInputs,
+  readCatalog,
 } from "@maycombhq/scanner";
+import { catalogDirOf } from "@maycombhq/core";
 import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
@@ -89,8 +91,12 @@ const write = async (edit: number) => {
 
 describe(`one repo changed on a ${REPOS}-repo estate (beta.28.1)`, () => {
   it("writes the catalog inside the budget", async () => {
-    // The first write after the cold build reads every record file once into the parse cache.
-    expect((await write(1))?.written.written).toBeGreaterThan(0);
+    // The cold build leaves no parse kept: one read fills the cache, as the first command after
+    // a build does (a write in its place made this file take 30 s longer).
+    expect(
+      (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records
+        .length,
+    ).toBeGreaterThan(10_000);
     const { s, value } = await cpu("verify --write", () => write(2));
     expect(value?.written.written).toBeGreaterThan(0);
     expect(value?.written.unchanged).toBeGreaterThan(10_000);
@@ -119,26 +125,30 @@ describe(`one repo changed on a ${REPOS}-repo estate (beta.28.1)`, () => {
 /**
  * The build's work grows with the estate, not with its square: the same build in memory (no
  * build cache, nothing read from or written to a catalog) of 6 repos and of 18 (about 9,700 and
- * 29,000 records), by CPU time, each the better of two runs (a shared runner's stall in one run
- * isn't the build's). Linear work is about 3 times; before beta.28.1 it was about 9 times (at 20
- * and 60 repos, 18 s and 167 s). The bound and the ratios measured are below, at the assertion.
+ * 29,000 records; clusters of 3 repos, so the features grow with the estate as an estate's do).
+ * What is compared is the time of the passes the squared searches were in (the projection and
+ * estate join, the joins applied, the merge, the features: buildPhases' clock), not the whole
+ * build, whose files and build.json still grow faster than the estate (each record lists its
+ * sources; build.json lists each source once from beta.28.2). Linear work is 3 times.
+ *
+ * Measured on this build machine (2 shared CPUs, load 6 to 10): the passes 2.5 times; the whole
+ * build 4.9 to 5.6 times, and 6.9 to 7.5 with main's searches (63869566). A first pair of builds
+ * is enough when it passes; a second pair (each size's better time is kept) only when it doesn't,
+ * so a runner's stall in one build fails nothing. The test takes about 25 s here.
  */
-/** The phases the squared searches were in (buildPhases' names). */
-const PASSES = /facts projection|joins applied|3 merge|3 features/;
-
 describe("the build's time grows with the estate (beta.28.1)", () => {
-  it("builds 18 repos in under 5 times the CPU time of 6", async () => {
+  it("runs the passes of 18 repos in under 4 times the time of 6", async () => {
     const SIZES = [6, 18] as const;
-    const at18 = await mkdtemp(join(tmpdir(), "atticus-big-growth-"));
+    const BOUND = 4;
+    const dir18 = await mkdtemp(join(tmpdir(), "atticus-big-growth-"));
     try {
       // An estate of its own, listing 18 repos (a build of 6 has no slot for the others).
-      const { root: r18, options: o18 } = await makeBigEstate(at18, {
+      const { root: r18, options: o18 } = await makeBigEstate(dir18, {
         repos: SIZES[1],
         checkouts: 0,
       });
-      const at = async (n: number) => {
+      const inputs = async (n: number) => {
         const facts = new Map<string, ReturnType<typeof factsSlotOf>>();
-        // Clusters of 3 repos: its features grow with the estate, as an estate's do.
         const o = { ...o18, repos: n, clusters: n / 3 };
         for (let r = 0; r < n; r++) {
           const id = bigRepoId(r);
@@ -148,44 +158,43 @@ describe("the build's time grows with the estate (beta.28.1)", () => {
           });
           facts.set(id, factsSlotOf(id, a!.text!, b!.text!));
         }
-        const i = await loadBuildInputs(r18, {
-          slots: (on) => ({ ...on, facts: facts as never }),
-        });
+        return loadBuildInputs(r18, { slots: (on) => ({ ...on, facts: facts as never }) });
+      };
+      const of = { small: await inputs(SIZES[0]), big: await inputs(SIZES[1]) };
+      const run = async (size: "small" | "big") => {
+        let passes = 0;
+        buildPhases.on = (p, ms) => {
+          if (PASSES.test(p)) passes += ms / 1000;
+        };
         buildCacheHooks.off = true;
         try {
-          const runs: { s: number; passes: number; records: number }[] = [];
-          for (const k of [1, 2]) {
-            let passes = 0;
-            buildPhases.on = (p, ms) => {
-              if (PASSES.test(p)) passes += ms / 1000;
-            };
-            const b = await cpu(`build of ${n} repos in memory (${k})`, () => buildCatalog(i));
-            buildPhases.on = undefined;
-            console.log(`big-estate-speed   its passes: ${passes.toFixed(2)} s`);
-            runs.push({ s: b.s, passes, records: b.value.records.length });
-          }
-          return {
-            s: Math.min(...runs.map((x) => x.s)),
-            passes: Math.min(...runs.map((x) => x.passes)),
-            records: runs[0]!.records,
-          };
+          const b = await cpu(`build of ${size} in memory`, () => buildCatalog(of[size]));
+          return { s: b.s, passes, records: b.value.records.length };
         } finally {
           buildCacheHooks.off = false;
           buildPhases.on = undefined;
         }
       };
       // A first build, not counted: the code compiled and the heap grown before either size.
-      await at(SIZES[0]);
-      const small = await at(SIZES[0]);
-      const big = await at(SIZES[1]);
+      await run("small");
+      let small = await run("small");
+      let big = await run("big");
       expect(big.records).toBeGreaterThan(2.5 * small.records);
+      const ratio = () => big.passes / small.passes;
+      if (ratio() >= BOUND) {
+        const [s2, b2] = [await run("small"), await run("big")];
+        small = s2.passes < small.passes ? s2 : small;
+        big = b2.passes < big.passes ? b2 : big;
+      }
       console.log(
-        `big-estate-speed growth: ${(big.s / small.s).toFixed(2)} (build), ${(big.passes / small.passes).toFixed(2)} (passes)`,
+        `big-estate-speed growth: the passes ${ratio().toFixed(2)} times, the build ${(big.s / small.s).toFixed(2)}`,
       );
-      // MEASURED
-      expect(big.s / small.s).toBeLessThan(5);
+      expect(ratio()).toBeLessThan(BOUND);
     } finally {
-      await rm(at18, { recursive: true, force: true });
+      await rm(dir18, { recursive: true, force: true });
     }
   }, 600_000);
 });
+
+/** The phases the squared searches were in (buildPhases' names). */
+const PASSES = /facts projection|joins applied|3 merge|3 features/;

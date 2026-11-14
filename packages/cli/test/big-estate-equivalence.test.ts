@@ -106,6 +106,8 @@ describe("one repo changed: the catalog is the bytes a build from scratch makes 
         // Estates 2 and 3 with gateway proxies on one host, fronting some of the services.
         gateways: seed === 1 ? 0 : seed,
         routes: 20,
+        // Estate 3 in two clusters: several features, so a change moves entry points between them.
+        clusters: seed === 3 ? 2 : 1,
       });
       const cold = await buildAndWrite(root, { command: "atticus catalog build" });
       expect(cold.guard.refused).toBeUndefined();

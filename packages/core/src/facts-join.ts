@@ -1530,13 +1530,22 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * host several repos list (a shared API gateway host, each proxy in a repo of its own) is
    * answered by whichever of them serves the call's path, never by the first one listed.
    */
+  // beta.28.1 (field report 2): which of `declared` list a host depends on the host and port
+  // only, and `declared` never changes, so each is matched once (a call compiled a pattern for
+  // every host the estate lists, twice for some calls, 13,000 calls at 60 repos).
+  const listedFor = new Map<string, typeof declared>();
   const claimed = (h: { host: string; port?: number }, path?: string) => {
-    const ported = declared.filter(
-      (d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port),
-    );
-    const listed = ported.length
-      ? ported
-      : declared.filter((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
+    const at = `${h.host}\u0000${h.port ?? ""}`;
+    let listed = listedFor.get(at);
+    if (!listed) {
+      const ported = declared.filter(
+        (d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port),
+      );
+      listed = ported.length
+        ? ported
+        : declared.filter((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
+      listedFor.set(at, listed);
+    }
     if (!listed.length) return undefined;
     // ADR 0134: where repos give the base path they answer under, the call's path picks among
     // them: only those with the longest base path that starts it. None starting it leaves the

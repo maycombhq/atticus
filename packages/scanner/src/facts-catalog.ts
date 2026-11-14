@@ -257,16 +257,32 @@ const MAX_ID = 120;
  * same wherever it is renamed.
  */
 export function remapIds(remap: ReadonlyMap<string, string>): (id: string) => string {
+  // beta.28.1: an id the map doesn't hold is renamed by the first entry (in the map's order) that
+  // is a prefix of it up to a `.`: those can only be the id's own parts before one of its dots,
+  // so each is looked up, and the first in order wins, as a walk of the whole map found it (the
+  // walk was most of a 60-repo build). The order is read once; no caller changes the map after.
+  let order: Map<string, number> | undefined;
   return (id) => {
     const exact = remap.get(id);
     if (exact) return exact;
-    for (const [from, to] of remap)
-      if (id.startsWith(`${from}.`)) {
-        const out = to + id.slice(from.length);
-        if (out.length <= MAX_ID) return out;
-        const hash = createHash("sha256").update(out, "utf8").digest("hex").slice(0, 16);
-        return `${out.slice(0, MAX_ID - hash.length - 1).replace(/[-._]+$/, "")}.${hash}`;
+    let from: string | undefined;
+    let best = Infinity;
+    for (let dot = id.indexOf("."); dot !== -1; dot = id.indexOf(".", dot + 1)) {
+      const p = id.slice(0, dot);
+      if (!remap.has(p)) continue;
+      order ??= new Map([...remap.keys()].map((k, n) => [k, n]));
+      const n = order.get(p)!;
+      if (n < best) {
+        best = n;
+        from = p;
       }
+    }
+    if (from !== undefined) {
+      const out = remap.get(from)! + id.slice(from.length);
+      if (out.length <= MAX_ID) return out;
+      const hash = createHash("sha256").update(out, "utf8").digest("hex").slice(0, 16);
+      return `${out.slice(0, MAX_ID - hash.length - 1).replace(/[-._]+$/, "")}.${hash}`;
+    }
     return id;
   };
 }
@@ -1191,10 +1207,15 @@ export function factsRecords(input: {
   const loose = new Map<string, Rec>(); // unresolved id -> replacement
   const looseFact = new Map<string, string>(); // unresolved id -> fact id
   const extra: Rec[] = [];
+  // The first projected record of each kind and id (what a search of them found), by index.
+  const projectedAt = new Map<string, CatalogRecord>();
+  for (const r of projected.records) {
+    const k = `${r.kind}\u0000${r.id}`;
+    if (!projectedAt.has(k)) projectedAt.set(k, r);
+  }
   for (const [factId, id] of Object.entries(projected.ids)) {
     const f = factById.get(factId)!;
-    const rec = projected.records.find((r) => r.id === id && r.kind === "Unresolved") as
-      Rec | undefined;
+    const rec = projectedAt.get(`Unresolved\u0000${id}`) as Rec | undefined;
     if (f.kind === "call" && rec) {
       looseFact.set(id, factId);
       const url = HTTP_CALLS.has(f.callType) ? urlOf(f, facts) : undefined;
@@ -1208,7 +1229,7 @@ export function factsRecords(input: {
         loose.set(id, { ...rec, unresolvedKind: "event-publish", raw: f.path });
     }
     if (f.kind === "entry" && EVENT_CALLS.has(f.entryType)) {
-      const ep = projected.records.find((r) => r.id === id && r.kind === "Endpoint") as Rec;
+      const ep = projectedAt.get(`Endpoint\u0000${id}`) as Rec;
       extra.push({
         kind: "Unresolved",
         schemaVersion: 2,

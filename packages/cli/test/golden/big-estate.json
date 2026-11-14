@@ -1,0 +1,50 @@
+{
+  "capability": {
+    "files": 2,
+    "sha256": "1db3324bf12ba4469c8beb6effcd088ba597904d5250f2c8f8c27749283f0ebc"
+  },
+  "component": {
+    "files": 8,
+    "sha256": "103cdea0520ca12349091a6ff31809d13ebed41838c6842f7fefff188fdd5f18"
+  },
+  "datastore": {
+    "files": 6,
+    "sha256": "4728ee16aa11a6df258faf3d718fbef734296d7a7ecb8c7c920725622519c828"
+  },
+  "endpoint": {
+    "files": 260,
+    "sha256": "7c4a3490c49db4c968d8390399a8c092541f6e632e5df167e6204b8aa04d8ff2"
+  },
+  "gatewayroute": {
+    "files": 20,
+    "sha256": "d551d16c7de1b070749f626308456961bddf6e38093118a08467ce8af0169838"
+  },
+  "glossaryterm": {
+    "files": 24,
+    "sha256": "8d2746e8067a83fc6311faf051fea8c62a515166763509c167f7a6e95ff8832e"
+  },
+  "interface": {
+    "files": 147,
+    "sha256": "5a1fbb92aaa593ddbed2a35130c5049dd678bb6b7efd307932d0aa6d1d79bbca"
+  },
+  "schema": {
+    "files": 480,
+    "sha256": "1d632c6f89fc86b9a56325c335681b0c85c317ee7d655298355d8725c6c83c9f"
+  },
+  "setting": {
+    "files": 66,
+    "sha256": "b27cff5c532e465fc3723aba65bbaf85cdebaed2a94aa6ae4a01fa073818fc09"
+  },
+  "table": {
+    "files": 24,
+    "sha256": "baeb18381d3a2ca17c272b6ea44e00f622307f7746c75fbf07bab7d2b826da85"
+  },
+  "unresolved": {
+    "files": 20,
+    "sha256": "746185b1f903814465564a993d1b774e2af44595cd48750cd36170e596c63136"
+  },
+  "build.json": {
+    "files": 1,
+    "sha256": "ca98ef728e4c3297c491f6f79c72e026d54ee7995e1a4c86997fd222fa66e6a6"
+  }
+}
