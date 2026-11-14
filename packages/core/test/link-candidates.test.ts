@@ -188,6 +188,7 @@ describe("a prefix match needs a shared literal (field hunt G3)", () => {
       join: { joins: [], asks: [], misses: [], outside: [], left: [] } as never,
       apis: [...others, "/gw/fees/{a}", "/edge/fees/{b}"].map((path, i) => ({
         id: `e-${i}`,
+        kind: "entry" as const,
         method: "GET",
         path,
       })),
