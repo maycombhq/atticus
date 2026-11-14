@@ -1751,9 +1751,10 @@ export function removalsToConfirm(
   for (const r of before)
     for (const repo of repoOfEvidence(r)) had.set(repo, (had.get(repo) ?? 0) + 1);
   const at = pairedArrowsAt(added);
+  const loose = looseEndsAt(before);
   const { over } = overRemovalLimits(
     had,
-    removed.map((r) => ({ repos: repoOfEvidence(r), joined: !!joinedArrowOf(r, at) })),
+    removed.map((r) => ({ repos: repoOfEvidence(r), joined: !!joinedArrowOf(r, at, loose) })),
   );
   return over ? removed.length : undefined;
 }
@@ -1783,20 +1784,45 @@ function evidenceLines(r: CatalogRecord): string[] {
 /**
  * Beta.28.1 (field hunt G1): the arrow a person's pairing joins that this build adds for a loose
  * end's call, as `Interface/<id>`: exactly one such added arrow (flagged `joined-by-person`), from
- * the loose end's owner, cites a line the loose end cites. A loose end with no line, no owner, or more than one such arrow says nothing.
+ * the loose end's owner, cites a line the loose end cites, and the loose end is its owner's only
+ * one on that line (`looseAt`, counted over the last build's records). An Unresolved carries no
+ * call id, only its raw text, its owner and its evidence, so where two loose ends of one caller
+ * share a line the pairing's can't be told apart: neither is joined now, and each counts toward
+ * the limits as any removal. A loose end with no line or no owner says nothing either.
  */
 function joinedArrowOf(
   r: CatalogRecord,
   addedAt: ReadonlyMap<string, readonly CatalogRecord[]>,
+  looseAt: ReadonlyMap<string, number>,
 ): string | undefined {
   if (r.kind !== "Unresolved") return undefined;
   const owner = (r as unknown as { owner?: string }).owner;
   if (!owner) return undefined;
   const ids = new Set<string>();
-  for (const k of evidenceLines(r))
-    for (const x of addedAt.get(k) ?? [])
-      if ((x as unknown as { from?: string }).from === owner) ids.add(x.id);
+  for (const k of evidenceLines(r)) {
+    const arrows = (addedAt.get(k) ?? []).filter(
+      (x) => (x as unknown as { from?: string }).from === owner,
+    );
+    if (!arrows.length) continue;
+    if (looseAt.get(`${owner}\u0000${k}`) !== 1) return undefined;
+    for (const x of arrows) ids.add(x.id);
+  }
   return ids.size === 1 ? `Interface/${[...ids][0]}` : undefined;
+}
+
+/** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
+function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of records) {
+    if (r.kind !== "Unresolved") continue;
+    const owner = (r as unknown as { owner?: string }).owner;
+    if (!owner) continue;
+    for (const k of new Set(evidenceLines(r))) {
+      const key = `${owner}\u0000${k}`;
+      out.set(key, (out.get(key) ?? 0) + 1);
+    }
+  }
+  return out;
 }
 
 /** The kinds a join across repos derives (an arrow, a loose end, a feature, a glossary term). */
@@ -2243,6 +2269,7 @@ export async function guardBuild(
     // caller, is that call joined now by the person, not a loss. An answer's join (words that may
     // make a box nobody meant) still goes through the limits.
     const addedArrowsAt = pairedArrowsAt(addedNow);
+    const looseAt = looseEndsAt(oldRecords.values());
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2368,11 +2395,12 @@ export async function guardBuild(
       // record of the repo): the same thing back under another id, or no fact of the repo's read
       // that makes it. Only for a removal something explains already: never a bug's excuse.
       const own: string[] = [];
-      // G1: a loose end a person's pairing joins in this build. Matched by line: an Unresolved
-      // carries no call id (only its raw text, its owner and its evidence), so the join is the
-      // one arrow the pairing adds that cites the same line from the same caller. Two calls on
-      // one line, or two such arrows, match nothing, and the removal counts as any other.
-      const joinedNow = r ? joinedArrowOf(r, addedArrowsAt) : undefined;
+      // G1: a loose end a person's pairing joins in this build, matched by line (an Unresolved
+      // carries no call id): the one arrow the pairing adds citing the line, from the same
+      // caller, where the loose end is that caller's only one on the line. Two loose ends on one
+      // line, or two such arrows, are no join: each removal counts as any other. Only an
+      // explained removal is said joined (below); an unexplained one refuses on its own.
+      const joinedNow = r ? joinedArrowOf(r, addedArrowsAt, looseAt) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
         if (back) own.push(back);

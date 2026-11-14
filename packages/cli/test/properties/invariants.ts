@@ -184,7 +184,13 @@ function partners(m: Model, slot: number): number[] {
     .filter((r) => r.slot !== slot)
     .filter((r) => {
       const theirs = new Set([...r.hosts, r.base.legacyHost]);
-      return linked(slot, myHosts, r.slot) || linked(r.slot, theirs, slot);
+      // A person's pairing joins its two repos too (field hunt G1): the callee's read decides
+      // whether the caller's loose call is joined.
+      const paired = m.pairs.some(
+        (p) =>
+          (p.caller === slot && p.callee === r.slot) || (p.callee === slot && p.caller === r.slot),
+      );
+      return paired || linked(slot, myHosts, r.slot) || linked(r.slot, theirs, slot);
     })
     .map((r) => r.slot);
 }
@@ -246,9 +252,20 @@ function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
       ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person")
     )
       for (const k of new Set(lines(r))) at.set(k, [...(at.get(k) ?? []), r]);
+  // A loose end is the pairing's only where it is its owner's only one on that line (an
+  // Unresolved carries no call id), counted over the last build's records, as the guard does.
+  const looseAt = new Map<string, number>();
+  for (const r of records(s.before.generated).values() as unknown as Iterable<Cited>)
+    if (r.kind === "Unresolved" && r.owner)
+      for (const k of new Set(lines(r))) {
+        const key = `${r.owner}\u0000${k}`;
+        looseAt.set(key, (looseAt.get(key) ?? 0) + 1);
+      }
   const out = new Set<string>();
   for (const [id, r] of gone as unknown as Map<string, Cited>) {
     if (r.kind !== "Unresolved" || !r.owner) continue;
+    const onLine = lines(r).filter((k) => (at.get(k) ?? []).some((x) => x.from === r.owner));
+    if (onLine.some((k) => looseAt.get(`${r.owner}\u0000${k}`) !== 1)) continue;
     const ids = new Set(
       lines(r).flatMap((k) => (at.get(k) ?? []).filter((x) => x.from === r.owner).map((x) => x.id)),
     );
@@ -958,6 +975,28 @@ function content(s: Step): void {
     new Set(recs.flatMap((r) => arrowOf(v, r) ?? [])),
     false,
   );
+  // Beta.28.1 (field hunt G1): a person's pairing is drawn, joined by a person, and its call's
+  // loose end is gone, whenever the model says the build can draw it.
+  for (const p of v.pairedRequired()) {
+    if (p.keys.some((k) => skip.has(k))) continue;
+    const drawn = recs.some(
+      (r) =>
+        r.kind === "Interface" &&
+        p.keys.includes(arrowOf(v, r) ?? "") &&
+        ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person"),
+    );
+    if (!drawn)
+      fail("completeness", `${where} a person's pairing isn't drawn: none of ${p.keys.join(", ")}`);
+    const loose = recs.find(
+      (r) =>
+        r.kind === "Unresolved" &&
+        r.owner === p.from &&
+        String(r.raw ?? "").startsWith(p.raw.method) &&
+        String(r.raw ?? "").endsWith(p.raw.tail),
+    );
+    if (loose)
+      fail("completeness", `${where} a person's pairing is drawn, yet ${loose.id} is still loose`);
+  }
 }
 
 /** Run the per-command checks of the invariants asked for. */

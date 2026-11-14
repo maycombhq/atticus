@@ -450,6 +450,54 @@ export class Model {
       });
   }
 
+  /**
+   * Beta.28.1 (field hunt G1, the re-review): the pairings a build must draw. While the caller
+   * is read from its facts and still makes the call to a host no repo answers on, and the callee
+   * is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
+   * readers read has none), the build draws the arrow, joined by a person (by the call's path or
+   * the entry's), and the call's loose end is gone.
+   */
+  pairedRequired(): {
+    from: string;
+    keys: string[];
+    raw: { method: string; tail: string };
+  }[] {
+    const out: { from: string; keys: string[]; raw: { method: string; tail: string } }[] = [];
+    const suppressed = new Set(
+      this.curated.flatMap((d) => (d.action === "suppress" && d.arrow ? [d.arrow] : [])),
+    );
+    for (const x of this.pairs) {
+      const c = this.repos[x.caller]!;
+      const e = this.repos[x.callee]!;
+      const s = this.source(x.caller);
+      const t = this.source(x.callee);
+      if (s?.from !== "facts" || t?.from !== "facts") continue;
+      if (
+        !s.obs.code.calls.some(
+          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
+        )
+      )
+        continue;
+      if (this.calleeOf(x.host)) continue;
+      if (
+        !served(e.base, t.obs.code).some(
+          (y) => y.method === x.entry.method && y.path === x.entry.path,
+        )
+      )
+        continue;
+      const keys = [...new Set([x.path, x.entry.path])].map((path) =>
+        arrowKey(c.base.component, e.base.component, x.method, path),
+      );
+      if (keys.some((k) => suppressed.has(k))) continue;
+      out.push({
+        from: c.base.component,
+        keys,
+        raw: { method: x.method, tail: `${x.host}${x.path}` },
+      });
+    }
+    return out;
+  }
+
   allowedArrows(): Set<string> {
     return this.arrows().admitted;
   }

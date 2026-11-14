@@ -707,7 +707,14 @@ export async function act(
       const c = callers[d.slot % callers.length]!;
       const callees = m.live().filter((r) => r.slot !== c.slot && served(r.base, r.code).length);
       if (!callees.length) return undefined;
-      const e = callees[d.to % callees.length]!;
+      // A callee read from its facts first: the build draws the pairing then (it names an entry
+      // fact), so the model requires it; any other callee only when none is.
+      const factsRead = callees.filter((r) => {
+        const f = m.facts.get(r.slot);
+        return !!f && f.id === r.id;
+      });
+      const pool = factsRead.length ? factsRead : callees;
+      const e = pool[d.to % pool.length]!;
       const loose = looseOf(c);
       const entries = served(e.base, e.code);
       const call = loose[d.call % loose.length]!;
