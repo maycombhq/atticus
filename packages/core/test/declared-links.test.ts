@@ -396,3 +396,56 @@ describe("a System to add where its platform has no profile yet (the review of b
     );
   });
 });
+
+describe("a declaration keeps every line it doesn't touch (field hunt G5)", () => {
+  // Flow lists written both ways, quoted and unquoted scalars, a comment: as a person wrote them.
+  const MIXED = [
+    "schemaVersion: 1",
+    "platform: forge",
+    "name: 'Forge (invented)'",
+    "systems:",
+    "  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }",
+    "  - id: ledger # the books",
+    '    name: "Ledger"',
+    "    boundary: product",
+    "    aliases: [forge-ledger,ledger-api]",
+    "environments: [dv, qa, prod]",
+    "",
+  ].join("\n");
+  const untouched = (before: string, after: string) => {
+    const a = after.split("\n");
+    return before.split("\n").filter((l) => !a.includes(l));
+  };
+
+  for (const eol of ["\n", "\r\n"] as const)
+    it(`adds only its lines, every other byte as it was (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
+      const root = await mkdtemp(join(tmpdir(), "atticus-declared-keep-"));
+      await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+      const file = join(root, "org-pack/profiles/forge/profile.yaml");
+      const before = MIXED.replaceAll("\n", eol);
+      await writeFile(file, before);
+      const call = { kind: "call" as const, system: "ledger", route: "GET /forge/fees/v1/{id}" };
+      const p = await declareLink(root, call, { by: "pat", at, preview: true });
+      expect(p.changes.every((c) => c.was === undefined)).toBe(true);
+      await declareLink(root, call, { by: "pat", at });
+      const after = await readFile(file, "utf8");
+      expect(untouched(MIXED, after.replaceAll("\r\n", "\n"))).toEqual([]);
+      expect(after.includes("\r\n")).toBe(eol === "\r\n");
+      // A topic too, and a System the canvas adds first.
+      await declareLink(
+        root,
+        { kind: "topic", system: "platform", topic: "forge.fees.events", side: "publishes" },
+        { by: "pat", at },
+      );
+      await declareLink(
+        root,
+        { kind: "call", system: "forge-fees", route: "GET /forge/ledger/v1/ping" },
+        { by: "pat", at, create: { platform: "forge", owner: "team-fees" } },
+      );
+      const last = (await readFile(file, "utf8")).replaceAll("\r\n", "\n");
+      expect(last).toContain("environments: [dv, qa, prod]");
+      expect(last).toContain("    aliases: [forge-ledger,ledger-api]");
+      expect(last).toContain("name: 'Forge (invented)'");
+      expect(last).toContain("  - id: ledger # the books");
+    });
+});

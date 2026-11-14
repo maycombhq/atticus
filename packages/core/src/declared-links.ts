@@ -171,7 +171,11 @@ export async function declareLink(
       : doc.createNode(DeclaredCall.parse({ route: value }));
   item.comment = declaredComment(o.by, o.at, d.kind === "topic" ? d.side : undefined);
   list.add(item);
-  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  // Field hunt G5: the lines the declaration doesn't touch stay as the person wrote them.
+  const after = keepUntouchedLines(
+    found.created ? found.disk! : text,
+    doc.toString({ lineWidth: 0, flowCollectionPadding: true }),
+  );
   const check = Profile.safeParse(doc.toJS());
   if (!check.success)
     throw new DeclareError(
@@ -185,6 +189,55 @@ export async function declareLink(
   const wrote = inEol(after, eol);
   await writeFileIfUnchanged(path, raw, wrote);
   return { rel, changes, written: true, before: raw, wrote, ...created };
+}
+
+/**
+ * Beta.28.1 (field hunt G5): `after`, a whole document as the yaml library writes it, with every
+ * line it has unchanged from `before` (the file as written, LF) given back as `before` wrote it:
+ * a flow list's padding (`[dv, qa, prod]`), its quotes, its spacing. `before` as the library
+ * writes it is lined up with `before` line for line (the library keeps the lines and comments of
+ * a document it only reads); a line of `after` that is one of those, in order, is that line of
+ * `before`. Where the two don't line up (the library joined or split a line), `after` as it is.
+ */
+export function keepUntouchedLines(before: string, after: string): string {
+  const norm = parseDocument(before).toString({ lineWidth: 0, flowCollectionPadding: true });
+  const o = before.split("\n");
+  const n = norm.split("\n");
+  const a = after.split("\n");
+  if (o.length !== n.length) return after;
+  // The lines both share at either end, then the longest common run of the middle.
+  let head = 0;
+  while (head < n.length && head < a.length && n[head] === a[head]) head++;
+  let tail = 0;
+  while (
+    tail < n.length - head &&
+    tail < a.length - head &&
+    n[n.length - 1 - tail] === a[a.length - 1 - tail]
+  )
+    tail++;
+  const nm = n.slice(head, n.length - tail);
+  const am = a.slice(head, a.length - tail);
+  const w = am.length + 1;
+  const lcs = new Uint32Array((nm.length + 1) * w);
+  for (let i = nm.length - 1; i >= 0; i--)
+    for (let j = am.length - 1; j >= 0; j--)
+      lcs[i * w + j] =
+        nm[i] === am[j]
+          ? lcs[(i + 1) * w + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!);
+  const out = o.slice(0, head);
+  let i = 0;
+  let j = 0;
+  while (j < am.length) {
+    if (i < nm.length && nm[i] === am[j]) {
+      out.push(o[head + i]!);
+      i++;
+      j++;
+    } else if (i < nm.length && lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) i++;
+    else out.push(am[j++]!);
+  }
+  out.push(...o.slice(o.length - tail));
+  return out.join("\n");
 }
 
 /**
