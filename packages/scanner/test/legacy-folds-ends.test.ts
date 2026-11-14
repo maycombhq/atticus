@@ -231,7 +231,8 @@ describe("which repos an end of a legacy arrow is of, its slot pruned (seed 1542
       slots,
     );
     expect(r.ends.get("orders-api")).toEqual(["forge-ledger", "forge-orders"]);
-    expect(r.guessed).toEqual(["orders-api"]);
+    // Every arrow names its repos: no guess, so a removal names each (a system of both).
+    expect(r.guessed).toEqual([]);
     // forge-orders archived, forge-ledger listed but unread for now: the arrow its own evidence
     // says may be of forge-ledger stays (ADR 0195 point 6), and so does the other (a superset).
     const live = new Set(["forge-ledger", "forge-payments"]);
@@ -249,6 +250,19 @@ describe("which repos an end of a legacy arrow is of, its slot pruned (seed 1542
   });
 
   it("with no evidence on its side, every repo it can be of, and that it is a guess", () => {
+    // Beside an arrow that names its repo, one with none still makes the end a guess.
+    const mixed = withUnslottedEnds(
+      new Map(),
+      [
+        arrow("if-1", "orders-api", "payments-api", [ev("forge-orders", "caller")]),
+        arrow("if-2", "orders-api", "payments-api", [ev("forge-payments", "callee")]),
+      ],
+      held,
+      inputs,
+      slots,
+    );
+    expect(mixed.ends.get("orders-api")).toEqual(["forge-ledger", "forge-orders"]);
+    expect(mixed.guessed).toEqual(["orders-api"]);
     const r = withUnslottedEnds(
       new Map(),
       [arrow("if-1", "orders-api", "payments-api", [ev("forge-payments", "callee")])],

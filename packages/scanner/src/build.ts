@@ -708,9 +708,11 @@ export function withUnslottedEnds(
   // Beta.28.1 (seed 1542546636, and its reviews): an end is of the repos the arrows naming it
   // name on its side (the caller's for `from`, the callee's for `to`), all of them: an end of
   // several repos (a system's id) stays while one of them may be live, whichever arrow named it
-  // (point 6). An arrow with no evidence on that side may be of any of them. An end of more
-  // than one repo is a guess, which the removal words as one.
+  // (point 6). An arrow with no evidence on that side may be of any of them: that end is a
+  // guess (of more than one repo), which the removal words as one; an end every arrow names
+  // the repos of is of each, and its removal names each.
   const named = new Map<string, Set<string>>();
+  const unnamed = new Set<string>();
   for (const r of legacy) {
     if (r.kind !== "Interface") continue;
     const x = r as unknown as { from?: string; to?: string };
@@ -725,6 +727,7 @@ export function withUnslottedEnds(
       const mine = repos.filter((repo) => own.has(repo));
       const acc = named.get(end) ?? new Set<string>();
       for (const repo of mine.length ? mine : repos) acc.add(repo);
+      if (!mine.length) unnamed.add(end);
       named.set(end, acc);
     }
   }
@@ -733,7 +736,7 @@ export function withUnslottedEnds(
   for (const [end, acc] of named) {
     const mine = repos.filter((repo) => acc.has(repo));
     out.set(end, mine);
-    if (mine.length > 1) guessed.push(end);
+    if (unnamed.has(end) && mine.length > 1) guessed.push(end);
   }
   return { ends: out, guessed: guessed.sort(cmpText) };
 }
@@ -788,7 +791,7 @@ export function foldsAway(
    * Where `id` ends up: along the chain, the last feature the catalog keeps (one an alias folds
    * on into a feature in no record stays itself). Undefined when no kept feature takes it.
    */
-  // A feature on a cycle of aliases folds into nothing here (which one stays isn't said).
+  // A feature on a cycle of aliases isn't folded away here (which one stays isn't said).
   const reaches = (from: string, to: string): boolean => {
     const seen = new Set<string>();
     const todo = [from];

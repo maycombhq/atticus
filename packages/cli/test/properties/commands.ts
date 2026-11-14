@@ -132,6 +132,11 @@ export type Expect =
   | { kind: "succeed" }
   /** Refuse (with this guard, when given). */
   | { kind: "refuse"; guard?: Guard }
+  /**
+   * The hunt of beta.28.1 (F1): verify --write refuses a read whose every fact is rejected
+   * before any build, so no guard: it says so ("every fact of the read was rejected").
+   */
+  | { kind: "refuse"; rejected: true }
   /** A dry run: list, write nothing, refuse nothing. */
   | { kind: "dry" }
   /** Anything that writes nothing (a cancelled run; verify without --write). */
@@ -506,7 +511,7 @@ async function verify(
     confirm,
     // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
     // fact it adds was never accepted, so the catalog is the clean read's.
-    expect: noneKept ? { kind: "refuse" } : { kind: "succeed" },
+    expect: noneKept ? { kind: "refuse", rejected: true } : { kind: "succeed" },
     rerun: d,
     onSuccess: () => {
       const was = m.facts.get(r.slot);
@@ -856,7 +861,10 @@ export async function act(
     case "discard-edits": {
       if (!m.handEdits.length) return undefined;
       const p = w.pending;
-      const count = (p?.edits?.length ?? m.handEdits.length) + (d.wrong ? 1 : 0);
+      // A wrong count is one off the edits on disk now: a refusal's listing may be stale (an edit
+      // made since), and the listing's count plus one may be the true count, which the build
+      // rightly takes (seed 1550829716).
+      const count = d.wrong ? m.handEdits.length + 1 : (p?.edits?.length ?? m.handEdits.length);
       const c: Confirm = { ...(p?.confirm ?? {}), ...confirm, discardEdits: count };
       const acted = p ? await act(p.desc, ctx, w, before, c) : await build(w, c);
       if (!acted) return undefined;
