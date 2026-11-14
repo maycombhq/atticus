@@ -5,6 +5,7 @@ import {
   acquireLock,
   catalogDirOf,
   cmpText,
+  commitCurrent,
   declareLink,
   deserializeRecord,
   LockHeldError,
@@ -1244,6 +1245,10 @@ export async function applyMapEdits(
           edits: new Set([i]),
         });
     };
+    // Beta.28.1 (the re-review): the writes start here, so a Stop from here is too late: the job
+    // ends as its writes and its build do (saying the Stop came too late), never "stopped" with
+    // its changes saved or taken back.
+    commitCurrent();
     for (const [i, e] of o.edits.entries()) {
       const said = `Change ${i + 1} of ${n}, ${mapEditWords(e)}`;
       try {

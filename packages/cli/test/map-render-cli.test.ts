@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   answerQuestion,
@@ -26,6 +26,17 @@ import { factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { writeReadPlan } from "../src/map-parts.js";
+import { writeProgressHooks } from "../src/write-progress.js";
+
+// Beta.28.1 (the review): verify --write's progress lines (an err line without `progress`)
+// start once a write runs past 2 s; a slow runner's write would put them in `err`, which these
+// tests check is empty. Kept quiet here: the progress has its own tests (apply-progress).
+beforeAll(() => {
+  writeProgressHooks.quietMs = 1_000_000_000;
+});
+afterAll(() => {
+  delete writeProgressHooks.quietMs;
+});
 import { confirmed, seedReadersSlots } from "./seed-slots.js";
 import { verifyCommand as verifyCommandRaw } from "../src/verify-commands.js";
 

@@ -96,14 +96,12 @@ export function uiKnowRoutes(
     const args = build(arg);
     if (!args) throw badRequest(`The ${name} view needs an id: /api/view/${name}/<id>.`);
     // Loaded when first used: main.ts imports the command that starts this server.
-    const { main } = await import("./main.js");
+    const { main, capturedIo } = await import("./main.js");
     const out: string[] = [];
     const err: string[] = [];
-    const code = await main(
-      [...args, "--json", "--root", ctx.root],
-      { out: (l) => out.push(l), err: (l) => err.push(l) },
-      { quiet: true },
-    );
+    const code = await main([...args, "--json", "--root", ctx.root], capturedIo(out, err), {
+      quiet: true,
+    });
     const text = out.join("\n").trim();
     if (code === 2) {
       const words = err.join("\n") || "The command refused the request.";
@@ -145,14 +143,10 @@ export function uiKnowRoutes(
   };
   /** Run a command that prints text, not JSON; returns the text. */
   const text = async (args: string[]) => {
-    const { main } = await import("./main.js");
+    const { main, capturedIo } = await import("./main.js");
     const out: string[] = [];
     const err: string[] = [];
-    const code = await main(
-      [...args, "--root", ctx.root],
-      { out: (l) => out.push(l), err: (l) => err.push(l) },
-      { quiet: true },
-    );
+    const code = await main([...args, "--root", ctx.root], capturedIo(out, err), { quiet: true });
     if (code === 2) {
       const words = err.join("\n") || "The command refused the request.";
       // A refusal that names the step to take first (a scan) is an empty state, not a failure.

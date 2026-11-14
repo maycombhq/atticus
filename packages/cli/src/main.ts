@@ -951,6 +951,13 @@ export async function main(
       printToCurrent(l);
       givenIo.err(l);
     },
+    // Beta.28.1: a progress line goes to the run log too, then where the caller sends it (a
+    // job's Console); a caller with none takes it as an err line (a terminal's standard error).
+    progress: (l) => {
+      if (!givenIo.progress) return io.err(l);
+      said?.line(l);
+      givenIo.progress(l);
+    },
   };
   try {
     // A Copilot step's progress (printProgress) goes to this run's log too.
@@ -4210,4 +4217,16 @@ async function checkFlags(
       : "atticus help --all lists every command and what it takes. Nothing was run.",
   );
   return 2;
+}
+
+/**
+ * Beta.28.1 (the review): the Output a route gives `main` when it keeps a command's lines (its
+ * answer's `out` and `err`): progress goes to the job's Console at once, never into them.
+ */
+export function capturedIo(out: string[], err: string[]): Output {
+  return {
+    out: (l) => out.push(l),
+    err: (l) => err.push(l),
+    progress: (l) => printToCurrent(l, { now: true }),
+  };
 }

@@ -78,6 +78,18 @@ export const COPY = {
           ? "It was stopped before it finished."
           : "It failed; the Console has what it printed.",
     working: "Working on it…",
+    /**
+     * Beta.28.1 (the owner's field reports 2 and 3): a read or preview the person waits on, run
+     * as a job: what it is doing now, its Stop, and what Stop did.
+     */
+    jobWait: {
+      now: (line: string) => `Now: ${line}`,
+      stop: "Stop",
+      stopping: "Stopping…",
+      stopLabel: (what: string) => `Stop: ${what}`,
+      stopped: "Stopped before it finished: nothing was changed.",
+      again: "Start it again",
+    },
     ccReading: "Reading your metarepo…",
     ccCantRead: "Couldn't read what needs attention: each panel below says why.",
     notLoaded: "not loaded",

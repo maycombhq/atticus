@@ -217,6 +217,8 @@ async function run(
       err.push(l);
       printToCurrent(l);
     },
+    // Beta.28.1: progress goes to the Console as it runs, never into the job's result.
+    progress: (l) => printToCurrent(l, { now: true }),
   });
   return { code, out, err };
 }
@@ -800,14 +802,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     const stepRunner =
       deps.runStep ??
       (async (args: string[]) => {
-        const { main } = await import("./main.js");
+        const { main, capturedIo } = await import("./main.js");
         const out: string[] = [];
         const err: string[] = [];
-        const code = await main(
-          [...args, "--root", root],
-          { out: (l) => out.push(l), err: (l) => err.push(l) },
-          { quiet: true },
-        );
+        // Beta.28.1 (the review): progress to the job's Console (and its run log), never into
+        // the lines and errors the step answers with.
+        const code = await main([...args, "--root", root], capturedIo(out, err), { quiet: true });
         return { code, out, err };
       });
     // Review of beta.23: the resume (the next batch's prompt, a draft's files, a read's verify

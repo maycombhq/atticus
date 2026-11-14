@@ -1094,6 +1094,47 @@ interface Resolved {
 
 /** Join every call of the estate's facts to the entry that serves it, or say why not. */
 export function joinFacts(input: JoinFactsInput): FactsJoinResult {
+  return runSteps(joinFactsSteps(input));
+}
+
+/**
+ * Beta.28.1 (the review of "nothing slow runs silently"): joinFacts, giving way every
+ * JOIN_YIELD_EVERY calls, so a caller that awaits `tick` between (joinFactsAsync) lets a
+ * heartbeat, a Console line or a Stop through during a long join. The same join either way.
+ */
+export function joinFactsAsync(
+  input: JoinFactsInput,
+  tick: () => Promise<void>,
+): Promise<FactsJoinResult> {
+  return runStepsAsync(joinFactsSteps(input), tick);
+}
+
+/** How many calls the join reads between two points where it gives way. */
+export const JOIN_YIELD_EVERY = 200;
+
+/** Work written as steps (a generator that yields where it may give way), run to its end. */
+export function runSteps<T>(g: Generator<void, T, void>): T {
+  for (;;) {
+    const r = g.next();
+    if (r.done) return r.value;
+  }
+}
+
+/** The same, awaiting `tick` at each point it may give way. */
+export async function runStepsAsync<T>(
+  g: Generator<void, T, void>,
+  tick: () => Promise<void>,
+): Promise<T> {
+  for (;;) {
+    const r = g.next();
+    if (r.done) return r.value;
+    await tick();
+  }
+}
+
+/** joinFacts as steps: see joinFactsAsync. */
+export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoinResult, void> {
+  let read = 0;
   const repos = [...input.repos].sort((x, y) => cmp(x.repo, y.repo));
   const componentOf = (r: JoinRepo, f: Fact) => factIdPart(f.component ?? r.component ?? r.repo);
   const nodes: Node[] = [];
@@ -2316,6 +2357,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
 
   for (const c of nodes) {
     if (c.fact.kind !== "call") continue;
+    if (++read % JOIN_YIELD_EVERY === 0) yield;
     const raw = c as Node & { fact: Call };
     // The call as the join reads it: its path resolved when written as a setting (J0).
     const resolved = EVENTS.has(raw.fact.callType) ? raw.fact : withPathResolved(raw);

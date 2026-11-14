@@ -2,6 +2,22 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.1 (unreleased)
+
+### Fixed
+
+- **Nothing slow runs silently (the owner's field reports 2 and 3).** The Connect panel's read of the calls and APIs, Edit the map's pairing fields, Correct on a pairing, the Connect panel's **Preview** and the panel after a correction (what the next Apply changes) now run as local jobs. While you wait, the panel shows what the job is doing now (reading the estate's facts, joining the calls and APIs, and saying when the join has to be worked out again for N repos, reading the other box's APIs, matching, each step of the preview) and a **Stop** button. Stop ends the job at its next step and the panel says it was stopped and nothing was changed, with **Start it again**. The same lines are in the Console.
+- **`atticus verify <repo> --write` says each step.** The write stage prints a line as each step starts, with the time so far, including the catalog build's eight passes one by one; a step still running after 30 seconds says so. Work that ends within 2 seconds still prints nothing. Stop is heard between steps until the catalog is being written; after that the write finishes and says why it ignored the Stop.
+- **A step's line reaches the Console before the step's work.** A progress line goes out at once, with the job's lines before it, instead of in the next batch, so a line printed just before a long pass is there while the pass runs. The long work gives way as it goes (after each repo's projection, inside the estate join every 200 calls, after each repo's flows), so the heartbeat comes during a long pass and Stop is heard there too. The build and the join are the same either way.
+- **A Stop that comes too late says so.** Once a job has started writing (Apply's catalog write, Edit the map's changes saved, a pairing appended), Stop is too late: the job ends done and says the Stop came after the write, instead of ending "stopped" with its files written. A pairing hears Stop up to the step before it writes. The end line ("The write took …") is said only when the write finished.
+- **Progress lines stay out of a step's answer.** When the app runs `verify --write` for a step (Done of a read, a hand-off's resume), its progress goes to the job's Console and the run log, never into the lines or errors the step answers with.
+- **Waits don't pile up.** A read nobody waits on any more (the panel closed, another box picked, read again) is stopped. Two reads of the same estate share one join that is under way. On Correct, a repo you type (when the repos don't load) is read once the typing pauses, not once a key. A stopped Connect preview says it was stopped (not an error) and is no longer taken as a write. After Stop, the keyboard lands on **Start it again**, and the wait's line is read out as it changes.
+- **Edit the map's Apply and Connect's pairing no longer work out the estate's join**, which they didn't use: checking a pairing reads only the caller's calls and the other box's APIs.
+
+### Changed
+
+- **Local API 3.14.0 (additive).** `GET /api/links/candidates` and `GET /api/facts/{repo}/preview` take `job=1`, and `POST /api/links/connect` takes `job: true`: each answers `202` with a job id at once; the job prints each step (its progress message is its last line), `POST /api/jobs/{jobId}/cancel` ends it between steps, and its result's `answer` is what the request answers without `job` (or `problem`, refused). Without `job`, each answers as before.
+
 ## 2.0.0-beta.28 (2026-11-13)
 
 ### Added

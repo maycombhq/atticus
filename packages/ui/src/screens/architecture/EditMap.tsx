@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
-import { ApiError, useApi } from "../../api/client.js";
+import { ApiError, useApi, useJobRead } from "../../api/client.js";
+import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { RunWithCopilot, useCopilotRuns, type StartAsk } from "../../app/copilot-runs.js";
 import { followJob, JobFailed } from "../../app/job.js";
@@ -385,7 +386,8 @@ function PairFields(p: {
   rows: readonly PairRow[];
 }) {
   const link = p.to.link!;
-  const cands = useApi<Api.LinkCandidatesViewT>(candidatesPath(p.from, link));
+  // Beta.28.1: read as a job: the wait says each step and has Stop (a join can take minutes).
+  const cands = useJobRead<Api.LinkCandidatesViewT>(candidatesPath(p.from, link));
   const facts = useApi<Api.RepoFactsViewT>(
     p.redirect ? `/api/facts/${encodeURIComponent(p.from)}` : undefined,
   );
@@ -405,7 +407,17 @@ function PairFields(p: {
     // The rows start once, when both reads are in, for this pair of boxes.
   }, [key]);
   const factsState = p.redirect ? facts.state : "ready";
-  if (cands.state === "loading" || factsState === "loading")
+  if (cands.state === "loading")
+    return (
+      <JobWait
+        what={E.add.loading}
+        line={cands.line}
+        onStop={cands.stop}
+        stopping={cands.stopping}
+      />
+    );
+  if (cands.state === "error" && cands.stopped) return <JobStoppedNote onAgain={cands.reload} />;
+  if (factsState === "loading")
     return (
       <p className="ev-say" role="status" aria-busy="true" style={{ margin: 0 }}>
         {E.add.loading}

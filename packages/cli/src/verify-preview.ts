@@ -125,8 +125,19 @@ const posixRel = (root: string, p: string) => relative(root, p).split(sep).join(
 export async function verifyWritePreview(
   root: string,
   repo: string,
-  o: { fact?: string; extra?: readonly FactCorrection[] } = {},
+  o: {
+    fact?: string;
+    extra?: readonly FactCorrection[];
+    /**
+     * Beta.28.1: told each step as it starts (the check of the facts, the build pass by pass),
+     * and awaited: a job's progress, which may stop the preview there. It only listens.
+     */
+    step?: (what: string) => Promise<void>;
+    /** Beta.28.1 (the review): awaited inside the build's long passes (a Stop may throw). */
+    tick?: () => Promise<void>;
+  } = {},
 ): Promise<View | undefined> {
+  const step = o.step ?? (() => Promise.resolve());
   const rel = factsRelOf(root);
   const wrote = `${rel}/${repo}.corrections.jsonl`;
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
@@ -160,6 +171,7 @@ export async function verifyWritePreview(
   const commit = [...new Set(before.map((f) => f.commit))].sort()[0];
   const head = await headFromFiles(dir);
   const off = stackHelpersOff();
+  await step(`Checking ${repo}'s facts at their lines`);
   const inputs = await verifyInputsOf(root, repo, dir);
   const report = await verifyFacts({
     facts: before,
@@ -229,6 +241,7 @@ export async function verifyWritePreview(
   // ADR 0151: the write first reads this repo's contract files in its checkout into
   // `<repo>.contracts.yaml`; the preview reads them the same way, in memory, so it says what the
   // write will. And it keeps no read cache: it writes nothing at all.
+  await step("Reading the repo's contract files");
   const contracts = await repoContractsOf(root, repo, dir, report.accepted);
   const companion = join(factsDirOf(root), `${repo}.contracts.yaml`);
   const onDisk = await readFile(companion, "utf8").catch(() => undefined);
@@ -240,7 +253,10 @@ export async function verifyWritePreview(
     cache: false,
     ...(report.coverage.unknown.length === 0 ? { readComplete: true } : {}),
     ...(o.extra?.length ? { extraPairs: pairsFromCorrections(report.accepted, o.extra) } : {}),
+    ...(o.step ? { step } : {}),
+    ...(o.tick ? { tick: o.tick } : {}),
   });
+  await step("Working out what changes");
   const catalogRel = layoutOf(root).catalog.replace(/\/+$/, "");
   const recordFiles = [
     ...p.diff.added,

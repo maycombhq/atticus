@@ -88,7 +88,8 @@ export function tracked<T>(
 export function answerAsJob(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
-  work: () => Promise<Record<string, unknown>>,
+  /** Beta.28.1: told the job's control, to print its steps and say its last as its progress. */
+  work: (c?: JobControl) => Promise<Record<string, unknown>>,
   o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
 ): { status: 202; body: { jobId: string } } {
   const opts: JobStartOptions = {
@@ -98,9 +99,9 @@ export function answerAsJob(
   };
   const job = ctx.jobs.start(
     o.kind ?? "work",
-    async () => {
+    async (c) => {
       try {
-        const answer = await work();
+        const answer = await work(c);
         const lines = Array.isArray(answer.lines) ? answer.lines.map(String) : [];
         return { result: { answer, lines } };
       } catch (e) {
@@ -413,11 +414,16 @@ export function uiActivityRoutes(
   });
 
   // ---------------------------------------------------------------- live: the jobs
-  // Lines go out in small batches per job, so a chatty scan doesn't flood the socket.
+  // Lines go out in small batches per job, so a chatty scan doesn't flood the socket. Beta.28.1:
+  // a line after a quiet spell goes out at once (the batch's leading edge), and a progress line
+  // (printed with `now`) always does, with its job's lines before it, so a step's line reaches
+  // the Console before the step's work, not when it ends.
   const pending = new Map<string, { at: number; lines: string[] }>();
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastFlush = 0;
   const flush = () => {
     flushTimer = undefined;
+    lastFlush = Date.now();
     for (const [id, p] of pending) ctx.events.publish({ type: "activity.lines", id, ...p });
     pending.clear();
   };
@@ -428,7 +434,17 @@ export function uiActivityRoutes(
       const p = pending.get(e.id);
       if (p) p.lines.push(...c.lines);
       else pending.set(e.id, { at: c.at, lines: [...c.lines] });
-      flushTimer ??= setTimeout(flush, 100);
+      // Beta.28.1 (the review): a progress line (a step of long work) goes out at once with the
+      // job's lines before it, whatever the batch: the step's work may keep the thread next,
+      // and no timer fires inside it.
+      if (c.now) {
+        const mine = pending.get(e.id)!;
+        pending.delete(e.id);
+        ctx.events.publish({ type: "activity.lines", id: e.id, ...mine });
+        return;
+      }
+      if (flushTimer === undefined && Date.now() - lastFlush >= 100) flush();
+      else flushTimer ??= setTimeout(flush, 100);
       return;
     }
     if (pending.has(e.id)) flush();

@@ -21,6 +21,28 @@ export function withSignal<T>(signal: AbortSignal, fn: () => Promise<T>): Promis
   return store.run(signal, fn);
 }
 
+/**
+ * Beta.28.1 (the review of the jobs with Stop): the job's commit point. Work that has started
+ * writing (a catalog being written, a pairing appended) says so with `commitCurrent()`: a Stop
+ * after it is too late, and the job ends done, saying the Stop came after the write.
+ */
+const commits = new AsyncLocalStorage<() => void>();
+
+/** Run `fn` with `commit` as what `commitCurrent()` inside it calls. */
+export function withCommit<T>(commit: () => void, fn: () => Promise<T>): Promise<T> {
+  return commits.run(commit, fn);
+}
+
+/**
+ * Say the job this code runs in has started writing: Stop is no longer heard. True when a job
+ * heard it (it says a late Stop itself); false outside one.
+ */
+export function commitCurrent(): boolean {
+  const c = commits.getStore();
+  c?.();
+  return !!c;
+}
+
 /** The signal of the job this code runs in, if it runs in one. */
 export function currentSignal(): AbortSignal | undefined {
   return store.getStore();

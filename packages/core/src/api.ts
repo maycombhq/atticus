@@ -606,8 +606,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `problems` by place, nothing written), writes them, then builds once, as one local job whose
  *   result is `MapEditsResult` (with the caller repos they touch). A problem may carry
  *   `problems`. Additive only.
+ * 3.14.0 (beta.28.1, "nothing slow runs silently"): the Connect panel's read and its preview as
+ *   jobs. GET /api/links/candidates with `job=1` and POST /api/links/connect with `job: true`
+ *   answer 202 JobAccepted at once; the job prints each step (its progress message is the last
+ *   line it said), Stop (POST /api/jobs/{jobId}/cancel) ends it between steps, and its result's
+ *   `answer` is the answer the request gives without `job` (or `problem`, refused). Without
+ *   `job`, both answer as before. GET /api/facts/{repo}/preview takes `job=1` the same way (the
+ *   panel after a correction). Additive only.
  */
-export const API_VERSION = "3.13.0";
+export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -5730,6 +5737,11 @@ export const ConnectLinksRequest = z.object({
   rule: z.boolean().optional(),
   /** Say what it would write and what the next verify --write changes; write nothing. */
   preview: z.boolean().optional(),
+  /**
+   * 3.14.0 (beta.28.1): run it as a job (202 and its id at once; its steps are the job's lines,
+   * Stop ends it between them, and its result `answer` is this request's result, or `problem`).
+   */
+  job: z.boolean().optional(),
 });
 export const ConnectLinksResult = z.object({
   written: z.boolean(),
@@ -7669,8 +7681,17 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "After a correction: the commands to run (atticus verify <repo> --write, then the git steps with the exact files) and what that write will change in the facts and the catalog (links moved, added, removed; facts dropped or edited), computed in-process without writing (ADR 0149)",
       tag: "workspace",
-      params: [p("repo"), q("fact", str, "The fact corrected, for the branch and commit message")],
+      params: [
+        p("repo"),
+        q("fact", str, "The fact corrected, for the branch and commit message"),
+        q(
+          "job",
+          str,
+          "3.14.0: 1 runs the preview as a job (202 JobAccepted; its steps are its lines, Stop ends it between them, its result `answer` is this view or `problem`)",
+        ),
+      ],
       ok: { status: 200, schema: "VerifyPreviewView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job=1`)" },
       errors: [400, 404],
     },
   },
@@ -8288,8 +8309,14 @@ const OPS: Record<string, Record<string, Op>> = {
         q("from", str, "Box A: the caller's repo"),
         q("to", str, "Box B: a repo of the manifest"),
         q("system", str, "Box B: an outside system of the profile (instead of to)"),
+        q(
+          "job",
+          str,
+          "3.14.0: 1 runs the read as a job (202 JobAccepted; its steps are its lines, Stop ends it between them, its result `answer` is this view or `problem`)",
+        ),
       ],
       ok: { status: 200, schema: "LinkCandidatesView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job=1`)" },
       errors: [400, 404],
     },
   },
@@ -8297,10 +8324,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "connectLinks",
       summary:
-        "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes",
+        "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes. 3.14.0: with `job: true`, 202 JobAccepted at once; the job's result `answer` is this result, or `problem`",
       tag: "views",
       body: ConnectLinksRequest,
       ok: { status: 200, schema: "ConnectLinksResult", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job: true`)" },
       errors: [400, 404, 409, 422],
     },
   },

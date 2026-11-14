@@ -2,11 +2,13 @@ import {
   helperOn,
   joinConventions,
   joinFacts,
+  joinFactsAsync,
   joinFlagsOf,
   type AuditItemT,
   type Fact,
   type FactEnd,
   type FactsJoinResult,
+  type JoinFactsInput,
   type OrgPack,
   type PersonPair,
 } from "@maycombhq/core";
@@ -29,9 +31,34 @@ export function estateJoinOf(
   /** ADR 0181: of the targets, those the AI answered, so their links are `joined-by-ai`. */
   aiTargets?: Readonly<Record<string, Readonly<Record<string, { runtime: string; run: string }>>>>,
 ): FactsJoinResult {
+  return joinFacts(estateJoinInput(op, list, targets, pairs, aiTargets));
+}
+
+/**
+ * Beta.28.1: estateJoinOf giving way inside the join (joinFactsAsync), so a read that awaits
+ * `tick` there lets its lines, a heartbeat or a Stop through. The same join either way.
+ */
+export function estateJoinOfAsync(
+  op: OrgPack,
+  list: readonly { repo: string; facts: readonly Fact[] }[],
+  tick: () => Promise<void>,
+  targets?: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>,
+  aiTargets?: Readonly<Record<string, Readonly<Record<string, { runtime: string; run: string }>>>>,
+): Promise<FactsJoinResult> {
+  return joinFactsAsync(estateJoinInput(op, list, targets, pairs, aiTargets), tick);
+}
+
+function estateJoinInput(
+  op: OrgPack,
+  list: readonly { repo: string; facts: readonly Fact[] }[],
+  targets?: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>,
+  aiTargets?: Readonly<Record<string, Readonly<Record<string, { runtime: string; run: string }>>>>,
+): JoinFactsInput {
   const repos = list.filter((x) => !isPrototypeRepo(op, x.repo));
   const renames = componentRenames(repos, op);
-  return joinFacts({
+  return {
     repos: joinReposOf(op, repos, renames),
     ...(targets ? { targets } : {}),
     ...(aiTargets && Object.keys(aiTargets).length ? { aiTargets } : {}),
@@ -40,7 +67,7 @@ export function estateJoinOf(
     // The org pack's facing words and gateway bundle folders (ADR 0147), as the catalog joins.
     ...joinConventions(op),
     walkGateways: helperOn("gateway-walk"),
-  });
+  };
 }
 
 /** A repo's joined calls as audit items, in id order. */
