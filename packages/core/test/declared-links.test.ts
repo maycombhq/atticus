@@ -557,6 +557,11 @@ describe("keeping untouched lines never changes what the profile says (the re-re
       expect(strictJs(out), before).toEqual(strictJs(after));
       if (out !== after) {
         kept++;
+        // The re-review: what is kept is exactly what the library would write, read again.
+        expect(
+          parseDocument(out).toString({ lineWidth: 0, flowCollectionPadding: true }),
+          `${before}\n---\n${out}`,
+        ).toBe(after);
         // Every line the edit didn't touch (the library writes it the same in `after`) is still
         // there as the file had it, in order, byte for byte.
         const o = before.split("\n");
@@ -576,5 +581,5 @@ describe("keeping untouched lines never changes what the profile says (the re-re
     }
     // The safe cases are kept: most profiles keep their lines.
     expect(kept).toBeGreaterThan(800);
-  }, 120_000);
+  }, 30_000);
 });
