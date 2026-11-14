@@ -215,6 +215,41 @@ describe("JobManager commit", () => {
     expect(jobs.linesOf(job.id)?.lines).toContain(TOO_LATE);
   });
 
+  it("a Stop taken back at the commit restores the message, and says so to listeners (S3)", async () => {
+    const events: { type: string; message?: string }[] = [];
+    const jobs = new JobManager((e) => events.push(e as { type: string; message?: string }));
+    const states: { stopping?: boolean; message: string }[] = [];
+    jobs.subscribe((c) => {
+      if (c.type === "state")
+        states.push({
+          ...(c.job.stopping ? { stopping: true } : {}),
+          message: c.job.progress.message,
+        });
+    });
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    let after!: () => void;
+    const reached = new Promise<void>((r) => (after = r));
+    const job = jobs.start("work", async (c) => {
+      c.progress(1, 3, "Writing the catalog");
+      await held;
+      c.commit();
+      after();
+      await new Promise((r) => setTimeout(r, 20));
+      return {};
+    });
+    jobs.cancel(job.id);
+    expect(jobs.get(job.id)!.progress.message).toBe("Stopping…");
+    go();
+    await reached;
+    const now = jobs.get(job.id)!;
+    expect(now.stopping).toBeUndefined();
+    expect(now.progress.message).toBe("Writing the catalog");
+    expect(events.at(-1)).toMatchObject({ type: "job.progress", message: "Writing the catalog" });
+    expect(states.at(-1)).toEqual({ message: "Writing the catalog" });
+    await jobs.settle(job.id);
+  });
+
   it("closing the app past a job's commit says no Stop after its record ended", async () => {
     const recorded: string[] = [];
     const jobs = new JobManager(() => undefined, undefined, {
