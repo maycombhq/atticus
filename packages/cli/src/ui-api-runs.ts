@@ -169,7 +169,7 @@ export function uiModelRunRoutes(
               if (code === 0) applied = repo;
               ctx.events.publish({ type: "file.changed", path: "." });
             }
-            c.progress(1, 1, code === 0 ? "Done" : "Stopped");
+            c.progress(1, 1, code === 0 ? "Done" : "Failed");
             ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
             const lines = appLines(raw);
             const next = code === 0 ? undefined : syncNextOf(raw);

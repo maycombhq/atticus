@@ -263,6 +263,29 @@ describe("Apply confirms exactly the list its refusal showed (POST /api/facts/{r
   );
 });
 
+describe("a local job's end in words (the hunt of beta.28.1)", () => {
+  it(
+    "a refused build ends saying refused, with the guard's reason; its errors are its error lines",
+    async () => {
+      const root = await metarepo();
+      const { job } = await serve(root);
+      const first = (await job(APPLY)) as Awaited<ReturnType<typeof job>> & {
+        progress: { message: string };
+        errors: string[];
+        result: { lines: string[]; refused: { message: string } };
+      };
+      expect(first.result.refused).toBeDefined();
+      expect(first.progress.message).toBe(`Refused: ${first.result.refused.message}`);
+      expect(first.progress.message).not.toBe("Stopped");
+      // Not every line the verify printed: only those it said as errors.
+      expect(first.errors.length).toBeGreaterThan(0);
+      expect(first.errors.length).toBeLessThan(first.result.lines.length);
+      expect(first.errors.join("\n")).not.toMatch(/facts kept, \d+ rejected; coverage/);
+    },
+    T,
+  );
+});
+
 describe("an Apply that leaves rejected facts out is applied, with their count (beta.28.1)", () => {
   it(
     "its job ends done, code 0, with leftOut and a line naming each fact left out",
