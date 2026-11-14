@@ -281,6 +281,7 @@ export async function drawnOf(
   root: string,
   from: string,
   facts: readonly Fact[],
+  s: LinkSteps = SILENT,
 ): Promise<
   | {
       join: (j: { interface: string; call: { at: string } }) => boolean;
@@ -296,8 +297,10 @@ export async function drawnOf(
     () => false,
   );
   if (!built) return undefined;
+  await s.step("Reading what the map draws");
+  // The integration review of beta.28.1: read for this answer, not kept in memory after it.
   const read = (d: string) =>
-    readCatalog(join(dir, d), { cacheRoot: root }).then(
+    readCatalog(join(dir, d), { cacheRoot: root, keep: false }).then(
       (c) => c.records,
       () => [] as CatalogRecord[],
     );
@@ -363,8 +366,9 @@ async function candidatesIn(
   from: string,
   to: Api.LinkBoxT,
   c: Awaited<ReturnType<typeof context>>,
+  s: LinkSteps = SILENT,
 ) {
-  const drawn = await drawnOf(root, from, c.facts);
+  const drawn = await drawnOf(root, from, c.facts, s);
   const inBox = inBoxOf(c.op, to);
   return linkCandidates({
     from,
@@ -389,7 +393,7 @@ export async function candidatesOf(
 ): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
   const c = await context(root, from, to, s);
   await s.step(`Matching ${from}'s calls with them`);
-  const cands = await candidatesIn(root, from, to, c);
+  const cands = await candidatesIn(root, from, to, c, s);
   const q = await openRuleQuestion(root, from);
   const loose = cands.calls.filter(
     (x) => x.status !== "paired" && x.status !== "joined" && x.status !== "here",
@@ -411,6 +415,40 @@ export async function candidatesOf(
   return { view, facts: c.facts };
 }
 
+/** The API each of A's calls goes to already: an arrow to it here, or a person's pairing. */
+async function alreadyIn(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  c: Awaited<ReturnType<typeof context>>,
+  s: LinkSteps = SILENT,
+): Promise<Map<string, string>> {
+  return new Map(
+    (await candidatesIn(root, from, to, c, s)).calls.flatMap((x) =>
+      x.status === "here" && x.now
+        ? [[x.fact, x.now] as const]
+        : x.status === "paired" && x.paired
+          ? [[x.fact, x.paired] as const]
+          : [],
+    ),
+  );
+}
+
+/**
+ * The integration review of beta.28.1 (S2b): which API each of A's calls goes to already in B's
+ * box, with the estate's join, worked out once for a caller that pairs several times (Edit the
+ * map's Apply, before its first write) and passed to `pairingsOf` as `already`.
+ */
+export async function alreadyPairedOf(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+  s: LinkSteps = SILENT,
+): Promise<Map<string, string>> {
+  const c = await context(root, from, to, s);
+  return alreadyIn(root, from, to, c, s);
+}
+
 /**
  * The person's pairings Connect to… writes (ADR 0174): one `link` correction per pair, each on
  * the call's cited line, to B's API. Refused (an HttpError, nothing written) when A has no such
@@ -430,6 +468,13 @@ export async function pairingsOf(
      * made redundant meanwhile is a no-op, said in `skipped`, never a failed batch).
      */
     redundant?: "refuse" | "skip";
+    /**
+     * The integration review of beta.28.1 (S2b): the API each of A's calls goes to already
+     * (`alreadyPairedOf`), worked out once by a caller that pairs several times (Edit the map's
+     * Apply, before any of its writes): given, this pairing works out no join itself. An empty
+     * map tells no pair redundant (Edit the map's check before its job).
+     */
+    already?: ReadonlyMap<string, string>;
   },
 ): Promise<{
   corrections: FactCorrection[];
@@ -441,10 +486,13 @@ export async function pairingsOf(
 }> {
   const { from, to, pairs } = req;
   // Beta.28.1: a pairing needs A's calls and B's APIs, and the estate's join only to tell a
-  // redundant pair (below: a call that goes to that very API already); with no pairs it is not
-  // worked out. The join is kept on file per stamp and shared while under way, so Edit the map's
-  // several pairings work it out once.
-  const c = await context(root, from, to, o.steps, { join: pairs.length > 0 });
+  // redundant pair (below: a call that goes to that very API already); with no pairs, or with
+  // `already` worked out by the caller, it works out no join. The join is kept on file per stamp
+  // of what it reads, so a pairing after another pairing's write works it out again: Edit the
+  // map's Apply passes `already`, worked out once before its first write.
+  const c = await context(root, from, to, o.steps, {
+    join: pairs.length > 0 && o.already === undefined,
+  });
   const calls = new Map(c.facts.filter((f) => f.kind === "call").map((f) => [f.id, f]));
   const apis = new Map(c.b.apis.map((a) => [a.id, a]));
   const corrections: FactCorrection[] = [];
@@ -452,17 +500,9 @@ export async function pairingsOf(
   // (an arrow to it, or a person's pairing with it) would be a redundant line. Only that API:
   // where the API an arrow goes to isn't known (an arrow the catalog draws, not the join), any
   // pairing is allowed.
-  const already = pairs.length
-    ? new Map(
-        (await candidatesIn(root, from, to, c)).calls.flatMap((x) =>
-          x.status === "here" && x.now
-            ? [[x.fact, x.now] as const]
-            : x.status === "paired" && x.paired
-              ? [[x.fact, x.paired] as const]
-              : [],
-        ),
-      )
-    : new Map<string, string>();
+  const already =
+    o.already ??
+    (pairs.length ? await alreadyIn(root, from, to, c, o.steps) : new Map<string, string>());
   const skipped: { call: string; api: string; said: string }[] = [];
   for (const p of pairs) {
     if (already.get(p.call) === p.api) {

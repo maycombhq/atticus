@@ -367,6 +367,7 @@ export async function estateJoinOnFile(
   const key = `${root}\u0000${at}`;
   let work = joinsUnderWay.get(key);
   if (!work) {
+    estateJoinHooks.onJoin?.();
     work = (async () => {
       await breathe();
       const join = await estateJoinOfAsync(
@@ -384,6 +385,9 @@ export async function estateJoinOnFile(
   }
   return o.tick ? waitTicking(work, o.tick) : work;
 }
+
+/** Tests count the estate joins worked out (not kept from the last read). */
+export const estateJoinHooks: { onJoin?: () => void } = {};
 
 /** The estate joins being worked out, by root and stamp (estateJoinOnFile). */
 const joinsUnderWay = new Map<string, Promise<FactsJoinResult>>();
