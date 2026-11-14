@@ -53,6 +53,8 @@ const rng = (seed: number) => () => {
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
+/** A draw of its own (each call draws again, so an else-if on it is a second chance). */
+const chance = (r: () => number, p: number) => r() < p;
 const OPTS = { lineWidth: 0, flowCollectionPadding: true } as const;
 
 function profileOf(r: () => number): string {
@@ -62,7 +64,7 @@ function profileOf(r: () => number): string {
     r() < 0.25 ? pick([" # c", "\t# tab before", " #\ttab inside", " # a: b", " #"]) : "";
   const L: string[] = [];
   if (r() < 0.2) L.push("%YAML 1.2", "---");
-  else if (r() < 0.2) L.push("---");
+  else if (chance(r, 0.2)) L.push("---");
   if (r() < 0.3) L.push(pick(["# top", "#\ttabbed top", "# top: with colon"]));
   L.push(`schemaVersion: 1${cm()}`, "platform: forge", `name: ${sc("Forge")}${cm()}`);
   if (r() < 0.3) L.push(`"key: with colon": ${sc("v: x")}${cm()}`);
@@ -91,7 +93,7 @@ function profileOf(r: () => number): string {
     else if (d < 0.35) L.push(`${p}  description: "a: b # c"`);
     else if (d < 0.4) L.push(`${p}  description:`, `${p}    plain multi`, `${p}    line scalar`);
     if (r() < 0.3) L.push(`${p}  aliases:${cm()}`, `${p}  - one`, `${p}  - 'two'${cm()}`);
-    else if (r() < 0.3) L.push(`${p}  aliases: [ a, b ]${cm()}`);
+    else if (chance(r, 0.3)) L.push(`${p}  aliases: [ a, b ]${cm()}`);
     const cc = r();
     if (cc < 0.3)
       L.push(
@@ -198,7 +200,6 @@ describe("a declaration on any profile (the re-review of G5)", () => {
   it("declares on CRLF, anchors and quoted keys, keeping every other key and the declarations", async () => {
     const r = rng(7);
     let bad = 0;
-    let skipped = 0;
     let ran = 0;
     for (let k = 0; k < 300; k++) {
       const root = await mkdtemp(join(tmpdir(), "rerev-g5d-"));
@@ -208,7 +209,6 @@ describe("a declaration on any profile (the re-review of G5)", () => {
       if (/^---\nother/m.test(before) || /^\.\.\.$/m.test(before)) continue;
       if (parseDocument(before.replace(/\r\n/g, "\n")).errors.length) continue;
       if (!Profile.safeParse(parseDocument(before.replace(/\r\n/g, "\n")).toJS()).success) {
-        skipped++;
         continue;
       }
       if (r() < 0.5) before = before.replace(/\r?\n/g, "\r\n");
