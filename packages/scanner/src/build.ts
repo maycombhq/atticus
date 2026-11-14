@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { constants as fsConstants, existsSync } from "node:fs";
+import { copyFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
 import {
@@ -10,6 +10,8 @@ import {
   applySharedMaps,
   catalogDirOf,
   cmpText,
+  copyFileAtomic,
+  deserializeRecord,
   evidenceDirOf,
   evidenceRelOf,
   factIdPart,
@@ -84,7 +86,13 @@ import {
   targetsFromAnswers,
 } from "./facts-catalog.js";
 import { pairsOfText } from "./facts-scan.js";
-import { forgetCatalogs, readCatalog, writeCatalog } from "./files.js";
+import {
+  forgetCatalogs,
+  readCatalog,
+  sortCatalogRecords,
+  writeCatalog,
+  type CatalogFilesRead,
+} from "./files.js";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { joinAnswerQuestions, joinAnswerQuestionsOf } from "./join-host-questions.js";
 import {
@@ -125,6 +133,7 @@ import {
   type LegacyJoinsSlotT,
   type ReadersSlotT,
 } from "./slots.js";
+import { phaseClock } from "./build-phases.js";
 
 /**
  * The build (ADR 0195 point 2): `catalog/generated` made from the source slots and the build
@@ -414,6 +423,7 @@ export async function loadBuildInputs(
     questions?: readonly Question[];
   } = {},
 ): Promise<BuildInputs> {
+  const mark = phaseClock("inputs: ");
   forgetKeptReads();
   const pack = await packOf(root);
   const orgPackDir = o.orgPackDir ?? pack.orgPackDir;
@@ -421,8 +431,10 @@ export async function loadBuildInputs(
   const op = o.op ?? (await loadOrgPack(orgPackDir));
   const problems: string[] = [];
   await loadReadersTrust(stateDir);
+  mark("org pack");
   const onDisk = await readSlots(root);
   const slots = o.slots ? o.slots(onDisk) : onDisk;
+  mark("read slots");
   const curatedDir = o.curatedDir ?? curatedDirOf(root, op);
   const curated = o.curated
     ? { records: o.curated, problems: [] }
@@ -489,6 +501,7 @@ export async function loadBuildInputs(
   put(relOf(root, proposals), await treeHash(proposals));
   for (const f of federated)
     put(`federated/${f.id}`, await treeHash(f.dir, (r) => r.startsWith(".") || r === "workspace"));
+  mark("the other inputs");
   return {
     root,
     op,
@@ -712,6 +725,7 @@ export interface BuildProgress {
 export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {}): Promise<Build> {
   const { op, root } = i;
   const pass = async (n: number) => progress.onPass?.(n, BUILD_PASSES.length, BUILD_PASSES[n - 1]!);
+  const mark = phaseClock("build: ");
   // The build cache (point 9): a build of the same inputs is the last build, kept whole; else
   // the last build's record texts are kept for the records that didn't change. A build with
   // federated catalogs isn't kept (their folders are read outside the inputs).
@@ -725,6 +739,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
         wikis: op.sources.wikis,
       });
   const kept = await loadKept<Build>(i.stateDir, cacheKey?.key);
+  mark("cache key and lookup");
   if (kept.hit) return kept.hit;
   const problems: ScanProblem[] = [];
   const notes: string[] = [];
@@ -816,6 +831,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // A contract file is read in the facts' order of their companions (`<repo>.contracts.yaml`).
   contracts.sort((a, b) => cmpText(`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`));
 
+  mark("1 sources");
   // ---- 2. framework models, then the estate join over every facts slot at once
   await pass(2);
   const frameworks = await usableFrameworks(op, problems);
@@ -825,8 +841,11 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     projection = progress.tick
       ? await factsEstateRecordsAsync(op, factRepos, progress.tick)
       : factsEstateRecords(op, factRepos);
+    mark("2 facts projection and estate join");
     code = applyPipelineModels([...readerRecords, ...projection.records], frameworks);
+    mark("2 framework models");
     code = withFactsEstateJoins(code, op, projection);
+    mark("2 joins applied");
   } else code = applyPipelineModels(readerRecords, frameworks);
 
   // ---- 3. the merge, intake, features, federation, the glossary
@@ -835,6 +854,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const mergeInput = (records: CatalogRecord[]) =>
     estateMergeInput(op, estateRepos(op), [...records].sort(byKindId), undefined, read);
   let merged = mergeCatalog(mergeInput(code));
+  mark("3 merge");
   let inputs: ScanInputsResult | undefined;
   if (i.inputsDir !== null) {
     inputs = await scanInputs({
@@ -850,6 +870,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
     if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
   }
+  mark("3 intake");
   let records = withoutHeardListeners(merged.records, projection);
   let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;
   if (projection) {
@@ -883,6 +904,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     decisions: i.curated.records,
     proposalsDir,
   });
+  mark("3 features");
   for (const p of found.problems)
     problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
   let federated: FederatedContribution[] | undefined;
@@ -911,6 +933,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     proposalsDir,
     orgPackDir: i.orgPackDir,
   });
+  mark("3 federation and glossary");
   notes.push(...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`));
   records = [...glossary.records, ...fedRecords];
 
@@ -938,6 +961,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     records = shared ? applySharedMaps(records, shared, systems) : stripSharedMaps(records);
   }
 
+  mark("4 link evidence and shared maps");
   // ---- 5. the legacy records, as they are, until a current source takes over (point 6)
   await pass(5);
   const retired: RetiredJoin[] = [];
@@ -1248,6 +1272,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       ),
   );
 
+  mark("5 legacy");
   // ---- 6. the curated decisions, once, last
   await pass(6);
   // A decision changes or suppresses a record the build makes; it never adds one (ADR 0195
@@ -1273,6 +1298,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       message: `invalid record: ${inv.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
     });
   const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
+  mark("6 curated");
 
   // ---- per fact repo: flows, loose calls, the join about it
   await pass(7);
@@ -1300,6 +1326,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     }
   }
 
+  mark("per repo");
   // ---- the files and build.json
   await pass(8);
   const files = new Map<string, string>();
@@ -1322,6 +1349,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     legacyJoins !== undefined ? sha(legacyJoins) : legacySlot ? legacySlot.sha : undefined,
     legacyKept ?? [],
   );
+  mark("files and build.json");
   const stats = {
     records: out.length,
     interfaces: out.filter((r) => r.kind === "Interface").length,
@@ -1375,6 +1403,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // while they ran may be in the build or not, so the build is no build of either.
   if (cacheKey && (await cacheKey.unchanged()))
     stageKept(build, i.stateDir, cacheKey.key, textKeys);
+  mark("kept");
   return build;
 }
 
@@ -1759,11 +1788,32 @@ function buildManifestOfText(
 }
 
 /** Every record file under a catalog folder, with the hash of its bytes (line endings aside). */
-/** A catalog folder's record files, by path under it: their text (LF) and its hash. */
-type DiskFiles = Map<string, { sha: string; text: string }>;
+/**
+ * A catalog folder's record files, by path under it: their text (LF) and its hash, and the
+ * size and time (ms, floored) the file had when it was read (none: not known).
+ */
+type DiskFiles = Map<string, { sha: string; text: string; size?: number; mtimeMs?: number }>;
+
+/**
+ * Whether a read of the folder (`readCatalogWithFiles`) found every record file `onDisk` holds,
+ * and no other, each with the size and time it has there: then a read of the files again would
+ * get each record from the parse cache that read filled (it keys a parse by them), so that read's
+ * records are what it would give (beta.28.1: the guards and the map read 97,000 files again).
+ */
+function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: DiskFiles): boolean {
+  if (!read || read.dir !== resolve(dir) || read.files.size !== onDisk.size) return false;
+  for (const [p, f] of onDisk) {
+    const r = read.files.get(p);
+    if (!r || f.size === undefined || r.size < 0) return false;
+    if (r.size !== f.size || r.mtimeMs !== f.mtimeMs) return false;
+  }
+  return true;
+}
 
 async function hashFiles(dir: string): Promise<DiskFiles> {
-  const out = new Map<string, { sha: string; text: string }>();
+  // The paths first, in the walk's order; then the files read many at once (beta.28.1: one at
+  // a time, 100,000 record files took 15 s) and put in the map in that order.
+  const paths: string[] = [];
   async function walk(d: string, rel: string) {
     let entries;
     try {
@@ -1774,15 +1824,34 @@ async function hashFiles(dir: string): Promise<DiskFiles> {
     for (const e of entries.sort((a, b) => cmpText(a.name, b.name))) {
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(join(d, e.name), r);
-      else if (/\.ya?ml$/.test(e.name)) {
-        const text = (await readFile(join(d, e.name), "utf8")).replace(/\r\n?/g, "\n");
-        out.set(r, { sha: sha(text), text });
-      }
+      else if (/\.ya?ml$/.test(e.name)) paths.push(r);
     }
   }
   await walk(dir, "");
+  const texts = new Array<string>(paths.length);
+  const stats = new Array<{ size: number; mtimeMs: number }>(paths.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(READ_AT_ONCE, paths.length) }, async () => {
+      for (let k = next++; k < paths.length; k = next++) {
+        // Its size and time from the open file, as readFile itself looks them up.
+        const fh = await open(join(dir, ...paths[k]!.split("/")), "r");
+        try {
+          const s = await fh.stat();
+          stats[k] = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+          texts[k] = (await fh.readFile("utf8")).replace(/\r\n?/g, "\n");
+        } finally {
+          await fh.close();
+        }
+      }
+    }),
+  );
+  const out: DiskFiles = new Map();
+  paths.forEach((r, k) => out.set(r, { sha: sha(texts[k]!), text: texts[k]!, ...stats[k]! }));
   return out;
 }
+/** How many files a build reads at once (a few dozen: well under any open-files limit). */
+const READ_AT_ONCE = 32;
 
 /** Where a command writes (the baseline's catalog, or a branch's beside it). */
 export interface CatalogTarget {
@@ -1850,8 +1919,14 @@ export async function guardBuild(
     onDisk?: DiskFiles;
     /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
     manifests?: { onDisk: string | undefined; mine: string };
+    /**
+     * The target's records as the caller read them (under its lock), used in place of a read
+     * of the files again when every file still has the size and time it had (`sameFilesAs`).
+     */
+    lastRead?: CatalogFilesRead;
   },
 ): Promise<GuardResult> {
+  const mark = phaseClock("guards: ");
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
@@ -1859,6 +1934,12 @@ export async function guardBuild(
     ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)
     : await readBuildManifest(target.manifest);
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
+  mark("build.json read");
+  /** The target's records now: the caller's read where it still holds, else read again. */
+  const lastRecords = async (): Promise<readonly CatalogRecord[]> =>
+    sameFilesAs(o.lastRead, target.generated, onDisk)
+      ? o.lastRead!.records
+      : (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records;
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
   const again = (flag: string) => `${o.command} ${flag}`;
@@ -1918,6 +1999,7 @@ export async function guardBuild(
     if (o.discardEdits !== undefined)
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
   }
+  mark("hand edits");
   const discardCount = before ? onDisk.size : edits.length;
   const beforeEdits: HandEdit[] = [...onDisk.keys()].map((p) => ({
     path: `${genRel}/${p}`,
@@ -1938,9 +2020,9 @@ export async function guardBuild(
       return !b.files.has(p) && onDisk.has(p);
     });
     if (removing) {
-      const cat = await readCatalog(target.generated, { cacheRoot: root, fresh: true });
-      for (const r of cat.records) oldRecords.set(recordPath(r), r);
+      for (const r of await lastRecords()) oldRecords.set(recordPath(r), r);
     }
+    mark("last build's records read");
     const repoGone = (repo: string) => !b.sources.some((s) => s.repo === repo);
     // Each repo's slot files as this build read them, with their hashes.
     const slotNow = new Map<string, { path: string; sha256: string }[]>();
@@ -2141,6 +2223,7 @@ export async function guardBuild(
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
     }
+    mark("removals explained");
     // The records each repo had in the last build, for the share.
     const had = new Map<string, number>();
     for (const r of oldRecords.values())
@@ -2187,12 +2270,7 @@ export async function guardBuild(
   // ---- no empty catalog over a full one
   const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
   const emptyNow = !b.records.some(fromCode) && b.listed.length > 0;
-  const hadCode =
-    emptyNow && last.manifest
-      ? (await readCatalog(target.generated, { cacheRoot: root, fresh: true })).records.some(
-          fromCode,
-        )
-      : false;
+  const hadCode = emptyNow && last.manifest ? (await lastRecords()).some(fromCode) : false;
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
@@ -2321,11 +2399,28 @@ export async function takeUndoCopy(
   } = {},
 ): Promise<number | undefined> {
   // The bytes as they are on disk (a Windows checkout's CRLF kept), compared as text.
-  const changes: { path: string; before: Buffer | null; after: string | null; input?: true }[] = [];
+  // `before` "copy": a file the caller read already, copied by the system, not read again
+  // (beta.28.1: build.json, 180 MB at 60 repos).
+  const changes: {
+    path: string;
+    before: Buffer | "copy" | null;
+    after: string | null;
+    input?: true;
+  }[] = [];
   for (const t of touched) {
     // A file the caller read already that the command leaves as it is isn't read again.
     const next = t.text === null ? null : t.text.replace(/\r\n?/g, "\n");
-    if (extra.known?.has(t.path) && (extra.known.get(t.path) ?? null) === next) continue;
+    if (extra.known?.has(t.path)) {
+      const was = extra.known.get(t.path) ?? null;
+      if (was === next) continue;
+      changes.push({
+        path: t.path,
+        before: was === null ? null : "copy",
+        after: next === null ? null : sha(next),
+        ...(t.input ? { input: t.input } : {}),
+      });
+      continue;
+    }
     const raw = await readFile(t.path).catch(() => undefined);
     const cur = raw?.toString("utf8").replace(/\r\n?/g, "\n");
     if ((cur ?? null) === next) continue;
@@ -2357,7 +2452,15 @@ export async function takeUndoCopy(
     if (c.before !== null) {
       const to = join(dir, "files", ...relOf(root, c.path).split("/"));
       await mkdir(dirname(to), { recursive: true });
-      await writeFile(to, c.before);
+      if (c.before !== "copy") await writeFile(to, c.before);
+      else
+        try {
+          await copyFile(c.path, to, fsConstants.COPYFILE_FICLONE);
+        } catch (e) {
+          // Gone since the caller read it: there is nothing to put back, as a read would find.
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+          c.before = null;
+        }
     }
   if (extra.nextManifest !== undefined)
     await writeFile(join(dir, "next-build.json"), extra.nextManifest, "utf8");
@@ -2446,7 +2549,19 @@ export async function writeBuiltCatalog(
   const w = await writeCatalog(target.generated, b.records, { texts: b.files, onDisk });
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
   const manifestNow = o.manifests ? o.manifests.onDisk : await readText(target.manifest);
-  if (manifestNow !== manifestText) await writeFileAtomic(target.manifest, manifestText);
+  if (manifestNow !== manifestText) {
+    // beta.28.1: the undo copy's next-build.json holds these bytes already (written just now,
+    // under the lock): build.json is a copy of it, made by the system, not written again.
+    const next = undo !== undefined ? join(o.undoDir, String(undo), "next-build.json") : undefined;
+    const same =
+      next !== undefined &&
+      (await stat(next).then(
+        (s) => s.size === Buffer.byteLength(manifestText, "utf8"),
+        () => false,
+      ));
+    if (same) await copyFileAtomic(next, target.manifest);
+    else await writeFileAtomic(target.manifest, manifestText);
+  }
   return {
     ...w,
     slots: wrote.sort(cmpText),
@@ -2724,6 +2839,11 @@ export interface BuildAndWrite {
   guard: GuardResult;
   /** Undefined when refused, or with `check`. */
   write?: WriteResult;
+  /**
+   * After a write, with `read`: catalog/generated's records as `readCatalog` reads them, where
+   * that read still matched the files (beta.28.1: so the caller doesn't read 97,000 files again).
+   */
+  catalog?: CatalogRecord[];
   /** With `check`: whether catalog/generated is what the slots build. */
   upToDate?: boolean;
   /**
@@ -2775,11 +2895,18 @@ export async function buildAndWrite(
       files?: number;
     }) => void | Promise<void>;
     onPass?: BuildProgress["onPass"];
+    /**
+     * The target's records as the caller read them under its lock (`readCatalogWithFiles`): the
+     * guards use them, and the result's `catalog` is worked out from them, where every file
+     * still has the size and time that read found (beta.28.1: one read of the catalog a write).
+     */
+    read?: CatalogFilesRead;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
   const undoDir = buildUndoDirOf(root, pack.stateDir);
   if (!o.build) await o.onStep?.({ step: "build" });
+  const mark = phaseClock("write: ");
   const build =
     o.build ??
     (await buildCatalog(
@@ -2797,8 +2924,10 @@ export async function buildAndWrite(
   // The target's record files and build.json, read once for the guards, the report and the
   // write, and the build.json this build writes, serialized once (ADR 0195 point 9).
   await o.onStep?.({ step: "check" });
+  mark("build");
   const target = o.target ?? baselineTarget(root);
   const onDisk = await hashFiles(target.generated);
+  mark("hash catalog on disk");
   const manifestOnDisk = await readText(target.manifest);
   const manifests = {
     onDisk: manifestOnDisk,
@@ -2813,10 +2942,12 @@ export async function buildAndWrite(
     command: o.command,
     onDisk,
     manifests,
+    ...(o.read ? { lastRead: o.read } : {}),
     ...(o.target ? { target: o.target } : {}),
     ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
     ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
   });
+  mark("guards");
   // The confirm's list worked out again here, under the caller's lock: the guard as a refusal
   // would list it (no counts), compared with what the page showed.
   if (o.expect && !o.check) {
@@ -2827,6 +2958,7 @@ export async function buildAndWrite(
           command: o.command,
           onDisk,
           manifests,
+          ...(o.read ? { lastRead: o.read } : {}),
           ...(o.target ? { target: o.target } : {}),
         })
       : guard;
@@ -2856,11 +2988,13 @@ export async function buildAndWrite(
     target: o.target ?? baselineTarget(root),
     ...(o.now ? { now: o.now } : {}),
   });
+  mark("report");
   // The build cache keeps what these inputs build, written or refused (point 9).
   await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
     path: target.manifest,
     text: manifests.mine,
   });
+  mark("keep build");
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
     return { build, guard };
@@ -2887,6 +3021,7 @@ export async function buildAndWrite(
     }).catch(() => undefined);
     throw e;
   }
+  mark("write catalog");
   const changedNothing = write.written === 0 && write.removed === 0 && write.slots.length === 0;
   await writeBuildReport(undoDir, {
     ...report,
@@ -2896,7 +3031,35 @@ export async function buildAndWrite(
     ...(write.undo !== undefined ? { undo: write.undo } : {}),
     ...(write.discarded.length ? { discarded: write.discarded } : {}),
   });
-  return { build, guard, write };
+  const catalog = catalogAfterWrite(build, target, onDisk, o.read);
+  return { build, guard, write, ...(catalog ? { catalog } : {}) };
+}
+
+/**
+ * The target's records after the write, as `readCatalog` would read them, from the caller's read
+ * (`buildAndWrite`'s `read`): the write leaves exactly the build's files there, so a file it
+ * left as it was is the record that read had (its size and time unchanged), and a file it wrote
+ * is the parse of the text it wrote. Undefined when that read doesn't match the files.
+ */
+function catalogAfterWrite(
+  b: Build,
+  target: CatalogTarget,
+  onDisk: DiskFiles,
+  read: CatalogFilesRead | undefined,
+): CatalogRecord[] | undefined {
+  if (!sameFilesAs(read, target.generated, onDisk)) return undefined;
+  const out: CatalogRecord[] = [];
+  for (const [p, text] of b.files) {
+    // writeCatalog's own test of a file it leaves as it is.
+    if (onDisk.get(p)?.text.replace(/\r\n?/g, "\n") === text) {
+      const r = read!.files.get(p)!.record;
+      if (r) out.push(r);
+      continue;
+    }
+    const r = deserializeRecord(text);
+    if (r.ok) out.push(r.record);
+  }
+  return sortCatalogRecords(out);
 }
 
 /** A record file a build adds or changes, as its report lists it. */

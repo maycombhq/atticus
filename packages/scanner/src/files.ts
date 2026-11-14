@@ -41,8 +41,13 @@ export function forgetCatalogs(): void {
  */
 export async function readCatalog(
   dir: string,
-  o: { cacheRoot?: string; fresh?: boolean } = {},
+  /**
+   * `keep: false` reads the parses kept under `cacheRoot` and writes none (a preview): it
+   * neither uses nor fills this process's kept copy.
+   */
+  o: { cacheRoot?: string; fresh?: boolean; keep?: boolean } = {},
 ): Promise<CatalogRead> {
+  if (o.keep === false) return readCatalogFiles(dir, o.cacheRoot, false);
   if (!keeping) return readCatalogFiles(dir, o.cacheRoot);
   const key = resolve(dir);
   if (o.fresh) {
@@ -66,7 +71,42 @@ export async function readCatalog(
  */
 const CATALOG_CACHE_VERSION = `c1@${SCHEMA_VERSION}`;
 
-async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<CatalogRead> {
+/** A read of a catalog folder with each file as it was read (`readCatalogWithFiles`). */
+export interface CatalogFilesRead extends CatalogRead {
+  /** The folder read, absolute. */
+  dir: string;
+  /** Each record file by its path under `dir`: its record (none: a problem), size and time. */
+  files: Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>;
+}
+
+/**
+ * `readCatalog` from the files (never a kept copy), with each file's record, size and time
+ * (ms, floored, as the parse cache keys them). beta.28.1: a write reads the catalog once, and
+ * its guards and its map use that read where every file still has the size and time it had
+ * (what a read of the files again would get from the parse cache: `sameFilesAs`).
+ */
+export async function readCatalogWithFiles(
+  dir: string,
+  o: { cacheRoot?: string } = {},
+): Promise<CatalogFilesRead> {
+  const files = new Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>();
+  const read = await readCatalogFiles(dir, o.cacheRoot, undefined, files);
+  return { ...read, dir: resolve(dir), files };
+}
+
+/** Sort a catalog's records as a read gives them: kind, then id. */
+export function sortCatalogRecords<R extends CatalogRecord>(records: R[]): R[] {
+  return records.sort((a, b) =>
+    a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind),
+  );
+}
+
+async function readCatalogFiles(
+  dir: string,
+  cacheRoot?: string,
+  keep?: boolean,
+  withFiles?: Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>,
+): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
   const files: string[] = [];
@@ -92,6 +132,8 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
     name: "catalog",
     version: CATALOG_CACHE_VERSION,
     cacheRoot,
+    ...(keep === false ? { keep } : {}),
+    ...(withFiles ? { withStats: true } : {}),
     parse: (text) => {
       const r = deserializeRecord(text);
       return r.ok
@@ -101,9 +143,14 @@ async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<Catalo
   })) {
     if (p.problem === undefined) records.push(p.value!);
     else problems.push({ file: p.rel, message: p.problem });
+    withFiles?.set(p.rel, {
+      ...(p.problem === undefined ? { record: p.value! } : {}),
+      size: p.size ?? -1,
+      mtimeMs: p.mtimeMs ?? -1,
+    });
   }
   // The same order as a scan's records (kind, then id), whatever the file names sort to.
-  records.sort((a, b) => (a.kind === b.kind ? cmpText(a.id, b.id) : cmpText(a.kind, b.kind)));
+  sortCatalogRecords(records);
   return { records, problems };
 }
 
