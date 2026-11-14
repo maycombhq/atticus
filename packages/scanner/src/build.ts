@@ -698,8 +698,21 @@ function withUnslottedEnds(
   for (const r of legacy) {
     if (r.kind !== "Interface") continue;
     const x = r as unknown as { from?: string; to?: string };
-    for (const end of [x.from, x.to])
-      if (end && !out.has(end) && !held.has(end)) out.set(end, repos);
+    // Beta.28.1 (seed 1542546636): an end is the repos the arrow's evidence names on its side
+    // (the caller's for `from`, the callee's for `to`) among those, when it names any: an arrow
+    // out of an archived repo isn't a join with another repo taken out of the manifests.
+    const sideOf = (side: "caller" | "callee") => {
+      const named = new Set(
+        (r.evidence ?? []).filter((e) => e.side === side && e.repo).map((e) => e.repo!),
+      );
+      const mine = repos.filter((repo) => named.has(repo));
+      return mine.length ? mine : repos;
+    };
+    for (const [end, side] of [
+      [x.from, "caller"],
+      [x.to, "callee"],
+    ] as const)
+      if (end && !out.has(end) && !held.has(end)) out.set(end, sideOf(side));
   }
   return out;
 }
@@ -1317,7 +1330,17 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const legacySlotKeys = new Set(
     (legacySlot ? legacySlot.slot.records : []).map((r) => `${r.kind}/${r.id}`),
   );
-  records = [...byKey.values()].filter(
+  // Beta.28.1 (seed 1539914139): the features pass folds only into a feature it detects. A
+  // target the overlay alone keeps (a legacy feature no current source derives now) can't take
+  // the folded feature's members, so the folded one is left out while the target is in the
+  // catalog, as the alias says, whether the folded one is a legacy copy or derived again. (Its
+  // legacy copy retiring must not bring it back on the next build.)
+  const foldedInto = new Map<string, string[]>();
+  for (const d of i.curated.records)
+    if (d.kind === "CuratedDecision" && d.status === "current" && d.action === "alias")
+      for (const v of Array.isArray(d.value) ? d.value : [d.value])
+        if (typeof v === "string") foldedInto.set(v, [...(foldedInto.get(v) ?? []), d.target]);
+  const overlaid = [...byKey.values()].filter(
     (r) =>
       !(legacySlot && isLegacyGone(r, legacySlotKeys, live, goneEnds)) &&
       !(
@@ -1325,6 +1348,13 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
         legacyKeys.has(`${r.kind}/${r.id}`) &&
         !derivedKeys.has(`${r.kind}/${r.id}`)
       ),
+  );
+  const keptFeatures = new Set(
+    overlaid.filter((r) => r.kind === "Capability" && !foldedNow.has(r.id)).map((r) => r.id),
+  );
+  records = overlaid.filter(
+    (r) =>
+      !(r.kind === "Capability" && (foldedInto.get(r.id) ?? []).some((t) => keptFeatures.has(t))),
   );
 
   mark("5 legacy");

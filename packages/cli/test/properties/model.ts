@@ -23,6 +23,11 @@ export interface Observation {
   id: string;
   /** A readers slot `atticus upgrade` adopted (status legacy): the old catalog's records. */
   legacy?: boolean;
+  /**
+   * The harness's failing reader (fault.ts), when the read ran with it: the slot lists the
+   * readers that wrote it, so a read with another set changes the slot.
+   */
+  extra?: string;
 }
 
 export interface RepoState {

@@ -446,17 +446,24 @@ async function scan(
     observed,
     unobserved,
     rerun: d,
-    onSuccess: () => observe(m, observed),
+    // Beta.28.1 (seed 1542933929): the fault's extra reader runs on every repo the scan reads,
+    // so each slot it writes lists that reader: the other repos' slots change too.
+    onSuccess: () =>
+      observe(m, observed, d.t === "scan-reader-fails" ? `fails-on.${target!.id}` : undefined),
   };
 }
 
-/** The readers of these slots read in full now: their slots hold this read. */
-function observe(m: Model, slots: number[]): void {
+/**
+ * The readers of these slots read in full now: their slots hold this read, and `extra` names the
+ * harness's failing reader when it ran too (a slot lists the readers that wrote it).
+ */
+function observe(m: Model, slots: number[], extra?: string): void {
   for (const s of slots) {
     const r = m.repos[s]!;
     const was = m.readers.get(s);
-    if (!was || was.commit !== r.commit || was.id !== r.id || was.legacy) m.changes.slots.add(s);
-    m.readers.set(s, { code: r.code, commit: r.commit, id: r.id });
+    if (!was || was.commit !== r.commit || was.id !== r.id || was.legacy || was.extra !== extra)
+      m.changes.slots.add(s);
+    m.readers.set(s, { code: r.code, commit: r.commit, id: r.id, ...(extra ? { extra } : {}) });
   }
 }
 

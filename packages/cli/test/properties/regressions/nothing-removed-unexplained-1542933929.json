@@ -1,0 +1,58 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: confirm-removals reports Unresolved/ledger-api.http-call.3b701c93d0 removed by \"slot\", but what changed is input. A scan whose reader fails on one repo writes the other repos' slots with that reader in their list: their slots changed, which the model didn't count (beta.28.1).",
+  "seed": 1542933929,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "legacy-payments.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "answer",
+      "host": 0,
+      "to": "self"
+    },
+    {
+      "t": "scan-reader-fails",
+      "slot": 0
+    },
+    {
+      "t": "undo",
+      "n": 0,
+      "yes": false,
+      "back": false
+    }
+  ]
+}
