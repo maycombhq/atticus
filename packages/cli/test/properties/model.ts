@@ -136,6 +136,19 @@ export class Model {
   curated: Decision[] = [];
   /** Host → slot a person said answers on it, or "none". */
   answers = new Map<string, number | "none">();
+  /**
+   * Beta.28.1 (field hunt G1, the re-review): a person's pairing of a loose call (a call to a
+   * legacy host nobody answered) with an entry of another repo, Connect to…'s `link` correction.
+   * The build draws the arrow, flagged joined by a person, while the call and the entry are read.
+   */
+  pairs: {
+    caller: number;
+    method: string;
+    path: string;
+    host: string;
+    callee: number;
+    entry: { method: string; path: string };
+  }[] = [];
   /** Generated files edited by hand and not yet made curated or discarded. */
   handEdits: HandEdit[] = [];
   /**
@@ -293,6 +306,24 @@ export class Model {
               s.from !== "legacy" && t.from !== "legacy",
             );
         }
+    }
+    // A person's pairing: admitted while the caller's source still makes the call and both
+    // repos are read (the arrow's path is the call's or the entry's: either is admitted). Not
+    // required: a pairing that no longer meets an entry goes stale, kept on file, and draws none.
+    for (const x of this.pairs) {
+      const c = this.repos[x.caller]!;
+      const e = this.repos[x.callee]!;
+      const s = this.source(x.caller);
+      if (!s || s.from === "legacy" || !this.isLive(x.callee)) continue;
+      if (
+        !s.obs.code.calls.some(
+          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
+        )
+      )
+        continue;
+      if (this.calleeOf(x.host)) continue;
+      for (const path of new Set([x.path, x.entry.path]))
+        add(arrowKey(c.base.component, e.base.component, x.method, path), false, false);
     }
     if (withLegacy)
       for (const j of this.liveLegacy()) {

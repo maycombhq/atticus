@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -6,6 +6,7 @@ import fc from "fast-check";
 import { parse, stringify } from "yaml";
 import {
   CancelledError,
+  correctionLine,
   HOSTS_NONE,
   HOSTS_STEP,
   listQuestions,
@@ -21,6 +22,8 @@ import {
   sketchArb,
   writeManifest,
   renderFacts,
+  served,
+  slugOf,
   writeRead,
   type Code,
   type Sketch,
@@ -83,6 +86,12 @@ export type Desc =
   | { t: "verify-live"; slot: number }
   /** A person answers which repo serves a repo's legacy host: another repo, the repo itself, or none. */
   | { t: "answer"; host: number; to: number | "self" | "none" }
+  /**
+   * Beta.28.1 (field hunt G1): a person pairs a repo's loose call (to a legacy host nobody
+   * answered) with an entry of another repo, as Connect to… writes it (a `link` correction), then
+   * builds. `call` and `api` pick among the caller's loose calls and the callee's entries.
+   */
+  | { t: "pair"; slot: number; to: number; call: number; api: number }
   | { t: "curate"; action: "suppress" | "assert" | "alias"; pick: number }
   | { t: "uncurate"; pick: number }
   | { t: "archive"; slot: number }
@@ -675,6 +684,80 @@ export async function act(
     case "verify-live":
       return verify(d, m, w, confirm);
 
+    case "pair": {
+      // The owner's flow (field hunt G1): Connect to… pairs a loose call (to a legacy host nobody
+      // answered) with another repo's entry, reading both repos' facts files, then Apply runs
+      // `verify <caller> --write`. `slot` and `to` pick among the repos that can pair: a caller
+      // with such a call, a callee with an entry.
+      const looseOf = (r: (typeof m.repos)[number]) =>
+        r.code.calls
+          .filter((x) => !m.calleeOf(x.host) && !m.answers.has(x.host))
+          .filter(
+            (x) =>
+              !m.pairs.some(
+                (p) =>
+                  p.caller === r.slot &&
+                  p.method === x.method &&
+                  p.path === x.path &&
+                  p.host === x.host,
+              ),
+          );
+      const callers = m.live().filter((r) => looseOf(r).length && existsSync(w.clone(r.id)));
+      if (!callers.length) return undefined;
+      const c = callers[d.slot % callers.length]!;
+      const callees = m.live().filter((r) => r.slot !== c.slot && served(r.base, r.code).length);
+      if (!callees.length) return undefined;
+      const e = callees[d.to % callees.length]!;
+      const loose = looseOf(c);
+      const entries = served(e.base, e.code);
+      const call = loose[d.call % loose.length]!;
+      const entry = entries[d.api % entries.length]!;
+      // The facts files of the code each has now, as `atticus verify` leaves them (each fact
+      // checked at its line): what Connect to… reads.
+      for (const r of [c, e]) {
+        const file = join(w.root, "facts", `${r.id}.jsonl`);
+        await writeRead(w.root, r.base, r.id, r.code, r.commit);
+        await writeFile(
+          file,
+          (await readFile(file, "utf8")).replaceAll('"verified":"none"', '"verified":"line"'),
+        );
+      }
+      const { pairingsOf } = await import("../../src/ui-api-links.js");
+      const callId = `c-${slugOf(`${call.method} ${call.host} ${call.path}`)}`;
+      const apiId = `e-${slugOf(`${entry.method} ${entry.path}`)}`;
+      let lines: string[];
+      try {
+        const p = await pairingsOf(
+          w.root,
+          { from: c.id, to: { repo: e.id }, pairs: [{ call: callId, api: apiId }] },
+          { by: "forge.dev", at: "2026-11-14T10:00:00.000Z" },
+        );
+        lines = p.corrections.map(correctionLine);
+      } catch (err) {
+        throw new Error(`harness: the pairing ${callId} → ${apiId} was refused: ${String(err)}`, {
+          cause: err,
+        });
+      }
+      if (!lines.length) return undefined;
+      await mkdir(join(w.root, "facts"), { recursive: true });
+      await appendFile(
+        join(w.root, "facts", `${c.id}.corrections.jsonl`),
+        lines.map((l) => `${l}\n`).join(""),
+      );
+      m.pairs.push({
+        caller: c.slot,
+        method: call.method,
+        path: call.path,
+        host: call.host,
+        callee: e.slot,
+        entry: { method: entry.method, path: entry.path },
+      });
+      // A person's word about the calls to that host, as an answer is: what it explains.
+      m.changes.answered.add(call.host);
+      // Then Apply: `verify <caller> --write` with the pairing on file.
+      return verify({ t: "verify-write", slot: c.slot, ok: true }, m, w, confirm);
+    }
+
     case "answer": {
       // `host` picks among the open questions about a repo's legacy host (the scan asks one for
       // each host a call names that no repo lists), so an answer acts whenever one is asked.
@@ -686,6 +769,8 @@ export async function act(
         .sort((a, b) => (a.q.id < b.q.id ? -1 : 1));
       if (!open.length) return undefined;
       const { q, h } = open[d.host % open.length]!;
+      // A host a person paired a call of is theirs already (the pairing stands over the answer).
+      if (m.pairs.some((p) => p.host === h.base.legacyHost)) return undefined;
       const to = d.to === "none" ? undefined : d.to === "self" ? h : live(m, d.to);
       if (d.to !== "none" && !to) return undefined;
       const host = h.base.legacyHost;
@@ -1245,6 +1330,19 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
     ),
     d(fc.record({ t: fc.constant("upgrade" as const), yes: fc.boolean() })),
     ...times(3, d(fc.constant({ t: "again" }))),
+    // Beta.28.1 (field hunt G1): last, so the draws of the commands before it stay as they were.
+    ...times(
+      4,
+      d(
+        fc.record({
+          t: fc.constant("pair" as const),
+          slot,
+          to: slot,
+          call: fc.nat(4),
+          api: fc.nat(8),
+        }),
+      ),
+    ),
   ];
 }
 
@@ -1261,6 +1359,7 @@ export const GENERATED: readonly CommandType[] = [
   "verify-write",
   "verify-live",
   "answer",
+  "pair",
   "curate",
   "uncurate",
   "archive",

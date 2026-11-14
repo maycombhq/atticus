@@ -280,20 +280,18 @@ export async function verifyWritePreview(
     if (m?.replace(/\r\n?/g, "\n") !== serializeBuildManifest(p.build.manifest))
       files.push(posixRel(root, buildManifestPath(root)));
   }
-  // Beta.28.1 (field hunt G1): the build's guards as the Apply will run them, nothing written:
-  // whether the Apply waits for a confirm of its removals, and the count that confirms them.
-  await step("Checking the build's guards");
-  const { buildAndWrite } = await import("@maycombhq/scanner");
-  const checked = await buildAndWrite(root, {
-    command: `atticus verify ${repo} --write`,
-    build: p.build,
-    slots: p.snap,
-    check: true,
-    keepNoReads: true,
-  });
-  const waits = checked.guard.refused?.reasons.includes("large-removals")
-    ? checked.guard.refused.allowRemovals
-    : undefined;
+  // Beta.28.1 (field hunt G1, the re-review): whether the Apply will wait for a confirm of its
+  // removals, by the guard's own limits (`overRemovalLimits`), from the records this preview has
+  // already: no second read or hash of the catalog's files (that took 33 CPU s at 30 repos).
+  const { removalsToConfirm } = await import("@maycombhq/scanner");
+  const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
+  const gone = new Set(p.diff.removed.map(k));
+  const made = new Set(p.diff.added.map(k));
+  const waits = removalsToConfirm(
+    p.existing,
+    p.existing.filter((r) => gone.has(k(r))),
+    p.result.records.filter((r) => made.has(k(r))),
+  );
   const confirm =
     waits !== undefined
       ? { removals: waits, command: `atticus verify ${repo} --write --allow-removals ${waits}` }

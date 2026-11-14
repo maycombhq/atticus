@@ -1713,6 +1713,64 @@ export function rekeyedWords(
   return out;
 }
 
+/**
+ * The large-removal limits of ADR 0195 point 4 as one rule, for the guard and for a preview
+ * (beta.28.1, the re-review of G1): `had` is each repo's records in the last build, `gone` each
+ * removal with the repos its evidence names and whether it is a loose end a person's pairing
+ * joins now (which counts toward neither limit). `big`: the repos over the share, with how many.
+ */
+export function overRemovalLimits(
+  had: ReadonlyMap<string, number>,
+  gone: readonly { repos: readonly string[]; joined?: boolean }[],
+): { over: boolean; big: [string, number][]; counted: number } {
+  const counted = gone.filter((x) => !x.joined);
+  const per = new Map<string, number>();
+  for (const x of counted) for (const repo of x.repos) per.set(repo, (per.get(repo) ?? 0) + 1);
+  const big = [...per].filter(([repo, n]) => n > (had.get(repo) ?? 0) * REMOVAL_LIMITS.share);
+  return {
+    over: big.length > 0 || counted.length > REMOVAL_LIMITS.count,
+    big,
+    counted: counted.length,
+  };
+}
+
+/**
+ * Beta.28.1 (the re-review of G1): what a preview can say of the next write's large-removal
+ * guard without the guard's read of the files: from the catalog on file (`before`) and the
+ * records the build removes and adds, the count to confirm when the removals are over the
+ * limits (every removal listed; undefined when under them). The guard itself also lists hand
+ * edits and unexplained removals, which refuse on their own: this is only the limits' part.
+ */
+export function removalsToConfirm(
+  before: readonly CatalogRecord[],
+  removed: readonly CatalogRecord[],
+  added: readonly CatalogRecord[],
+): number | undefined {
+  if (!removed.length) return undefined;
+  const had = new Map<string, number>();
+  for (const r of before)
+    for (const repo of repoOfEvidence(r)) had.set(repo, (had.get(repo) ?? 0) + 1);
+  const at = pairedArrowsAt(added);
+  const { over } = overRemovalLimits(
+    had,
+    removed.map((r) => ({ repos: repoOfEvidence(r), joined: !!joinedArrowOf(r, at) })),
+  );
+  return over ? removed.length : undefined;
+}
+
+/** The arrows a person's pairing joins among `added`, by each line they cite. */
+function pairedArrowsAt(added: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
+  const out = new Map<string, CatalogRecord[]>();
+  for (const x of added)
+    if (x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"))
+      for (const k of new Set(evidenceLines(x))) {
+        const l = out.get(k);
+        if (l) l.push(x);
+        else out.set(k, [x]);
+      }
+  return out;
+}
+
 /** Each line a record cites, as `<repo>\u0000<path>\u0000<line>`. */
 function evidenceLines(r: CatalogRecord): string[] {
   const out: string[] = [];
@@ -2184,14 +2242,7 @@ export async function guardBuild(
     // each line they cite: a loose end (Unresolved) citing a line such an arrow cites, of the same
     // caller, is that call joined now by the person, not a loss. An answer's join (words that may
     // make a box nobody meant) still goes through the limits.
-    const addedArrowsAt = new Map<string, CatalogRecord[]>();
-    for (const x of addedNow)
-      if (x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"))
-        for (const k of new Set(evidenceLines(x))) {
-          const l = addedArrowsAt.get(k);
-          if (l) l.push(x);
-          else addedArrowsAt.set(k, [x]);
-        }
+    const addedArrowsAt = pairedArrowsAt(addedNow);
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2317,10 +2368,13 @@ export async function guardBuild(
       // record of the repo): the same thing back under another id, or no fact of the repo's read
       // that makes it. Only for a removal something explains already: never a bug's excuse.
       const own: string[] = [];
-      let joinedNow: string | undefined;
+      // G1: a loose end a person's pairing joins in this build. Matched by line: an Unresolved
+      // carries no call id (only its raw text, its owner and its evidence), so the join is the
+      // one arrow the pairing adds that cites the same line from the same caller. Two calls on
+      // one line, or two such arrows, match nothing, and the removal counts as any other.
+      const joinedNow = r ? joinedArrowOf(r, addedArrowsAt) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
-        joinedNow = back ? undefined : joinedArrowOf(r, addedArrowsAt);
         if (back) own.push(back);
         else if (joinedNow) own.push(`joined now (${joinedNow})`);
         // Only where the repo's read changed and nothing else is why: not a removal an answer,
@@ -2358,14 +2412,11 @@ export async function guardBuild(
       );
     }
     // A loose end joined now is the join's own result: it counts toward neither limit.
-    const counted = removals.filter((x) => !joinedLooseEnds.has(x.path));
-    const gone = new Map<string, number>();
-    for (const x of counted) for (const repo of x.repos) gone.set(repo, (gone.get(repo) ?? 0) + 1);
-    const big = [...gone].filter(([repo, n]) => n > (had.get(repo) ?? 0) * REMOVAL_LIMITS.share);
-    if (
-      (big.length || counted.length > REMOVAL_LIMITS.count) &&
-      o.allowRemovals !== removals.length
-    ) {
+    const { big, over } = overRemovalLimits(
+      had,
+      removals.map((x) => ({ repos: x.repos, joined: joinedLooseEnds.has(x.path) })),
+    );
+    if (over && o.allowRemovals !== removals.length) {
       reasons.push("large-removals");
       // beta.28: beside each repo's count, what the same build adds for it: a read switched to
       // another source that keys its records otherwise removes and adds about as many.
