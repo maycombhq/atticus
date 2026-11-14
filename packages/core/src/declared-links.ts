@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
@@ -182,6 +183,14 @@ export async function declareLink(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
+  // The re-review of G5: the text itself is checked, as it will be written, not the document.
+  const written = strictMeaning(after);
+  const again = written === undefined ? undefined : Profile.safeParse(written);
+  if (!again?.success)
+    throw new DeclareError(
+      "invalid",
+      `${rel}: the profile as it would be written doesn't read back as the same profile (a bug): nothing written.`,
+    );
   // Against the file as it is on disk: a system added first is one of the lines it changes.
   const changes = changedLines(found.created ? found.disk! : text, after);
   const created = found.created ? { created: d.system } : {};
@@ -199,7 +208,10 @@ export async function declareLink(
  * a document it only reads); a line of `after` that is one of those, in order, is that line of
  * `before`. Where the two don't line up (the library joined or split a line), `after` as it is.
  */
-export function keepUntouchedLines(before: string, after: string): string {
+export function keepUntouchedLines(written: string, after: string): string {
+  // A file without a last newline is lined up as one with it, and written back without it.
+  const open = !written.endsWith("\n");
+  const before = open ? `${written}\n` : written;
   const norm = parseDocument(before).toString({ lineWidth: 0, flowCollectionPadding: true });
   const o = before.split("\n");
   const n = norm.split("\n");
@@ -237,7 +249,19 @@ export function keepUntouchedLines(before: string, after: string): string {
     else out.push(am[j++]!);
   }
   out.push(...o.slice(o.length - tail));
-  return out.join("\n");
+  const joined = out.join("\n");
+  const kept = open && joined.endsWith("\n") ? joined.slice(0, -1) : joined;
+  // The re-review of G5: lining up by count alone can put a line of a folded scalar where another
+  // belongs (a key written twice, a value cut short). What is kept must say exactly what `after`
+  // says, read strictly (a key twice is an error); anything else is `after` as it is.
+  const meaning = strictMeaning(kept);
+  return meaning !== undefined && isDeepStrictEqual(meaning, strictMeaning(after)) ? kept : after;
+}
+
+/** A YAML text's value, read strictly (a duplicate key or any error: undefined). */
+function strictMeaning(text: string): unknown {
+  const d = parseDocument(text, { uniqueKeys: true });
+  return d.errors.length ? undefined : d.toJS();
 }
 
 /**

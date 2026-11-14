@@ -212,7 +212,7 @@ function pathScore(
     const at = long.length - short.length;
     return (
       short.every((x, i) => eq(x, long[at + i]!)) &&
-      short.some((x, i) => !isWild(x) && !/^v\d+$/.test(x) && x === long[at + i])
+      short.some((x, i) => !isWild(x) && !/^v\d+$/i.test(x) && x === long[at + i])
     );
   };
   if (shaped && (tail(b, a) || tail(a, b))) return { score: 0.85 * k, why: "prefix" };

@@ -146,6 +146,11 @@ describe("a prefix match needs a shared literal (field hunt G3)", () => {
     for (const path of others)
       expect(pairScore(fees, { method: "GET", path })?.why, path).not.toBe("prefix");
     expect(pairScore(fees, { method: "GET", path: "/v1/{id}/{x}/{y}" })?.why).not.toBe("prefix");
+    // A version segment in capitals is a version too.
+    expect(pairScore(fees, { method: "GET", path: "/api/V1/{id}" })?.why).not.toBe("prefix");
+    expect(
+      pairScore({ method: "GET", path: "/V1/{id}" }, { method: "GET", path: "/gw/V1/{x}" })?.why,
+    ).not.toBe("prefix");
     // A real tail: the call's resource and its variable, under a gateway's own prefix.
     expect(pairScore(fees, { method: "GET", path: "/gw/v1/fees/{feeId}" })).toEqual({
       score: 0.85,

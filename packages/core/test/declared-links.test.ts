@@ -2,8 +2,14 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { declaredOf, declareLink, DeclareError, undeclareLink } from "../src/index.js";
+import { parse, parseDocument } from "yaml";
+import {
+  declaredOf,
+  declareLink,
+  DeclareError,
+  keepUntouchedLines,
+  undeclareLink,
+} from "../src/index.js";
 
 /**
  * G3 (ADR 0174): a declared link, written to the profile with who and when as the line's
@@ -448,4 +454,127 @@ describe("a declaration keeps every line it doesn't touch (field hunt G5)", () =
       expect(last).toContain("name: 'Forge (invented)'");
       expect(last).toContain("  - id: ledger # the books");
     });
+});
+
+describe("keeping untouched lines never changes what the profile says (the re-review of G5)", () => {
+  const strictJs = (t: string) => {
+    const d = parseDocument(t, { uniqueKeys: true });
+    return d.errors.length ? { errors: d.errors.map((e) => e.code) } : d.toJS();
+  };
+  const declared = async (before: string) => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-declared-safe-"));
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    const file = join(root, "org-pack/profiles/forge/profile.yaml");
+    await writeFile(file, before);
+    await declareLink(
+      root,
+      { kind: "call", system: "ledger", route: "GET /forge/fees/v1/{id}" },
+      { by: "pat", at },
+    );
+    return readFile(file, "utf8");
+  };
+
+  it("declares on a profile with a folded scalar and no trailing newline, its meaning kept", async () => {
+    const before = [
+      "schemaVersion: 1",
+      "platform: forge",
+      "name: Forge",
+      "systems:",
+      "  - id: ledger",
+      "    name: >-",
+      "      The books of the Forge estate,",
+      "      kept by the ledger team",
+      "    boundary: product",
+      "environments: [dv, qa, prod]",
+    ].join("\n");
+    const wrote = await declared(before);
+    const js = strictJs(wrote) as { systems: { name: string; calls: unknown[] }[] };
+    expect(js).not.toHaveProperty("errors");
+    expect(js.systems[0]!.name).toBe("The books of the Forge estate, kept by the ledger team");
+    expect(js.systems[0]!.calls).toEqual([{ route: "GET /forge/fees/v1/{id}" }]);
+    expect(wrote.match(/^\s*calls:/gm)).toHaveLength(1);
+  });
+
+  // A seeded generator (no network, the same profiles every run): profiles with flow and block
+  // lists in either padding, quotes, comments, folded and literal scalars, with or without a
+  // trailing newline, edited the way a declaration edits them.
+  const rng = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const profileOf = (r: () => number) => {
+    const pick = <T>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
+    const word = () => pick(["dv", "qa", "prod", "forge-ledger", "ledger-api", "books", "fees"]);
+    const flow = (xs: string[]) => (r() < 0.5 ? `[${xs.join(", ")}]` : `[ ${xs.join(", ")} ]`);
+    const scalar = (v: string) => pick([v, `'${v}'`, `"${v}"`]);
+    const lines = ["schemaVersion: 1", "platform: forge", `name: ${scalar("Forge")}`];
+    if (r() < 0.3) lines.unshift("# The Forge profile (invented).");
+    lines.push("systems:");
+    const n = 1 + Math.floor(r() * 3);
+    for (let i = 0; i < n; i++) {
+      const id = i === 0 ? "ledger" : `sys-${i}`;
+      if (r() < 0.3) {
+        lines.push(
+          `  - { id: ${id}, name: ${scalar(id)}, boundary: product, aliases: ${flow([word()])} }`,
+        );
+        continue;
+      }
+      lines.push(
+        `  - id: ${id}${r() < 0.3 ? " # a comment" : ""}`,
+        `    name: ${scalar(id)}`,
+        "    boundary: product",
+      );
+      const d = r();
+      if (d < 0.25)
+        lines.push("    description: >-", "      The books of the estate,", "      kept by a team");
+      else if (d < 0.4) lines.push("    description: |", "      Line one", "      Line two");
+      else if (d < 0.5) lines.push(`    description: ${scalar("one line")}`);
+      if (r() < 0.5) lines.push(`    aliases: ${flow([word(), word()])}`);
+      else if (r() < 0.3)
+        lines.push("    aliases:", `      - ${word()}`, `      - ${scalar(word())}`);
+    }
+    if (r() < 0.8) lines.push(`environments: ${flow(["dv", "qa", "prod"])}`);
+    return lines.join("\n") + (r() < 0.6 ? "\n" : "");
+  };
+
+  it("on 2,000 random profiles: the same meaning as the library's rewrite, untouched lines kept when safe", () => {
+    const r = rng(20261114);
+    let kept = 0;
+    for (let k = 0; k < 2000; k++) {
+      const before = profileOf(r);
+      const doc = parseDocument(before);
+      const sys = (
+        doc.get("systems") as {
+          items: { get: (k: string) => unknown; set: (k: string, v: unknown) => void }[];
+        }
+      ).items[0]!;
+      const calls = doc.createNode([{ route: "GET /forge/fees/v1/{id}" }]);
+      sys.set("calls", calls);
+      const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+      const out = keepUntouchedLines(before, after);
+      expect(strictJs(out), before).toEqual(strictJs(after));
+      if (out !== after) {
+        kept++;
+        // Every line the edit didn't touch (the library writes it the same in `after`) is still
+        // there as the file had it, in order, byte for byte.
+        const o = before.split("\n");
+        const n = parseDocument(before)
+          .toString({ lineWidth: 0, flowCollectionPadding: true })
+          .split("\n");
+        const a = new Set(after.split("\n"));
+        const lines = out.split("\n");
+        let at = 0;
+        for (const [i, l] of o.entries()) {
+          if (!l || !a.has(n[i]!)) continue;
+          const j = lines.indexOf(l, at);
+          expect(j, `${l}\n---\n${before}\n---\n${out}`).toBeGreaterThanOrEqual(0);
+          at = j + 1;
+        }
+      }
+    }
+    // The safe cases are kept: most profiles keep their lines.
+    expect(kept).toBeGreaterThan(800);
+  });
 });

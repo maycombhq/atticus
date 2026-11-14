@@ -96,7 +96,7 @@ function PreviewBody({ v }: { v: Preview }) {
       {p.confirm && (
         <>
           <p role="status" className="ev-say">
-            {N.confirm(p.confirm.removals)}
+            {N.confirm(p.confirm.removals, `“${COPY.propose.confirmApply(p.confirm.removals)}”`)}
           </p>
           <Cmd text={p.confirm.command} label={N.confirmCommand} />
         </>

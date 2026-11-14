@@ -155,12 +155,14 @@ describe("what happens after a correction (C4)", () => {
 
   it("says when the Apply will wait for a confirm of its removals, with the command (G1)", () => {
     const cmd = "atticus verify forge-payments --write --allow-removals 6";
-    expect(panel({ state: "ready", data: VIEW })).not.toContain(esc(N.confirm(6)));
+    expect(panel({ state: "ready", data: VIEW })).not.toContain(
+      esc(N.confirm(6, `“${COPY.propose.confirmApply(6)}”`)),
+    );
     const out = panel({
       state: "ready",
       data: { ...VIEW, preview: { ...VIEW.preview!, confirm: { removals: 6, command: cmd } } },
     });
-    expect(out).toContain(esc(N.confirm(6)));
+    expect(out).toContain(esc(N.confirm(6, `“${COPY.propose.confirmApply(6)}”`)));
     expect(out).toContain('role="status"');
     expect(out).toContain(`aria-label="${esc(N.copy(`${N.confirmCommand}: ${cmd}`))}"`);
   });
