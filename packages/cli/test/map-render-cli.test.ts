@@ -548,6 +548,16 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     };
     expect(twice).toEqual(once);
     expect(o.out.join("\n")).toMatch(/No catalog changes/);
+    // The hunt of beta.28.1: a build that writes nothing takes no new undo copy.
+    const { listUndo, undoDirOf } = await import("@maycombhq/scanner");
+    const copies = (await listUndo(await undoDirOf(root))).length;
+    expect(await write(root)).toBe(0);
+    expect((await listUndo(await undoDirOf(root))).length).toBe(copies);
+    const said: string[] = [];
+    const quietIo = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(await main(["catalog", "build", "--root", root], quietIo), said.join("\n")).toBe(0);
+    expect(await main(["catalog", "build", "--root", root], quietIo), said.join("\n")).toBe(0);
+    expect((await listUndo(await undoDirOf(root))).length).toBe(copies);
   });
 
   // Beta.28.1 (field report 5): one rejected fact no longer blocks the rest. The kept facts are
