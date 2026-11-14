@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { printToCurrent } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { capturedIo } from "../src/main.js";
+import { capturedStep } from "../src/map-all.js";
+import { captured } from "../src/ui-api-steps.js";
 import { uiActivityRoutes } from "../src/ui-api-activity.js";
 import { writeProgress } from "../src/write-progress.js";
 
@@ -79,5 +81,41 @@ describe("a progress line reaches the Console before the step's work", () => {
     await srv.jobs.settle(job.id);
     expect(before).toEqual(["first", "Writing specs… (3 s in)"]);
     expect([...out, ...err]).toEqual([]);
+  });
+
+  it("a local step's progress (ui-api-steps captured) is a `now` line, never in its result (S2)", async () => {
+    let before: string[] = [];
+    let ran: Awaited<ReturnType<typeof captured>> | undefined;
+    const job = srv.jobs.start("step", async () => {
+      await new Promise((r) => setTimeout(r, 150));
+      ran = await captured(async (io) => {
+        io.out("a line");
+        io.progress!("Building the catalog: pass 1 of 8… (2 s in)");
+        before = said(job.id);
+        busy(200);
+        return 0;
+      });
+      return {};
+    });
+    await srv.jobs.settle(job.id);
+    expect(before).toContain("Building the catalog: pass 1 of 8… (2 s in)");
+    expect(ran).toEqual({ code: 0, out: ["a line"], err: [] });
+  });
+
+  it("map --all's kept output sends progress on, never into its errors (S2)", () => {
+    const outer: string[] = [];
+    const c = capturedStep({
+      out: () => undefined,
+      err: (l) => outer.push(`err ${l}`),
+      progress: (l) => outer.push(`progress ${l}`),
+    });
+    c.progress!("Loading the catalog… (1 s in)");
+    c.err("No checkout of forge-ledger");
+    expect(c.errs).toEqual(["No checkout of forge-ledger"]);
+    expect(outer).toEqual(["progress Loading the catalog… (1 s in)"]);
+    // With nothing to send it to, it is dropped, still never an error line.
+    const alone = capturedStep();
+    alone.progress!("Writing specs…");
+    expect(alone.errs).toEqual([]);
   });
 });

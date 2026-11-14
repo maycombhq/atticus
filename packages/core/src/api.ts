@@ -627,7 +627,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   Also in 3.14.0 (beta.28.1, field report 5): Apply (POST /api/facts/{repo}/apply) writes the kept facts
  *   with the rejected ones left out (`verify --write` exit 3): its job ends done, code 0, and
  *   its result (`FactsApplyResult`) carries `leftOut`, how many facts were left out, beside the
- *   lines naming each with the file to fix it in. Additive only.
+ *   lines naming each with the file to fix it in. Additive only. Apply to every repo (POST
+ *   /api/facts/apply-all) the same: a repo that wrote with facts left out is applied, and its
+ *   result carries `leftOut` (all repos) and `leftOutRepos` (how many repos left some out).
  */
 export const API_VERSION = "3.14.0";
 export const DEFAULT_PORT = 4321;
@@ -2224,6 +2226,8 @@ export const FactsApplyResult = z.object({
   lines: z.array(z.string()),
   refused: BuildRefusalView.optional(),
   leftOut: z.number().int().positive().optional(),
+  /** Apply to every repo's (POST /api/facts/apply-all): how many repos left facts out. */
+  leftOutRepos: z.number().int().positive().optional(),
   next: z.unknown().optional(),
 });
 export type FactsApplyResultT = z.infer<typeof FactsApplyResult>;
@@ -8450,7 +8454,8 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: {
         status: 202,
         schema: "JobAccepted",
-        description: "Started: its job's result is the code and the lines verify printed",
+        description:
+          "Started: its job's result is FactsApplyResult: the code and the lines verify printed, and (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0)",
       },
       errors: [409],
     },

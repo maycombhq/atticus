@@ -49,6 +49,9 @@ export async function captured(f: (io: Output) => Promise<number>): Promise<Ran>
       err.push(l);
       printToCurrent(l);
     },
+    // The hunt of beta.28.1 (S2): a write's steps and heartbeats go to the Console as they run,
+    // never into the job's lines or errors.
+    progress: (l) => printToCurrent(l, { now: true }),
   });
   return { code, out, err };
 }
@@ -69,9 +72,39 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
   return r
     .add("POST", "/api/facts/apply-all", async () => {
       const { verifyAllCommand } = await import("./verify-commands.js");
-      return asJob("Applying to every repo", () =>
-        captured((io) => verifyAllCommand(root, { write: true, verbose: false, json: false }, io)),
-      );
+      const { APPLIED_WITH_LEFT_OUT } = await import("./verify-left-out.js");
+      return asJob("Applying to every repo", async () => {
+        // The hunt of beta.28.1 (S2): each repo's own outcome, told by verify: a repo that wrote
+        // with rejected facts left out (exit 3) is applied, as one repo's Apply is.
+        const codes: number[] = [];
+        let leftOut = 0;
+        let leftOutRepos = 0;
+        const ran = await captured((io) =>
+          verifyAllCommand(
+            root,
+            {
+              write: true,
+              verbose: false,
+              json: false,
+              onRepo: (_repo, code, out) => {
+                codes.push(code);
+                if (code === APPLIED_WITH_LEFT_OUT) {
+                  leftOut += out;
+                  leftOutRepos++;
+                }
+              },
+            },
+            io,
+          ),
+        );
+        const applied =
+          ran.code !== 0 &&
+          codes.length > 0 &&
+          leftOutRepos > 0 &&
+          codes.every((c) => c === 0 || c === APPLIED_WITH_LEFT_OUT);
+        if (!applied) return ran;
+        return { ...ran, code: 0, extra: { leftOut, leftOutRepos } };
+      });
     })
     .add("POST", "/api/estate/join", async () => {
       const { estateJoin } = await import("./estate-commands.js");
