@@ -14,6 +14,9 @@ import { HttpError } from "@maycombhq/server";
 import { systemToCreate } from "./ui-api-declared.js";
 import { pairingsOf } from "./ui-api-links.js";
 
+/** No call paired already: the check before the job joins nothing (S2b). */
+const NONE_PAIRED: ReadonlyMap<string, string> = new Map();
+
 /**
  * Edit the map (beta.28): what POST /api/map/edits checks before it writes anything, and the
  * caller repos the changes touch. A delete names Interfaces the catalog has now; an add is what
@@ -77,10 +80,13 @@ export async function checkMapEdits(
         staged.add(key);
       }
       try {
+        // The integration review of beta.28.1 (S2b): checked in the request with no join; a
+        // pair a call has already is told (and skipped) by the Apply's job, which joins once.
         const made = await pairingsOf(root, p, {
           by: "preview",
           at: new Date(0).toISOString(),
           redundant: "skip",
+          already: NONE_PAIRED,
         });
         // A lined arrow's redirect pairs the calls the arrow is: each pair's call cites one of
         // the deleted Interfaces' caller lines (a lineless arrow's are the person's pick).

@@ -5055,6 +5055,9 @@ export const COPY = {
     applyAll: "Apply to every repo's map",
     applyingAll: "Applying…",
     appliedAll: "Applied: every repo's facts are checked again and the map is drawn again.",
+    /** The hunt of beta.28.1 (S2): it wrote every repo, leaving rejected facts out of some. */
+    appliedAllLeftOut: (n: number, repos: number) =>
+      `Applied, ${n} ${n === 1 ? "fact" : "facts"} left out in ${repos} ${repos === 1 ? "repo" : "repos"}: every other fact is in the catalog and the map is drawn again. Each fact left out is listed below with the file to fix it in.`,
     sync: "Sync the repos",
     syncing: "Syncing…",
     synced: "Synced the repos' clones.",

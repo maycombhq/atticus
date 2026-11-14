@@ -84,7 +84,7 @@ import { requireConfirmedModel } from "./model-address.js";
 import { keptAnswer } from "./watched-memo.js";
 import { syncNextOf } from "./sync-next.js";
 import { changeNextStep } from "./cockpit.js";
-import { APPLIED_WITH_LEFT_OUT, LEFT_OUT_LINE } from "./verify-left-out.js";
+import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
 import { changeProblems, missingChangeWords } from "./change-problems.js";
 import {
   markCheckedByApp,
@@ -199,6 +199,15 @@ interface Ran {
   err: string[];
   /** Beta.27 review, final round: more for the job's result (the upgrade's `upgraded`). */
   extra?: Record<string, unknown>;
+}
+
+/**
+ * A guard's refusal as a job's progress message: its first sentence of its first line only (the
+ * listing of what it would remove stays in the Console and the job's lines).
+ */
+export function firstSentenceOf(text: string): string {
+  const line = text.split(/\r?\n/)[0]!.trim();
+  return /^.*?[.!?](?=\s|$)/.exec(line)?.[0] ?? line;
 }
 
 async function run(
@@ -692,7 +701,18 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       async (c) => {
         c.progress(0, 1, what);
         const res = await work();
-        c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+        // The hunt of beta.28.1: how it ended, in words: a refused build says so with the
+        // guard's reason (never "Stopped", which is a person's Stop), a failure says failed.
+        const refusal = (res.extra?.refused as { message?: unknown } | undefined)?.message;
+        c.progress(
+          1,
+          1,
+          res.code === 0
+            ? "Done"
+            : typeof refusal === "string"
+              ? `Refused: ${firstSentenceOf(refusal)}`
+              : "Failed",
+        );
         ctx.events.publish({ type: "file.changed", path: "." });
         // Review of beta.23 (ADR 0188): in the app's words (its buttons, not the commands to
         // type), and a repo with no base clone here is offered Sync the repos (`next`).
@@ -702,7 +722,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const next = res.code === 0 ? undefined : syncNextOf(raw);
         return {
           result: { ...res.extra, code: res.code, lines, ...(next ? { next } : {}) },
-          errors: res.code === 0 ? [] : lines,
+          // Its errors are the lines it said as errors (all its lines when it said none so).
+          errors: res.code === 0 ? [] : res.err.length ? appLines(res.err) : lines,
         };
       },
       { title: what },
@@ -867,6 +888,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         return asJob(`Applying to ${repo}`, async () => {
           const { lastBuildOf } = await import("./build-report.js");
           const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+          // The hunt of beta.28.1 (S1): the count of facts left out, told by verify itself; its
+          // lines show only the first few.
+          let leftOut = 0;
           const ran = await run((io) =>
             verifyCommand(
               root,
@@ -875,6 +899,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 write: true,
                 verbose: false,
                 json: false,
+                onLeftOut: (l) => (leftOut = l.length),
                 ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
                 ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
                 ...(b.plan !== undefined ? { plan: b.plan } : {}),
@@ -890,7 +915,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               ...ran,
               code: 0,
               // The count the app's Apply says ("Applied, N facts left out"), its lines below it.
-              extra: { leftOut: ran.out.filter((l) => LEFT_OUT_LINE.test(l)).length },
+              extra: { leftOut },
             };
           // The build this Apply ran refused (a large removal, a hand edit): its listing, which
           // the app's confirm step shows and confirms with its counts. Only this job's report.
@@ -2057,7 +2082,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             const res = await run((io) => workspaceSync(root, b.repos, io, { signal: c.signal }));
             // Review of beta.23: the code and every line, the errors too, so the page says why a
             // sync failed; its progress says Stopped then, never Synced.
-            c.progress(1, 1, res.code === 0 ? "Synced" : "Stopped");
+            c.progress(1, 1, res.code === 0 ? "Synced" : "Failed");
             const lines = [...res.out, ...res.err];
             // Stopped: the job ends `cancelled` (its Console line says Stopped), not failed.
             if (c.cancelled) return { result: { code: res.code, lines } };

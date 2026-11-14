@@ -36,7 +36,10 @@ interface YamlLine {
   rest?: string;
 }
 
-const YAML_KEY = /^(["']?)([^\s"'#:{}[\],&*!|>][^"'#:]*?)\1\s*:(?:\s+(.*))?$/;
+// The hunt of beta.28.1 (N1): a key's words split by runs of spaces, each run followed by a word,
+// so a long run of spaces with no colon after it is passed once (a lazy `[^"'#:]*?` before
+// `\s*:` was quadratic on it).
+const YAML_KEY = /^(["']?)([^\s"'#:{}[\],&*!|>][^"'#:\s]*(?:\s+[^"'#:\s]+)*)\1\s*:(?:\s+(.*))?$/;
 
 function yamlLine(text: string): YamlLine | undefined {
   if (!text.trim() || /^\s*#/.test(text) || /^\s*(---|\.\.\.)\s*$/.test(text)) return undefined;
@@ -419,9 +422,13 @@ function setsToken(
   const flag = new RegExp(`(?:^|\\s)-D${n}=("[^"]*"|'[^']*'|\\S+)`).exec(l);
   if (flag) return same(flag[1]!.replace(/^(["'])(.*)\1$/, "$2"));
   if (/\.ya?ml$/i.test(p.file)) {
+    // The cheap test first: a line under no key path sets nothing.
     const path = yamlPathAt(lines, p.line);
-    const kv = /^\s*["']?[^"':#]+["']?\s*:\s*(.*)$/.exec(l);
-    if (!path || !kv) return false;
+    if (!path) return false;
+    // The hunt of beta.28.1 (N1): trimmed, and a key whose words are split by single runs of
+    // spaces, so nothing backtracks on a long run of them (the old form was cubic).
+    const kv = /^["']?[^"':#\s]+(?:\s+[^"':#\s]+)*["']?\s*:\s*(.*)$/.exec(l.trim());
+    if (!kv) return false;
     const own = path.join(".") === name;
     // A CI file's variables (`variables:`, `env:`) are set by their own name at any depth.
     const ci =
@@ -504,7 +511,12 @@ export function configLineProblem(
     if (tok.fallback !== undefined && same(tok.fallback)) return undefined;
     if ((f.cite.with ?? []).some((p) => setsToken(p, tok.name, same, linesOf, notSource)))
       return undefined;
-    return `${where} sets ${key} to the token ${tok.written}; claim the token, or cite where ${tok.written} is set in \`with\` (the build property, deploy or CI line that sets ${tok.name})`;
+    // The hunt of beta.28.1: a `with` line refused for where it is, said as such.
+    const refused = (f.cite.with ?? []).filter((p) => notSource(p.file));
+    const why = refused.length
+      ? ` (${refused.map((p) => `${p.file}:${p.line}`).join(", ")} ${refused.length === 1 ? "is" : "are"} a test's resource, a fixture or a secret file: ${refused.length === 1 ? "it sets" : "they set"} no token for the app)`
+      : "";
+    return `${where} sets ${key} to the token ${tok.written}; claim the token, or cite where ${tok.written} is set in \`with\` (the build property, deploy or CI line that sets ${tok.name})${why}`;
   };
 
   // a deploy tool's token: `{ "xpath": "<key>", "value": "<value>" }` in a bundle's config.json

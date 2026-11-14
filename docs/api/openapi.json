@@ -11859,7 +11859,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Started: its job's result is the code and the lines verify printed",
+            "description": "Started: its job's result is FactsApplyResult: the code and the lines verify printed, and (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0)",
             "content": {
               "application/json": {
                 "schema": {
@@ -48977,6 +48977,11 @@
             "additionalProperties": false
           },
           "leftOut": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "leftOutRepos": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991

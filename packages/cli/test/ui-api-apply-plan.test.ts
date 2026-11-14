@@ -263,6 +263,35 @@ describe("Apply confirms exactly the list its refusal showed (POST /api/facts/{r
   );
 });
 
+describe("a local job's end in words (the hunt of beta.28.1)", () => {
+  it(
+    "a refused build ends saying refused, with the guard's reason; its errors are its error lines",
+    async () => {
+      const root = await metarepo();
+      const { job } = await serve(root);
+      const first = (await job(APPLY)) as Awaited<ReturnType<typeof job>> & {
+        progress: { message: string };
+        errors: string[];
+        result: { lines: string[]; refused: { message: string } };
+      };
+      expect(first.result.refused).toBeDefined();
+      const { firstSentenceOf } = await import("../src/ui-api.js");
+      expect(first.progress.message).toBe(
+        `Refused: ${firstSentenceOf(first.result.refused.message)}`,
+      );
+      // One sentence, never the guard's listing of what it would remove.
+      expect(first.progress.message).not.toContain("\n");
+      expect(first.progress.message.length).toBeLessThan(first.result.refused.message.length);
+      expect(first.progress.message).not.toBe("Stopped");
+      // Not every line the verify printed: only those it said as errors.
+      expect(first.errors.length).toBeGreaterThan(0);
+      expect(first.errors.length).toBeLessThan(first.result.lines.length);
+      expect(first.errors.join("\n")).not.toMatch(/facts kept, \d+ rejected; coverage/);
+    },
+    T,
+  );
+});
+
 describe("an Apply that leaves rejected facts out is applied, with their count (beta.28.1)", () => {
   it(
     "its job ends done, code 0, with leftOut and a line naming each fact left out",
@@ -284,6 +313,70 @@ describe("an Apply that leaves rejected facts out is applied, with their count (
       expect(left.result!.code, left.result!.lines.join("\n")).toBe(0);
       expect((left.result as { leftOut?: number }).leftOut).toBe(1);
       expect(left.result!.lines.join("\n")).toMatch(new RegExp(`left out: ${id} \\(`));
+    },
+    T,
+  );
+
+  it(
+    "12 facts left out are counted 12, not the 5 lines shown (the hunt of beta.28.1, S1)",
+    async () => {
+      const root = await metarepo();
+      const { job } = await serve(root);
+      const first = await job(APPLY);
+      const refused = first.result!.refused!;
+      const ok = await job(APPLY, { allowRemovals: refused.allowRemovals, plan: refused.plan });
+      expect(ok.result!.code, ok.result!.lines.join("\n")).toBe(0);
+      const bad = JSON.parse(
+        readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!,
+      ) as { id: string };
+      const facts = join(root, "facts", "forge-ledger.jsonl");
+      const twelve = Array.from({ length: 12 }, (_, i) =>
+        JSON.stringify({ ...bad, id: `${bad.id}-${i + 1}` }),
+      );
+      writeFileSync(facts, readFileSync(facts, "utf8") + twelve.join("\n") + "\n");
+      const left = await job(APPLY);
+      expect(left.result!.code, left.result!.lines.join("\n")).toBe(0);
+      expect((left.result as { leftOut?: number }).leftOut).toBe(12);
+    },
+    T,
+  );
+});
+
+describe("Apply to every repo that leaves facts out is applied (the hunt of beta.28.1, S2)", () => {
+  it(
+    "its job ends done with the facts left out counted, and no progress line in its result",
+    async () => {
+      const { writeProgressHooks } = await import("../src/write-progress.js");
+      writeProgressHooks.quietMs = 0;
+      try {
+        const root = await metarepo();
+        const { job } = await serve(root);
+        const first = await job(APPLY);
+        const refused = first.result!.refused!;
+        const ok = await job(APPLY, { allowRemovals: refused.allowRemovals, plan: refused.plan });
+        expect(ok.result!.code, ok.result!.lines.join("\n")).toBe(0);
+        const bad = JSON.parse(
+          readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8").split("\n")[0]!,
+        ) as { id: string };
+        const facts = join(root, "facts", "forge-ledger.jsonl");
+        const seven = Array.from({ length: 7 }, (_, i) =>
+          JSON.stringify({ ...bad, id: `${bad.id}-${i + 1}` }),
+        );
+        writeFileSync(facts, readFileSync(facts, "utf8") + seven.join("\n") + "\n");
+        const all = (await job("/api/facts/apply-all")) as Awaited<ReturnType<typeof job>> & {
+          errors?: string[];
+        };
+        expect(all.state, all.result?.lines.join("\n")).toBe("done");
+        expect(all.result!.code).toBe(0);
+        const r = all.result as { leftOut?: number; leftOutRepos?: number };
+        expect(r.leftOut).toBe(7);
+        expect(r.leftOutRepos).toBe(1);
+        // The write's steps went to the Console only, never into the result or its errors.
+        const said = [...all.result!.lines, ...(all.errors ?? [])].join("\n");
+        expect(said).not.toMatch(/Loading the catalog…/);
+      } finally {
+        delete writeProgressHooks.quietMs;
+      }
     },
     T,
   );

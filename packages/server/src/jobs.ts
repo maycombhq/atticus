@@ -149,6 +149,8 @@ export class JobManager {
   private ends = new Map<string, () => void>();
   /** Jobs past their commit point (beta.28.1): a Stop now is too late. */
   private committedIds = new Set<string>();
+  /** The message a job said before a Stop not yet heard (the hunt of beta.28.1, S3). */
+  private beforeStop = new Map<string, string>();
   private recorders = new Map<string, JobRecorder>();
   /** Each run log record this manager made, and its job. */
   private runIds = new Map<string, string>();
@@ -237,6 +239,15 @@ export class JobManager {
       p.from += drop;
     }
     this.tell({ type: "lines", job, at, lines, ...(o?.now ? { now: true } : {}) });
+    // The hunt of beta.28.1: a progress line (`now`: a step as it starts, a heartbeat) is what
+    // the job is doing now, so its progress message follows it (Apply's write, step by step);
+    // a job stopping keeps saying "Stopping…".
+    const last = lines.at(-1);
+    if (o?.now && last && job.state === "running" && !job.stopping) {
+      job.progress = { ...job.progress, message: last };
+      this.publish({ type: "job.progress", jobId: job.id, ...job.progress });
+      this.tell({ type: "state", job });
+    }
   }
 
   /** Tell a job's recorder, never failing the job (a recorder that throws is dropped). */
@@ -307,7 +318,15 @@ export class JobManager {
       // A Stop asked before the work heard it: too late now, said as such.
       if (cancelled.delete(id)) {
         delete job.stopping;
+        // The hunt of beta.28.1 (S3): the Stop is taken back, so is its "Stopping…".
+        const was = this.beforeStop.get(id);
+        this.beforeStop.delete(id);
+        if (was !== undefined && job.progress.message === STOPPING) {
+          job.progress = { ...job.progress, message: was };
+          this.publish({ type: "job.progress", jobId: id, ...job.progress });
+        }
         line(TOO_LATE);
+        this.tell({ type: "state", job });
       }
     };
     const control: JobControl = {
@@ -343,6 +362,7 @@ export class JobManager {
       }
       this.aborts.delete(id);
       this.committedIds.delete(id);
+      this.beforeStop.delete(id);
       // Printed nothing as it ran: what it ended with is its lines.
       const p = this.printed.get(id);
       if (p && p.from + p.lines.length === 0) {
@@ -354,6 +374,11 @@ export class JobManager {
         if (end.length) line(end.join("\n"));
       }
       if (job.state === "cancelled") line(STOPPED);
+      // The hunt of beta.28.1: its last word is how it ended: "Stopped." for a stop (never the
+      // "Stopping…" it said while stopping), and a job done is done of every step it counted.
+      if (job.state === "cancelled") job.progress = { ...job.progress, message: STOPPED };
+      else if (job.state === "done" && job.progress.done < job.progress.total)
+        job.progress = { ...job.progress, done: job.progress.total };
       delete job.stopping;
       job.finishedAt = this.now().toISOString();
       ofKind.delete(id);
@@ -411,6 +436,7 @@ export class JobManager {
       return true;
     }
     this.cancelledIds.add(id);
+    this.beforeStop.set(id, j.progress.message);
     j.stopping = true;
     j.progress = { ...j.progress, message: STOPPING };
     this.print(j, STOPPING);

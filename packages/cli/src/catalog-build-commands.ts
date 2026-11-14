@@ -6,6 +6,7 @@ import {
   catalogDirOf,
   cmpText,
   commitCurrent,
+  currentSignal,
   declareLink,
   deserializeRecord,
   loadOrgPack,
@@ -1247,6 +1248,39 @@ export async function applyMapEdits(
           edits: new Set([i]),
         });
     };
+    // The integration review of beta.28.1 (S2b): which API each paired call goes to already,
+    // worked out once for each pair of boxes before any write (each write changes the stamp
+    // the estate's join is kept under, so a pairing after a write would join again): one join,
+    // its steps on the Console, Stop heard while it runs.
+    const already = new Map<string, Map<string, string>>();
+    const boxKey = (p: { from: string; to: Api.LinkBoxT }) =>
+      JSON.stringify([p.from, p.to.repo ?? null, p.to.system ?? null]);
+    const paired = o.edits.flatMap((e) => ("pair" in e && e.pair.pairs.length ? [e.pair] : []));
+    if (paired.length) {
+      const { alreadyPairedOf } = await import("./ui-api-links.js");
+      const { writeProgress } = await import("./write-progress.js");
+      const signal = currentSignal();
+      const p = writeProgress((l) => (io.progress ?? io.err)(l), {
+        quietMs: 0,
+        title: "Reading the calls paired already",
+        ...(signal ? { signal } : {}),
+      });
+      try {
+        for (const x of paired)
+          if (!already.has(boxKey(x)))
+            already.set(
+              boxKey(x),
+              await alreadyPairedOf(root, x.from, x.to, {
+                step: (w) => p.step(w),
+                say: (l) => p.say(l),
+                tick: () => p.tick(),
+                commit: () => undefined,
+              }),
+            );
+      } finally {
+        p.end();
+      }
+    }
     // Beta.28.1 (the re-review): the writes start here, so a Stop from here is too late: the job
     // ends as its writes and its build do (saying the Stop came too late), never "stopped" with
     // its changes saved or taken back.
@@ -1305,7 +1339,12 @@ export async function applyMapEdits(
           const { appendLines } = await import("./file-lock.js");
           // The re-review of beta.28.1: a pair a terminal's write made redundant meanwhile is a
           // no-op, said, never a failed batch.
-          const p = await pairingsOf(root, e.pair, { by, at, redundant: "skip" });
+          const p = await pairingsOf(root, e.pair, {
+            by,
+            at,
+            redundant: "skip",
+            already: already.get(boxKey(e.pair)) ?? new Map(),
+          });
           for (const x of p.skipped) io.out(`${said}: ${x.said}`);
           const lines = p.corrections.map(correctionLine);
           if (lines.length) {

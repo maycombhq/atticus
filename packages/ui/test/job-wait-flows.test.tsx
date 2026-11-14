@@ -114,6 +114,50 @@ describe("Connect's Preview as a job", () => {
   });
 });
 
+describe("a preview nobody waits on any more is stopped (the hunt of beta.28.1, S5)", () => {
+  it("another box picked while it runs: its job is stopped, and its answer never lands", async () => {
+    const cancels: string[] = [];
+    vi.stubGlobal("document", { querySelector: () => null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        cancels.push(path);
+        return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+      }),
+    );
+    let finish!: () => void;
+    let signal: AbortSignal | undefined;
+    const props = {
+      from: "forge-billing",
+      box: { repo: "gw" } as Api.LinkBoxT,
+      cands: { state: "ready", data: view },
+      post: async (_b: unknown, follow?: JobFollow) => {
+        signal = follow?.signal;
+        follow?.onJob?.("job-8");
+        await new Promise<void>((r) => (finish = r));
+        return { written: false, file: "f", lines: ["l"], verify: "v", commit: "c" };
+      },
+    };
+    const m = mount(Pairing as never, props as never);
+    (button(m.tree, COPY.connect.preview).props.onClick as () => void)();
+    await flush();
+    m.render();
+    expect(waits(m.tree)).toHaveLength(1);
+    expect(signal?.aborted).toBe(false);
+    props.box = { repo: "forge-ledger" };
+    m.render();
+    await flush();
+    expect(signal?.aborted).toBe(true);
+    expect(cancels).toContain("/api/jobs/job-8/cancel");
+    finish();
+    await flush();
+    m.render();
+    // The old box's preview is not shown under the new one.
+    expect(all(m.tree).some((e) => e.props.file === "f")).toBe(false);
+    expect(waits(m.tree)).toHaveLength(0);
+  });
+});
+
 describe("Correct on a pairing: the candidates' wait", () => {
   it("shows the read's line and its Stop while the other repo's APIs are read", () => {
     const stop = () => undefined;

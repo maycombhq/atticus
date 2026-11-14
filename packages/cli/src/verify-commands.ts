@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   factsDirOf,
   factsRelOf,
@@ -40,7 +40,14 @@ import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 import { noCheckoutLine } from "./sync-next.js";
-import { APPLIED_WITH_LEFT_OUT, leftOutLines, leftOutOf } from "./verify-left-out.js";
+import {
+  APPLIED_WITH_LEFT_OUT,
+  leftOutLines,
+  leftOutOf,
+  leftOutRefusedLines,
+  pairingWaitLines,
+  type LeftOutFact,
+} from "./verify-left-out.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -106,6 +113,12 @@ export interface VerifyCommandOptions {
    * message. Past it the command stops with words, rather than being killed without any.
    */
   ceilingBytes?: number;
+  /**
+   * Told the facts a written `--write` left out (exit 3), all of them: the app's Apply counts
+   * them from here, never from the lines printed, which show only the first few (the hunt of
+   * beta.28.1, S1).
+   */
+  onLeftOut?: (leftOut: readonly LeftOutFact[]) => void;
 }
 
 /**
@@ -224,7 +237,13 @@ export async function factsRepos(root: string): Promise<string[]> {
  */
 export async function verifyAllCommand(
   root: string,
-  o: Omit<VerifyCommandOptions, "dir">,
+  o: Omit<VerifyCommandOptions, "dir" | "onLeftOut"> & {
+    /**
+     * Each repo's own outcome as it ends: its exit code and, for a write with rejected facts
+     * left out (exit 3), how many (the hunt of beta.28.1, S2: the app's Apply to every repo).
+     */
+    onRepo?: (repo: string, code: number, leftOut: number) => void;
+  },
   io: Output,
 ): Promise<number> {
   const repos = await factsRepos(root);
@@ -235,8 +254,16 @@ export async function verifyAllCommand(
     return 2;
   }
   const failed: string[] = [];
+  const { onRepo, ...each } = o;
   for (const repo of repos) {
-    const code = await verifyCommand(root, repo, o, io);
+    let leftOut = 0;
+    const code = await verifyCommand(
+      root,
+      repo,
+      { ...each, onLeftOut: (l) => (leftOut = l.length) },
+      io,
+    );
+    onRepo?.(repo, code, leftOut);
     if (code !== 0) failed.push(repo);
   }
   const passed = repos.length - failed.length;
@@ -324,7 +351,14 @@ export async function verifyCommand(
     io.err(noCheckoutLine(repo));
     return 2;
   }
-  const commit = o.commit ?? (await headOf(dir));
+  // The hunt of beta.28.1 (F1): a clone with no .git of its own (a copy under workspace/) has no
+  // commit to tell; git would answer the metarepo's HEAD, a commit its facts were never read at.
+  const ownGit = dir === root || existsSync(join(dir, ".git"));
+  if (!o.commit && !ownGit)
+    io.err(
+      `Atticus can't tell ${repo}'s commit: ${relative(root, dir).replace(/\\/g, "/")} has no .git of its own (a copy, not a clone), so its facts are checked at no commit. Sync the repos to clone it again.`,
+    );
+  const commit = o.commit ?? (ownGit ? await headOf(dir) : undefined);
   const source = dirSource(dir);
   // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
   // where every file they cite is unchanged since, and read again where one changed.
@@ -409,8 +443,17 @@ export async function verifyCommand(
   // refuse the write: nothing says what they backed. The review of beta.28.1 (S4): so do
   // questions or reviewed lines refused with no fact rejected, as before; with facts left out,
   // they are said beside them.
+  // The hunt of beta.28.1 (F1): never a partial write under a commit its facts weren't read at:
+  // a fact rejected as read at another commit, or every fact rejected, refuses it as before.
+  const otherCommit = report.rejected.filter((r) => r.code === "wrong-commit").length;
+  const noneKept = report.accepted.length === 0;
   const leftOut =
-    keepFacts && !o.whole && badLines.length === 0 && report.rejected.length > 0
+    keepFacts &&
+    !o.whole &&
+    badLines.length === 0 &&
+    report.rejected.length > 0 &&
+    !otherCommit &&
+    !noneKept
       ? await leftOutOf(root, repo, report)
       : undefined;
   const partial = leftOut?.ok ? leftOut : undefined;
@@ -454,7 +497,22 @@ export async function verifyCommand(
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
   const n = report.rejected.length;
-  const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  const whyWhole = otherCommit
+    ? ` (${otherCommit === 1 ? "1 fact was" : `${otherCommit} facts were`} read at another commit than ${commit ? commit.slice(0, 12) : "this clone's"}: read ${repo} again at this commit with atticus map ${repo}, then Apply)`
+    : n && noneKept
+      ? " (every fact of the read was rejected, so nothing of it would be written)"
+      : "";
+  const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected${whyWhole}` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  // N2: a partial write refused (guards, the lock) says the facts it would have left out.
+  const refusedLeftOut = () =>
+    partial
+      ? leftOutRefusedLines(
+          repo,
+          partial.leftOut,
+          { facts: `${rel}/${repo}.jsonl`, rejected: `${rel}/${repo}.rejected.jsonl` },
+          SHOWN,
+        )
+      : [];
   if (o.json) {
     let written;
     let refusedBuild: unknown;
@@ -476,6 +534,7 @@ export async function verifyCommand(
         },
         { ...io, out: () => undefined },
       );
+      if (!written) for (const l of refusedLeftOut()) io.err(l);
       if (!written && !refusedBuild) return 1;
     } else if (o.write) io.err(rejectedNote);
     io.out(
@@ -500,7 +559,10 @@ export async function verifyCommand(
       ),
     );
     if (refusedBuild) return 1;
-    if (written && partial) return APPLIED_WITH_LEFT_OUT;
+    if (written && partial) {
+      o.onLeftOut?.(partial.leftOut);
+      return APPLIED_WITH_LEFT_OUT;
+    }
     return failed ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
@@ -762,7 +824,17 @@ export async function verifyCommand(
       qProblems.length + reviewedBad.length,
     ))
       io.out(l);
+    // F5: a person's pairing of a call left out waits on the fact to put back, said.
+    for (const l of pairingWaitLines(
+      partial.leftOut,
+      report.rejected,
+      new Set(corrections.corrections.filter((c) => c.action === "link").map((c) => c.fact)),
+      `${rel}/${repo}.jsonl`,
+    ))
+      io.out(l);
+    o.onLeftOut?.(partial.leftOut);
     return APPLIED_WITH_LEFT_OUT;
   }
+  if (!written) for (const l of refusedLeftOut()) io.err(l);
   return written ? 0 : 1;
 }
