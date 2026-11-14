@@ -609,6 +609,8 @@ export interface Build {
    * manifests (a rename rewrites the inputs, so a renamed repo isn't one of them).
    */
   unslottedEnds?: Map<string, string[]>;
+  /** The ends of `unslottedEnds` that may be of any of their repos: no evidence says which. */
+  unslottedGuessed?: string[];
   facts: Map<string, FactsRepoBuild>;
   retired: RetiredJoin[];
   /** joins.json as it is after this build (the retired entries out), when it changed. */
@@ -618,6 +620,11 @@ export interface Build {
     suppressed: string[];
     /** The record ids a current alias decision folds into its target (a removal it explains). */
     folded?: string[];
+    /**
+     * Beta.28.1: the features `foldsAway` left out, folded into a feature that couldn't take
+     * them (one the overlay alone keeps), and the problems of the aliases that did it.
+     */
+    stranded?: { id: string; into: string; detected: boolean; problems: string[] }[];
     problems: CuratedProblem[];
   };
   /** Curated decisions whose target isn't in the build: kept in catalog/curated, applied when it returns. */
@@ -678,43 +685,133 @@ function endsGone(r: CatalogRecord, ends: Map<string, string[]>, live: Set<strin
  * `inputs`) and that have none now. Its own slot gone (a prune of an orphaned slot), the end is
  * one of theirs.
  */
-function withUnslottedEnds(
+export function withUnslottedEnds(
   ends: Map<string, string[]>,
   legacy: readonly CatalogRecord[],
   /** The ids of the records this build and the legacy slots hold: no repo's end to lose. */
   held: ReadonlySet<string>,
   inputs: Readonly<Record<string, string>>,
   slots: BuildSlots,
-): Map<string, string[]> {
+): { ends: Map<string, string[]>; guessed: string[] } {
   const unslotted = new Set<string>();
   for (const path of Object.keys(inputs)) {
     const m = /^catalog\/sources\/(?:readers\/(.+)\.json|facts\/(.+)\.jsonl)$/.exec(path);
     const repo = m?.[1] ?? m?.[2];
     if (repo && !slots.readers.has(repo) && !slots.facts.has(repo)) unslotted.add(repo);
   }
-  if (!unslotted.size) return ends;
+  if (!unslotted.size) return { ends, guessed: [] };
   const repos = [...unslotted].sort(cmpText);
-  const out = new Map(ends);
+  // Beta.28.1 (seed 1542546636, and its review): an end is of the repos the evidence of every
+  // arrow naming it agrees on, on its side (the caller's for `from`, the callee's for `to`); an
+  // arrow with no evidence on that side says nothing of it. When none says anything, or they
+  // disagree, it may be of any of them: a guess, which the removal words as one.
+  const agreed = new Map<string, string[] | undefined>();
   for (const r of legacy) {
     if (r.kind !== "Interface") continue;
     const x = r as unknown as { from?: string; to?: string };
-    // Beta.28.1 (seed 1542546636): an end is the repos the arrow's evidence names on its side
-    // (the caller's for `from`, the callee's for `to`) among those, when it names any: an arrow
-    // out of an archived repo isn't a join with another repo taken out of the manifests.
-    const sideOf = (side: "caller" | "callee") => {
+    for (const [end, side] of [
+      [x.from, "caller"],
+      [x.to, "callee"],
+    ] as const) {
+      if (!end || ends.has(end) || held.has(end)) continue;
       const named = new Set(
         (r.evidence ?? []).filter((e) => e.side === side && e.repo).map((e) => e.repo!),
       );
       const mine = repos.filter((repo) => named.has(repo));
-      return mine.length ? mine : repos;
+      const was = agreed.get(end);
+      if (!mine.length) {
+        if (!agreed.has(end)) agreed.set(end, undefined);
+      } else agreed.set(end, was === undefined ? mine : was.filter((repo) => mine.includes(repo)));
+    }
+  }
+  const out = new Map(ends);
+  const guessed: string[] = [];
+  for (const [end, mine] of agreed) {
+    const known = mine?.length ? mine : undefined;
+    out.set(end, known ?? repos);
+    if (!known && repos.length > 1) guessed.push(end);
+  }
+  return { ends: out, guessed: guessed.sort(cmpText) };
+}
+
+/**
+ * The words and kinds of a removal by the repos at an arrow's end that are gone. A guessed end
+ * (`withUnslottedEnds`) of repos some archived and some taken out of the manifests is one line:
+ * which of them it was of isn't known.
+ */
+export function endGoneWords(
+  gone: readonly { repo: string; archived: boolean }[],
+  guessed: boolean,
+): { words: string[]; kinds: RemovalReason[] } {
+  const kinds: RemovalReason[] = [];
+  if (gone.some((g) => !g.archived)) kinds.push("manifest");
+  if (gone.some((g) => g.archived)) kinds.push("archived");
+  if (guessed && kinds.length === 2) {
+    const names = gone.map((g) => g.repo);
+    return {
+      words: [
+        `its end is of ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}, each archived or removed`,
+      ],
+      kinds,
     };
-    for (const [end, side] of [
-      [x.from, "caller"],
-      [x.to, "callee"],
-    ] as const)
-      if (end && !out.has(end) && !held.has(end)) out.set(end, sideOf(side));
+  }
+  return {
+    words: gone.map((g) =>
+      g.archived ? `${g.repo} is archived` : `${g.repo} isn't in the manifests any more`,
+    ),
+    kinds,
+  };
+}
+
+/**
+ * Beta.28.1 (seed 1539914139, and its review): the features an alias folds away that are still in
+ * the catalog after the passes, while the feature the alias (or a chain of them) folds them into
+ * is kept: the features pass merges only into a feature it detects, so one the legacy overlay
+ * alone keeps can't take them. Only feature ids are folded, as the features pass reads an alias.
+ * `kept` holds the catalog's Capability ids, `detected` those the features pass made.
+ */
+export function foldsAway(
+  aliases: readonly { id: string; target: string; value: unknown }[],
+  kept: ReadonlySet<string>,
+  detected: ReadonlySet<string>,
+): Map<string, { into: string; detected: boolean; decisions: string[] }> {
+  const into = new Map<string, { target: string; decision: string }[]>();
+  for (const d of aliases)
+    for (const v of Array.isArray(d.value) ? d.value : [d.value])
+      if (typeof v === "string" && v.startsWith("feature.") && v !== d.target)
+        into.set(v, [...(into.get(v) ?? []), { target: d.target, decision: d.id }]);
+  const out = new Map<string, { into: string; detected: boolean; decisions: string[] }>();
+  /** Where `id` ends up: the first kept feature no alias folds, along the chain. */
+  const resolve = (id: string, seen: Set<string>): { to: string; via: string[] } | undefined => {
+    for (const x of [...(into.get(id) ?? [])].sort((a, b) => cmpText(a.decision, b.decision))) {
+      if (seen.has(x.target)) continue;
+      if (!into.has(x.target)) {
+        if (kept.has(x.target)) return { to: x.target, via: [x.decision] };
+        continue;
+      }
+      const next = resolve(x.target, new Set([...seen, x.target]));
+      if (next) return { to: next.to, via: [x.decision, ...next.via] };
+    }
+    return undefined;
+  };
+  for (const id of [...into.keys()].sort(cmpText)) {
+    if (!kept.has(id)) continue;
+    const r = resolve(id, new Set([id]));
+    if (r) out.set(id, { into: r.to, detected: detected.has(r.to), decisions: r.via });
   }
   return out;
+}
+
+/** What a removal says of a feature `foldsAway` left out: where its entry points went (nowhere). */
+export function foldWords(s: {
+  into: string;
+  detected: boolean;
+  problems: readonly string[];
+}): string {
+  const head = s.detected
+    ? `folded by an alias into ${s.into}, which couldn't take it`
+    : `folded by an alias into a feature that isn't detected now (${s.into})`;
+  return `${head}: its entry points are in no feature${s.problems.length ? ` (${s.problems.join("; ")})` : ""}`;
 }
 
 /** One repo's slot files on disk, relative to the root (for prune and the orphan report). */
@@ -1039,7 +1136,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // or system of a repo the upgrade had a slot of (the joins slot's `inputs`) and has none now:
   // when every such repo is gone (removed from the manifests or archived), the arrow leaves with
   // them, through the removal guard; when one may be live (unread for now), it stays (point 6).
-  const goneEnds = legacySlot
+  const withEnds = legacySlot
     ? withUnslottedEnds(
         ends,
         [...legacyAll, ...legacySlot.slot.records],
@@ -1047,7 +1144,8 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
         legacySlot.slot.inputs,
         i.slots,
       )
-    : ends;
+    : { ends, guessed: [] };
+  const goneEnds = withEnds.ends;
   const unslottedEnds = new Map([...goneEnds].filter(([end]) => !ends.has(end)));
   // Beta.27 (a user's Map), narrowed by its review and as the owner approved it on 2026-11-12
   // (ADR 0195 addendum "a legacy join its caller's facts place elsewhere"): an adopted call
@@ -1330,32 +1428,42 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const legacySlotKeys = new Set(
     (legacySlot ? legacySlot.slot.records : []).map((r) => `${r.kind}/${r.id}`),
   );
-  // Beta.28.1 (seed 1539914139): the features pass folds only into a feature it detects. A
-  // target the overlay alone keeps (a legacy feature no current source derives now) can't take
-  // the folded feature's members, so the folded one is left out while the target is in the
-  // catalog, as the alias says, whether the folded one is a legacy copy or derived again. (Its
-  // legacy copy retiring must not bring it back on the next build.)
-  const foldedInto = new Map<string, string[]>();
-  for (const d of i.curated.records)
-    if (d.kind === "CuratedDecision" && d.status === "current" && d.action === "alias")
-      for (const v of Array.isArray(d.value) ? d.value : [d.value])
-        if (typeof v === "string") foldedInto.set(v, [...(foldedInto.get(v) ?? []), d.target]);
+  // What the passes derived: the records before them, and the features they detected (a
+  // feature they derive again isn't the legacy copy an alias keeps out).
+  const detectedNow = new Set(found.features.map((f) => f.id));
   const overlaid = [...byKey.values()].filter(
     (r) =>
       !(legacySlot && isLegacyGone(r, legacySlotKeys, live, goneEnds)) &&
       !(
         foldedNow.has(r.id) &&
         legacyKeys.has(`${r.kind}/${r.id}`) &&
-        !derivedKeys.has(`${r.kind}/${r.id}`)
+        !derivedKeys.has(`${r.kind}/${r.id}`) &&
+        !(r.kind === "Capability" && detectedNow.has(r.id))
       ),
   );
-  const keptFeatures = new Set(
-    overlaid.filter((r) => r.kind === "Capability" && !foldedNow.has(r.id)).map((r) => r.id),
+  // Beta.28.1 (seed 1539914139): the features pass folds only into a feature it detects. A
+  // target the overlay alone keeps (a legacy feature no current source derives now) can't take
+  // the folded feature's members, so the folded one is left out while the target is in the
+  // catalog, as the alias says, whether the folded one is a legacy copy or derived again (its
+  // legacy copy retiring must not bring it back on the next build), and its removal says so.
+  const away = foldsAway(
+    i.curated.records.flatMap((d) =>
+      d.kind === "CuratedDecision" && d.status === "current" && d.action === "alias"
+        ? [{ id: d.id, target: d.target, value: d.value }]
+        : [],
+    ),
+    new Set(overlaid.filter((r) => r.kind === "Capability").map((r) => r.id)),
+    detectedNow,
   );
-  records = overlaid.filter(
-    (r) =>
-      !(r.kind === "Capability" && (foldedInto.get(r.id) ?? []).some((t) => keptFeatures.has(t))),
-  );
+  const stranded = [...away].map(([id, x]) => ({
+    id,
+    into: x.into,
+    detected: x.detected,
+    problems: found.problems
+      .filter((p) => x.decisions.includes(p.decision))
+      .map((p) => `${p.decision}: ${p.message}`),
+  }));
+  records = overlaid.filter((r) => !(r.kind === "Capability" && away.has(r.id)));
 
   mark("5 legacy");
   // ---- 6. the curated decisions, once, last
@@ -1455,6 +1563,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     listed: [...listed].sort(cmpText),
     orphaned,
     ...(unslottedEnds.size ? { unslottedEnds } : {}),
+    ...(withEnds.guessed.length ? { unslottedGuessed: withEnds.guessed } : {}),
     facts,
     retired,
     ...(legacyJoins !== undefined ? { legacyJoins } : {}),
@@ -1472,6 +1581,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
           ),
         ),
       ].sort(cmpText),
+      ...(stranded.length ? { stranded } : {}),
       problems: applied.problems,
     },
     orphanedDecisions,
@@ -2240,11 +2350,9 @@ export async function guardBuild(
         }
       }
       const unslotted = r ? endsGone(r, b.unslottedEnds ?? new Map(), liveNow) : [];
-      for (const repo of new Set([
-        ...repos,
-        ...(r ? endsGone(r, oldEnds, liveNow) : []),
-        ...unslotted,
-      ]))
+      const known = new Set([...repos, ...(r ? endsGone(r, oldEnds, liveNow) : [])]);
+      const gone: { repo: string; archived: boolean }[] = [];
+      for (const repo of new Set([...known, ...unslotted]))
         if (repoGone(repo)) {
           const archived = b.listed.includes(repo);
           // A repo whose slots are kept (orphaned) was archived or taken out of the manifests; one
@@ -2255,9 +2363,19 @@ export async function guardBuild(
             kinds.add("slot");
             continue;
           }
-          why.add(archived ? `${repo} is archived` : `${repo} isn't in the manifests any more`);
-          kinds.add(archived ? "archived" : "manifest");
+          gone.push({ repo, archived });
         }
+      // An end no evidence says the repo of (`unslottedGuessed`): one of them, not each.
+      const ifEnds = r?.kind === "Interface" ? r : undefined;
+      const guessedEnd =
+        !!ifEnds &&
+        [(ifEnds as { from?: string }).from, (ifEnds as { to?: string }).to].some(
+          (e) => !!e && (b.unslottedGuessed ?? []).includes(e),
+        ) &&
+        gone.every((g) => !known.has(g.repo));
+      const goneSaid = endGoneWords(gone, guessedEnd);
+      for (const w of goneSaid.words) why.add(w);
+      for (const k of goneSaid.kinds) kinds.add(k);
       if (last.manifest.buildVersion !== b.manifest.buildVersion) {
         why.add(`the build changed (${last.manifest.buildVersion} to ${b.manifest.buildVersion})`);
         kinds.add("build");
@@ -2267,7 +2385,8 @@ export async function guardBuild(
         kinds.add("curated");
       }
       if (b.curated.folded?.includes(id)) {
-        why.add("a curated alias folds it into another record");
+        const st = b.curated.stranded?.find((x) => x.id === id && kind === "capability");
+        why.add(st ? foldWords(st) : "a curated alias folds it into another record");
         kinds.add("curated");
       }
       // A legacy join that left without being derived: the call its caller's facts read placed.
