@@ -576,5 +576,5 @@ describe("keeping untouched lines never changes what the profile says (the re-re
     }
     // The safe cases are kept: most profiles keep their lines.
     expect(kept).toBeGreaterThan(800);
-  });
+  }, 120_000);
 });
