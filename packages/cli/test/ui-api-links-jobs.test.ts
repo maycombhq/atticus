@@ -201,7 +201,7 @@ describe("Connect's reads as jobs (beta.28.1, API 3.14.0)", () => {
     expect((await srv.jobs.settle(id)).state).toBe("cancelled");
   });
 
-  it("a pairing reads A's calls and B's APIs, never the estate's join (Edit the map's Apply)", async () => {
+  it("a pairing reads A's calls and B's APIs, and the estate's join only to tell a redundant pair", async () => {
     const steps: string[] = [];
     const said: string[] = [];
     const p = await pairingsOf(root, PAIR, {
@@ -215,8 +215,13 @@ describe("Connect's reads as jobs (beta.28.1, API 3.14.0)", () => {
       },
     });
     expect(p.corrections).toHaveLength(1);
-    expect(steps).toEqual(["Reading the estate's facts", "Reading forge-partner-gateway's APIs"]);
-    expect(said).toEqual([]);
+    // Beta.28.1 integration: the join tells a pair the call has already (409/skip); it is kept on
+    // file per stamp and shared while under way, so several pairings work it out once.
+    expect(steps).toEqual([
+      "Reading the estate's facts",
+      "Joining the estate's calls and APIs",
+      "Reading forge-partner-gateway's APIs",
+    ]);
   });
 
   it("the preview after a correction as a job: the same answer, its steps as lines", async () => {
