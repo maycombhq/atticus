@@ -690,24 +690,39 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   // current arrow, and only by that end's own line of code (the publisher's `caller` side, the
   // listener's `callee` side), so a new arrow never cites a person's word, a guess or a document
   // as the other end's code; an end with no such line isn't one.
+  // The review's P4: an end keeps its side's config lines too (a topic a setting gives), so the
+  // citation is whole, and a joined arrow the join guessed (a guess flag, or inferred) passes
+  // its flags and its doubt on: an arrow made with that end is a guess as well.
+  type JoinedEnd = { ev: Evidence[]; flags: Set<string>; guessed: boolean };
   const joinedEnds = new Map<
     string,
-    { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }
+    { pub: Map<string, JoinedEnd>; sub: Map<string, JoinedEnd> }
   >();
+  const GUESSES = new Set<string>(JOIN_GUESS_FLAGS);
   const own = (evs: readonly Evidence[], side: "caller" | "callee") =>
-    evs.filter((x) => x.source === "code" && x.side === side);
+    evs.some((x) => x.source === "code" && x.side === side)
+      ? evs.filter((x) => (x.source === "code" || x.source === "config") && x.side === side)
+      : [];
   for (const r of input.records as unknown as Rec[]) {
     if (r.kind !== "Interface" || r.via !== "event-bus") continue;
     if ((r.status ?? "current") !== "current") continue;
-    if (((r.flags as string[] | undefined) ?? []).includes(DECLARED_TOPIC)) continue;
+    const flags = (r.flags as string[] | undefined) ?? [];
+    if (flags.includes(DECLARED_TOPIC)) continue;
     const t = String(r.normalizedPath);
     const e = joinedEnds.get(t) ?? { pub: new Map(), sub: new Map() };
-    const from = String(r.from);
-    const to = String(r.to);
-    const pubEv = own(r.evidence, "caller");
-    const subEv = own(r.evidence, "callee");
-    if (pubEv.length) e.pub.set(from, unionEvidence(e.pub.get(from) ?? [], pubEv));
-    if (subEv.length) e.sub.set(to, unionEvidence(e.sub.get(to) ?? [], subEv));
+    const guess = flags.filter((f) => GUESSES.has(f));
+    const guessed = guess.length > 0 || r.confidence !== "verified";
+    const put = (m: Map<string, JoinedEnd>, at: string, ev: Evidence[]) => {
+      if (!ev.length) return;
+      const was = m.get(at);
+      m.set(at, {
+        ev: unionEvidence(was?.ev ?? [], ev),
+        flags: new Set([...(was?.flags ?? []), ...guess]),
+        guessed: (was?.guessed ?? false) || guessed,
+      });
+    };
+    put(e.pub, String(r.from), own(r.evidence, "caller"));
+    put(e.sub, String(r.to), own(r.evidence, "callee"));
     joinedEnds.set(t, e);
   }
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
@@ -749,8 +764,20 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       ep ?? own.find((x) => x.component === s) ?? own.find((x) => x.component === p);
     // The loose ends, with the ends an arrow on the topic joins already: a pair needs one loose.
     const already = joinedEnds.get(topic);
-    const pubs = new Map([...(already?.pub ?? []), ...pub]);
-    const subs = new Map([...(already?.sub ?? []), ...sub]);
+    const pubs = new Map([
+      ...[...(already?.pub ?? [])].map(([k, v]) => [k, v.ev] as const),
+      ...pub,
+    ]);
+    const subs = new Map([
+      ...[...(already?.sub ?? [])].map(([k, v]) => [k, v.ev] as const),
+      ...sub,
+    ]);
+    // A joined end (not a loose one) of the pair: its arrow's guess, if it was one.
+    const joinedOf = (p: string, s: string) =>
+      [
+        !pub.has(p) ? already?.pub.get(p) : undefined,
+        !sub.has(s) ? already?.sub.get(s) : undefined,
+      ].filter((x): x is JoinedEnd => !!x);
     // The pairs with a loose end: each loose publisher with every listener, then every publisher
     // with each loose listener (an arrow the join made already, between two joined ends, isn't
     // made again). The review: not every publisher with every listener of the topic.
@@ -771,15 +798,23 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       heardPub.add(p);
       heardSub.add(s);
       {
-        const pc = pev.filter((e) => e.source === "code");
-        const sc = sev.filter((e) => e.source === "code");
+        // A joined end cites its code and config lines as its arrow did; a loose one its code.
+        const pc = pub.has(p) ? pev.filter((e) => e.source === "code") : pev;
+        const sc = sub.has(s) ? sev.filter((e) => e.source === "code") : sev;
+        const ends = joinedOf(p, s);
+        const guessFlags = [...new Set(ends.flatMap((x) => [...x.flags]))].sort();
+        const guessed = ends.some((x) => x.guessed);
         const pairEp = epOf(p, s);
         addInterface({
           schemaVersion: 1,
           kind: "Interface",
           id: interfaceId(p, s, undefined, topic),
           status: "current",
-          confidence: pc.length > 0 && sc.length > 0 ? "verified" : "inferred",
+          confidence:
+            pc.some((e) => e.source === "code") && sc.some((e) => e.source === "code") && !guessed
+              ? "verified"
+              : "inferred",
+          ...(guessFlags.length ? { flags: guessFlags } : {}),
           from: p,
           to: s,
           // The topic's Endpoint: its definition's, or one either end of this pair serves. Another

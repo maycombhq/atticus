@@ -379,6 +379,39 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     expect(pairs([planned, loose("ledger", "event-subscribe", T, "callee")])).not.toContain(
       "orders>ledger",
     );
+    // P4: an arrow the join guessed (a topic placeholder a platform setting resolved): the
+    // listener joined to its publisher cites the publisher's config line too, and is a guess
+    // as well (the join's flags, inferred), never verified.
+    const guessed = arrow(
+      [
+        at("forge-orders", "caller"),
+        { ...at("forge-orders", "caller", "config"), path: "application.yml", line: 4 },
+        at("forge-payments", "callee"),
+      ],
+      { confidence: "inferred", flags: ["joined-by-platform-setting"] },
+    );
+    const g = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      guessed,
+      loose("audit", "event-subscribe", T, "callee"),
+    ]);
+    const toAudit = (
+      g.records.filter((x) => x.kind === "Interface") as unknown as {
+        from: string;
+        to: string;
+        confidence: string;
+        flags?: string[];
+        evidence: { source?: string; path?: string }[];
+      }[]
+    ).find((i) => i.to === "audit")!;
+    expect(toAudit.from).toBe("orders");
+    expect(toAudit.confidence).toBe("inferred");
+    expect(toAudit.flags).toEqual(["joined-by-platform-setting"]);
+    expect(
+      toAudit.evidence.some((e) => e.source === "config" && e.path === "application.yml"),
+    ).toBe(true);
     // The code's own lines on both sides: each end counts, citing only its own line.
     const both = arrow([at("forge-orders", "caller"), at("forge-payments", "callee")]);
     const r = merged([
