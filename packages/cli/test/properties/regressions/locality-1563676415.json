@@ -1,0 +1,56 @@
+{
+  "invariant": "locality",
+  "note": "locality: only forge-orders's observation changed, yet confirm-removals changed Interface/if-060d0447e87c76c0 (forge-ledger, forge-payments); Unresolved/payments-api.event-subscribe.56f7ebd295 (forge-payments). The topic merge of a readers-read listener with a publisher the estate join joined (the same fix as completeness-1557984687, beta.28.1).",
+  "seed": 1563676415,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": ["forge.ledger.changed"],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.ledger.changed"]
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.ledger.changed"]
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan-reader-fails",
+      "slot": 4
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": false
+    },
+    {
+      "t": "verify-write",
+      "slot": 4,
+      "ok": false
+    },
+    {
+      "t": "verify-live",
+      "slot": 0
+    }
+  ]
+}
