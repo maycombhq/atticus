@@ -341,6 +341,9 @@ export interface App {
   server: ChildProcess;
 }
 
+/** Servers stopApp is stopping: their exit was asked for. */
+const stopping = new WeakSet<ChildProcess>();
+
 /** Start `atticus ui` on a free port and wait for its address. */
 export async function startApp(root: string): Promise<App> {
   const server = spawn(process.execPath, [BIN, "ui", "--port", "0", "--root", root], {
@@ -358,7 +361,15 @@ export async function startApp(root: string): Promise<App> {
       }
     });
     server.stderr!.on("data", (b: Buffer) => (out += b.toString()));
-    server.on("exit", (c) => reject(new Error(`atticus ui exited ${c}: ${out}`)));
+    server.on("exit", (c, sig) => {
+      reject(new Error(`atticus ui exited ${c}: ${out}`));
+      // After it started, an exit nobody asked for is said with what the server printed last, so
+      // a journey that then can't connect names why (the CI of beta.28.2: ERR_CONNECTION_FAILED).
+      if (!stopping.has(server))
+        process.stderr.write(
+          `\natticus ui exited unasked (code ${c}, signal ${sig}):\n${out.slice(-8000)}\n`,
+        );
+    });
   });
   return { url, root, server };
 }
@@ -367,6 +378,7 @@ export async function stopApp(a: App): Promise<void> {
   // Wait for the server to exit: until then it may still be writing its log.
   if (a.server.exitCode === null && a.server.signalCode === null) {
     const exited = new Promise((resolve) => a.server.once("exit", resolve));
+    stopping.add(a.server);
     a.server.kill();
     await exited;
   }
