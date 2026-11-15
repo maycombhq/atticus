@@ -1,0 +1,92 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: confirm-removals reports Interface/if-69f84052a7017eaa removed by \"slot\", but what changed is input. The move's Apply (verify-write of forge-payments, confirmed) removed the arrow the pairing moved; the build listed both reasons, its facts snapshot's meta (a broken read before, a clean one now) and the corrections, and the harness kept only the first. The removal is explained when any reason the build lists is one the model explains (beta.28.1.1).",
+  "seed": 1575258260,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/accounts"
+            }
+          ],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "legacy-orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-notify",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/notices"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "verify-write",
+      "slot": 1,
+      "ok": false
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "upgrade",
+      "yes": false
+    }
+  ]
+}

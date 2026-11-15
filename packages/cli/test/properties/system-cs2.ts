@@ -119,6 +119,7 @@ function outcome(
           removed: report.removed.map((x) => ({
             id: idOf(x),
             reason: x.reasons?.[0] ?? "slot",
+            ...(x.reasons?.length ? { reasons: x.reasons } : {}),
           })),
         }
       : {}),
