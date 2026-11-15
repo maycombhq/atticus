@@ -128,9 +128,13 @@ import {
   BUILD_VERSION,
   sha256Of,
   sourcesDirOf,
+  newerAtticusWords,
+  newerFileAt,
+  versionedFormatOf,
   type BuildManifestT,
   type FactsSlotMetaT,
   type LegacyJoinsSlotT,
+  type NewerFile,
   type ReadersSlotT,
 } from "./slots.js";
 import { phaseClock } from "./build-phases.js";
@@ -1996,7 +2000,12 @@ export type RefusalReason =
   | "unexplained-removals"
   | "large-removals"
   | "hand-edits"
-  | "not-upgraded";
+  | "not-upgraded"
+  /**
+   * Beta.28.1.1 (ADR 0197): build.json or a slot was written by a newer Atticus, at a version of
+   * its format this one doesn't read: upgrade Atticus; never `atticus upgrade`.
+   */
+  | "newer-atticus";
 
 /** Why a build wrote nothing (point 4): every reason at once, with its list, and how to go on. */
 export interface BuildRefusal {
@@ -2012,6 +2021,8 @@ export interface BuildRefusal {
   discardEdits?: number;
   /** For a scan that read nothing: each repo and why. */
   unread?: { repo: string; why: string }[];
+  /** Beta.28.1.1: the files a newer Atticus wrote (`newer-atticus`). */
+  newer?: NewerFile[];
 }
 
 export interface GuardResult {
@@ -2194,6 +2205,86 @@ export const UPGRADE_UNDONE =
   "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
 
 /**
+ * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a
+ * newer Atticus wrote, at a version of their format this one doesn't read: the target's
+ * build.json, every slot under catalog/sources (readers, facts metas, legacy joins), and the
+ * latest undo copy's next-build.json (a newer Atticus's build cut short). Only their first bytes
+ * are read when they begin with their version, as every one written canonically does.
+ */
+export async function newerCatalogFiles(
+  root: string,
+  o: { target?: CatalogTarget; undoDir?: string } = {},
+): Promise<NewerFile[]> {
+  const target = o.target ?? baselineTarget(root);
+  const out: NewerFile[] = [];
+  out.push(...(await newerFileAt(target.manifest, relOf(root, target.manifest), "build.json")));
+  const dir = sourcesDirOf(root);
+  const slotFiles: string[] = [];
+  for (const sub of ["readers", "facts", "legacy"])
+    for (const n of (await readdir(join(dir, sub)).catch(() => [] as string[])).sort(cmpText))
+      slotFiles.push(join(dir, sub, n));
+  if (resolve(target.manifest) !== resolve(buildManifestPath(root)))
+    slotFiles.unshift(buildManifestPath(root));
+  for (const abs of slotFiles) {
+    const rel = relOf(root, abs);
+    out.push(...(await newerFileAt(abs, rel, rel.endsWith("/build.json") ? "build.json" : rel)));
+  }
+  if (o.undoDir) {
+    const latest = (await listUndo(o.undoDir))[0];
+    if (latest) {
+      const abs = join(o.undoDir, String(latest.n), "next-build.json");
+      out.push(
+        ...(await newerFileAt(
+          abs,
+          "next-build.json",
+          `the build.json of undo copy ${latest.n} (next-build.json)`,
+        )),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * The versioned files an undo would put back that a newer Atticus wrote (ADR 0197): restoring one
+ * would leave this Atticus a catalog it can't read, so the undo refuses as the build does.
+ */
+export async function newerInUndoPlan(undoDir: string, plan: UndoPlan): Promise<NewerFile[]> {
+  const out: NewerFile[] = [];
+  for (const f of plan.files) {
+    if (f.to !== "file" || !versionedFormatOf(f.path)) continue;
+    const abs = join(undoDir, String(f.from), "files", ...f.path.split("/"));
+    const name = f.path.endsWith("/build.json") ? "build.json" : f.path;
+    out.push(
+      ...(await newerFileAt(abs, f.path, `${name} in undo copy ${f.from}`)).map((x) => ({
+        ...x,
+        path: f.path,
+      })),
+    );
+  }
+  return out;
+}
+
+/** What upgrades Atticus itself (ADR 0197): never `atticus upgrade`, which is for an older catalog. */
+export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
+
+/** A guard's refusal of a catalog a newer Atticus wrote: nothing else is looked at or said. */
+export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[]): GuardResult {
+  return {
+    removals: [],
+    edits: [],
+    refused: {
+      reasons: ["newer-atticus"],
+      message: [
+        `Nothing written: ${genRel} and every slot are as they were.`,
+        newerAtticusWords(files),
+      ].join("\n"),
+      newer: files.map((f) => ({ ...f })),
+    },
+  };
+}
+
+/**
  * The guards of point 4, on the build in memory, before any file is written. `changed` are the
  * slot files this command writes (a scan's reads, a verify's snapshot): a removal they explain is
  * the command's own result.
@@ -2226,6 +2317,9 @@ export async function guardBuild(
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
+  // Beta.28.1.1 (ADR 0197): a catalog a newer Atticus wrote is neither read nor written over.
+  const newer = await newerCatalogFiles(root, { target, undoDir: o.undoDir });
+  if (newer.length) return newerAtticusRefusal(genRel, newer);
   const last = o.manifests
     ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)
     : await readBuildManifest(target.manifest);
@@ -3337,11 +3431,13 @@ export async function buildAndWrite(
     ...(o.now ? { now: o.now } : {}),
   });
   mark("report");
-  // The build cache keeps what these inputs build, written or refused (point 9).
-  await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
-    path: target.manifest,
-    text: manifests.mine,
-  });
+  // The build cache keeps what these inputs build, written or refused (point 9); not over a
+  // catalog a newer Atticus wrote (beta.28.1.1), whose build.json this one doesn't read.
+  if (!guard.refused?.reasons.includes("newer-atticus"))
+    await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
+      path: target.manifest,
+      text: manifests.mine,
+    });
   mark("keep build");
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
@@ -3517,6 +3613,7 @@ export async function writeRefusedReport(
 
 /** The commands that go on from a refusal: what confirms, curates, discards or upgrades. */
 export function refusalCommands(r: BuildRefusal, command: string): string[] {
+  if (r.reasons.includes("newer-atticus")) return [NEWER_ATTICUS_COMMAND];
   if (r.reasons.includes("not-upgraded")) return ["atticus upgrade", "atticus upgrade --yes"];
   if (r.reasons.includes("unexplained-removals")) return ["atticus support bundle"];
   const allow = r.reasons.includes("large-removals")

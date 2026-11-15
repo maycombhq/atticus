@@ -951,8 +951,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         return { ...r, body: { ...r.body, upgraded } };
       })
       .add("POST", "/api/upgrade", async () => {
-        const { newerThan, newerWords, upgradeCheck, upgradeCommand } =
+        const { newerCatalogOf, newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");
+        // Beta.28.1.1 (ADR 0197): never over a catalog a newer Atticus built.
+        const newerCatalog = await newerCatalogOf(root);
+        if (newerCatalog) throw conflict(newerCatalog.message);
         const c = await upgradeCheck(root);
         if (c.newer) throw conflict(newerWords(c));
         // Round 49: as atticus upgrade does, it runs to record this Atticus when no step waits

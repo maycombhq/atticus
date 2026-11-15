@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
+  catalogDirOf,
   factsDirOf,
   factsRelOf,
   listQuestions,
@@ -310,6 +311,21 @@ export async function verifyCommand(
       `No facts for ${repo} at ${rel}/${repo}.jsonl. Run /atticus-map ${repo} in your assistant first (or atticus map ${repo} to read it in batches); it writes that file.`,
     );
     return 2;
+  }
+  // Beta.28.1.1 (ADR 0197): a --write over a catalog a newer Atticus built writes nothing, not
+  // even the facts file's repairs: it refuses first, as the build's guard does, and says so.
+  if (o.write) {
+    const { newerAtticusRefusal, newerCatalogFiles, undoDirOf, writeRefusedReport } =
+      await import("@maycombhq/scanner");
+    const newer = await newerCatalogFiles(root, { undoDir: await undoDirOf(root) });
+    if (newer.length) {
+      const genRel = relative(root, join(catalogDirOf(root), "generated")).replace(/\\/g, "/");
+      const refusal = newerAtticusRefusal(genRel, newer).refused!;
+      await writeRefusedReport(root, `atticus verify ${repo} --write`, refusal);
+      for (const l of refusal.message.split("\n")) io.err(l);
+      if (o.json) io.out(JSON.stringify({ written: false, refused: refusal }, null, 2));
+      return 1;
+    }
   }
   // A-room: the facts file is read a line at a time, and the read stops itself with a message
   // once the heap is past its ceiling. The same guard is passed to the verifier below, so a big

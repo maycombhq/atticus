@@ -630,8 +630,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   lines naming each with the file to fix it in. Additive only. Apply to every repo (POST
  *   /api/facts/apply-all) the same: a repo that wrote with facts left out is applied, and its
  *   result carries `leftOut` (all repos) and `leftOutRepos` (how many repos left some out).
+ * 3.14.1 (beta.28.1.1, ADR 0197 "beta.28.1 and older reading version 2"): a refused build's
+ *   `reasons` (BuildRefusalView: GET /api/build's `pending.refused` and `last.refused`, a scan's
+ *   and an Apply's job result) may be `newer-atticus`: catalog/sources/build.json or a slot was
+ *   written by a newer Atticus, at a version of its format this one doesn't read. Its `message`
+ *   says so, its `command` is `npm i -g @maycombhq/atticus@beta`, and nothing was written; it is
+ *   never `not-upgraded`. The Apply preview's `confirm.refused` may list it the same way. The
+ *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words. Additive only.
  */
-export const API_VERSION = "3.14.0";
+export const API_VERSION = "3.14.1";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1906,6 +1913,8 @@ export const BuildRefusalView = z.object({
       "large-removals",
       "hand-edits",
       "not-upgraded",
+      // 3.14.1 (beta.28.1.1, ADR 0197): build.json or a slot a newer Atticus wrote.
+      "newer-atticus",
     ]),
   ),
   message: z.string(),
@@ -2774,7 +2783,9 @@ export const VerifyPreviewView = z.object({
         .object({
           removals: z.number().int().optional(),
           edits: z.number().int().optional(),
-          refused: z.array(z.enum(["nothing-read", "empty", "unexplained-removals"])).optional(),
+          refused: z
+            .array(z.enum(["nothing-read", "empty", "unexplained-removals", "newer-atticus"]))
+            .optional(),
           upgrade: z.literal(true).optional(),
           command: z.string().optional(),
         })

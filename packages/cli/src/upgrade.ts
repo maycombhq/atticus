@@ -730,6 +730,20 @@ function storeLine(s: OpenSpecStorePlan): string {
   return `Wrote ${STORE_MARKER}: this metarepo is the OpenSpec store ${s.id} (beta). Commit it; then a developer runs openspec store register <their clone> once to use it from plain OpenSpec.`;
 }
 
+/**
+ * Beta.28.1.1 (ADR 0197): the catalog's files a newer Atticus wrote (build.json at a version this
+ * one doesn't read, a slot, a newer build's undo copy), with the refusal's words; none: undefined.
+ */
+export async function newerCatalogOf(
+  root: string,
+): Promise<{ message: string; files: import("@maycombhq/scanner").NewerFile[] } | undefined> {
+  const { newerAtticusWords, newerCatalogFiles, undoDirOf } = await import("@maycombhq/scanner");
+  const files = await newerCatalogFiles(root, { undoDir: await undoDirOf(root) });
+  return files.length
+    ? { message: `${newerAtticusWords(files)} Nothing was changed.`, files }
+    : undefined;
+}
+
 /** atticus upgrade [--check] [--dry-run] [--openspec-store] [--by you] [--json]; the person defaults to the Git user. */
 export async function upgradeCommand(
   root: string,
@@ -749,6 +763,27 @@ export async function upgradeCommand(
   io: Output,
   version = VERSION,
 ): Promise<number> {
+  // Beta.28.1.1 (ADR 0197): a catalog a newer Atticus built is never upgraded by this one, not
+  // even listed: `atticus upgrade` is for a catalog older than this Atticus.
+  const newerFiles = await newerCatalogOf(root);
+  if (newerFiles) {
+    io.err(newerFiles.message);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          {
+            refused: {
+              reasons: ["newer-atticus"],
+              message: newerFiles.message,
+              newer: newerFiles.files,
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    return 1;
+  }
   const c = await upgradeCheck(root, version);
   const { planUpgradeToSlots, applyUpgradeToSlots, upgradeSlotsView } =
     await import("@maycombhq/scanner");

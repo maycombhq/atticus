@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.14.0",
+    "version": "3.14.1",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -47346,7 +47346,8 @@
                         "unexplained-removals",
                         "large-removals",
                         "hand-edits",
-                        "not-upgraded"
+                        "not-upgraded",
+                        "newer-atticus"
                       ]
                     }
                   },
@@ -47629,7 +47630,8 @@
                         "unexplained-removals",
                         "large-removals",
                         "hand-edits",
-                        "not-upgraded"
+                        "not-upgraded",
+                        "newer-atticus"
                       ]
                     }
                   },
@@ -48462,7 +48464,8 @@
                     "unexplained-removals",
                     "large-removals",
                     "hand-edits",
-                    "not-upgraded"
+                    "not-upgraded",
+                    "newer-atticus"
                   ]
                 }
               },
@@ -48738,7 +48741,8 @@
                     "unexplained-removals",
                     "large-removals",
                     "hand-edits",
-                    "not-upgraded"
+                    "not-upgraded",
+                    "newer-atticus"
                   ]
                 }
               },
@@ -51809,7 +51813,8 @@
                       "enum": [
                         "nothing-read",
                         "empty",
-                        "unexplained-removals"
+                        "unexplained-removals",
+                        "newer-atticus"
                       ]
                     }
                   },

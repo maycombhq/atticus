@@ -1112,6 +1112,9 @@ export const COPY = {
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
+      // Beta.28.1.1 (ADR 0197): build.json or a slot a newer Atticus wrote.
+      "newer-atticus": () =>
+        "This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run atticus upgrade.",
     } as Record<string, (n: number) => string>,
     inTerminal: "In a terminal",
     reviewRemovals: (n: number) => `Review the ${n} removals`,
@@ -6289,7 +6292,9 @@ export const COPY = {
     confirmEdits: (n: number, button: string) =>
       `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it a curated decision" : "them curated decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
-    confirmRefused: (reasons: readonly ("nothing-read" | "empty" | "unexplained-removals")[]) =>
+    confirmRefused: (
+      reasons: readonly ("nothing-read" | "empty" | "unexplained-removals" | "newer-atticus")[],
+    ) =>
       `Apply will refuse and write nothing, whatever is confirmed: ${reasons
         .map(
           (r) =>
@@ -6299,6 +6304,8 @@ export const COPY = {
               empty:
                 "its build would hold no record from any repo's code over a catalog that has some",
               "nothing-read": "no repo could be read",
+              "newer-atticus":
+                "this metarepo's catalog was built by a newer Atticus (upgrade Atticus: npm i -g @maycombhq/atticus@beta; don't run atticus upgrade)",
             })[r],
         )
         .join("; ")}.`,
