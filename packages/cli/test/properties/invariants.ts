@@ -687,6 +687,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const o = s.outcome!;
     const gone = removedBy(s);
     const reported = new Map((o.removed ?? []).map((x) => [x.id, x.reason]));
+    const listed = new Map((o.removed ?? []).map((x) => [x.id, x.reasons ?? [x.reason]]));
     for (const [id, rec] of gone) {
       const why = explanations(s, rec);
       if (!why.size)
@@ -702,10 +703,16 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         );
       // The org pack migrated since (an upgrade's other steps) is an input every record rests
       // on: the build may name it, though the removal must still be one the model explains.
-      if (!why.has(said!) && !(said === "input" && s.m.changes.orgPack))
+      // Beta.28.1.1 (seed 1575258260): a removal the build lists with several reasons (a slot
+      // whose meta changed, and the input that moved the arrow) is explained when one of them is
+      // one the model explains; the model doesn't follow a facts snapshot's meta.
+      const any = (listed.get(id) ?? [said!]).some(
+        (x) => why.has(x) || (x === "input" && !!s.m.changes.orgPack),
+      );
+      if (!any)
         fail(
           "nothing-removed-unexplained",
-          `${s.desc.t} reports ${id} removed by "${said}", but what changed is ${[...why].join(" or ")}`,
+          `${s.desc.t} reports ${id} removed by "${(listed.get(id) ?? [said!]).join(", ")}", but what changed is ${[...why].join(" or ")}`,
         );
     }
     const edited = new Set(s.handEditsBefore.map((e) => `${e.kind}/${e.id}`));

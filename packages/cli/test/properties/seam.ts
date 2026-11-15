@@ -124,7 +124,11 @@ export interface Outcome {
   /** A `hand-edits` refusal's list: each file, as its path under catalog/generated/ (`/`). */
   edits?: string[];
   /** A build that wrote: each record it removed, as `<Kind>/<id>`, with its reason. */
-  removed?: { id: string; reason: RemovalReason }[];
+  /**
+   * `reason` is the most specific; `reasons` every one the build lists (beta.28.1.1, seed
+   * 1575258260: a removal both a changed slot and a changed input explain lists both).
+   */
+  removed?: { id: string; reason: RemovalReason; reasons?: RemovalReason[] }[];
   /**
    * `atticus catalog prune`: the files it listed (a dry run) or removed (`yes`), as paths under
    * catalog/sources/ (`/`): orphaned and archived repos' slot files and
