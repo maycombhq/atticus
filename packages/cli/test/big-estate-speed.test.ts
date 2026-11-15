@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -97,10 +97,26 @@ describe(`one repo changed on a ${REPOS}-repo estate (beta.28.1)`, () => {
       (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records
         .length,
     ).toBeGreaterThan(10_000);
-    const { s, value } = await cpu("verify --write", () => write(2));
+    let manifestRead = 0;
+    buildPhases.on = (p, ms) => {
+      if (p === "guards: build.json read") manifestRead += ms / 1000;
+    };
+    const { s, value } = await cpu("verify --write", () => write(2)).finally(() => {
+      buildPhases.on = undefined;
+    });
     expect(value?.written.written).toBeGreaterThan(0);
     expect(value?.written.unchanged).toBeGreaterThan(10_000);
     expect(s).toBeLessThan(WRITE_CPU_S);
+    // ADR 0197: build.json lists each source once. Version 1 was about 1,900 bytes a file
+    // (182 MB at 60 repos); version 2 is about 220 here (its paths), and the guards read it in
+    // about 0.01 s. A build.json listing each file's sources again would pass neither budget.
+    const manifest = await readFile(join(catalogDirOf(root), "sources", "build.json"), "utf8");
+    const files = (JSON.parse(manifest) as { files: unknown[] }).files.length;
+    console.log(
+      `big-estate-speed build.json: ${(manifest.length / files).toFixed(0)} bytes a file, read by the guards in ${manifestRead.toFixed(2)} s`,
+    );
+    expect(manifest.length / files).toBeLessThan(300);
+    expect(manifestRead).toBeLessThan(0.5);
   }, 600_000);
 
   it("reads the Connect panel and previews a pairing inside the budget", async () => {

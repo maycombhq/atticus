@@ -1,11 +1,15 @@
-import { cp, mkdtemp, readFile, readdir, rm, utimes } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { cp, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { catalogDirOf, mapDirOf } from "@maycombhq/core";
 import {
+  BuildCrash,
   buildAndWrite,
   buildCacheHooks,
+  buildWriteHooks,
   buildUndoDirOf,
   factsSnapshotWrites,
   forgetSerializedTexts,
@@ -14,6 +18,10 @@ import {
 } from "@maycombhq/scanner";
 import { mapRenderCommand, writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { asBeta281, v1Of } from "./build-json-v1.js";
+
+/** The built CLI (`pnpm build`), as a person runs it. */
+const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 
 /**
  * beta.28.1, field report 6: a write of one changed repo builds from the build cache (the last
@@ -201,5 +209,101 @@ describe("one read of the catalog a write (beta.28.1)", () => {
     const w = await buildAndWrite(root, { command, slots, read });
     expect(w.guard.refused).toBeUndefined();
     expect(w.catalog).toBeUndefined();
+  }, 600_000);
+});
+
+/**
+ * ADR 0197: build.json of version 1 (a metarepo beta.28.1 built, `asBeta281`) and of version 2
+ * mean the same to the guards; a build cut short whose undo copy holds version 1 is caught up;
+ * a later version is refused, a newer Atticus wrote it.
+ */
+describe("build.json of version 1 and of version 2 (ADR 0197)", () => {
+  const estate = async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-big-v1-"));
+    made.push(dir);
+    const made_ = await makeBigEstate(dir, {
+      repos: 4,
+      entries: 40,
+      calls: 30,
+      tables: 6,
+      settings: 30,
+      gateways: 1,
+      routes: 10,
+      checkouts: 4,
+    });
+    const b = await buildAndWrite(made_.root, { command: "atticus catalog build" });
+    expect(b.guard.refused).toBeUndefined();
+    return made_;
+  };
+  const slotsOf = async (
+    root: string,
+    options: Awaited<ReturnType<typeof makeBigEstate>>["options"],
+    edit: number,
+  ) => {
+    const facts = await writeBigRepo(root, 1, options, edit, true, false);
+    return factsSnapshotWrites(root, bigRepoId(1), facts, { commit: BIG_COMMIT, contracts: null });
+  };
+  const command = "atticus verify forge-svc-01 --write";
+
+  it("the guards give the same over either version: removals, a hand edit, the counts", async () => {
+    const { root, options } = await estate();
+    // A hand edit, and a change of one repo that removes some of its records.
+    const generated = join(catalogDirOf(root), "generated");
+    const [one] = (await readCatalogWithFiles(generated)).files.keys();
+    const edited = join(generated, ...one!.split("/"));
+    await writeFile(edited, (await readFile(edited, "utf8")) + "# by hand\n");
+    const slots = await slotsOf(root, options, 7);
+    const v2 = await buildAndWrite(root, { command, slots, check: true });
+    expect(v2.guard.edits.length).toBe(1);
+    expect(v2.guard.removals.length).toBeGreaterThan(0);
+    await asBeta281(root);
+    const manifest = await readFile(join(catalogDirOf(root), "sources", "build.json"), "utf8");
+    expect((JSON.parse(manifest) as { version: number }).version).toBe(1);
+    const v1 = await buildAndWrite(root, { command, slots, check: true });
+    expect(v1.guard).toEqual(v2.guard);
+    // Confirmed as listed, the write over version 1 goes through and writes version 2.
+    const w = await buildAndWrite(root, {
+      command,
+      slots,
+      discardEdits: 1,
+      allowRemovals: v2.guard.removals.length,
+    });
+    expect(w.guard.refused).toBeUndefined();
+    const after = await readFile(join(catalogDirOf(root), "sources", "build.json"), "utf8");
+    expect((JSON.parse(after) as { version: number }).version).toBe(2);
+    expect(v1Of(after)).not.toBe(after);
+  }, 600_000);
+
+  it("a build cut short over version 1 is caught up, its undo copy's next-build.json read", async () => {
+    const { root, options } = await estate();
+    const slots = await slotsOf(root, options, 3);
+    buildWriteHooks.crash = "mid-records";
+    await expect(buildAndWrite(root, { command, slots })).rejects.toThrow(BuildCrash);
+    // As if beta.28.1 had been cut short there: its undo copy's next-build.json of version 1.
+    await asBeta281(root);
+    const next = await buildAndWrite(root, { command, slots });
+    expect(next.guard.refused).toBeUndefined();
+    expect(next.guard.edits).toEqual([]);
+    expect(await builtOf(root)).toEqual(await fromScratch(root));
+  }, 600_000);
+
+  it("refuses a build.json of a later version: upgrade Atticus, and nothing is written", async () => {
+    const { root } = await estate();
+    const path = join(catalogDirOf(root), "sources", "build.json");
+    const m = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    await writeFile(path, JSON.stringify({ ...m, version: 3 }, null, 2) + "\n");
+    const before = await builtOf(root);
+    await expect(buildAndWrite(root, { command: "atticus catalog build" })).rejects.toThrow(
+      "catalog/sources/build.json was written by a newer Atticus (version 3): upgrade Atticus to build here.",
+    );
+    // The command prints that and nothing more (no "something unexpected"), and exits 1.
+    const r = spawnSync(process.execPath, [BIN, "catalog", "build", "--root", root], {
+      encoding: "utf8",
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr.trim().split("\n")).toEqual([
+      "atticus: catalog/sources/build.json was written by a newer Atticus (version 3): upgrade Atticus to build here.",
+    ]);
+    expect(await builtOf(root)).toEqual(before);
   }, 600_000);
 });

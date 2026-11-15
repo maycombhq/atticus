@@ -1,16 +1,26 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { Session } from "node:inspector/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "vitest";
-import { buildAndWrite, buildPhases, estateJoinOf, estateFacts } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  buildPhases,
+  estateJoinOf,
+  estateFacts,
+  manifestToV1,
+  parseBuildManifest,
+  serializeBuildManifest,
+  serializeBuildManifestV1,
+} from "@maycombhq/scanner";
 import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
 import { bigGatewayId, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { v1Of } from "./build-json-v1.js";
 
 /**
  * The benchmark of field report 6 (beta.28.1): not part of `pnpm check`. Run it with
@@ -106,6 +116,31 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
         ),
       );
       say(`  written: ${JSON.stringify(w?.written)}`);
+    }
+    // ADR 0197: build.json in both versions, the same build: size, the guards' read (a parse,
+    // version 1 turned into version 2), the write's serializing, and the round trip.
+    {
+      const text = await readFile(join(root, "catalog", "sources", "build.json"), "utf8");
+      const v1 = v1Of(text);
+      const at = (f: () => unknown) => {
+        const t = performance.now();
+        f();
+        return ((performance.now() - t) / 1000).toFixed(2);
+      };
+      let p2: ReturnType<typeof parseBuildManifest> | undefined;
+      let p1: ReturnType<typeof parseBuildManifest> | undefined;
+      const r2 = at(() => (p2 = parseBuildManifest(text)));
+      const r1 = at(() => (p1 = parseBuildManifest(v1)));
+      if (!p1?.ok || !p2?.ok) throw new Error("build.json doesn't read");
+      const old = manifestToV1(p2.slot);
+      const w2 = at(() => serializeBuildManifest(p2!.ok ? p2!.slot : (undefined as never)));
+      const w1 = at(() => serializeBuildManifestV1(old));
+      say(
+        `build.json version 2: ${(text.length / 1e6).toFixed(1)} MB, read ${r2} s, written ${w2} s; version 1: ${(v1.length / 1e6).toFixed(1)} MB, read ${r1} s, written ${w1} s`,
+      );
+      const same = serializeBuildManifest(p1.slot) === text && serializeBuildManifestV1(old) === v1;
+      say(`  round trip version 1 to 2 and back: ${same ? "byte for byte" : "DIFFERS"}`);
+      if (!same) throw new Error("build.json's round trip differs");
     }
     const op = await loadOrgPack(orgPackDirOf(root));
     const estate = await timed("estateFacts", () => estateFacts(root, op, ""));
