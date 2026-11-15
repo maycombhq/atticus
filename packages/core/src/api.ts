@@ -636,7 +636,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   written by a newer Atticus, at a version of its format this one doesn't read. Its `message`
  *   says so, its `command` is `npm i -g @maycombhq/atticus@beta`, and nothing was written; it is
  *   never `not-upgraded`. The Apply preview's `confirm.refused` may list it the same way. The
- *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words. Additive only.
+ *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words. Every route
+ *   that writes one of the build's inputs (the build, scan, Apply, undo, prune, the upgrade, the
+ *   map's edits and deletes, corrections, pairings, declared links and boxes, answers, triage,
+ *   the AI's decisions, the org pack's repos and owners) answers 409 on such a catalog before it
+ *   writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
+ *   newer }`. Additive only.
  */
 export const API_VERSION = "3.14.1";
 export const DEFAULT_PORT = 4321;

@@ -2223,8 +2223,14 @@ export async function newerCatalogFiles(
   for (const sub of ["readers", "facts", "legacy"])
     for (const n of (await readdir(join(dir, sub)).catch(() => [] as string[])).sort(cmpText))
       slotFiles.push(join(dir, sub, n));
-  if (resolve(target.manifest) !== resolve(buildManifestPath(root)))
+  if (resolve(target.manifest) !== resolve(buildManifestPath(root))) {
     slotFiles.unshift(buildManifestPath(root));
+    // A branch's catalog (catalog/branches/<b>/sources): its own slots, when it keeps any.
+    const own = dirname(target.manifest);
+    for (const sub of ["readers", "facts", "legacy"])
+      for (const n of (await readdir(join(own, sub)).catch(() => [] as string[])).sort(cmpText))
+        slotFiles.push(join(own, sub, n));
+  }
   for (const abs of slotFiles) {
     const rel = relOf(root, abs);
     out.push(...(await newerFileAt(abs, rel, rel.endsWith("/build.json") ? "build.json" : rel)));
@@ -2267,6 +2273,36 @@ export async function newerInUndoPlan(undoDir: string, plan: UndoPlan): Promise<
 
 /** What upgrades Atticus itself (ADR 0197): never `atticus upgrade`, which is for an older catalog. */
 export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
+
+/** A writer's refusal of a metarepo whose catalog a newer Atticus built (`refuseIfNewer`). */
+export interface NewerAtticusRefusal {
+  reasons: ["newer-atticus"];
+  message: string;
+  newer: NewerFile[];
+}
+
+/**
+ * Beta.28.1.1 (ADR 0197): the one check every writer of the build's inputs makes before it
+ * writes anything (a curated decision, a correction, an answer, the org pack, a slot): the
+ * refusal, when a newer Atticus built this metarepo's catalog, else undefined. Its words are the
+ * build's: upgrade Atticus, never `atticus upgrade`.
+ */
+export async function refuseIfNewer(
+  root: string,
+  o: { target?: CatalogTarget } = {},
+): Promise<NewerAtticusRefusal | undefined> {
+  const files = await newerCatalogFiles(root, {
+    ...(o.target ? { target: o.target } : {}),
+    undoDir: await undoDirOf(root),
+  });
+  return files.length
+    ? {
+        reasons: ["newer-atticus"],
+        message: `Nothing written: ${newerAtticusWords(files)}`,
+        newer: files,
+      }
+    : undefined;
+}
 
 /** A guard's refusal of a catalog a newer Atticus wrote: nothing else is looked at or said. */
 export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[]): GuardResult {

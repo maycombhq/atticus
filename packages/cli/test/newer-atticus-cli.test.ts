@@ -1,13 +1,14 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord } from "@maycombhq/core";
-import { buildManifestPath, listUndo, undoDirOf } from "@maycombhq/scanner";
+import { buildManifestPath, listUndo, newerCatalogFiles, undoDirOf } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { main } from "../src/main.js";
+import { NEWER_GUARDED_COMMANDS, NEWER_GUARDED_ROUTES } from "../src/newer-guard.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { seedReadersSlots } from "./seed-slots.js";
 
@@ -197,6 +198,56 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
   );
 
   it(
+    "every command-line writer of the build's inputs (curated decisions, corrections, answers, the org pack) refuses before it writes",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      const before = await tree(root);
+      for (const words of [...NEWER_GUARDED_COMMANDS].map((c) => c.split(" "))) {
+        const x = await run([...words, "--root", root]);
+        expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
+        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(2)}`);
+        notUpgradeAdvice(x.err);
+        const j = await run([...words, "--json", "--root", root]);
+        if (j.code === 1 && j.out.trim().startsWith("{"))
+          expect(JSON.parse(j.out).refused.reasons, words.join(" ")).toEqual(["newer-atticus"]);
+      }
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it("each guarded route is one the app's server has", () => {
+    const src = join(__dirname, "..", "src");
+    const text = readdirSync(src)
+      .filter((f) => f.endsWith(".ts"))
+      .map((f) => readFileSync(join(src, f), "utf8"))
+      .join("\n");
+    for (const route of NEWER_GUARDED_ROUTES) {
+      const [method, pattern] = route.split(" ") as [string, string];
+      expect(text, route).toContain(`.add("${method}", "${pattern}"`);
+    }
+  });
+
+  it(
+    "a branch's own slot written by a newer Atticus is known too",
+    async () => {
+      const root = await metarepo();
+      const dir = join(root, "catalog", "branches", "feature-x", "sources");
+      mkdirSync(join(dir, "readers"), { recursive: true });
+      writeFileSync(join(dir, "readers", "forge-ledger.json"), '{\n  "slotVersion": 2\n}\n');
+      const files = await newerCatalogFiles(root, {
+        target: { generated: join(dir, "..", "generated"), manifest: join(dir, "build.json") },
+      });
+      expect(files.map((f) => f.path)).toEqual([
+        "catalog/branches/feature-x/sources/readers/forge-ledger.json",
+      ]);
+      expect(await newerCatalogFiles(root)).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     "a build.json of an unknown shape at version 3 is refused the same way",
     async () => {
       const root = await metarepo();
@@ -223,18 +274,26 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       const root = await metarepo();
       await writeFile(buildManifestPath(root), V2);
       const before = await tree(root);
-      const { call, job } = await serve(root);
-      const applied = await job("/api/facts/forge-ledger/apply");
-      expect(applied.result.code).not.toBe(0);
-      expect(applied.result.refused).toMatchObject({
-        reasons: ["newer-atticus"],
-        command: "npm i -g @maycombhq/atticus@beta",
-      });
-      expect(applied.result.refused.message).toContain(MESSAGE(2));
+      const { call } = await serve(root);
+      const applied = await call("/api/facts/forge-ledger/apply", "POST", {});
+      expect(applied.status).toBe(409);
+      expect(applied.body.refused).toMatchObject({ reasons: ["newer-atticus"] });
+      expect(applied.body.refused.message).toContain(MESSAGE(2));
       const view = await call("/api/build");
       expect(view.status).toBe(200);
       expect(view.body.pending.refused.reasons).toEqual(["newer-atticus"]);
       expect(view.body.upgrade).toBeUndefined();
+      // Every writer of the build's inputs: 409 with the refusal, before its body is read.
+      for (const route of NEWER_GUARDED_ROUTES) {
+        const [method, pattern] = route.split(" ") as [string, string];
+        const path = pattern
+          .replace(/\{repo\}|\{repoId\}/g, "forge-ledger")
+          .replace(/\{[^}]+\}/g, "x");
+        const x = await call(path, method, {});
+        expect(x.status, route).toBe(409);
+        expect(x.body.refused?.reasons, route).toEqual(["newer-atticus"]);
+        expect(x.body.detail, route).toContain(MESSAGE(2));
+      }
       const up = await call("/api/upgrade", "POST", {});
       expect(up.status).toBe(409);
       expect(JSON.stringify(up.body)).toContain("built by a newer Atticus");

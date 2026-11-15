@@ -1309,6 +1309,15 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ? process.env.ATTICUS_ROOT
         : process.cwd(),
   );
+  // Beta.28.1.1 (ADR 0197): a writer of the build's inputs refuses before it writes anything
+  // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
+  {
+    const g = await import("./newer-guard.js");
+    if (g.newerGuardedCommand(group, command, values)) {
+      const refusedNewer = await g.refuseNewerCommand(root, io, values.json === true);
+      if (refusedNewer !== undefined) return refusedNewer;
+    }
+  }
   if (!runsNoAi(group, command)) await setUpAi();
   // ADR 0086: atticus next, and --handoff on the AI steps (the prompt, result file and finish).
   if (group === "next")
