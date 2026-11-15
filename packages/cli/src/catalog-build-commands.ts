@@ -604,6 +604,44 @@ async function planEdits(
     }
     return restored.get(rel);
   };
+  // Property seed 1560540612: a record a person's suppress takes out, the build after it not
+  // run yet or refused (a large removal): the catalog holds the record as the last build made
+  // it, as with an archive whose build was refused (ADR 0195, its addendum), so the edit is
+  // read against the record the same inputs build without the suppresses of it, and the assert
+  // waits, orphaned, while a suppress holds. Built once, only when an edit needs it.
+  const suppressedNow = new Set(
+    inputs.curated.records.flatMap((d) =>
+      d.kind === "CuratedDecision" && d.status === "current" && d.action === "suppress"
+        ? [d.target]
+        : [],
+    ),
+  );
+  const unsuppressed = new Map<string, Map<string, CatalogRecord>>();
+  const asUnsuppressed = async (rel: string, id: string): Promise<CatalogRecord | undefined> => {
+    if (!suppressedNow.has(id)) return undefined;
+    let built = unsuppressed.get(id);
+    if (!built) {
+      // Only the suppresses of this record: what the others take out is still out.
+      const a = await buildCatalog({
+        ...inputs,
+        curated: {
+          ...inputs.curated,
+          records: inputs.curated.records.filter(
+            (d) =>
+              !(
+                d.kind === "CuratedDecision" &&
+                d.status === "current" &&
+                d.action === "suppress" &&
+                d.target === id
+              ),
+          ),
+        },
+      });
+      built = new Map(a.records.map((r) => [recordPath(r), r]));
+      unsuppressed.set(id, built);
+    }
+    return built.get(rel);
+  };
   const out: EditPlan[] & { buildPlan?: string } = [];
   // The plan GET /api/build lists for this build (an app's confirm checks it under the lock).
   Object.defineProperty(out, "buildPlan", {
@@ -650,7 +688,11 @@ async function planEdits(
       ];
       return held.find((r) => r.kind === kind && r.id === id);
     };
-    const derived = derivedNow ?? (await asLastBuilt(rel)) ?? fromSlot();
+    const derived =
+      derivedNow ??
+      (p.ok ? await asUnsuppressed(rel, p.record.id) : undefined) ??
+      (await asLastBuilt(rel)) ??
+      fromSlot();
     if (!p.ok || !derived) {
       plan({ why: "it doesn't read as a record, or the build no longer makes it" });
       continue;

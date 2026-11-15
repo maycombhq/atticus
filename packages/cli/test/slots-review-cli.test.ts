@@ -433,3 +433,91 @@ describe("a second catalog edits --curate of a record is its own decision (the r
     T,
   );
 });
+
+describe("an edit of a record a person's suppress, not yet built, takes out (property seed 1560540612)", () => {
+  const DECISIONS = ["catalog", "curated", "curateddecision"];
+
+  /** The Forge metarepo built from its golden readers slots: no upgrade, no legacy slot. */
+  async function built(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "atticus-slots-review-"));
+    made.push(root);
+    await cp(join(FIXTURES, "forge", "metarepo"), root, { recursive: true });
+    await cp(
+      join(FIXTURES, "forge", "slots", "readers"),
+      join(root, "catalog", "sources", "readers"),
+      { recursive: true },
+    );
+    const b = await atticus(root, "catalog", "build");
+    expect(b.code, b.all()).toBe(0);
+    return root;
+  }
+
+  it(
+    "edits --curate drafts the assert against the record as the last build made it, and it waits while the suppress holds",
+    async () => {
+      const root = await built();
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const file = readdirSync(dir).sort()[0]!;
+      const path = join(dir, file);
+      const p = deserializeRecord(await readFile(path, "utf8"));
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const rec = p.record as CatalogRecord & { auth?: string };
+      const auth = rec.auth === "mtls" ? "basic" : "mtls";
+      // The person's suppress, its build not run yet (or refused for a large removal): the
+      // catalog still holds the record as the last build made it, and they edit that file.
+      await mkdir(join(root, ...DECISIONS), { recursive: true });
+      await writeFile(
+        join(root, ...DECISIONS, "cd-suppress-endpoint.yaml"),
+        [
+          "schemaVersion: 5",
+          "kind: CuratedDecision",
+          "id: cd-suppress-endpoint",
+          "status: current",
+          "confidence: asserted",
+          `target: ${rec.id}`,
+          "action: suppress",
+          "value: null",
+          "reason: A person's decision in a test.",
+          "by: pat",
+          "at: 2026-11-11T10:00:00Z",
+          "",
+        ].join("\n"),
+      );
+      await writeFile(path, serializeRecord({ ...rec, auth } as CatalogRecord));
+      const curate = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      expect(curate.all()).not.toMatch(/the build no longer makes it/);
+      expect(curate.code, curate.all()).toBe(0);
+      const drafted = Object.entries(files(join(root, ...DECISIONS))).filter(([f]) =>
+        f.startsWith("cd-edit-assert-"),
+      );
+      expect(drafted).toHaveLength(1);
+      expect(drafted[0]![1]).toMatch(/action: assert/);
+      expect(drafted[0]![1]).toContain(`auth: ${auth}`);
+      expect(drafted[0]![1]).toContain(`target: ${rec.id}`);
+      // The build takes the record out (the suppress), the edit's file with it, as no hand edit:
+      // the assert is kept, waiting for the record to come back.
+      const b = await atticus(root, "catalog", "build", "--json");
+      const refused = (
+        JSON.parse(b.out.join("\n")) as {
+          refused?: { allowRemovals?: number; reasons: string[] };
+        }
+      ).refused;
+      expect(refused?.reasons ?? []).not.toContain("hand-edits");
+      if (refused?.allowRemovals !== undefined)
+        expect(
+          (
+            await atticus(
+              root,
+              "catalog",
+              "build",
+              "--allow-removals",
+              String(refused.allowRemovals),
+            )
+          ).code,
+        ).toBe(0);
+      expect(existsSync(path)).toBe(false);
+      expect(Object.keys(files(join(root, ...DECISIONS)))).toContain(drafted[0]![0]);
+    },
+    T,
+  );
+});
