@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { catalogDirOf } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
 import { makeBigEstate } from "./big-estate.js";
+import { v1Of } from "./build-json-v1.js";
 
 /**
  * beta.28.1: a small generated estate (big-estate.ts: 6 repos in clusters of 3, 2 gateway
@@ -14,6 +15,11 @@ import { makeBigEstate } from "./big-estate.js";
  * from this branch, whose catalog the review of beta.28.1 found byte-identical with main's
  * (63869566) over 14,677 files; a change that moves one byte of any record shows here. After a
  * deliberate change of output, record them again: ATTICUS_GOLDEN_WRITE=1.
+ *
+ * ADR 0197 (beta.28.2): build.json is version 2, so its digest was recorded again, deliberately;
+ * no record's digest moved. "build.json (version 1)" is the digest of the version 1 it gives
+ * back (`manifestToV1`): the digest beta.28.1 recorded for "build.json", f7faea44…, so the same
+ * build means the same in either version, byte for byte.
  */
 const GOLDEN = join(import.meta.dirname, "golden", "big-estate.json");
 let dir: string | undefined;
@@ -43,6 +49,11 @@ async function digests(root: string): Promise<Record<string, { files: number; sh
   }
   const manifest = await readFile(join(catalogDirOf(root), "sources", "build.json"));
   out["build.json"] = { files: 1, sha256: createHash("sha256").update(manifest).digest("hex") };
+  const v1 = v1Of(manifest.toString("utf8"));
+  out["build.json (version 1)"] = {
+    files: 1,
+    sha256: createHash("sha256").update(v1, "utf8").digest("hex"),
+  };
   return out;
 }
 

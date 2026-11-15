@@ -5,6 +5,7 @@ import { sha256Of } from "@maycombhq/core";
 import {
   manifestToV1,
   parseBuildManifest,
+  serializeBuildManifest,
   serializeBuildManifestV1,
   undoDirOf,
 } from "@maycombhq/scanner";
@@ -17,11 +18,19 @@ import {
  * command (`undo.json`) is that of the version 1 it left. Nothing else changes.
  */
 
-/** A build.json's text of version 2 as version 1; any other text as it is. */
+/**
+ * A build.json's text of version 2 as version 1; any other text as it is. Each one is checked
+ * to read back as the version 2 it came from, byte for byte (ADR 0197's round trip): every
+ * world of the property tests, the goldens and the bench that writes one checks it.
+ */
 export function v1Of(text: string): string {
   const p = parseBuildManifest(text);
   if (!p.ok || (JSON.parse(text) as { version?: unknown }).version !== 2) return text;
-  return serializeBuildManifestV1(manifestToV1(p.slot));
+  const v1 = serializeBuildManifestV1(manifestToV1(p.slot));
+  const back = parseBuildManifest(v1);
+  if (!back.ok || serializeBuildManifest(back.slot) !== text.replace(/\r\n?/g, "\n"))
+    throw new Error("build.json's round trip, version 2 to 1 and back, differs");
+  return v1;
 }
 
 const MANIFEST = "catalog/sources/build.json";

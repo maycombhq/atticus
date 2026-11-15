@@ -1,10 +1,10 @@
 # 0197. build.json lists each source once
 
-- Status: accepted (2026-11-15, by the product owner, as proposed: content-hash set ids, no `atticus upgrade` step, and the "newer Atticus" refusal in a separate 2.0.0-beta.28.1.1)
+- Status: accepted (2026-11-15, by the product owner, as proposed: content-hash set ids, no `atticus upgrade` step, and the "newer Atticus" refusal in a separate 2.0.0-beta.28.1.1). Amended the same day: the owner dropped the separate 2.0.0-beta.28.1.1. The newer-Atticus refusal ships inside beta.28.2, from the branch `fix/b2811-newer` (see "Migration and older versions").
 - Date: 2026-11-15 (proposed and accepted)
 - Release: 2.0.0-beta.28.2 (speed only)
 - Amends: ADR 0195 ("`build.json`'s sources", point 7's undo copies, and point 9's addendum of 2026-11-13, which proposed this)
-- Contracts: none of C1 to C6, and the facts file is unchanged. `catalog/sources/build.json` is one of the formats ADR 0195 versions outside the contracts; its `version` goes from 1 to 2. The JSON Schema `atticus schema export` writes for it (`slotJsonSchemas`) changes with it. No local API route reads or returns it.
+- Contracts: none of C1 to C6, and the facts file is unchanged. `catalog/sources/build.json` is one of the formats ADR 0195 versions outside the contracts; its `version` goes from 1 to 2. The JSON Schema `atticus schema export` writes for it (`slotJsonSchemas`) changes with it. No local API route reads or returns it. The newer-Atticus refusal adds one refusal reason, `newer-atticus`, to C4 (Local API 3.15.0, additive); it ships from `fix/b2811-newer`, not from this ADR's code.
 
 ## Context
 
@@ -75,8 +75,8 @@ Estimated size: about 17 MB at 100,404 files. The file entries are about 16.5 MB
   - on the other side of a merge, which the merge-time check reads from git.
 - **No `atticus upgrade` step.** The first build of beta.28.2 writes version 2. It is not a removal, because `buildVersion` changes with it, and it takes an undo copy as any write does.
 - **Undo across the change.** `atticus catalog undo` across the change puts back the version 1 `build.json` byte for byte from its copy, and checks the restored files against it as a version 1 manifest. The next build writes version 2 again.
-- **A newer version than the reader knows** (3 or later, for beta.28.2) is refused with: "catalog/sources/build.json was written by a newer Atticus (version N): upgrade Atticus to build here." Nothing is written, and `--discard-edits` doesn't apply to it.
-- **beta.28.1 and older reading version 2.** These read it as unreadable. Their guard then takes the catalog for one from before beta.27 and refuses every build with "run atticus upgrade". Their `atticus upgrade` sees a `build.json` and does nothing. Nothing is lost, but the advice is wrong, and `--discard-edits <n>` there would write the whole catalog again as version 1. The proposal is a 2.0.0-beta.28.1.1 that only adds the "newer Atticus" refusal above, released before beta.28.2. A team on mixed versions then gets the right advice. This is an open decision for the owner: without it, the beta.28.2 release notes have to tell teams to upgrade together.
+- **A newer version than the reader knows** (3 or later, for beta.28.2) is refused. This is the guard's refusal with reason `newer-atticus`, a refusal reason added to C4 (Local API 3.15.0; the change is additive). Its words are: "This metarepo's catalog was built by a newer Atticus (build.json version N; this Atticus reads up to M): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run `atticus upgrade`." `guardBuild` makes this check before it calls `parseBuildManifest`. M is `BUILD_MANIFEST_READS` in `packages/scanner/src/slots.ts`, which equals `BUILD_MANIFEST_VERSION`, so it is 2 in beta.28.2. Nothing is written, and `--discard-edits` doesn't apply to it. `parseBuildManifest` keeps its own `newer` result and the thrown `NewerBuildManifestError` as a last resort only, for a reader that the guard's check doesn't come before. People see the refusal, not that error.
+- **beta.28.1 and older reading version 2.** These read it as unreadable. Their guard then takes the catalog for one from before beta.27 and refuses every build with "run atticus upgrade". Their `atticus upgrade` sees a `build.json` and does nothing. Nothing is lost, but the advice is wrong, and `--discard-edits <n>` there would write the whole catalog again as version 1. A 2.0.0-beta.28.1.1 with only the "newer Atticus" refusal was proposed. The owner dropped it, so the refusal ships in beta.28.2 and later only. The beta.28.2 release notes therefore have to tell a team to upgrade every member together before the first build of beta.28.2 is committed.
 
 ## Expected gains
 
@@ -114,7 +114,7 @@ Step 2 of beta.28.2 would make the features and the glossary incremental: only t
   - A test forces a set id collision and checks the lengthened ids.
   - Windows CI runs the round trip and the goldens; LF line endings and `cmpText` order are already checked there.
 - **Older versions.**
-  - A beta.28.1.1 test reads a version 2 `build.json` and refuses with the new words.
+  - With the newer-Atticus refusal of `fix/b2811-newer`, a test reads a `build.json` of a later version and refuses with `newer-atticus` and its words. Without it, beta.28.1 and older can't be tested to refuse, and the release notes cover them (see above).
   - A beta.28.2 test reads version 3 and refuses the same way.
 - **Speed.** `big-estate-speed.test.ts` gains a budget for the guards' read of `build.json`. The bench reports the size of `build.json` next to each write.
 
@@ -130,7 +130,7 @@ Step 2 of beta.28.2 would make the features and the glossary incremental: only t
 
 **Code.** `packages/scanner/src/slots.ts`: `BuildManifest` is version 2. `BuildManifestV1` stays for reading. The module also has `manifestOfFiles` (the writer's shape), `sourceSetIds` (16 hex digits, lengthened by 4 while two sets share an id), `sourcesOf` (a file's sources, kept per set), `manifestFromV1` and `manifestToV1`, `serializeBuildManifestV1`, and `NewerBuildManifestError`. `parseBuildManifest` reads either version as version 2. It refuses a later one with `newer`, and a set or source a file names that isn't listed.
 
-`build.ts` builds the manifest with `manifestOfFiles`. Its guards walk each set's sources once. Reading a later version throws `NewerBuildManifestError`, from `build.json` or from an interrupted build's `next-build.json`, so nothing is built or written. That is an error rather than a refusal reason, because the refusal reasons are listed in the local API (C4). The CLI prints its message alone ("…was written by a newer Atticus (version N): upgrade Atticus to build here.") and exits 1. The build cache's format is 2, so a kept build of version 1 is never written as `build.json`.
+`build.ts` builds the manifest with `manifestOfFiles`, and its guards walk each set's sources once. On this branch (`adr/b282-build-json`), reading a later version throws `NewerBuildManifestError`, whether from `build.json` or from an interrupted build's `next-build.json`, so nothing is built or written. The CLI prints the error's message alone ("…was written by a newer Atticus (version N): upgrade Atticus to build here.") and exits 1. This is a stopgap until the integration of beta.28.2 merges `fix/b2811-newer`. From then on, the person-facing path is that branch's `newer-atticus` refusal, which `guardBuild` checks before `parseBuildManifest`. `BUILD_MANIFEST_READS` must then be 2, which it is once it equals `BUILD_MANIFEST_VERSION`. The error stays only as the last resort described above. The version 3 tests in `big-estate-equivalence.test.ts` expect the error's words today, and they then move to the refusal and its words. The build cache's format is 2, so a kept build of version 1 is never written as `build.json`.
 
 `BUILD_VERSION` is not bumped. The first build of version 2 changes no record and is not refused: the property tests' beta.28.1 world, the equivalence tests and the 60-repo bench all write over a version 1 file.
 
@@ -142,27 +142,33 @@ Step 2 of beta.28.2 would make the features and the glossary incremental: only t
   - the same guard result over either version, with a hand edit and removals pending;
   - a build cut short whose undo copy holds version 1 is caught up;
   - version 3 is refused by `buildAndWrite` and by the CLI, and nothing is written.
-- `big-estate-speed.test.ts` checks that `build.json` is under 300 bytes a file (measured 218) and that the guards read it in under 0.5 s (measured 0.01 s).
-- The bench checks the round trip at 60 repos.
+- `big-estate-speed.test.ts` checks that `build.json` is under 300 bytes a file (measured 218 at 12 repos; version 1 is about 1,900) and that the guards read it in under 0.5 s (measured 0.04 s).
+- `big-estate-golden.test.ts` pins the digest of `build.json` and of the version 1 it gives back. Only the `build.json` digest in `packages/cli/test/golden/big-estate.json` was recorded again, on purpose. Every record kind's digest is unchanged, and the version 1 digest is the one beta.28.1 recorded (`f7faea44…`).
+- `v1Of` in `build-json-v1.ts` checks that each version 2 it turns into version 1 reads back as the same version 2, byte for byte. Every property-test world that `as-beta-28-1` rewrites, and the bench, go through it.
+- The bench checks the round trip on its estate.
 
-**Measured.** The bench estate is 60 repos and 30 gateway proxies, 100,407 records, on a shared 2-CPU machine at load 2 to 6. The base is beta.28.1's code (`origin/perf/b282` at 941b2049), run first with two writes. Then this code ran on the same estate: its first write reads version 1 and writes version 2, and its second write is a steady one.
+**Measured.** These numbers come from the bench estate at 30 repos and 15 gateway proxies (`ATTICUS_BENCH_REPOS=30 ATTICUS_BENCH_GATEWAYS=15`, 50,291 records), on a 2-CPU machine shared by four builders at load 4 to 14. It was not run at 60 repos: with about 3 GB free, the first try at 30 repos was killed for memory. The base is beta.28.1's code (`origin/perf/b282` at 941b2049). It built the estate cold and then made six writes, in three runs. This code then ran on a copy of that estate. Its first write read version 1 and wrote version 2, and five steady writes followed in three runs, alternating with the base's. Each cell gives the range over the steady writes. A phase under 0.05 s isn't printed, so it shows as "< 0.05".
 
-| One repo's `verify <repo> --write`, steady                | Version 1 (base) | Version 2 |
-| --------------------------------------------------------- | ---------------- | --------- |
-| `build.json`                                              | 190.2 MB         | 23.2 MB   |
-| parsing it (the bench, alone)                             | 1.72 s           | 0.19 s    |
-| serializing it (the bench, alone)                         | 0.65 s           | 0.07 s    |
-| the guards' read of `build.json`                          | 2.44 s           | 0.09 s    |
-| the guards in all                                         | 7.22 s           | 1.66 s    |
-| keep build                                                | 4.95 s           | 1.87 s    |
-| write catalog (with `build.json` and its two undo copies) | 3.38 s           | 0.54 s    |
-| the build's "files and build.json"                        | 3.06 s           | 3.48 s    |
-| hashing every record file                                 | 5.22 s           | 8.58 s    |
-| the write, on the clock                                   | 54.9 s           | 46.8 s    |
-| the write, in CPU time                                    | 56.9 s           | 57.5 s    |
+| One repo's `verify <repo> --write`, 30 repos              | Version 1 (base)      | Version 2             |
+| --------------------------------------------------------- | --------------------- | --------------------- |
+| `build.json`                                              | 95.2 MB               | 11.2 MB               |
+| parsing it (the bench, alone)                             | 0.87 to 2.20 s        | 0.09 to 0.22 s        |
+| serializing it (the bench, alone)                         | 0.39 to 0.74 s        | 0.03 to 0.06 s        |
+| the guards' read of `build.json`                          | 0.49 to 1.02 s        | < 0.05 to 0.11 s      |
+| the guards in all                                         | 2.7 to 6.5 s          | 0.8 to 2.9 s          |
+| keep build                                                | 1.3 to 3.7 s          | 1.0 to 2.8 s          |
+| write catalog (with `build.json` and its two undo copies) | 1.3 to 3.3 s          | 0.3 to 0.9 s          |
+| the two system copies of `build.json` alone (`cp`)        | 0.05 to 0.11 s        | 0.01 to 0.06 s        |
+| an undo copy's two `build.json`s on disk                  | 2 × 95 MB             | 2 × 11 MB             |
+| the build's "files and build.json"                        | 1.3 to 2.4 s          | 2.0 to 4.7 s          |
+| hashing every record file                                 | 2.6 to 5.4 s          | 3.0 to 5.4 s          |
+| the write, on the clock (median)                          | 32 to 38 s (36)       | 31 to 39 s (36)       |
+| the write, in CPU time (median)                           | 22.4 to 26.3 s (24.6) | 20.7 to 22.6 s (21.3) |
 
-The first write of version 2, which reads version 1, took 60.9 s. The steps that handle `build.json` are about 11 s shorter. The write as a whole is 8 s shorter on the clock, but its CPU time did not move within this machine's noise. The hash of every record file was 3 s slower in the second run, and the CPU time counts every thread, the system's copies among them.
+The steps that handle `build.json` (the guards' read, the guards' walk of the sources, keep build and the write with its undo copies) take about 3 to 6 s less a write. CPU time is about 3 s less a write, and the ranges don't overlap. Wall-clock time didn't move within this machine's noise: the other builders' load moved the hash and the passes by several seconds between runs. "Files and build.json" didn't get faster here. Making the manifest is now a small part of a phase that also writes the record files' texts.
 
-Version 2 is 23 MB, not the 17 MB estimated: each file's entry holds its full path, which is most of it. An undo copy now holds 2 × 23 MB of `build.json`, not 2 × 190 MB.
+The first write of version 2 reads version 1 and writes version 2, with a build cache of the old format, so it builds without the cache. It took 47.4 s (43.8 CPU s), once. It was not refused: its 33 removals were explained, as the base's were for the same change. The undo copy it took holds the version 1 `build.json` byte for byte (`cmp`).
 
-The ≤15 s goal stays open, as "Expected gains" says. What a write spends now is mostly the passes over the whole estate (about 15 s here), hashing every record file (5 to 9 s), reading the slots and the kept parses, and the map. Step 2 of beta.28.2 (incremental features and glossary) is next.
+At 30 repos, version 2 is 223 bytes a file. Most of that is the file's path, which is why the 17 MB estimated for 60 repos is low. By the same ratio, 60 repos would be about 22 MB (not measured).
+
+The ≤15 s goal stays open, as "Expected gains" says. A write's time now goes mostly to the passes over the whole estate, hashing every record file (3 to 5 s here), reading the slots and the kept parses, and the map. Step 2 of beta.28.2 (incremental features and glossary) is next.

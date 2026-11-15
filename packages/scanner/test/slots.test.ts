@@ -217,6 +217,19 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
     expect(s.ReadersSlot!.$id).toBe(
       "https://maycombhq.github.io/atticus/schema/sources/v1/ReadersSlot.json",
     );
+    // ADR 0197: atticus schema export writes build.json's version 2.
+    const bm = s.BuildManifest as unknown as {
+      properties: Record<string, { const?: unknown }>;
+      required: string[];
+    };
+    expect(Object.keys(bm.properties).sort()).toEqual([
+      "buildVersion",
+      "files",
+      "sourceSets",
+      "sources",
+      "version",
+    ]);
+    expect(bm.properties.version!.const).toBe(2);
     for (const z of [ReadersSlot, FactsSlotMeta, LegacyJoinsSlot, BuildManifest])
       expect(z).toBeDefined();
     expect(CrossCheckDismissals).toBeDefined();
@@ -412,6 +425,9 @@ describe("build.json lists each source once (ADR 0197)", () => {
     // 1 digit for 40 sets can't be unique: lengthened by 4 at a time, the same every time.
     expect(new Set(ids.map((x) => x.length)).size).toBe(1);
     expect(ids[0]!.length % 4).toBe(1);
+    // The ids were lengthened because the shorter ones collided: the shortest unique length.
+    const shorter = ids.map((x) => x.slice(0, x.length - 4));
+    expect(new Set(shorter).size).toBeLessThan(40);
     expect(sourceSetIds(sets, 1)).toEqual(ids);
     expect(sourceSetIds(sets)).toEqual(sets.map((_, k) => sourceSetIds(sets)[k]!));
     expect(sourceSetIds(sets)[0]).toMatch(/^[0-9a-f]{16}$/);
