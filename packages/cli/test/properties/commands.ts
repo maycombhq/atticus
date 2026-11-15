@@ -723,14 +723,7 @@ export async function act(
               : !m.repos.some((y) => y.hosts.includes(x.host)) && !m.answers.has(x.host),
           )
           .filter(
-            (x) =>
-              !m.pairs.some(
-                (p) =>
-                  p.caller === r.slot &&
-                  p.method === x.method &&
-                  p.path === x.path &&
-                  p.host === x.host,
-              ),
+            (x) => !m.pairs.some((p) => p.caller === r.slot && p.at === r.code.calls.indexOf(x)),
           );
       const callers = m.live().filter((r) => looseOf(r).length && existsSync(w.clone(r.id)));
       if (!callers.length) return undefined;
@@ -792,6 +785,7 @@ export async function act(
       );
       m.pairs.push({
         caller: c.slot,
+        at: c.code.calls.indexOf(call),
         method: call.method,
         path: call.path,
         host: call.host,

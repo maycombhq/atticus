@@ -372,15 +372,18 @@ function movedByPairings(models: (Model | undefined)[], slots: ReadonlySet<numbe
   const out = new Set<string>();
   for (const m of models) {
     if (!m) continue;
-    for (const x of m.pairs) {
-      if (!slots.has(x.callee)) continue;
-      if (!m.effectivePair(x.caller, x)) continue;
-      const from = m.repos[x.caller]!.base.component;
-      const to = m.repos[x.callee]!.base.component;
-      for (const path of new Set([x.path, x.entry.path]))
-        out.add(arrowKey(from, to, x.method, path));
-      const host = m.calleeOf(x.host);
-      if (host) out.add(arrowKey(from, host.base.component, x.method, x.path));
+    for (const c of m.live()) {
+      const src = m.source(c.slot);
+      for (const [at, call] of (src?.obs.code.calls ?? []).entries()) {
+        const x = m.effectivePair(c.slot, at);
+        if (!x || !slots.has(x.callee)) continue;
+        const from = c.base.component;
+        const to = m.repos[x.callee]!.base.component;
+        for (const path of new Set([call.path, x.entry.path]))
+          out.add(arrowKey(from, to, call.method, path));
+        const host = m.calleeOf(call.host);
+        if (host) out.add(arrowKey(from, host.base.component, call.method, call.path));
+      }
     }
   }
   return out;

@@ -1,0 +1,90 @@
+{
+  "invariant": "links-are-live",
+  "note": "links-are-live: after scan-subset the arrow orders-api|payments-api|POST|/payments-admin/r0 doesn't follow from the current observations. A person paired forge-orders' new call (POST /entries, legacy host) whose Apply waits; the facts on file are the old read, whose call on that same line with that path (POST /entries, ledger's host) the correction meets by design (file, line, value), so the arrow moves. The model now keys a pairing by the call's place and path, as a correction meets its call (beta.28.1).",
+  "seed": 1566335274,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "POST",
+              "path": "/entries",
+              "host": "ledger.forge.example"
+            },
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "payments.forge.example"
+            }
+          ],
+          "publishes": ["forge.orders.changed"],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "crash",
+      "at": "after-slots",
+      "via": "verify",
+      "slot": 0
+    },
+    {
+      "t": "change-code",
+      "slot": 0,
+      "sketch": {
+        "endpoints": [],
+        "calls": [
+          {
+            "to": 1,
+            "ep": 1,
+            "legacy": true
+          }
+        ],
+        "publishes": false,
+        "consumes": []
+      }
+    },
+    {
+      "t": "verify-write",
+      "slot": 4,
+      "ok": false
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "scan-subset",
+      "slots": [0]
+    }
+  ]
+}
