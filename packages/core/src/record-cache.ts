@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { statFilesIn, type FileStat } from "./file-pool.js";
+import { hashFilesIn, statFilesIn, type FileHash, type FileStat } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 
 /**
@@ -22,7 +22,32 @@ import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
  *
  * Nothing here decides what a file means: the caller's `parse` does, and only its output (the
  * record, or the problem with the file) is kept.
+ *
+ * Racily clean files (the final review of beta.28.2, Git's rule of the same name). A file system
+ * keeps a file's time to a grain (FAT 2 s, HFS+ 1 s, some SMB and NFS mounts 1 s or more), so a
+ * same-size edit made within that grain of a read or a write can keep the time the parse was kept
+ * by, and size and time alone would serve the old text. So each parse is kept with the clock as
+ * it was taken (`at`: before the bytes parsed were read, or before a writer wrote them), and one
+ * whose file's time is no more than `RACY_MS` before `at` is "racy": it keeps the sha256 of the
+ * bytes parsed, and is reused only when the file still hashes to them (read in the file pool's
+ * workers; cheaper than a parse), then kept again as of the hash's read when by then it is no
+ * longer racy (the next command, seconds on: from then on its stat alone decides). A parse whose
+ * file's time is more than `RACY_MS` before `at` is trusted by size and time, as before: any edit
+ * after `at` has a time after `at` less the grain, so it can't keep that time. A parse kept with no `at` (an older cache) is racy, and with no hash it is
+ * parsed again. The rule takes this machine's clock and the file system's to agree to within the
+ * grain (a mount whose server runs more than `RACY_MS` behind can still serve a stale parse, as
+ * Git can).
  */
+
+/**
+ * The widest timestamp grain allowed for (FAT's 2 s): a parse kept of a file whose time was
+ * within this of the moment it was kept is checked by its hash before it is reused.
+ */
+export const RACY_MS = 2000;
+
+/** Tests set the clock a parse is kept at (ms; default `Date.now`). */
+export const recordCacheHooks: { now?: () => number } = {};
+const now = () => (recordCacheHooks.now ?? Date.now)();
 
 /** One file's parse: the value, or why the file isn't valid. Never both. */
 export interface Parsed<T> {
@@ -41,8 +66,31 @@ export type ParseOutcome<T> = { ok: true; value: T } | { ok: false; message: str
 interface Entry {
   size: number;
   mtimeMs: number;
+  /** The clock (ms) as the parse was kept: before its bytes were read, or written. None: racy. */
+  at?: number;
+  /** A racy entry's sha256 of the bytes parsed (none once it isn't racy). */
+  sha?: string;
   value?: unknown;
   problem?: string;
+}
+
+/** Whether a file's time is within the grain of the moment its parse was kept (`RACY_MS`). */
+const racy = (mtimeMs: number, at: number | undefined) =>
+  at === undefined || mtimeMs >= at - RACY_MS;
+
+/** An entry kept as of `at`, its hash kept only while it is racy. */
+function entryAt(
+  e: { size: number; mtimeMs: number; value?: unknown; problem?: string },
+  at: number | undefined,
+  sha: string | undefined,
+): Entry {
+  return {
+    size: e.size,
+    mtimeMs: e.mtimeMs,
+    ...(at !== undefined ? { at } : {}),
+    ...(sha !== undefined && racy(e.mtimeMs, at) ? { sha } : {}),
+    ...(e.problem === undefined ? { value: e.value } : { problem: e.problem }),
+  };
 }
 
 interface Memo {
@@ -129,29 +177,63 @@ export async function readParsedFiles<T>(o: {
   const stats = await statFilesIn(o.dir, o.files);
   const fresh = new Map<string, Entry>();
   const toRead: number[] = [];
+  const toCheck: number[] = [];
   o.files.forEach((rel, i) => {
     const s = stats[i];
     const hit = had.get(rel);
-    if (s && hit && hit.size === s.size && hit.mtimeMs === s.mtimeMs) fresh.set(rel, hit);
+    if (!s || !hit || hit.size !== s.size || hit.mtimeMs !== s.mtimeMs) toRead.push(i);
+    else if (!racy(hit.mtimeMs, hit.at)) fresh.set(rel, hit);
+    else if (hit.sha !== undefined) toCheck.push(i);
     else toRead.push(i);
   });
+  // A racy parse (its file's time within the grain of when it was kept): reused only when the
+  // file's bytes still hash to the ones parsed, then kept again as of that hash's read.
+  let rekept = 0;
+  if (toCheck.length) {
+    const at = now();
+    const hashes: FileHash[] | undefined = await hashFilesIn(
+      o.dir,
+      toCheck.map((i) => o.files[i]!),
+      { raw: true },
+    ).catch(() => undefined);
+    toCheck.forEach((i, k) => {
+      const rel = o.files[i]!;
+      const hit = had.get(rel)!;
+      const h = hashes?.[k];
+      if (h && h.sha === hit.sha && h.size === hit.size && h.mtimeMs === hit.mtimeMs) {
+        // Kept again only when that ends its raciness (the next command, seconds on); still
+        // racy (a read straight after), it stays as it was and the cache isn't written again.
+        if (racy(hit.mtimeMs, at)) fresh.set(rel, hit);
+        else {
+          fresh.set(rel, entryAt(hit, at, h.sha));
+          rekept++;
+        }
+      } else toRead.push(i);
+    });
+  }
+  // Before any byte is read: an edit after this has a later time, less the grain.
+  const at = now();
   const read = await mapAtOnce(toRead, async (i) => {
     const rel = o.files[i]!;
     const s = stats[i];
     try {
-      const r = o.parse(await readFile(full(rel), "utf8"), rel);
-      const e: Entry = {
-        size: s?.size ?? -1,
-        mtimeMs: s?.mtimeMs ?? -1,
-        ...(r.ok ? { value: r.value } : { problem: r.message }),
-      };
+      const bytes = await readFile(full(rel));
+      const r = o.parse(bytes.toString("utf8"), rel);
+      const size = s?.size ?? -1;
+      const mtimeMs = s?.mtimeMs ?? -1;
+      const sha = racy(mtimeMs, at) ? createHash("sha256").update(bytes).digest("hex") : undefined;
+      const e = entryAt(
+        { size, mtimeMs, ...(r.ok ? { value: r.value } : { problem: r.message }) },
+        at,
+        sha,
+      );
       return { rel, e };
     } catch (err) {
       // A file that can't be read at all: the problem is reported, and nothing is kept for it.
       return { rel, e: { size: -1, mtimeMs: -1, problem: (err as Error).message.split("\n")[0]! } };
     }
   });
-  const changed = read.length > 0 || fresh.size !== had.size;
+  const changed = read.length > 0 || rekept > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
   if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);
   if (memo && o.keep !== false && o.kept)
@@ -183,7 +265,11 @@ export interface KeptParses<T> {
  * megabytes of YAML, and the next read parsed them again). Each file is kept by the size and time
  * it had as it was written, with the parse of the text the writer wrote there, which is what a
  * read of it would parse; a file whose size or time is another now (changed since), or gone, isn't
- * kept. A cache that can't be written costs the next read its parses.
+ * kept. A file written moments ago is racy (its time is within `RACY_MS` of the write): it is kept
+ * with the hash of the bytes written (`writeFileAtomic`'s `stat` gives it, and the clock as the
+ * write began), so the next read reuses it only when the file still hashes to them; one with no
+ * hash is parsed again by the next read. A cache that can't be written costs the next read its
+ * parses.
  */
 export async function keepParses<T>(
   k: KeptParses<T>,
@@ -191,9 +277,15 @@ export async function keepParses<T>(
     /**
      * Each file written, with the size and time it had as it was written (`writeFileAtomic`'s
      * `stat`): it is kept only while it still has exactly those, so an edit made since (of the
-     * same size too: its time differs) is parsed by the next read, never served the writer's text.
+     * same size too: its time differs, or within the grain its hash does) is parsed by the next
+     * read, never served the writer's text. `sha` and `writtenAt` as `writeFileAtomic` gives them.
      */
-    files: readonly { rel: string; value?: T; problem?: string; at: FileStat }[];
+    files: readonly {
+      rel: string;
+      value?: T;
+      problem?: string;
+      at: FileStat & { sha?: string; writtenAt?: number };
+    }[];
     removed: readonly string[];
   },
 ): Promise<void> {
@@ -209,11 +301,18 @@ export async function keepParses<T>(
       entries.delete(f.rel);
       return;
     }
-    entries.set(f.rel, {
-      size: s.size,
-      mtimeMs: s.mtimeMs,
-      ...(f.problem === undefined ? { value: f.value } : { problem: f.problem }),
-    });
+    entries.set(
+      f.rel,
+      entryAt(
+        {
+          size: s.size,
+          mtimeMs: s.mtimeMs,
+          ...(f.problem === undefined ? { value: f.value } : { problem: f.problem }),
+        },
+        f.at.writtenAt,
+        f.at.sha,
+      ),
+    );
   });
   await writeMemo(k.memo, k.version, k.dir, entries);
 }

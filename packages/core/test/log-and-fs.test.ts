@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,10 +82,22 @@ describe("whole files and locks", () => {
   it("says the size and time the file it wrote has, as written (beta.28.2)", async () => {
     const dir = await temp();
     const f = join(dir, "a/record.yaml");
-    const told: { size: number; mtimeMs: number }[] = [];
+    const told: { size: number; mtimeMs: number; sha: string; writtenAt: number }[] = [];
+    const before = Date.now();
     await writeFileAtomic(f, "kind: Endpoint\n", { stat: (s) => told.push(s) });
     const s = await stat(f);
-    expect(told).toEqual([{ size: s.size, mtimeMs: Math.floor(s.mtimeMs) }]);
+    // And the hash of the bytes written, and the clock as the write began (a parse kept by them
+    // is checked by the hash while the file's time is within the grain: record-cache.ts).
+    expect(told).toEqual([
+      {
+        size: s.size,
+        mtimeMs: Math.floor(s.mtimeMs),
+        sha: createHash("sha256").update("kind: Endpoint\n").digest("hex"),
+        writtenAt: expect.any(Number),
+      },
+    ]);
+    expect(told[0]!.writtenAt).toBeGreaterThanOrEqual(before);
+    expect(told[0]!.writtenAt).toBeLessThanOrEqual(Date.now());
     expect(await readdir(join(dir, "a"))).toEqual(["record.yaml"]);
   });
 

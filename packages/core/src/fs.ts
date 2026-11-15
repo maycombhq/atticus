@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import {
   copyFile,
@@ -30,9 +30,12 @@ export async function writeFileAtomic(
      * Told the size and time (ms, floored) of the file as written (beta.28.2: a writer keeps its
      * parse by them): the temporary file's, taken on its handle before the rename (which keeps
      * them), when the file has the same once renamed; not told when they differ (the file was
-     * changed meanwhile, or the system set another time on close).
+     * changed meanwhile, or the system set another time on close). With them, the sha256 of the
+     * bytes written and `writtenAt`, the clock (ms) as the write began: a parse kept by them is
+     * checked by that hash while the file's time is within the timestamp's grain of `writtenAt`
+     * (record-cache.ts, `RACY_MS`).
      */
-    stat?: (s: { size: number; mtimeMs: number }) => void;
+    stat?: (s: { size: number; mtimeMs: number; sha: string; writtenAt: number }) => void;
   } = {},
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -43,12 +46,19 @@ export async function writeFileAtomic(
       await renameRetrying(tmp, path);
       return;
     }
+    // Before the file is there to be edited by anyone else: any later edit has a later time.
+    const writtenAt = Date.now();
     const fh = await open(tmp, "w");
-    let mine: { size: number; mtimeMs: number };
+    let mine: { size: number; mtimeMs: number; sha: string; writtenAt: number };
     try {
       await fh.writeFile(data, typeof data === "string" ? "utf8" : undefined);
       const s = await fh.stat();
-      mine = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+      const sha = (
+        typeof data === "string"
+          ? createHash("sha256").update(data, "utf8")
+          : createHash("sha256").update(data)
+      ).digest("hex");
+      mine = { size: s.size, mtimeMs: Math.floor(s.mtimeMs), sha, writtenAt };
     } finally {
       await fh.close();
     }

@@ -38,7 +38,18 @@ export const filePoolHooks: {
   minFiles?: number;
   /** A test's workers that fail as they start (as one that can't: ERR_WORKER_INIT_FAILED, OOM). */
   failStart?: boolean;
+  /** A test's workers that start and never say they are ready (nor fail, nor exit). */
+  neverReady?: boolean;
+  /** How long the workers have to say they are ready (default `START_TIMEOUT_MS`). */
+  startTimeoutMs?: number;
 } = {};
+
+/**
+ * How long the workers have to say they are ready before this thread reads instead (the final
+ * review of beta.28.2: a worker that neither answered nor failed hung the build). A worker starts
+ * in tens of milliseconds; 10 s is a host so loaded that this thread would be no slower.
+ */
+export const START_TIMEOUT_MS = 10_000;
 
 /** Below this many files the workers' start costs more than they save. */
 const MIN_FILES = 512;
@@ -86,7 +97,7 @@ const { createHash } = require("node:crypto");
 const { isUtf8 } = require("node:buffer");
 const at = (dir, rel) => path.join(dir, ...rel.split("/"));
 parentPort.postMessage({ ready: true });
-parentPort.on("message", ({ id, dir, rels, hash }) => {
+parentPort.on("message", ({ id, dir, rels, hash, raw }) => {
   const out = new Array(rels.length);
   try {
     for (let k = 0; k < rels.length; k++) {
@@ -102,7 +113,7 @@ parentPort.on("message", ({ id, dir, rels, hash }) => {
         const bytes = fs.readFileSync(fd);
         // The same hash as textShaOf, written again here (a worker of eval can't import it).
         const h = createHash("sha256");
-        if (!bytes.includes(13) && isUtf8(bytes)) h.update(bytes);
+        if (raw || (!bytes.includes(13) && isUtf8(bytes))) h.update(bytes);
         else h.update(bytes.toString("utf8").replace(/\\r\\n?/g, "\\n"), "utf8");
         out[k] = [s.size, Math.floor(s.mtimeMs), h.digest("hex")];
       } finally {
@@ -118,41 +129,56 @@ parentPort.on("message", ({ id, dir, rels, hash }) => {
 
 type Row = [number, number] | [number, number, string] | null;
 
+/** What is read of each file: its size and time only, or its hash too (`raw`: of its bytes as they are). */
+interface Want {
+  hash: boolean;
+  raw?: boolean;
+}
+
 /** The folder's files through `n` workers, each given a batch at a time; rows in the paths' order. */
 async function throughWorkers(
   n: number,
   dir: string,
   rels: readonly string[],
-  hash: boolean,
+  want: Want,
 ): Promise<Row[]> {
   const rows = new Array<Row>(rels.length);
   const workers: Worker[] = [];
   const code = filePoolHooks.failStart
     ? `throw new Error("a test's worker fails to start");`
-    : WORKER;
+    : filePoolHooks.neverReady
+      ? `setInterval(() => {}, 60_000);`
+      : WORKER;
   // A process where a worker can't start (a sandbox, a host without them, a worker out of memory
   // or failing as it starts, before its first answer): this thread reads.
+  // One that never says it is ready, nor fails (a host too loaded, a hung start): after
+  // `START_TIMEOUT_MS` the workers are stopped and this thread reads, so a build never hangs.
   let started: boolean;
+  let timer: NodeJS.Timeout | undefined;
   try {
     for (let i = 0; i < n; i++) workers.push(new Worker(code, { eval: true }));
-    started = (
-      await Promise.all(
-        workers.map(
-          (w) =>
-            new Promise<boolean>((resolve) => {
-              w.once("message", (m: { ready?: boolean }) => resolve(m.ready === true));
-              w.once("error", () => resolve(false));
-              w.once("exit", () => resolve(false));
-            }),
-        ),
-      )
-    ).every(Boolean);
+    const ready = Promise.all(
+      workers.map(
+        (w) =>
+          new Promise<boolean>((resolve) => {
+            w.once("message", (m: { ready?: boolean }) => resolve(m.ready === true));
+            w.once("error", () => resolve(false));
+            w.once("exit", () => resolve(false));
+          }),
+      ),
+    ).then((all) => all.every(Boolean));
+    const late = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), filePoolHooks.startTimeoutMs ?? START_TIMEOUT_MS);
+    });
+    started = await Promise.race([ready, late]);
   } catch {
     started = false;
+  } finally {
+    clearTimeout(timer);
   }
   if (!started) {
     await Promise.all(workers.map((w) => w.terminate()));
-    return inThread(dir, rels, hash);
+    return inThread(dir, rels, want);
   }
   let next = 0;
   try {
@@ -164,7 +190,13 @@ async function throughWorkers(
               if (next >= rels.length) return resolve();
               const from = next;
               next = Math.min(rels.length, next + BATCH);
-              w.postMessage({ id: from, dir, rels: rels.slice(from, next), hash });
+              w.postMessage({
+                id: from,
+                dir,
+                rels: rels.slice(from, next),
+                hash: want.hash,
+                raw: want.raw === true,
+              });
             };
             w.on(
               "message",
@@ -195,14 +227,14 @@ async function throughWorkers(
 }
 
 /** The folder's files in this thread, a few dozen at once (a small folder, or no workers). */
-async function inThread(dir: string, rels: readonly string[], hash: boolean): Promise<Row[]> {
+async function inThread(dir: string, rels: readonly string[], want: Want): Promise<Row[]> {
   const rows = new Array<Row>(rels.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(READ_AT_ONCE, rels.length) }, async () => {
       for (let k = next++; k < rels.length; k = next++) {
         const full = join(dir, ...rels[k]!.split("/"));
-        if (!hash) {
+        if (!want.hash) {
           const s = await stat(full).catch(() => undefined);
           rows[k] = s ? [s.size, Math.floor(s.mtimeMs)] : null;
           continue;
@@ -211,7 +243,11 @@ async function inThread(dir: string, rels: readonly string[], hash: boolean): Pr
         const fh = await open(full, "r");
         try {
           const s = await fh.stat();
-          rows[k] = [s.size, Math.floor(s.mtimeMs), textShaOf(await fh.readFile())];
+          const bytes = await fh.readFile();
+          const sha = want.raw
+            ? createHash("sha256").update(bytes).digest("hex")
+            : textShaOf(bytes);
+          rows[k] = [s.size, Math.floor(s.mtimeMs), sha];
         } finally {
           await fh.close();
         }
@@ -221,18 +257,28 @@ async function inThread(dir: string, rels: readonly string[], hash: boolean): Pr
   return rows;
 }
 
-function rowsOf(dir: string, rels: readonly string[], hash: boolean): Promise<Row[]> {
+function rowsOf(dir: string, rels: readonly string[], want: Want): Promise<Row[]> {
   const n = workersFor(rels.length);
-  return n > 0 ? throughWorkers(n, dir, rels, hash) : inThread(dir, rels, hash);
+  return n > 0 ? throughWorkers(n, dir, rels, want) : inThread(dir, rels, want);
 }
 
 /**
  * Every named file under `dir` (paths with forward slashes), read whole and hashed: its text hash
  * (`textShaOf`), size and time, in the order of `rels`. A file that can't be opened or read fails
- * the call with that error (its `code`: ENOENT for one gone since it was listed).
+ * the call with that error (its `code`: ENOENT for one gone since it was listed). With `raw`, the
+ * hash is of the file's bytes as they are (sha256, no line endings made LF): a parse kept by it
+ * is of exactly those bytes (record-cache.ts).
  */
-export async function hashFilesIn(dir: string, rels: readonly string[]): Promise<FileHash[]> {
-  return (await rowsOf(dir, rels, true)).map((r) => ({ sha: r![2]!, size: r![0], mtimeMs: r![1] }));
+export async function hashFilesIn(
+  dir: string,
+  rels: readonly string[],
+  o: { raw?: boolean } = {},
+): Promise<FileHash[]> {
+  return (await rowsOf(dir, rels, { hash: true, raw: o.raw === true })).map((r) => ({
+    sha: r![2]!,
+    size: r![0],
+    mtimeMs: r![1],
+  }));
 }
 
 /** Every named file's size and time (ms, floored), in the order of `rels`; none for one not there. */
@@ -240,7 +286,7 @@ export async function statFilesIn(
   dir: string,
   rels: readonly string[],
 ): Promise<(FileStat | undefined)[]> {
-  return (await rowsOf(dir, rels, false)).map((r) =>
+  return (await rowsOf(dir, rels, { hash: false })).map((r) =>
     r ? { size: r[0], mtimeMs: r[1] } : undefined,
   );
 }

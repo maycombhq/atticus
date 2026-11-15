@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   writeFileAtomic,
   keepParses,
@@ -10,6 +10,8 @@ import {
   readFlow,
   readParsedFiles,
   readRepoSpec,
+  recordCacheHooks,
+  RACY_MS,
   serializeRecord,
   specFlowFiles,
 } from "../src/index.js";
@@ -376,5 +378,150 @@ describe("the parses of files a writer wrote, kept for the next read", () => {
       { rel: "a.yaml", value: "ok a, edited meanwhile" },
     ]);
     expect(next.parsed).toEqual(["a.yaml"]);
+  });
+});
+
+/**
+ * The final review of beta.28.2: on a file system whose times are coarse (FAT 2 s, HFS+ 1 s, some
+ * SMB and NFS mounts) a same-size edit made soon after a file was read or written keeps the same
+ * time, so a parse kept by size and time alone served the old text. As Git's "racily clean" rule:
+ * a parse kept of a file whose time was within `RACY_MS` of the moment it was kept is reused only
+ * when the file's bytes still hash to the ones parsed; an older one is trusted by size and time.
+ */
+describe("a file kept within the timestamp's grain is checked by its hash", () => {
+  const mine: string[] = [];
+  afterEach(async () => {
+    delete recordCacheHooks.now;
+    await Promise.all(mine.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  });
+  const root = async () => {
+    const r = await metarepo();
+    mine.push(r);
+    const dir = join(r, "things");
+    await mkdir(dir, { recursive: true });
+    return { root: r, dir };
+  };
+  /** Rewrite a file with a text of the same size and put its time back, as a coarse clock would. */
+  const sameSizeSameTime = async (file: string, text: string) => {
+    const s = await stat(file);
+    await writeFile(file, text);
+    await utimes(file, s.atimeMs / 1000, s.mtimeMs / 1000);
+    const now = await stat(file);
+    expect([now.size, Math.floor(now.mtimeMs)]).toEqual([s.size, Math.floor(s.mtimeMs)]);
+  };
+
+  it("the grain is 2 s", () => {
+    expect(RACY_MS).toBe(2000);
+  });
+
+  it("a same-size edit with the same time, soon after a read, is parsed again", async () => {
+    const { root: r, dir } = await root();
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    await writeFile(join(dir, "b.yaml"), "ok b\n");
+    await read(dir, ["a.yaml", "b.yaml"], counting().parse, r);
+    await sameSizeSameTime(join(dir, "a.yaml"), "ok X\n");
+    const next = counting();
+    expect(await read(dir, ["a.yaml", "b.yaml"], next.parse, r)).toEqual([
+      { rel: "a.yaml", value: "ok X" },
+      { rel: "b.yaml", value: "ok b" },
+    ]);
+    // b's bytes still hash the same: it isn't parsed again.
+    expect(next.parsed).toEqual(["a.yaml"]);
+  });
+
+  it("a same-size edit with the same time, soon after a writer kept its parse, is parsed again", async () => {
+    const { root: r, dir } = await root();
+    await writeFile(join(dir, "b.yaml"), "ok a\n");
+    let kept: KeptParses<string> | undefined;
+    await readParsedFiles<string>({
+      dir,
+      files: ["b.yaml"],
+      name: "test",
+      version: "1",
+      parse: counting().parse,
+      cacheRoot: r,
+      kept: (k) => (kept = k),
+    });
+    let at: { size: number; mtimeMs: number } | undefined;
+    await writeFileAtomic(join(dir, "b.yaml"), "ok b\n", { stat: (s) => (at = s) });
+    await keepParses(kept!, { files: [{ rel: "b.yaml", value: "ok b", at: at! }], removed: [] });
+    // Unchanged: the kept parse is taken (its hash matches), nothing is parsed.
+    const same = counting();
+    expect(await read(dir, ["b.yaml"], same.parse, r)).toEqual([{ rel: "b.yaml", value: "ok b" }]);
+    expect(same.parsed).toEqual([]);
+    await sameSizeSameTime(join(dir, "b.yaml"), "ok X\n");
+    const next = counting();
+    expect(await read(dir, ["b.yaml"], next.parse, r)).toEqual([{ rel: "b.yaml", value: "ok X" }]);
+    expect(next.parsed).toEqual(["b.yaml"]);
+  });
+
+  it("a writer's stat with no hash (an older caller) keeps nothing that can be trusted while racy", async () => {
+    const { root: r, dir } = await root();
+    await writeFile(join(dir, "b.yaml"), "ok a\n");
+    let kept: KeptParses<string> | undefined;
+    await readParsedFiles<string>({
+      dir,
+      files: ["b.yaml"],
+      name: "test",
+      version: "1",
+      parse: counting().parse,
+      cacheRoot: r,
+      kept: (k) => (kept = k),
+    });
+    let at: { size: number; mtimeMs: number } | undefined;
+    await writeFileAtomic(join(dir, "b.yaml"), "ok b\n", {
+      stat: (s) => (at = { size: s.size, mtimeMs: s.mtimeMs }),
+    });
+    await keepParses(kept!, { files: [{ rel: "b.yaml", value: "ok b", at: at! }], removed: [] });
+    await sameSizeSameTime(join(dir, "b.yaml"), "ok X\n");
+    expect(await read(dir, ["b.yaml"], counting().parse, r)).toEqual([
+      { rel: "b.yaml", value: "ok X" },
+    ]);
+  });
+
+  it("a file whose time was well before it was kept is trusted by its size and time (no hash)", async () => {
+    const { root: r, dir } = await root();
+    const old = new Date("2026-01-01T00:00:00Z");
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    await utimes(join(dir, "a.yaml"), old, old);
+    await read(dir, ["a.yaml"], counting().parse, r);
+    // Not something a real clock allows (an edit now has a time of now): it shows the stat alone
+    // decides, as before, so an unchanged estate costs one stat a file.
+    await sameSizeSameTime(join(dir, "a.yaml"), "ok X\n");
+    const next = counting();
+    expect(await read(dir, ["a.yaml"], next.parse, r)).toEqual([{ rel: "a.yaml", value: "ok a" }]);
+    expect(next.parsed).toEqual([]);
+  });
+
+  it("a racy parse whose hash matches is kept again as of now, and once past the grain the stat decides", async () => {
+    const { root: r, dir } = await root();
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    await read(dir, ["a.yaml"], counting().parse, r);
+    const memoOf = async () => {
+      const [f] = await readdir(join(r, ".atticus", "cache"));
+      return JSON.parse(await readFile(join(r, ".atticus", "cache", f!), "utf8")) as {
+        entries: Record<string, { sha?: string; at?: number }>;
+      };
+    };
+    expect((await memoOf()).entries["a.yaml"]!.sha).toMatch(/^[0-9a-f]{64}$/);
+    // A read straight after: checked by its hash, still racy, so the cache isn't written again.
+    const [f] = await readdir(join(r, ".atticus", "cache"));
+    const bytes = await readFile(join(r, ".atticus", "cache", f!));
+    const straight = counting();
+    expect(await read(dir, ["a.yaml"], straight.parse, r)).toEqual([
+      { rel: "a.yaml", value: "ok a" },
+    ]);
+    expect(straight.parsed).toEqual([]);
+    expect((await readFile(join(r, ".atticus", "cache", f!))).equals(bytes)).toBe(true);
+    // The next command, a few seconds on.
+    const later = Date.now() + 5_000;
+    recordCacheHooks.now = () => later;
+    const next = counting();
+    expect(await read(dir, ["a.yaml"], next.parse, r)).toEqual([{ rel: "a.yaml", value: "ok a" }]);
+    expect(next.parsed).toEqual([]);
+    const e = (await memoOf()).entries["a.yaml"]!;
+    expect(e.at).toBe(later);
+    // No longer racy: its hash isn't kept, and the stat alone decides from now on.
+    expect(e.sha).toBeUndefined();
   });
 });

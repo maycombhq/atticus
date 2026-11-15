@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, rm, stat, utimes, writeFile, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -143,6 +144,39 @@ describe("hashing a folder's files, in this thread or in workers (beta.28.2)", (
       delete filePoolHooks.failStart;
     }
   });
+
+  it("a worker that never says it is ready is stopped after the start-up wait, and this thread reads", async () => {
+    // The final review of beta.28.2: a worker that neither answered nor failed hung the build.
+    filePoolHooks.workers = 2;
+    filePoolHooks.minFiles = 0;
+    filePoolHooks.neverReady = true;
+    filePoolHooks.startTimeoutMs = 200;
+    try {
+      const dir = await folder(ODD);
+      const rels = Object.keys(ODD);
+      const t0 = Date.now();
+      expect((await hashFilesIn(dir, rels)).map((h) => h.sha)).toEqual(
+        rels.map((r) => expectedSha(ODD[r]!)),
+      );
+      expect((await statFilesIn(dir, rels)).every((s) => s !== undefined)).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(5_000);
+    } finally {
+      delete filePoolHooks.neverReady;
+      delete filePoolHooks.startTimeoutMs;
+    }
+  });
+
+  for (const way of WAYS)
+    it(`${way.name}: with raw, the hash of the bytes as they are (CR and all)`, async () => {
+      filePoolHooks.workers = way.workers;
+      filePoolHooks.minFiles = 0;
+      const dir = await folder(ODD);
+      const rels = Object.keys(ODD);
+      const got = await hashFilesIn(dir, rels, { raw: true });
+      expect(got.map((h) => h.sha)).toEqual(
+        rels.map((r) => createHash("sha256").update(ODD[r]!).digest("hex")),
+      );
+    });
 
   it("no files: nothing read, no worker started", async () => {
     filePoolHooks.workers = 2;
