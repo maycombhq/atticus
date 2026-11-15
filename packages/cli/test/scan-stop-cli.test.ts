@@ -382,6 +382,10 @@ describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)"
         refused: { reasons: string[]; allowRemovals: number };
       };
       expect(report.refused.reasons).toContain("empty");
+      // beta.28.2: no confirm can take an empty catalog over a full one, so the removals aren't
+      // also offered as ones that wait for a confirm.
+      expect(report.refused.reasons).not.toContain("large-removals");
+      expect(j.out.join("\n")).not.toMatch(/wait(s)? for you to confirm/);
       const again = capture();
       expect(
         await main(

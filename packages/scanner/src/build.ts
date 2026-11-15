@@ -2779,7 +2779,14 @@ export async function guardBuild(
       had,
       removals.map((x) => ({ repos: x.repos, joined: joinedLooseEnds.has(x.path) })),
     );
-    if (over && o.allowRemovals !== removals.length) {
+    // beta.28.2: an empty catalog over a full one refuses below with no confirm, so it isn't also
+    // offered here as a removal that "waits for you to confirm".
+    const emptiedNow =
+      !b.records.some((r) => r.evidence.some((e) => !!e.repo)) &&
+      b.listed.length > 0 &&
+      !!lastManifest &&
+      (await lastRecords()).some((r) => r.evidence.some((e) => !!e.repo));
+    if (over && !emptiedNow && o.allowRemovals !== removals.length) {
       reasons.push("large-removals");
       // beta.28: beside each repo's count, what the same build adds for it: a read switched to
       // another source that keys its records otherwise removes and adds about as many.

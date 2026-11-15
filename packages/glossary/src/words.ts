@@ -6,7 +6,7 @@ import { identifierWords, singularNoun } from "@maycombhq/core";
  */
 
 /** Tokens that carry no business meaning in an identifier. */
-export const STOP_TOKENS = new Set([
+export const STOP_TOKENS: ReadonlySet<string> = new Set([
   "a",
   "an",
   "and",
@@ -38,7 +38,7 @@ export const STOP_TOKENS = new Set([
 ]);
 
 /** Leading qualifiers dropped from a compound name: old_limit and new_limit are both "limit". */
-export const QUALIFIERS = new Set([
+export const QUALIFIERS: ReadonlySet<string> = new Set([
   "cur",
   "curr",
   "current",

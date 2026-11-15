@@ -50,7 +50,9 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
     await session.post("Profiler.enable");
     // ATTICUS_BENCH_PROF_US: the sampling interval in microseconds (5000 by default).
     await session.post("Profiler.setSamplingInterval", {
-      interval: Number(process.env.ATTICUS_BENCH_PROF_US ?? 5000),
+      interval: Number.isFinite(Number(process.env.ATTICUS_BENCH_PROF_US))
+        ? Number(process.env.ATTICUS_BENCH_PROF_US)
+        : 5000,
     });
     await session.post("Profiler.start");
   }

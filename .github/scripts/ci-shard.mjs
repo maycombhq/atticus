@@ -59,6 +59,9 @@ const UNIT_DEFAULT = 5;
 // The CLI's test files that take 10 s or more.
 const CLI_WEIGHTS = {
   "propose.test.ts": 149,
+  // beta.28.2: generated estates built incrementally and from scratch, byte for byte.
+  "big-estate-equivalence.test.ts": 125,
+  "big-estate-speed.test.ts": 65,
   "learn-cli.test.ts": 103,
   // ADR 0195's property tests: 100 sequences of up to 10 commands took 41 s of CPU on Linux
   // (2026-11-11, beta.26's writers), with the known failures, examples and mutants about 100 s.
