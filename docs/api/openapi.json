@@ -42076,6 +42076,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "newerCatalog": {
+            "type": "string"
           }
         },
         "required": [

@@ -636,10 +636,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   written by a newer Atticus, at a version of its format this one doesn't read. Its `message`
  *   says so, its `command` is `npm i -g @maycombhq/atticus@beta`, and nothing was written; it is
  *   never `not-upgraded`. The Apply preview's `confirm.refused` may list it the same way. The
- *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words. Every route
+ *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words; GET
+ *   /api/upgrade then lists no `pending` step and says why in `newerCatalog`, and GET
+ *   /api/build/undo offers no `plan` (its `problem` says why). Every route
  *   that writes one of the build's inputs (the build, scan, Apply, undo, prune, the upgrade, the
  *   map's edits and deletes, corrections, call corrections, pairings, declared links and boxes,
- *   answers, triage, the AI's decisions, the baseline, the org pack's files, repos and owners)
+ *   answers, triage, the AI's decisions, the baseline, initiatives, an owner question's send,
+ *   starting a run, the org pack's files, repos and owners)
  *   answers 409 on such a catalog before it writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
  *   newer }`. Additive only.
  */
@@ -5626,6 +5629,11 @@ export const UpgradeView = z.object({
    * result, and offers Propose for the stamp alone too.
    */
   upgraded: z.array(z.string()).optional(),
+  /**
+   * 3.15.0 (beta.28.2, ADR 0197): the catalog was built by a newer Atticus, in words that say to
+   * upgrade Atticus (never `atticus upgrade`); `pending` is then empty, as the upgrade refuses.
+   */
+  newerCatalog: z.string().optional(),
 });
 // ------------------------------------------------------------------ set up from the app (ADR 0190)
 

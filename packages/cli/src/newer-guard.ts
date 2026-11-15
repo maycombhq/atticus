@@ -1,4 +1,5 @@
 import type { Output } from "./commands.js";
+import { markNewerChecked } from "@maycombhq/scanner";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the writers of the build's
@@ -12,13 +13,11 @@ import type { Output } from "./commands.js";
 /** `atticus <group> <command>` of each writer the command line has (`<group>` alone: any). */
 export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "alias",
-  "absorb accept",
   "baseline",
   "catalog build",
   "catalog edits",
   "catalog prune",
   "catalog undo",
-  "connect match",
   "feature link",
   "feature merge",
   "feature name",
@@ -29,6 +28,10 @@ export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "glossary define",
   "glossary link",
   "glossary scan",
+  "initiative commit",
+  "initiative new",
+  "initiative plan",
+  "initiative request",
   "intake add",
   "orgpack accept",
   "orgpack owner",
@@ -65,6 +68,14 @@ export function newerGuardedCommand(
   // `verify <repo>` writes only with --write (a read alone writes nothing of the build's).
   if (group === "verify") return values.write === true;
   if (group === "scan") return command === undefined;
+  // Read-only modes are not refused (review of beta.28.2): they write nothing of the build's.
+  if (group === "absorb" && command === "accept") return values["dry-run"] !== true;
+  if (group === "connect" && command === "match") return values.read !== true;
+  // `catalog validate <folder> --fix` writes the records again; without --fix it only reads.
+  if (group === "catalog" && command === "validate") return values.fix === true;
+  // `atticus map <repo>` is the assistant's read, refused before it costs a model call;
+  // `map render` only draws the map from the facts there are.
+  if (group === "map") return command !== undefined && command !== "render";
   // `catalog migrate` writes the catalog's files again, but not with --dry-run.
   if (group === "catalog" && command === "migrate") return values["dry-run"] !== true;
   // `catalog crosscheck` reads, but its --promote, --dismiss and --undismiss write a decision.
@@ -91,6 +102,11 @@ export const NEWER_GUARDED_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/baseline",
   "POST /api/links/corrections",
   "POST /api/links/delete",
+  "POST /api/initiatives",
+  "POST /api/initiatives/{initiativeId}/plan",
+  "POST /api/commitments/{commitmentId}/status",
+  "POST /api/owner-questions/{id}/send",
+  "POST /api/runs",
   "POST /api/links/deleted/undo",
   "POST /api/links/connect",
   "POST /api/links/match",
@@ -134,4 +150,12 @@ export async function refuseNewerCommand(
   io.err(r.message);
   if (json) io.out(JSON.stringify({ written: false, refused: r }, null, 2));
   return 1;
+}
+
+/**
+ * After a check that found nothing: the rest of the caller's own async context (this is called
+ * from it, not awaited) runs its build without checking again (review of beta.28.2).
+ */
+export function markChecked(root: string): void {
+  markNewerChecked(root);
 }

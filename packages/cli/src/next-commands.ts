@@ -272,6 +272,11 @@ export interface NextState {
     seedCollisions?: { seed: string; repo: string; capability: string; flow: string }[];
   }[];
   problems: { file: string; message: string }[];
+  /**
+   * Beta.28.2 (ADR 0197): the catalog was built by a newer Atticus; every step that writes would
+   * refuse, so the first step is to upgrade Atticus.
+   */
+  newerCatalog?: string;
 }
 
 const METAREPO = "metarepo";
@@ -325,6 +330,8 @@ async function staleOf(root: string, repo: string): Promise<RepoState["stale"]> 
 
 /** Read everything the steps depend on. Files that don't read are problems, never a crash. */
 export async function readNextState(root: string): Promise<NextState> {
+  const { refuseIfNewer } = await import("@maycombhq/scanner");
+  const newer = await refuseIfNewer(root);
   const view = await onboardingView(root);
   const problems = [...view.problems];
   const repos: RepoState[] = [];
@@ -618,6 +625,7 @@ export async function readNextState(root: string): Promise<NextState> {
     problems,
     ...(orgpack ? { orgpack } : {}),
     ...(unverifiedNeeds ? { unverifiedNeeds } : {}),
+    ...(newer ? { newerCatalog: newer.message } : {}),
   };
 }
 
@@ -1349,6 +1357,15 @@ function costWords(r: RepoState): string {
 
 export function nextSteps(s: NextState): NextStep[] {
   const out: NextStep[] = [];
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus built: upgrade Atticus first (never
+  // `atticus upgrade`); the steps after it that write refuse until then.
+  if (s.newerCatalog)
+    out.push({
+      step: "upgrade-atticus",
+      command: "npm i -g @maycombhq/atticus@beta",
+      why: s.newerCatalog,
+      person: true,
+    });
   // The change in hand first (a live run, 2026-10-25, was pointed at eleven repo questions while
   // its change waited on its own step): its own questions, then its stage.
   const byChange = s.changeQuestions ?? {};

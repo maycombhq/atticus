@@ -256,6 +256,10 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
     commit: c.commit,
     files: c.files.length,
   }));
+  // Beta.28.2 (ADR 0197): no plan over a catalog a newer Atticus built: the undo refuses it.
+  const { refuseIfNewer } = await import("@maycombhq/scanner");
+  const newer = await refuseIfNewer(root);
+  if (newer) return { copies, problem: newer.message };
   const plan = await planUndo(undoDir, n);
   if ("problem" in plan) return { copies, problem: plan.problem };
   return {

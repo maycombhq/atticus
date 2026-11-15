@@ -4642,6 +4642,9 @@ export const COPY = {
       `This metarepo waits on ${n} upgrade step${n === 1 ? "" : "s"} for this Atticus. Upgrading backs up every file it changes under .atticus/backups/, runs each step and stamps the metarepo; then propose the changes for review.`,
     newer: (stamp: string, mine: string) =>
       `A newer Atticus (${stamp}) upgraded this metarepo; this is ${mine}. Install ${stamp} or later before working in it.`,
+    /** Beta.28.2 (ADR 0197): the catalog was built by a newer Atticus than this one. */
+    newerCatalog:
+      "This metarepo's catalog was built by a newer Atticus: upgrade Atticus (npm i -g @maycombhq/atticus@beta) before working in it. Don't run atticus upgrade; it is for a catalog older than this Atticus.",
     step: (summary: string, files: number) => `${summary} (${files} file${files === 1 ? "" : "s"})`,
     run: "Run the upgrade",
     running: "Upgrading…",

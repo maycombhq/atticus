@@ -41,6 +41,13 @@ export function UpgradeOfferView(p: {
         {U.newer(view.stamp, view.atticus)}
       </div>
     );
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus built: upgrade Atticus, not the metarepo.
+  if (view.newerCatalog)
+    return (
+      <div className="state error" role="alert">
+        {U.newerCatalog}
+      </div>
+    );
   if (!view.pending.length && run.state !== "done") return null;
   // Beta.27 review, final round: only the stamp changed, as the run's own result says it.
   const stampOnly = run.state === "done" && run.upgraded !== undefined && !run.upgraded.length;
@@ -123,7 +130,7 @@ export function UpgradeOffer({
   useReloadOnFiles(u);
   const [run, setRun] = useState<UpgradeRun>({ state: "idle" });
   if (u.state !== "ready") return null;
-  const newer = !!(u.data.newer && u.data.stamp);
+  const newer = !!((u.data.newer && u.data.stamp) || u.data.newerCatalog);
   if ((part === "newer" && !newer) || (part === "pending" && newer)) return null;
   if (only && run.state === "idle" && !u.data.pending.some((s) => s.id.startsWith(only)))
     return null;

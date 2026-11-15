@@ -432,6 +432,9 @@ async function headOf(path: string): Promise<string | undefined> {
     const buf = Buffer.alloc(HEAD_BYTES);
     const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0);
     return buf.subarray(0, bytesRead).toString("utf8");
+  } catch {
+    // A folder whose name ends .json (EISDIR), or a file that can't be read: no version to say.
+    return undefined;
   } finally {
     await fh.close();
   }

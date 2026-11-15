@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { constants as fsConstants, existsSync } from "node:fs";
 import { copyFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -2236,19 +2237,58 @@ export async function newerCatalogFiles(
     out.push(...(await newerFileAt(abs, rel, rel.endsWith("/build.json") ? "build.json" : rel)));
   }
   if (o.undoDir) {
-    const latest = (await listUndo(o.undoDir))[0];
-    if (latest) {
-      const abs = join(o.undoDir, String(latest.n), "next-build.json");
+    // The latest undo copy by its folder's number alone (review of beta.28.2): parsing every
+    // copy's undo.json (listUndo) costs megabytes on each guarded command of a large catalog.
+    const latest = await latestUndoCopy(o.undoDir);
+    if (latest !== undefined) {
+      const abs = join(o.undoDir, String(latest), "next-build.json");
       out.push(
         ...(await newerFileAt(
           abs,
           "next-build.json",
-          `the build.json of undo copy ${latest.n} (next-build.json)`,
+          `the build.json of undo copy ${latest} (next-build.json)`,
         )),
       );
     }
   }
   return out;
+}
+
+/** The number of the newest undo copy that has its undo.json (only stat'd, never parsed). */
+async function latestUndoCopy(undoDir: string): Promise<number | undefined> {
+  const ns = (await readdir(undoDir).catch(() => [] as string[]))
+    .filter((n) => /^\d+$/.test(n))
+    .map(Number)
+    .sort((a, b) => b - a);
+  for (const n of ns)
+    if (
+      await stat(join(undoDir, String(n), "undo.json")).then(
+        (x) => x.isFile(),
+        () => false,
+      )
+    )
+      return n;
+  return undefined;
+}
+
+/**
+ * Review of beta.28.2: a command or route that has just made the newer-Atticus check of the
+ * baseline catalog (`refuseIfNewer`) and found nothing marks its own async context (called from
+ * its own function after the check, since a mark made inside an awaited one stays there), so the build it goes on to run
+ * doesn't make the same check again. The mark holds a few seconds only: a job queued behind
+ * another, or a long-lived context, checks again.
+ */
+const newerChecked = new AsyncLocalStorage<{ root: string; at: number }>();
+const NEWER_CHECK_HOLDS_MS = 5_000;
+
+/** Mark the rest of this async context as having checked `root`'s catalog just now. */
+export function markNewerChecked(root: string): void {
+  newerChecked.enterWith({ root: resolve(root), at: Date.now() });
+}
+
+function newerCheckedNow(root: string): boolean {
+  const m = newerChecked.getStore();
+  return !!m && m.root === resolve(root) && Date.now() - m.at < NEWER_CHECK_HOLDS_MS;
 }
 
 /**
@@ -2354,7 +2394,12 @@ export async function guardBuild(
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
   // Beta.28.2 (ADR 0197): a catalog a newer Atticus wrote is neither read nor written over.
-  const newer = await newerCatalogFiles(root, { target, undoDir: o.undoDir });
+  // Once per command: not again when its own check of the baseline catalog was just made.
+  const baseline = resolve(target.manifest) === resolve(buildManifestPath(root));
+  const newer =
+    baseline && newerCheckedNow(root)
+      ? []
+      : await newerCatalogFiles(root, { target, undoDir: o.undoDir });
   if (newer.length) return newerAtticusRefusal(genRel, newer);
   const last = o.manifests
     ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)

@@ -1280,6 +1280,26 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     await schemaExport(arg ?? "schema", io);
     return 0;
   }
+  // beta.17: inside a Copilot session Atticus runs, the metarepo is the session's own, wherever
+  // Copilot's shell has moved to (a repo's checkout under it, say).
+  const root = resolve(
+    typeof values.root === "string"
+      ? values.root
+      : process.env.ATTICUS_ACP_SESSION && process.env.ATTICUS_ROOT
+        ? process.env.ATTICUS_ROOT
+        : process.cwd(),
+  );
+  // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
+  // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
+  {
+    const g = await import("./newer-guard.js");
+    if (g.newerGuardedCommand(group, command, values)) {
+      const refusedNewer = await g.refuseNewerCommand(root, io, values.json === true);
+      if (refusedNewer !== undefined) return refusedNewer;
+      // The build this command goes on to run doesn't check again (scanner markNewerChecked).
+      g.markChecked(root);
+    }
+  }
   if (group === "catalog" && command === "validate") {
     if (!arg) {
       io.err(
@@ -1299,24 +1319,6 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       return 2;
     }
     return catalogDiff(resolve(arg), resolve(b), values.json === true, io);
-  }
-  // beta.17: inside a Copilot session Atticus runs, the metarepo is the session's own, wherever
-  // Copilot's shell has moved to (a repo's checkout under it, say).
-  const root = resolve(
-    typeof values.root === "string"
-      ? values.root
-      : process.env.ATTICUS_ACP_SESSION && process.env.ATTICUS_ROOT
-        ? process.env.ATTICUS_ROOT
-        : process.cwd(),
-  );
-  // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
-  // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
-  {
-    const g = await import("./newer-guard.js");
-    if (g.newerGuardedCommand(group, command, values)) {
-      const refusedNewer = await g.refuseNewerCommand(root, io, values.json === true);
-      if (refusedNewer !== undefined) return refusedNewer;
-    }
   }
   if (!runsNoAi(group, command)) await setUpAi();
   // ADR 0086: atticus next, and --handoff on the AI steps (the prompt, result file and finish).
@@ -3140,6 +3142,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
           by: who(),
           skip: values.skip === true,
           ...(str(values.note) ? { note: str(values.note)! } : {}),
+          ...(values.json === true ? { json: true } : {}),
         },
         io,
       );

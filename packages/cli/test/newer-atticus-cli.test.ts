@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { fileStepStore, ManualNotifier } from "@maycombhq/adapters";
 import { parseRecord, runsDirOf } from "@maycombhq/core";
 import {
   BUILD_MANIFEST_READS,
@@ -291,6 +292,144 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
         expect(x.body.detail, path).toContain(MESSAGE(N));
       }
       expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "the review's writers: a hand-off's Done of any run but a task run's, initiatives, an owner question's send step, validate --fix and the map's read refuse before they write; read-only modes don't",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      // A glossary definer's and a feature namer's hand-offs waiting for their Done.
+      for (const [id, agent] of [
+        ["run-20261115000000-0002", "glossary-definer"],
+        ["run-20261115000000-0003", "feature-namer"],
+      ] as const) {
+        const dir = join(runsDirOf(root), "glossary", id);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+          join(dir, "run.json"),
+          `${JSON.stringify({ state: "waiting", request: { agent } }, null, 2)}\n`,
+        );
+      }
+      // An owner question's notification step, sent by hand (its Done is a send on record).
+      const n = new ManualNotifier({
+        store: fileStepStore(root),
+        now: () => "2026-11-15T09:00:00Z",
+      });
+      const { id: sent } = await n.send(
+        { channel: "@team-ledger", title: "A question for Ledger team", body: "Which limit?" },
+        { by: "pat", at: "2026-11-15T09:00:00Z", ref: "owner-ask:q-limit" },
+      );
+      const step = sent.replace(/^manual:/, "");
+      const before = await tree(root);
+      for (const words of [
+        ["handoff", "done", "run-20261115000000-0002"],
+        ["handoff", "done", "run-20261115000000-0003"],
+        ["initiative", "new"],
+        ["initiative", "plan"],
+        ["initiative", "request"],
+        ["initiative", "commit"],
+        ["todo", "done", step, "--by", "pat"],
+        ["catalog", "validate", "catalog/generated", "--fix"],
+        ["map", "forge-ledger"],
+        ["absorb", "accept", "payments"],
+        ["connect", "match", "forge-ledger", "--to", "forge-api"],
+      ]) {
+        const x = await run([...words, "--root", root]);
+        expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
+        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        const j = await run([...words, "--json", "--root", root]);
+        expect(j.code, words.join(" ")).toBe(1);
+        expect(JSON.parse(j.out).refused.reasons, words.join(" ")).toEqual(["newer-atticus"]);
+      }
+      for (const words of [
+        ["absorb", "accept", "payments", "--dry-run"],
+        ["connect", "match", "forge-ledger", "--to", "forge-api", "--read"],
+        ["catalog", "validate", "catalog/generated"],
+      ]) {
+        // Each may fail on its own grounds (no such repo here); never with the refusal.
+        const x = await run([...words, "--root", root]).catch((e: Error) => ({ err: e.message }));
+        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+      }
+      expect(await tree(root)).toEqual(before);
+      // The app: the same writers answer 409 before they write (and a run's start before it
+      // costs a model call); a run's Done says the refusal.
+      const { call } = await serve(root);
+      for (const [method, path] of [
+        ["POST", "/api/initiatives"],
+        ["POST", "/api/initiatives/{initiativeId}/plan"],
+        ["POST", "/api/commitments/{commitmentId}/status"],
+        ["POST", "/api/owner-questions/{id}/send"],
+        ["POST", "/api/runs"],
+      ] as const) {
+        expect(NEWER_GUARDED_ROUTES.has(`${method} ${path}`), path).toBe(true);
+        const x = await call(path.replace(/\{[^}]+\}/g, "x"), method, {});
+        expect(x.status, path).toBe(409);
+        expect(x.body.refused?.reasons, path).toEqual(["newer-atticus"]);
+      }
+      const done = await call("/api/runs/run-20261115000000-0002/done", "POST", {});
+      expect(done.status).not.toBe(200);
+      expect(JSON.stringify(done.body)).toContain(MESSAGE(N));
+      const stepDone = await call(`/api/todo/${step}/done`, "POST", {});
+      expect(stepDone.status).not.toBe(200);
+      expect(JSON.stringify(stepDone.body)).toContain(MESSAGE(N));
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "what reads on a newer catalog says so: GET /api/upgrade offers no steps, GET /api/build/undo no plan, and atticus next says to upgrade Atticus first",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      const before = await tree(root);
+      const { call } = await serve(root);
+      const up = await call("/api/upgrade");
+      expect(up.status).toBe(200);
+      expect(up.body.pending).toEqual([]);
+      expect(up.body.newerCatalog).toContain(MESSAGE(N));
+      const undo = await call("/api/build/undo");
+      expect(undo.status).toBe(200);
+      expect(undo.body.plan).toBeUndefined();
+      expect(undo.body.problem).toContain(MESSAGE(N));
+      const next = await run(["next", "--json", "--root", root]);
+      const steps = (
+        JSON.parse(next.out) as { steps: { step: string; command: string; why: string }[] }
+      ).steps;
+      expect(steps[0]).toMatchObject({
+        step: "upgrade-atticus",
+        command: "npm i -g @maycombhq/atticus@beta",
+      });
+      expect(steps[0]!.why).toContain(MESSAGE(N));
+      const text = await run(["next", "--root", root]);
+      expect(text.out).toContain("npm i -g @maycombhq/atticus@beta");
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "the latest undo copy is found without parsing every copy: one whose undo.json doesn't parse still has its next-build.json read; a folder named .json is skipped",
+    async () => {
+      const root = await metarepo();
+      const undoDir = await undoDirOf(root);
+      const latest = Math.max(
+        ...readdirSync(undoDir)
+          .filter((x) => /^\d+$/.test(x))
+          .map(Number),
+      );
+      const copy = join(undoDir, String(latest + 1));
+      mkdirSync(copy, { recursive: true });
+      writeFileSync(join(copy, "undo.json"), "{ cut short");
+      writeFileSync(join(copy, "next-build.json"), V2);
+      mkdirSync(join(root, "catalog", "sources", "readers", "odd.json"), { recursive: true });
+      const files = await newerCatalogFiles(root, { undoDir });
+      expect(files.map((f) => [f.name, f.version])).toEqual([
+        [`the build.json of undo copy ${latest + 1} (next-build.json)`, N],
+      ]);
     },
     T,
   );

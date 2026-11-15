@@ -91,12 +91,14 @@ export function extendUiRoutes(
       // anything when a newer Atticus built this metarepo's catalog (newer-guard.ts).
       NEWER_GUARDED_ROUTES.has(`${method} ${pattern}`)
         ? async (req) => {
-            const { refuseIfNewer } = await import("@maycombhq/scanner");
+            const { markNewerChecked, refuseIfNewer } = await import("@maycombhq/scanner");
             const newer = await refuseIfNewer(ctx.root);
             if (newer)
               throw new HttpError(409, "Built by a newer Atticus", newer.message, {
                 refused: newer,
               });
+            // The build the route goes on to run (a job it starts now) doesn't check again.
+            markNewerChecked(ctx.root);
             return asTheApp(() => handler(req));
           }
         : (req) => asTheApp(() => handler(req)),

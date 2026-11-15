@@ -932,15 +932,19 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // each load, so the answer is kept until a change is heard (watched-memo.ts).
       .add("GET", "/api/upgrade", async () => {
         const r = await keptAnswer(root, "upgrade", async () => {
-          const { newerAtticusOf, upgradeCheck } = await import("./upgrade.js");
+          const { newerAtticusOf, newerCatalogOf, upgradeCheck } = await import("./upgrade.js");
           const c = await upgradeCheck(root);
           // Round 49: a stamp this Atticus can't read still names the newer Atticus, when it does.
           const stamp = c.stamp?.atticus ?? newerAtticusOf(c);
+          // Beta.28.2 (ADR 0197): over a catalog a newer Atticus built, no step is offered (the
+          // upgrade refuses), and the words say to upgrade Atticus.
+          const newerCatalog = await newerCatalogOf(root);
           const body: Api.UpgradeViewT = {
             atticus: c.atticus,
             newer: c.newer,
             ...(stamp ? { stamp } : {}),
-            pending: c.pending,
+            pending: newerCatalog ? [] : c.pending,
+            ...(newerCatalog ? { newerCatalog: newerCatalog.message } : {}),
           };
           return { status: 200, body };
         });
