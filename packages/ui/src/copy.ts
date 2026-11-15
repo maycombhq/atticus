@@ -1112,7 +1112,7 @@ export const COPY = {
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
-      // Beta.28.1.1 (ADR 0197): build.json or a slot a newer Atticus wrote.
+      // Beta.28.2 (ADR 0197): build.json or a slot a newer Atticus wrote.
       "newer-atticus": () =>
         "This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run atticus upgrade.",
     } as Record<string, (n: number) => string>,

@@ -312,7 +312,7 @@ export async function verifyCommand(
     );
     return 2;
   }
-  // Beta.28.1.1 (ADR 0197): a --write over a catalog a newer Atticus built writes nothing, not
+  // Beta.28.2 (ADR 0197): a --write over a catalog a newer Atticus built writes nothing, not
   // even the facts file's repairs: it refuses first, as the build's guard does, and says so.
   if (o.write) {
     const { newerAtticusRefusal, newerCatalogFiles, undoDirOf, writeRefusedReport } =

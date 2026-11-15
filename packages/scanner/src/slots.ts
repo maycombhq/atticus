@@ -42,6 +42,12 @@ export const SLOT_VERSION = 1 as const;
 /** The version of `catalog/sources/build.json`. */
 export const BUILD_MANIFEST_VERSION = 1 as const;
 /**
+ * ADR 0197: the newest `build.json` version this Atticus reads, and the M of the newer-Atticus
+ * refusal ("this Atticus reads up to M"): a later one was written by a newer Atticus. It follows
+ * BUILD_MANIFEST_VERSION, so the version 2 writer raises both at once.
+ */
+export const BUILD_MANIFEST_READS: number = BUILD_MANIFEST_VERSION;
+/**
  * The build's own version (ADR 0195 point 4, review of CS1): bumped whenever the build's passes
  * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
  * by it (`build.json`'s `buildVersion`).
@@ -348,7 +354,7 @@ export function parseLegacyJoins(text: string): SlotParse<LegacyJoinsSlotT> {
 }
 
 /**
- * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): a file under catalog/sources
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): a file under catalog/sources
  * that a newer Atticus wrote, at a version of its format this one doesn't read. This Atticus
  * neither reads it nor writes over it: the build, `atticus upgrade` and undo refuse, and say to
  * upgrade Atticus, never to run `atticus upgrade` (which is for a catalog older than this one).
@@ -370,7 +376,7 @@ export function versionedFormatOf(
   rel: string,
 ): { field: string; reads: number; also?: { field: string; reads: number } } | undefined {
   if (/(^|\/)build\.json$/.test(rel) || /(^|\/)next-build\.json$/.test(rel))
-    return { field: "version", reads: BUILD_MANIFEST_VERSION };
+    return { field: "version", reads: BUILD_MANIFEST_READS };
   if (/(^|\/)facts\/[^/]+\.meta\.json$/.test(rel))
     return {
       field: "slotVersion",
@@ -451,7 +457,7 @@ export async function newerFileAt(abs: string, rel: string, name = rel): Promise
 }
 
 /**
- * The refusal's words for files a newer Atticus wrote (ADR 0197, beta.28.1.1): upgrade Atticus,
+ * The refusal's words for files a newer Atticus wrote (ADR 0197, beta.28.2): upgrade Atticus,
  * and never `atticus upgrade`, which would take a newer catalog for an older one.
  */
 export function newerAtticusWords(files: readonly NewerFile[]): string {

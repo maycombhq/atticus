@@ -953,7 +953,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/upgrade", async () => {
         const { newerCatalogOf, newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");
-        // Beta.28.1.1 (ADR 0197): never over a catalog a newer Atticus built.
+        // Beta.28.2 (ADR 0197): never over a catalog a newer Atticus built.
         const newerCatalog = await newerCatalogOf(root);
         if (newerCatalog) throw conflict(newerCatalog.message);
         const c = await upgradeCheck(root);

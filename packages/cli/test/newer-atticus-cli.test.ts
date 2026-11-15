@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord } from "@maycombhq/core";
-import { buildManifestPath, listUndo, newerCatalogFiles, undoDirOf } from "@maycombhq/scanner";
+import {
+  BUILD_MANIFEST_READS,
+  buildManifestPath,
+  listUndo,
+  newerCatalogFiles,
+  undoDirOf,
+} from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { main } from "../src/main.js";
 import { NEWER_GUARDED_COMMANDS, NEWER_GUARDED_ROUTES } from "../src/newer-guard.js";
@@ -13,7 +19,7 @@ import { extendUiRoutes } from "../src/ui-commands.js";
 import { seedReadersSlots } from "./seed-slots.js";
 
 /**
- * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): beta.28.2 writes
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): beta.28.2 writes
  * catalog/sources/build.json version 2. Every command of this Atticus that would read or write
  * over it (catalog build, verify --write, scan, catalog edits, catalog undo, atticus upgrade,
  * and the app's Apply) refuses with the newer-Atticus words, exits non-zero, writes nothing and
@@ -31,12 +37,15 @@ afterAll(async () => {
   await Promise.all(made.map((d) => rm(d, { recursive: true, force: true, maxRetries: 5 })));
 });
 
+/** The newest build.json this Atticus reads (M), and the next one (N), a newer Atticus's. */
+const M = BUILD_MANIFEST_READS;
+const N = M + 1;
 const MESSAGE = (n: number) =>
-  `This metarepo's catalog was built by a newer Atticus (build.json version ${n}; this Atticus reads up to 1): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
-/** build.json version 2 as ADR 0197 draws it. */
+  `This metarepo's catalog was built by a newer Atticus (build.json version ${n}; this Atticus reads up to ${M}): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
+/** build.json one version past this Atticus's, in the shape ADR 0197 draws version 2. */
 const V2 = `${JSON.stringify(
   {
-    version: 2,
+    version: N,
     buildVersion: "2.0.0-beta.28.2",
     sources: { "catalog/sources/readers/forge-ledger.json": "a".repeat(64) },
     sourceSets: { "0123456789abcdef": ["catalog/sources/readers/forge-ledger.json"] },
@@ -46,7 +55,7 @@ const V2 = `${JSON.stringify(
   2,
 )}\n`;
 /** A newer build.json of a shape nobody knows yet, its version not first. */
-const UNKNOWN = `${JSON.stringify({ shards: ["catalog/sources/build/0.json"], version: 3 }, null, 2)}\n`;
+const UNKNOWN = `${JSON.stringify({ shards: ["catalog/sources/build/0.json"], version: N + 1 }, null, 2)}\n`;
 
 const run = async (args: string[]) => {
   const out: string[] = [];
@@ -143,7 +152,7 @@ const notUpgradeAdvice = (text: string) => {
 
 describe("a catalog a newer Atticus built is refused by every writer, which writes nothing (ADR 0197)", () => {
   it(
-    "build.json version 2: catalog build, verify --write, scan, catalog edits, catalog undo and atticus upgrade refuse in the newer-Atticus words",
+    "build.json one version past this Atticus's: catalog build, verify --write, scan, catalog edits, catalog undo and atticus upgrade refuse in the newer-Atticus words",
     async () => {
       const root = await metarepo();
       await writeFile(buildManifestPath(root), V2);
@@ -172,7 +181,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
           // --check compares and says the catalog isn't what builds; it still writes nothing.
           continue;
         }
-        expect(x.err, args.join(" ")).toContain(MESSAGE(2));
+        expect(x.err, args.join(" ")).toContain(MESSAGE(N));
         notUpgradeAdvice(x.err);
       }
       // --json carries the reason a program reads.
@@ -180,7 +189,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       expect(j.code).toBe(1);
       expect(JSON.parse(j.out).refused).toMatchObject({
         reasons: ["newer-atticus"],
-        newer: [{ path: "catalog/sources/build.json", field: "version", version: 2, reads: 1 }],
+        newer: [{ path: "catalog/sources/build.json", field: "version", version: N, reads: M }],
       });
       for (const args of [
         ["upgrade", "--json"],
@@ -206,7 +215,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       for (const words of [...NEWER_GUARDED_COMMANDS].map((c) => c.split(" "))) {
         const x = await run([...words, "--root", root]);
         expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
-        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(2)}`);
+        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
         notUpgradeAdvice(x.err);
         const j = await run([...words, "--json", "--root", root]);
         if (j.code === 1 && j.out.trim().startsWith("{"))
@@ -248,7 +257,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
   );
 
   it(
-    "a build.json of an unknown shape at version 3 is refused the same way",
+    "a build.json of an unknown shape, two versions past, is refused the same way",
     async () => {
       const root = await metarepo();
       await writeFile(buildManifestPath(root), UNKNOWN);
@@ -260,7 +269,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         const x = await run([...args, "--root", root]);
         expect(x.code).not.toBe(0);
-        expect(x.err).toContain(MESSAGE(3));
+        expect(x.err).toContain(MESSAGE(N + 1));
         notUpgradeAdvice(x.err);
       }
       expect(await tree(root)).toEqual(before);
@@ -278,7 +287,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       const applied = await call("/api/facts/forge-ledger/apply", "POST", {});
       expect(applied.status).toBe(409);
       expect(applied.body.refused).toMatchObject({ reasons: ["newer-atticus"] });
-      expect(applied.body.refused.message).toContain(MESSAGE(2));
+      expect(applied.body.refused.message).toContain(MESSAGE(N));
       const view = await call("/api/build");
       expect(view.status).toBe(200);
       expect(view.body.pending.refused.reasons).toEqual(["newer-atticus"]);
@@ -292,7 +301,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
         const x = await call(path, method, {});
         expect(x.status, route).toBe(409);
         expect(x.body.refused?.reasons, route).toEqual(["newer-atticus"]);
-        expect(x.body.detail, route).toContain(MESSAGE(2));
+        expect(x.body.detail, route).toContain(MESSAGE(N));
       }
       const up = await call("/api/upgrade", "POST", {});
       expect(up.status).toBe(409);

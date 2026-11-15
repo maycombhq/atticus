@@ -2,19 +2,19 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## 2.0.0-beta.28.1.1 (2026-11-15)
+## 2.0.0-beta.28.2 (unreleased)
 
-A small patch, released before beta.28.2 (ADR 0197): beta.28.2 writes `catalog/sources/build.json` version 2, and this Atticus now says so when it meets one, instead of taking the catalog for one from before beta.27.
+beta.28.2 writes `catalog/sources/build.json` version 2 (ADR 0197). From this release, an Atticus that meets a `build.json` or slot newer than it reads says so, instead of taking the catalog for one from before beta.27.
 
 ### Fixed
 
-- **A catalog built by a newer Atticus is refused in its own words.** When `catalog/sources/build.json` has a `version` greater than this Atticus reads (version 2, beta.28.2's, of whatever shape), every command that would read or write over it refuses, exits non-zero, writes nothing and takes no undo copy: `atticus catalog build` (with `--discard-edits` or `--allow-removals` too), `atticus verify <repo> --write`, `atticus scan`, `atticus catalog edits [--curate]`, `atticus catalog undo [--yes]`, and the app's Apply, scan and build. They say: "This metarepo's catalog was built by a newer Atticus (build.json version 2; this Atticus reads up to 1): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run `atticus upgrade`." Before, beta.28.1 read such a file as unreadable and refused every build with "run atticus upgrade", which was the wrong advice, and `--discard-edits` would have written the whole catalog again in the older format.
+- **A catalog built by a newer Atticus is refused in its own words.** When `catalog/sources/build.json` has a `version` greater than this Atticus reads, of whatever shape, every command that would read or write over it refuses, exits non-zero, writes nothing and takes no undo copy: `atticus catalog build` (with `--discard-edits` or `--allow-removals` too), `atticus verify <repo> --write`, `atticus scan`, `atticus catalog edits [--curate]`, `atticus catalog undo [--yes]`, and the app's Apply, scan and build. They say, for a version N this Atticus reads up to M: "This metarepo's catalog was built by a newer Atticus (build.json version N; this Atticus reads up to M): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run `atticus upgrade`." Before, an Atticus read such a file as unreadable and refused every build with "run atticus upgrade", which was the wrong advice, and `--discard-edits` would have written the whole catalog again in the older format.
 - **Nothing that feeds the build is saved first.** Every writer of the build's inputs refuses before it writes anything, in the command line (exit 1; `--json` gives `refused.reasons: ["newer-atticus"]`) and in the app (409 with the same refusal): Edit the map, Delete this link and Bring it back, corrections and pairings, declared links and boxes, answers and question routing, triage, the AI's decisions, feature and glossary decisions, aliases, reading rules, repo types, owners and descriptions, `intake add`, `repo rename`, `catalog prune`. Before, they saved their file and only the build after it refused.
 - **`atticus upgrade` never touches a catalog a newer Atticus built.** It refuses with the same words, with `--yes`, `--check` and `--json` alike, and so does the app's upgrade (409).
 - **The same rule for every versioned slot file the build reads.** A readers slot or the legacy joins slot (`slotVersion`, a branch catalog's own slots too), a facts meta (`slotVersion`, and `factsSchemaVersion` newer than this Atticus's facts), the latest undo copy's `next-build.json` (a newer Atticus's build cut short), and a `build.json` or slot that `catalog undo` would put back from its copy. Each is known by its first bytes, so a 190 MB `build.json` isn't read whole for it.
 - **A version 1 `build.json` behaves exactly as before.**
 
-### Local API 3.14.1 (additive)
+### Local API 3.15.0 (additive)
 
 - A refused build's `reasons` (`pending.refused`, `last.refused`, a job's result) may be `newer-atticus`, with the words above as its `message` and `npm i -g @maycombhq/atticus@beta` as its `command`. Apply's preview `confirm.refused` may list it. Every route that writes one of the build's inputs answers 409 on such a catalog, before it writes, with the refusal as the problem's `refused`. The app shows it on Set up › Catalog builds and before Apply.
 

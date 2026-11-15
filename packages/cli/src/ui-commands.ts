@@ -87,7 +87,7 @@ export function extendUiRoutes(
     add(
       method,
       pattern,
-      // Beta.28.1.1 (ADR 0197): a writer of the build's inputs answers 409 before it writes
+      // Beta.28.2 (ADR 0197): a writer of the build's inputs answers 409 before it writes
       // anything when a newer Atticus built this metarepo's catalog (newer-guard.ts).
       NEWER_GUARDED_ROUTES.has(`${method} ${pattern}`)
         ? async (req) => {

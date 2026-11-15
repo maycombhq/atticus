@@ -630,7 +630,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   lines naming each with the file to fix it in. Additive only. Apply to every repo (POST
  *   /api/facts/apply-all) the same: a repo that wrote with facts left out is applied, and its
  *   result carries `leftOut` (all repos) and `leftOutRepos` (how many repos left some out).
- * 3.14.1 (beta.28.1.1, ADR 0197 "beta.28.1 and older reading version 2"): a refused build's
+ * 3.15.0 (beta.28.2, ADR 0197 "beta.28.1 and older reading version 2"): a refused build's
  *   `reasons` (BuildRefusalView: GET /api/build's `pending.refused` and `last.refused`, a scan's
  *   and an Apply's job result) may be `newer-atticus`: catalog/sources/build.json or a slot was
  *   written by a newer Atticus, at a version of its format this one doesn't read. Its `message`
@@ -643,7 +643,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
  *   newer }`. Additive only.
  */
-export const API_VERSION = "3.14.1";
+export const API_VERSION = "3.15.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1918,7 +1918,7 @@ export const BuildRefusalView = z.object({
       "large-removals",
       "hand-edits",
       "not-upgraded",
-      // 3.14.1 (beta.28.1.1, ADR 0197): build.json or a slot a newer Atticus wrote.
+      // 3.15.0 (beta.28.2, ADR 0197): build.json or a slot a newer Atticus wrote.
       "newer-atticus",
     ]),
   ),

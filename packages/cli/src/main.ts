@@ -1309,7 +1309,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ? process.env.ATTICUS_ROOT
         : process.cwd(),
   );
-  // Beta.28.1.1 (ADR 0197): a writer of the build's inputs refuses before it writes anything
+  // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
   // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
   {
     const g = await import("./newer-guard.js");

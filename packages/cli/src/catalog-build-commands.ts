@@ -129,7 +129,7 @@ export function buildJson(r: BuildAndWrite) {
  * in plain words and the command that goes on, so an action never just fails.
  */
 export function refusalHint(r: BuildRefusal, command: string): string {
-  // Beta.28.1.1 (ADR 0197): its own words, never the upgrade's.
+  // Beta.28.2 (ADR 0197): its own words, never the upgrade's.
   if (r.reasons.includes("newer-atticus"))
     return r.message.split("\n").slice(1).join(" ") || r.message;
   if (r.reasons.includes("not-upgraded"))
@@ -286,7 +286,7 @@ export async function catalogUndo(
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
-  // Beta.28.1.1 (ADR 0197): no undo over, or back to, a catalog a newer Atticus built.
+  // Beta.28.2 (ADR 0197): no undo over, or back to, a catalog a newer Atticus built.
   const newer = async (p: Awaited<ReturnType<typeof planUndo>>) => {
     const files = [
       ...(await newerCatalogFiles(root, { undoDir })),
@@ -405,7 +405,7 @@ export async function catalogUndo(
 }
 
 /**
- * Beta.28.1.1 (ADR 0197): a command that refuses a catalog a newer Atticus wrote, in the build's
+ * Beta.28.2 (ADR 0197): a command that refuses a catalog a newer Atticus wrote, in the build's
  * words (upgrade Atticus, never `atticus upgrade`), and with `--json` the build's refusal shape.
  */
 function refuseNewer(
@@ -838,7 +838,7 @@ export async function catalogEdits(
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
-  // Beta.28.1.1 (ADR 0197): a catalog a newer Atticus wrote has no hand edits this one can tell.
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus wrote has no hand edits this one can tell.
   const newerFiles = await newerCatalogFiles(root, { undoDir });
   if (newerFiles.length)
     return refuseNewer(io, o.json, newerFiles, "Nothing to curate", { edits: [], decisions: [] });

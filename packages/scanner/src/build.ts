@@ -2002,7 +2002,7 @@ export type RefusalReason =
   | "hand-edits"
   | "not-upgraded"
   /**
-   * Beta.28.1.1 (ADR 0197): build.json or a slot was written by a newer Atticus, at a version of
+   * Beta.28.2 (ADR 0197): build.json or a slot was written by a newer Atticus, at a version of
    * its format this one doesn't read: upgrade Atticus; never `atticus upgrade`.
    */
   | "newer-atticus";
@@ -2021,7 +2021,7 @@ export interface BuildRefusal {
   discardEdits?: number;
   /** For a scan that read nothing: each repo and why. */
   unread?: { repo: string; why: string }[];
-  /** Beta.28.1.1: the files a newer Atticus wrote (`newer-atticus`). */
+  /** Beta.28.2: the files a newer Atticus wrote (`newer-atticus`). */
   newer?: NewerFile[];
 }
 
@@ -2205,7 +2205,7 @@ export const UPGRADE_UNDONE =
   "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
 
 /**
- * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a
  * newer Atticus wrote, at a version of their format this one doesn't read: the target's
  * build.json, every slot under catalog/sources (readers, facts metas, legacy joins), and the
  * latest undo copy's next-build.json (a newer Atticus's build cut short). Only their first bytes
@@ -2282,7 +2282,7 @@ export interface NewerAtticusRefusal {
 }
 
 /**
- * Beta.28.1.1 (ADR 0197): the one check every writer of the build's inputs makes before it
+ * Beta.28.2 (ADR 0197): the one check every writer of the build's inputs makes before it
  * writes anything (a curated decision, a correction, an answer, the org pack, a slot): the
  * refusal, when a newer Atticus built this metarepo's catalog, else undefined. Its words are the
  * build's: upgrade Atticus, never `atticus upgrade`.
@@ -2353,7 +2353,7 @@ export async function guardBuild(
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const genRel = relOf(root, target.generated);
-  // Beta.28.1.1 (ADR 0197): a catalog a newer Atticus wrote is neither read nor written over.
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus wrote is neither read nor written over.
   const newer = await newerCatalogFiles(root, { target, undoDir: o.undoDir });
   if (newer.length) return newerAtticusRefusal(genRel, newer);
   const last = o.manifests
@@ -3468,7 +3468,7 @@ export async function buildAndWrite(
   });
   mark("report");
   // The build cache keeps what these inputs build, written or refused (point 9); not over a
-  // catalog a newer Atticus wrote (beta.28.1.1), whose build.json this one doesn't read.
+  // catalog a newer Atticus wrote (beta.28.2), whose build.json this one doesn't read.
   if (!guard.refused?.reasons.includes("newer-atticus"))
     await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
       path: target.manifest,

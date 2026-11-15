@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  BUILD_MANIFEST_READS,
   BUILD_MANIFEST_VERSION,
   buildAndWrite,
   buildManifestPath,
@@ -22,7 +23,7 @@ import {
 } from "../src/index.js";
 
 /**
- * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): beta.28.2 writes build.json
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): beta.28.2 writes build.json
  * version 2. This Atticus refuses a catalog a newer one wrote, in its own words (upgrade Atticus,
  * never `atticus upgrade`), writes nothing and takes no undo copy; a version 1 build.json builds
  * as before. Invented Forge estate (CLAUDE.md rule 3).
@@ -37,10 +38,13 @@ afterAll(async () => {
   await Promise.all(made.map((d) => rm(d, { recursive: true, force: true })));
 });
 
-/** build.json version 2 as ADR 0197 draws it: one table of sources, sets by content. */
+/** build.json one version past this Atticus's, in the shape ADR 0197 draws version 2. */
+/** The newest build.json this Atticus reads (M), and the next one (N), a newer Atticus's. */
+const M = BUILD_MANIFEST_READS;
+const N = M + 1;
 const V2 = `${JSON.stringify(
   {
-    version: 2,
+    version: N,
     buildVersion: "2.0.0-beta.28.2",
     sources: { "catalog/sources/readers/forge-ledger.json": "a".repeat(64) },
     sourceSets: { "0123456789abcdef": ["catalog/sources/readers/forge-ledger.json"] },
@@ -56,10 +60,10 @@ const V2 = `${JSON.stringify(
   2,
 )}\n`;
 /** A newer build.json of a shape nobody knows yet, its version not even first. */
-const UNKNOWN = `${JSON.stringify({ shards: ["x"], version: 3 }, null, 2)}\n`;
+const UNKNOWN = `${JSON.stringify({ shards: ["x"], version: N + 1 }, null, 2)}\n`;
 
 const MESSAGE = (n: number) =>
-  `This metarepo's catalog was built by a newer Atticus (build.json version ${n}; this Atticus reads up to 1): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
+  `This metarepo's catalog was built by a newer Atticus (build.json version ${n}; this Atticus reads up to ${M}): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
 
 /** The Forge golden slots, built once (build.json version 1 and an undo copy). */
 async function built(): Promise<string> {
@@ -95,12 +99,12 @@ describe("a version a newer Atticus wrote is known by its first bytes, or its wh
       [],
     );
   });
-  it("finds version 2 first, and version 3 of an unknown shape anywhere", () => {
-    expect(newerVersionsIn(V2, { field: "version", reads: 1 })).toEqual([
-      { field: "version", version: 2, reads: 1 },
+  it("finds the next version first, and one past it of an unknown shape anywhere", () => {
+    expect(newerVersionsIn(V2, { field: "version", reads: M })).toEqual([
+      { field: "version", version: N, reads: M },
     ]);
-    expect(newerVersionsIn(UNKNOWN, { field: "version", reads: 1 })).toEqual([
-      { field: "version", version: 3, reads: 1 },
+    expect(newerVersionsIn(UNKNOWN, { field: "version", reads: M })).toEqual([
+      { field: "version", version: N + 1, reads: M },
     ]);
     // Not JSON at all, or no number: unreadable as before, not newer.
     expect(newerVersionsIn("{ not json", { field: "version", reads: 1 })).toEqual([]);
@@ -113,11 +117,11 @@ describe("a version a newer Atticus wrote is known by its first bytes, or its wh
           path: "catalog/sources/build.json",
           name: "build.json",
           field: "version",
-          version: 2,
-          reads: 1,
+          version: N,
+          reads: M,
         },
       ]),
-    ).toBe(MESSAGE(2));
+    ).toBe(MESSAGE(N));
     expect(
       refusalCommands({ reasons: ["newer-atticus"], message: "" }, "atticus catalog build"),
     ).toEqual(["npm i -g @maycombhq/atticus@beta"]);
@@ -126,8 +130,8 @@ describe("a version a newer Atticus wrote is known by its first bytes, or its wh
 
 describe("the build refuses a catalog a newer Atticus wrote, and writes nothing (ADR 0197)", () => {
   for (const [what, text, n] of [
-    ["build.json version 2", V2, 2],
-    ["a build.json of an unknown shape at version 3", UNKNOWN, 3],
+    ["build.json one version past this Atticus's", V2, N],
+    ["a build.json of an unknown shape two versions past", UNKNOWN, N + 1],
   ] as const)
     it(
       `${what}: refused as newer-atticus, never not-upgraded; no undo copy, no file changed`,
@@ -241,7 +245,7 @@ describe("the build refuses a catalog a newer Atticus wrote, and writes nothing 
       expect(c.to).toBe("file");
       await writeFile(join(undoDir, String(c.from), "files", ...c.path.split("/")), V2);
       expect((await newerInUndoPlan(undoDir, plan)).map((f) => [f.path, f.version])).toEqual([
-        ["catalog/sources/build.json", 2],
+        ["catalog/sources/build.json", N],
       ]);
     },
     T,

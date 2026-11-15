@@ -731,7 +731,7 @@ function storeLine(s: OpenSpecStorePlan): string {
 }
 
 /**
- * Beta.28.1.1 (ADR 0197): the catalog's files a newer Atticus wrote (build.json at a version this
+ * Beta.28.2 (ADR 0197): the catalog's files a newer Atticus wrote (build.json at a version this
  * one doesn't read, a slot, a newer build's undo copy), with the refusal's words; none: undefined.
  */
 export async function newerCatalogOf(
@@ -763,7 +763,7 @@ export async function upgradeCommand(
   io: Output,
   version = VERSION,
 ): Promise<number> {
-  // Beta.28.1.1 (ADR 0197): a catalog a newer Atticus built is never upgraded by this one, not
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus built is never upgraded by this one, not
   // even listed: `atticus upgrade` is for a catalog older than this Atticus.
   const newerFiles = await newerCatalogOf(root);
   if (newerFiles) {

@@ -1,7 +1,7 @@
 import type { Output } from "./commands.js";
 
 /**
- * Beta.28.1.1 (ADR 0197, "beta.28.1 and older reading version 2"): the writers of the build's
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the writers of the build's
  * inputs, refused before they write anything when a newer Atticus built this metarepo's catalog
  * (`refuseIfNewer`). Each of them saves a curated decision, a correction, an answer, a file of
  * the org pack, a slot or the catalog itself, then builds: over a newer catalog the build would
