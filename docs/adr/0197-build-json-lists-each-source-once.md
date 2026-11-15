@@ -147,7 +147,15 @@ Step 2 of beta.28.2 would make the features and the glossary incremental: only t
 - `v1Of` in `build-json-v1.ts` checks that each version 2 it turns into version 1 reads back as the same version 2, byte for byte. Every property-test world that `as-beta-28-1` rewrites, and the bench, go through it.
 - The bench checks the round trip on its estate.
 
-**Measured.** These numbers come from the bench estate at 30 repos and 15 gateway proxies (`ATTICUS_BENCH_REPOS=30 ATTICUS_BENCH_GATEWAYS=15`, 50,291 records), on a 2-CPU machine shared by four builders at load 4 to 14. It was not run at 60 repos: with about 3 GB free, the first try at 30 repos was killed for memory. The base is beta.28.1's code (`origin/perf/b282` at 941b2049). It built the estate cold and then made six writes, in three runs. This code then ran on a copy of that estate. Its first write read version 1 and wrote version 2, and five steady writes followed in three runs, alternating with the base's. Each cell gives the range over the steady writes. A phase under 0.05 s isn't printed, so it shows as "< 0.05".
+**Measured.** The release's numbers come from invented Forge estates, with `packages/cli/test/big-estate-bench.test.ts` on one machine, beta.28.1 against beta.28.2:
+
+- At 60 repos (about 104,000 records), one repo's Apply takes 49 s, 65 s before, with 29% less CPU time. At 30 repos (about 52,000 records) it takes 20.1 s, 26.4 s before.
+- The pairing preview at 60 repos takes 10.1 s, 23.8 s before. The Connect panel's cold read takes 4.1 s, 7.6 s before.
+- `build.json` at 60 repos is 24.8 MB, 198.5 MB before.
+- The first write over a version 1 catalog, which writes version 2, takes about 86 s at 60 repos.
+- A cold build is not reliably faster. The 15 s goal for one repo's Apply at 60 repos is still open.
+
+**Earlier measurement (30 repos only).** These numbers come from the bench estate at 30 repos and 15 gateway proxies (`ATTICUS_BENCH_REPOS=30 ATTICUS_BENCH_GATEWAYS=15`, 50,291 records), on a 2-CPU machine shared by four builders at load 4 to 14. That run did not reach 60 repos: with about 3 GB free, the first try at 30 repos was killed for memory. The 60-repo figures above were measured later. The base is beta.28.1's code (`origin/perf/b282` at 941b2049). It built the estate cold and then made six writes, in three runs. This code then ran on a copy of that estate. Its first write read version 1 and wrote version 2, and five steady writes followed in three runs, alternating with the base's. Each cell gives the range over the steady writes. A phase under 0.05 s isn't printed, so it shows as "< 0.05".
 
 | One repo's `verify <repo> --write`, 30 repos              | Version 1 (base)      | Version 2             |
 | --------------------------------------------------------- | --------------------- | --------------------- |
@@ -169,6 +177,6 @@ The steps that handle `build.json` (the guards' read, the guards' walk of the so
 
 The first write of version 2 reads version 1 and writes version 2, with a build cache of the old format, so it builds without the cache. It took 47.4 s (43.8 CPU s), once. It was not refused: its 33 removals were explained, as the base's were for the same change. The undo copy it took holds the version 1 `build.json` byte for byte (`cmp`).
 
-At 30 repos, version 2 is 223 bytes a file. Most of that is the file's path, which is why the 17 MB estimated for 60 repos is low. By the same ratio, 60 repos would be about 22 MB (not measured).
+At 30 repos, version 2 is 223 bytes a file. Most of that is the file's path, which is why the 17 MB estimated for 60 repos is low. By the same ratio, 60 repos would be about 22 MB; measured later, it is 24.8 MB.
 
 The ≤15 s goal stays open, as "Expected gains" says. A write's time now goes mostly to the passes over the whole estate, hashing every record file (3 to 5 s here), reading the slots and the kept parses, and the map. Step 2 of beta.28.2 (incremental features and glossary) is next.

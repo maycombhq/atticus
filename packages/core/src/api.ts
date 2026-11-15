@@ -642,9 +642,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   that writes one of the build's inputs (the build, scan, Apply, undo, prune, the upgrade, the
  *   map's edits and deletes, corrections, call corrections, pairings, declared links and boxes,
  *   answers, triage, the AI's decisions, the baseline, initiatives, an owner question's send,
- *   starting a run, the org pack's files, repos and owners)
- *   answers 409 on such a catalog before it writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
- *   newer }`. Additive only.
+ *   starting a run, the org pack's files, patterns, sources, adapters and AI settings, a file
+ *   promoted into inputs/, repos and owners) answers 409 on such a catalog before it writes
+ *   anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message, newer }`,
+ *   `newer` (BuildRefusalView's, optional) naming each file a newer Atticus wrote with its
+ *   version and the newest one this Atticus reads. Additive only.
  *   Also in 3.15.0 (ADR 0197 review): a `hand-edits` refusal may carry `unreadableManifest: true`,
  *   when catalog/sources/build.json is there but doesn't read (edited or merged by hand). Its
  *   `command` is the build again with `--discard-edits` of every record file, never the curate.
@@ -1943,6 +1945,26 @@ export const BuildRefusalView = z.object({
    * record file); its edits are not to be made curated.
    */
   unreadableManifest: z.literal(true).optional(),
+  /**
+   * 3.15.0 (beta.28.2, ADR 0197): a `newer-atticus` refusal's files a newer Atticus wrote
+   * (build.json, a slot), each with its version field, the version it has and the newest one
+   * this Atticus reads, as the 409 problem's `refused.newer` and the command line's --json say.
+   */
+  newer: z
+    .array(
+      z.object({
+        /** Metarepo-relative, '/'-separated. */
+        path: z.string(),
+        /** What the words call it: `build.json`, or its path. */
+        name: z.string(),
+        /** The version field (`version`, `slotVersion`, `factsSchemaVersion`). */
+        field: z.string(),
+        version: z.number().int(),
+        /** The newest version of it this Atticus reads. */
+        reads: z.number().int(),
+      }),
+    )
+    .optional(),
   /** What goes on in a terminal (the build, the hand edits' curate, or the upgrade). */
   command: z.string(),
   /**

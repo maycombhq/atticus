@@ -193,6 +193,24 @@ describe("what happens after a correction (C4)", () => {
     expect(out).not.toContain(esc(N.confirmCommand));
   });
 
+  it("a catalog a newer Atticus built: the Apply will refuse in the copy's words, to upgrade Atticus, with no confirm or count", () => {
+    const out = panel({
+      state: "ready",
+      data: {
+        ...VIEW,
+        preview: { ...VIEW.preview!, confirm: { refused: ["newer-atticus"] } },
+      },
+    });
+    expect(out).toContain(esc(N.confirmRefused(["newer-atticus"])));
+    expect(N.confirmRefused(["newer-atticus"])).toContain("npm i -g @maycombhq/atticus@beta");
+    expect(out).toContain('role="alert"');
+    expect(out).not.toContain("atticus upgrade --yes");
+    expect(out).not.toContain(esc(N.confirmUpgrade));
+    expect(out).not.toContain(esc(N.confirmCommand));
+    expect(out).not.toContain("--allow-removals");
+    expect(out).not.toContain("--discard-edits");
+  });
+
   it("points a catalog from before the slots at atticus upgrade", () => {
     const out = panel({
       state: "ready",

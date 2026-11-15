@@ -73,6 +73,40 @@ describe("local API (contract C4)", () => {
     expect(committed).toBe(JSON.stringify(openApiDocument(), null, 2) + "\n");
   });
 
+  it("3.15.0: a newer-atticus refusal keeps the files a newer Atticus wrote (refused.newer)", () => {
+    const newer = [
+      {
+        path: "catalog/sources/build.json",
+        name: "build.json",
+        field: "version",
+        version: 3,
+        reads: 2,
+      },
+    ];
+    const r = Api.BuildRefusalView.parse({
+      reasons: ["newer-atticus"],
+      message: "Nothing written: built by a newer Atticus.",
+      command: "npm i -g @maycombhq/atticus@beta",
+      newer,
+    });
+    expect(r.newer).toEqual(newer);
+    // Optional: a refusal of any other reason has none.
+    expect(
+      Api.BuildRefusalView.parse({ reasons: ["empty"], message: "m", command: "c" }).newer,
+    ).toBeUndefined();
+    // In the API doc, every refusal (each one carries unreadableManifest) has newer too.
+    const refusals: Record<string, unknown>[] = [];
+    const walk = (x: unknown): void => {
+      if (!x || typeof x !== "object") return;
+      const p = (x as { properties?: Record<string, unknown> }).properties;
+      if (p && "unreadableManifest" in p) refusals.push(p);
+      for (const v of Object.values(x)) walk(v);
+    };
+    walk(doc);
+    expect(refusals.length).toBeGreaterThan(0);
+    for (const p of refusals) expect(p).toHaveProperty("newer");
+  });
+
   it("describes the live events", () => {
     expect(Api.LiveEvent.safeParse({ type: "job.done", jobId: "j1", state: "done" }).success).toBe(
       true,

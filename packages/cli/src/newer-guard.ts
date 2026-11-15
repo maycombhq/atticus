@@ -33,6 +33,7 @@ export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "initiative request",
   "intake add",
   "orgpack accept",
+  "onboard accept",
   "orgpack owner",
   "probe answer",
   "questions answer",
@@ -47,11 +48,14 @@ export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "repo-type new",
   "repo-type note",
   "repo-type rules",
+  "plugin add",
   "rules activate",
   "rules add",
   "rules import",
   "rules off",
   "scan",
+  "skills import",
+  "sources tag",
   "triage decide",
   "types add",
   "types notes",
@@ -62,8 +66,20 @@ export function newerGuardedCommand(
   group: string | undefined,
   command: string | undefined,
   values: Record<string, unknown>,
+  arg?: string,
 ): boolean {
   if (!group) return false;
+  // `scan verify <repo>` keeps its proposal in proposals/scan/, which no build reads; --accept
+  // writes it into org-pack/scan/ (final review of beta.28.2).
+  if (group === "scan" && command === "verify") return values.accept === true;
+  // A shared map's import or refresh writes shared/, which the build joins; list only reads.
+  if (group === "estate" && command === "shared") return arg === "import" || arg === "refresh";
+  // `sources add` only prints the entry without --save; with it, sources.yaml is written.
+  if (group === "sources" && command === "add") return values.save === true;
+  // `change attach --promote` copies a change's file into inputs/, which the build reads.
+  if (group === "change" && command === "attach") return values.promote !== undefined;
+  // `standards accept` writes org-pack/checklists/standards.yaml, but not with --dry-run.
+  if (group === "standards" && command === "accept") return values["dry-run"] !== true;
   // `verify <repo>` writes only with --write (a read alone writes nothing of the build's).
   if (group === "verify") return values.write === true;
   if (group === "scan") return command === undefined;
@@ -126,6 +142,13 @@ export const NEWER_GUARDED_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/orgpack/draft/{platform}/accept",
   "POST /api/setup/repos",
   "PUT /api/setup/file",
+  "POST /api/setup/patterns",
+  "POST /api/setup/sources",
+  "PUT /api/setup/adapters/{kind}",
+  // runtime.yaml is a file of the org pack, whose whole folder the build hashes.
+  "PUT /api/settings/ai",
+  "POST /api/knowledge/sources",
+  "POST /api/changes/{changeId}/inputs/{name}/promote",
   "PUT /api/orgpack/owner",
   "PUT /api/repos/{repo}/owner",
   "PUT /api/repos/{repoId}/branches",

@@ -47578,6 +47578,41 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "newer": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "field": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reads": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "name",
+                        "field",
+                        "version",
+                        "reads"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "command": {
                     "type": "string"
                   },
@@ -47865,6 +47900,41 @@
                   "unreadableManifest": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "newer": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "field": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reads": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "name",
+                        "field",
+                        "version",
+                        "reads"
+                      ],
+                      "additionalProperties": false
+                    }
                   },
                   "command": {
                     "type": "string"
@@ -48704,6 +48774,41 @@
                 "type": "boolean",
                 "const": true
               },
+              "newer": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "reads": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "name",
+                    "field",
+                    "version",
+                    "reads"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "command": {
                 "type": "string"
               },
@@ -48984,6 +49089,41 @@
               "unreadableManifest": {
                 "type": "boolean",
                 "const": true
+              },
+              "newer": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "reads": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "name",
+                    "field",
+                    "version",
+                    "reads"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "command": {
                 "type": "string"

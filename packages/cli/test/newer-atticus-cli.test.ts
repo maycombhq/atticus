@@ -381,6 +381,74 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
   );
 
   it(
+    "the final review's writers: the org pack's patterns, sources, adapters and AI settings, a file promoted into inputs/, scan verify --accept and a shared map's import or refresh refuse before they write; their read-only modes don't",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      const before = await tree(root);
+      for (const words of [
+        ["scan", "verify", "forge-ledger", "--accept"],
+        ["estate", "shared", "import", "../their-metarepo", "--team", "risk", "--system", "x"],
+        ["join", "shared", "import", "../their-metarepo", "--team", "risk", "--system", "x"],
+        ["estate", "shared", "refresh"],
+        ["sources", "add", "markdown-folder", "../wiki", "--save"],
+        ["sources", "tag", "forge-wiki", "--kind", "glossary"],
+        ["change", "attach", "add-refund-window", "--promote", "inputs/refund-rules.md"],
+        ["onboard", "accept", "forge-dialect"],
+        ["standards", "accept"],
+        ["skills", "import", "../their-repo", "--team", "risk"],
+        ["plugin", "add", "vertex"],
+      ]) {
+        const x = await run([...words, "--root", root]);
+        expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
+        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        notUpgradeAdvice(x.err);
+        const j = await run([...words, "--json", "--root", root]);
+        expect(j.code, words.join(" ")).toBe(1);
+        expect(JSON.parse(j.out).refused, words.join(" ")).toMatchObject({
+          reasons: ["newer-atticus"],
+          newer: [{ path: "catalog/sources/build.json", version: N, reads: M }],
+        });
+      }
+      for (const words of [
+        ["estate", "shared", "list"],
+        ["sources", "add", "markdown-folder", "../wiki"],
+        ["standards", "accept", "--dry-run"],
+      ]) {
+        // Each may fail on its own grounds; never with the refusal.
+        const x = await run([...words, "--root", root]).catch((e: Error) => ({ err: e.message }));
+        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+      }
+      expect(await tree(root)).toEqual(before);
+      const { call } = await serve(root);
+      for (const [method, path] of [
+        ["POST", "/api/setup/patterns"],
+        ["POST", "/api/setup/sources"],
+        ["PUT", "/api/setup/adapters/{kind}"],
+        ["PUT", "/api/settings/ai"],
+        ["POST", "/api/knowledge/sources"],
+        ["POST", "/api/changes/{changeId}/inputs/{name}/promote"],
+      ] as const) {
+        expect(NEWER_GUARDED_ROUTES.has(`${method} ${path}`), path).toBe(true);
+        const x = await call(path.replace("{kind}", "model").replace(/\{[^}]+\}/g, "x"), method, {
+          preview: true,
+        });
+        expect(x.status, path).toBe(409);
+        expect(x.body.refused?.reasons, path).toEqual(["newer-atticus"]);
+        expect(x.body.refused?.newer?.[0]?.version, path).toBe(N);
+        expect(x.body.detail, path).toContain(MESSAGE(N));
+      }
+      // The org pack's draft goes to proposals/orgpack/, which no build reads (the build reads
+      // the catalog's own proposals folder): it is a proposal a person accepts, and the accept
+      // is refused.
+      expect(NEWER_GUARDED_ROUTES.has("POST /api/orgpack/draft")).toBe(false);
+      expect(NEWER_GUARDED_ROUTES.has("POST /api/orgpack/draft/{platform}/accept")).toBe(true);
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
     "what reads on a newer catalog says so: GET /api/upgrade offers no steps, GET /api/build/undo no plan, and atticus next says to upgrade Atticus first",
     async () => {
       const root = await metarepo();

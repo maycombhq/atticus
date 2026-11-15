@@ -604,6 +604,47 @@ describe("a refused build: its list and its ways on, nothing written until confi
     expect(out).toContain(esc(B.upgradeOn));
   });
 
+  it("a catalog a newer Atticus built: the copy's words, the command to upgrade Atticus, no confirm or count (beta.28.2)", () => {
+    const refused: Api.BuildRefusalViewT = {
+      reasons: ["newer-atticus"],
+      message: "Nothing written: built by a newer Atticus.",
+      command: "npm i -g @maycombhq/atticus@beta",
+      newer: [
+        {
+          path: "catalog/sources/build.json",
+          name: "build.json",
+          field: "version",
+          version: 3,
+          reads: 2,
+        },
+      ],
+    };
+    for (const upgradeHere of [false, true]) {
+      const out = html(
+        <RefusalView
+          refused={refused}
+          upgradeHere={upgradeHere}
+          onAllowRemovals={fail}
+          onCurate={fail}
+          onDiscard={fail}
+        />,
+      );
+      expect(out).toContain(esc(B.reason["newer-atticus"]!(0)));
+      expect(out).toContain("npm i -g @maycombhq/atticus@beta");
+      // Never the advice for a catalog from before the slots, and nothing to confirm.
+      expect(out).not.toContain("atticus upgrade --yes");
+      expect(out).not.toContain(esc(B.upgradeOn));
+      expect(out).not.toContain(">Review the");
+      expect(out).not.toContain(esc(B.discard(0)));
+      expect(out).not.toContain(esc(B.buildAgain(0)));
+      // The one button is the command's Copy.
+      expect(out.match(/<button[^>]*>[^<]*</g)).toEqual([
+        expect.stringMatching(/class="btn run-copy"[^>]*>Copy</),
+      ]);
+      expect(out).not.toMatch(/\d+ (record|file)s?\b/);
+    }
+  });
+
   it("on Catalog builds, a refusal as not upgraded points to the upgrade step below", () => {
     const out = html(
       <RefusalView

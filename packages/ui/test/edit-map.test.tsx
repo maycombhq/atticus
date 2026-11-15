@@ -602,6 +602,43 @@ describe("the list beside the canvas, and Apply my changes", () => {
     ).toContain(esc(COPY.panelResults.reviewBuild));
   });
 
+  it("a refusal for an empty catalog names no removal count; a large removal does (RefusalLink, beta.28.2 review)", () => {
+    const listed = [
+      { id: "if-a", kind: "Interface", path: "interface/if-a.yaml", reasons: ["curated"] },
+      { id: "if-b", kind: "Interface", path: "interface/if-b.yaml", reasons: ["curated"] },
+      { id: "if-c", kind: "Interface", path: "interface/if-c.yaml", reasons: ["curated"] },
+    ];
+    // An empty catalog over a full one lists what it would remove, but nothing confirms it.
+    const empty = {
+      reasons: ["empty" as const],
+      message: "Nothing written",
+      removals: listed,
+      command: "atticus catalog build",
+    } as unknown as Api.BuildRefusalViewT;
+    const large = {
+      reasons: ["large-removals" as const],
+      message: "waits",
+      removals: listed,
+      allowRemovals: 3,
+      command: "atticus catalog build --allow-removals 3",
+    } as unknown as Api.BuildRefusalViewT;
+    const R = COPY.panelResults;
+    const none = html(<RefusalLink refused={empty} />);
+    expect(none).toContain(esc(R.waitsBuild));
+    expect(none).toContain(esc(R.reviewBuild));
+    expect(none).not.toContain(esc(R.waitsRemovals(3)));
+    expect(none).not.toContain(esc(R.reviewRemovals(3)));
+    expect(none).not.toMatch(/\b3 removal/);
+    const some = html(<RefusalLink refused={large} />);
+    expect(some).toContain(esc(R.waitsRemovals(3)));
+    expect(some).toContain(esc(R.reviewRemovals(3)));
+    // The edit map's saved panel draws the same link.
+    const page = view({ state: "saved", n: 2, refused: empty }, []);
+    expect(page).toContain(esc(R.waitsBuild));
+    expect(page).not.toContain(esc(R.reviewRemovals(3)));
+    expect(view({ state: "saved", n: 2, refused: large }, [])).toContain(esc(R.reviewRemovals(3)));
+  });
+
   it("Apply sends the list once and reads its 422, a failed job's outcomes, a waiting build and the callers", async () => {
     const l = six();
     const sent: unknown[] = [];

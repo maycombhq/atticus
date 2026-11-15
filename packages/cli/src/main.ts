@@ -1293,7 +1293,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
   {
     const g = await import("./newer-guard.js");
-    if (g.newerGuardedCommand(group, command, values)) {
+    if (g.newerGuardedCommand(group, command, values, arg)) {
       const refusedNewer = await g.refuseNewerCommand(root, io, values.json === true);
       if (refusedNewer !== undefined) return refusedNewer;
     }
