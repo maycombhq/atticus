@@ -309,6 +309,51 @@ describe("atticus repo rename <old> <new> (F5)", () => {
     expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });
 
+  it("keeps each line's own ending in a pairings file it rewrites (CRLF)", async () => {
+    const root = await readEstate();
+    const corr = join(root, "facts", "forge-web.corrections.jsonl");
+    const line = (repo: string, fact: string) =>
+      JSON.stringify({
+        schemaVersion: 1,
+        fact,
+        target: { kind: "call", file: "src/Client.java", line: 9, value: "/customers" },
+        action: "link",
+        link: { repo, entry: "e-list", method: "GET", path: "/customers" },
+        by: "pat",
+        at: NOW.toISOString(),
+      });
+    await writeFile(
+      corr,
+      `${line("forge-customers", "c-a")}\r\n${line("forge-orders", "c-b")}\r\n`,
+    );
+    expect(await repoRename(root, "forge-customers", "forge-accounts", io().io)).toBe(0);
+    const text = await readFile(corr, "utf8");
+    expect(text.split("\r\n")).toHaveLength(3);
+    expect(text.replace(/\r\n/g, "")).not.toContain("\n");
+    expect(text).toContain('"repo":"forge-accounts"');
+  });
+
+  it("refuses, changing nothing, when another repo's pairing names the new id already", async () => {
+    const root = await readEstate();
+    const corr = join(root, "facts", "forge-web.corrections.jsonl");
+    const was = `${JSON.stringify({
+      schemaVersion: 1,
+      fact: "c-a",
+      target: { kind: "call", file: "src/Client.java", line: 9, value: "/customers" },
+      action: "link",
+      link: { repo: "forge-accounts", entry: "e-list", method: "GET", path: "/customers" },
+      by: "pat",
+      at: NOW.toISOString(),
+    })}\n`;
+    await writeFile(corr, was);
+    const o = io();
+    expect(await repoRename(root, "forge-customers", "forge-accounts", o.io)).toBe(1);
+    expect(o.err.join("\n")).toContain("facts/forge-web.corrections.jsonl:1");
+    expect(o.err.join("\n")).toContain("Nothing was changed");
+    expect(await readFile(corr, "utf8")).toBe(was);
+    expect(await ids(root)).toContain("forge-customers");
+  });
+
   it("refuses a repo no manifest lists, an id already listed, and an id that isn't a slug", async () => {
     const root = await readEstate();
     let o = io();

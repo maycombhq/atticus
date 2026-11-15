@@ -94,10 +94,11 @@ function renamedText(text: string, from: string, to: string): string {
 /** A facts-folder file's text with every `repo` of the old id put as the new. */
 function rewriteFactsFile(name: string, text: string, from: string, to: string): string {
   if (name.endsWith(".jsonl"))
+    // Each line keeps its own ending (the review: a CRLF file stays CRLF where a line changes).
     return text
-      .split(/\r?\n/)
-      .map((line) => {
-        if (!line.trim()) return line;
+      .split(/(\r?\n)/)
+      .map((line, i) => {
+        if (i % 2 === 1 || !line.trim()) return line;
         try {
           const r = renamed(JSON.parse(line), from, to);
           return r.changed ? JSON.stringify(r.value) : line;
@@ -105,7 +106,7 @@ function rewriteFactsFile(name: string, text: string, from: string, to: string):
           return line; // a line that isn't JSON is the reader's to fix, kept as written
         }
       })
-      .join("\n");
+      .join("");
   try {
     const r = renamed(parse(text), from, to);
     return r.changed ? stringify(r.value) : text;
@@ -213,6 +214,29 @@ async function renameLocked(
       relTo: `${rel}/${to}.yaml`,
       name: ".yaml",
     });
+  }
+  // The review: another repo's pairing that names the new id already would take the renamed
+  // repo's entries as its own (and a rename back would rewrite it to the old id): refused, like a
+  // file already where one would go, until the person settles it.
+  const naming: string[] = [];
+  for (const n of (await readdir(factsDir).catch(() => [] as string[])).sort()) {
+    if (!n.endsWith(".corrections.jsonl") || n === `${from}.corrections.jsonl`) continue;
+    const lines = (await readFile(join(factsDir, n), "utf8")).split(/\r?\n/);
+    for (const [i, l] of lines.entries()) {
+      if (!l.trim()) continue;
+      try {
+        if ((JSON.parse(l) as { link?: { repo?: string } }).link?.repo === to)
+          naming.push(`${fRel}/${n}:${i + 1}`);
+      } catch {
+        // not a JSON line: the reader's to fix
+      }
+    }
+  }
+  if (naming.length) {
+    io.err(
+      `A pairing names ${to} already (${naming.join(", ")}): renaming ${from} to ${to} would give it ${from}'s entries. Take it out or point it elsewhere first. Nothing was changed.`,
+    );
+    return 1;
   }
   const taken = moves.filter((m) => existsSync(m.dst));
   if (taken.length) {
