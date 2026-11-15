@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.30 (pre-release, with Atticus 2.0.0-beta.28.1)
+
+- **Ships with Atticus 2.0.0-beta.28.1, and needs it.** The app in its tab reads beta.28.1's local API (3.14): the Connect panel's read and the pairing preview run as jobs with live lines and Stop, connecting two boxes never dead-ends (a call to an unset `@token@` host is listed to pair, a call with an arrow can be moved here), and an Apply that left rejected facts out says "Applied, N facts left out". `/verify --write` that left facts out says it applied.
+
 ## 0.7.29 (pre-release, with Atticus 2.0.0-beta.28)
 
 - **Ships with Atticus 2.0.0-beta.28, and needs it.** The app in its tab reads beta.28's local API (3.13): Edit the map (delete, add and redirect arrows, then one Apply that builds once), Delete this link on every arrow, details beside the Map you can make wider, and Stop that ends a Copilot run within seconds.
