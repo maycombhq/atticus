@@ -591,17 +591,21 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const c = s.m.changes;
     if (c.curated.size || c.answered.size || [...c.slots].some((x) => !s.m.facts.has(x))) return;
     // A manifest entry changed (a repo archived, taken out, renamed: an input, not a read):
-    // a join with that repo changes its partners' records, a facts call to its host reaching
-    // its System's box, say (seed 486233045). Locality judges those.
+    // a join with that repo changes the records it can reach, a facts call to its host reaching
+    // its System's box, say (seed 486233045). Only those are left to locality; every other
+    // record of the repos read is still judged here (the re-review: not the whole step).
     const was = s.modelBefore.built;
-    if (
-      [...c.slots].some((x) => {
-        const a = was?.repos[x];
-        const n = s.m.repos[x];
-        return !!a && !!n && (a.listed !== n.listed || a.archived !== n.archived || a.id !== n.id);
-      })
-    )
-      return;
+    const entries = [...c.slots].filter((x) => {
+      const a = was?.repos[x];
+      const n = s.m.repos[x];
+      return !!a && !!n && (a.listed !== n.listed || a.archived !== n.archived || a.id !== n.id);
+    });
+    const byEntry = (slot: number, rec: Rec) =>
+      entries.some(
+        (x) =>
+          involves(s.m, [x], rec) ||
+          ((JOINED.has(rec.kind) || rec.kind === "Interface") && partners(s.m, x).includes(slot)),
+      );
     const b = records(s.before.generated);
     for (const r of s.m.live()) {
       if (!s.m.facts.has(r.slot)) continue;
@@ -611,6 +615,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
         if (!ev.length || !ev.every((e) => e.by === "assistant" && e.repo && ids.has(e.repo)))
           continue;
         if (s.editsBefore.includes(p)) continue;
+        if (byEntry(r.slot, rec)) continue;
         if (s.after.generated.get(p) !== s.before.generated.get(p))
           fail(
             "readers-never-destroy-facts",
