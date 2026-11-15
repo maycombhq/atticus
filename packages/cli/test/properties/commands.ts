@@ -28,6 +28,7 @@ import {
   type Code,
   type Sketch,
 } from "./estate.js";
+import { asBeta281, v1Of } from "../build-json-v1.js";
 import { fault } from "./fault.js";
 import { arrowOf, checkStep, InvariantError, type Invariant, type Step } from "./invariants.js";
 import {
@@ -67,6 +68,12 @@ export type Desc =
    * cited at this end"), verified by the callee's line alone.
    */
   | { t: "seed-beta26"; verify: number[]; lineless?: number[] }
+  /**
+   * ADR 0197: the metarepo as beta.28.1 built it: its build.json, and each undo copy's, as
+   * version 1 (`asBeta281`). Only in a prefix, after a first write; the catalog is unchanged, so
+   * the model is too, and the writes after it read a build.json of version 1.
+   */
+  | { t: "as-beta-28-1" }
   | { t: "scan" }
   | { t: "scan-subset"; slots: number[] }
   | { t: "scan-not-cloned"; slot: number }
@@ -641,6 +648,21 @@ export async function act(
   const m = ctx.m;
   const n = m.repos.length;
   switch (d.t) {
+    case "as-beta-28-1": {
+      if (!before.sources.has("build.json")) return undefined;
+      await asBeta281(w.root);
+      // What undo takes back is what beta.28.1 would have left: its build.json of version 1.
+      const v1 = (snap: Snap) => {
+        const t = snap.sources.get("build.json");
+        if (t !== undefined) snap.sources.set("build.json", v1Of(t));
+      };
+      for (const u of w.undoable) {
+        v1(u.before);
+        v1(u.after);
+      }
+      return {};
+    }
+
     case "seed-beta26": {
       if (m.writes || m.beta26 || before.generated.size || before.sources.size)
         throw new Error("harness: seed-beta26 comes first, on a metarepo nothing wrote yet");
@@ -1272,6 +1294,17 @@ export const prefixArb: fc.Arbitrary<Desc[]> = fc.oneof(
       ]),
     weight: 1,
   },
+  // ADR 0197: a metarepo beta.28.1 built (build.json of version 1), then this Atticus.
+  {
+    arbitrary: fc
+      .uniqueArray(fc.nat({ max: 4 }), { maxLength: 2 })
+      .map((verify): Desc[] => [
+        { t: "scan" },
+        ...verify.map((slot): Desc => ({ t: "verify-write", slot, ok: true })),
+        { t: "as-beta-28-1" },
+      ]),
+    weight: 1,
+  },
 );
 
 /**
@@ -1409,6 +1442,7 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
 /** Every command type the generators make: the coverage check's list. */
 export const GENERATED: readonly CommandType[] = [
   "seed-beta26",
+  "as-beta-28-1",
   "scan",
   "scan-subset",
   "scan-not-cloned",

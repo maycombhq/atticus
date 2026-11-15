@@ -327,6 +327,31 @@ const seq = (
 });
 
 export const EXAMPLES: Example[] = [
+  // ADR 0197: a metarepo beta.28.1 built (build.json of version 1). The first write of this
+  // Atticus reads it and writes version 2, and its undo puts version 1 back byte for byte.
+  seq(
+    "undo-restores",
+    "a write over a build.json of version 1 (beta.28.1's), then its undo: version 1 comes back byte for byte",
+    [
+      { t: "scan" },
+      { t: "as-beta-28-1" },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "undo", n: 1, yes: true },
+    ],
+    [has("payments' POST /refunds", postRefunds)],
+  ),
+  seq(
+    "equivalence",
+    "a build.json of version 1 (beta.28.1's) under a scan and verify --write gives what a fresh build gives",
+    [
+      { t: "scan" },
+      { t: "verify-write", slot: 0, ok: true },
+      { t: "as-beta-28-1" },
+      { t: "verify-write", slot: 1, ok: true },
+      { t: "scan" },
+    ],
+    [has("arrow from payments to GET /accounts", callsLedger)],
+  ),
   seq(
     "equivalence",
     "a scan, verify --write of the ledger, and a scan give what a fresh build of those reads gives",
