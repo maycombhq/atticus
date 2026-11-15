@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## 2.0.0-beta.28.2 (unreleased)
+## 2.0.0-beta.28.2 (2026-11-15)
 
 beta.28.2 writes `catalog/sources/build.json` version 2 (ADR 0197). From this release, an Atticus that meets a `build.json` or slot newer than it reads says so, instead of taking the catalog for one from before beta.27.
 
