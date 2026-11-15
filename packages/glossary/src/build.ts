@@ -6,7 +6,7 @@ import {
   type RecordOf,
 } from "@maycombhq/core";
 import { namingHint, type KnowledgePage, type NamingHint } from "@maycombhq/knowledge";
-import { codeTerms, fieldNames, type CodeTerm } from "./code.js";
+import { codeNames, codeTermsOf, fieldNamesOf, type CodeTerm } from "./code.js";
 import type { DefinitionProposal } from "./proposals.js";
 import { wikiDefinitions, type WikiDefinition } from "./wiki.js";
 import { compoundOf, definitionKey, displayTerm, singleOf, termId, termKey } from "./words.js";
@@ -39,6 +39,11 @@ export interface GlossaryInput {
   decisions?: readonly CatalogRecord[];
   /** AI definition proposals for code-only terms (catalog/proposals/glossaryterm). */
   proposals?: readonly DefinitionProposal[];
+  /**
+   * False: no naming hints (`hints` is empty). A build of the catalog reads none (beta.28.2);
+   * the glossary's own commands and screens do. Default true.
+   */
+  hints?: boolean;
 }
 
 export interface GlossaryConflict {
@@ -183,7 +188,9 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
     defs.set(id, [...(defs.get(id) ?? []), d]);
   }
   const code = new Map<string, CodeTerm>();
-  for (const t of codeTerms(records, keyOfAlias).values()) code.set(idOfKey(t.key), t);
+  // The records' names, read once for the terms and the hints (beta.28.2).
+  const names = codeNames(records);
+  for (const t of codeTermsOf(names, keyOfAlias).values()) code.set(idOfKey(t.key), t);
   const proposals = new Map((input.proposals ?? []).map((p) => [p.term, p]));
 
   // A compound name only the code uses that shortens another term (holder_nm for Holder name)
@@ -351,12 +358,16 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
     .sort((a, b) => a.column.localeCompare(b.column) || a.term.localeCompare(b.term));
 
   // ---- naming hints for fields no term covers
-  const covered = new Set([...terms.flatMap((t) => t.fields), ...links.map((l) => l.column)]);
-  const names = entries.map((e) => ({ id: e.id, term: e.term, aliases: e.aliases }));
-  const hints = fieldNames(records)
-    .filter((f) => !covered.has(f.record))
-    .map((f) => namingHint(f.record, f.name, names))
-    .filter((h): h is NamingHint => !!h);
+  const hints: NamingHint[] = [];
+  if (input.hints !== false) {
+    const covered = new Set([...terms.flatMap((t) => t.fields), ...links.map((l) => l.column)]);
+    const termNames = entries.map((e) => ({ id: e.id, term: e.term, aliases: e.aliases }));
+    for (const f of fieldNamesOf(names)) {
+      if (covered.has(f.record)) continue;
+      const h = namingHint(f.record, f.name, termNames);
+      if (h) hints.push(h);
+    }
+  }
 
   return {
     terms,

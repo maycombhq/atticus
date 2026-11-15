@@ -1103,6 +1103,8 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     decisions: i.curated.records,
     proposalsDir,
     orgPackDir: i.orgPackDir,
+    // A build reads the terms and the columns' links, never the naming hints (beta.28.2).
+    hints: false,
   });
   mark("3 federation and glossary");
   notes.push(...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`));
