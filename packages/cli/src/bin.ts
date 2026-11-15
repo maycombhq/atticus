@@ -61,6 +61,12 @@ else if ((await import("./node-version.js")).nodeTooOld(process.versions.node)) 
       const message = err instanceof Error ? err.message : String(err);
       const logFile = (err as { logFile?: string } | null)?.logFile;
       process.stderr.write(`atticus: ${message}\n`);
+      // An error that says all there is to do (a build.json a newer Atticus wrote: upgrade
+      // Atticus, ADR 0197): nothing unexpected happened, so nothing more is said.
+      if ((err as { plain?: boolean } | null)?.plain) {
+        process.exitCode = 1;
+        return;
+      }
       process.stderr.write(
         logFile
           ? `The details are in ${logFile}. To report it, run atticus support bundle and read what it collected before you send it.\n`

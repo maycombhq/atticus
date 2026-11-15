@@ -114,7 +114,12 @@ import {
   buildManifestPath,
   factsSlotPaths,
   legacyJoinsPath,
+  manifestOfFiles,
+  NewerBuildManifestError,
   parseBuildManifest,
+  sourcesOf,
+  BUILD_MANIFEST_VERSION,
+  type ManifestFile,
   parseFactsSlotMeta,
   parseFactsSnapshot,
   parseLegacyJoins,
@@ -1731,7 +1736,7 @@ function manifestOf(
   const inputs = [...i.inputHashes].map(([path, sha256]) => ({ path, sha256 }));
   const legacyKeys = new Set(legacySha ? legacyKept.map((r) => `${r.kind}/${r.id}`) : []);
   const genRel = relOf(root, generatedDirOf(root));
-  const out: BuildManifestT["files"] = [];
+  const out: ManifestFile[] = [];
   for (const r of records) {
     const path = recordPath(r);
     const text = files.get(path)!;
@@ -1747,7 +1752,8 @@ function manifestOf(
       sources: srcs.filter((s) => !seen.has(s.path) && !!seen.add(s.path)),
     });
   }
-  return { version: 1, buildVersion: BUILD_VERSION, files: out };
+  // ADR 0197: each source listed once, each set of them once.
+  return manifestOfFiles(BUILD_VERSION, out);
 }
 
 // ------------------------------------------------------------------ the guards
@@ -2064,6 +2070,14 @@ export async function readBuildManifest(
  * manifest, so it reads: its JSON is the manifest, unchecked; ADR 0195 point 9, a 40-repo
  * estate's build.json is large).
  */
+/** A build.json's path as a person reads it: from its catalog folder on, else as given. */
+function shownPath(path: string | undefined): string {
+  if (!path) return "build.json";
+  const p = path.split(sep).join("/");
+  const at = p.lastIndexOf("/catalog/");
+  return at >= 0 ? p.slice(at + 1) : p;
+}
+
 function buildManifestOfText(
   text: string | undefined,
   mine?: string,
@@ -2071,11 +2085,22 @@ function buildManifestOfText(
   path?: string,
 ): { manifest?: BuildManifestT; text?: string; problem?: string } {
   if (text === undefined) return {};
-  if (mine !== undefined && text === mine)
-    return { manifest: JSON.parse(text) as BuildManifestT, text };
-  if (path !== undefined && isWrittenManifest(path, text))
-    return { manifest: JSON.parse(text) as BuildManifestT, text };
+  // This build's own text, or one the build cache says this code wrote, reads unchecked: of
+  // this version only (ADR 0197: a version 1 text is read, and so turned into version 2).
+  const own = () => {
+    const m = JSON.parse(text) as BuildManifestT;
+    return m.version === BUILD_MANIFEST_VERSION ? m : undefined;
+  };
+  if (mine !== undefined && text === mine) {
+    const m = own();
+    if (m) return { manifest: m, text };
+  }
+  if (path !== undefined && isWrittenManifest(path, text)) {
+    const m = own();
+    if (m) return { manifest: m, text };
+  }
   const p = parseBuildManifest(text);
+  if (!p.ok && p.newer !== undefined) throw new NewerBuildManifestError(shownPath(path), p.newer);
   return p.ok
     ? { manifest: p.slot, text }
     : { text, problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
@@ -2183,9 +2208,11 @@ async function interruptedManifest(
 ): Promise<BuildManifestT | undefined> {
   const latest = (await listUndo(undoDir))[0];
   if (!latest) return undefined;
-  const next = await readText(join(undoDir, String(latest.n), "next-build.json"));
+  const at = join(undoDir, String(latest.n), "next-build.json");
+  const next = await readText(at);
   if (next === undefined || next === current) return undefined;
   const p = parseBuildManifest(next);
+  if (!p.ok && p.newer !== undefined) throw new NewerBuildManifestError(at, p.newer);
   return p.ok ? p.slot : undefined;
 }
 
@@ -2319,9 +2346,17 @@ export async function guardBuild(
   /** The removals that are a loose end this build joins (G1): listed, never counted to a limit. */
   const joinedLooseEnds = new Set<string>();
   if (lastManifest) {
+    // ADR 0197: a file's sources are its set's; each set is looked at once.
+    const nowOf = sourcesOf(b.manifest);
+    const thenOf = sourcesOf(lastManifest);
+    /** Each set's files, the first of each: a distinct set's sources, once. */
+    const onePerSet = (m: BuildManifestT) => {
+      const seen = new Set<string>();
+      return m.files.filter((f) => !seen.has(f.sources) && !!seen.add(f.sources));
+    };
     const nowSources = new Set<string>();
-    for (const f of b.manifest.files)
-      for (const s of f.sources) nowSources.add(`${s.path}\u0000${s.sha256}`);
+    for (const f of onePerSet(b.manifest))
+      for (const s of nowOf(f)) nowSources.add(`${s.path}\u0000${s.sha256}`);
     const oldRecords = new Map<string, CatalogRecord>();
     // The last build's records are read only when this one removes any (most builds don't).
     const removing = lastManifest.files.some((f) => {
@@ -2337,8 +2372,8 @@ export async function guardBuild(
     const slotNow = new Map<string, { path: string; sha256: string }[]>();
     // Most files share their sources: each distinct one is looked at once.
     const sawNow = new Set<string>();
-    for (const f of b.manifest.files)
-      for (const x of f.sources) {
+    for (const f of onePerSet(b.manifest))
+      for (const x of nowOf(f)) {
         const key = `${x.path}\u0000${x.sha256}`;
         if (sawNow.has(key)) continue;
         sawNow.add(key);
@@ -2351,8 +2386,8 @@ export async function guardBuild(
     // Each slot file as the last build read it.
     const slotThen = new Set<string>();
     const sawThen = new Set<string>();
-    for (const f of lastManifest.files)
-      for (const x of f.sources) {
+    for (const f of onePerSet(lastManifest))
+      for (const x of thenOf(f)) {
         const key = `${x.path}\u0000${x.sha256}`;
         if (sawThen.has(key)) continue;
         sawThen.add(key);
@@ -2426,7 +2461,7 @@ export async function guardBuild(
       const why = new Set<string>();
       const kinds = new Set<RemovalReason>();
       let estate = false;
-      for (const s of f.sources)
+      for (const s of thenOf(f))
         if (!nowSources.has(`${s.path}\u0000${s.sha256}`)) {
           if (s.path === ALL_SLOTS) estate = true;
           else {
@@ -2436,7 +2471,7 @@ export async function guardBuild(
         }
       // A repo its evidence names that has a slot now the record didn't rest on (read for the
       // first time since, a repo not cloned then, say): that repo's slot explains it.
-      const had = new Set(f.sources.map((x) => `${x.path}\u0000${x.sha256}`));
+      const had = new Set(thenOf(f).map((x) => `${x.path}\u0000${x.sha256}`));
       for (const repo of repos)
         for (const x of slotNow.get(repo) ?? [])
           if (!had.has(`${x.path}\u0000${x.sha256}`)) {

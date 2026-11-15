@@ -39,8 +39,11 @@ import { changesSince, type GitRunner } from "@maycombhq/workspace";
 
 /** The version of the readers, facts and legacy joins slots. */
 export const SLOT_VERSION = 1 as const;
-/** The version of `catalog/sources/build.json`. */
-export const BUILD_MANIFEST_VERSION = 1 as const;
+/**
+ * The version of `catalog/sources/build.json` this Atticus writes (ADR 0197: 2, each source
+ * listed once). It reads 1 as well, and refuses a later one (`NewerBuildManifestError`).
+ */
+export const BUILD_MANIFEST_VERSION = 2 as const;
 /**
  * The build's own version (ADR 0195 point 4, review of CS1): bumped whenever the build's passes
  * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
@@ -128,14 +131,150 @@ export type LegacyJoinsSlotT = Omit<z.infer<typeof LegacyJoinsSlot>, "records"> 
 };
 
 const HASHED = z.strictObject({ path: PATH, sha256: SHA256 });
-export const BuildManifest = z.strictObject({
-  version: z.literal(BUILD_MANIFEST_VERSION),
+/** build.json as beta.27 to beta.28.1 wrote it: each file with every source it came from. */
+export const BuildManifestV1 = z.strictObject({
+  version: z.literal(1),
   /** The build that wrote it (`BUILD_VERSION`): a change of it explains a removal. */
   buildVersion: z.string().min(1),
   /** Every file the last build wrote under catalog/generated/, with the sources it came from. */
   files: z.array(z.strictObject({ path: PATH, sha256: SHA256, sources: z.array(HASHED) })),
 });
+export type BuildManifestV1T = z.infer<typeof BuildManifestV1>;
+/** A set of sources' id (ADR 0197): the start of the hash of its paths, 16 hex digits or more. */
+const SET_ID = z.string().regex(/^[0-9a-f]{16,64}$/, "a source set's id, 16 to 64 hex digits");
+/**
+ * build.json (ADR 0197): each source the build read listed once, by its path, with its hash;
+ * each set of sources a file came from listed once, by an id of its paths; each file the last
+ * build wrote under catalog/generated/ with its hash and its set. A file's sources are its set's
+ * paths, each with its hash in `sources`: what version 1 listed with each file.
+ */
+export const BuildManifest = z.strictObject({
+  version: z.literal(BUILD_MANIFEST_VERSION),
+  /** The build that wrote it (`BUILD_VERSION`): a change of it explains a removal. */
+  buildVersion: z.string().min(1),
+  /** Each source, by its path: its hash. */
+  sources: z.record(PATH, SHA256),
+  /** Each set of sources, by its id: its paths, sorted. */
+  sourceSets: z.record(SET_ID, z.array(PATH)),
+  /** Every file the last build wrote under catalog/generated/, with its set of sources. */
+  files: z.array(z.strictObject({ path: PATH, sha256: SHA256, sources: SET_ID })),
+});
 export type BuildManifestT = z.infer<typeof BuildManifest>;
+
+/** A file of the build with each source it came from, as version 1 listed them. */
+export type ManifestFile = {
+  path: string;
+  sha256: string;
+  sources: { path: string; sha256: string }[];
+};
+
+/**
+ * Each set's id (ADR 0197): the first `start` hex digits of the SHA-256 of its paths, each
+ * followed by a newline; while two sets share an id, every id is 4 digits longer. The sets are
+ * distinct, so the same sets always get the same ids.
+ */
+export function sourceSetIds(sets: readonly (readonly string[])[], start = 16): string[] {
+  const full = sets.map((paths) =>
+    createHash("sha256")
+      .update(paths.map((p) => `${p}\n`).join(""), "utf8")
+      .digest("hex"),
+  );
+  for (let n = start; n <= 64; n += 4) {
+    const ids = full.map((h) => h.slice(0, n));
+    if (new Set(ids).size === ids.length) return ids;
+  }
+  throw new Error("build.json: two sets of sources have the same hash");
+}
+
+/**
+ * The manifest of these files and their sources, each source once and each set once (ADR 0197).
+ * A path with two hashes can't be listed once: an error, as no build reads a source twice.
+ */
+export function manifestOfFiles(
+  buildVersion: string,
+  files: readonly ManifestFile[],
+  o: { idDigits?: number } = {},
+): BuildManifestT {
+  const sources = new Map<string, string>();
+  const setOf = new Map<string, number>();
+  const sets: string[][] = [];
+  const at: number[] = [];
+  for (const f of files) {
+    const paths = new Set<string>();
+    for (const x of f.sources) {
+      const had = sources.get(x.path);
+      if (had !== undefined && had !== x.sha256)
+        throw new Error(`build.json lists ${x.path} with two hashes`);
+      sources.set(x.path, x.sha256);
+      paths.add(x.path);
+    }
+    const sorted = [...paths].sort(cmpText);
+    const key = sorted.join("\n");
+    let n = setOf.get(key);
+    if (n === undefined) {
+      n = sets.length;
+      sets.push(sorted);
+      setOf.set(key, n);
+    }
+    at.push(n);
+  }
+  const ids = sourceSetIds(sets, o.idDigits);
+  return {
+    version: BUILD_MANIFEST_VERSION,
+    buildVersion,
+    sources: Object.fromEntries([...sources].sort(([a], [b]) => cmpText(a, b))),
+    sourceSets: Object.fromEntries(
+      sets.map((paths, n) => [ids[n]!, paths] as const).sort(([a], [b]) => cmpText(a, b)),
+    ),
+    files: files.map((f, k) => ({ path: f.path, sha256: f.sha256, sources: ids[at[k]!]! })),
+  };
+}
+
+/** Each file's sources, as version 1 listed them (kept per set: most files share one). */
+export function sourcesOf(
+  m: BuildManifestT,
+): (f: BuildManifestT["files"][number]) => ManifestFile["sources"] {
+  const memo = new Map<string, ManifestFile["sources"]>();
+  return (f) => {
+    let l = memo.get(f.sources);
+    if (!l) {
+      l = (m.sourceSets[f.sources] ?? []).map((path) => ({ path, sha256: m.sources[path]! }));
+      memo.set(f.sources, l);
+    }
+    return l;
+  };
+}
+
+/** Version 1 of a manifest (what beta.28.1 wrote for the same build): for tests and the bench. */
+export function manifestToV1(m: BuildManifestT): BuildManifestV1T {
+  const of = sourcesOf(m);
+  return {
+    version: 1,
+    buildVersion: m.buildVersion,
+    files: m.files.map((f) => ({ path: f.path, sha256: f.sha256, sources: of(f) })),
+  };
+}
+
+/** A manifest of version 1 in version 2 (ADR 0197: every version 1 file is read this way). */
+export function manifestFromV1(m: BuildManifestV1T): BuildManifestT {
+  return manifestOfFiles(m.buildVersion, m.files);
+}
+
+/**
+ * A build.json of a version this Atticus doesn't know: a newer Atticus wrote it (ADR 0197).
+ * Nothing is built over it; the words are for the person, with nothing to add (`plain`).
+ */
+export class NewerBuildManifestError extends Error {
+  readonly plain = true;
+  constructor(
+    readonly file: string,
+    readonly manifestVersion: number,
+  ) {
+    super(
+      `${file} was written by a newer Atticus (version ${manifestVersion}): upgrade Atticus to build here.`,
+    );
+  }
+}
 
 export const CrossCheckDismissals = z.strictObject({
   version: z.literal(DISMISSALS_VERSION),
@@ -151,7 +290,9 @@ export const CrossCheckDismissals = z.strictObject({
 export type CrossCheckDismissalsT = z.infer<typeof CrossCheckDismissals>;
 
 export type SlotParse<T> =
-  { ok: true; slot: T } | { ok: false; issues: { path: string; message: string }[] };
+  | { ok: true; slot: T }
+  /** `newer`: a version of the format later than this Atticus reads (build.json, ADR 0197). */
+  | { ok: false; issues: { path: string; message: string }[]; newer?: number };
 
 // ------------------------------------------------------------------ canonical form
 
@@ -223,7 +364,27 @@ export function serializeLegacyJoins(s: LegacyJoinsSlotT): string {
   });
 }
 
+/**
+ * build.json (ADR 0197): `sources` by path, `sourceSets` by id (each set's paths sorted) and
+ * `files` by path, so the same build writes the same bytes.
+ */
 export function serializeBuildManifest(m: BuildManifestT): string {
+  const byKey = <V>(o: Record<string, V>) => Object.entries(o).sort(([a], [b]) => cmpText(a, b));
+  return json({
+    version: m.version,
+    buildVersion: m.buildVersion,
+    sources: Object.fromEntries(byKey(m.sources)),
+    sourceSets: Object.fromEntries(
+      byKey(m.sourceSets).map(([id, paths]) => [id, [...paths].sort(cmpText)] as const),
+    ),
+    files: [...m.files]
+      .sort((a, b) => cmpText(a.path, b.path))
+      .map((f) => ({ path: f.path, sha256: f.sha256, sources: f.sources })),
+  });
+}
+
+/** build.json as version 1 (what beta.28.1 wrote): for tests and the bench. */
+export function serializeBuildManifestV1(m: BuildManifestV1T): string {
   return json({
     version: m.version,
     buildVersion: m.buildVersion,
@@ -347,11 +508,41 @@ export function parseLegacyJoins(text: string): SlotParse<LegacyJoinsSlotT> {
   return r.ok ? { ok: true, slot: { ...s.data, records: r.records } } : r;
 }
 
+/**
+ * build.json of version 1 or 2, read as version 2 (ADR 0197). A later version is refused with
+ * `newer`: a newer Atticus wrote it.
+ */
 export function parseBuildManifest(text: string): SlotParse<BuildManifestT> {
   const j = parseJson(text);
   if (!j.ok) return j;
+  const version = (j.value as { version?: unknown } | null)?.version;
+  if (typeof version === "number" && Number.isInteger(version) && version > BUILD_MANIFEST_VERSION)
+    return {
+      ok: false,
+      newer: version,
+      issues: [{ path: "version", message: `written by a newer Atticus (version ${version})` }],
+    };
+  if (version === 1) {
+    const v1 = BuildManifestV1.safeParse(j.value);
+    if (!v1.success) return { ok: false, issues: zodIssues(v1.error) };
+    try {
+      return { ok: true, slot: manifestFromV1(v1.data) };
+    } catch (e) {
+      return { ok: false, issues: [{ path: "files", message: (e as Error).message }] };
+    }
+  }
   const s = BuildManifest.safeParse(j.value);
-  return s.success ? { ok: true, slot: s.data } : { ok: false, issues: zodIssues(s.error) };
+  if (!s.success) return { ok: false, issues: zodIssues(s.error) };
+  // Every set a file names is listed, and every path a set names has its hash.
+  const bad: Issue[] = [];
+  for (const f of s.data.files)
+    if (!Object.hasOwn(s.data.sourceSets, f.sources))
+      bad.push({ path: "files", message: `${f.path} names the set ${f.sources}, not listed` });
+  for (const [id, paths] of Object.entries(s.data.sourceSets))
+    for (const p of paths)
+      if (!Object.hasOwn(s.data.sources, p))
+        bad.push({ path: "sourceSets", message: `the set ${id} names ${p}, not in sources` });
+  return bad.length ? { ok: false, issues: bad.slice(0, 20) } : { ok: true, slot: s.data };
 }
 
 export function parseDismissals(text: string): SlotParse<CrossCheckDismissalsT> {

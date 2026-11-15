@@ -8,6 +8,10 @@ import type { Extractor } from "@maycombhq/sdk";
 import {
   BuildManifest,
   CrossCheckDismissals,
+  manifestOfFiles,
+  manifestToV1,
+  NewerBuildManifestError,
+  sourceSetIds,
   FactsSlotMeta,
   LegacyJoinsSlot,
   ReadersSlot,
@@ -20,6 +24,7 @@ import {
   readersSlotOf,
   scanEstate,
   serializeBuildManifest,
+  serializeBuildManifestV1,
   serializeDismissals,
   serializeFactsSlotMeta,
   serializeFactsSnapshot,
@@ -42,6 +47,10 @@ const SLOTS = join(FORGE, "slots");
 const PLUGINS = join(HERE, "../../../fixtures/scanner-plugins");
 const T = 180_000;
 const read = (rel: string) => readFileSync(join(SLOTS, ...rel.split("/")), "utf8");
+/** The Forge golden build.json (version 2), and the same build as beta.28.1 wrote it (version 1). */
+const V2 = join(SLOTS, "build.json");
+const readV2 = () => readFileSync(V2, "utf8");
+const readV1 = () => readFileSync(join(FORGE, "build-json", "build.v1.json"), "utf8");
 const FORGE_REPOS = readdirSync(join(FORGE, "repos")).sort();
 
 describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)", () => {
@@ -130,13 +139,13 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
     expect(p.slot.records.length).toBeGreaterThan(0);
   });
 
-  it("the build manifest", () => {
-    const text = read("build.json");
+  it("the build manifest (version 2, ADR 0197)", () => {
+    const text = readV2();
     const p = parseBuildManifest(text);
     expect(p.ok, p.ok ? "" : JSON.stringify(p.issues)).toBe(true);
     if (!p.ok) return;
     expect(serializeBuildManifest(p.slot)).toBe(text);
-    expect(p.slot.version).toBe(1);
+    expect(p.slot.version).toBe(2);
   });
 
   it("the cross-check's dismissals", () => {
@@ -163,11 +172,21 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
       extractors: [...p.slot.extractors].reverse(),
     };
     expect(serializeReadersSlot(shuffled)).toBe(read("readers/forge-ledger.json"));
-    const b = parseBuildManifest(read("build.json"));
+    const b = parseBuildManifest(readV2());
     if (!b.ok) throw new Error("golden doesn't read");
-    expect(serializeBuildManifest({ ...b.slot, files: [...b.slot.files].reverse() })).toBe(
-      read("build.json"),
-    );
+    const reversed = <V>(o: Record<string, V>) => Object.fromEntries(Object.entries(o).reverse());
+    expect(
+      serializeBuildManifest({
+        ...b.slot,
+        files: [...b.slot.files].reverse(),
+        sources: reversed(b.slot.sources),
+        sourceSets: Object.fromEntries(
+          Object.entries(b.slot.sourceSets)
+            .reverse()
+            .map(([id, paths]) => [id, [...paths].reverse()]),
+        ),
+      }),
+    ).toBe(readV2());
   });
 
   it("refuses what isn't a slot: another version, a partial status, a record that isn't C1", () => {
@@ -361,4 +380,76 @@ describe("what a scan observes of each repo: a full read, or nothing (ADR 0195 p
     },
     T,
   );
+});
+
+/**
+ * ADR 0197: build.json version 2 lists each source once and each set of sources once. Version 1
+ * (fixtures/forge/build-json/build.v1.json: the Forge golden as beta.28.1 wrote it) reads as the
+ * version 2 golden (fixtures/forge/slots/build.json, what the build writes: build.test.ts), and
+ * version 2 gives version 1 back byte for byte; a later version is refused.
+ */
+describe("build.json lists each source once (ADR 0197)", () => {
+  it("version 1 reads as the version 2 golden, and gives version 1 back byte for byte", async () => {
+    const v1 = readV1();
+    const p = parseBuildManifest(v1);
+    expect(p.ok, p.ok ? "" : JSON.stringify(p.issues)).toBe(true);
+    if (!p.ok) return;
+    expect(serializeBuildManifest(p.slot)).toBe(readV2());
+    expect(serializeBuildManifestV1(manifestToV1(p.slot))).toBe(v1);
+    // A Windows checkout's CRLF reads the same.
+    const crlf = parseBuildManifest(readV2().replace(/\n/g, "\r\n"));
+    expect(crlf.ok && serializeBuildManifest(crlf.slot)).toBe(readV2());
+    const v = JSON.parse(readV2()) as { files: unknown[]; sources: object; sourceSets: object };
+    expect(v.files.length).toBe((JSON.parse(v1) as { files: unknown[] }).files.length);
+    expect(Object.keys(v.sourceSets).length).toBeLessThan(v.files.length);
+    expect(readV2().length).toBeLessThan(v1.length / 3);
+  });
+
+  it("each set's id is the start of its paths' hash, lengthened while two share one", () => {
+    const sets = Array.from({ length: 40 }, (_, k) => [`catalog/sources/facts/r${k}.jsonl`]);
+    const ids = sourceSetIds(sets, 1);
+    expect(new Set(ids).size).toBe(40);
+    // 1 digit for 40 sets can't be unique: lengthened by 4 at a time, the same every time.
+    expect(new Set(ids.map((x) => x.length)).size).toBe(1);
+    expect(ids[0]!.length % 4).toBe(1);
+    expect(sourceSetIds(sets, 1)).toEqual(ids);
+    expect(sourceSetIds(sets)).toEqual(sets.map((_, k) => sourceSetIds(sets)[k]!));
+    expect(sourceSetIds(sets)[0]).toMatch(/^[0-9a-f]{16}$/);
+    // A manifest made with short ids reads and writes back as any other.
+    const p = parseBuildManifest(readV1());
+    if (!p.ok) throw new Error("golden doesn't read");
+    const v1 = manifestToV1(p.slot);
+    const short = manifestOfFiles(v1.buildVersion, v1.files, { idDigits: 1 });
+    expect(Object.keys(short.sourceSets).every((id) => id.length < 16)).toBe(true);
+    // An id shorter than 16 digits isn't one version 2 reads: the writer starts at 16.
+    expect(parseBuildManifest(serializeBuildManifest(short)).ok).toBe(false);
+    const long = manifestOfFiles(v1.buildVersion, v1.files, { idDigits: 17 });
+    const back = parseBuildManifest(serializeBuildManifest(long));
+    expect(back.ok && serializeBuildManifestV1(manifestToV1(back.slot))).toBe(readV1());
+  });
+
+  it("refuses a later version (a newer Atticus wrote it), and a set or source not listed", () => {
+    const v2 = JSON.parse(readV2()) as Record<string, unknown> & {
+      files: { sources: string }[];
+      sourceSets: Record<string, string[]>;
+    };
+    const newer = parseBuildManifest(JSON.stringify({ ...v2, version: 3 }));
+    expect(newer.ok).toBe(false);
+    expect(!newer.ok && newer.newer).toBe(3);
+    expect(String(new NewerBuildManifestError("catalog/sources/build.json", 3).message)).toBe(
+      "catalog/sources/build.json was written by a newer Atticus (version 3): upgrade Atticus to build here.",
+    );
+    const noSet = { ...v2, files: [{ ...v2.files[0]!, sources: "0".repeat(16) }] };
+    expect(parseBuildManifest(JSON.stringify(noSet)).ok).toBe(false);
+    const [id, paths] = Object.entries(v2.sourceSets)[0]!;
+    const noSource = { ...v2, sourceSets: { ...v2.sourceSets, [id]: [...paths, "nowhere"] } };
+    expect(parseBuildManifest(JSON.stringify(noSource)).ok).toBe(false);
+    // Version 1 listing one source with two hashes can't be listed once: it doesn't read.
+    const v1 = JSON.parse(readV1()) as {
+      files: { sources: { path: string; sha256: string }[] }[];
+    };
+    const two = structuredClone(v1);
+    two.files[1]!.sources[0]!.sha256 = "f".repeat(64);
+    expect(parseBuildManifest(JSON.stringify(two)).ok).toBe(false);
+  });
 });

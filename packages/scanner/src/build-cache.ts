@@ -25,8 +25,11 @@ import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
  * federated catalogs is never kept: their folders are read outside the inputs.
  */
 
-/** Bumped when what the cache holds changes shape. */
-export const BUILD_CACHE_FORMAT = 1;
+/**
+ * Bumped when what the cache holds changes shape. 2 (ADR 0197): the build's manifest is
+ * build.json's version 2, so a kept build of version 1 is never written as build.json.
+ */
+export const BUILD_CACHE_FORMAT = 2;
 
 /**
  * A test's switches: with `off`, nothing is read from or written to the cache; `stamp` stands

@@ -310,10 +310,13 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       await buildAndWrite(root, { command: "atticus catalog build" });
       const path = join(root, "catalog/sources/build.json");
       const m = JSON.parse(await readFile(path, "utf8")) as {
-        files: { path: string; sha256: string; sources: { path: string; sha256: string }[] }[];
+        sources: Record<string, string>;
+        files: { path: string; sha256: string; sources: string }[];
       };
       // Two records the last build wrote and this one won't, which rested on the estate's slots
-      // as they were (catalog/sources had another hash) and on nothing else that changed.
+      // as they were (catalog/sources had another hash) and on nothing else that changed. In
+      // build.json version 2 (ADR 0197) a source has one hash for every file: the last build's.
+      m.sources["catalog/sources"] = "0".repeat(64);
       const ghostOf = async (kind: string) => {
         const one = m.files.find((f) => f.path.includes(`/${kind}/`))!;
         const was = /^id: (.*)$/m.exec(await readFile(join(root, one.path), "utf8"))![1]!;
@@ -324,9 +327,7 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
         const ghost = {
           path: `catalog/generated/${kind}/${was}-ghost.yaml`,
           sha256: sha256Of(text),
-          sources: one.sources.map((s) =>
-            s.path === "catalog/sources" ? { ...s, sha256: "0".repeat(64) } : s,
-          ),
+          sources: one.sources,
         };
         m.files.push(ghost);
         await writeFile(join(root, ghost.path), text);
