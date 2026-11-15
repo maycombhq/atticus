@@ -125,3 +125,44 @@ Step 2 of beta.28.2 would make the features and the glossary incremental: only t
 - **One `build.json` per repo.** Many records name several repos (every arrow, every glossary term), so a file's sources don't divide by repo. The guards would also have to read every part anyway, to see a hand edit anywhere.
 - **A SQLite index.** It isn't text, so it can't be committed and reviewed. It adds a native dependency on every platform. It would replace a format the merge-time check reads from git.
 - **Numeric indices for sources and sets**, as first proposed. They are smaller by about 1 MB, but a new source renumbers what follows it (see Decision §1).
+
+## As built (2.0.0-beta.28.2, 2026-11-15)
+
+**Code.** `packages/scanner/src/slots.ts`: `BuildManifest` is version 2. `BuildManifestV1` stays for reading. The module also has `manifestOfFiles` (the writer's shape), `sourceSetIds` (16 hex digits, lengthened by 4 while two sets share an id), `sourcesOf` (a file's sources, kept per set), `manifestFromV1` and `manifestToV1`, `serializeBuildManifestV1`, and `NewerBuildManifestError`. `parseBuildManifest` reads either version as version 2. It refuses a later one with `newer`, and a set or source a file names that isn't listed.
+
+`build.ts` builds the manifest with `manifestOfFiles`. Its guards walk each set's sources once. Reading a later version throws `NewerBuildManifestError`, from `build.json` or from an interrupted build's `next-build.json`, so nothing is built or written. That is an error rather than a refusal reason, because the refusal reasons are listed in the local API (C4). The CLI prints its message alone ("…was written by a newer Atticus (version N): upgrade Atticus to build here.") and exits 1. The build cache's format is 2, so a kept build of version 1 is never written as `build.json`.
+
+`BUILD_VERSION` is not bumped. The first build of version 2 changes no record and is not refused: the property tests' beta.28.1 world, the equivalence tests and the 60-repo bench all write over a version 1 file.
+
+**Tests.**
+
+- `packages/scanner/test/slots.test.ts`: the Forge golden as beta.28.1 wrote it (`fixtures/forge/build-json/build.v1.json`) reads as the version 2 golden (`fixtures/forge/slots/build.json`, which the build writes, `build.test.ts`). Version 2 gives version 1 back byte for byte. The test also covers CRLF, any order giving the same bytes, a forced set-id collision, and the refusals.
+- `packages/cli/test/build-json-v1.ts` (`asBeta281`) writes a metarepo's `build.json` and its undo copies as beta.28.1 wrote them. The property tests get it as a third prefix, with two examples: a write over version 1, undone, puts version 1 back byte for byte; and writes over version 1 equal a fresh build.
+- `big-estate-equivalence.test.ts` checks:
+  - the same guard result over either version, with a hand edit and removals pending;
+  - a build cut short whose undo copy holds version 1 is caught up;
+  - version 3 is refused by `buildAndWrite` and by the CLI, and nothing is written.
+- `big-estate-speed.test.ts` checks that `build.json` is under 300 bytes a file (measured 218) and that the guards read it in under 0.5 s (measured 0.01 s).
+- The bench checks the round trip at 60 repos.
+
+**Measured.** The bench estate is 60 repos and 30 gateway proxies, 100,407 records, on a shared 2-CPU machine at load 2 to 6. The base is beta.28.1's code (`origin/perf/b282` at 941b2049), run first with two writes. Then this code ran on the same estate: its first write reads version 1 and writes version 2, and its second write is a steady one.
+
+| One repo's `verify <repo> --write`, steady                | Version 1 (base) | Version 2 |
+| --------------------------------------------------------- | ---------------- | --------- |
+| `build.json`                                              | 190.2 MB         | 23.2 MB   |
+| parsing it (the bench, alone)                             | 1.72 s           | 0.19 s    |
+| serializing it (the bench, alone)                         | 0.65 s           | 0.07 s    |
+| the guards' read of `build.json`                          | 2.44 s           | 0.09 s    |
+| the guards in all                                         | 7.22 s           | 1.66 s    |
+| keep build                                                | 4.95 s           | 1.87 s    |
+| write catalog (with `build.json` and its two undo copies) | 3.38 s           | 0.54 s    |
+| the build's "files and build.json"                        | 3.06 s           | 3.48 s    |
+| hashing every record file                                 | 5.22 s           | 8.58 s    |
+| the write, on the clock                                   | 54.9 s           | 46.8 s    |
+| the write, in CPU time                                    | 56.9 s           | 57.5 s    |
+
+The first write of version 2, which reads version 1, took 60.9 s. The steps that handle `build.json` are about 11 s shorter. The write as a whole is 8 s shorter on the clock, but its CPU time did not move within this machine's noise. The hash of every record file was 3 s slower in the second run, and the CPU time counts every thread, the system's copies among them.
+
+Version 2 is 23 MB, not the 17 MB estimated: each file's entry holds its full path, which is most of it. An undo copy now holds 2 × 23 MB of `build.json`, not 2 × 190 MB.
+
+The ≤15 s goal stays open, as "Expected gains" says. What a write spends now is mostly the passes over the whole estate (about 15 s here), hashing every record file (5 to 9 s), reading the slots and the kept parses, and the map. Step 2 of beta.28.2 (incremental features and glossary) is next.

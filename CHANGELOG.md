@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.2 (unreleased)
+
+### Changed
+
+- **`build.json` lists each source once (ADR 0197).** `catalog/sources/build.json` is version 2: a table of the sources the build read, the sets of them each file came from (by an id of their paths), and each file with its set. At 60 repos and 100,000 records it is 23 MB, not 190 MB. One repo's `atticus verify <repo> --write` spends about 11 s less on it: the guards read it in 0.1 s (2.4 s before), the build cache keeps it in 1.9 s (5 s), and an undo copy holds two 23 MB copies, not two of 190 MB. This Atticus reads version 1 and version 2 and writes version 2. The first build after upgrading writes version 2 and refuses nothing, and `atticus catalog undo` across it puts version 1 back byte for byte. A `build.json` of a later version is refused with "upgrade Atticus to build here", and nothing is written. Every record file is unchanged.
+
 ## 2.0.0-beta.28.1 (2026-11-15)
 
 ### Fixed

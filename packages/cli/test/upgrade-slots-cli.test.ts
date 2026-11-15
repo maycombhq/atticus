@@ -686,11 +686,11 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const bj = join(root, "catalog/sources/build.json");
       const text = readFileSync(bj, "utf8");
       // The estate's hash of every slot used (build.ts manifestOf): the slots, then joins.json.
-      const m = JSON.parse(text) as { files: { sources: { path: string; sha256: string }[] }[] };
+      // build.json lists each source once, with its hash (ADR 0197).
+      const m = JSON.parse(text) as { sources: Record<string, string> };
       const slots = new Map<string, string>();
-      for (const f of m.files)
-        for (const x of f.sources)
-          if (/^catalog\/sources\/(readers|facts)\//.test(x.path)) slots.set(x.path, x.sha256);
+      for (const [path, hash] of Object.entries(m.sources))
+        if (/^catalog\/sources\/(readers|facts)\//.test(path)) slots.set(path, hash);
       const estate = (j: string) =>
         sha(
           [
