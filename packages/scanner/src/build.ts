@@ -2405,7 +2405,11 @@ export async function guardBuild(
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   mark("build.json read");
   /** The target's records now: the caller's read where it still holds, else read again. */
-  const lastRecords = async (): Promise<readonly CatalogRecord[]> =>
+  let lastRecordsRead: Promise<readonly CatalogRecord[]> | undefined;
+  /** Read once a guard: the removals, the empty check and the had-code check share it. */
+  const lastRecords = (): Promise<readonly CatalogRecord[]> =>
+    (lastRecordsRead ??= lastRecordsOnce());
+  const lastRecordsOnce = async (): Promise<readonly CatalogRecord[]> =>
     sameFilesAs(o.lastRead, target.generated, onDisk)
       ? o.lastRead!.records
       : (

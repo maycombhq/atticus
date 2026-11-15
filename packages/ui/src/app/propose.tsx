@@ -68,7 +68,10 @@ export const CATALOG_BUILDS_HREF = "#/catalog-builds";
  */
 export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
   const R = COPY.panelResults;
-  const n = refused.removals?.length ?? refused.allowRemovals ?? 0;
+  // Only a large removal waits for a confirm (an empty catalog over a full one has none).
+  const n = refused.reasons.includes("large-removals")
+    ? (refused.removals?.length ?? refused.allowRemovals ?? 0)
+    : 0;
   return (
     <div className="stack" style={{ gap: 6 }}>
       <p className="ev-say" role="status" style={{ margin: 0 }}>
