@@ -13,6 +13,7 @@ import type { Output } from "./commands.js";
 export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "alias",
   "absorb accept",
+  "baseline",
   "catalog build",
   "catalog edits",
   "catalog prune",
@@ -22,10 +23,12 @@ export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "feature merge",
   "feature name",
   "feature split",
+  "feature suggest-names",
   "feature tag",
   "glossary alias",
   "glossary define",
   "glossary link",
+  "glossary scan",
   "intake add",
   "orgpack accept",
   "orgpack owner",
@@ -33,6 +36,7 @@ export const NEWER_GUARDED_COMMANDS: ReadonlySet<string> = new Set([
   "questions answer",
   "questions correct",
   "questions owner",
+  "questions propose",
   "questions route",
   "questions undo",
   "repo add",
@@ -61,6 +65,11 @@ export function newerGuardedCommand(
   // `verify <repo>` writes only with --write (a read alone writes nothing of the build's).
   if (group === "verify") return values.write === true;
   if (group === "scan") return command === undefined;
+  // `catalog migrate` writes the catalog's files again, but not with --dry-run.
+  if (group === "catalog" && command === "migrate") return values["dry-run"] !== true;
+  // `catalog crosscheck` reads, but its --promote, --dismiss and --undismiss write a decision.
+  if (group === "catalog" && command === "crosscheck")
+    return ["promote", "dismiss", "undismiss"].some((k) => values[k] !== undefined);
   return NEWER_GUARDED_COMMANDS.has(group) || NEWER_GUARDED_COMMANDS.has(`${group} ${command}`);
 }
 
@@ -79,6 +88,8 @@ export const NEWER_GUARDED_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/facts/{repo}/corrections/undo",
   "POST /api/crosscheck/{repo}/promote",
   "POST /api/crosscheck/{repo}/dismiss",
+  "POST /api/baseline",
+  "POST /api/links/corrections",
   "POST /api/links/delete",
   "POST /api/links/deleted/undo",
   "POST /api/links/connect",
@@ -98,6 +109,8 @@ export const NEWER_GUARDED_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/trust/answer-boxes/ignore",
   "POST /api/trust/answer-boxes/rename",
   "POST /api/orgpack/draft/{platform}/accept",
+  "POST /api/setup/repos",
+  "PUT /api/setup/file",
   "PUT /api/orgpack/owner",
   "PUT /api/repos/{repo}/owner",
   "PUT /api/repos/{repoId}/branches",

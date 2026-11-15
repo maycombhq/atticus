@@ -287,6 +287,11 @@ export async function runDone(
   // and decides from it as the AI's, through Atticus.
   const agent = await runAgentOf(root, runId);
   if (agent === "decide-propose" || agent === "decide-match") {
+    // Beta.28.2 (ADR 0197): its Done writes the AI's answers or pairings, which the build
+    // reads: refused before it writes anything over a catalog a newer Atticus built.
+    const { refuseNewerCommand } = await import("./newer-guard.js");
+    const refusedNewer = await refuseNewerCommand(root, io, o.json === true);
+    if (refusedNewer !== undefined) return refusedNewer;
     const { decideRunDone } = await import("./decide-handoff.js");
     return decideRunDone(root, runId, io);
   }

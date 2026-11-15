@@ -638,9 +638,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   never `not-upgraded`. The Apply preview's `confirm.refused` may list it the same way. The
  *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words. Every route
  *   that writes one of the build's inputs (the build, scan, Apply, undo, prune, the upgrade, the
- *   map's edits and deletes, corrections, pairings, declared links and boxes, answers, triage,
- *   the AI's decisions, the org pack's repos and owners) answers 409 on such a catalog before it
- *   writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
+ *   map's edits and deletes, corrections, call corrections, pairings, declared links and boxes,
+ *   answers, triage, the AI's decisions, the baseline, the org pack's files, repos and owners)
+ *   answers 409 on such a catalog before it writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
  *   newer }`. Additive only.
  */
 export const API_VERSION = "3.15.0";

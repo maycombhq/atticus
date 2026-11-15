@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord } from "@maycombhq/core";
+import { parseRecord, runsDirOf } from "@maycombhq/core";
 import {
   BUILD_MANIFEST_READS,
   buildManifestPath,
@@ -226,6 +226,75 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
     T,
   );
 
+  it(
+    "the writers found on the second pass: baseline, catalog migrate, cross-check decisions, name and glossary proposals, the AI's answers and a decide hand-off's Done refuse before they write",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      // A Match's hand-off waiting for its Done (its answer becomes the AI's pairings).
+      const runDir = join(runsDirOf(root), "match-forge-ledger", "run-20261115000000-0001");
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(
+        join(runDir, "run.json"),
+        `${JSON.stringify({ state: "waiting", request: { agent: "decide-match" } }, null, 2)}\n`,
+      );
+      const before = await tree(root);
+      for (const words of [
+        ["baseline"],
+        ["catalog", "migrate"],
+        ["catalog", "crosscheck", "forge-ledger", "--promote", "x"],
+        ["catalog", "crosscheck", "forge-ledger", "--dismiss", "x"],
+        ["catalog", "crosscheck", "forge-ledger", "--undismiss", "x"],
+        ["feature", "suggest-names"],
+        ["glossary", "scan"],
+        ["questions", "propose"],
+        ["handoff", "done", "run-20261115000000-0001"],
+      ]) {
+        const x = await run([...words, "--root", root]);
+        expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
+        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        notUpgradeAdvice(x.err);
+        const j = await run([...words, "--json", "--root", root]);
+        expect(j.code, words.join(" ")).toBe(1);
+        expect(JSON.parse(j.out).refused.reasons, words.join(" ")).toEqual(["newer-atticus"]);
+      }
+      // What only reads isn't one of them.
+      for (const words of [
+        ["catalog", "migrate", "--dry-run"],
+        ["catalog", "crosscheck", "forge-ledger"],
+      ]) {
+        const x = await run([...words, "--root", root]);
+        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+      }
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "the app's writers found on the second pass: accepting the baseline, call corrections, adding repos to a profile, an org-pack file: 409, nothing written",
+    async () => {
+      const root = await metarepo();
+      await writeFile(buildManifestPath(root), V2);
+      const before = await tree(root);
+      const { call } = await serve(root);
+      for (const [method, path] of [
+        ["POST", "/api/baseline"],
+        ["POST", "/api/links/corrections"],
+        ["POST", "/api/setup/repos"],
+        ["PUT", "/api/setup/file"],
+      ] as const) {
+        expect(NEWER_GUARDED_ROUTES.has(`${method} ${path}`), path).toBe(true);
+        const x = await call(path, method, {});
+        expect(x.status, path).toBe(409);
+        expect(x.body.refused?.reasons, path).toEqual(["newer-atticus"]);
+        expect(x.body.detail, path).toContain(MESSAGE(N));
+      }
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
   it("each guarded route is one the app's server has", () => {
     const src = join(__dirname, "..", "src");
     const text = readdirSync(src)
@@ -234,7 +303,9 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       .join("\n");
     for (const route of NEWER_GUARDED_ROUTES) {
       const [method, pattern] = route.split(" ") as [string, string];
-      expect(text, route).toContain(`.add("${method}", "${pattern}"`);
+      // On one line, or with the method and pattern on lines of their own.
+      const escaped = pattern.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+      expect(text, route).toMatch(new RegExp(`\\.add\\(\\s*"${method}",\\s*"${escaped}"`));
     }
   });
 
