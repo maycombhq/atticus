@@ -2665,7 +2665,11 @@ export const UNDO_KEEP = 5;
  * stops after its slots (`after-slots`) or after some of its record files (`mid-records`),
  * throwing `BuildCrash`, as a process that died there would leave it. Never set outside tests.
  */
-export const buildWriteHooks: { crash?: "after-slots" | "mid-records" } = {};
+export const buildWriteHooks: {
+  crash?: "after-slots" | "mid-records";
+  /** Awaited right after the record files are written (a test's edit in that window). */
+  afterRecords?: () => Promise<void>;
+} = {};
 
 export class BuildCrash extends Error {
   constructor(readonly at: "after-slots" | "mid-records") {
@@ -2832,6 +2836,8 @@ export async function writeBuiltCatalog(
     onDisk?: DiskFiles;
     /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
     manifests?: { onDisk: string | undefined; mine: string };
+    /** Filled with each record file written's size and time as written (`writeCatalog`'s). */
+    writtenStats?: Map<string, { size: number; mtimeMs: number }>;
   },
 ): Promise<WriteResult> {
   if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
@@ -2889,8 +2895,10 @@ export async function writeBuiltCatalog(
     texts: b.files,
     onDisk,
     shaOf: (p, text) => fileShaOf(b, p, text),
+    ...(o.writtenStats ? { stats: o.writtenStats } : {}),
   });
   mark("record files");
+  await buildWriteHooks.afterRecords?.();
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
   const manifestNow = o.manifests ? o.manifests.onDisk : await readText(target.manifest);
   if (manifestNow !== manifestText) {
@@ -3349,6 +3357,7 @@ export async function buildAndWrite(
   }
   await o.onStep?.({ step: "write", files: build.files.size });
   let write: WriteResult;
+  const writtenStats = new Map<string, { size: number; mtimeMs: number }>();
   try {
     write = await writeBuiltCatalog(build, {
       undoDir,
@@ -3356,6 +3365,7 @@ export async function buildAndWrite(
       guard,
       onDisk,
       manifests,
+      writtenStats,
       ...(o.slots ? { slots: o.slots } : {}),
       ...(o.target ? { target: o.target } : {}),
       ...(o.now ? { now: o.now } : {}),
@@ -3388,6 +3398,7 @@ export async function buildAndWrite(
       o.read,
       after.written,
       [...onDisk.keys()].filter((p) => !build.files.has(p)),
+      writtenStats,
     ).catch(() => undefined);
   mark("parses kept");
   return { build, guard, write, ...(catalog ? { catalog } : {}) };

@@ -33,7 +33,12 @@ export interface FileHash extends FileStat {
  * folder read by workers. By default 2 to 4 workers (one fewer than the CPUs, at least 2), for
  * folders of `MIN_FILES` files or more.
  */
-export const filePoolHooks: { workers?: number; minFiles?: number } = {};
+export const filePoolHooks: {
+  workers?: number;
+  minFiles?: number;
+  /** A test's workers that fail as they start (as one that can't: ERR_WORKER_INIT_FAILED, OOM). */
+  failStart?: boolean;
+} = {};
 
 /** Below this many files the workers' start costs more than they save. */
 const MIN_FILES = 512;
@@ -80,6 +85,7 @@ const path = require("node:path");
 const { createHash } = require("node:crypto");
 const { isUtf8 } = require("node:buffer");
 const at = (dir, rel) => path.join(dir, ...rel.split("/"));
+parentPort.postMessage({ ready: true });
 parentPort.on("message", ({ id, dir, rels, hash }) => {
   const out = new Array(rels.length);
   try {
@@ -94,6 +100,7 @@ parentPort.on("message", ({ id, dir, rels, hash }) => {
       try {
         const s = fs.fstatSync(fd);
         const bytes = fs.readFileSync(fd);
+        // The same hash as textShaOf, written again here (a worker of eval can't import it).
         const h = createHash("sha256");
         if (!bytes.includes(13) && isUtf8(bytes)) h.update(bytes);
         else h.update(bytes.toString("utf8").replace(/\\r\\n?/g, "\\n"), "utf8");
@@ -120,10 +127,30 @@ async function throughWorkers(
 ): Promise<Row[]> {
   const rows = new Array<Row>(rels.length);
   const workers: Worker[] = [];
+  const code = filePoolHooks.failStart
+    ? `throw new Error("a test's worker fails to start");`
+    : WORKER;
+  // A process where a worker can't start (a sandbox, a host without them, a worker out of memory
+  // or failing as it starts, before its first answer): this thread reads.
+  let started: boolean;
   try {
-    for (let i = 0; i < n; i++) workers.push(new Worker(WORKER, { eval: true }));
+    for (let i = 0; i < n; i++) workers.push(new Worker(code, { eval: true }));
+    started = (
+      await Promise.all(
+        workers.map(
+          (w) =>
+            new Promise<boolean>((resolve) => {
+              w.once("message", (m: { ready?: boolean }) => resolve(m.ready === true));
+              w.once("error", () => resolve(false));
+              w.once("exit", () => resolve(false));
+            }),
+        ),
+      )
+    ).every(Boolean);
   } catch {
-    // A process where a worker can't start (a sandbox, a host without them): this thread reads.
+    started = false;
+  }
+  if (!started) {
     await Promise.all(workers.map((w) => w.terminate()));
     return inThread(dir, rels, hash);
   }

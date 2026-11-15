@@ -124,6 +124,26 @@ describe("hashing a folder's files, in this thread or in workers (beta.28.2)", (
       });
     });
 
+  it("a worker that can't start (it fails before its first answer) leaves the read to this thread", async () => {
+    filePoolHooks.workers = 2;
+    filePoolHooks.minFiles = 0;
+    filePoolHooks.failStart = true;
+    try {
+      const dir = await folder(ODD);
+      const rels = Object.keys(ODD);
+      expect((await hashFilesIn(dir, rels)).map((h) => h.sha)).toEqual(
+        rels.map((r) => expectedSha(ODD[r]!)),
+      );
+      expect((await statFilesIn(dir, rels)).every((s) => s !== undefined)).toBe(true);
+      // A file that can't be read still fails the read, from this thread.
+      await expect(hashFilesIn(dir, ["a/lf.yaml", "a/gone.yaml"])).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      delete filePoolHooks.failStart;
+    }
+  });
+
   it("no files: nothing read, no worker started", async () => {
     filePoolHooks.workers = 2;
     filePoolHooks.minFiles = 0;

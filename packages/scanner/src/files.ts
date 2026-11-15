@@ -121,16 +121,29 @@ export async function keepWrittenParses(
   read: CatalogFilesRead,
   written: readonly { rel: string; text: string; parsed: ReturnType<typeof parseCatalogText> }[],
   removed: readonly string[],
+  /**
+   * Each file's size and time as the write wrote it (`writeCatalog`'s `stats`): a file is kept
+   * only while it has them still, so one changed since (the same size too) is parsed again.
+   */
+  at: ReadonlyMap<string, { size: number; mtimeMs: number }>,
 ): Promise<void> {
   if (!read.kept) return;
   forgetCatalogs();
   await keepParses(read.kept, {
-    files: written.map((w) => ({
-      rel: w.rel,
-      bytes: Buffer.byteLength(w.text, "utf8"),
-      ...(w.parsed.ok ? { value: w.parsed.value } : { problem: w.parsed.message }),
-    })),
-    removed,
+    files: written.flatMap((w) => {
+      const st = at.get(w.rel);
+      return st
+        ? [
+            {
+              rel: w.rel,
+              at: st,
+              ...(w.parsed.ok ? { value: w.parsed.value } : { problem: w.parsed.message }),
+            },
+          ]
+        : [];
+    }),
+    // A file written with no size and time taken is forgotten: the next read parses it.
+    removed: [...removed, ...written.filter((w) => !at.has(w.rel)).map((w) => w.rel)],
   });
 }
 
@@ -211,6 +224,11 @@ export async function writeCatalog(
     onDisk?: ReadonlyMap<string, { sha: string }>;
     /** The hash of a text wanted at a path (`sha256Of` of it; the build knows most already). */
     shaOf?: (rel: string, text: string) => string;
+    /**
+     * Filled with each file written's size and time as it was written (`writeFileAtomic`'s
+     * `stat`; none where the file changed at once), by path (beta.28.2: the parses kept by them).
+     */
+    stats?: Map<string, { size: number; mtimeMs: number }>;
   } = {},
 ): Promise<{ written: number; unchanged: number; removed: number }> {
   // What a reader kept is out of date once this writes.
@@ -232,7 +250,7 @@ export async function writeCatalog(
     }
     // One record at a time, each whole: a scan cut short leaves every file readable, and the
     // next scan finishes the job.
-    await writeFileAtomic(full, text);
+    await writeFileAtomic(full, text, o.stats ? { stat: (st) => o.stats!.set(rel, st) } : {});
     written++;
   }
   let removed = 0;

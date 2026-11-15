@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  writeFileAtomic,
   keepParses,
   type KeptParses,
   parseRecord,
@@ -263,14 +264,16 @@ describe("the parses of files a writer wrote, kept for the next read", () => {
       kept: (k) => (kept = k),
     });
     expect(kept).toBeDefined();
-    // The writer writes b (a new text), adds d, and removes c.
-    await writeFile(join(dir, "b.yaml"), "ok b, written\n");
-    await writeFile(join(dir, "d.yaml"), "no d\n");
+    // The writer writes b (a new text), adds d, and removes c, each file's size and time taken
+    // as it was written.
+    const at: Record<string, { size: number; mtimeMs: number }> = {};
+    await writeFileAtomic(join(dir, "b.yaml"), "ok b, written\n", { stat: (s) => (at.b = s) });
+    await writeFileAtomic(join(dir, "d.yaml"), "no d\n", { stat: (s) => (at.d = s) });
     await rm(join(dir, "c.yaml"));
     await keepParses(kept!, {
       files: [
-        { rel: "b.yaml", value: "ok b, written" },
-        { rel: "d.yaml", problem: "not ok: no d" },
+        { rel: "b.yaml", value: "ok b, written", at: at.b! },
+        { rel: "d.yaml", problem: "not ok: no d", at: at.d! },
       ],
       removed: ["c.yaml"],
     });
@@ -312,6 +315,35 @@ describe("the parses of files a writer wrote, kept for the next read", () => {
     expect((await readdir(root)).sort()).toEqual(["org-pack", "things"]);
   });
 
+  it("a file changed by hand (the same size) between its write and the keep isn't kept as written", async () => {
+    // The review of beta.28.2: the parses were kept by the size and time the files had seconds
+    // after the write, so a same-size edit in between was served the writer's text.
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "b.yaml"), "ok a\n");
+    let kept: KeptParses<string> | undefined;
+    await readParsedFiles<string>({
+      dir,
+      files: ["b.yaml"],
+      name: "test",
+      version: "1",
+      parse: counting().parse,
+      cacheRoot: root,
+      kept: (k) => (kept = k),
+    });
+    let at: { size: number; mtimeMs: number } | undefined;
+    await writeFileAtomic(join(dir, "b.yaml"), "ok b\n", { stat: (s) => (at = s) });
+    await new Promise((r) => setTimeout(r, 20));
+    await writeFile(join(dir, "b.yaml"), "ok X\n");
+    await keepParses(kept!, { files: [{ rel: "b.yaml", value: "ok b", at: at! }], removed: [] });
+    const next = counting();
+    expect(await read(dir, ["b.yaml"], next.parse, root)).toEqual([
+      { rel: "b.yaml", value: "ok X" },
+    ]);
+    expect(next.parsed).toEqual(["b.yaml"]);
+  });
+
   it("a file gone or changed again before its size and time are taken isn't kept as written", async () => {
     const root = await metarepo();
     const dir = join(root, "things");
@@ -327,9 +359,18 @@ describe("the parses of files a writer wrote, kept for the next read", () => {
       cacheRoot: root,
       kept: (k) => (kept = k),
     });
-    // The writer says it wrote "ok a2" (6 bytes with its LF) but the file holds another text.
+    // The writer wrote "ok a2", then the file was written again (another size), and one it says
+    // it wrote is gone.
+    let at: { size: number; mtimeMs: number } | undefined;
+    await writeFileAtomic(join(dir, "a.yaml"), "ok a2\n", { stat: (s) => (at = s) });
     await writeFile(join(dir, "a.yaml"), "ok a, edited meanwhile\n");
-    await keepParses(kept!, { files: [{ rel: "a.yaml", value: "ok a2", bytes: 6 }], removed: [] });
+    await keepParses(kept!, {
+      files: [
+        { rel: "a.yaml", value: "ok a2", at: at! },
+        { rel: "gone.yaml", value: "ok gone", at: at! },
+      ],
+      removed: [],
+    });
     const next = counting();
     expect(await read(dir, ["a.yaml"], next.parse, root)).toEqual([
       { rel: "a.yaml", value: "ok a, edited meanwhile" },

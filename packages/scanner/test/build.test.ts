@@ -34,6 +34,7 @@ import {
   readBuildReport,
   readCatalog,
   readCatalogWithFiles,
+  parseCatalogText,
   readersSlotPath,
   serializeBuildManifest,
   serializeReadersSlot,
@@ -91,6 +92,12 @@ async function tree(dir: string): Promise<Record<string, string>> {
   await walk(dir, "");
   return out;
 }
+
+/** A record file's text as a read parses it (its record, or undefined). */
+const parseRecordText = (text: string) => {
+  const p = parseCatalogText(text);
+  return p.ok ? p.value : undefined;
+};
 
 const snap = async (root: string) => ({
   generated: await tree(join(root, "catalog/generated")),
@@ -531,6 +538,48 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       },
       T,
     );
+
+  it(
+    "a same-size edit of a file the write just wrote is read as edited, never as the build's text (beta.28.2 review)",
+    async () => {
+      const root = await forge();
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      const gen = join(root, "catalog/generated");
+      const [changed] = readdirSync(join(gen, "endpoint")).sort();
+      const path = join(gen, "endpoint", changed!);
+      const text = await readFile(path, "utf8");
+      // A hand edit the next build discards: so the build writes this file again.
+      await appendFile(path, "# edited by hand\n");
+      const read = await readCatalogWithFiles(gen, { cacheRoot: root });
+      const at = text.indexOf("forge");
+      const meanwhile = `${text.slice(0, at)}F${text.slice(at + 1)}`;
+      expect(Buffer.byteLength(meanwhile)).toBe(Buffer.byteLength(text));
+      // Right after the record files are written, before the parses are kept, the same file is
+      // edited again to the build's size.
+      buildWriteHooks.afterRecords = async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        await writeFile(path, meanwhile);
+      };
+      try {
+        const w = await buildAndWrite(root, {
+          command: "atticus catalog build",
+          discardEdits: 1,
+          read,
+        });
+        expect(w.guard.refused).toBeUndefined();
+      } finally {
+        delete buildWriteHooks.afterRecords;
+      }
+      expect(await readFile(path, "utf8")).toBe(meanwhile);
+      const next = await readCatalogWithFiles(gen, { cacheRoot: root });
+      expect(next.records).toEqual((await readCatalog(gen, { fresh: true })).records);
+      // The edited file's record is the parse of its bytes now (it differs from the build's).
+      const now = parseRecordText(meanwhile);
+      expect(next.files.get(`endpoint/${changed}`)?.record).toEqual(now);
+      expect(now).not.toEqual(parseRecordText(text));
+    },
+    T,
+  );
 
   for (const way of [
     { name: "in this thread", workers: 0 },

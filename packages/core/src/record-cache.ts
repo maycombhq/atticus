@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { statFilesIn } from "./file-pool.js";
+import { statFilesIn, type FileStat } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 
 /**
@@ -181,14 +181,19 @@ export interface KeptParses<T> {
  * Add the parses of files a writer wrote since its read (`k`) to what that read kept, and forget
  * the files it removed (beta.28.2: a catalog write rewrites its features and glossary terms,
  * megabytes of YAML, and the next read parsed them again). Each file is kept by the size and time
- * it has now, with the parse of the text the writer wrote there, which is what a read of it would
- * parse; `bytes`, when given, is that text's size, and a file of another size (changed again
- * since) isn't kept, nor one gone. A cache that can't be written costs the next read its parses.
+ * it had as it was written, with the parse of the text the writer wrote there, which is what a
+ * read of it would parse; a file whose size or time is another now (changed since), or gone, isn't
+ * kept. A cache that can't be written costs the next read its parses.
  */
 export async function keepParses<T>(
   k: KeptParses<T>,
   o: {
-    files: readonly { rel: string; value?: T; problem?: string; bytes?: number }[];
+    /**
+     * Each file written, with the size and time it had as it was written (`writeFileAtomic`'s
+     * `stat`): it is kept only while it still has exactly those, so an edit made since (of the
+     * same size too: its time differs) is parsed by the next read, never served the writer's text.
+     */
+    files: readonly { rel: string; value?: T; problem?: string; at: FileStat }[];
     removed: readonly string[];
   },
 ): Promise<void> {
@@ -200,7 +205,7 @@ export async function keepParses<T>(
   );
   o.files.forEach((f, i) => {
     const s = stats[i];
-    if (!s || (f.bytes !== undefined && s.size !== f.bytes)) {
+    if (!s || s.size !== f.at.size || s.mtimeMs !== f.at.mtimeMs) {
       entries.delete(f.rel);
       return;
     }
