@@ -2,6 +2,14 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.2 (unreleased)
+
+### Changed
+
+- **A write reads and hashes the catalog's files in worker threads.** `atticus verify <repo> --write` (and every build that writes) read and hashed every record file under catalog/generated through the promise API, four calls a file, then decoded each text and replaced its line endings to hash it: at 30 repos and 48,000 records that took 4 to 5 s (about 4 CPU s), at 60 repos 10 to 13 s. Two to four worker threads now read the files with one open file each (no more than four files open at once, Windows included) and hash their bytes, the main thread staying free for the progress line and Stop between steps: 0.7 s (0.7 CPU s) at 30 repos. Every byte of every file is still read: the hand-edit guard trusts no file's size or time, and an edit that keeps both is still refused (a test edits a file to the same size and sets its time back). The read of the catalog before the build takes the files' sizes and times the same way (4 to 5 s at 30 repos before, about 1 s now), and the guards and the write no longer hold every file's text, only its hash.
+- **A write keeps what it parsed of the files it wrote.** Every write rewrites the features and the glossary terms, some of them megabytes of YAML, and both the write (for the map) and the next command's read parsed them. The write now keeps those parses with the other kept parses (`.atticus/cache`), by each file's size and time after the write, so the next read parses none of them again.
+- **The same bytes.** The catalog, build.json and the map are the bytes they were: the equivalence test of random one-repo writes against a build from scratch runs with the files read in workers, in the main thread, and as a run decides, and a Windows checkout of the catalog (CRLF) is still no hand edit and is written nothing.
+
 ## 2.0.0-beta.28.1 (2026-11-15)
 
 ### Fixed
