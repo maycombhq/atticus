@@ -15,6 +15,7 @@ import {
   forgetSerializedTexts,
   readCatalog,
   readCatalogWithFiles,
+  undoDirOf,
 } from "@maycombhq/scanner";
 import { mapRenderCommand, writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
@@ -305,5 +306,74 @@ describe("build.json of version 1 and of version 2 (ADR 0197)", () => {
       "atticus: catalog/sources/build.json was written by a newer Atticus (version 3): upgrade Atticus to build here.",
     ]);
     expect(await builtOf(root)).toEqual(before);
+  }, 600_000);
+  it("a version 1 edited or merged by hand (a source at two hashes) says so, and building again writes version 2", async () => {
+    const { root } = await estate();
+    const path = join(catalogDirOf(root), "sources", "build.json");
+    const v1 = JSON.parse(v1Of(await readFile(path, "utf8"))) as {
+      files: { sources: { path: string; sha256: string }[] }[];
+    };
+    // A merge that joined two builds' lines: the same source at two hashes.
+    const f = v1.files.find((x) => x.sources.length > 0)!;
+    f.sources[0]!.sha256 = "f".repeat(64);
+    await writeFile(path, JSON.stringify(v1, null, 2) + "\n");
+    // In another clone of the metarepo (undo copies aren't committed): with an undo copy whose
+    // manifest still names every file, the build catches up from it instead.
+    await rm(await undoDirOf(root), { recursive: true, force: true });
+    const before = await builtOf(root);
+    const r = await buildAndWrite(root, { command: "atticus catalog build" });
+    expect(r.guard.refused?.reasons).toEqual(["hand-edits"]);
+    const n = r.guard.refused?.discardEdits ?? 0;
+    expect(n).toBeGreaterThan(100);
+    expect(r.guard.refused?.message).toContain(
+      "catalog/sources/build.json doesn't read (build.json was edited or merged by hand: build again)",
+    );
+    expect(r.guard.refused?.message).toContain(`atticus catalog build --discard-edits ${n}`);
+    // Not the advice for a catalog from before the slots: atticus upgrade does nothing here.
+    expect(r.guard.refused?.message).not.toContain("atticus upgrade");
+    expect(await builtOf(root)).toEqual(before);
+    const again = await buildAndWrite(root, { command: "atticus catalog build", discardEdits: n });
+    expect(again.guard.refused).toBeUndefined();
+    const after = await readFile(path, "utf8");
+    expect((JSON.parse(after) as { version: number }).version).toBe(2);
+    expect(await builtOf(root)).toEqual(await fromScratch(root));
+  }, 600_000);
+
+  it("a branch's build.json of version 1 (catalog/branches/<b>/sources) reads as version 2", async () => {
+    const { root, options } = await estate();
+    const branch = join(catalogDirOf(root), "branches", "develop");
+    const target = {
+      generated: join(branch, "generated"),
+      manifest: join(branch, "sources", "build.json"),
+    };
+    const first = await buildAndWrite(root, { command: "atticus catalog build", target });
+    expect(first.guard.refused).toBeUndefined();
+    const v2 = await readFile(target.manifest, "utf8");
+    expect((JSON.parse(v2) as { version: number }).version).toBe(2);
+    expect(JSON.parse(v2).files[0].path).toMatch(/^catalog\/branches\/develop\/generated\//);
+    // The branch as beta.28.1 built it: its build.json of version 1, the same build.
+    const v1 = v1Of(v2);
+    await writeFile(target.manifest, v1);
+    const slots = await slotsOf(root, options, 5);
+    const c1 = await buildAndWrite(root, { command, slots, target, check: true });
+    await writeFile(target.manifest, v2);
+    const c2 = await buildAndWrite(root, { command, slots, target, check: true });
+    expect(c1.guard).toEqual(c2.guard);
+    expect(c1.guard.refused?.reasons ?? []).not.toContain("not-upgraded");
+    // Written over version 1, it writes version 2, and the undo copy keeps version 1's bytes.
+    await writeFile(target.manifest, v1);
+    const w = await buildAndWrite(root, {
+      command,
+      slots,
+      target,
+      allowRemovals: c1.guard.refused?.allowRemovals,
+    });
+    expect(w.guard.refused).toBeUndefined();
+    const after = await readFile(target.manifest, "utf8");
+    expect((JSON.parse(after) as { version: number }).version).toBe(2);
+    const undo = await undoDirOf(root);
+    const latest = (await readdir(undo)).map(Number).sort((a, b) => b - a)[0]!;
+    const kept = join(undo, String(latest), "files", ...relative(root, target.manifest).split(sep));
+    expect(await readFile(kept, "utf8")).toBe(v1);
   }, 600_000);
 });

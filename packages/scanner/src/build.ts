@@ -2314,7 +2314,15 @@ export async function guardBuild(
     return now ? m === now.sha : m === "deleted";
   });
   for (const e of curatedEdits) edits.splice(edits.indexOf(e), 1);
-  if (before && o.discardEdits !== onDisk.size) {
+  if (before && o.discardEdits !== onDisk.size && last.problem !== undefined) {
+    // ADR 0197 review: a build.json is there but doesn't read (edited or merged by hand, say).
+    // The catalog isn't one from before the slots, so `atticus upgrade` is no answer: no file
+    // can be told from a hand edit, and building again replaces them all.
+    reasons.push("hand-edits");
+    lines.push(
+      `${relOf(root, target.manifest)} ${last.problem}: no file under ${genRel} can be told from a hand edit, so nothing is overwritten. Build again, replacing its ${onDisk.size} record files with this build (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${onDisk.size}`)}.`,
+    );
+  } else if (before && o.discardEdits !== onDisk.size) {
     reasons.push("not-upgraded");
     // An undo that took back the upgrade leaves a catalog from before the slots again.
     const latest = (await listUndo(o.undoDir))[0];

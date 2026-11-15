@@ -170,8 +170,10 @@ export type ManifestFile = {
 
 /**
  * Each set's id (ADR 0197): the first `start` hex digits of the SHA-256 of its paths, each
- * followed by a newline; while two sets share an id, every id is 4 digits longer. The sets are
- * distinct, so the same sets always get the same ids.
+ * followed by a newline. While some sets share an id, only those sets' ids are 4 digits longer;
+ * every other id keeps its length, so a collision changes no line but its own sets'. An id
+ * depends only on its set and on which other sets share its start, so the same sets always get
+ * the same ids, in any order.
  */
 export function sourceSetIds(sets: readonly (readonly string[])[], start = 16): string[] {
   const full = sets.map((paths) =>
@@ -179,11 +181,21 @@ export function sourceSetIds(sets: readonly (readonly string[])[], start = 16): 
       .update(paths.map((p) => `${p}\n`).join(""), "utf8")
       .digest("hex"),
   );
-  for (let n = start; n <= 64; n += 4) {
-    const ids = full.map((h) => h.slice(0, n));
-    if (new Set(ids).size === ids.length) return ids;
+  const len = full.map(() => start);
+  for (;;) {
+    const by = new Map<string, number[]>();
+    full.forEach((h, k) => {
+      const id = h.slice(0, len[k]);
+      by.set(id, [...(by.get(id) ?? []), k]);
+    });
+    const shared = [...by.values()].filter((ks) => ks.length > 1);
+    if (!shared.length) return full.map((h, k) => h.slice(0, len[k]));
+    for (const ks of shared)
+      for (const k of ks) {
+        if (len[k]! >= 64) throw new Error("build.json: two sets of sources have the same hash");
+        len[k] = Math.min(64, len[k]! + 4);
+      }
   }
-  throw new Error("build.json: two sets of sources have the same hash");
 }
 
 /**
@@ -527,8 +539,15 @@ export function parseBuildManifest(text: string): SlotParse<BuildManifestT> {
     if (!v1.success) return { ok: false, issues: zodIssues(v1.error) };
     try {
       return { ok: true, slot: manifestFromV1(v1.data) };
-    } catch (e) {
-      return { ok: false, issues: [{ path: "files", message: (e as Error).message }] };
+    } catch {
+      // One source at two hashes: no build writes that (a build reads each source once), so a
+      // person edited it or a merge joined two builds' lines. Building again writes it whole.
+      return {
+        ok: false,
+        issues: [
+          { path: "files", message: "build.json was edited or merged by hand: build again" },
+        ],
+      };
     }
   }
   const s = BuildManifest.safeParse(j.value);
@@ -563,12 +582,15 @@ export function slotJsonSchemas(): Record<string, object> {
     FactsSlotMeta,
     LegacyJoinsSlot,
     BuildManifest,
+    BuildManifestV1,
     CrossCheckDismissals,
   };
+  /** Each format's version in its $id: build.json's is 2 (ADR 0197), version 1 still read. */
+  const versionOf: Record<string, number> = { BuildManifest: BUILD_MANIFEST_VERSION };
   const out: Record<string, object> = {};
   for (const [name, schema] of Object.entries(files))
     out[name] = {
-      $id: `https://maycombhq.github.io/atticus/schema/sources/v1/${name}.json`,
+      $id: `https://maycombhq.github.io/atticus/schema/sources/v${versionOf[name] ?? 1}/${name}.json`,
       title: name,
       ...z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }),
     };

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -209,6 +210,7 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
     const s = slotJsonSchemas() as Record<string, { $id: string; title: string }>;
     expect(Object.keys(s).sort()).toEqual([
       "BuildManifest",
+      "BuildManifestV1",
       "CrossCheckDismissals",
       "FactsSlotMeta",
       "LegacyJoinsSlot",
@@ -216,6 +218,13 @@ describe("the slot formats read and write byte for byte (ADR 0195 point 1, CS1)"
     ]);
     expect(s.ReadersSlot!.$id).toBe(
       "https://maycombhq.github.io/atticus/schema/sources/v1/ReadersSlot.json",
+    );
+    // ADR 0197: build.json's schema is version 2's; version 1, still read, is exported too.
+    expect(s.BuildManifest!.$id).toBe(
+      "https://maycombhq.github.io/atticus/schema/sources/v2/BuildManifest.json",
+    );
+    expect(s.BuildManifestV1!.$id).toBe(
+      "https://maycombhq.github.io/atticus/schema/sources/v1/BuildManifestV1.json",
     );
     // ADR 0197: atticus schema export writes build.json's version 2.
     const bm = s.BuildManifest as unknown as {
@@ -418,18 +427,38 @@ describe("build.json lists each source once (ADR 0197)", () => {
     expect(readV2().length).toBeLessThan(v1.length / 3);
   });
 
-  it("each set's id is the start of its paths' hash, lengthened while two share one", () => {
+  it("each set's id is the start of its paths' hash; only ids that collide are lengthened", () => {
+    // Worked out by hand: printf 'catalog/sources/facts/r0.jsonl\n' | sha256sum, and the same
+    // with 'catalog/sources/joins.json\n' after it.
+    expect(sourceSetIds([["catalog/sources/facts/r0.jsonl"]])).toEqual(["dc63dcc663511559"]);
+    expect(
+      sourceSetIds([["catalog/sources/facts/r0.jsonl", "catalog/sources/joins.json"]]),
+    ).toEqual(["e16dfd862b211162"]);
     const sets = Array.from({ length: 40 }, (_, k) => [`catalog/sources/facts/r${k}.jsonl`]);
+    const full = sets.map((paths) =>
+      createHash("sha256")
+        .update(paths.map((x) => `${x}\n`).join(""))
+        .digest("hex"),
+    );
+    // 1 digit for 40 sets can't be unique: the ids that share a start are lengthened, 4 digits at
+    // a time, and only they.
     const ids = sourceSetIds(sets, 1);
     expect(new Set(ids).size).toBe(40);
-    // 1 digit for 40 sets can't be unique: lengthened by 4 at a time, the same every time.
-    expect(new Set(ids.map((x) => x.length)).size).toBe(1);
-    expect(ids[0]!.length % 4).toBe(1);
-    // The ids were lengthened because the shorter ones collided: the shortest unique length.
-    const shorter = ids.map((x) => x.slice(0, x.length - 4));
-    expect(new Set(shorter).size).toBeLessThan(40);
-    expect(sourceSetIds(sets, 1)).toEqual(ids);
-    expect(sourceSetIds(sets)).toEqual(sets.map((_, k) => sourceSetIds(sets)[k]!));
+    ids.forEach((id, k) => {
+      expect(full[k]!.startsWith(id)).toBe(true);
+      expect((id.length - 1) % 4).toBe(0);
+      // Each lengthened id was lengthened because, 4 digits shorter, another set shared it.
+      if (id.length > 1) {
+        const shorter = id.slice(0, id.length - 4);
+        expect(full.filter((h, j) => j !== k && h.startsWith(shorter)).length).toBeGreaterThan(0);
+      }
+    });
+    // A set that shares no start with any other keeps the shortest id; the others are longer.
+    const solo = sets.map((_, k) => full.every((h, j) => j === k || h[0] !== full[k]![0]));
+    ids.forEach((id, k) => expect(id.length === 1).toBe(solo[k]));
+    expect(new Set(ids.map((x) => x.length)).size).toBeGreaterThan(1);
+    // The same sets in any order get the same ids.
+    expect(sourceSetIds([...sets].reverse(), 1)).toEqual([...ids].reverse());
     expect(sourceSetIds(sets)[0]).toMatch(/^[0-9a-f]{16}$/);
     // A manifest made with short ids reads and writes back as any other.
     const p = parseBuildManifest(readV1());
@@ -466,6 +495,12 @@ describe("build.json lists each source once (ADR 0197)", () => {
     };
     const two = structuredClone(v1);
     two.files[1]!.sources[0]!.sha256 = "f".repeat(64);
-    expect(parseBuildManifest(JSON.stringify(two)).ok).toBe(false);
+    const twice = parseBuildManifest(JSON.stringify(two));
+    expect(twice.ok).toBe(false);
+    // It says what happened (edited or merged by hand), never that it is a later version.
+    expect(!twice.ok && twice.issues).toEqual([
+      { path: "files", message: "build.json was edited or merged by hand: build again" },
+    ]);
+    expect(!twice.ok && twice.newer).toBeUndefined();
   });
 });

@@ -72,6 +72,7 @@ describe("atticus CLI", () => {
     // ADR 0195: the source slots, build.json and the cross-check's dismissals.
     expect((await readdir(join(dir, "sources"))).sort()).toEqual([
       "BuildManifest.json",
+      "BuildManifestV1.json", // ADR 0197: version 1, still read
       "CrossCheckDismissals.json",
       "FactsSlotMeta.json",
       "LegacyJoinsSlot.json",
