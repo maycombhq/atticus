@@ -857,12 +857,22 @@ describe("Feature design, Stories and Tasks", () => {
 });
 
 describe("where the slash commands are (ADR 0104, 0105)", () => {
-  /** Every string the copy file holds, functions called with a placeholder. */
+  /**
+   * Every string the copy file holds, functions called with a placeholder (a list for one that
+   * takes a list, such as beta.28.1's `confirmRefused`).
+   */
+  const call = (f: (...a: unknown[]) => unknown): unknown => {
+    try {
+      return f("x", "x", "x", "x");
+    } catch {
+      return f(["x"], ["x"], ["x"], ["x"]);
+    }
+  };
   const words = (v: unknown): string[] =>
     typeof v === "string"
       ? [v]
       : typeof v === "function"
-        ? words((v as (...a: string[]) => unknown)("x", "x", "x", "x"))
+        ? words(call(v as (...a: unknown[]) => unknown))
         : v && typeof v === "object"
           ? Object.values(v).flatMap(words)
           : [];
