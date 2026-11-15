@@ -2561,9 +2561,14 @@ export async function guardBuild(
     }
     mark("removals explained");
     // The records each repo had in the last build, for the share.
+    // The records each repo had in the last build: those it wrote (build.json lists them, or an
+    // interrupted build's copy does), not a record file a person added by hand since (property
+    // seed 1567472602: a hand-added file made the share's base larger).
     const had = new Map<string, number>();
-    for (const r of oldRecords.values())
+    for (const [p, r] of oldRecords) {
+      if (!known.has(p) && !alt.has(p)) continue;
       for (const repo of repoOfEvidence(r)) had.set(repo, (had.get(repo) ?? 0) + 1);
+    }
     if (unexplained.length) {
       reasons.push("unexplained-removals");
       lines.push(
