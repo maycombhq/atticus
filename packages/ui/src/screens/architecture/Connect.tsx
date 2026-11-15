@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import {
   api,
@@ -264,6 +264,25 @@ export function Pairing(p: {
   const asked = JSON.stringify({ pairs, rule: !!rule });
   const [previewed, setPreviewed] = useState<string | undefined>();
   const [undoing, setUndoing] = useState(false);
+  // The hunt of beta.28.1 (S5): the preview under way, stopped when nobody waits on it any more
+  // (another box, or the panel closed): its job is stopped and its answer never lands.
+  const previewCtl = useRef<AbortController | undefined>(undefined);
+  const alive = useRef(true);
+  const boxKey = JSON.stringify([p.from, p.box]);
+  useEffect(() => {
+    if (!previewCtl.current) return;
+    previewCtl.current.abort();
+    previewCtl.current = undefined;
+    setBusy(undefined);
+    setWait(undefined);
+  }, [boxKey]);
+  useEffect(
+    () => () => {
+      alive.current = false;
+      previewCtl.current?.abort();
+    },
+    [],
+  );
   const send = async (mode: "preview" | "write") => {
     if (!pairs.length && !rule) {
       setError(C.nothingPicked);
@@ -273,7 +292,22 @@ export function Pairing(p: {
     setError(undefined);
     setStoppedPreview(false);
     const sentAsked = asked;
-    if (mode === "preview") setWait({});
+    let ctl: AbortController | undefined;
+    if (mode === "preview") {
+      previewCtl.current?.abort();
+      ctl = new AbortController();
+      previewCtl.current = ctl;
+      setWait({});
+    }
+    const gone = () => !alive.current || ctl?.signal.aborted === true;
+    let job: string | undefined;
+    ctl?.signal.addEventListener(
+      "abort",
+      () => {
+        if (job) void stopJob(job).catch(() => undefined);
+      },
+      { once: true },
+    );
     try {
       const r = await post(
         {
@@ -284,10 +318,19 @@ export function Pairing(p: {
           ...(mode === "preview" ? { preview: true } : {}),
         },
         {
-          onJob: (job) => setWait((w) => ({ ...w, job })),
-          onLine: (line) => setWait((w) => ({ ...w, line })),
+          onJob: (id) => {
+            job = id;
+            // Gone before the server named it: stopped now.
+            if (ctl?.signal.aborted) void stopJob(id).catch(() => undefined);
+            else if (!gone()) setWait((w) => ({ ...w, job: id }));
+          },
+          onLine: (line) => {
+            if (!gone()) setWait((w) => ({ ...w, line }));
+          },
+          ...(ctl ? { signal: ctl.signal } : {}),
         },
       );
+      if (gone()) return;
       if (mode === "preview") {
         setPreview(r);
         // The picks as they were sent, not as they are when the answer comes.
@@ -299,11 +342,16 @@ export function Pairing(p: {
         p.cands.reload?.();
       }
     } catch (e) {
+      if (gone()) return;
       if (e instanceof JobStopped) setStoppedPreview(true);
       else setError(errorOf(e));
     } finally {
-      setBusy(undefined);
-      setWait(undefined);
+      if (previewCtl.current === ctl) previewCtl.current = undefined;
+      // A newer preview (another box) holds the wait now; an unmounted panel holds none.
+      if (alive.current && (!ctl || !ctl.signal.aborted || !previewCtl.current)) {
+        setBusy(undefined);
+        setWait(undefined);
+      }
     }
   };
   const stopPreview = () => {

@@ -141,6 +141,11 @@ export type Expect =
   | { kind: "succeed" }
   /** Refuse (with this guard, when given). */
   | { kind: "refuse"; guard?: Guard }
+  /**
+   * The hunt of beta.28.1 (F1): verify --write refuses a read whose every fact is rejected
+   * before any build, so no guard: it says so ("every fact of the read was rejected").
+   */
+  | { kind: "refuse"; rejected: true }
   /** A dry run: list, write nothing, refuse nothing. */
   | { kind: "dry" }
   /** Anything that writes nothing (a cancelled run; verify without --write). */
@@ -455,17 +460,24 @@ async function scan(
     observed,
     unobserved,
     rerun: d,
-    onSuccess: () => observe(m, observed),
+    // Beta.28.1 (seed 1542933929): the fault's extra reader runs on every repo the scan reads,
+    // so each slot it writes lists that reader: the other repos' slots change too.
+    onSuccess: () =>
+      observe(m, observed, d.t === "scan-reader-fails" ? `fails-on.${target!.id}` : undefined),
   };
 }
 
-/** The readers of these slots read in full now: their slots hold this read. */
-function observe(m: Model, slots: number[]): void {
+/**
+ * The readers of these slots read in full now: their slots hold this read, and `extra` names the
+ * harness's failing reader when it ran too (a slot lists the readers that wrote it).
+ */
+function observe(m: Model, slots: number[], extra?: string): void {
   for (const s of slots) {
     const r = m.repos[s]!;
     const was = m.readers.get(s);
-    if (!was || was.commit !== r.commit || was.id !== r.id || was.legacy) m.changes.slots.add(s);
-    m.readers.set(s, { code: r.code, commit: r.commit, id: r.id });
+    if (!was || was.commit !== r.commit || was.id !== r.id || was.legacy || was.extra !== extra)
+      m.changes.slots.add(s);
+    m.readers.set(s, { code: r.code, commit: r.commit, id: r.id, ...(extra ? { extra } : {}) });
   }
 }
 
@@ -498,12 +510,17 @@ async function verify(
   });
   if (!write) return { outcome, expect: { kind: "neutral" } };
   const facts = { code: r.code, commit: r.commit, id: r.id };
+  // The hunt of beta.28.1 (F1, seed 1548203660): a read whose every fact is rejected is refused
+  // as before, never written as a read of nothing: the broken fact of a read whose code gives
+  // no fact, or the one fact a later read breaks.
+  const kept = renderFacts(r.base, r.id, r.code, r.commit).trim().split("\n").filter(Boolean);
+  const noneKept = later !== undefined ? kept.length === 1 : !ok && kept.length === 0;
   return {
     outcome,
     confirm,
     // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
     // fact it adds was never accepted, so the catalog is the clean read's.
-    expect: { kind: "succeed" },
+    expect: noneKept ? { kind: "refuse", rejected: true } : { kind: "succeed" },
     rerun: d,
     onSuccess: () => {
       const was = m.facts.get(r.slot);
@@ -936,7 +953,10 @@ export async function act(
     case "discard-edits": {
       if (!m.handEdits.length) return undefined;
       const p = w.pending;
-      const count = (p?.edits?.length ?? m.handEdits.length) + (d.wrong ? 1 : 0);
+      // A wrong count is one off the edits on disk now: a refusal's listing may be stale (an edit
+      // made since), and the listing's count plus one may be the true count, which the build
+      // rightly takes (seed 1550829716).
+      const count = d.wrong ? m.handEdits.length + 1 : (p?.edits?.length ?? m.handEdits.length);
       const c: Confirm = { ...(p?.confirm ?? {}), ...confirm, discardEdits: count };
       const acted = p ? await act(p.desc, ctx, w, before, c) : await build(w, c);
       if (!acted) return undefined;

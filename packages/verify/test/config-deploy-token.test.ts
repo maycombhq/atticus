@@ -295,6 +295,10 @@ describe("where a `with` line may set a token (the review of beta.28.1)", () => 
         with: [part(file, 1, value)],
       });
     expect(await codes(pool(TEST_RES, "13"))).toEqual(["claim-not-on-line"]);
+    // The hunt of beta.28.1: it says the cited line was refused for being a test's resource.
+    expect((await run(pool(TEST_RES, "13")))[0]!.message).toContain(
+      `${TEST_RES}:1 is a test's resource, a fixture or a secret file: it sets no token for the app`,
+    );
     // A secret file isn't read at all (verify refuses citing it); the token isn't set by it.
     expect((await run(pool(SECRET, "14"))).length).toBeGreaterThan(0);
   });

@@ -1,0 +1,68 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: confirm-removals reports Interface/if-cd5141e56a92b1f4 removed by \"manifest\", but what changed is archived or slot or input. After prune took the orphaned slots, an end of a legacy arrow out of the archived repo was given every repo the upgrade had a slot of and has none now, the removed one too (beta.28.1).",
+  "seed": 1542546636,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "payments.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "archive",
+      "slot": 0
+    },
+    {
+      "t": "remove",
+      "slot": 1
+    },
+    {
+      "t": "prune",
+      "yes": true
+    },
+    {
+      "t": "confirm-removals",
+      "wrong": false
+    }
+  ]
+}

@@ -112,6 +112,16 @@ const write = (root: string, o = io()) =>
     o.io,
   );
 
+/**
+ * The red-team facts a partial --write leaves out: all but the one read at another commit, which
+ * refuses the write whole (the hunt of beta.28.1, F1: never written under a commit it wasn't read at).
+ */
+const redteamSameCommit = () =>
+  readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l && !l.includes('"id":"rt-wrong-commit"'))
+    .join("\n") + "\n";
+
 const files = (dir: string): Record<string, string> => {
   const out: Record<string, string> = {};
   const walk = (d: string, rel: string) => {
@@ -538,6 +548,16 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     };
     expect(twice).toEqual(once);
     expect(o.out.join("\n")).toMatch(/No catalog changes/);
+    // The hunt of beta.28.1: a build that writes nothing takes no new undo copy.
+    const { listUndo, undoDirOf } = await import("@maycombhq/scanner");
+    const copies = (await listUndo(await undoDirOf(root))).length;
+    expect(await write(root)).toBe(0);
+    expect((await listUndo(await undoDirOf(root))).length).toBe(copies);
+    const said: string[] = [];
+    const quietIo = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(await main(["catalog", "build", "--root", root], quietIo), said.join("\n")).toBe(0);
+    expect(await main(["catalog", "build", "--root", root], quietIo), said.join("\n")).toBe(0);
+    expect((await listUndo(await undoDirOf(root))).length).toBe(copies);
   });
 
   // Beta.28.1 (field report 5): one rejected fact no longer blocks the rest. The kept facts are
@@ -547,14 +567,13 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const clean = await metarepo();
     expect(await write(clean)).toBe(0);
     const root = await metarepo(
-      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
-        readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8"),
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") + redteamSameCommit(),
     );
     const o = io();
     expect(await write(root, o)).toBe(3);
     const said = o.out.join("\n");
     expect(said).toMatch(
-      /Applied to forge-ledger with 11 facts left out \(rejected; none was in the catalog before\)/,
+      /Applied to forge-ledger with 10 facts left out \(rejected; none was in the catalog before\)/,
     );
     expect(said).toMatch(
       /left out: rt-no-file \([a-z-]+\): fix it in facts\/forge-ledger\.jsonl, reading src\/main\/java\/forge\/ledger\/AdminController\.java:10 again/,
@@ -571,8 +590,7 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
   // the kept facts, stamped verified, so the next scan (or --write) projected the half-read repo.
   it("a refused --write leaves the facts file byte for byte as it was, and says why", async () => {
     const asRead = (
-      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") +
-      readFileSync(join(VERIFY, "redteam.facts.jsonl"), "utf8")
+      readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8") + redteamSameCommit()
     ).replaceAll('"verified":"line"', '"verified":"none"');
     const root = await metarepo(asRead);
     const factsFile = join(root, "facts", "forge-ledger.jsonl");
@@ -581,7 +599,7 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(await write(root, o)).toBe(3);
     // The rejected facts stay in the facts file to be fixed; the kept ones went to the catalog.
     expect(readFileSync(factsFile).equals(bytes)).toBe(true);
-    expect(o.out.join("\n")).toMatch(/with 11 facts left out/);
+    expect(o.out.join("\n")).toMatch(/with 10 facts left out/);
     // What to fix is still written, and the verify report.
     expect(readFileSync(join(root, "facts", "forge-ledger.rejected.jsonl"), "utf8")).toMatch(
       /"code":/,

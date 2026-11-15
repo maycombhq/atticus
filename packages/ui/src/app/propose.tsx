@@ -480,7 +480,20 @@ export async function runApplyAll(
     const r = await followJob("/api/facts/apply-all", {}, undefined, (jobId) =>
       set((was) => ({ ...was, jobId })),
     );
-    set({ running: false, lines: r.lines, note: { ok: true, text: COPY.appStep.appliedAll } });
+    // The hunt of beta.28.1 (S2): repos that wrote with rejected facts left out are applied.
+    const leftOut = leftOutOf(r.result);
+    const repos = r.result?.leftOutRepos;
+    set({
+      running: false,
+      lines: r.lines,
+      note: {
+        ok: true,
+        text:
+          leftOut && typeof repos === "number" && repos > 0
+            ? COPY.appStep.appliedAllLeftOut(leftOut, repos)
+            : COPY.appStep.appliedAll,
+      },
+    });
     return true;
   } catch (e) {
     const next = nextAfter(e);

@@ -1,0 +1,88 @@
+{
+  "invariant": "curation-survives",
+  "note": "curation-survives: cd-alias-feature.entries folds feature.forge-payments into feature.entries, yet after build both are in the catalog. A legacy feature an alias folds into a legacy-only target: the build that retired the folded feature's legacy copy left it out, the next build brought it back (beta.28.1).",
+  "seed": 1539914139,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "POST",
+              "path": "/entries"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-notify",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.payments.changed"]
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "POST",
+              "path": "/entries",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": ["forge.payments.changed"],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "change-code",
+      "slot": 0,
+      "sketch": {
+        "endpoints": [],
+        "calls": [],
+        "publishes": false,
+        "consumes": []
+      }
+    },
+    {
+      "t": "curate",
+      "action": "alias",
+      "pick": 0
+    },
+    {
+      "t": "scan"
+    },
+    {
+      "t": "confirm-removals",
+      "wrong": true
+    }
+  ]
+}

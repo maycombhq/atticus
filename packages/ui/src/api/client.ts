@@ -898,16 +898,25 @@ export function useJobRead<T>(path: string | undefined, o: { view?: string } = {
   const [line, setLine] = useState<string | undefined>();
   const [jobId, setJobId] = useState<string | undefined>();
   const [stopped, setStopped] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  // The hunt of beta.28.1 (S4): "Stopping…" is of the job Stop was pressed on, never the next.
+  const [stoppingId, setStoppingId] = useState<string | undefined>();
+  // Each read's own: an earlier read's job or end never lands on a later one.
+  const reads = useRef(0);
   const load = useCallback((p: string, signal: AbortSignal) => {
+    const mine = ++reads.current;
+    const current = (f: () => void) => {
+      if (reads.current === mine) f();
+    };
     setLine(undefined);
     setStopped(false);
-    setStopping(false);
+    setStoppingId(undefined);
+    // The hunt of beta.28.1 (S4): the last read's job is not this one's, so no Stop until named.
+    setJobId(undefined);
     return readAsJob<T>(p, signal, {
-      onLine: setLine,
-      onJob: setJobId,
-      onStopped: () => setStopped(true),
-      onEnd: () => setJobId(undefined),
+      onLine: (l) => current(() => setLine(l)),
+      onJob: (id) => current(() => setJobId(id)),
+      onStopped: () => current(() => setStopped(true)),
+      onEnd: () => current(() => setJobId(undefined)),
     });
   }, []);
   const r = useApi<T>(path, { load, ...(o.view ? { view: o.view } : {}) });
@@ -915,15 +924,17 @@ export function useJobRead<T>(path: string | undefined, o: { view?: string } = {
   const stop =
     jobId && running
       ? () => {
-          setStopping(true);
-          void stopJob(jobId).catch(() => setStopping(false));
+          setStoppingId(jobId);
+          void stopJob(jobId).catch(() =>
+            setStoppingId((was) => (was === jobId ? undefined : was)),
+          );
         }
       : undefined;
   return {
     ...r,
     ...(line && running ? { line } : {}),
     ...(stop ? { stop } : {}),
-    stopping: stopping && running,
+    stopping: stoppingId !== undefined && stoppingId === jobId && running,
     stopped: stopped && r.state === "error",
   };
 }
