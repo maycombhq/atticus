@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants as fsConstants, existsSync } from "node:fs";
-import { copyFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
@@ -11,13 +11,13 @@ import {
   catalogDirOf,
   cmpText,
   copyFileAtomic,
-  deserializeRecord,
   evidenceDirOf,
   evidenceRelOf,
   factIdPart,
   FACTS_SCHEMA_VERSION,
   factsDirOf,
   factsRelOf,
+  hashFilesIn,
   joinSharedMaps,
   keptFilesMayHaveChanged,
   linkEvidenceOf,
@@ -88,6 +88,8 @@ import {
 import { pairsOfText } from "./facts-scan.js";
 import {
   forgetCatalogs,
+  keepWrittenParses,
+  parseCatalogText,
   readCatalog,
   sortCatalogRecords,
   writeCatalog,
@@ -2094,12 +2096,13 @@ function buildManifestOfText(
     : { text, problem: `doesn't read (${p.issues[0]?.message ?? "invalid"})` };
 }
 
-/** Every record file under a catalog folder, with the hash of its bytes (line endings aside). */
 /**
- * A catalog folder's record files, by path under it: their text (LF) and its hash, and the
- * size and time (ms, floored) the file had when it was read (none: not known).
+ * A catalog folder's record files, by path under it: the hash of each one's text with its line
+ * endings LF, and the size and time (ms, floored) the file had when it was read (none: not
+ * known). Beta.28.2: not their texts (100,000 strings held through the build's guards and write);
+ * what a write leaves as it is, is told by its hash.
  */
-type DiskFiles = Map<string, { sha: string; text: string; size?: number; mtimeMs?: number }>;
+type DiskFiles = Map<string, { sha: string; size?: number; mtimeMs?: number }>;
 
 /**
  * Whether a read of the folder (`readCatalogWithFiles`) found every record file `onDisk` holds,
@@ -2118,8 +2121,9 @@ function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: Di
 }
 
 async function hashFiles(dir: string): Promise<DiskFiles> {
-  // The paths first, in the walk's order; then the files read many at once (beta.28.1: one at
-  // a time, 100,000 record files took 15 s) and put in the map in that order.
+  // The paths first, in the walk's order; then every file read whole and hashed, in a few worker
+  // threads for a big folder (beta.28.2, file-pool.ts: through the promise API 100,000 record
+  // files took 10 to 13 s), and put in the map in that order.
   const paths: string[] = [];
   async function walk(d: string, rel: string) {
     let entries;
@@ -2134,31 +2138,15 @@ async function hashFiles(dir: string): Promise<DiskFiles> {
       else if (/\.ya?ml$/.test(e.name)) paths.push(r);
     }
   }
+  const mark = phaseClock("hash: ");
   await walk(dir, "");
-  const texts = new Array<string>(paths.length);
-  const stats = new Array<{ size: number; mtimeMs: number }>(paths.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(READ_AT_ONCE, paths.length) }, async () => {
-      for (let k = next++; k < paths.length; k = next++) {
-        // Its size and time from the open file, as readFile itself looks them up.
-        const fh = await open(join(dir, ...paths[k]!.split("/")), "r");
-        try {
-          const s = await fh.stat();
-          stats[k] = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
-          texts[k] = (await fh.readFile("utf8")).replace(/\r\n?/g, "\n");
-        } finally {
-          await fh.close();
-        }
-      }
-    }),
-  );
+  mark("walk");
+  const hashed = await hashFilesIn(dir, paths);
+  mark("read and sha256");
   const out: DiskFiles = new Map();
-  paths.forEach((r, k) => out.set(r, { sha: sha(texts[k]!), text: texts[k]!, ...stats[k]! }));
+  paths.forEach((r, k) => out.set(r, hashed[k]!));
   return out;
 }
-/** How many files a build reads at once (a few dozen: well under any open-files limit). */
-const READ_AT_ONCE = 32;
 
 /** Where a command writes (the baseline's catalog, or a branch's beside it). */
 export interface CatalogTarget {
@@ -2828,7 +2816,11 @@ export const UNDO_KEEP = 5;
  * stops after its slots (`after-slots`) or after some of its record files (`mid-records`),
  * throwing `BuildCrash`, as a process that died there would leave it. Never set outside tests.
  */
-export const buildWriteHooks: { crash?: "after-slots" | "mid-records" } = {};
+export const buildWriteHooks: {
+  crash?: "after-slots" | "mid-records";
+  /** Awaited right after the record files are written (a test's edit in that window). */
+  afterRecords?: () => Promise<void>;
+} = {};
 
 export class BuildCrash extends Error {
   constructor(readonly at: "after-slots" | "mid-records") {
@@ -2905,7 +2897,9 @@ export async function takeUndoCopy(
   }[] = [];
   for (const t of touched) {
     // A file the caller read already that the command leaves as it is isn't read again.
-    const next = t.text === null ? null : t.text.replace(/\r\n?/g, "\n");
+    // beta.28.2: a text with no CR is its own LF text (build.json: 180 MB scanned for nothing).
+    const next =
+      t.text === null ? null : t.text.includes("\r") ? t.text.replace(/\r\n?/g, "\n") : t.text;
     if (extra.known?.has(t.path)) {
       const was = extra.known.get(t.path) ?? null;
       if (was === next) continue;
@@ -2993,9 +2987,12 @@ export async function writeBuiltCatalog(
     onDisk?: DiskFiles;
     /** The target's build.json as read already, and the one this build writes (buildAndWrite's). */
     manifests?: { onDisk: string | undefined; mine: string };
+    /** Filled with each record file written's size and time as written (`writeCatalog`'s). */
+    writtenStats?: Map<string, { size: number; mtimeMs: number }>;
   },
 ): Promise<WriteResult> {
   if (o.guard.refused) throw new Error("writeBuiltCatalog: the build was refused");
+  const mark = phaseClock("write catalog: ");
   const root = b.root;
   const target = o.target ?? baselineTarget(root);
   const manifestText = o.manifests?.mine ?? serializeBuildManifest(manifestAt(b, target));
@@ -3006,18 +3003,20 @@ export async function writeBuiltCatalog(
   const onDisk = o.onDisk ?? (await hashFiles(target.generated));
   const touched: { path: string; text: string | null }[] = [];
   for (const [p, text] of b.files)
-    if (onDisk.get(p)?.text !== text)
+    if (onDisk.get(p)?.sha !== fileShaOf(b, p, text))
       touched.push({ path: join(target.generated, ...p.split("/")), text });
   for (const p of onDisk.keys())
     if (!b.files.has(p))
       touched.push({ path: join(target.generated, ...p.split("/")), text: null });
   for (const s of slots) touched.push(s);
   touched.push({ path: target.manifest, text: manifestText });
+  mark("what changes");
   const undo = await takeUndoCopy(root, o.undoDir, o.command, touched, {
     nextManifest: manifestText,
     ...(o.now ? { now: o.now } : {}),
     ...(o.manifests ? { known: new Map([[target.manifest, o.manifests.onDisk ?? null]]) } : {}),
   });
+  mark("undo copy");
   const wrote: string[] = [];
   for (const s of slots) {
     const cur = await readText(s.path);
@@ -3042,7 +3041,15 @@ export async function writeBuiltCatalog(
       await writeFileAtomic(t.path, t.text!);
     throw new BuildCrash(crash);
   }
-  const w = await writeCatalog(target.generated, b.records, { texts: b.files, onDisk });
+  mark("slots");
+  const w = await writeCatalog(target.generated, b.records, {
+    texts: b.files,
+    onDisk,
+    shaOf: (p, text) => fileShaOf(b, p, text),
+    ...(o.writtenStats ? { stats: o.writtenStats } : {}),
+  });
+  mark("record files");
+  await buildWriteHooks.afterRecords?.();
   await rm(curatedEditsPathOf(o.undoDir), { force: true });
   const manifestNow = o.manifests ? o.manifests.onDisk : await readText(target.manifest);
   if (manifestNow !== manifestText) {
@@ -3058,6 +3065,7 @@ export async function writeBuiltCatalog(
     if (same) await copyFileAtomic(next, target.manifest);
     else await writeFileAtomic(target.manifest, manifestText);
   }
+  mark("build.json");
   return {
     ...w,
     slots: wrote.sort(cmpText),
@@ -3502,6 +3510,7 @@ export async function buildAndWrite(
   }
   await o.onStep?.({ step: "write", files: build.files.size });
   let write: WriteResult;
+  const writtenStats = new Map<string, { size: number; mtimeMs: number }>();
   try {
     write = await writeBuiltCatalog(build, {
       undoDir,
@@ -3509,6 +3518,7 @@ export async function buildAndWrite(
       guard,
       onDisk,
       manifests,
+      writtenStats,
       ...(o.slots ? { slots: o.slots } : {}),
       ...(o.target ? { target: o.target } : {}),
       ...(o.now ? { now: o.now } : {}),
@@ -3532,7 +3542,18 @@ export async function buildAndWrite(
     ...(write.undo !== undefined ? { undo: write.undo } : {}),
     ...(write.discarded.length ? { discarded: write.discarded } : {}),
   });
-  const catalog = catalogAfterWrite(build, target, onDisk, o.read);
+  const after = catalogAfterWrite(build, target, onDisk, o.read);
+  const catalog = after?.records;
+  mark("catalog after the write");
+  // beta.28.2: the parses of the texts written kept for the next read, which parsed them again.
+  if (after && o.read)
+    await keepWrittenParses(
+      o.read,
+      after.written,
+      [...onDisk.keys()].filter((p) => !build.files.has(p)),
+      writtenStats,
+    ).catch(() => undefined);
+  mark("parses kept");
   return { build, guard, write, ...(catalog ? { catalog } : {}) };
 }
 
@@ -3547,20 +3568,28 @@ function catalogAfterWrite(
   target: CatalogTarget,
   onDisk: DiskFiles,
   read: CatalogFilesRead | undefined,
-): CatalogRecord[] | undefined {
+):
+  | {
+      records: CatalogRecord[];
+      /** The files written, each with its text and that text's parse (for the next read). */
+      written: { rel: string; text: string; parsed: ReturnType<typeof parseCatalogText> }[];
+    }
+  | undefined {
   if (!sameFilesAs(read, target.generated, onDisk)) return undefined;
   const out: CatalogRecord[] = [];
+  const written: { rel: string; text: string; parsed: ReturnType<typeof parseCatalogText> }[] = [];
   for (const [p, text] of b.files) {
     // writeCatalog's own test of a file it leaves as it is.
-    if (onDisk.get(p)?.text.replace(/\r\n?/g, "\n") === text) {
+    if (onDisk.get(p)?.sha === fileShaOf(b, p, text)) {
       const r = read!.files.get(p)!.record;
       if (r) out.push(r);
       continue;
     }
-    const r = deserializeRecord(text);
-    if (r.ok) out.push(r.record);
+    const parsed = parseCatalogText(text);
+    written.push({ rel: p, text, parsed });
+    if (parsed.ok) out.push(parsed.value);
   }
-  return sortCatalogRecords(out);
+  return { records: sortCatalogRecords(out), written };
 }
 
 /** A record file a build adds or changes, as its report lists it. */

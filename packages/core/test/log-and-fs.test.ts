@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -76,6 +76,16 @@ describe("whole files and locks", () => {
     await writeFileAtomic(f, "two\n");
     expect(await readFile(f, "utf8")).toBe("two\n");
     expect(await readdir(join(dir, "a/b"))).toEqual(["record.yaml"]);
+  });
+
+  it("says the size and time the file it wrote has, as written (beta.28.2)", async () => {
+    const dir = await temp();
+    const f = join(dir, "a/record.yaml");
+    const told: { size: number; mtimeMs: number }[] = [];
+    await writeFileAtomic(f, "kind: Endpoint\n", { stat: (s) => told.push(s) });
+    const s = await stat(f);
+    expect(told).toEqual([{ size: s.size, mtimeMs: Math.floor(s.mtimeMs) }]);
+    expect(await readdir(join(dir, "a"))).toEqual(["record.yaml"]);
   });
 
   it("lets one scan run at a time and reports one that was cut short", async () => {

@@ -1,6 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { copyFile, link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  link,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { keptFilesMayHaveChanged } from "./kept-files.js";
@@ -12,12 +22,39 @@ import { keptFilesMayHaveChanged } from "./kept-files.js";
  * Windows a rename can fail for a moment while a virus scanner or indexer holds the file:
  * it is retried a few times before giving up.
  */
-export async function writeFileAtomic(path: string, data: string | Uint8Array): Promise<void> {
+export async function writeFileAtomic(
+  path: string,
+  data: string | Uint8Array,
+  o: {
+    /**
+     * Told the size and time (ms, floored) of the file as written (beta.28.2: a writer keeps its
+     * parse by them): the temporary file's, taken on its handle before the rename (which keeps
+     * them), when the file has the same once renamed; not told when they differ (the file was
+     * changed meanwhile, or the system set another time on close).
+     */
+    stat?: (s: { size: number; mtimeMs: number }) => void;
+  } = {},
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   try {
-    await writeFile(tmp, data, typeof data === "string" ? "utf8" : undefined);
+    if (!o.stat) {
+      await writeFile(tmp, data, typeof data === "string" ? "utf8" : undefined);
+      await renameRetrying(tmp, path);
+      return;
+    }
+    const fh = await open(tmp, "w");
+    let mine: { size: number; mtimeMs: number };
+    try {
+      await fh.writeFile(data, typeof data === "string" ? "utf8" : undefined);
+      const s = await fh.stat();
+      mine = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+    } finally {
+      await fh.close();
+    }
     await renameRetrying(tmp, path);
+    const now = await stat(path).catch(() => undefined);
+    if (now && now.size === mine.size && Math.floor(now.mtimeMs) === mine.mtimeMs) o.stat(mine);
   } catch (e) {
     await rm(tmp, { force: true });
     throw e;

@@ -30,8 +30,8 @@ const say = (l: string) => console.log(`bench ${l}`);
 const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(0, 200)}`) };
 
 async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
-  const phases: [string, number][] = [];
-  buildPhases.on = (p, ms) => phases.push([p, ms]);
+  const phases: [string, number, number][] = [];
+  buildPhases.on = (p, ms, cpu) => phases.push([p, ms, cpu]);
   // ATTICUS_BENCH_PROF=<words of a label>: a CPU profile of that phase, beside the estate.
   const prof = process.env.ATTICUS_BENCH_PROF;
   const session = prof && label.includes(prof) ? new Session() : undefined;
@@ -62,9 +62,14 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
     say(
       `${label}: ${((performance.now() - t) / 1000).toFixed(2)} s (${((used.user + used.system) / 1e6).toFixed(1)} CPU s)`,
     );
-    const sum = new Map<string, number>();
-    for (const [p, ms] of phases) sum.set(p, (sum.get(p) ?? 0) + ms);
-    for (const [p, ms] of sum) if (ms >= 50) say(`  ${p}: ${(ms / 1000).toFixed(2)} s`);
+    // Each phase's wall clock and the CPU the process used meanwhile (every thread's).
+    const sum = new Map<string, [number, number]>();
+    for (const [p, ms, cpu] of phases) {
+      const was = sum.get(p) ?? [0, 0];
+      sum.set(p, [was[0] + ms, was[1] + cpu]);
+    }
+    for (const [p, [ms, cpu]] of sum)
+      if (ms >= 50) say(`  ${p}: ${(ms / 1000).toFixed(2)} s (${(cpu / 1000).toFixed(1)} CPU s)`);
   }
 }
 
