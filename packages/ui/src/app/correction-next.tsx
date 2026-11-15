@@ -108,7 +108,22 @@ function PreviewBody({ v }: { v: Preview }) {
               {N.confirm(p.confirm.removals, `“${COPY.propose.confirmApply(p.confirm.removals)}”`)}
             </p>
           )}
-          <Cmd text={p.confirm.command} label={N.confirmCommand} />
+          {p.confirm.refused?.length ? (
+            <p role="alert" className="state error" style={{ margin: 0 }}>
+              {N.confirmRefused(p.confirm.refused)}
+            </p>
+          ) : null}
+          {p.confirm.upgrade && (
+            <p role="status" className="ev-say">
+              {N.confirmUpgrade}
+            </p>
+          )}
+          {p.confirm.command && (
+            <Cmd
+              text={p.confirm.command}
+              label={p.confirm.upgrade ? N.confirmUpgradeCommand : N.confirmCommand}
+            />
+          )}
         </>
       )}
       {p.staleCorrections.length > 0 && (

@@ -51802,13 +51802,25 @@
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991
                   },
+                  "refused": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "nothing-read",
+                        "empty",
+                        "unexplained-removals"
+                      ]
+                    }
+                  },
+                  "upgrade": {
+                    "type": "boolean",
+                    "const": true
+                  },
                   "command": {
                     "type": "string"
                   }
                 },
-                "required": [
-                  "command"
-                ],
                 "additionalProperties": false
               },
               "staleCorrections": {

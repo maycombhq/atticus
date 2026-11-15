@@ -497,7 +497,7 @@ export class Model {
       out.push({
         from: c.base.component,
         keys,
-        raw: { method: x.method, tail: `${x.host}${x.path}` },
+        raw: { method: x.method, tail: `//${x.host}${x.path}` },
       });
     }
     return out;

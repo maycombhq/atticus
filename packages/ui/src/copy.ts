@@ -6288,6 +6288,23 @@ export const COPY = {
     // The re-review of G1: files under catalog/generated changed by hand stop the Apply first.
     confirmEdits: (n: number, button: string) =>
       `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it a curated decision" : "them curated decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
+    // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
+    confirmRefused: (reasons: readonly ("nothing-read" | "empty" | "unexplained-removals")[]) =>
+      `Apply will refuse and write nothing, whatever is confirmed: ${reasons
+        .map(
+          (r) =>
+            ({
+              "unexplained-removals":
+                "its build would remove records that no changed slot, input or decision explains (a bug: Catalog builds lists them)",
+              empty:
+                "its build would hold no record from any repo's code over a catalog that has some",
+              "nothing-read": "no repo could be read",
+            })[r],
+        )
+        .join("; ")}.`,
+    confirmUpgrade:
+      "Apply will stop first: the catalog was written before beta.27 and is to be upgraded. Run atticus upgrade (it shows what it would do first; atticus upgrade --yes applies it), then Apply.",
+    confirmUpgradeCommand: "Upgrade the catalog",
     confirmCommand: "Or confirm from a terminal",
     stale: (ids: string) =>
       `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,

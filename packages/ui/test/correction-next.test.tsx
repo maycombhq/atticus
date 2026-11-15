@@ -178,4 +178,31 @@ describe("what happens after a correction (C4)", () => {
     expect(out).not.toContain(esc(N.confirm(3, `“${COPY.propose.confirmApply(3)}”`)));
     expect(out).toContain(esc(cmd));
   });
+
+  it("says the Apply will refuse, and why, with no command, when nothing confirms it", () => {
+    const out = panel({
+      state: "ready",
+      data: {
+        ...VIEW,
+        preview: { ...VIEW.preview!, confirm: { refused: ["unexplained-removals", "empty"] } },
+      },
+    });
+    expect(out).toContain(esc(N.confirmRefused(["unexplained-removals", "empty"])));
+    expect(out).toContain('role="alert"');
+    expect(out).not.toContain("--allow-removals");
+    expect(out).not.toContain(esc(N.confirmCommand));
+  });
+
+  it("points a catalog from before the slots at atticus upgrade", () => {
+    const out = panel({
+      state: "ready",
+      data: {
+        ...VIEW,
+        preview: { ...VIEW.preview!, confirm: { upgrade: true, command: "atticus upgrade" } },
+      },
+    });
+    expect(out).toContain(esc(N.confirmUpgrade));
+    expect(out).toContain("atticus upgrade");
+    expect(out).not.toContain("--discard-edits");
+  });
 });

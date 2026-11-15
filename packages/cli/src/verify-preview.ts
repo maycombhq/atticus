@@ -120,6 +120,39 @@ const linkView = (l: LinkView): LinkView => ({
 const posixRel = (root: string, p: string) => relative(root, p).split(sep).join("/");
 
 /**
+ * Beta.28.1 (field hunt G1, its re-reviews): what the next Apply's guards say, as the preview's
+ * `confirm`: undefined when they pass. A refusal nothing confirms (removals nothing explains, an
+ * empty build, nothing read) is said as `refused`, with no command, since no flag helps; a
+ * catalog from before the slots points at `atticus upgrade`; otherwise the counts of the
+ * removals and the hand edits to confirm, and the command that confirms exactly them.
+ */
+export function confirmOf(
+  repo: string,
+  refused:
+    { reasons: readonly string[]; allowRemovals?: number; discardEdits?: number } | undefined,
+): Preview["confirm"] {
+  if (!refused?.reasons.length) return undefined;
+  const hard = (["nothing-read", "empty", "unexplained-removals"] as const).filter((r) =>
+    refused.reasons.includes(r),
+  );
+  if (hard.length) return { refused: hard };
+  if (refused.reasons.includes("not-upgraded"))
+    return { upgrade: true, command: "atticus upgrade" };
+  const waits = refused.reasons.includes("large-removals") ? refused.allowRemovals : undefined;
+  const edits = refused.reasons.includes("hand-edits") ? refused.discardEdits : undefined;
+  if (waits === undefined && edits === undefined) return undefined;
+  return {
+    ...(waits !== undefined ? { removals: waits } : {}),
+    ...(edits !== undefined ? { edits } : {}),
+    command: [
+      `atticus verify ${repo} --write`,
+      ...(waits !== undefined ? [`--allow-removals ${waits}`] : []),
+      ...(edits !== undefined ? [`--discard-edits ${edits}`] : []),
+    ].join(" "),
+  };
+}
+
+/**
  * The preview of `atticus verify <repo> --write` after a correction, with the commands. Undefined
  * when the repo has no facts file (the route says 404).
  */
@@ -304,24 +337,7 @@ export async function verifyWritePreview(
     read: onFile,
     keepNoReads: true,
   });
-  const refused = checked.guard.refused;
-  const waits = refused?.reasons.includes("large-removals") ? refused.allowRemovals : undefined;
-  const edits =
-    refused && (refused.reasons.includes("hand-edits") || refused.reasons.includes("not-upgraded"))
-      ? refused.discardEdits
-      : undefined;
-  const confirm =
-    waits !== undefined || edits !== undefined
-      ? {
-          ...(waits !== undefined ? { removals: waits } : {}),
-          ...(edits !== undefined ? { edits } : {}),
-          command: [
-            `atticus verify ${repo} --write`,
-            ...(waits !== undefined ? [`--allow-removals ${waits}`] : []),
-            ...(edits !== undefined ? [`--discard-edits ${edits}`] : []),
-          ].join(" "),
-        }
-      : undefined;
+  const confirm = confirmOf(repo, checked.guard.refused);
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))
     files.push(specRelOf(root, repo));

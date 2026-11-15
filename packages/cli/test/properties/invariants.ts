@@ -1000,7 +1000,9 @@ function content(s: Step): void {
       (r) =>
         r.kind === "Unresolved" &&
         r.owner === p.from &&
-        String(r.raw ?? "").startsWith(p.raw.method) &&
+        // `<METHOD> https://<host><path>`: the host whole (`//` before it), not a host that
+        // ends with it (`legacy-<host>`).
+        String(r.raw ?? "").startsWith(`${p.raw.method} `) &&
         String(r.raw ?? "").endsWith(p.raw.tail),
     );
     if (loose)

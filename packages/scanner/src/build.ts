@@ -1865,7 +1865,7 @@ export function rekeyedWords(
 }
 
 /**
- * The large-removal limits of ADR 0195 point 4 as one rule, for the guard and for a preview
+ * The large-removal limits of ADR 0195 point 4 as one rule (a preview runs the guard itself)
  * (beta.28.1, the re-review of G1): `had` is each repo's records in the last build, `gone` each
  * removal with the repos its evidence names and whether it is a loose end a person's pairing
  * joins now (which counts toward neither limit). `big`: the repos over the share, with how many.
@@ -1885,33 +1885,8 @@ export function overRemovalLimits(
   };
 }
 
-/**
- * Beta.28.1 (the re-review of G1): what a preview can say of the next write's large-removal
- * guard without the guard's read of the files: from the catalog on file (`before`) and the
- * records the build removes and adds, the count to confirm when the removals are over the
- * limits (every removal listed; undefined when under them). The guard itself also lists hand
- * edits and unexplained removals, which refuse on their own: this is only the limits' part.
- */
-export function removalsToConfirm(
-  before: readonly CatalogRecord[],
-  removed: readonly CatalogRecord[],
-  added: readonly CatalogRecord[],
-): number | undefined {
-  if (!removed.length) return undefined;
-  const had = new Map<string, number>();
-  for (const r of before)
-    for (const repo of repoOfEvidence(r)) had.set(repo, (had.get(repo) ?? 0) + 1);
-  const at = pairedArrowsAt(added);
-  const loose = looseEndsAt(before);
-  const { over } = overRemovalLimits(
-    had,
-    removed.map((r) => ({ repos: repoOfEvidence(r), joined: !!joinedArrowOf(r, at, loose) })),
-  );
-  return over ? removed.length : undefined;
-}
-
-/** The arrows a person's pairing joins among `added`, by each line they cite. */
-function pairedArrowsAt(added: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
+/** The arrows a person's pairing joins among `added`, by each line they cite (exported for tests). */
+export function pairedArrowsAt(added: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
   const out = new Map<string, CatalogRecord[]>();
   for (const x of added)
     if (x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"))
@@ -1941,7 +1916,7 @@ function evidenceLines(r: CatalogRecord): string[] {
  * share a line the pairing's can't be told apart: neither is joined now, and each counts toward
  * the limits as any removal. A loose end with no line or no owner says nothing either.
  */
-function joinedArrowOf(
+export function joinedArrowOf(
   r: CatalogRecord,
   addedAt: ReadonlyMap<string, readonly CatalogRecord[]>,
   looseAt: ReadonlyMap<string, number>,
@@ -1962,7 +1937,7 @@ function joinedArrowOf(
 }
 
 /** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
-function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
+export function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of records) {
     if (r.kind !== "Unresolved") continue;
