@@ -402,7 +402,9 @@ describe("one read of the catalog a write (beta.28.1)", () => {
       ).toBe(true);
       expect(w.catalog).toEqual((await readCatalog(generated, { fresh: true })).records);
       // beta.28.2: the write kept the parses of what it wrote, so the next read parses nothing
-      // (its cache file isn't written again) and reads what a read of every file gives.
+      // and reads what a read of every file gives. Its cache file keeps every entry's size, time
+      // and parse; a read past the timestamp's grain (RACY_MS) may only date an entry checked by
+      // its hash (`at`, dropping `sha`), so those two are left out of the comparison.
       const cache = join(root, ".atticus", "cache");
       const memo = join(
         cache,
@@ -410,7 +412,13 @@ describe("one read of the catalog a write (beta.28.1)", () => {
       );
       const kept = await readFile(memo);
       const next = await readCatalogWithFiles(generated, { cacheRoot: root });
-      expect((await readFile(memo)).equals(kept)).toBe(true);
+      const parses = (b: Buffer) =>
+        Object.fromEntries(
+          Object.entries(
+            (JSON.parse(String(b)) as { entries: Record<string, Record<string, unknown>> }).entries,
+          ).map(([k, { at: _at, sha: _sha, ...e }]) => [k, e]),
+        );
+      expect(parses(await readFile(memo))).toEqual(parses(kept));
       expect(next.records).toEqual((await readCatalog(generated, { fresh: true })).records);
       expect(next.problems).toEqual([]);
     }
