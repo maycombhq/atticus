@@ -363,6 +363,29 @@ function unjustified(s: Step): string | undefined {
 }
 
 /** What the model says may explain a removed record, by the build report's reasons. */
+/**
+ * The arrows a person's pairing moves, of pairings with a repo in `slots`: the paired call's
+ * arrow to the paired entry and the one by its host, `from|to|method|path`, for each pairing in
+ * effect in either model (before the step or after it: the move, or the move back).
+ */
+function movedByPairings(models: (Model | undefined)[], slots: ReadonlySet<number>): Set<string> {
+  const out = new Set<string>();
+  for (const m of models) {
+    if (!m) continue;
+    for (const x of m.pairs) {
+      if (!slots.has(x.callee)) continue;
+      if (!m.effectivePair(x.caller, x)) continue;
+      const from = m.repos[x.caller]!.base.component;
+      const to = m.repos[x.callee]!.base.component;
+      for (const path of new Set([x.path, x.entry.path]))
+        out.add(arrowKey(from, to, x.method, path));
+      const host = m.calleeOf(x.host);
+      if (host) out.add(arrowKey(from, host.base.component, x.method, x.path));
+    }
+  }
+  return out;
+}
+
 function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   const m = s.m;
   const c = m.changes;
@@ -390,12 +413,12 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   // A person's pairing decides where its caller's call goes while its callee's read serves the
   // entry: a change of the callee's read moves the caller's arrow (to the entry, or back to its
   // host), which that read explains (property seed 1560234151).
-  for (const slot of c.slots)
-    if (
-      rec.kind === "Interface" &&
-      m.pairs.some((p) => p.callee === slot && m.repos[p.caller]!.base.component === rec.from)
-    )
+  // Only the paired call's own arrows, while the pairing is in effect (the review).
+  for (const slot of c.slots) {
+    const k = arrowOf(m, rec);
+    if (k && movedByPairings([s.modelBefore.built, m], new Set([slot])).has(k))
       for (const x of reasonsOf(slot)) out.add(x);
+  }
   if (c.curated.has(rec.id)) out.add("curated");
   if (c.answered.size) {
     // Only what came from the answer: the loose ends naming the host, the arrows from its
@@ -450,13 +473,11 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       entries.some((x) => [...idsOf(s.m, x)].some((id) => (r.repos as unknown[]).includes(id)));
     // A person's pairing with a repo read now: its caller's arrows follow that read (a move to
     // the paired entry, or back to the host), and its loose ends with them.
-    const pairedCallers = s.m.pairs
-      .filter((p) => c.slots.has(p.callee))
-      .map((p) => s.m.repos[p.caller]!.base.component);
+    const moved = movedByPairings([s.modelBefore.built, s.m], c.slots);
     const ok = (r: Rec | undefined) =>
       involves(s.m, c.slots, r) ||
       (!!r && JOINED.has(r.kind) && involves(s.m, reach, r)) ||
-      (!!r && r.kind === "Interface" && pairedCallers.includes(String(r.from))) ||
+      (!!r && moved.has(arrowOf(s.m, r) ?? "")) ||
       (!!r && listsEntry(r));
     const bad = unchangedSince(s.before.generated, s.after.generated, s.editsBefore).filter(
       (p) => !ok(a.get(p)) && !ok(b.get(p)),
@@ -558,6 +579,18 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     // that have facts (another repo's read may change a join, which is locality's to judge).
     const c = s.m.changes;
     if (c.curated.size || c.answered.size || [...c.slots].some((x) => !s.m.facts.has(x))) return;
+    // A manifest entry changed (a repo archived, taken out, renamed: an input, not a read):
+    // a join with that repo changes its partners' records, a facts call to its host reaching
+    // its System's box, say (seed 486233045). Locality judges those.
+    const was = s.modelBefore.built;
+    if (
+      [...c.slots].some((x) => {
+        const a = was?.repos[x];
+        const n = s.m.repos[x];
+        return !!a && !!n && (a.listed !== n.listed || a.archived !== n.archived || a.id !== n.id);
+      })
+    )
+      return;
     const b = records(s.before.generated);
     for (const r of s.m.live()) {
       if (!s.m.facts.has(r.slot)) continue;

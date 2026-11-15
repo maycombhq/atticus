@@ -1,0 +1,62 @@
+{
+  "invariant": "readers-never-destroy-facts",
+  "note": "readers-never-destroy-facts: forge-payments has verified facts, yet confirm-removals removed Unresolved/unresolved.c-get-ledger-forge-example-accounts, projected from them. forge-ledger was archived (a manifest entry, an input), so forge-payments' call to its host reaches forge-ledger's System box: a join with the archived repo, not a read destroying facts. It fails without the pairing too. The invariant now judges only steps where nothing but readers of repos with facts changed (beta.28.1).",
+  "seed": 486233045,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "legacy-payments.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 3,
+      "ok": false
+    },
+    {
+      "t": "archive",
+      "slot": 0
+    },
+    {
+      "t": "scan"
+    }
+  ]
+}
