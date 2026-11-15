@@ -1006,6 +1006,25 @@ export const EXAMPLES: Example[] = [
     },
   ),
   seq(
+    "completeness",
+    "a verify --write of a read with no fact, over the last repo read by the readers, is refused as an empty catalog, and the catalog is kept (seed 1620544652)",
+    // ADR 0195 point 4: the build of the write reads the ledger's new facts, not its readers
+    // slot. They hold no fact, so with payments taken out of the manifests the build has no
+    // record from code over a catalog that has some, and it refuses; nothing is written.
+    [{ t: "remove", slot: 0 }, { t: "scan" }, { t: "verify-write", slot: 1, ok: true }],
+    [
+      has("the ledger's own Component, kept by the refusal", (recs) =>
+        recs.find((r) => r.kind === "Component" && r.id === ledger.component),
+      ),
+    ],
+    {
+      repos: [
+        { base: payments, code: empty },
+        { base: ledger, code: empty },
+      ],
+    },
+  ),
+  seq(
     "equivalence",
     "a verify --write refused for a removal, its repo then archived, settles without its confirmation: the refused command no longer runs (seed 1754877814)",
     // ADR 0195 point 4: a refused command writes nothing, and its listing waits for its own

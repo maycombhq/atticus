@@ -1,0 +1,41 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: verify-write didn't succeed: refused (empty-catalog), and forge-ledger has a source that makes records. A gap in the oracle: it judged the guard by the ledger's readers slot, but the write's build reads the ledger's new facts, which hold no fact, so with payments removed the build has no record from code and the guard is right (ADR 0195 point 4). The guard is now judged by the model the build reads (Acted.reads).",
+  "seed": 1620544652,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "remove",
+      "slot": 0
+    },
+    {
+      "t": "scan"
+    },
+    {
+      "t": "verify-write",
+      "slot": 1,
+      "ok": true
+    }
+  ]
+}

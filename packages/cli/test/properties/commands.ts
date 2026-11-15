@@ -176,6 +176,12 @@ export interface Acted {
   rerun?: Desc;
   /** The model's update, applied only when the outcome succeeded. */
   onSuccess?: () => void | Promise<void>;
+  /**
+   * For a command that writes a source before its build (`verify --write`): the model with that
+   * source in place, which is what the build reads, so a guard of that build is judged by it
+   * (seed 1620544652). Left out, the model now.
+   */
+  reads?: Model;
   /** The model the catalog must agree with after a success, when it isn't the model now (undo). */
   builtAfter?: Model;
   /** What the next write must still explain (after an undo). */
@@ -533,6 +539,7 @@ async function verify(
     // Beta.28.1: a broken read's rejected fact is left out and the rest written (exit 3); the
     // fact it adds was never accepted, so the catalog is the clean read's.
     expect: noneKept ? { kind: "refuse", rejected: true } : { kind: "succeed" },
+    ...(noneKept ? {} : { reads: withFacts(m, r.slot, facts) }),
     rerun: d,
     onSuccess: () => {
       const was = m.facts.get(r.slot);
@@ -540,6 +547,17 @@ async function verify(
       m.facts.set(r.slot, facts);
     },
   };
+}
+
+/** The model with a repo's facts slot holding this read, as a write's build reads it. */
+function withFacts(
+  m: Model,
+  slot: number,
+  facts: { code: Code; commit: string; id: string },
+): Model {
+  const next = m.clone(false);
+  next.facts.set(slot, structuredClone(facts));
+  return next;
 }
 
 /** `atticus repo rename <id> <id>-core`; with `crash`, its write stops part way. */
