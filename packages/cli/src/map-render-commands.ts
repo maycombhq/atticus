@@ -54,6 +54,7 @@ import {
   answerReconfirmed,
   answerRuleOffers,
   buildAndWrite,
+  phaseClock,
   buildCatalog,
   buildLines,
   diffCatalogs,
@@ -675,10 +676,13 @@ export async function writeFactsIntoCatalog(
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
+    // beta.28.2: each step's time, for the benchmark (nothing unless it listens).
+    const mark = phaseClock("verify: ");
     // beta.28.1: read once; the guards and the map use this read where every file is still as
     // it found them (each file's size and time), and read the files again where one isn't.
     await progress.step("Loading the catalog");
     const existing = await readCatalogWithFiles(generated, { cacheRoot: root });
+    mark("read the catalog");
     progress.say(
       `The catalog on file: ${existing.records.length.toLocaleString("en-US")} records.`,
     );
@@ -730,6 +734,7 @@ export async function writeFactsIntoCatalog(
       step: (what) => progress.step(what),
       tick: () => progress.tick(),
     });
+    mark("projection");
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
       io.err(
@@ -761,6 +766,7 @@ export async function writeFactsIntoCatalog(
         }
       },
     });
+    mark("build and write");
     // The app's confirm of a list that changed meanwhile: nothing written, and what the build
     // lists now (its own plan with it) for the page to show.
     if (built.changed) io.err(pageChanged("what the build would remove or discard"));
@@ -1101,8 +1107,10 @@ export async function writeFactsIntoCatalog(
     if (sharedAbout) for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
     await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
     for (const l of lines) io.out(l);
+    mark("contracts, specs, flows, questions, report");
     await progress.step("Rendering the map");
     const map = await renderRepoMap(root, repo, io, built.catalog);
+    mark("map");
     progress.end({ done: true });
     return {
       written,

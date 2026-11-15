@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  keepParses,
+  type KeptParses,
   parseRecord,
   readFlow,
   readParsedFiles,
@@ -232,5 +234,106 @@ describe("a repo's flows read one at a time", () => {
     expect(await readRepoSpec(root, "forge-notes")).toEqual(spec);
     expect(await readRepoSpec(root, "forge-notes")).toEqual(spec);
     expect((await readdir(root)).sort()).toEqual(["org-pack", "specs"]);
+  });
+});
+
+/**
+ * beta.28.2: a writer that read a folder (keeping its parses) and then wrote some of its files
+ * adds the parses of the texts it wrote, by each file's size and time after the write, so the
+ * next read parses none of them again (a catalog's features and glossary terms are rewritten by
+ * every write, and some are megabytes of YAML). A file changed after that is parsed again.
+ */
+describe("the parses of files a writer wrote, kept for the next read", () => {
+  it("the next read parses nothing it wrote, takes what it kept, and parses a later change", async () => {
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    await writeFile(join(dir, "b.yaml"), "ok b\n");
+    await writeFile(join(dir, "c.yaml"), "ok c\n");
+    let kept: KeptParses<string> | undefined;
+    const first = counting();
+    await readParsedFiles<string>({
+      dir,
+      files: ["a.yaml", "b.yaml", "c.yaml"],
+      name: "test",
+      version: "1",
+      parse: first.parse,
+      cacheRoot: root,
+      kept: (k) => (kept = k),
+    });
+    expect(kept).toBeDefined();
+    // The writer writes b (a new text), adds d, and removes c.
+    await writeFile(join(dir, "b.yaml"), "ok b, written\n");
+    await writeFile(join(dir, "d.yaml"), "no d\n");
+    await rm(join(dir, "c.yaml"));
+    await keepParses(kept!, {
+      files: [
+        { rel: "b.yaml", value: "ok b, written" },
+        { rel: "d.yaml", problem: "not ok: no d" },
+      ],
+      removed: ["c.yaml"],
+    });
+    const next = counting();
+    const got = await read(dir, ["a.yaml", "b.yaml", "d.yaml"], next.parse, root);
+    expect(next.parsed).toEqual([]);
+    expect(got).toEqual([
+      { rel: "a.yaml", value: "ok a" },
+      { rel: "b.yaml", value: "ok b, written" },
+      { rel: "d.yaml", problem: "not ok: no d" },
+    ]);
+    // A change after the write (another size) is parsed again.
+    await writeFile(join(dir, "b.yaml"), "ok b, changed by hand\n");
+    const again = counting();
+    expect((await read(dir, ["a.yaml", "b.yaml", "d.yaml"], again.parse, root))[1]).toEqual({
+      rel: "b.yaml",
+      value: "ok b, changed by hand",
+    });
+    expect(again.parsed).toEqual(["b.yaml"]);
+  });
+
+  it("a read that keeps nothing (no root, or keep: false) gives nothing to add to", async () => {
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    const told: unknown[] = [];
+    for (const o of [{}, { cacheRoot: root, keep: false }])
+      await readParsedFiles<string>({
+        dir,
+        files: ["a.yaml"],
+        name: "test",
+        version: "1",
+        parse: counting().parse,
+        ...o,
+        kept: (k) => told.push(k),
+      });
+    expect(told).toEqual([]);
+    expect((await readdir(root)).sort()).toEqual(["org-pack", "things"]);
+  });
+
+  it("a file gone or changed again before its size and time are taken isn't kept as written", async () => {
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    let kept: KeptParses<string> | undefined;
+    await readParsedFiles<string>({
+      dir,
+      files: ["a.yaml"],
+      name: "test",
+      version: "1",
+      parse: counting().parse,
+      cacheRoot: root,
+      kept: (k) => (kept = k),
+    });
+    // The writer says it wrote "ok a2" (6 bytes with its LF) but the file holds another text.
+    await writeFile(join(dir, "a.yaml"), "ok a, edited meanwhile\n");
+    await keepParses(kept!, { files: [{ rel: "a.yaml", value: "ok a2", bytes: 6 }], removed: [] });
+    const next = counting();
+    expect(await read(dir, ["a.yaml"], next.parse, root)).toEqual([
+      { rel: "a.yaml", value: "ok a, edited meanwhile" },
+    ]);
+    expect(next.parsed).toEqual(["a.yaml"]);
   });
 });

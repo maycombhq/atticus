@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, readdir, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { catalogDirOf, mapDirOf } from "@maycombhq/core";
+import { catalogDirOf, filePoolHooks, mapDirOf } from "@maycombhq/core";
 import {
   buildAndWrite,
   buildCacheHooks,
@@ -27,6 +27,8 @@ import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate
 const made: string[] = [];
 afterAll(async () => {
   buildCacheHooks.off = false;
+  delete filePoolHooks.workers;
+  delete filePoolHooks.minFiles;
   await Promise.all(made.map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -90,8 +92,14 @@ const differences = (a: Map<string, Buffer>, b: Map<string, Buffer>) =>
     .sort();
 
 describe("one repo changed: the catalog is the bytes a build from scratch makes (beta.28.1)", () => {
-  for (const seed of [1, 2, 3])
+  // beta.28.2: the catalog's files hashed and their times read in 2 worker threads (estate 1),
+  // in this thread (estate 2), and as a run decides by the folder's size (estate 3).
+  const ways = { 1: { workers: 2, minFiles: 0 }, 2: { workers: 0, minFiles: 0 }, 3: {} } as const;
+  for (const seed of [1, 2, 3] as const)
     it(`estate ${seed}: three changes of one repo each`, async () => {
+      delete filePoolHooks.workers;
+      delete filePoolHooks.minFiles;
+      Object.assign(filePoolHooks, ways[seed]);
       const dir = await mkdtemp(join(tmpdir(), "atticus-big-eq-"));
       made.push(dir);
       const repos = 4 + seed;
@@ -191,6 +199,18 @@ describe("one read of the catalog a write (beta.28.1)", () => {
         (await readFile(join(copy, "files", "catalog", "sources", "build.json"))).equals(before),
       ).toBe(true);
       expect(w.catalog).toEqual((await readCatalog(generated, { fresh: true })).records);
+      // beta.28.2: the write kept the parses of what it wrote, so the next read parses nothing
+      // (its cache file isn't written again) and reads what a read of every file gives.
+      const cache = join(root, ".atticus", "cache");
+      const memo = join(
+        cache,
+        (await readdir(cache)).find((f) => f.startsWith("catalog-"))!,
+      );
+      const kept = await readFile(memo);
+      const next = await readCatalogWithFiles(generated, { cacheRoot: root });
+      expect((await readFile(memo)).equals(kept)).toBe(true);
+      expect(next.records).toEqual((await readCatalog(generated, { fresh: true })).records);
+      expect(next.problems).toEqual([]);
     }
     // A file touched after the read: nothing of the read is used, and the write says no catalog.
     const slots = await slotsFor(5);

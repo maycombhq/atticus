@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { statFilesIn } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 
 /**
@@ -114,16 +115,18 @@ export async function readParsedFiles<T>(o: {
   keep?: boolean;
   /** Each file's size and time with its parse (beta.28.1: a write matches them to its own read). */
   withStats?: boolean;
+  /**
+   * Told what this read keeps under `cacheRoot` (not called when it keeps nothing): a writer that
+   * then writes some of the files adds their parses with `keepParses` (beta.28.2).
+   */
+  kept?: (k: KeptParses<T>) => void;
 }): Promise<Parsed<T>[]> {
   const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
   const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
   const full = (rel: string) => join(o.dir, ...rel.split("/"));
-  const stats = await mapAtOnce(o.files, (rel) =>
-    stat(full(rel)).then(
-      (s) => ({ size: s.size, mtimeMs: Math.floor(s.mtimeMs) }),
-      () => undefined,
-    ),
-  );
+  // beta.28.2: in a few worker threads for a big folder (file-pool.ts: 100,000 stats through the
+  // promise API took a second and more), the same sizes and times.
+  const stats = await statFilesIn(o.dir, o.files);
   const fresh = new Map<string, Entry>();
   const toRead: number[] = [];
   o.files.forEach((rel, i) => {
@@ -151,6 +154,8 @@ export async function readParsedFiles<T>(o: {
   const changed = read.length > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
   if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);
+  if (memo && o.keep !== false && o.kept)
+    o.kept({ memo, version: o.version, dir: o.dir, entries: new Map(fresh) } as KeptParses<T>);
   return o.files.map((rel, i) => {
     const e = fresh.get(rel)!;
     return {
@@ -159,6 +164,53 @@ export async function readParsedFiles<T>(o: {
       ...(o.withStats ? { size: stats[i]?.size ?? -1, mtimeMs: stats[i]?.mtimeMs ?? -1 } : {}),
     };
   });
+}
+
+/** What a read kept of a folder's parses (`readParsedFiles`'s `kept`), for `keepParses`. */
+export interface KeptParses<T> {
+  readonly memo: { root: string; file: string };
+  readonly version: string;
+  readonly dir: string;
+  /** The kept parses by path, as that read left them. */
+  readonly entries: ReadonlyMap<string, Entry>;
+  /** Only to tie the type to the parse's value. */
+  readonly _value?: T;
+}
+
+/**
+ * Add the parses of files a writer wrote since its read (`k`) to what that read kept, and forget
+ * the files it removed (beta.28.2: a catalog write rewrites its features and glossary terms,
+ * megabytes of YAML, and the next read parsed them again). Each file is kept by the size and time
+ * it has now, with the parse of the text the writer wrote there, which is what a read of it would
+ * parse; `bytes`, when given, is that text's size, and a file of another size (changed again
+ * since) isn't kept, nor one gone. A cache that can't be written costs the next read its parses.
+ */
+export async function keepParses<T>(
+  k: KeptParses<T>,
+  o: {
+    files: readonly { rel: string; value?: T; problem?: string; bytes?: number }[];
+    removed: readonly string[];
+  },
+): Promise<void> {
+  const entries = new Map(k.entries);
+  for (const rel of o.removed) entries.delete(rel);
+  const stats = await statFilesIn(
+    k.dir,
+    o.files.map((f) => f.rel),
+  );
+  o.files.forEach((f, i) => {
+    const s = stats[i];
+    if (!s || (f.bytes !== undefined && s.size !== f.bytes)) {
+      entries.delete(f.rel);
+      return;
+    }
+    entries.set(f.rel, {
+      size: s.size,
+      mtimeMs: s.mtimeMs,
+      ...(f.problem === undefined ? { value: f.value } : { problem: f.problem }),
+    });
+  });
+  await writeMemo(k.memo, k.version, k.dir, entries);
 }
 
 async function writeMemo(
