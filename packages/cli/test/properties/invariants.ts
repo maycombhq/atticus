@@ -264,6 +264,9 @@ function notUpgradedMay(s: Step): boolean {
 }
 
 /** Why a guard's refusal of this step is not one the model accounts for (undefined: it is). */
+/** What verify --write says when it refuses a read whose every fact was rejected (F1). */
+const EVERY_FACT_REJECTED = /every fact of the read was rejected/;
+
 function unjustified(s: Step): string | undefined {
   const o = s.outcome!;
   if (!o.refused) return "it didn't refuse";
@@ -782,7 +785,13 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
           `${t} didn't succeed: ${o.refused ? `refused${o.guard ? ` (${o.guard})` : ""}` : "nor refused"}, and ${why}${said()}`,
         );
     }
-    if (e.kind === "refuse") {
+    if (e.kind === "refuse" && "rejected" in e) {
+      if (!o.refused || o.guard || !EVERY_FACT_REJECTED.test([...o.out, ...o.err].join("\n")))
+        fail(
+          "completeness",
+          `${t} should have refused before any build, every fact of its read rejected, yet ${o.wrote ? "it succeeded" : o.refused ? `it refused${o.guard ? ` for ${o.guard}` : " otherwise"}` : "it didn't say it refused"}${said()}`,
+        );
+    } else if (e.kind === "refuse") {
       if (!o.refused)
         fail(
           "completeness",

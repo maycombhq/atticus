@@ -1,0 +1,41 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: verify-write didn't succeed: refused (empty-catalog), and forge-payments has a source that makes records. A broken read of a repo whose code gives no fact has every fact rejected: verify --write refuses it as before (the hunt of beta.28.1, F1), and the model expected the partial write of field report 5 (beta.28.1).",
+  "seed": 1548203660,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "remove",
+      "slot": 3
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": false
+    }
+  ]
+}
