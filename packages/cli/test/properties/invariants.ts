@@ -274,6 +274,14 @@ function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
   return out;
 }
 
+/**
+ * The record files a person added by hand, by path: not records the last build wrote, so not in
+ * a repo's count for the share (as the guard counts, from build.json). A file changed by hand is
+ * one the build wrote: it counts (property seed 1567472602).
+ */
+const addedByHand = (s: Step): string[] =>
+  s.handEditsBefore.filter((e) => e.how === "add").map((e) => e.path);
+
 function largeOf(
   before: Snap,
   gone: Map<string, Rec>,
@@ -707,7 +715,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   "large-removals-confirmed"(s) {
     if (!builtOk(s)) return;
     const gone = removedBy(s);
-    const big = largeOf(s.before, gone, s.editsBefore, joinedNow(s, gone));
+    const big = largeOf(s.before, gone, addedByHand(s), joinedNow(s, gone));
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
     if (n === undefined)
@@ -964,7 +972,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       if (
         fresh &&
         !edited.size &&
-        !largeOf(s.before, gone, s.editsBefore, joinedNow(s, gone)).length
+        !largeOf(s.before, gone, addedByHand(s), joinedNow(s, gone)).length
       )
         fail(
           "completeness",
