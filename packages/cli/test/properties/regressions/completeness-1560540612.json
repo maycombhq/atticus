@@ -1,0 +1,52 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: curate-edits didn't succeed: refused, and the guard (none) isn't one the model can account for here. A hand edit of a record a person's suppress takes out, its build refused for the large removal: edits --curate found no record to read it against and said \"the build no longer makes it\" (beta.28.1).",
+  "seed": 1560540612,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "verify-write",
+      "slot": 1,
+      "ok": false
+    },
+    {
+      "t": "curate",
+      "action": "suppress",
+      "pick": 0
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "change"
+    },
+    {
+      "t": "curate-edits"
+    }
+  ]
+}

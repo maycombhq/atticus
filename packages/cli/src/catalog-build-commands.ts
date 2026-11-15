@@ -474,6 +474,12 @@ const slug = (s: string) =>
 /** Fields an assert can't set (identity and provenance belong to the catalog). */
 const PROTECTED = new Set(["kind", "id", "schemaVersion", "confidence", "evidence"]);
 
+/** Whether the latest build an undo took back was the upgrade (the catalog is from before it again). */
+async function latestUndoIsUpgrade(undoDir: string): Promise<boolean> {
+  const latest = (await listUndo(undoDir))[0];
+  return !!latest?.command.startsWith("atticus catalog undo");
+}
+
 /** What `edits --curate` would do with one hand-edited file. */
 interface EditPlan {
   path: string;
@@ -511,7 +517,9 @@ function cantSay(p: Pick<EditPlan, "fields" | "removed">): string {
 async function planEdits(
   root: string,
   undoDir: string,
-): Promise<EditPlan[] & { buildPlan?: string }> {
+  /** Kept between the listing and the plan under the lock: a build of the same inputs. */
+  memo?: Map<string, Map<string, CatalogRecord>>,
+): Promise<EditPlan[] & { buildPlan?: string; notUpgraded?: boolean }> {
   const inputs = await loadBuildInputs(root);
   // Built from the inputs as loaded, where GET /api/build (catalogBuildView: buildAndWrite with
   // `check`) builds them through slotsAfter and withFactsWrites. With no slot writes those give
@@ -604,10 +612,78 @@ async function planEdits(
     }
     return restored.get(rel);
   };
-  const out: EditPlan[] & { buildPlan?: string } = [];
+  // Property seed 1560540612 (and its review): a record a person's suppress takes out, the build
+  // after it not run yet or refused (a large removal): the catalog holds the record as the last
+  // build made it, as with an archive whose build was refused (ADR 0195, its addendum), so the
+  // edit is read against the record the same inputs build without the suppresses of it, and the
+  // assert waits, orphaned, while a suppress holds. Only a suppress of the whole record (one
+  // naming a scope leaves it in the build), only for a changed file, and only when the record
+  // built so is byte for byte what the last build wrote (build.json's hash): when an input
+  // changed it since, the edit falls through and is said, never widened with what changed.
+  // One build for every such edit, kept for the plan under the lock (`memo`).
+  const plainSuppress = (d: CatalogRecord) =>
+    d.kind === "CuratedDecision" &&
+    d.status === "current" &&
+    d.action === "suppress" &&
+    (d.value === null || d.value === undefined);
+  const suppressedNow = new Set(
+    inputs.curated.records.flatMap((d) =>
+      plainSuppress(d) && d.kind === "CuratedDecision" ? [d.target] : [],
+    ),
+  );
+  const wanted = new Set<string>();
+  if (suppressedNow.size)
+    for (const e of edits) {
+      const rel = e.path.startsWith(`${genRel}/`) ? e.path.slice(genRel.length + 1) : e.path;
+      if (e.how !== "changed" || built.has(rel)) continue;
+      const p = deserializeRecord(
+        await readFile(join(root, ...e.path.split("/")), "utf8").catch(() => ""),
+      );
+      if (p.ok && suppressedNow.has(p.record.id)) wanted.add(p.record.id);
+    }
+  let unsuppressed: Map<string, CatalogRecord> | undefined;
+  const asUnsuppressed = async (rel: string, id: string): Promise<CatalogRecord | undefined> => {
+    if (!wanted.has(id)) return undefined;
+    if (!unsuppressed) {
+      const m = await readBuildManifest(baselineTarget(root).manifest);
+      const key = sha256Of(JSON.stringify([b.manifest, [...wanted].sort(cmpText), m.manifest]));
+      unsuppressed = memo?.get(key);
+      if (!unsuppressed) {
+        // Only the suppresses of these records: what the others take out is still out.
+        const a = await buildCatalog({
+          ...inputs,
+          curated: {
+            ...inputs.curated,
+            records: inputs.curated.records.filter(
+              (d) => !(plainSuppress(d) && d.kind === "CuratedDecision" && wanted.has(d.target)),
+            ),
+          },
+        });
+        const shas = new Map((m.manifest?.files ?? []).map((f) => [f.path, f.sha256]));
+        unsuppressed = new Map();
+        for (const r of a.records) {
+          if (!wanted.has(r.id)) continue;
+          const p = recordPath(r);
+          const text = a.files.get(p);
+          const want = shas.get(`${genRel}/${p}`);
+          if (text !== undefined && want !== undefined && sha256Of(text) === want)
+            unsuppressed.set(p, r);
+        }
+        memo?.set(key, unsuppressed);
+      }
+    }
+    return unsuppressed.get(rel);
+  };
+  const out: EditPlan[] & { buildPlan?: string; notUpgraded?: boolean } = [];
   // The plan GET /api/build lists for this build (an app's confirm checks it under the lock).
   Object.defineProperty(out, "buildPlan", {
     value: buildPlanOf(g),
+    enumerable: false,
+  });
+  // A catalog with no build.json (written before beta.27, or an undo took the upgrade back): no
+  // file under it is a hand edit yet, and `atticus upgrade` adopts every one of them.
+  Object.defineProperty(out, "notUpgraded", {
+    value: !!g.refused?.reasons.includes("not-upgraded"),
     enumerable: false,
   });
   for (const e of edits) {
@@ -650,7 +726,11 @@ async function planEdits(
       ];
       return held.find((r) => r.kind === kind && r.id === id);
     };
-    const derived = derivedNow ?? (await asLastBuilt(rel)) ?? fromSlot();
+    const derived =
+      derivedNow ??
+      (p.ok ? await asUnsuppressed(rel, p.record.id) : undefined) ??
+      (await asLastBuilt(rel)) ??
+      fromSlot();
     if (!p.ok || !derived) {
       plan({ why: "it doesn't read as a record, or the build no longer makes it" });
       continue;
@@ -713,7 +793,23 @@ export async function catalogEdits(
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
-  const listed = await planEdits(root, undoDir);
+  const memo = new Map<string, Map<string, CatalogRecord>>();
+  const listed = await planEdits(root, undoDir, memo);
+  // Property seed 1562698156: every writer refuses until `atticus upgrade --yes`, and so does
+  // this one; it never says no file was changed by hand over a catalog it can't tell that of.
+  if (listed.notUpgraded) {
+    const why = `Nothing to curate: catalog/generated was written before beta.27 (there is no catalog/sources/build.json${(await latestUndoIsUpgrade(undoDir)) ? ": an undo took the upgrade back" : ""}), so no file in it is a hand edit yet. Run atticus upgrade: it adopts every record file there, yours with them, into legacy slots (it shows what it would do first; atticus upgrade --yes applies it).`;
+    io.err(why);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          { edits: [], decisions: [], refused: { reasons: ["not-upgraded"], message: why } },
+          null,
+          2,
+        ),
+      );
+    return 1;
+  }
   const edits = listed.map((p) => ({ path: p.path, how: p.how }));
   if (!edits.length) {
     if (o.json) io.out(JSON.stringify({ edits: [], decisions: [] }, null, 2));
@@ -750,7 +846,7 @@ export async function catalogEdits(
   }
   return locked(root, "atticus catalog edits --curate", io, async () => {
     // Planned again under the lock: what it writes is what it listed, or nothing.
-    const plans = await planEdits(root, undoDir);
+    const plans = await planEdits(root, undoDir, memo);
     if (JSON.stringify(plans) !== JSON.stringify(listed)) {
       const why =
         "Nothing written: the hand edits changed while this ran (another command wrote meanwhile). Run atticus catalog edits again to list them.";
