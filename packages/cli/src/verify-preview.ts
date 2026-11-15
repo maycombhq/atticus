@@ -17,6 +17,7 @@ import {
   specRelOf,
   stackHelpersOff,
   type Api,
+  type CatalogRecord,
   pairsFromCorrections,
   type Fact,
   type FactCorrection,
@@ -150,6 +151,40 @@ export function confirmOf(
       ...(edits !== undefined ? [`--discard-edits ${edits}`] : []),
     ].join(" "),
   };
+}
+
+/**
+ * The guard's refusal without the unexplained removals a previewed pairing explains: when every
+ * one is a loose end the pairing joins now (`joinedArrowOf`, as the guard counts it), the Apply
+ * explains them by the pairing on file, and the reason goes; any other leaves it as it is.
+ */
+async function pendingExplained(
+  refused:
+    | (NonNullable<Parameters<typeof confirmOf>[1]> & {
+        unexplained?: readonly { kind: string; id: string }[];
+      })
+    | undefined,
+  p: {
+    existing: readonly CatalogRecord[];
+    result: { records: readonly CatalogRecord[] };
+    diff: { added: readonly { kind: string; id: string }[] };
+  },
+  extra: number | undefined,
+): Promise<Parameters<typeof confirmOf>[1]> {
+  if (!refused?.reasons.includes("unexplained-removals") || !extra) return refused;
+  const { joinedArrowOf, looseEndsAt, pairedArrowsAt } = await import("@maycombhq/scanner");
+  const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
+  const made = new Set(p.diff.added.map(k));
+  const at = pairedArrowsAt(p.result.records.filter((r) => made.has(k(r))));
+  const loose = looseEndsAt(p.existing);
+  const before = new Map(p.existing.map((r) => [k(r), r] as const));
+  const all = (refused.unexplained ?? []).every((u) => {
+    const r = before.get(k(u));
+    return !!r && !!joinedArrowOf(r, at, loose);
+  });
+  return all && refused.unexplained?.length
+    ? { ...refused, reasons: refused.reasons.filter((x) => x !== "unexplained-removals") }
+    : refused;
 }
 
 /**
@@ -337,7 +372,13 @@ export async function verifyWritePreview(
     read: onFile,
     keepNoReads: true,
   });
-  const confirm = confirmOf(repo, checked.guard.refused);
+  // A pairing previewed (not on file yet) changes no input the guard can see, so the loose ends
+  // it joins have nothing to explain their removal here; the Apply, with the pairing on file,
+  // explains them by it. Those, and only those, are taken off the preview's unexplained list.
+  const confirm = confirmOf(
+    repo,
+    await pendingExplained(checked.guard.refused, p, o.extra?.length),
+  );
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))
     files.push(specRelOf(root, repo));
