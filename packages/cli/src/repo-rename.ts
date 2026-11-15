@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -337,6 +337,20 @@ async function renameLocked(
     inputWrites.push({ path: m.dst, text: rewriteFactsFile(m.name, text, from, to), input: true });
     inputRemovals.push({ path: m.src, text: null, input: true });
     said.push(`${m.rel} → ${m.relTo}`);
+  }
+  // Property seed 1561741725: another repo's pairing with this one (Connect to…'s `link` line in
+  // its corrections, `link.repo`) follows the rename, or the person's pairing goes stale and its
+  // arrow leaves. Only those lines change; the rest of each file is kept as written.
+  const moving = new Set(moves.map((m) => m.src));
+  for (const n of (await readdir(factsDir).catch(() => [] as string[])).sort()) {
+    if (!n.endsWith(".corrections.jsonl")) continue;
+    const file = join(factsDir, n);
+    if (moving.has(file)) continue;
+    const text = await readFile(file, "utf8");
+    const next = rewriteFactsFile(".jsonl", text, from, to);
+    if (next === text) continue;
+    inputWrites.push({ path: file, text: next, input: true });
+    said.push(`${fRel}/${n}: its pairings with ${from}`);
   }
   const questions = (await listQuestions(root)).questions.map((q) =>
     q.repo === from

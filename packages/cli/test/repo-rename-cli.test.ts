@@ -281,6 +281,34 @@ describe("atticus repo rename <old> <new> (F5)", () => {
     expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
   });
 
+  it("rewrites another repo's pairing with it, and leaves the rest of that file as written (property seed 1561741725)", async () => {
+    const root = await readEstate();
+    // forge-web's person paired a call with forge-customers' entry (Connect to…'s link line),
+    // and one with another repo's: only the first names the renamed repo.
+    const corr = join(root, "facts", "forge-web.corrections.jsonl");
+    const line = (repo: string, fact: string) =>
+      JSON.stringify({
+        schemaVersion: 1,
+        fact,
+        target: { kind: "call", file: "src/Client.java", line: 9, value: "/customers" },
+        action: "link",
+        link: { repo, entry: "e-list", method: "GET", path: "/customers" },
+        by: "pat",
+        at: NOW.toISOString(),
+      });
+    const other = line("forge-orders", "c-orders");
+    await writeFile(corr, `${line("forge-customers", "c-customers")}\n${other}\n`);
+    const o = io();
+    expect(await repoRename(root, "forge-customers", "forge-accounts", o.io)).toBe(0);
+    const lines = (await readFile(corr, "utf8")).trim().split("\n");
+    expect(JSON.parse(lines[0]!).link.repo).toBe("forge-accounts");
+    expect(lines[1]).toBe(other);
+    expect(o.out.join("\n")).toContain("facts/forge-web.corrections.jsonl");
+    // The rename's build has the pairing's input as it now is.
+    const check = io();
+    expect(await main(["catalog", "build", "--check", "--root", root], check.io)).toBe(0);
+  });
+
   it("refuses a repo no manifest lists, an id already listed, and an id that isn't a slug", async () => {
     const root = await readEstate();
     let o = io();
