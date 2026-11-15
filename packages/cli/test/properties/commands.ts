@@ -978,6 +978,11 @@ export async function act(
       // discarded.
       const adds = m.handEdits.filter((e) => e.how === "add");
       const pre = await sut().curateEdits(w.root);
+      // Seed 1562698156: before the upgrade (an undo took it back) no file is a hand edit yet,
+      // and the command refuses as every writer does, writing nothing: an added record must be
+      // refused anyway, and any other is checked as a command that may refuse so only then.
+      if (pre.guard === "not-upgraded")
+        return { outcome: pre, expect: adds.length ? { kind: "refuse" } : { kind: "succeed" } };
       const curate = (e: HandEdit) => {
         const common = {
           target: e.id,

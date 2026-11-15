@@ -517,6 +517,112 @@ describe("an edit of a record a person's suppress, not yet built, takes out (pro
         ).toBe(0);
       expect(existsSync(path)).toBe(false);
       expect(Object.keys(files(join(root, ...DECISIONS)))).toContain(drafted[0]![0]);
+      // The draft holds only what the person changed.
+      const d = deserializeRecord(drafted[0]![1]);
+      if (!d.ok) throw new Error(JSON.stringify(d.issues));
+      expect((d.record as unknown as { value: Record<string, unknown> }).value).toEqual({ auth });
+      // The suppress taken away, the record comes back as it was, with the edit's field.
+      await rm(join(root, ...DECISIONS, "cd-suppress-endpoint.yaml"));
+      const back = await atticus(root, "catalog", "build");
+      expect(back.code, back.all()).toBe(0);
+      const now = deserializeRecord(await readFile(path, "utf8"));
+      if (!now.ok) throw new Error(JSON.stringify(now.issues));
+      // An assert's record: the person's field, `asserted`, and their evidence beside the code's.
+      const {
+        confidence: _c,
+        evidence,
+        ...fields
+      } = now.record as CatalogRecord & {
+        auth?: string;
+      };
+      const { confidence: _o, evidence: was, ...before } = rec;
+      expect(fields).toEqual({ ...before, auth });
+      expect(evidence).toEqual(expect.arrayContaining(was));
+    },
+    T,
+  );
+
+  it(
+    "reads it against the record only as the last build wrote it: a slot changed since widens no draft",
+    async () => {
+      const root = await built();
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const file = readdirSync(dir).sort()[0]!;
+      const path = join(dir, file);
+      const p = deserializeRecord(await readFile(path, "utf8"));
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const rec = p.record as CatalogRecord & { auth?: string; pathOrTopic?: string };
+      await mkdir(join(root, ...DECISIONS), { recursive: true });
+      await writeFile(
+        join(root, ...DECISIONS, "cd-suppress-endpoint.yaml"),
+        [
+          "schemaVersion: 5",
+          "kind: CuratedDecision",
+          "id: cd-suppress-endpoint",
+          "status: current",
+          "confidence: asserted",
+          `target: ${rec.id}`,
+          "action: suppress",
+          "value: null",
+          "reason: A person's decision in a test.",
+          "by: pat",
+          "at: 2026-11-11T10:00:00Z",
+          "",
+        ].join("\n"),
+      );
+      // A read since the last build changed the record's auth in its slot (its build not run).
+      const repo = String(rec.evidence[0]!.repo);
+      const slotPath = join(root, "catalog", "sources", "readers", `${repo}.json`);
+      const slot = JSON.parse(await readFile(slotPath, "utf8")) as {
+        records: { id: string; auth?: string }[];
+      };
+      const inSlot = slot.records.find((r) => r.id === rec.id)!;
+      expect(inSlot, "the slot holds the record by its id").toBeDefined();
+      inSlot.auth = rec.auth === "basic" ? "mtls" : "basic";
+      await writeFile(slotPath, JSON.stringify(slot, null, 2) + "\n");
+      // The person edits only the path.
+      await writeFile(
+        path,
+        serializeRecord({ ...rec, pathOrTopic: `${rec.pathOrTopic}/v2` } as CatalogRecord),
+      );
+      const curate = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
+      const drafts = Object.entries(files(join(root, ...DECISIONS))).filter(([f]) =>
+        f.startsWith("cd-edit-assert-"),
+      );
+      // Never an assert of auth, which the person didn't change.
+      for (const [, t] of drafts) expect(t, curate.all()).not.toMatch(/^\s*auth:/m);
+      if (drafts.length) expect(drafts[0]![1]).toContain(`pathOrTopic: ${rec.pathOrTopic}/v2`);
+      else expect(curate.all()).toContain(file);
+    },
+    T,
+  );
+});
+
+describe("edits --curate on a catalog whose upgrade was undone (property seed 1562698156)", () => {
+  it(
+    "refuses, saying the catalog is from before beta.27 and the upgrade adopts its files, and writes no decision",
+    async () => {
+      const root = await upgraded();
+      const undo = await atticus(root, "catalog", "undo", "--yes");
+      expect(undo.code, undo.all()).toBe(0);
+      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
+      // A record added by hand: before the upgrade, no file is a hand edit yet.
+      const dir = join(root, "catalog", "generated", "endpoint");
+      const file = readdirSync(dir).sort()[0]!;
+      const text = await readFile(join(dir, file), "utf8");
+      await writeFile(join(dir, `by-hand.${file}`), text);
+      const decisions = join(root, "catalog", "curated", "curateddecision");
+      const before = files(decisions);
+      for (const args of [["--curate", "--by", "pat"], []]) {
+        const r = await atticus(root, "catalog", "edits", ...args, "--json");
+        expect(r.code, r.all()).toBe(1);
+        expect(r.all()).toMatch(/written before beta\.27/);
+        expect(r.all()).toMatch(/atticus upgrade/);
+        expect(r.all()).not.toMatch(/No file under catalog\/generated was changed by hand/);
+        const j = JSON.parse(r.out.join("\n")) as { refused?: { reasons: string[] } };
+        expect(j.refused?.reasons).toEqual(["not-upgraded"]);
+      }
+      expect(files(decisions)).toEqual(before);
     },
     T,
   );

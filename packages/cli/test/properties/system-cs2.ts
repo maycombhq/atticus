@@ -183,11 +183,18 @@ export const cs2Writers: CatalogSystem = {
   },
   async curateEdits(root) {
     const r = await run(["catalog", "edits", "--curate", "--root", root, "--json"]);
-    const report = reportOf(r.out) as Report & { decisions?: string[]; left?: unknown[] };
+    const report = reportOf(r.out) as Report & {
+      decisions?: string[];
+      left?: unknown[];
+      refused?: { reasons?: string[] };
+    };
+    // Seed 1562698156: a catalog from before beta.27 (an undo took the upgrade back) refuses.
+    const notUpgraded = !!report.refused?.reasons?.includes("not-upgraded");
     return {
       ...r,
-      wrote: r.code === 0 && !(report.left ?? []).length,
-      refused: (report.left ?? []).length > 0,
+      wrote: r.code === 0 && !(report.left ?? []).length && !report.refused,
+      refused: (report.left ?? []).length > 0 || !!report.refused,
+      ...(notUpgraded ? { guard: "not-upgraded" as const } : {}),
     };
   },
   async undo(root, o) {

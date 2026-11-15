@@ -1,0 +1,72 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: curate-edits should have refused, yet succeeded. After an undo took the upgrade back, edits --curate said no file was changed by hand (the guard said not upgraded, so it listed none) and exited 0 over a record added by hand; it now refuses as every writer does until atticus upgrade --yes (beta.28.1).",
+  "seed": 1562698156,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/accounts"
+            },
+            {
+              "method": "POST",
+              "path": "/entries"
+            }
+          ],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "legacy-payments.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "undo",
+      "n": 0,
+      "yes": true,
+      "back": false
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "add"
+    },
+    {
+      "t": "curate-edits"
+    }
+  ]
+}
