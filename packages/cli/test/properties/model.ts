@@ -437,9 +437,10 @@ export class Model {
    * only when both its ends are read from facts (a facts slot is always written after the
    * upgrade; a callee still legacy gives the join nothing to place the call with) and the
    * caller's read places every call it has with the arrow's method and path somewhere else: none
-   * is left, or each goes to a host another live repo lists. An arrow that cites no line at its
-   * caller's end (`lineless`) needs the caller's read complete too: with no file to check, a call
-   * gone from a read in parts may be one in a file it hasn't reached (`Code.unread`). May, not
+   * is left, or each goes to a host another live repo lists (or to another live repo's entry a
+   * person's pairing in force names, which stands over its host). An arrow that cites no line at
+   * its caller's end (`lineless`) needs the caller's read complete too: with no file to check, a
+   * call gone from a read in parts may be one in a file it hasn't reached (`Code.unread`). May, not
    * must: the build also asks that the read cite the file the arrow's caller line is in, which
    * the model doesn't track. An event's arrow never leaves this way: it joins two sources, and a
    * legacy listener gives the join nothing to pair a publish with.
@@ -454,10 +455,13 @@ export class Model {
     // whatever its callee is read from and wherever the read's calls go.
     if (j.lineless) return s?.from === "facts" && !s.obs.code.unread;
     if (s?.from !== "facts" || this.source(j.arrow.to)?.from !== "facts") return false;
-    return s.obs.code.calls
-      .filter((c) => c.method === method && c.path === path)
-      .every((c) => {
-        const e = this.calleeOf(c.host);
+    // A person's pairing in force places the call at its entry, over the call's host (property
+    // seed 1595513695: a move's callee read from facts, the build joins the call there).
+    return [...s.obs.code.calls.entries()]
+      .filter(([, c]) => c.method === method && c.path === path)
+      .every(([at, c]) => {
+        const x = this.effectivePair(j.arrow!.from, at);
+        const e = x ? this.repos[x.callee] : this.calleeOf(c.host);
         return !!e && e.slot !== j.arrow!.to && e.slot !== j.arrow!.from;
       });
   }

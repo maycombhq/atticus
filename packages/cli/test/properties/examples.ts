@@ -157,6 +157,46 @@ const FILLED: Estate = estateOf({
   ],
 });
 
+/**
+ * The property run's shrunk estate (seed 1595513695): forge-orders calls the ledger's legacy
+ * host, forge-ledger calls GET /orders on orders' own host (which serves only its filler
+ * routes), and forge-payments calls GET /orders on orders' legacy host.
+ */
+const PAIRED: Estate = estateOf({
+  repos: [
+    {
+      base: "forge-orders",
+      code: {
+        endpoints: [],
+        calls: [{ method: "GET", path: "/accounts", host: "legacy-ledger.forge.example" }],
+        publishes: [],
+        consumes: [],
+        filler: 10,
+      },
+    },
+    {
+      base: "forge-ledger",
+      code: {
+        endpoints: [],
+        calls: [{ method: "GET", path: "/orders", host: "orders.forge.example" }],
+        publishes: [],
+        consumes: [],
+        filler: 10,
+      },
+    },
+    {
+      base: "forge-payments",
+      code: {
+        endpoints: [],
+        calls: [{ method: "GET", path: "/orders", host: "legacy-orders.forge.example" }],
+        publishes: [],
+        consumes: [],
+        filler: 10,
+      },
+    },
+  ],
+});
+
 /** forge-payments calling forge-notify's GET /notices in place of the ledger. */
 const paymentsToNotify: Code = {
   ...paymentsCode,
@@ -1162,5 +1202,30 @@ export const EXAMPLES: Example[] = [
       { t: "verify-live", slot: 0 },
     ],
     [lacks("the ledger's GET /accounts", getAccounts)],
+  ),
+  seq(
+    "completeness",
+    "after the upgrade a loose call paired, the call moved, and another paired: the build's cross-repo arrows are the model's (seed 1595513695)",
+    [
+      { t: "seed-beta26", verify: [] },
+      { t: "upgrade", yes: true },
+      { t: "pair", slot: 0, to: 0, call: 0, api: 0 },
+      { t: "move", slot: 0, to: 0, call: 0, api: 0 },
+      { t: "pair", slot: 0, to: 0, call: 0, api: 0 },
+    ],
+    // The move pairs the ledger's GET /orders with payments' first admin route; once payments is
+    // read from facts (the last pair's Apply) the pairing stands over the host, so the legacy
+    // arrow to orders leaves and the moved one is drawn.
+    [
+      lacks(
+        "the legacy arrow from the ledger to orders' GET /orders",
+        arrow("ledger-api", "orders-api", "GET", "/orders"),
+      ),
+      has(
+        "the moved arrow from the ledger to payments",
+        arrow("ledger-api", "payments-api", "GET", "/payments-admin/r0"),
+      ),
+    ],
+    PAIRED,
   ),
 ];

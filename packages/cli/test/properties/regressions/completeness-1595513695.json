@@ -1,0 +1,88 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: after pair the catalog's cross-repo arrows aren't what the model says the build makes: missing ledger-api|orders-api|GET|/orders. A gap in the oracle: forge-ledger's call to orders' host was moved by a person's pairing to forge-payments' entry, and once payments was read from facts the pairing stood over the host, so the build placed the call there and the legacy join from beta.26 left (ADR 0195 addendum \"a legacy join its caller's facts place elsewhere\"). The model judged where the call goes by its host alone; it now takes a pairing in force first, as its arrows do.",
+  "seed": 1595513695,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "legacy-ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "legacy-orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    }
+  ]
+}
