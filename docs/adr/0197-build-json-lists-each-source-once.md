@@ -1,7 +1,7 @@
 # 0197. build.json lists each source once
 
-- Status: proposed (design only, for the product owner's review before any code)
-- Date: 2026-11-15
+- Status: accepted (2026-11-15, by the product owner, as proposed: content-hash set ids, no `atticus upgrade` step, and the "newer Atticus" refusal in a separate 2.0.0-beta.28.1.1)
+- Date: 2026-11-15 (proposed and accepted)
 - Release: 2.0.0-beta.28.2 (speed only)
 - Amends: ADR 0195 ("`build.json`'s sources", point 7's undo copies, and point 9's addendum of 2026-11-13, which proposed this)
 - Contracts: none of C1 to C6, and the facts file is unchanged. `catalog/sources/build.json` is one of the formats ADR 0195 versions outside the contracts; its `version` goes from 1 to 2. The JSON Schema `atticus schema export` writes for it (`slotJsonSchemas`) changes with it. No local API route reads or returns it.
