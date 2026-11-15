@@ -360,9 +360,13 @@ function unjustified(s: Step): string | undefined {
     // the manifests still list one. A facts file with no fact makes none (`makesRecords`): with
     // the ledger's empty facts its only source, archiving payments leaves no record from code,
     // and the guard is right to refuse (seed 1754877814).
+    // The sources are the ones the build read: a verify --write's build reads the repo's new
+    // facts, so the ledger's facts file with no fact, written over its readers slot with
+    // payments removed, leaves no record from code, and the guard is right (seed 1620544652).
+    const m = s.reads ?? s.m;
     if (!s.before.generated.size) return "the catalog was empty already";
-    if (!s.m.repos.some((r) => r.listed)) return "the manifests list no repo";
-    const read = s.m.live().filter((r) => s.m.makesRecords(r.slot));
+    if (!m.repos.some((r) => r.listed)) return "the manifests list no repo";
+    const read = m.live().filter((r) => m.makesRecords(r.slot));
     if (read.length)
       return `${read.map((r) => r.id).join(", ")} ${read.length === 1 ? "has a source that makes" : "have sources that make"} records`;
     return undefined;
