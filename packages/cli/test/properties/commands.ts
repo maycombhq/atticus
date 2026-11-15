@@ -708,7 +708,10 @@ export async function act(
       // with such a call, a callee with an entry.
       const looseOf = (r: (typeof m.repos)[number]) =>
         r.code.calls
-          .filter((x) => !m.calleeOf(x.host) && !m.answers.has(x.host))
+          // Loose: a host no repo of the profiles lists, live or not (property seed 1560234151: a
+          // removed repo's host still reaches its System, an arrow to that box, not a loose
+          // end), and nobody answered.
+          .filter((x) => !m.repos.some((y) => y.hosts.includes(x.host)) && !m.answers.has(x.host))
           .filter(
             (x) =>
               !m.pairs.some(

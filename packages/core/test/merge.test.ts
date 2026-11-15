@@ -253,6 +253,66 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     expect(r.records.filter((x) => x.kind !== "Unresolved" && x.id.includes("topics"))).toEqual([]);
   });
 
+  it("joins a loose listener with a publisher the estate join joined already (property seed 1557984687)", () => {
+    // forge-orders publishes and forge-payments listens, both read from their facts: the estate
+    // join drew orders → payments. forge-ledger, read by its readers, listens too: its loose
+    // listener still hears orders (one consumer read from facts takes no other consumer away).
+    const joined = {
+      ...base,
+      kind: "Interface",
+      id: interfaceId("orders", "payments", undefined, "forge.orders.changed"),
+      from: "orders",
+      to: "payments",
+      via: "event-bus",
+      normalizedPath: "forge.orders.changed",
+      sync: "async",
+      direction: "outbound",
+      conflicts: [],
+      evidence: [
+        { ...ev[0]!, repo: "forge-orders", side: "caller" },
+        { ...ev[0]!, repo: "forge-payments", path: "b.java", side: "callee" },
+      ],
+    } as unknown as CatalogRecord;
+    const r = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("ledger", "ledger"),
+      joined,
+      loose("ledger", "event-subscribe", "forge.orders.changed", "callee"),
+    ]);
+    const ifs = r.records.filter((x) => x.kind === "Interface") as unknown as {
+      from: string;
+      to: string;
+      evidence: { repo?: string; side?: string }[];
+    }[];
+    expect(ifs.map((i) => `${i.from}>${i.to}`).sort()).toEqual([
+      "orders>ledger",
+      "orders>payments",
+    ]);
+    // The new arrow cites the publisher's side only, not the other consumer's line.
+    const toLedger = ifs.find((i) => i.to === "ledger")!;
+    expect(toLedger.evidence.some((e) => e.repo === "forge-payments")).toBe(false);
+    expect(r.records.filter((x) => x.kind === "Unresolved")).toEqual([]);
+    // And a loose publisher hears a listener the join joined, the same way.
+    const r2 = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      joined,
+      loose("audit", "event-publish", "forge.orders.changed", "caller"),
+    ]);
+    expect(
+      (
+        r2.records.filter((x) => x.kind === "Interface") as unknown as {
+          from: string;
+          to: string;
+        }[]
+      )
+        .map((i) => `${i.from}>${i.to}`)
+        .sort(),
+    ).toEqual(["audit>payments", "orders>payments"]);
+  });
+
   it("gives a pair the topic's Endpoint only when it is the topic's definition or one of the pair serves it (ADR 0195, locality)", () => {
     // forge-payments' facts read its listener as an Endpoint of its own on the topic: the
     // arrow from the publisher to forge-ledger, another consumer, doesn't point at it.

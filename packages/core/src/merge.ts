@@ -683,6 +683,38 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       )
       .map((r) => String(r.normalizedPath)),
   );
+  // Property seed 1557984687: the ends the code's own topic arrows join already (the estate
+  // join's, of repos read from their facts), by topic, each with its side's evidence. A loose
+  // listener (a repo read by its readers) still hears such a publisher, and a loose publisher
+  // such a listener: one consumer read from its facts takes no other consumer away.
+  const joinedEnds = new Map<
+    string,
+    { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }
+  >();
+  for (const r of input.records as unknown as Rec[]) {
+    if (r.kind !== "Interface" || r.via !== "event-bus") continue;
+    if (((r.flags as string[] | undefined) ?? []).includes(DECLARED_TOPIC)) continue;
+    const t = String(r.normalizedPath);
+    const e = joinedEnds.get(t) ?? { pub: new Map(), sub: new Map() };
+    const evs = r.evidence;
+    const from = String(r.from);
+    const to = String(r.to);
+    e.pub.set(
+      from,
+      unionEvidence(
+        e.pub.get(from) ?? [],
+        evs.filter((x) => x.side !== "callee"),
+      ),
+    );
+    e.sub.set(
+      to,
+      unionEvidence(
+        e.sub.get(to) ?? [],
+        evs.filter((x) => x.side !== "caller"),
+      ),
+    );
+    joinedEnds.set(t, e);
+  }
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
   for (const l of loose.filter(
     (x) => x.unresolvedKind === "event-publish" || x.unresolvedKind === "event-subscribe",
@@ -720,9 +752,13 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         if (x.component === "unknown" || !x.component) x.component = firstCodePub;
     const epOf = (p: string, s: string) =>
       ep ?? own.find((x) => x.component === s) ?? own.find((x) => x.component === p);
-    for (const [p, pev] of [...pub.entries()].sort()) {
-      for (const [s, sev] of [...sub.entries()].sort()) {
-        if (p === s) continue;
+    // The loose ends, with the ends an arrow on the topic joins already: a pair needs one loose.
+    const already = joinedEnds.get(topic);
+    const pubs = new Map([...(already?.pub ?? []), ...pub]);
+    const subs = new Map([...(already?.sub ?? []), ...sub]);
+    for (const [p, pev] of [...pubs.entries()].sort()) {
+      for (const [s, sev] of [...subs.entries()].sort()) {
+        if (p === s || (!pub.has(p) && !sub.has(s))) continue;
         const pc = pev.filter((e) => e.source === "code");
         const sc = sev.filter((e) => e.source === "code");
         const pairEp = epOf(p, s);
@@ -786,7 +822,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       continue;
     }
     // A publisher or subscriber with no counterpart stays a loose end.
-    if (sub.size === 0)
+    if (subs.size === 0)
       for (const l of loose.filter(
         (x) =>
           x.unresolvedKind === "event-publish" &&
@@ -794,7 +830,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
           x.evidence.some((e) => e.source === "code"),
       ))
         unresolved.push(l);
-    if (pub.size === 0)
+    if (pubs.size === 0)
       for (const l of loose.filter(
         (x) =>
           x.unresolvedKind === "event-subscribe" &&

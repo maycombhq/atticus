@@ -1,0 +1,78 @@
+{
+  "invariant": "nothing-removed-unexplained",
+  "note": "nothing-removed-unexplained: confirm-removals reports Interface/if-84a59019b1d5315a removed by \"slot\", but what changed is input. The harness paired a call to a removed repo's host as loose, though it reaches that repo's System (an arrow to the box); pairing it moved the arrow when the callee was read. A pair now picks only a host no repo of the profiles lists (beta.28.1).",
+  "seed": 1560234151,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/orders"
+            }
+          ],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "remove",
+      "slot": 0
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    }
+  ]
+}
