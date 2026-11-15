@@ -172,7 +172,13 @@ function results(
 export async function todoDone(
   root: string,
   stepRef: string | undefined,
-  o: { result?: Record<string, string> | string[]; by?: string; skip?: boolean; note?: string },
+  o: {
+    result?: Record<string, string> | string[];
+    by?: string;
+    skip?: boolean;
+    note?: string;
+    json?: boolean;
+  },
   io: Output,
   deps: TodoDeps = {},
 ): Promise<number> {
@@ -192,6 +198,14 @@ export async function todoDone(
     if (!s) {
       io.err(`There is no step ${stepRef}.`);
       return 1;
+    }
+    // Beta.28.2 (ADR 0197): an owner question's send step, done, puts the send on record in
+    // catalog/curated (a build input): refused before the step is recorded over a catalog a
+    // newer Atticus built.
+    if (!o.skip && s.action === "send-notification" && s.approval?.ref?.startsWith("owner-ask:")) {
+      const { refuseNewerCommand } = await import("./newer-guard.js");
+      const refusedNewer = await refuseNewerCommand(root, io, o.json === true);
+      if (refusedNewer !== undefined) return refusedNewer;
     }
     const done = await recordStep(fileStepStore(root), s.id, {
       by: o.by,

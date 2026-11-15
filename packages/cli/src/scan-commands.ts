@@ -1,9 +1,12 @@
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { acquireLock, catalogDirOf, LockHeldError, throwIfCancelled } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
   buildAndWrite,
+  newerAtticusRefusal,
+  newerCatalogFiles,
+  undoDirOf,
   writeRefusedReport,
   buildLines,
   diffCatalogs,
@@ -397,6 +400,17 @@ export async function scanCommand(
 
 async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Promise<number> {
   const out = join(catalogDirOf(root), "generated");
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus built is neither read nor written over,
+  // before any repo is read: the refusal is the build's own, never "the scan read nothing".
+  const newer = await newerCatalogFiles(root, { undoDir: await undoDirOf(root) });
+  if (newer.length) {
+    const command = `atticus scan${o.repos?.length ? ` --repos ${o.repos.join(",")}` : ""}`;
+    const refusal = newerAtticusRefusal(relative(root, out).split(sep).join("/"), newer).refused!;
+    if (!o.dryRun) await writeRefusedReport(root, command, refusal);
+    io.err(refusal.message);
+    if (o.json) io.out(JSON.stringify({ written: false, refused: refusal }, null, 2));
+    return 1;
+  }
   const before = await readCatalog(out, { cacheRoot: root, fresh: true });
   const started = Date.now();
   const scan = await scanEstate({

@@ -630,8 +630,23 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   lines naming each with the file to fix it in. Additive only. Apply to every repo (POST
  *   /api/facts/apply-all) the same: a repo that wrote with facts left out is applied, and its
  *   result carries `leftOut` (all repos) and `leftOutRepos` (how many repos left some out).
+ * 3.15.0 (beta.28.2, ADR 0197 "beta.28.1 and older reading version 2"): a refused build's
+ *   `reasons` (BuildRefusalView: GET /api/build's `pending.refused` and `last.refused`, a scan's
+ *   and an Apply's job result) may be `newer-atticus`: catalog/sources/build.json or a slot was
+ *   written by a newer Atticus, at a version of its format this one doesn't read. Its `message`
+ *   says so, its `command` is `npm i -g @maycombhq/atticus@beta`, and nothing was written; it is
+ *   never `not-upgraded`. The Apply preview's `confirm.refused` may list it the same way. The
+ *   upgrade job (POST /api/upgrade) refuses on such a catalog with the same words; GET
+ *   /api/upgrade then lists no `pending` step and says why in `newerCatalog`, and GET
+ *   /api/build/undo offers no `plan` (its `problem` says why). Every route
+ *   that writes one of the build's inputs (the build, scan, Apply, undo, prune, the upgrade, the
+ *   map's edits and deletes, corrections, call corrections, pairings, declared links and boxes,
+ *   answers, triage, the AI's decisions, the baseline, initiatives, an owner question's send,
+ *   starting a run, the org pack's files, repos and owners)
+ *   answers 409 on such a catalog before it writes anything: a problem whose `refused` is `{ reasons: ["newer-atticus"], message,
+ *   newer }`. Additive only.
  */
-export const API_VERSION = "3.14.0";
+export const API_VERSION = "3.15.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1906,6 +1921,8 @@ export const BuildRefusalView = z.object({
       "large-removals",
       "hand-edits",
       "not-upgraded",
+      // 3.15.0 (beta.28.2, ADR 0197): build.json or a slot a newer Atticus wrote.
+      "newer-atticus",
     ]),
   ),
   message: z.string(),
@@ -2774,7 +2791,9 @@ export const VerifyPreviewView = z.object({
         .object({
           removals: z.number().int().optional(),
           edits: z.number().int().optional(),
-          refused: z.array(z.enum(["nothing-read", "empty", "unexplained-removals"])).optional(),
+          refused: z
+            .array(z.enum(["nothing-read", "empty", "unexplained-removals", "newer-atticus"]))
+            .optional(),
           upgrade: z.literal(true).optional(),
           command: z.string().optional(),
         })
@@ -5610,6 +5629,11 @@ export const UpgradeView = z.object({
    * result, and offers Propose for the stamp alone too.
    */
   upgraded: z.array(z.string()).optional(),
+  /**
+   * 3.15.0 (beta.28.2, ADR 0197): the catalog was built by a newer Atticus, in words that say to
+   * upgrade Atticus (never `atticus upgrade`); `pending` is then empty, as the upgrade refuses.
+   */
+  newerCatalog: z.string().optional(),
 });
 // ------------------------------------------------------------------ set up from the app (ADR 0190)
 

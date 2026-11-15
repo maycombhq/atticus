@@ -2,6 +2,22 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.2 (unreleased)
+
+beta.28.2 writes `catalog/sources/build.json` version 2 (ADR 0197). From this release, an Atticus that meets a `build.json` or slot newer than it reads says so, instead of taking the catalog for one from before beta.27.
+
+### Fixed
+
+- **A catalog built by a newer Atticus is refused in its own words.** When `catalog/sources/build.json` has a `version` greater than this Atticus reads, of whatever shape, every command that would read or write over it refuses, exits non-zero, writes nothing and takes no undo copy: `atticus catalog build` (with `--discard-edits` or `--allow-removals` too), `atticus verify <repo> --write`, `atticus scan`, `atticus catalog edits [--curate]`, `atticus catalog undo [--yes]`, and the app's Apply, scan and build. They say, for a version N this Atticus reads up to M: "This metarepo's catalog was built by a newer Atticus (build.json version N; this Atticus reads up to M): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run `atticus upgrade`." Before, an Atticus read such a file as unreadable and refused every build with "run atticus upgrade", which was the wrong advice, and `--discard-edits` would have written the whole catalog again in the older format.
+- **Nothing that feeds the build is saved first.** Every writer of the build's inputs refuses before it writes anything, in the command line (exit 1; `--json` gives `refused.reasons: ["newer-atticus"]`) and in the app (409 with the same refusal): Edit the map, Delete this link and Bring it back, corrections and pairings, declared links and boxes, answers and question routing, triage, the AI's decisions (`questions propose`), the Done of every hand-off but a task run's (`handoff done`, and the app's Done: a propose or Match hand-off, glossary definitions, feature names), initiatives and their plans and commitments, an owner question's send (and its manual step marked done), feature and glossary decisions and proposals (`feature suggest-names`, `glossary scan`), aliases, reading rules, repo types, owners and descriptions, accepting the baseline (`atticus baseline`), call corrections, cross-check decisions (`catalog crosscheck --promote`, `--dismiss`, `--undismiss`), adding repos and editing org-pack files on Set up, `intake add`, `repo rename`, `catalog migrate` (not `--dry-run`), `catalog validate --fix`, `catalog prune`. `atticus map <repo>` and starting a run in the app refuse too, before they cost a model call. What only reads goes on as before: `absorb accept --dry-run`, `connect match --read`, `catalog validate` without `--fix`. Set up › Upgrade offers no upgrade step and says to upgrade Atticus, Undo offers nothing to take back, and `atticus next` says to upgrade Atticus first. The check reads only the first bytes of each versioned file and the latest undo copy's `next-build.json`. Before, they saved their file and only the build after it refused.
+- **`atticus upgrade` never touches a catalog a newer Atticus built.** It refuses with the same words, with `--yes`, `--check` and `--json` alike, and so does the app's upgrade (409).
+- **The same rule for every versioned slot file the build reads.** A readers slot or the legacy joins slot (`slotVersion`, a branch catalog's own slots too), a facts meta (`slotVersion`, and `factsSchemaVersion` newer than this Atticus's facts), the latest undo copy's `next-build.json` (a newer Atticus's build cut short), and a `build.json` or slot that `catalog undo` would put back from its copy. Each is known by its first bytes, so a 190 MB `build.json` isn't read whole for it.
+- **A version 1 `build.json` behaves exactly as before.**
+
+### Local API 3.15.0 (additive)
+
+- A refused build's `reasons` (`pending.refused`, `last.refused`, a job's result) may be `newer-atticus`, with the words above as its `message` and `npm i -g @maycombhq/atticus@beta` as its `command`. Apply's preview `confirm.refused` may list it. Every route that writes one of the build's inputs answers 409 on such a catalog, before it writes, with the refusal as the problem's `refused`. The app shows it on Set up › Catalog builds and before Apply.
+
 ## 2.0.0-beta.28.1 (2026-11-15)
 
 ### Fixed
