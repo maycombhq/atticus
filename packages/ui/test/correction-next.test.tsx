@@ -152,4 +152,57 @@ describe("what happens after a correction (C4)", () => {
     expect(out).toContain(esc(N.blocked(2)));
     expect(out).toContain(esc(N.headMoved("abcdef123456", "c3c0006")));
   });
+
+  it("says when the Apply will wait for a confirm of its removals, with the command (G1)", () => {
+    const cmd = "atticus verify forge-payments --write --allow-removals 6";
+    expect(panel({ state: "ready", data: VIEW })).not.toContain(
+      esc(N.confirm(6, `“${COPY.propose.confirmApply(6)}”`)),
+    );
+    const out = panel({
+      state: "ready",
+      data: { ...VIEW, preview: { ...VIEW.preview!, confirm: { removals: 6, command: cmd } } },
+    });
+    expect(out).toContain(esc(N.confirm(6, `“${COPY.propose.confirmApply(6)}”`)));
+    expect(out).toContain('role="status"');
+    expect(out).toContain(`aria-label="${esc(N.copy(`${N.confirmCommand}: ${cmd}`))}"`);
+    expect(out).not.toContain(esc(N.confirmEdits(3, `“${COPY.catalogBuild.confirmDiscard(3)}”`)));
+  });
+
+  it("says when the Apply will stop first for hand edits, with the command (G1's re-review)", () => {
+    const cmd = "atticus verify forge-payments --write --discard-edits 3";
+    const out = panel({
+      state: "ready",
+      data: { ...VIEW, preview: { ...VIEW.preview!, confirm: { edits: 3, command: cmd } } },
+    });
+    expect(out).toContain(esc(N.confirmEdits(3, `“${COPY.catalogBuild.confirmDiscard(3)}”`)));
+    expect(out).not.toContain(esc(N.confirm(3, `“${COPY.propose.confirmApply(3)}”`)));
+    expect(out).toContain(esc(cmd));
+  });
+
+  it("says the Apply will refuse, and why, with no command, when nothing confirms it", () => {
+    const out = panel({
+      state: "ready",
+      data: {
+        ...VIEW,
+        preview: { ...VIEW.preview!, confirm: { refused: ["unexplained-removals", "empty"] } },
+      },
+    });
+    expect(out).toContain(esc(N.confirmRefused(["unexplained-removals", "empty"])));
+    expect(out).toContain('role="alert"');
+    expect(out).not.toContain("--allow-removals");
+    expect(out).not.toContain(esc(N.confirmCommand));
+  });
+
+  it("points a catalog from before the slots at atticus upgrade", () => {
+    const out = panel({
+      state: "ready",
+      data: {
+        ...VIEW,
+        preview: { ...VIEW.preview!, confirm: { upgrade: true, command: "atticus upgrade" } },
+      },
+    });
+    expect(out).toContain(esc(N.confirmUpgrade));
+    expect(out).toContain("atticus upgrade");
+    expect(out).not.toContain("--discard-edits");
+  });
 });

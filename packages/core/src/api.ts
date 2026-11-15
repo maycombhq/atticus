@@ -2761,6 +2761,24 @@ export const VerifyPreviewView = z.object({
         .optional(),
       /** The checkout's HEAD is past the facts' commit: verify reads the changed files' facts again. */
       headMoved: z.object({ head: z.string(), commit: z.string() }).optional(),
+      /**
+       * 3.14.0 (beta.28.1): what the Apply's guards will say (ADR 0195 point 4), absent when it
+       * writes without a word. It waits for a person's confirm when its build removes more than
+       * the guard's limit (`removals`, how many it lists) or files under catalog/generated were
+       * changed by hand (`edits`, how many), with the command that confirms exactly them; it
+       * refuses whatever is confirmed when `refused` lists reasons (removals nothing explains,
+       * an empty build, nothing read), and no command is given; on a catalog from before the
+       * slots (`upgrade`) the command is `atticus upgrade`.
+       */
+      confirm: z
+        .object({
+          removals: z.number().int().optional(),
+          edits: z.number().int().optional(),
+          refused: z.array(z.enum(["nothing-read", "empty", "unexplained-removals"])).optional(),
+          upgrade: z.literal(true).optional(),
+          command: z.string().optional(),
+        })
+        .optional(),
       /** Corrections on file that meet no fact in this read (kept, applied when it is read again). */
       staleCorrections: z.array(z.string()),
     })

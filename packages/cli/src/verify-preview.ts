@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import {
+  catalogDirOf,
   factsDirOf,
   factsRelOf,
   headFromFiles,
@@ -16,6 +17,7 @@ import {
   specRelOf,
   stackHelpersOff,
   type Api,
+  type CatalogRecord,
   pairsFromCorrections,
   type Fact,
   type FactCorrection,
@@ -117,6 +119,73 @@ const linkView = (l: LinkView): LinkView => ({
 });
 
 const posixRel = (root: string, p: string) => relative(root, p).split(sep).join("/");
+
+/**
+ * Beta.28.1 (field hunt G1, its re-reviews): what the next Apply's guards say, as the preview's
+ * `confirm`: undefined when they pass. A refusal nothing confirms (removals nothing explains, an
+ * empty build, nothing read) is said as `refused`, with no command, since no flag helps; a
+ * catalog from before the slots points at `atticus upgrade`; otherwise the counts of the
+ * removals and the hand edits to confirm, and the command that confirms exactly them.
+ */
+export function confirmOf(
+  repo: string,
+  refused:
+    { reasons: readonly string[]; allowRemovals?: number; discardEdits?: number } | undefined,
+): Preview["confirm"] {
+  if (!refused?.reasons.length) return undefined;
+  const hard = (["nothing-read", "empty", "unexplained-removals"] as const).filter((r) =>
+    refused.reasons.includes(r),
+  );
+  if (hard.length) return { refused: hard };
+  if (refused.reasons.includes("not-upgraded"))
+    return { upgrade: true, command: "atticus upgrade" };
+  const waits = refused.reasons.includes("large-removals") ? refused.allowRemovals : undefined;
+  const edits = refused.reasons.includes("hand-edits") ? refused.discardEdits : undefined;
+  if (waits === undefined && edits === undefined) return undefined;
+  return {
+    ...(waits !== undefined ? { removals: waits } : {}),
+    ...(edits !== undefined ? { edits } : {}),
+    command: [
+      `atticus verify ${repo} --write`,
+      ...(waits !== undefined ? [`--allow-removals ${waits}`] : []),
+      ...(edits !== undefined ? [`--discard-edits ${edits}`] : []),
+    ].join(" "),
+  };
+}
+
+/**
+ * The guard's refusal without the unexplained removals a previewed pairing explains: when every
+ * one is a loose end the pairing joins now (`joinedArrowOf`, as the guard counts it), the Apply
+ * explains them by the pairing on file, and the reason goes; any other leaves it as it is.
+ */
+async function pendingExplained(
+  refused:
+    | (NonNullable<Parameters<typeof confirmOf>[1]> & {
+        unexplained?: readonly { kind: string; id: string }[];
+      })
+    | undefined,
+  p: {
+    existing: readonly CatalogRecord[];
+    result: { records: readonly CatalogRecord[] };
+    diff: { added: readonly { kind: string; id: string }[] };
+  },
+  extra: number | undefined,
+): Promise<Parameters<typeof confirmOf>[1]> {
+  if (!refused?.reasons.includes("unexplained-removals") || !extra) return refused;
+  const { joinedArrowOf, looseEndsAt, pairedArrowsAt } = await import("@maycombhq/scanner");
+  const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
+  const made = new Set(p.diff.added.map(k));
+  const at = pairedArrowsAt(p.result.records.filter((r) => made.has(k(r))));
+  const loose = looseEndsAt(p.existing);
+  const before = new Map(p.existing.map((r) => [k(r), r] as const));
+  const all = (refused.unexplained ?? []).every((u) => {
+    const r = before.get(k(u));
+    return !!r && !!joinedArrowOf(r, at, loose);
+  });
+  return all && refused.unexplained?.length
+    ? { ...refused, reasons: refused.reasons.filter((x) => x !== "unexplained-removals") }
+    : refused;
+}
 
 /**
  * The preview of `atticus verify <repo> --write` after a correction, with the commands. Undefined
@@ -247,7 +316,16 @@ export async function verifyWritePreview(
   const onDisk = await readFile(companion, "utf8").catch(() => undefined);
   const next = contracts.entries.length ? stringify(contracts, { lineWidth: 0 }) : undefined;
   if (onDisk !== next) files.push(`${rel}/${repo}.contracts.yaml`);
+  // The catalog on file read once, with each file's size and time (no read cache kept): the
+  // projection compares with it, and the guards below use it where every file is still as read.
+  await step("Loading the catalog");
+  const { readCatalogWithFiles } = await import("@maycombhq/scanner");
+  const onFile = await readCatalogWithFiles(join(catalogDirOf(root), "generated"), {
+    cacheRoot: root,
+    keep: false,
+  });
   const p = await projectFactsIntoCatalog(root, repo, report.accepted, {
+    existing: onFile.records,
     ...(op ? { op } : {}),
     contracts,
     cache: false,
@@ -280,6 +358,27 @@ export async function verifyWritePreview(
     if (m?.replace(/\r\n?/g, "\n") !== serializeBuildManifest(p.build.manifest))
       files.push(posixRel(root, buildManifestPath(root)));
   }
+  // Beta.28.1 (field hunt G1, its re-reviews): whether the Apply will wait for a person's
+  // confirm, as its own guards say it: the build guarded against the catalog's files as on disk
+  // (the removals of what the last build wrote, the files changed by hand), nothing written and
+  // no read cache kept; the read above stands in for a second read while the files are as read.
+  await step("Checking the build's guards");
+  const { buildAndWrite } = await import("@maycombhq/scanner");
+  const checked = await buildAndWrite(root, {
+    command: `atticus verify ${repo} --write`,
+    build: p.build,
+    slots: p.snap,
+    check: true,
+    read: onFile,
+    keepNoReads: true,
+  });
+  // A pairing previewed (not on file yet) changes no input the guard can see, so the loose ends
+  // it joins have nothing to explain their removal here; the Apply, with the pairing on file,
+  // explains them by it. Those, and only those, are taken off the preview's unexplained list.
+  const confirm = confirmOf(
+    repo,
+    await pendingExplained(checked.guard.refused, p, o.extra?.length),
+  );
   // The folders the write renders: the repo's flows and its map, and the questions it asks.
   if (p.result.flows.length || existsSync(join(root, ...specRelOf(root, repo).split("/"))))
     files.push(specRelOf(root, repo));
@@ -364,6 +463,7 @@ export async function verifyWritePreview(
         moved,
       },
       ...(headMoved ? { headMoved } : {}),
+      ...(confirm ? { confirm } : {}),
       staleCorrections,
     },
   };

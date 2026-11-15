@@ -184,7 +184,13 @@ function partners(m: Model, slot: number): number[] {
     .filter((r) => r.slot !== slot)
     .filter((r) => {
       const theirs = new Set([...r.hosts, r.base.legacyHost]);
-      return linked(slot, myHosts, r.slot) || linked(r.slot, theirs, slot);
+      // A person's pairing joins its two repos too (field hunt G1): the callee's read decides
+      // whether the caller's loose call is joined.
+      const paired = m.pairs.some(
+        (p) =>
+          (p.caller === slot && p.callee === r.slot) || (p.callee === slot && p.caller === r.slot),
+      );
+      return paired || linked(slot, myHosts, r.slot) || linked(r.slot, theirs, slot);
     })
     .map((r) => r.slot);
 }
@@ -225,21 +231,70 @@ function editedGone(s: Step): Set<string> {
  * ADR point 4's limits: more than 10% of a repo's records (those whose evidence names it), or
  * more than 200 in one build. What is above them, in words.
  */
-function largeOf(before: Snap, gone: Map<string, Rec>, skip: string[]): string[] {
+/**
+ * Beta.28.1 (field hunt G1): the loose ends (Unresolved) the step removed that a person's pairing
+ * joins: exactly one arrow the step added (`joined-by-person`), from the loose end's owner, cites a line the loose end cites.
+ * The guard counts none of them toward its limits (they are still listed with the removals).
+ */
+function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
+  type Cited = Rec & { owner?: string };
+  type Cite = { repo?: string; path?: string; line?: number };
+  const lines = (r: Cited) =>
+    ((r.evidence ?? []) as Cite[]).flatMap((e) =>
+      e.repo && e.path && e.line !== undefined ? [`${e.repo}\u0000${e.path}\u0000${e.line}`] : [],
+    );
+  const before = new Set([...records(s.before.generated).values()].map(recId));
+  const at = new Map<string, Cited[]>();
+  for (const r of records(s.after.generated).values() as unknown as Iterable<Cited>)
+    if (
+      r.kind === "Interface" &&
+      !before.has(recId(r)) &&
+      ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person")
+    )
+      for (const k of new Set(lines(r))) at.set(k, [...(at.get(k) ?? []), r]);
+  // A loose end is the pairing's only where it is its owner's only one on that line (an
+  // Unresolved carries no call id), counted over the last build's records, as the guard does.
+  const looseAt = new Map<string, number>();
+  for (const r of records(s.before.generated).values() as unknown as Iterable<Cited>)
+    if (r.kind === "Unresolved" && r.owner)
+      for (const k of new Set(lines(r))) {
+        const key = `${r.owner}\u0000${k}`;
+        looseAt.set(key, (looseAt.get(key) ?? 0) + 1);
+      }
+  const out = new Set<string>();
+  for (const [id, r] of gone as unknown as Map<string, Cited>) {
+    if (r.kind !== "Unresolved" || !r.owner) continue;
+    const onLine = lines(r).filter((k) => (at.get(k) ?? []).some((x) => x.from === r.owner));
+    if (onLine.some((k) => looseAt.get(`${r.owner}\u0000${k}`) !== 1)) continue;
+    const ids = new Set(
+      lines(r).flatMap((k) => (at.get(k) ?? []).filter((x) => x.from === r.owner).map((x) => x.id)),
+    );
+    if (ids.size === 1) out.add(id);
+  }
+  return out;
+}
+
+function largeOf(
+  before: Snap,
+  gone: Map<string, Rec>,
+  skip: string[],
+  joined: ReadonlySet<string> = new Set(),
+): string[] {
   const per = new Map<string, { had: number; gone: number }>();
   for (const [p, rec] of records(before.generated)) {
     if (skip.includes(p)) continue;
     for (const repo of repoOf(rec)) {
       const x = per.get(repo) ?? { had: 0, gone: 0 };
       x.had++;
-      if (gone.has(recId(rec))) x.gone++;
+      if (gone.has(recId(rec)) && !joined.has(recId(rec))) x.gone++;
       per.set(repo, x);
     }
   }
+  const counted = [...gone.keys()].filter((id) => !joined.has(id)).length;
   const big = [...per].filter(([, x]) => x.gone > 0 && x.gone > x.had * 0.1);
   return [
     ...big.map(([r, x]) => `${x.gone} of ${r}'s ${x.had} records`),
-    ...(gone.size > 200 ? [`${gone.size} records in one build`] : []),
+    ...(counted > 200 ? [`${counted} records in one build`] : []),
   ];
 }
 
@@ -601,7 +656,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   "large-removals-confirmed"(s) {
     if (!builtOk(s)) return;
     const gone = removedBy(s);
-    const big = largeOf(s.before, gone, s.editsBefore);
+    const big = largeOf(s.before, gone, s.editsBefore, joinedNow(s, gone));
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
     if (n === undefined)
@@ -855,7 +910,11 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
           "completeness",
           `confirmed right after its listing, ${t} removed ${list(gone.keys())}, not what it listed: ${list(p.removals.ids)}`,
         );
-      if (fresh && !edited.size && !largeOf(s.before, gone, s.editsBefore).length)
+      if (
+        fresh &&
+        !edited.size &&
+        !largeOf(s.before, gone, s.editsBefore, joinedNow(s, gone)).length
+      )
         fail(
           "completeness",
           `${t} refused ${gone.size} removals as large, but they are under the limits`,
@@ -925,6 +984,30 @@ function content(s: Step): void {
     new Set(recs.flatMap((r) => arrowOf(v, r) ?? [])),
     false,
   );
+  // Beta.28.1 (field hunt G1): a person's pairing is drawn, joined by a person, and its call's
+  // loose end is gone, whenever the model says the build can draw it.
+  for (const p of v.pairedRequired()) {
+    if (p.keys.some((k) => skip.has(k))) continue;
+    const drawn = recs.some(
+      (r) =>
+        r.kind === "Interface" &&
+        p.keys.includes(arrowOf(v, r) ?? "") &&
+        ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person"),
+    );
+    if (!drawn)
+      fail("completeness", `${where} a person's pairing isn't drawn: none of ${p.keys.join(", ")}`);
+    const loose = recs.find(
+      (r) =>
+        r.kind === "Unresolved" &&
+        r.owner === p.from &&
+        // `<METHOD> https://<host><path>`: the host whole (`//` before it), not a host that
+        // ends with it (`legacy-<host>`).
+        String(r.raw ?? "").startsWith(`${p.raw.method} `) &&
+        String(r.raw ?? "").endsWith(p.raw.tail),
+    );
+    if (loose)
+      fail("completeness", `${where} a person's pairing is drawn, yet ${loose.id} is still loose`);
+  }
 }
 
 /** Run the per-command checks of the invariants asked for. */

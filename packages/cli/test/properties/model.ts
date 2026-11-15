@@ -141,6 +141,19 @@ export class Model {
   curated: Decision[] = [];
   /** Host → slot a person said answers on it, or "none". */
   answers = new Map<string, number | "none">();
+  /**
+   * Beta.28.1 (field hunt G1, the re-review): a person's pairing of a loose call (a call to a
+   * legacy host nobody answered) with an entry of another repo, Connect to…'s `link` correction.
+   * The build draws the arrow, flagged joined by a person, while the call and the entry are read.
+   */
+  pairs: {
+    caller: number;
+    method: string;
+    path: string;
+    host: string;
+    callee: number;
+    entry: { method: string; path: string };
+  }[] = [];
   /** Generated files edited by hand and not yet made curated or discarded. */
   handEdits: HandEdit[] = [];
   /**
@@ -299,6 +312,24 @@ export class Model {
             );
         }
     }
+    // A person's pairing: admitted while the caller's source still makes the call and both
+    // repos are read (the arrow's path is the call's or the entry's: either is admitted). Not
+    // required: a pairing that no longer meets an entry goes stale, kept on file, and draws none.
+    for (const x of this.pairs) {
+      const c = this.repos[x.caller]!;
+      const e = this.repos[x.callee]!;
+      const s = this.source(x.caller);
+      if (!s || s.from === "legacy" || !this.isLive(x.callee)) continue;
+      if (
+        !s.obs.code.calls.some(
+          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
+        )
+      )
+        continue;
+      if (this.calleeOf(x.host)) continue;
+      for (const path of new Set([x.path, x.entry.path]))
+        add(arrowKey(c.base.component, e.base.component, x.method, path), false, false);
+    }
     if (withLegacy)
       for (const j of this.liveLegacy()) {
         if (!j.arrow) continue;
@@ -422,6 +453,54 @@ export class Model {
         const e = this.calleeOf(c.host);
         return !!e && e.slot !== j.arrow!.to && e.slot !== j.arrow!.from;
       });
+  }
+
+  /**
+   * Beta.28.1 (field hunt G1, the re-review): the pairings a build must draw. While the caller
+   * is read from its facts and still makes the call to a host no repo answers on, and the callee
+   * is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
+   * readers read has none), the build draws the arrow, joined by a person (by the call's path or
+   * the entry's), and the call's loose end is gone.
+   */
+  pairedRequired(): {
+    from: string;
+    keys: string[];
+    raw: { method: string; tail: string };
+  }[] {
+    const out: { from: string; keys: string[]; raw: { method: string; tail: string } }[] = [];
+    const suppressed = new Set(
+      this.curated.flatMap((d) => (d.action === "suppress" && d.arrow ? [d.arrow] : [])),
+    );
+    for (const x of this.pairs) {
+      const c = this.repos[x.caller]!;
+      const e = this.repos[x.callee]!;
+      const s = this.source(x.caller);
+      const t = this.source(x.callee);
+      if (s?.from !== "facts" || t?.from !== "facts") continue;
+      if (
+        !s.obs.code.calls.some(
+          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
+        )
+      )
+        continue;
+      if (this.calleeOf(x.host)) continue;
+      if (
+        !served(e.base, t.obs.code).some(
+          (y) => y.method === x.entry.method && y.path === x.entry.path,
+        )
+      )
+        continue;
+      const keys = [...new Set([x.path, x.entry.path])].map((path) =>
+        arrowKey(c.base.component, e.base.component, x.method, path),
+      );
+      if (keys.some((k) => suppressed.has(k))) continue;
+      out.push({
+        from: c.base.component,
+        keys,
+        raw: { method: x.method, tail: `//${x.host}${x.path}` },
+      });
+    }
+    return out;
   }
 
   allowedArrows(): Set<string> {

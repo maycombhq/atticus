@@ -54,6 +54,18 @@ const says = (c: FactCorrection): string => {
 };
 
 /**
+ * Beta.28.1 (field hunt G4): the system a box is, from the id a request names it by: a system of
+ * the profiles as it is; a repo of the manifest as the canvas draws its box (the manifest's
+ * `system`, else the slug of the repo's id: `forge.instruments.svc` is `forge-instruments-svc`).
+ * Any other id as it is (the declaration then says no system is that).
+ */
+export function boxSystemOf(op: OrgPack, id: string): string {
+  if (op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === id))) return id;
+  const repo = estateRepos(op).find((x) => x.id === id);
+  return repo ? (repo.system ?? factIdPart(repo.id)) : id;
+}
+
+/**
  * Beta.28.1 (field report 4): the System a declaration from this box needs added first, when no
  * profile has it: the box the canvas draws for a repo the manifest lists with no System of the
  * profiles (its id the manifest's `system`, else the repo's), in that repo's platform's profile,
@@ -206,6 +218,8 @@ export function uiDeclaredRoutes(
           { errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })) },
         );
       const op = await loadOrgPack(orgPackDirOf(ctx.root));
+      // G4: a repo's id names the system its box is drawn as.
+      b.data.system = boxSystemOf(op, b.data.system);
       // A system whose repos are read says what it publishes in its code: no word is needed.
       const own = estateRepos(op).some((x) => x.system === b.data.system);
       if (own && b.data.kind === "topic")
@@ -242,6 +256,7 @@ export function uiDeclaredRoutes(
       if (!b.success) throw badRequest("Say which declaration: { kind, system, value }.");
       try {
         const op = await loadOrgPack(orgPackDirOf(ctx.root));
+        b.data.system = boxSystemOf(op, b.data.system);
         const res = await undeclareLink(ctx.root, b.data, {
           inUse: await systemInUse(ctx.root, op, b.data.system),
         });

@@ -93,6 +93,39 @@ function PreviewBody({ v }: { v: Preview }) {
           {N.catalog(p.catalog.added, p.catalog.changed, p.catalog.removed, p.catalog.evidenceOnly)}
         </p>
       )}
+      {p.confirm && (
+        <>
+          {p.confirm.edits !== undefined && (
+            <p role="status" className="ev-say">
+              {N.confirmEdits(
+                p.confirm.edits,
+                `“${COPY.catalogBuild.confirmDiscard(p.confirm.edits)}”`,
+              )}
+            </p>
+          )}
+          {p.confirm.removals !== undefined && (
+            <p role="status" className="ev-say">
+              {N.confirm(p.confirm.removals, `“${COPY.propose.confirmApply(p.confirm.removals)}”`)}
+            </p>
+          )}
+          {p.confirm.refused?.length ? (
+            <p role="alert" className="state error" style={{ margin: 0 }}>
+              {N.confirmRefused(p.confirm.refused)}
+            </p>
+          ) : null}
+          {p.confirm.upgrade && (
+            <p role="status" className="ev-say">
+              {N.confirmUpgrade}
+            </p>
+          )}
+          {p.confirm.command && (
+            <Cmd
+              text={p.confirm.command}
+              label={p.confirm.upgrade ? N.confirmUpgradeCommand : N.confirmCommand}
+            />
+          )}
+        </>
+      )}
       {p.staleCorrections.length > 0 && (
         <p className="ev-say">{N.stale(p.staleCorrections.join(", "))}</p>
       )}

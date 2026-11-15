@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
@@ -171,12 +172,30 @@ export async function declareLink(
       : doc.createNode(DeclaredCall.parse({ route: value }));
   item.comment = declaredComment(o.by, o.at, d.kind === "topic" ? d.side : undefined);
   list.add(item);
-  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  // A profile the library can't write back (several documents, a YAML error) is refused whole.
+  if (doc.errors.length)
+    throw new DeclareError(
+      "invalid",
+      `${rel} doesn't read as one YAML document (${doc.errors[0]!.message.split("\n")[0]}): fix it, then declare again. Nothing written.`,
+    );
+  // Field hunt G5: the lines the declaration doesn't touch stay as the person wrote them.
+  const after = keepUntouchedLines(found.created ? found.disk! : text, doc.toString(OPTS));
   const check = Profile.safeParse(doc.toJS());
   if (!check.success)
     throw new DeclareError(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  // The re-review of G5: the text itself is checked, as it will be written, not the document.
+  const written = strictMeaning(after);
+  if (
+    written === undefined ||
+    !isDeepStrictEqual(written, doc.toJS()) ||
+    !Profile.safeParse(written).success
+  )
+    throw new DeclareError(
+      "invalid",
+      `${rel}: the profile as it would be written doesn't read back as the same profile (a bug): nothing written.`,
     );
   // Against the file as it is on disk: a system added first is one of the lines it changes.
   const changes = changedLines(found.created ? found.disk! : text, after);
@@ -185,6 +204,92 @@ export async function declareLink(
   const wrote = inEol(after, eol);
   await writeFileIfUnchanged(path, raw, wrote);
   return { rel, changes, written: true, before: raw, wrote, ...created };
+}
+
+/**
+ * Beta.28.1 (field hunt G5): `after`, a whole document as the yaml library writes it, with every
+ * line it has unchanged from `before` (the file as written, LF) given back as `before` wrote it:
+ * a flow list's padding (`[dv, qa, prod]`), its quotes, its spacing. `before` as the library
+ * writes it is lined up with `before` line for line (the library keeps the lines and comments of
+ * a document it only reads); a line of `after` that is one of those, in order, is that line of
+ * `before`. Where the two don't line up (the library joined or split a line), `after` as it is.
+ */
+export function keepUntouchedLines(written: string, after: string): string {
+  // A file without a last newline is lined up as one with it, and written back without it.
+  const open = !written.endsWith("\n");
+  const before = open ? `${written}\n` : written;
+  const norm = rewrite(before);
+  if (norm === undefined) return after;
+  const o = before.split("\n");
+  const n = norm.split("\n");
+  const a = after.split("\n");
+  if (o.length !== n.length) return after;
+  // The lines both share at either end, then the longest common run of the middle.
+  let head = 0;
+  while (head < n.length && head < a.length && n[head] === a[head]) head++;
+  let tail = 0;
+  while (
+    tail < n.length - head &&
+    tail < a.length - head &&
+    n[n.length - 1 - tail] === a[a.length - 1 - tail]
+  )
+    tail++;
+  const nm = n.slice(head, n.length - tail);
+  const am = a.slice(head, a.length - tail);
+  const w = am.length + 1;
+  const lcs = new Uint32Array((nm.length + 1) * w);
+  for (let i = nm.length - 1; i >= 0; i--)
+    for (let j = am.length - 1; j >= 0; j--)
+      lcs[i * w + j] =
+        nm[i] === am[j]
+          ? lcs[(i + 1) * w + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!);
+  const out = o.slice(0, head);
+  let i = 0;
+  let j = 0;
+  while (j < am.length) {
+    if (i < nm.length && nm[i] === am[j]) {
+      out.push(o[head + i]!);
+      i++;
+      j++;
+    } else if (i < nm.length && lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) i++;
+    else out.push(am[j++]!);
+  }
+  out.push(...o.slice(o.length - tail));
+  const joined = out.join("\n");
+  const kept = open && joined.endsWith("\n") ? joined.slice(0, -1) : joined;
+  // The re-review of G5: lining up by count alone can put a line of a folded scalar where another
+  // belongs (a key written twice, a value cut short, a key or a comment moved to another item).
+  // What is kept must be, read again and written by the library, exactly `after`, and say what
+  // it says read strictly (a key twice is an error); anything else is `after` as it is.
+  const meaning = strictMeaning(kept);
+  return meaning !== undefined &&
+    rewrite(kept) === after &&
+    isDeepStrictEqual(meaning, strictMeaning(after))
+    ? kept
+    : after;
+}
+
+const OPTS = { lineWidth: 0, flowCollectionPadding: true } as const;
+
+/** A YAML text as the library writes it again (undefined where it doesn't read). */
+function rewrite(text: string): string | undefined {
+  try {
+    const d = parseDocument(text);
+    return d.errors.length ? undefined : d.toString(OPTS);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A YAML text's value, read strictly (a duplicate key, an alias to nothing, any error: undefined). */
+function strictMeaning(text: string): unknown {
+  try {
+    const d = parseDocument(text, { uniqueKeys: true });
+    return d.errors.length ? undefined : d.toJS();
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -236,7 +341,12 @@ async function newSystemNode(
   const id = added.items[0]!.value as { comment?: string | null };
   id.comment = addedComment(who.by, who.at, addedHash(fields));
   seq.add(added);
-  const text = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  if (doc.errors.length)
+    throw new DeclareError(
+      "invalid",
+      `${rel} doesn't read as one YAML document (${doc.errors[0]!.message.split("\n")[0]}): fix it, then declare again. Nothing written.`,
+    );
+  const text = doc.toString(OPTS);
   const again = parseDocument(text);
   const node = (again.get("systems") as { items: unknown[] }).items.find(
     (x) => isMap(x) && x.get("id") === system,

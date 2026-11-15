@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import { Api, catalogDirOf, headFromFiles, isAdopted } from "@maycombhq/core";
+import {
+  Api,
+  catalogDirOf,
+  headFromFiles,
+  isAdopted,
+  loadOrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { promotedStates, readCatalog, readCrossCheck } from "@maycombhq/scanner";
 import {
   badRequest,
@@ -447,8 +454,13 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
       // staged change is checked first: one that can't be made is said by its place and nothing is
       // written. Then all are written and the catalog built once, as one local job.
       .add("POST", "/api/map/edits", async ({ body }) => {
-        const b = parse(Api.MapEditsRequest, body);
-        const { checkMapEdits } = await import("./map-edits.js");
+        const parsed = parse(Api.MapEditsRequest, body);
+        const { checkMapEdits, withBoxSystems } = await import("./map-edits.js");
+        // G4: an add from a repo's box names that repo's id; it is declared on the box's system.
+        const b = {
+          ...parsed,
+          edits: withBoxSystems(await loadOrgPack(orgPackDirOf(root)), parsed.edits),
+        };
         const { problems, callers, waitsOn } = await checkMapEdits(root, b.edits);
         if (problems.length)
           throw new HttpError(

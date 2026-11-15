@@ -11,7 +11,7 @@ import {
 } from "@maycombhq/core";
 import { estateRepos, factsSlotPaths, readCatalog } from "@maycombhq/scanner";
 import { HttpError } from "@maycombhq/server";
-import { systemToCreate } from "./ui-api-declared.js";
+import { boxSystemOf, systemToCreate } from "./ui-api-declared.js";
 import { pairingsOf } from "./ui-api-links.js";
 
 /** No call paired already: the check before the job joins nothing (S2b). */
@@ -27,6 +27,21 @@ const NONE_PAIRED: ReadonlyMap<string, string> = new Map();
  * the arrow is; the same add (or the same call paired) twice in one list is refused the second
  * time.
  */
+/**
+ * Beta.28.1 (field hunt G4): the edits with each add's (and redirect's) system named as the box
+ * it is drawn as: a repo's id (`forge.instruments.svc`) is its box's system. Anything else as it is.
+ */
+export function withBoxSystems(
+  op: Awaited<ReturnType<typeof loadOrgPack>>,
+  edits: readonly Api.MapEditT[],
+): Api.MapEditT[] {
+  return edits.map((e) =>
+    "add" in e && e.add
+      ? ({ ...e, add: { ...e.add, system: boxSystemOf(op, e.add.system) } } as Api.MapEditT)
+      : e,
+  );
+}
+
 export async function checkMapEdits(
   root: string,
   edits: readonly Api.MapEditT[],
@@ -35,6 +50,7 @@ export async function checkMapEdits(
     .records;
   const byId = new Map(records.map((r) => [r.id, r] as const));
   const op = await loadOrgPack(orgPackDirOf(root));
+  edits = withBoxSystems(op, edits);
   const repos = estateRepos(op);
   const reposOf = (system: string) => repos.filter((r) => r.system === system).map((r) => r.id);
   const problems: Api.MapEditProblemT[] = [];

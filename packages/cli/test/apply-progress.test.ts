@@ -280,3 +280,60 @@ describe("Apply as a job (the review of beta.28.1)", () => {
     T,
   );
 });
+
+describe("atticus catalog build says each step (field hunt G2)", () => {
+  it(
+    "says the build pass by pass, the check, the guards and the write, on the progress line only",
+    async () => {
+      const root = await metarepo();
+      const { catalogBuild } = await import("../src/catalog-build-commands.js");
+      const s = sink();
+      expect(await catalogBuild(root, {}, s.io)).toBe(0);
+      const passes = BUILD_PASSES.map(
+        (what, i) => `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length} (${what})`,
+      );
+      expect(stepsOf(s.progress)).toEqual([
+        "Reading the build's inputs",
+        ...passes,
+        "Reading the catalog's files to check the build",
+        "Checking the build's guards",
+        expect.stringMatching(/^Writing the catalog \(\d+ record files\)$/),
+      ]);
+      expect(s.progress.at(-1)).toMatch(/^The build took \d+ s\.$/);
+      expect([...s.out, ...s.err].some((l) => /… \(.* in\)$/.test(l))).toBe(false);
+      // --check says its steps too, and writes nothing.
+      const c = sink();
+      expect(await catalogBuild(root, { check: true }, c.io)).toBe(0);
+      expect(stepsOf(c.progress)).toEqual([
+        "Reading the build's inputs",
+        ...passes,
+        "Reading the catalog's files to check the build",
+        "Checking the build's guards",
+      ]);
+    },
+    T,
+  );
+
+  it(
+    "stops between the build's steps when Stop is asked, writing nothing",
+    async () => {
+      const root = await metarepo();
+      const { catalogBuild } = await import("../src/catalog-build-commands.js");
+      const before = await catalogText(root);
+      const ctl = new AbortController();
+      const s = sink();
+      const io = {
+        ...s.io,
+        progress: (l: string) => {
+          s.progress.push(l);
+          if (l.startsWith("Building the catalog: pass 2 ")) ctl.abort();
+        },
+      };
+      await expect(withSignal(ctl.signal, () => catalogBuild(root, {}, io))).rejects.toBeInstanceOf(
+        CancelledError,
+      );
+      expect(await catalogText(root)).toBe(before);
+    },
+    T,
+  );
+});

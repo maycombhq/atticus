@@ -293,6 +293,7 @@ export function renderCode(b: Base, code: Code): Rendered {
   return { files, at };
 }
 
+export const slugOf = (s: string) => slug(s);
 const slug = (s: string) =>
   s
     .toLowerCase()

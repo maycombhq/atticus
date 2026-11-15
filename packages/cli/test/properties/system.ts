@@ -1,4 +1,4 @@
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { main } from "../../src/main.js";
@@ -106,6 +106,7 @@ export const todaysWriters: CatalogSystem = {
     await cp(join(from, "org-pack"), join(to, "org-pack"), { recursive: true });
     for (const d of ["catalog/curated", "questions"])
       if (existsSync(join(from, d))) await cp(join(from, d), join(to, d), { recursive: true });
+    await copyCorrections(from, to);
     const clone = (id: string, commit: string) => {
       const dir = join(to, "workspace", id);
       if (!existsSync(dir)) {
@@ -130,6 +131,19 @@ export const todaysWriters: CatalogSystem = {
 };
 
 /**
+ * A person's pairings (Connect to…'s `link` corrections, field hunt G1): a build input of their
+ * own, kept beside the facts, so a fresh metarepo is given them as it is given the answers.
+ */
+async function copyCorrections(from: string, to: string): Promise<void> {
+  const dir = join(from, "facts");
+  for (const n of existsSync(dir) ? await readdir(dir) : [])
+    if (n.endsWith(".corrections.jsonl")) {
+      await mkdir(join(to, "facts"), { recursive: true });
+      await cp(join(dir, n), join(to, "facts", n));
+    }
+}
+
+/**
  * The equivalence oracle for a slot system (ADR point 10): a fresh metarepo given only the final
  * slots and inputs (the org pack, catalog/curated/, the answers, inputs/, catalog/sources/ but
  * build.json, which is the last build's output), with no clone and no cache, built once.
@@ -138,6 +152,7 @@ export async function freshFromSlots(sys: CatalogSystem, from: string, to: strin
   await mkdir(to, { recursive: true });
   for (const d of ["org-pack", "catalog/curated", "questions", "inputs"])
     if (existsSync(join(from, d))) await cp(join(from, d), join(to, d), { recursive: true });
+  await copyCorrections(from, to);
   if (existsSync(join(from, "catalog", "sources")))
     await cp(join(from, "catalog", "sources"), join(to, "catalog", "sources"), {
       recursive: true,

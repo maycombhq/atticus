@@ -51789,6 +51789,40 @@
                 ],
                 "additionalProperties": false
               },
+              "confirm": {
+                "type": "object",
+                "properties": {
+                  "removals": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "edits": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "refused": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "nothing-read",
+                        "empty",
+                        "unexplained-removals"
+                      ]
+                    }
+                  },
+                  "upgrade": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
               "staleCorrections": {
                 "type": "array",
                 "items": {

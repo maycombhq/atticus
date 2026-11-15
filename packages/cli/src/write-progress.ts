@@ -1,4 +1,4 @@
-import { CancelledError, commitCurrent } from "@maycombhq/core";
+import { CancelledError, commitCurrent, currentSignal } from "@maycombhq/core";
 
 /**
  * Beta.28.1 ("nothing slow runs silently", the owner's field report 1): a long piece of work
@@ -51,6 +51,8 @@ export interface WriteProgressOptions {
   title?: string;
   /** Nothing is said until the work has run this long (2 s); 0 says every step. */
   quietMs?: number;
+  /** What a Stop after `commit()` is told (the write's own words by default). */
+  tooLate?: string;
 }
 
 /** A duration in words: 4 s, 1 min 35 s, 1 h 2 min. */
@@ -119,7 +121,8 @@ export function writeProgress(
         if (!stopSaid && !jobSays) {
           stopSaid = true;
           say(
-            "Stop heard, but the catalog is being written: the write finishes first, so the catalog, its contracts and its specs stay in step.",
+            o.tooLate ??
+              "Stop heard, but the catalog is being written: the write finishes first, so the catalog, its contracts and its specs stay in step.",
           );
         }
       }
@@ -162,6 +165,50 @@ export function writeProgress(
       if (quietTimer !== undefined) clearTimeout(quietTimer);
       ended = true;
       if (o.title && e.done) say(`${o.title} took ${durationWords(Date.now() - began)}.`);
+    },
+  };
+}
+
+/**
+ * Beta.28.1 (field hunt G2): `atticus catalog build` (and the app's builds that run it: Catalog
+ * builds' confirm, Edit the map's "Building the catalog once") says its steps as verify --write
+ * does: the build's inputs read, each pass, the check of the files on disk, the guards, and the
+ * write, after which Stop is no longer heard. On the command's progress line (the app's Console,
+ * a terminal's standard error), with the job's Stop.
+ */
+export function catalogBuildProgress(io: {
+  err: (l: string) => void;
+  progress?: (l: string) => void;
+}): {
+  progress: WriteProgress;
+  hooks: {
+    onStep: (s: { step: "build" | "check" | "guard" | "write"; files?: number }) => Promise<void>;
+    onPass: (n: number, of: number, what: string) => Promise<void>;
+  };
+} {
+  const signal = currentSignal();
+  const progress = writeProgress((l) => (io.progress ?? io.err)(l), {
+    title: "The build",
+    ...(signal ? { signal } : {}),
+    tooLate:
+      "Stop heard, but the catalog is being written: the build finishes first, so the catalog and build.json stay in step.",
+  });
+  return {
+    progress,
+    hooks: {
+      onStep: async (s) => {
+        if (s.step === "build") await progress.step("Reading the build's inputs");
+        else if (s.step === "check")
+          await progress.step("Reading the catalog's files to check the build");
+        else if (s.step === "guard") await progress.step("Checking the build's guards");
+        else {
+          await progress.step(
+            `Writing the catalog (${(s.files ?? 0).toLocaleString("en-US")} record files)`,
+          );
+          progress.commit();
+        }
+      },
+      onPass: (n, of, what) => progress.step(`Building the catalog: pass ${n} of ${of} (${what})`),
     },
   };
 }
