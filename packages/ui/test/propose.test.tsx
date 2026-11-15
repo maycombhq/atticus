@@ -260,12 +260,17 @@ it("an Apply the server won't start says why, not that verify found problems", a
     (e) => e.type === "button" && text(e.props.children) === P.apply("forge-busy"),
   )!;
   (btn.props.onClick as () => void)();
-  for (let i = 0; i < 5; i++) await tick();
-  m.render();
-  const note = all(m.tree).find((e) => e.props.note !== undefined)!.props.note as {
-    ok: boolean;
-    text: string;
-  };
+  // Until the note settles (a slow runner takes more than a few ticks to hear the refusal).
+  type Note = { ok: boolean; text: string; working?: boolean };
+  const noteOf = () =>
+    all(m.tree).find((e) => e.props.note !== undefined)?.props.note as Note | undefined;
+  for (let i = 0; i < 200; i++) {
+    await tick();
+    m.render();
+    const n = noteOf();
+    if (n && !n.working) break;
+  }
+  const note = noteOf()!;
   expect(note).toEqual({
     ok: false,
     text: P.notStarted(

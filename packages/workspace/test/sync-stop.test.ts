@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -215,15 +215,23 @@ setTimeout(() => {}, 60_000);
       expect(shell).toBeGreaterThan(0);
       app.kill("SIGHUP");
       expect(await ended).toBe("SIGHUP");
-      const alive = (pid: number) => {
+      // A zombie (ended, not yet reaped: a CI container's init may reap late) is gone too.
+      const zombie = (pid: number) => {
         try {
-          process.kill(pid, 0);
-          return true;
+          return /^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
         } catch {
           return false;
         }
       };
-      for (let i = 0; i < 300 && (alive(shell!) || alive(child!)); i++)
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return !zombie(pid);
+        } catch {
+          return false;
+        }
+      };
+      for (let i = 0; i < 750 && (alive(shell!) || alive(child!)); i++)
         await new Promise((r) => setTimeout(r, 20));
       expect(alive(shell!)).toBe(false);
       expect(alive(child!)).toBe(false);

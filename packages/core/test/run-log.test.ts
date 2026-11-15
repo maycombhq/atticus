@@ -1201,14 +1201,15 @@ describe("a job the app started, in the run log", () => {
       command: {
         positionals: ["map", "forge-ledger"],
         flags: ["lens", "note"],
-        values: { lens: "security", note: "my pin 1234" },
+        values: { lens: "security", note: "my pin qz7xk" },
       },
     })!;
     step.end(0);
     const s = readTerminalRuns(root, { alive: () => true }).find((x) => x.runId === step.runId)!;
     expect(s.title).toBe("atticus map forge-ledger --lens security --note");
     expect(s.command).toEqual(["map", "forge-ledger"]);
-    expect(JSON.stringify(s)).not.toContain("1234");
+    // A word no run id, pid, host or time can hold (a pin of digits once matched the clock).
+    expect(JSON.stringify(s)).not.toContain("qz7xk");
   });
 
   it("an app record kept under the old rules is titled again by its kind and ids", async () => {
