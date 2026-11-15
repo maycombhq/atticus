@@ -1112,6 +1112,9 @@ export const COPY = {
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
+      // Beta.28.2 (ADR 0197): build.json or a slot a newer Atticus wrote.
+      "newer-atticus": () =>
+        "This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run atticus upgrade.",
     } as Record<string, (n: number) => string>,
     inTerminal: "In a terminal",
     reviewRemovals: (n: number) => `Review the ${n} removals`,
@@ -1132,6 +1135,13 @@ export const COPY = {
     editsIntro:
       "These files were changed by hand since the last build. A build never overwrites them: make each a curated decision, which every later build keeps, or discard them (a copy is kept for undo).",
     editsCaption: "Files changed by hand",
+    // ADR 0197 review (beta.28.2): build.json doesn't read, so every record file stands as a hand
+    // edit; building again is the only way on (`unreadableManifest`).
+    unreadableManifest: (n: number) =>
+      `catalog/sources/build.json doesn't read: it was edited or merged by hand. Without it none of the ${n} record files under catalog/generated can be told from a hand edit, so nothing is overwritten.`,
+    unreadableIntro:
+      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Making them curated isn't the way here.",
+    buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
     curate: (n: number) => `Make ${n === 1 ? "it" : `these ${n}`} curated`,
     curating: "Making them curated…",
@@ -4639,6 +4649,9 @@ export const COPY = {
       `This metarepo waits on ${n} upgrade step${n === 1 ? "" : "s"} for this Atticus. Upgrading backs up every file it changes under .atticus/backups/, runs each step and stamps the metarepo; then propose the changes for review.`,
     newer: (stamp: string, mine: string) =>
       `A newer Atticus (${stamp}) upgraded this metarepo; this is ${mine}. Install ${stamp} or later before working in it.`,
+    /** Beta.28.2 (ADR 0197): the catalog was built by a newer Atticus than this one. */
+    newerCatalog:
+      "This metarepo's catalog was built by a newer Atticus: upgrade Atticus (npm i -g @maycombhq/atticus@beta) before working in it. Don't run atticus upgrade; it is for a catalog older than this Atticus.",
     step: (summary: string, files: number) => `${summary} (${files} file${files === 1 ? "" : "s"})`,
     run: "Run the upgrade",
     running: "Upgrading…",
@@ -6289,7 +6302,9 @@ export const COPY = {
     confirmEdits: (n: number, button: string) =>
       `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it a curated decision" : "them curated decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
-    confirmRefused: (reasons: readonly ("nothing-read" | "empty" | "unexplained-removals")[]) =>
+    confirmRefused: (
+      reasons: readonly ("nothing-read" | "empty" | "unexplained-removals" | "newer-atticus")[],
+    ) =>
       `Apply will refuse and write nothing, whatever is confirmed: ${reasons
         .map(
           (r) =>
@@ -6299,6 +6314,8 @@ export const COPY = {
               empty:
                 "its build would hold no record from any repo's code over a catalog that has some",
               "nothing-read": "no repo could be read",
+              "newer-atticus":
+                "this metarepo's catalog was built by a newer Atticus (upgrade Atticus: npm i -g @maycombhq/atticus@beta; don't run atticus upgrade)",
             })[r],
         )
         .join("; ")}.`,

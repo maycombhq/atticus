@@ -13,6 +13,7 @@ import {
 } from "@maycombhq/core";
 import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
 import {
+  HttpError,
   startServer,
   type Router,
   type RunningServer,
@@ -22,6 +23,7 @@ import { stopAllBuilds } from "@maycombhq/taskrun";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
 import { answersMayHaveChanged, keepAnswersWhileWatched } from "./watched-memo.js";
+import { NEWER_GUARDED_ROUTES } from "./newer-guard.js";
 import { uiRoutes, type UiDeps } from "./ui-api.js";
 import { uiRunRoutes } from "./ui-api-run.js";
 import { uiMeRoutes } from "./ui-api-me.js";
@@ -82,7 +84,24 @@ export function extendUiRoutes(
   // app's, so a model call it makes is held to the address the person confirmed.
   const add = r.add.bind(r);
   r.add = ((method, pattern, handler, opts) =>
-    add(method, pattern, (req) => asTheApp(() => handler(req)), opts)) as Router["add"];
+    add(
+      method,
+      pattern,
+      // Beta.28.2 (ADR 0197): a writer of the build's inputs answers 409 before it writes
+      // anything when a newer Atticus built this metarepo's catalog (newer-guard.ts).
+      NEWER_GUARDED_ROUTES.has(`${method} ${pattern}`)
+        ? async (req) => {
+            const { refuseIfNewer } = await import("@maycombhq/scanner");
+            const newer = await refuseIfNewer(ctx.root);
+            if (newer)
+              throw new HttpError(409, "Built by a newer Atticus", newer.message, {
+                refused: newer,
+              });
+            return asTheApp(() => handler(req));
+          }
+        : (req) => asTheApp(() => handler(req)),
+      opts,
+    )) as Router["add"];
   const known = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
     warm: o.warm === true,
     ...(deps.doctor ? { doctor: deps.doctor } : {}),

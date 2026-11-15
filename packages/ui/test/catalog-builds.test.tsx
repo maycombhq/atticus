@@ -621,6 +621,30 @@ describe("a refused build: its list and its ways on, nothing written until confi
     expect(out).toContain(esc(B.upgradeTodo));
     expect(out).not.toContain('href="#/catalog-builds"');
   });
+
+  it("a build.json edited or merged by hand offers only Build again, never Make them curated", () => {
+    const out = html(
+      <RefusalView
+        refused={{
+          reasons: ["hand-edits"],
+          unreadableManifest: true,
+          message: "x",
+          edits: [{ path: "catalog/generated/table/ledger-db.account.yaml", how: "added" }],
+          discardEdits: 96,
+          command: "atticus catalog build --discard-edits 96",
+        }}
+        onAllowRemovals={fail}
+        onCurate={fail}
+        onDiscard={fail}
+      />,
+    );
+    expect(out).toContain(esc(B.unreadableManifest(96)));
+    expect(out).toContain(esc(B.buildAgain(96)));
+    expect(out).not.toContain(esc(B.curate(1)));
+    expect(out).not.toContain(esc(B.curateHint));
+    expect(out).not.toContain("ledger-db.account.yaml");
+    expect(out).not.toContain("atticus upgrade");
+  });
 });
 
 describe("Set up › Scans says what a scan read of each repo", () => {

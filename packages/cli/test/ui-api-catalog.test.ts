@@ -17,6 +17,7 @@ import { startServer, type RunningServer } from "@maycombhq/server";
 import { catalogBuild, listHooks } from "../src/catalog-build-commands.js";
 import { coalesced } from "../src/ui-api-catalog.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
+import { v1Of } from "./build-json-v1.js";
 
 /**
  * ADR 0195 ticket CS3 (C4 3.12.0): the readers' cross-check and the build's confirm steps, as the
@@ -767,5 +768,64 @@ describe("an upgrade whose first build changes the catalog waits for the count o
     expect((await callUp("/api/build/undo")).body.copies[0]).toMatchObject({
       command: "atticus upgrade --yes --accept-changes 1",
     });
+  });
+});
+
+describe("a build.json edited or merged by hand, as the app shows it (ADR 0197 review, C4 3.15.0)", () => {
+  let dir: string;
+  let bad: RunningServer;
+  const callBad = callOn(() => bad);
+  const jobBad = jobOn(callBad);
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "atticus-cs3-unreadable-"));
+    await cp(join(FORGE, "metarepo/org-pack"), join(dir, "org-pack"), { recursive: true });
+    await writeFile(join(dir, "org-pack/sources.yaml"), "schemaVersion: 1\nwikis: []\n");
+    await cp(join(SLOTS, "readers"), join(dir, "catalog/sources/readers"), { recursive: true });
+    await cp(join(SLOTS, "facts"), join(dir, "catalog/sources/facts"), { recursive: true });
+    expect(await catalogBuild(dir, {}, quiet)).toBe(0);
+    // Version 1 with one source at two hashes (a merge of two builds' lines), in another clone
+    // of the metarepo: no undo copy to catch up from.
+    const path = join(dir, "catalog/sources/build.json");
+    const v1 = JSON.parse(v1Of(await readFile(path, "utf8"))) as {
+      files: { sources: { sha256: string }[] }[];
+    };
+    v1.files.find((f) => f.sources.length)!.sources[0]!.sha256 = "f".repeat(64);
+    await writeFile(path, JSON.stringify(v1, null, 2) + "\n");
+    await rm(join(dir, ".index"), { recursive: true, force: true });
+    bad = await startServer({
+      root: dir,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) => extendUiRoutes(r, ctx),
+    });
+  }, 240_000);
+  afterAll(async () => {
+    await bad?.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("offers only to build again over every record file, never Make them curated", async () => {
+    const r = await callBad("/api/build");
+    const refused = r.body.pending.refused;
+    expect(refused.reasons).toEqual(["hand-edits"]);
+    expect(refused.unreadableManifest).toBe(true);
+    const n = refused.discardEdits as number;
+    expect(n).toBeGreaterThan(10);
+    expect(refused.command).toBe(`atticus catalog build --discard-edits ${n}`);
+    expect(refused.message).toContain("build.json was edited or merged by hand: build again");
+    expect(r.body.upgrade).toBeUndefined();
+    const before = await tree(join(dir, "catalog"));
+    // Make them curated refuses (its job ends with code 1), writing nothing.
+    const c = await jobBad("/api/build/edits/curate", { count: n, plan: r.body.pending.plan });
+    expect(c.result?.code).toBe(1);
+    expect(c.result!.lines.join(" ")).toContain(`atticus catalog build --discard-edits ${n}`);
+    expect(await tree(join(dir, "catalog"))).toEqual(before);
+    // Build again with that count: version 2 is written, and nothing waits.
+    const b = await jobBad("/api/build", { discardEdits: n, plan: r.body.pending.plan });
+    expect(b.result?.code, b.result?.lines.join("\n")).toBe(0);
+    const m = JSON.parse(await readFile(join(dir, "catalog/sources/build.json"), "utf8"));
+    expect(m.version).toBe(2);
+    expect((await callBad("/api/build")).body.pending.refused).toBeUndefined();
   });
 });

@@ -133,8 +133,8 @@ export function confirmOf(
     { reasons: readonly string[]; allowRemovals?: number; discardEdits?: number } | undefined,
 ): Preview["confirm"] {
   if (!refused?.reasons.length) return undefined;
-  const hard = (["nothing-read", "empty", "unexplained-removals"] as const).filter((r) =>
-    refused.reasons.includes(r),
+  const hard = (["nothing-read", "empty", "unexplained-removals", "newer-atticus"] as const).filter(
+    (r) => refused.reasons.includes(r),
   );
   if (hard.length) return { refused: hard };
   if (refused.reasons.includes("not-upgraded"))

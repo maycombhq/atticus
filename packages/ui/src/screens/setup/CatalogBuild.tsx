@@ -301,7 +301,11 @@ export function RefusalView(p: {
       </p>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {r.reasons.map((x) => (
-          <li key={x}>{B.reason[x]?.(n(x)) ?? x}</li>
+          <li key={x}>
+            {x === "hand-edits" && r.unreadableManifest
+              ? B.unreadableManifest(nEdits)
+              : (B.reason[x]?.(n(x)) ?? x)}
+          </li>
         ))}
       </ul>
       {r.unexplained && r.unexplained.length > 0 && <RemovalsTable removals={r.unexplained} />}
@@ -312,7 +316,24 @@ export function RefusalView(p: {
           </button>
         </div>
       )}
-      {r.reasons.includes("hand-edits") && (
+      {r.reasons.includes("hand-edits") && r.unreadableManifest && (
+        <section className="stack" style={{ gap: 6 }} aria-labelledby="cb-edits">
+          <h3 id="cb-edits" className="hud" style={{ margin: 0 }}>
+            {B.editsTitle}
+          </h3>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.unreadableIntro}
+          </p>
+          {p.onDiscard && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button type="button" className="btn primary" onClick={() => setDialog("discard")}>
+                {B.buildAgain(nEdits)}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+      {r.reasons.includes("hand-edits") && !r.unreadableManifest && (
         <section className="stack" style={{ gap: 6 }} aria-labelledby="cb-edits">
           <h3 id="cb-edits" className="hud" style={{ margin: 0 }}>
             {B.editsTitle}

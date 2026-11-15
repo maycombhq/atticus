@@ -31,6 +31,9 @@ import {
   guardBuild,
   listUndo,
   loadBuildInputs,
+  newerAtticusWords,
+  newerCatalogFiles,
+  newerInUndoPlan,
   planUndo,
   readBuildManifest,
   sha256Of,
@@ -42,6 +45,7 @@ import {
   type BuildAndWrite,
   type BuildRefusal,
   type HandEdit,
+  type NewerFile,
 } from "@maycombhq/scanner";
 import { gitUser } from "@maycombhq/workspace";
 import { buildPlanOf, pageChanged, prunePlanHash, undoPlanHash } from "./build-report.js";
@@ -125,8 +129,14 @@ export function buildJson(r: BuildAndWrite) {
  * in plain words and the command that goes on, so an action never just fails.
  */
 export function refusalHint(r: BuildRefusal, command: string): string {
+  // Beta.28.2 (ADR 0197): its own words, never the upgrade's.
+  if (r.reasons.includes("newer-atticus"))
+    return r.message.split("\n").slice(1).join(" ") || r.message;
   if (r.reasons.includes("not-upgraded"))
     return "This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).";
+  // ADR 0197 review: build.json doesn't read; building again is the only way on, never curate.
+  if (r.unreadableManifest)
+    return `catalog/sources/build.json doesn't read (edited or merged by hand): build again, replacing every record file with this build: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("hand-edits"))
     return `Files under catalog/generated were changed by hand. Make them curated: atticus catalog edits --curate, or discard them: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("unexplained-removals"))
@@ -216,8 +226,10 @@ export async function catalogBuild(
         );
       for (const l of buildLines(root, r)) (r.guard.refused ? io.err : io.out)(l);
     }
-    for (const p of r.build.problems)
-      if (!o.json) io.err(`${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
+    // A catalog a newer Atticus wrote: its slots' problems here are this Atticus's misreading.
+    if (!r.guard.refused?.reasons.includes("newer-atticus"))
+      for (const p of r.build.problems)
+        if (!o.json) io.err(`${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
     return r.guard.refused ? 1 : 0;
   };
   const code = o.check || o.held ? await run() : await locked(root, command, io, run);
@@ -277,8 +289,18 @@ export async function catalogUndo(
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
+  // Beta.28.2 (ADR 0197): no undo over, or back to, a catalog a newer Atticus built.
+  const newer = async (p: Awaited<ReturnType<typeof planUndo>>) => {
+    const files = [
+      ...(await newerCatalogFiles(root, { undoDir })),
+      ...("problem" in p ? [] : await newerInUndoPlan(undoDir, p)),
+    ];
+    return files.length ? refuseNewer(io, o.json, files, "Nothing undone") : undefined;
+  };
   const list = await listUndo(undoDir);
   const plan = await planUndo(undoDir, o.n);
+  const refusedNewer = await newer(plan);
+  if (refusedNewer !== undefined) return refusedNewer;
   if ("problem" in plan) {
     if (o.json) io.out(JSON.stringify({ copies: list, problem: plan.problem }, null, 2));
     else io.err(plan.problem);
@@ -313,6 +335,8 @@ export async function catalogUndo(
     }
     if (o.plan !== undefined && undoPlanHash(again) !== o.plan)
       return refuseChanged(io, o.json, pageChanged("what the undo puts back"));
+    const newerNow = await newer(again);
+    if (newerNow !== undefined) return newerNow;
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
@@ -381,6 +405,30 @@ export async function catalogUndo(
     }
     return 0;
   });
+}
+
+/**
+ * Beta.28.2 (ADR 0197): a command that refuses a catalog a newer Atticus wrote, in the build's
+ * words (upgrade Atticus, never `atticus upgrade`), and with `--json` the build's refusal shape.
+ */
+function refuseNewer(
+  io: Output,
+  json: boolean | undefined,
+  files: readonly NewerFile[],
+  what: string,
+  extra: Record<string, unknown> = {},
+): number {
+  const message = `${what}: ${newerAtticusWords(files)}`;
+  io.err(message);
+  if (json)
+    io.out(
+      JSON.stringify(
+        { ...extra, refused: { reasons: ["newer-atticus"], message, newer: files } },
+        null,
+        2,
+      ),
+    );
+  return 1;
 }
 
 /** What a command listed changed before it could take the lock: it writes nothing. */
@@ -519,7 +567,13 @@ async function planEdits(
   undoDir: string,
   /** Kept between the listing and the plan under the lock: a build of the same inputs. */
   memo?: Map<string, Map<string, CatalogRecord>>,
-): Promise<EditPlan[] & { buildPlan?: string; notUpgraded?: boolean }> {
+): Promise<
+  EditPlan[] & {
+    buildPlan?: string;
+    notUpgraded?: boolean;
+    unreadableManifest?: { files: number };
+  }
+> {
   const inputs = await loadBuildInputs(root);
   // Built from the inputs as loaded, where GET /api/build (catalogBuildView: buildAndWrite with
   // `check`) builds them through slotsAfter and withFactsWrites. With no slot writes those give
@@ -674,7 +728,11 @@ async function planEdits(
     }
     return unsuppressed.get(rel);
   };
-  const out: EditPlan[] & { buildPlan?: string; notUpgraded?: boolean } = [];
+  const out: EditPlan[] & {
+    buildPlan?: string;
+    notUpgraded?: boolean;
+    unreadableManifest?: { files: number };
+  } = [];
   // The plan GET /api/build lists for this build (an app's confirm checks it under the lock).
   Object.defineProperty(out, "buildPlan", {
     value: buildPlanOf(g),
@@ -684,6 +742,12 @@ async function planEdits(
   // file under it is a hand edit yet, and `atticus upgrade` adopts every one of them.
   Object.defineProperty(out, "notUpgraded", {
     value: !!g.refused?.reasons.includes("not-upgraded"),
+    enumerable: false,
+  });
+  // ADR 0197 review: a build.json that doesn't read lists every file as a hand edit; none is one
+  // to make curated, and building again is the way on.
+  Object.defineProperty(out, "unreadableManifest", {
+    value: g.refused?.unreadableManifest ? { files: g.refused.discardEdits ?? 0 } : undefined,
     enumerable: false,
   });
   for (const e of edits) {
@@ -793,6 +857,10 @@ export async function catalogEdits(
   io: Output,
 ): Promise<number> {
   const undoDir = await undoDirOf(root);
+  // Beta.28.2 (ADR 0197): a catalog a newer Atticus wrote has no hand edits this one can tell.
+  const newerFiles = await newerCatalogFiles(root, { undoDir });
+  if (newerFiles.length)
+    return refuseNewer(io, o.json, newerFiles, "Nothing to curate", { edits: [], decisions: [] });
   const memo = new Map<string, Map<string, CatalogRecord>>();
   const listed = await planEdits(root, undoDir, memo);
   // Property seed 1562698156: every writer refuses until `atticus upgrade --yes`, and so does
@@ -804,6 +872,29 @@ export async function catalogEdits(
       io.out(
         JSON.stringify(
           { edits: [], decisions: [], refused: { reasons: ["not-upgraded"], message: why } },
+          null,
+          2,
+        ),
+      );
+    return 1;
+  }
+  if (listed.unreadableManifest) {
+    const n = listed.unreadableManifest.files;
+    const why = `Nothing to curate: catalog/sources/build.json doesn't read (edited or merged by hand), so no file under catalog/generated can be told from a hand edit. Build again, replacing every record file with this build (a copy is kept for atticus catalog undo): atticus catalog build --discard-edits ${n}.`;
+    io.err(why);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          {
+            edits: [],
+            decisions: [],
+            refused: {
+              reasons: ["hand-edits"],
+              unreadableManifest: true,
+              discardEdits: n,
+              message: why,
+            },
+          },
           null,
           2,
         ),
@@ -846,6 +937,9 @@ export async function catalogEdits(
   }
   return locked(root, "atticus catalog edits --curate", io, async () => {
     // Planned again under the lock: what it writes is what it listed, or nothing.
+    const newerNow = await newerCatalogFiles(root, { undoDir });
+    if (newerNow.length)
+      return refuseNewer(io, o.json, newerNow, "Nothing to curate", { edits: [], decisions: [] });
     const plans = await planEdits(root, undoDir, memo);
     if (JSON.stringify(plans) !== JSON.stringify(listed)) {
       const why =

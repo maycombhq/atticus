@@ -82,6 +82,8 @@ export interface GlossaryForScanInput {
   pages?: readonly KnowledgePage[];
   /** The org-pack folder wiki locations are relative to; default the root's. */
   orgPackDir?: string;
+  /** False: the build's naming hints are left out (`buildGlossary`'s `hints`). Default true. */
+  hints?: boolean;
 }
 
 export interface GlossaryForScanResult {
@@ -112,6 +114,7 @@ export async function glossaryForScan(i: GlossaryForScanInput): Promise<Glossary
     records: i.records,
     decisions: i.decisions,
     proposals: prop.proposals,
+    ...(i.hints === false ? { hints: false } : {}),
   });
   problems.push(...build.problems);
   return { build, records: applyGlossary(i.records, build), problems };

@@ -604,6 +604,19 @@ describe("17: the upgrade panel", () => {
     );
     expect(withFiles).toContain(esc(COPY.upgrade.done));
     expect(withFiles).toMatch(/<button[^>]*>[^<]*(Propose|propose)/);
+    // Beta.28.2 (ADR 0197): a catalog a newer Atticus built: an alert to upgrade Atticus, and
+    // no button to run the upgrade, which would refuse.
+    const newerCatalog = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={{ ...view, pending: [], newerCatalog: "built by a newer Atticus" }}
+        run={{ state: "idle" }}
+        onRun={() => undefined}
+      />,
+    );
+    expect(newerCatalog).toContain('role="alert"');
+    expect(newerCatalog).toContain(esc(COPY.upgrade.newerCatalog));
+    expect(newerCatalog).not.toContain("<button");
+    expect(COPY.upgrade.newerCatalog).toContain("npm i -g @maycombhq/atticus@beta");
   });
 
   it("reads what the run changed from the job's result (final round)", async () => {

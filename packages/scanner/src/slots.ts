@@ -41,9 +41,17 @@ import { changesSince, type GitRunner } from "@maycombhq/workspace";
 export const SLOT_VERSION = 1 as const;
 /**
  * The version of `catalog/sources/build.json` this Atticus writes (ADR 0197: 2, each source
- * listed once). It reads 1 as well, and refuses a later one (`NewerBuildManifestError`).
+ * listed once). It reads 1 as well. A later one is the guard's newer-atticus refusal, checked
+ * before this module parses it (`BUILD_MANIFEST_READS`); `NewerBuildManifestError` is the last
+ * resort of a reader that check doesn't come before.
  */
 export const BUILD_MANIFEST_VERSION = 2 as const;
+/**
+ * ADR 0197: the newest `build.json` version this Atticus reads, and the M of the newer-Atticus
+ * refusal ("this Atticus reads up to M"): a later one was written by a newer Atticus. It follows
+ * BUILD_MANIFEST_VERSION, so the version 2 writer raises both at once.
+ */
+export const BUILD_MANIFEST_READS: number = BUILD_MANIFEST_VERSION;
 /**
  * The build's own version (ADR 0195 point 4, review of CS1): bumped whenever the build's passes
  * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
@@ -521,6 +529,122 @@ export function parseLegacyJoins(text: string): SlotParse<LegacyJoinsSlotT> {
 }
 
 /**
+ * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): a file under catalog/sources
+ * that a newer Atticus wrote, at a version of its format this one doesn't read. This Atticus
+ * neither reads it nor writes over it: the build, `atticus upgrade` and undo refuse, and say to
+ * upgrade Atticus, never to run `atticus upgrade` (which is for a catalog older than this one).
+ */
+export interface NewerFile {
+  /** Metarepo-relative, '/'-separated. */
+  path: string;
+  /** What the words call it: `build.json`, or its path. */
+  name: string;
+  /** The version field (`version`, `slotVersion`, `factsSchemaVersion`). */
+  field: string;
+  version: number;
+  /** The newest version of it this Atticus reads. */
+  reads: number;
+}
+
+/** The versioned formats under catalog/sources a build reads, by their path there. */
+export function versionedFormatOf(
+  rel: string,
+): { field: string; reads: number; also?: { field: string; reads: number } } | undefined {
+  if (/(^|\/)build\.json$/.test(rel) || /(^|\/)next-build\.json$/.test(rel))
+    return { field: "version", reads: BUILD_MANIFEST_READS };
+  if (/(^|\/)facts\/[^/]+\.meta\.json$/.test(rel))
+    return {
+      field: "slotVersion",
+      reads: SLOT_VERSION,
+      also: { field: "factsSchemaVersion", reads: FACTS_SCHEMA_VERSION },
+    };
+  if (/(^|\/)readers\/[^/]+\.json$/.test(rel) || /(^|\/)legacy\/joins\.json$/.test(rel))
+    return { field: "slotVersion", reads: SLOT_VERSION };
+  return undefined;
+}
+
+const HEAD_BYTES = 512;
+
+/**
+ * The versions a versioned text says, when newer than this Atticus reads. Every format here is
+ * canonical with its version first, so the first bytes say it (a 190 MB build.json isn't read
+ * whole for it); a text that doesn't begin so is parsed whole, so a newer Atticus's file of
+ * another shape is still known by its version, wherever the field is.
+ */
+export function newerVersionsIn(
+  text: string,
+  format: { field: string; reads: number; also?: { field: string; reads: number } },
+): { field: string; version: number; reads: number }[] {
+  const out: { field: string; version: number; reads: number }[] = [];
+  const t = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).slice(0, HEAD_BYTES);
+  const first = new RegExp(`^\\s*\\{\\s*"${format.field}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)\\s*[,}]`);
+  const m = first.exec(t);
+  const fields = [format, ...(format.also ? [format.also] : [])];
+  let value: Record<string, unknown> | undefined;
+  if (!m || format.also) {
+    const j = parseJson(text);
+    if (j.ok && j.value && typeof j.value === "object" && !Array.isArray(j.value))
+      value = j.value as Record<string, unknown>;
+  }
+  for (const f of fields) {
+    const v = f === format && m ? Number(m[1]) : value?.[f.field];
+    if (typeof v === "number" && Number.isFinite(v) && v > f.reads)
+      out.push({ field: f.field, version: v, reads: f.reads });
+  }
+  return out;
+}
+
+/** The first bytes of a file (enough for its version), or undefined when it isn't there. */
+async function headOf(path: string): Promise<string | undefined> {
+  const { open } = await import("node:fs/promises");
+  let fh;
+  try {
+    fh = await open(path, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0);
+    return buf.subarray(0, bytesRead).toString("utf8");
+  } catch {
+    // A folder whose name ends .json (EISDIR), or a file that can't be read: no version to say.
+    return undefined;
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * Whether a versioned file on disk was written by a newer Atticus: its first bytes, and the
+ * whole file only when they don't begin with its version (or for a facts meta, which is small
+ * and says its facts' version later). `rel` is its metarepo-relative path, `name` its words.
+ */
+export async function newerFileAt(abs: string, rel: string, name = rel): Promise<NewerFile[]> {
+  const format = versionedFormatOf(rel);
+  if (!format) return [];
+  const head = await headOf(abs);
+  if (head === undefined) return [];
+  const first = new RegExp(`^\\s*\\{\\s*"${format.field}"\\s*:\\s*-?\\d`);
+  const text =
+    first.test(head.charCodeAt(0) === 0xfeff ? head.slice(1) : head) && !format.also
+      ? head
+      : await readFile(abs, "utf8").catch(() => undefined);
+  if (text === undefined) return [];
+  return newerVersionsIn(text, format).map((x) => ({ path: rel, name, ...x }));
+}
+
+/**
+ * The refusal's words for files a newer Atticus wrote (ADR 0197, beta.28.2): upgrade Atticus,
+ * and never `atticus upgrade`, which would take a newer catalog for an older one.
+ */
+export function newerAtticusWords(files: readonly NewerFile[]): string {
+  const f = files[0]!;
+  const more = files.length > 1 ? `, and ${files.length - 1} more of its files` : "";
+  return `This metarepo's catalog was built by a newer Atticus (${f.name} ${f.field === "version" ? "version" : f.field} ${f.version}; this Atticus reads up to ${f.reads}${more}): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
+}
+
+/**
  * build.json of version 1 or 2, read as version 2 (ADR 0197). A later version is refused with
  * `newer`: a newer Atticus wrote it.
  */
@@ -528,7 +652,7 @@ export function parseBuildManifest(text: string): SlotParse<BuildManifestT> {
   const j = parseJson(text);
   if (!j.ok) return j;
   const version = (j.value as { version?: unknown } | null)?.version;
-  if (typeof version === "number" && Number.isInteger(version) && version > BUILD_MANIFEST_VERSION)
+  if (typeof version === "number" && Number.isInteger(version) && version > BUILD_MANIFEST_READS)
     return {
       ok: false,
       newer: version,

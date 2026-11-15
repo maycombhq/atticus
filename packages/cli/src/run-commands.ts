@@ -285,6 +285,12 @@ export async function runDone(
   }
   // Ninth UX walk (ADR 0181): a hand-off of questions propose or a Match reads its answer back
   // and decides from it as the AI's, through Atticus.
+  // Beta.28.2 (ADR 0197): every other run's Done can write what the build reads (the AI's
+  // answers or pairings, glossary definitions, feature names) and then build: refused before it
+  // writes anything over a catalog a newer Atticus built. A task run's builds the change's code.
+  const { refuseNewerCommand } = await import("./newer-guard.js");
+  const refusedNewer = await refuseNewerCommand(root, io, o.json === true);
+  if (refusedNewer !== undefined) return refusedNewer;
   const agent = await runAgentOf(root, runId);
   if (agent === "decide-propose" || agent === "decide-match") {
     const { decideRunDone } = await import("./decide-handoff.js");
