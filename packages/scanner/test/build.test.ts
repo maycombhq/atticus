@@ -10,6 +10,7 @@ import { loadOrgPack, parseFacts, trustKeptFiles } from "@maycombhq/core";
 import {
   applyUndo,
   buildAndWrite,
+  buildManifestPath,
   buildCatalog,
   BUILD_VERSION,
   buildWriteHooks,
@@ -342,6 +343,25 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       expect(r.guard.refused?.removals?.map((x) => [x.path, x.explainedBy])).toEqual([
         [feature.ghost.path, ["another repo's slot changed (a join with it)"]],
       ]);
+      expect(await snap(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "build.json deleted by hand after a good build: a build that removes records is still guarded, never silent (the re-review)",
+    async () => {
+      const root = await forge();
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      // A second build, so the latest undo copy holds the build.json the good build wrote.
+      const w0 = await dropRecords(root, "forge-ledger", () => true);
+      await buildAndWrite(root, { command: "atticus scan", slots: [w0] });
+      await rm(buildManifestPath(root));
+      const before = await snap(root);
+      const w = await dropRecords(root, "forge-ledger", (k) => k === "Component");
+      const r = await buildAndWrite(root, { command: "atticus scan", slots: [w] });
+      expect(r.guard.refused?.reasons).toContain("large-removals");
+      expect(r.guard.refused!.removals!.length).toBeGreaterThan(0);
       expect(await snap(root)).toEqual(before);
     },
     T,

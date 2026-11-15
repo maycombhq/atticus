@@ -2254,6 +2254,11 @@ export async function guardBuild(
   const interrupted = await interruptedManifest(o.undoDir, last.text);
   const alt = new Map<string, string>();
   for (const f of interrupted?.files ?? []) alt.set(strip(f.path), f.sha256);
+  // The re-review: with no build.json (deleted by hand, or a first build cut short), the manifest
+  // the latest undo copy says the last build wrote stands in for it, so the removals are still
+  // listed and guarded, never silently written. Only a catalog no manifest can be found for is
+  // one from before the slots.
+  const lastManifest = last.manifest ?? interrupted;
   // A catalog with no build.json is one from before the slots, unless every file in it is what
   // the first build, cut short, was writing (its undo copy's manifest): that build catches up.
   const before =
@@ -2313,13 +2318,13 @@ export async function guardBuild(
   const unexplained: Removal[] = [];
   /** The removals that are a loose end this build joins (G1): listed, never counted to a limit. */
   const joinedLooseEnds = new Set<string>();
-  if (last.manifest) {
+  if (lastManifest) {
     const nowSources = new Set<string>();
     for (const f of b.manifest.files)
       for (const s of f.sources) nowSources.add(`${s.path}\u0000${s.sha256}`);
     const oldRecords = new Map<string, CatalogRecord>();
     // The last build's records are read only when this one removes any (most builds don't).
-    const removing = last.manifest.files.some((f) => {
+    const removing = lastManifest.files.some((f) => {
       const p = strip(f.path);
       return !b.files.has(p) && onDisk.has(p);
     });
@@ -2346,7 +2351,7 @@ export async function guardBuild(
     // Each slot file as the last build read it.
     const slotThen = new Set<string>();
     const sawThen = new Set<string>();
-    for (const f of last.manifest.files)
+    for (const f of lastManifest.files)
       for (const x of f.sources) {
         const key = `${x.path}\u0000${x.sha256}`;
         if (sawThen.has(key)) continue;
@@ -2370,7 +2375,7 @@ export async function guardBuild(
     // of the whole list for each arrow was quadratic). A path ends with `/${rel}` exactly when
     // one of its tails at a `/` is `rel`.
     const lastTails = new Set<string>();
-    for (const f of last.manifest.files)
+    for (const f of lastManifest.files)
       for (let k = f.path.indexOf("/"); k >= 0; k = f.path.indexOf("/", k + 1))
         lastTails.add(f.path.slice(k + 1));
     for (const x of b.records) {
@@ -2408,7 +2413,7 @@ export async function guardBuild(
     // An arrow's ends, by repo, as the last build had them: a join with a repo gone is explained.
     const oldEnds = endReposOf(oldRecords.values());
     const liveNow = new Set(b.sources.map((s) => s.repo));
-    for (const f of last.manifest.files) {
+    for (const f of lastManifest.files) {
       const p = strip(f.path);
       if (b.files.has(p)) continue;
       // A file deleted by hand isn't a removal of this build's: the edits above list it (or
@@ -2490,8 +2495,8 @@ export async function guardBuild(
       const goneSaid = endGoneWords(gone, guessedEnd);
       for (const w of goneSaid.words) why.add(w);
       for (const k of goneSaid.kinds) kinds.add(k);
-      if (last.manifest.buildVersion !== b.manifest.buildVersion) {
-        why.add(`the build changed (${last.manifest.buildVersion} to ${b.manifest.buildVersion})`);
+      if (lastManifest.buildVersion !== b.manifest.buildVersion) {
+        why.add(`the build changed (${lastManifest.buildVersion} to ${b.manifest.buildVersion})`);
         kinds.add("build");
       }
       if (b.curated.suppressed.includes(id)) {
@@ -2610,7 +2615,7 @@ export async function guardBuild(
   // ---- no empty catalog over a full one
   const fromCode = (r: CatalogRecord) => r.evidence.some((e) => !!e.repo);
   const emptyNow = !b.records.some(fromCode) && b.listed.length > 0;
-  const hadCode = emptyNow && last.manifest ? (await lastRecords()).some(fromCode) : false;
+  const hadCode = emptyNow && lastManifest ? (await lastRecords()).some(fromCode) : false;
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
