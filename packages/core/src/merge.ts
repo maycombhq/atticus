@@ -684,35 +684,30 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       .map((r) => String(r.normalizedPath)),
   );
   // Property seed 1557984687: the ends the code's own topic arrows join already (the estate
-  // join's, of repos read from their facts), by topic, each with its side's evidence. A loose
-  // listener (a repo read by its readers) still hears such a publisher, and a loose publisher
-  // such a listener: one consumer read from its facts takes no other consumer away.
+  // join's, of repos read from their facts), by topic. A loose listener (a repo read by its
+  // readers) still hears such a publisher, and a loose publisher such a listener: one consumer
+  // read from its facts takes no other consumer away. The review: an end counts only from a
+  // current arrow, and only by that end's own line of code (the publisher's `caller` side, the
+  // listener's `callee` side), so a new arrow never cites a person's word, a guess or a document
+  // as the other end's code; an end with no such line isn't one.
   const joinedEnds = new Map<
     string,
     { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }
   >();
+  const own = (evs: readonly Evidence[], side: "caller" | "callee") =>
+    evs.filter((x) => x.source === "code" && x.side === side);
   for (const r of input.records as unknown as Rec[]) {
     if (r.kind !== "Interface" || r.via !== "event-bus") continue;
+    if ((r.status ?? "current") !== "current") continue;
     if (((r.flags as string[] | undefined) ?? []).includes(DECLARED_TOPIC)) continue;
     const t = String(r.normalizedPath);
     const e = joinedEnds.get(t) ?? { pub: new Map(), sub: new Map() };
-    const evs = r.evidence;
     const from = String(r.from);
     const to = String(r.to);
-    e.pub.set(
-      from,
-      unionEvidence(
-        e.pub.get(from) ?? [],
-        evs.filter((x) => x.side !== "callee"),
-      ),
-    );
-    e.sub.set(
-      to,
-      unionEvidence(
-        e.sub.get(to) ?? [],
-        evs.filter((x) => x.side !== "caller"),
-      ),
-    );
+    const pubEv = own(r.evidence, "caller");
+    const subEv = own(r.evidence, "callee");
+    if (pubEv.length) e.pub.set(from, unionEvidence(e.pub.get(from) ?? [], pubEv));
+    if (subEv.length) e.sub.set(to, unionEvidence(e.sub.get(to) ?? [], subEv));
     joinedEnds.set(t, e);
   }
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
@@ -756,9 +751,26 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     const already = joinedEnds.get(topic);
     const pubs = new Map([...(already?.pub ?? []), ...pub]);
     const subs = new Map([...(already?.sub ?? []), ...sub]);
-    for (const [p, pev] of [...pubs.entries()].sort()) {
-      for (const [s, sev] of [...subs.entries()].sort()) {
-        if (p === s || (!pub.has(p) && !sub.has(s))) continue;
+    // The pairs with a loose end: each loose publisher with every listener, then every publisher
+    // with each loose listener (an arrow the join made already, between two joined ends, isn't
+    // made again). The review: not every publisher with every listener of the topic.
+    const heardPub = new Set<string>();
+    const heardSub = new Set<string>();
+    const seen = new Set<string>();
+    const pairsOf: [string, Evidence[], string, Evidence[]][] = [];
+    const add = (p: string, pev: Evidence[], s: string, sev: Evidence[]) => {
+      if (p === s || seen.has(`${p}\u0000${s}`)) return;
+      seen.add(`${p}\u0000${s}`);
+      pairsOf.push([p, pev, s, sev]);
+    };
+    for (const [p, pev] of pub) for (const [s, sev] of subs) add(p, pev, s, sev);
+    for (const [s, sev] of sub) for (const [p, pev] of pubs) add(p, pev, s, sev);
+    const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+    pairsOf.sort((a, b) => (a[0] === b[0] ? byCode(a[2], b[2]) : byCode(a[0], b[0])));
+    for (const [p, pev, s, sev] of pairsOf) {
+      heardPub.add(p);
+      heardSub.add(s);
+      {
         const pc = pev.filter((e) => e.source === "code");
         const sc = sev.filter((e) => e.source === "code");
         const pairEp = epOf(p, s);
@@ -821,23 +833,16 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       }
       continue;
     }
-    // A publisher or subscriber with no counterpart stays a loose end.
-    if (subs.size === 0)
-      for (const l of loose.filter(
-        (x) =>
-          x.unresolvedKind === "event-publish" &&
-          x.raw === topic &&
-          x.evidence.some((e) => e.source === "code"),
-      ))
-        unresolved.push(l);
-    if (pubs.size === 0)
-      for (const l of loose.filter(
-        (x) =>
-          x.unresolvedKind === "event-subscribe" &&
-          x.raw === topic &&
-          x.evidence.some((e) => e.source === "code"),
-      ))
-        unresolved.push(l);
+    // A publisher or subscriber no arrow was made for stays a loose end (the review: this loose
+    // end's own arrows, not whether the topic has another side).
+    for (const l of loose.filter(
+      (x) =>
+        x.raw === topic &&
+        x.evidence.some((e) => e.source === "code") &&
+        ((x.unresolvedKind === "event-publish" && !heardPub.has(String(x.owner))) ||
+          (x.unresolvedKind === "event-subscribe" && !heardSub.has(String(x.owner)))),
+    ))
+      unresolved.push(l);
   }
 
   // ---- 6. database access

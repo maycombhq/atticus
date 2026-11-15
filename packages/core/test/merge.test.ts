@@ -313,6 +313,92 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     ).toEqual(["audit>payments", "orders>payments"]);
   });
 
+  it("counts a joined end only from current arrows and that end's own code line (the review)", () => {
+    const T = "forge.orders.changed";
+    const at = (repo: string, side: "caller" | "callee", source = "code") => ({
+      ...ev[0]!,
+      source,
+      repo,
+      path: `${repo}.java`,
+      side,
+    });
+    const arrow = (evidence: unknown[], extra: Record<string, unknown> = {}) =>
+      ({
+        ...base,
+        kind: "Interface",
+        id: interfaceId("orders", "payments", undefined, T),
+        from: "orders",
+        to: "payments",
+        via: "event-bus",
+        normalizedPath: T,
+        sync: "async",
+        direction: "outbound",
+        conflicts: [],
+        evidence,
+        ...extra,
+      }) as unknown as CatalogRecord;
+    const pairs = (records: CatalogRecord[]) =>
+      (
+        merged([
+          component("orders", "portal"),
+          component("payments", "ledger"),
+          component("audit", "ledger"),
+          component("ledger", "ledger"),
+          ...records,
+        ]).records.filter((x) => x.kind === "Interface") as unknown as {
+          from: string;
+          to: string;
+          evidence: { repo?: string; source?: string }[];
+        }[]
+      )
+        .map((i) => `${i.from}>${i.to}`)
+        .sort();
+    // P1: a person's pairing: the listener's side is the person's word, no line of its code.
+    const person = arrow(
+      [
+        at("forge-orders", "caller"),
+        { source: "manual", repo: "forge-orders", path: "a.java", line: 1, by: "person" },
+      ],
+      { flags: ["joined-by-person"] },
+    );
+    expect(pairs([person, loose("audit", "event-publish", T, "caller")])).toEqual([
+      "orders>payments",
+    ]);
+    // P2: a call fact naming its target, with no line of the listener's.
+    expect(
+      pairs([arrow([at("forge-orders", "caller")]), loose("audit", "event-publish", T, "caller")]),
+    ).toEqual(["orders>payments"]);
+    // P3: a spec's planned arrow is no code's join: no current arrow from a document.
+    const planned = arrow(
+      [at("forge-orders", "caller", "spec"), at("forge-payments", "callee", "spec")],
+      {
+        status: "planned",
+        confidence: "asserted",
+      },
+    );
+    expect(pairs([planned, loose("ledger", "event-subscribe", T, "callee")])).not.toContain(
+      "orders>ledger",
+    );
+    // The code's own lines on both sides: each end counts, citing only its own line.
+    const both = arrow([at("forge-orders", "caller"), at("forge-payments", "callee")]);
+    const r = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      both,
+      loose("audit", "event-publish", T, "caller"),
+    ]);
+    const made = (
+      r.records.filter((x) => x.kind === "Interface") as unknown as {
+        from: string;
+        to: string;
+        evidence: { repo?: string }[];
+      }[]
+    ).find((i) => i.from === "audit")!;
+    expect(made.to).toBe("payments");
+    expect(made.evidence.map((e) => e.repo).sort()).toEqual(["forge-payments", "r"]);
+  });
+
   it("gives a pair the topic's Endpoint only when it is the topic's definition or one of the pair serves it (ADR 0195, locality)", () => {
     // forge-payments' facts read its listener as an Endpoint of its own on the topic: the
     // arrow from the publisher to forge-ledger, another consumer, doesn't point at it.
