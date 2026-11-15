@@ -35,7 +35,8 @@ export interface CodeTerm {
   types: Record<string, string>;
 }
 
-interface Named {
+/** One name of a record the glossary reads (a schema field's name is its own). */
+export interface CodeName {
   record: string;
   kind: string;
   name: string;
@@ -49,6 +50,18 @@ interface Named {
 }
 
 const firstEvidence = (r: CatalogRecord): EvidenceT => r.evidence[0]!;
+
+/**
+ * The names of a catalog's records, as `codeTerms` and `fieldNames` read them: worked out once by
+ * a glossary build, which asks for both (beta.28.2). Read only.
+ */
+export type CodeNames = readonly CodeName[];
+type Named = CodeName;
+
+/** The names of a catalog's records, for `codeTermsOf` and `fieldNamesOf`. */
+export function codeNames(records: readonly CatalogRecord[]): CodeNames {
+  return named(records);
+}
 
 function named(records: readonly CatalogRecord[]): Named[] {
   const out: Named[] = [];
@@ -137,7 +150,14 @@ export function codeTerms(
   records: readonly CatalogRecord[],
   aliasOf: (key: string) => string = (k) => k,
 ): Map<string, CodeTerm> {
-  const items = named(records);
+  return codeTermsOf(named(records), aliasOf);
+}
+
+/** `codeTerms` of names `codeNames` gave. */
+export function codeTermsOf(
+  items: CodeNames,
+  aliasOf: (key: string) => string = (k) => k,
+): Map<string, CodeTerm> {
   // A word inside a compound name (holder in holder_name) belongs to that compound term, so
   // it doesn't count towards a single-word term.
   const byWord = new Map<string, Set<string>>();
@@ -229,7 +249,10 @@ export function codeTerms(
 
 /** Every column and schema field, for naming hints. */
 export function fieldNames(records: readonly CatalogRecord[]): { record: string; name: string }[] {
-  return named(records)
-    .filter((n) => n.isField)
-    .map((n) => ({ record: n.record, name: n.name }));
+  return fieldNamesOf(named(records));
+}
+
+/** `fieldNames` of names `codeNames` gave. */
+export function fieldNamesOf(items: CodeNames): { record: string; name: string }[] {
+  return items.filter((n) => n.isField).map((n) => ({ record: n.record, name: n.name }));
 }

@@ -59,11 +59,32 @@ export const singular = (w: string): string => singularNoun(w);
 
 const isNoise = (w: string) => STOP_TOKENS.has(w) || /^v\d+$/.test(w) || /^\d+$/.test(w);
 
+/**
+ * What a pure function of a name gave, kept by the name (beta.28.2, ADR 0195 point 9: a big
+ * estate's columns and fields share a few hundred names among a quarter of a million records).
+ * Bounded: past `max` names the oldest is forgotten. Only the work is saved.
+ */
+function keptByName<T>(of: (s: string) => T, max = 50_000): (s: string) => T {
+  const kept = new Map<string, T>();
+  return (s) => {
+    if (kept.has(s)) return kept.get(s)!;
+    const v = of(s);
+    kept.set(s, v);
+    if (kept.size > max) kept.delete(kept.keys().next().value!);
+    return v;
+  };
+}
+
+const businessWordsOf = keptByName((s: string): readonly string[] =>
+  splitWords(s)
+    .filter((w) => !isNoise(w))
+    .map(singular),
+);
+
 /** The business words of an identifier: split, without stop tokens, version or number segments, singular. */
 export function businessWords(s: string): string[] {
-  return splitWords(s)
-    .filter((w) => !isNoise(w))
-    .map(singular);
+  // A copy: the list kept is never one a caller can change.
+  return [...businessWordsOf(s)];
 }
 
 /**
@@ -72,7 +93,9 @@ export function businessWords(s: string): string[] {
  * (account_number, holder_name, daily_limit). A stop token in the middle (changed_by_email)
  * means the name is a sentence, not a term.
  */
-export function compoundOf(name: string): string | undefined {
+export const compoundOf = keptByName(compoundOfName);
+
+function compoundOfName(name: string): string | undefined {
   const w = splitWords(name).filter((x) => !/^\d+$/.test(x));
   while (w.length && (isNoise(w[0]!) || QUALIFIERS.has(w[0]!))) w.shift();
   while (w.length && isNoise(w.at(-1)!)) w.pop();
@@ -81,8 +104,10 @@ export function compoundOf(name: string): string | undefined {
 }
 
 /** The single business word a name stands for (account_id → account), or undefined. */
-export function singleOf(name: string): string | undefined {
-  const w = businessWords(name).filter((x) => !QUALIFIERS.has(x));
+export const singleOf = keptByName(singleOfName);
+
+function singleOfName(name: string): string | undefined {
+  const w = businessWordsOf(name).filter((x) => !QUALIFIERS.has(x));
   return w.length === 1 ? w[0] : undefined;
 }
 

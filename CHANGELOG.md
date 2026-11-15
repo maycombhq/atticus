@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.2 (unreleased)
+
+### Fixed
+
+- **The glossary pass of a build takes about half the time.** Each record's names were read twice (for the terms and for naming hints no build reads) and each name split again every time. A build now reads the names once, keeps each name's words, and makes no naming hints (the glossary's own commands and screens still show them). At 30 repos and 50,000 records the glossary takes about 0.35 CPU s of a write, 0.8 before; the same terms and links out, checked against the glossary as it was over 300 random estates. Making the features, the glossary and the merge reuse the last build's work was measured and not done: on the generated estates every flow passes through every repo, so a change of one repo can change every feature, and hashing the passes' inputs would cost more than it saves (ADR 0195's addendum of 2026-11-15).
+
 ## 2.0.0-beta.28.1 (2026-11-15)
 
 ### Fixed

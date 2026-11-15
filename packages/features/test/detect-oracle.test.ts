@@ -153,6 +153,25 @@ function decisions(seed: number, records: CatalogRecord[]): CatalogRecord[] {
   return out;
 }
 
+/** The estate after one component's change: its endpoints at new paths, some calls of it gone. */
+function changeOne(records: CatalogRecord[], seed: number): CatalogRecord[] {
+  const rnd = prng(seed * 13 + 5);
+  const comps = records.filter((r) => r.kind === "Component").map((r) => r.id);
+  const c = comps[Math.floor(rnd() * comps.length)]!;
+  return records.flatMap((r): CatalogRecord[] => {
+    if (r.kind === "Endpoint" && r.component === c && r.endpointType === "rest")
+      return [
+        {
+          ...r,
+          pathOrTopic: `${r.pathOrTopic}/moved`,
+          normalizedPath: `${r.normalizedPath ?? r.pathOrTopic}/moved`,
+        },
+      ];
+    if (r.kind === "Interface" && r.from === c && rnd() < 0.5) return [];
+    return [r];
+  });
+}
+
 const RUNS = 300;
 
 describe("the features' grouping by number gives what main's grouping gave (beta.28.1)", () => {
@@ -178,6 +197,13 @@ describe("the features' grouping by number gives what main's grouping gave (beta
         detectFeaturesWithReport(records, { decisions: ds, keepFlows: false }).features,
       ).toEqual(was.features);
       if (now.features.some((f) => f.entryPoints.length > 1)) grouped++;
+      // beta.28.2: the same process detects again after one "repo" changed (the words kept from
+      // the first detection are warm): a component's endpoints moved and some of its calls gone.
+      const changed = changeOne(records, seed);
+      expect(
+        detectFeaturesWithReport(changed, { decisions: ds, keepFlows: false }).features,
+        `seed ${seed}, changed`,
+      ).toEqual(onMain(changed, { decisions: ds }).features);
     }
     // The estates exercise what changed: features of several entry points, and pins.
     expect(grouped).toBeGreaterThan(RUNS / 3);
