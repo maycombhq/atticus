@@ -1,5 +1,4 @@
 import type { Output } from "./commands.js";
-import { markNewerChecked } from "@maycombhq/scanner";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the writers of the build's
@@ -150,12 +149,4 @@ export async function refuseNewerCommand(
   io.err(r.message);
   if (json) io.out(JSON.stringify({ written: false, refused: r }, null, 2));
   return 1;
-}
-
-/**
- * After a check that found nothing: the rest of the caller's own async context (this is called
- * from it, not awaited) runs its build without checking again (review of beta.28.2).
- */
-export function markChecked(root: string): void {
-  markNewerChecked(root);
 }

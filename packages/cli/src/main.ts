@@ -1296,8 +1296,6 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     if (g.newerGuardedCommand(group, command, values)) {
       const refusedNewer = await g.refuseNewerCommand(root, io, values.json === true);
       if (refusedNewer !== undefined) return refusedNewer;
-      // The build this command goes on to run doesn't check again (scanner markNewerChecked).
-      g.markChecked(root);
     }
   }
   if (group === "catalog" && command === "validate") {
