@@ -253,6 +253,185 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     expect(r.records.filter((x) => x.kind !== "Unresolved" && x.id.includes("topics"))).toEqual([]);
   });
 
+  it("joins a loose listener with a publisher the estate join joined already (property seed 1557984687)", () => {
+    // forge-orders publishes and forge-payments listens, both read from their facts: the estate
+    // join drew orders → payments. forge-ledger, read by its readers, listens too: its loose
+    // listener still hears orders (one consumer read from facts takes no other consumer away).
+    const joined = {
+      ...base,
+      kind: "Interface",
+      id: interfaceId("orders", "payments", undefined, "forge.orders.changed"),
+      from: "orders",
+      to: "payments",
+      via: "event-bus",
+      normalizedPath: "forge.orders.changed",
+      sync: "async",
+      direction: "outbound",
+      conflicts: [],
+      evidence: [
+        { ...ev[0]!, repo: "forge-orders", side: "caller" },
+        { ...ev[0]!, repo: "forge-payments", path: "b.java", side: "callee" },
+      ],
+    } as unknown as CatalogRecord;
+    const r = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("ledger", "ledger"),
+      joined,
+      loose("ledger", "event-subscribe", "forge.orders.changed", "callee"),
+    ]);
+    const ifs = r.records.filter((x) => x.kind === "Interface") as unknown as {
+      from: string;
+      to: string;
+      evidence: { repo?: string; side?: string }[];
+    }[];
+    expect(ifs.map((i) => `${i.from}>${i.to}`).sort()).toEqual([
+      "orders>ledger",
+      "orders>payments",
+    ]);
+    // The new arrow cites the publisher's side only, not the other consumer's line.
+    const toLedger = ifs.find((i) => i.to === "ledger")!;
+    expect(toLedger.evidence.some((e) => e.repo === "forge-payments")).toBe(false);
+    expect(r.records.filter((x) => x.kind === "Unresolved")).toEqual([]);
+    // And a loose publisher hears a listener the join joined, the same way.
+    const r2 = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      joined,
+      loose("audit", "event-publish", "forge.orders.changed", "caller"),
+    ]);
+    expect(
+      (
+        r2.records.filter((x) => x.kind === "Interface") as unknown as {
+          from: string;
+          to: string;
+        }[]
+      )
+        .map((i) => `${i.from}>${i.to}`)
+        .sort(),
+    ).toEqual(["audit>payments", "orders>payments"]);
+  });
+
+  it("counts a joined end only from current arrows and that end's own code line (the review)", () => {
+    const T = "forge.orders.changed";
+    const at = (repo: string, side: "caller" | "callee", source = "code") => ({
+      ...ev[0]!,
+      source,
+      repo,
+      path: `${repo}.java`,
+      side,
+    });
+    const arrow = (evidence: unknown[], extra: Record<string, unknown> = {}) =>
+      ({
+        ...base,
+        kind: "Interface",
+        id: interfaceId("orders", "payments", undefined, T),
+        from: "orders",
+        to: "payments",
+        via: "event-bus",
+        normalizedPath: T,
+        sync: "async",
+        direction: "outbound",
+        conflicts: [],
+        evidence,
+        ...extra,
+      }) as unknown as CatalogRecord;
+    const pairs = (records: CatalogRecord[]) =>
+      (
+        merged([
+          component("orders", "portal"),
+          component("payments", "ledger"),
+          component("audit", "ledger"),
+          component("ledger", "ledger"),
+          ...records,
+        ]).records.filter((x) => x.kind === "Interface") as unknown as {
+          from: string;
+          to: string;
+          evidence: { repo?: string; source?: string }[];
+        }[]
+      )
+        .map((i) => `${i.from}>${i.to}`)
+        .sort();
+    // P1: a person's pairing: the listener's side is the person's word, no line of its code.
+    const person = arrow(
+      [
+        at("forge-orders", "caller"),
+        { source: "manual", repo: "forge-orders", path: "a.java", line: 1, by: "person" },
+      ],
+      { flags: ["joined-by-person"] },
+    );
+    expect(pairs([person, loose("audit", "event-publish", T, "caller")])).toEqual([
+      "orders>payments",
+    ]);
+    // P2: a call fact naming its target, with no line of the listener's.
+    expect(
+      pairs([arrow([at("forge-orders", "caller")]), loose("audit", "event-publish", T, "caller")]),
+    ).toEqual(["orders>payments"]);
+    // P3: a spec's planned arrow is no code's join: no current arrow from a document.
+    const planned = arrow(
+      [at("forge-orders", "caller", "spec"), at("forge-payments", "callee", "spec")],
+      {
+        status: "planned",
+        confidence: "asserted",
+      },
+    );
+    expect(pairs([planned, loose("ledger", "event-subscribe", T, "callee")])).not.toContain(
+      "orders>ledger",
+    );
+    // P4: an arrow the join guessed (a topic placeholder a platform setting resolved): the
+    // listener joined to its publisher cites the publisher's config line too, and is a guess
+    // as well (the join's flags, inferred), never verified.
+    const guessed = arrow(
+      [
+        at("forge-orders", "caller"),
+        { ...at("forge-orders", "caller", "config"), path: "application.yml", line: 4 },
+        at("forge-payments", "callee"),
+      ],
+      { confidence: "inferred", flags: ["joined-by-platform-setting"] },
+    );
+    const g = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      guessed,
+      loose("audit", "event-subscribe", T, "callee"),
+    ]);
+    const toAudit = (
+      g.records.filter((x) => x.kind === "Interface") as unknown as {
+        from: string;
+        to: string;
+        confidence: string;
+        flags?: string[];
+        evidence: { source?: string; path?: string }[];
+      }[]
+    ).find((i) => i.to === "audit")!;
+    expect(toAudit.from).toBe("orders");
+    expect(toAudit.confidence).toBe("inferred");
+    expect(toAudit.flags).toEqual(["joined-by-platform-setting"]);
+    expect(
+      toAudit.evidence.some((e) => e.source === "config" && e.path === "application.yml"),
+    ).toBe(true);
+    // The code's own lines on both sides: each end counts, citing only its own line.
+    const both = arrow([at("forge-orders", "caller"), at("forge-payments", "callee")]);
+    const r = merged([
+      component("orders", "portal"),
+      component("payments", "ledger"),
+      component("audit", "ledger"),
+      both,
+      loose("audit", "event-publish", T, "caller"),
+    ]);
+    const made = (
+      r.records.filter((x) => x.kind === "Interface") as unknown as {
+        from: string;
+        to: string;
+        evidence: { repo?: string }[];
+      }[]
+    ).find((i) => i.from === "audit")!;
+    expect(made.to).toBe("payments");
+    expect(made.evidence.map((e) => e.repo).sort()).toEqual(["forge-payments", "r"]);
+  });
+
   it("gives a pair the topic's Endpoint only when it is the topic's definition or one of the pair serves it (ADR 0195, locality)", () => {
     // forge-payments' facts read its listener as an Endpoint of its own on the topic: the
     // arrow from the publisher to forge-ledger, another consumer, doesn't point at it.

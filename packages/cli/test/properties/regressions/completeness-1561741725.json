@@ -1,0 +1,52 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: after rename a person's pairing isn't drawn: none of payments-api|ledger-api|GET|/accounts, payments-api|ledger-api|GET|/ledger-admin/r0. forge-payments' person paired its call with forge-ledger's entry; atticus repo rename moved forge-ledger's own files but left the pairing in forge-payments' corrections naming the old id, so it went stale and the arrow left. The rename now rewrites other repos' pairings with it (beta.28.1).",
+  "seed": 1561741725,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "legacy-ledger.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": false
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "rename",
+      "slot": 0
+    }
+  ]
+}

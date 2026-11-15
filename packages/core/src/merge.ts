@@ -683,6 +683,48 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       )
       .map((r) => String(r.normalizedPath)),
   );
+  // Property seed 1557984687: the ends the code's own topic arrows join already (the estate
+  // join's, of repos read from their facts), by topic. A loose listener (a repo read by its
+  // readers) still hears such a publisher, and a loose publisher such a listener: one consumer
+  // read from its facts takes no other consumer away. The review: an end counts only from a
+  // current arrow, and only by that end's own line of code (the publisher's `caller` side, the
+  // listener's `callee` side), so a new arrow never cites a person's word, a guess or a document
+  // as the other end's code; an end with no such line isn't one.
+  // The review's P4: an end keeps its side's config lines too (a topic a setting gives), so the
+  // citation is whole, and a joined arrow the join guessed (a guess flag, or inferred) passes
+  // its flags and its doubt on: an arrow made with that end is a guess as well.
+  type JoinedEnd = { ev: Evidence[]; flags: Set<string>; guessed: boolean };
+  const joinedEnds = new Map<
+    string,
+    { pub: Map<string, JoinedEnd>; sub: Map<string, JoinedEnd> }
+  >();
+  const GUESSES = new Set<string>(JOIN_GUESS_FLAGS);
+  const own = (evs: readonly Evidence[], side: "caller" | "callee") =>
+    evs.some((x) => x.source === "code" && x.side === side)
+      ? evs.filter((x) => (x.source === "code" || x.source === "config") && x.side === side)
+      : [];
+  for (const r of input.records as unknown as Rec[]) {
+    if (r.kind !== "Interface" || r.via !== "event-bus") continue;
+    if ((r.status ?? "current") !== "current") continue;
+    const flags = (r.flags as string[] | undefined) ?? [];
+    if (flags.includes(DECLARED_TOPIC)) continue;
+    const t = String(r.normalizedPath);
+    const e = joinedEnds.get(t) ?? { pub: new Map(), sub: new Map() };
+    const guess = flags.filter((f) => GUESSES.has(f));
+    const guessed = guess.length > 0 || r.confidence !== "verified";
+    const put = (m: Map<string, JoinedEnd>, at: string, ev: Evidence[]) => {
+      if (!ev.length) return;
+      const was = m.get(at);
+      m.set(at, {
+        ev: unionEvidence(was?.ev ?? [], ev),
+        flags: new Set([...(was?.flags ?? []), ...guess]),
+        guessed: (was?.guessed ?? false) || guessed,
+      });
+    };
+    put(e.pub, String(r.from), own(r.evidence, "caller"));
+    put(e.sub, String(r.to), own(r.evidence, "callee"));
+    joinedEnds.set(t, e);
+  }
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
   for (const l of loose.filter(
     (x) => x.unresolvedKind === "event-publish" || x.unresolvedKind === "event-subscribe",
@@ -720,18 +762,59 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         if (x.component === "unknown" || !x.component) x.component = firstCodePub;
     const epOf = (p: string, s: string) =>
       ep ?? own.find((x) => x.component === s) ?? own.find((x) => x.component === p);
-    for (const [p, pev] of [...pub.entries()].sort()) {
-      for (const [s, sev] of [...sub.entries()].sort()) {
-        if (p === s) continue;
-        const pc = pev.filter((e) => e.source === "code");
-        const sc = sev.filter((e) => e.source === "code");
+    // The loose ends, with the ends an arrow on the topic joins already: a pair needs one loose.
+    const already = joinedEnds.get(topic);
+    const pubs = new Map([
+      ...[...(already?.pub ?? [])].map(([k, v]) => [k, v.ev] as const),
+      ...pub,
+    ]);
+    const subs = new Map([
+      ...[...(already?.sub ?? [])].map(([k, v]) => [k, v.ev] as const),
+      ...sub,
+    ]);
+    // A joined end (not a loose one) of the pair: its arrow's guess, if it was one.
+    const joinedOf = (p: string, s: string) =>
+      [
+        !pub.has(p) ? already?.pub.get(p) : undefined,
+        !sub.has(s) ? already?.sub.get(s) : undefined,
+      ].filter((x): x is JoinedEnd => !!x);
+    // The pairs with a loose end: each loose publisher with every listener, then every publisher
+    // with each loose listener (an arrow the join made already, between two joined ends, isn't
+    // made again). The review: not every publisher with every listener of the topic.
+    const heardPub = new Set<string>();
+    const heardSub = new Set<string>();
+    const seen = new Set<string>();
+    const pairsOf: [string, Evidence[], string, Evidence[]][] = [];
+    const add = (p: string, pev: Evidence[], s: string, sev: Evidence[]) => {
+      if (p === s || seen.has(`${p}\u0000${s}`)) return;
+      seen.add(`${p}\u0000${s}`);
+      pairsOf.push([p, pev, s, sev]);
+    };
+    for (const [p, pev] of pub) for (const [s, sev] of subs) add(p, pev, s, sev);
+    for (const [s, sev] of sub) for (const [p, pev] of pubs) add(p, pev, s, sev);
+    const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+    pairsOf.sort((a, b) => (a[0] === b[0] ? byCode(a[2], b[2]) : byCode(a[0], b[0])));
+    for (const [p, pev, s, sev] of pairsOf) {
+      heardPub.add(p);
+      heardSub.add(s);
+      {
+        // A joined end cites its code and config lines as its arrow did; a loose one its code.
+        const pc = pub.has(p) ? pev.filter((e) => e.source === "code") : pev;
+        const sc = sub.has(s) ? sev.filter((e) => e.source === "code") : sev;
+        const ends = joinedOf(p, s);
+        const guessFlags = [...new Set(ends.flatMap((x) => [...x.flags]))].sort();
+        const guessed = ends.some((x) => x.guessed);
         const pairEp = epOf(p, s);
         addInterface({
           schemaVersion: 1,
           kind: "Interface",
           id: interfaceId(p, s, undefined, topic),
           status: "current",
-          confidence: pc.length > 0 && sc.length > 0 ? "verified" : "inferred",
+          confidence:
+            pc.some((e) => e.source === "code") && sc.some((e) => e.source === "code") && !guessed
+              ? "verified"
+              : "inferred",
+          ...(guessFlags.length ? { flags: guessFlags } : {}),
           from: p,
           to: s,
           // The topic's Endpoint: its definition's, or one either end of this pair serves. Another
@@ -785,23 +868,16 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       }
       continue;
     }
-    // A publisher or subscriber with no counterpart stays a loose end.
-    if (sub.size === 0)
-      for (const l of loose.filter(
-        (x) =>
-          x.unresolvedKind === "event-publish" &&
-          x.raw === topic &&
-          x.evidence.some((e) => e.source === "code"),
-      ))
-        unresolved.push(l);
-    if (pub.size === 0)
-      for (const l of loose.filter(
-        (x) =>
-          x.unresolvedKind === "event-subscribe" &&
-          x.raw === topic &&
-          x.evidence.some((e) => e.source === "code"),
-      ))
-        unresolved.push(l);
+    // A publisher or subscriber no arrow was made for stays a loose end (the review: this loose
+    // end's own arrows, not whether the topic has another side).
+    for (const l of loose.filter(
+      (x) =>
+        x.raw === topic &&
+        x.evidence.some((e) => e.source === "code") &&
+        ((x.unresolvedKind === "event-publish" && !heardPub.has(String(x.owner))) ||
+          (x.unresolvedKind === "event-subscribe" && !heardSub.has(String(x.owner)))),
+    ))
+      unresolved.push(l);
   }
 
   // ---- 6. database access

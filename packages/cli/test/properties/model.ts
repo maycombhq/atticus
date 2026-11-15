@@ -148,6 +148,12 @@ export class Model {
    */
   pairs: {
     caller: number;
+    /**
+     * The call's place in the caller's code when it was paired: a correction meets the call on
+     * its line (file, line, and the fact's id or the cited value, its path), so a later call on
+     * that line with that path is the paired one, whatever its host (property seed 1566335274).
+     */
+    at: number;
     method: string;
     path: string;
     host: string;
@@ -288,9 +294,12 @@ export class Model {
     for (const c of this.live()) {
       const s = this.source(c.slot);
       if (!s) continue;
-      for (const call of s.obs.code.calls) {
+      for (const [at, call] of s.obs.code.calls.entries()) {
         const e = this.calleeOf(call.host);
         if (!e || e.slot === c.slot) continue;
+        // A person's pairing moved the call: it goes to the paired entry, not by its host.
+        const moved = this.effectivePair(c.slot, at);
+        if (moved && moved.callee !== e.slot) continue;
         const t = this.source(e.slot);
         const serves =
           !!t &&
@@ -315,20 +324,18 @@ export class Model {
     // A person's pairing: admitted while the caller's source still makes the call and both
     // repos are read (the arrow's path is the call's or the entry's: either is admitted). Not
     // required: a pairing that no longer meets an entry goes stale, kept on file, and draws none.
-    for (const x of this.pairs) {
-      const c = this.repos[x.caller]!;
-      const e = this.repos[x.callee]!;
-      const s = this.source(x.caller);
-      if (!s || s.from === "legacy" || !this.isLive(x.callee)) continue;
-      if (
-        !s.obs.code.calls.some(
-          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
-        )
-      )
-        continue;
-      if (this.calleeOf(x.host)) continue;
-      for (const path of new Set([x.path, x.entry.path]))
-        add(arrowKey(c.base.component, e.base.component, x.method, path), false, false);
+    for (const c of this.live()) {
+      const s = this.source(c.slot);
+      if (!s || s.from === "legacy") continue;
+      for (const [at, call] of s.obs.code.calls.entries()) {
+        const x = this.pairOn(c.slot, at);
+        if (!x || !this.isLive(x.callee)) continue;
+        // A loose call's pairing, or one that moves a call its host joins (it then stands over it).
+        if (this.calleeOf(call.host) && !this.effectivePair(c.slot, at)) continue;
+        const e = this.repos[x.callee]!;
+        for (const path of new Set([call.path, x.entry.path]))
+          add(arrowKey(c.base.component, e.base.component, call.method, path), false, false);
+      }
     }
     if (withLegacy)
       for (const j of this.liveLegacy()) {
@@ -456,9 +463,41 @@ export class Model {
   }
 
   /**
+   * The person's pairing that decides where a caller's call goes, when one does: while the caller
+   * is read from its facts and still makes the call, and the callee is read from its facts and
+   * serves the entry (a pairing names the callee's entry fact). It stands over the call's host
+   * (a move: the call goes to the paired entry, not to the repo its host names).
+   */
+  effectivePair(slot: number, at: number) {
+    const s = this.source(slot);
+    if (s?.from !== "facts") return undefined;
+    const x = this.pairOn(slot, at);
+    if (!x || !this.isLive(x.callee)) return undefined;
+    const t = this.source(x.callee);
+    return t?.from === "facts" &&
+      served(this.repos[x.callee]!.base, t.obs.code).some(
+        (y) => y.method === x.entry.method && y.path === x.entry.path,
+      )
+      ? x
+      : undefined;
+  }
+
+  /**
+   * The pairing that meets the caller's call at `at` of its source now (the newest made there,
+   * as the newest correction wins), when its path is still the call's.
+   */
+  pairOn(slot: number, at: number) {
+    const call = this.source(slot)?.obs.code.calls[at];
+    if (!call) return undefined;
+    return [...this.pairs]
+      .reverse()
+      .find((x) => x.caller === slot && x.at === at && x.path === call.path);
+  }
+
+  /**
    * Beta.28.1 (field hunt G1, the re-review): the pairings a build must draw. While the caller
-   * is read from its facts and still makes the call to a host no repo answers on, and the callee
-   * is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
+   * is read from its facts and still makes the call (to a host no repo answers on, or one a
+   * repo does: a move), and the callee is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
    * readers read has none), the build draws the arrow, joined by a person (by the call's path or
    * the entry's), and the call's loose end is gone.
    */
@@ -471,34 +510,23 @@ export class Model {
     const suppressed = new Set(
       this.curated.flatMap((d) => (d.action === "suppress" && d.arrow ? [d.arrow] : [])),
     );
-    for (const x of this.pairs) {
-      const c = this.repos[x.caller]!;
-      const e = this.repos[x.callee]!;
-      const s = this.source(x.caller);
-      const t = this.source(x.callee);
-      if (s?.from !== "facts" || t?.from !== "facts") continue;
-      if (
-        !s.obs.code.calls.some(
-          (y) => y.method === x.method && y.path === x.path && y.host === x.host,
-        )
-      )
-        continue;
-      if (this.calleeOf(x.host)) continue;
-      if (
-        !served(e.base, t.obs.code).some(
-          (y) => y.method === x.entry.method && y.path === x.entry.path,
-        )
-      )
-        continue;
-      const keys = [...new Set([x.path, x.entry.path])].map((path) =>
-        arrowKey(c.base.component, e.base.component, x.method, path),
-      );
-      if (keys.some((k) => suppressed.has(k))) continue;
-      out.push({
-        from: c.base.component,
-        keys,
-        raw: { method: x.method, tail: `//${x.host}${x.path}` },
-      });
+    for (const c of this.live()) {
+      const s = this.source(c.slot);
+      if (s?.from !== "facts") continue;
+      for (const [at, call] of s.obs.code.calls.entries()) {
+        const x = this.effectivePair(c.slot, at);
+        if (!x) continue;
+        const e = this.repos[x.callee]!;
+        const keys = [...new Set([call.path, x.entry.path])].map((path) =>
+          arrowKey(c.base.component, e.base.component, call.method, path),
+        );
+        if (keys.some((k) => suppressed.has(k))) continue;
+        out.push({
+          from: c.base.component,
+          keys,
+          raw: { method: call.method, tail: `//${call.host}${call.path}` },
+        });
+      }
     }
     return out;
   }

@@ -1,0 +1,53 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: after confirm-removals the catalog's cross-repo arrows aren't what the model says the build makes: missing ledger-api|payments-api|EVENT|forge.ledger.changed. The same topic merge (completeness-1557984687, beta.28.1).",
+  "seed": 1563832841,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": ["forge.ledger.changed"],
+          "consumes": ["forge.orders.changed"]
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.ledger.changed"]
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": ["forge.ledger.changed"]
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan-subset",
+      "slots": [1]
+    },
+    {
+      "t": "verify-write",
+      "slot": 2,
+      "ok": false
+    },
+    {
+      "t": "crash",
+      "at": "after-slots",
+      "via": "verify",
+      "slot": 0
+    }
+  ]
+}

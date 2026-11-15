@@ -1,0 +1,87 @@
+{
+  "invariant": "large-removals-confirmed",
+  "note": "large-removals-confirmed: discard-edits removed 2 of forge-ledger's 19 records without the removals being confirmed. The guard counted a repo's records from the files on disk, a record file a person added by hand among them (20), so 2 removals stayed under 10%; the share is now of the records the last build wrote (build.json lists), not a hand-added file (beta.28.1).",
+  "seed": 1567472602,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/accounts"
+            }
+          ],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "orders.forge.example"
+            },
+            {
+              "method": "POST",
+              "path": "/carts",
+              "host": "orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": ["forge.payments.changed"],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/accounts",
+              "host": "legacy-ledger.forge.example"
+            }
+          ],
+          "publishes": ["forge.payments.changed"],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "add"
+    },
+    {
+      "t": "pair",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "answer",
+      "host": 0,
+      "to": "self"
+    }
+  ]
+}
