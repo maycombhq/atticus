@@ -387,6 +387,15 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   for (const slot of c.slots)
     if (involves(m, [slot], rec) || (JOINED.has(rec.kind) && involves(m, partners(m, slot), rec)))
       for (const x of reasonsOf(slot)) out.add(x);
+  // A person's pairing decides where its caller's call goes while its callee's read serves the
+  // entry: a change of the callee's read moves the caller's arrow (to the entry, or back to its
+  // host), which that read explains (property seed 1560234151).
+  for (const slot of c.slots)
+    if (
+      rec.kind === "Interface" &&
+      m.pairs.some((p) => p.callee === slot && m.repos[p.caller]!.base.component === rec.from)
+    )
+      for (const x of reasonsOf(slot)) out.add(x);
   if (c.curated.has(rec.id)) out.add("curated");
   if (c.answered.size) {
     // Only what came from the answer: the loose ends naming the host, the arrows from its
@@ -439,9 +448,15 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       r.kind === "System" &&
       Array.isArray(r.repos) &&
       entries.some((x) => [...idsOf(s.m, x)].some((id) => (r.repos as unknown[]).includes(id)));
+    // A person's pairing with a repo read now: its caller's arrows follow that read (a move to
+    // the paired entry, or back to the host), and its loose ends with them.
+    const pairedCallers = s.m.pairs
+      .filter((p) => c.slots.has(p.callee))
+      .map((p) => s.m.repos[p.caller]!.base.component);
     const ok = (r: Rec | undefined) =>
       involves(s.m, c.slots, r) ||
       (!!r && JOINED.has(r.kind) && involves(s.m, reach, r)) ||
+      (!!r && r.kind === "Interface" && pairedCallers.includes(String(r.from))) ||
       (!!r && listsEntry(r));
     const bad = unchangedSince(s.before.generated, s.after.generated, s.editsBefore).filter(
       (p) => !ok(a.get(p)) && !ok(b.get(p)),

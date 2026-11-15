@@ -92,6 +92,11 @@ export type Desc =
    * builds. `call` and `api` pick among the caller's loose calls and the callee's entries.
    */
   | { t: "pair"; slot: number; to: number; call: number; api: number }
+  /**
+   * The same, of a call its host joins already (to another repo): the person moves it to
+   * another repo's entry, and the pairing stands over the host (the arrow moves).
+   */
+  | { t: "move"; slot: number; to: number; call: number; api: number }
   | { t: "curate"; action: "suppress" | "assert" | "alias"; pick: number }
   | { t: "uncurate"; pick: number }
   | { t: "archive"; slot: number }
@@ -701,7 +706,8 @@ export async function act(
     case "verify-live":
       return verify(d, m, w, confirm);
 
-    case "pair": {
+    case "pair":
+    case "move": {
       // The owner's flow (field hunt G1): Connect to… pairs a loose call (to a legacy host nobody
       // answered) with another repo's entry, reading both repos' facts files, then Apply runs
       // `verify <caller> --write`. `slot` and `to` pick among the repos that can pair: a caller
@@ -711,7 +717,11 @@ export async function act(
           // Loose: a host no repo of the profiles lists, live or not (property seed 1560234151: a
           // removed repo's host still reaches its System, an arrow to that box, not a loose
           // end), and nobody answered.
-          .filter((x) => !m.repos.some((y) => y.hosts.includes(x.host)) && !m.answers.has(x.host))
+          .filter((x) =>
+            d.t === "move"
+              ? !!m.calleeOf(x.host) && m.calleeOf(x.host)!.slot !== r.slot
+              : !m.repos.some((y) => y.hosts.includes(x.host)) && !m.answers.has(x.host),
+          )
           .filter(
             (x) =>
               !m.pairs.some(
@@ -725,7 +735,16 @@ export async function act(
       const callers = m.live().filter((r) => looseOf(r).length && existsSync(w.clone(r.id)));
       if (!callers.length) return undefined;
       const c = callers[d.slot % callers.length]!;
-      const callees = m.live().filter((r) => r.slot !== c.slot && served(r.base, r.code).length);
+      // A move goes to another repo than the one the host joins.
+      const hostOf = (x: { host: string }) => m.calleeOf(x.host)?.slot;
+      const callees = m
+        .live()
+        .filter(
+          (r) =>
+            r.slot !== c.slot &&
+            served(r.base, r.code).length &&
+            (d.t !== "move" || looseOf(c).some((x) => hostOf(x) !== r.slot)),
+        );
       if (!callees.length) return undefined;
       // A callee read from its facts first: the build draws the pairing then (it names an entry
       // fact), so the model requires it; any other callee only when none is.
@@ -735,7 +754,7 @@ export async function act(
       });
       const pool = factsRead.length ? factsRead : callees;
       const e = pool[d.to % pool.length]!;
-      const loose = looseOf(c);
+      const loose = looseOf(c).filter((x) => d.t !== "move" || hostOf(x) !== e.slot);
       const entries = served(e.base, e.code);
       const call = loose[d.call % loose.length]!;
       const entry = entries[d.api % entries.length]!;
@@ -1373,6 +1392,18 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
         }),
       ),
     ),
+    ...times(
+      2,
+      d(
+        fc.record({
+          t: fc.constant("move" as const),
+          slot,
+          to: slot,
+          call: fc.nat(4),
+          api: fc.nat(8),
+        }),
+      ),
+    ),
   ];
 }
 
@@ -1390,6 +1421,7 @@ export const GENERATED: readonly CommandType[] = [
   "verify-live",
   "answer",
   "pair",
+  "move",
   "curate",
   "uncurate",
   "archive",

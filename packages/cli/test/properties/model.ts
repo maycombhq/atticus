@@ -291,6 +291,9 @@ export class Model {
       for (const call of s.obs.code.calls) {
         const e = this.calleeOf(call.host);
         if (!e || e.slot === c.slot) continue;
+        // A person's pairing moved the call: it goes to the paired entry, not by its host.
+        const moved = this.effectivePair(c.slot, call);
+        if (moved && moved.callee !== e.slot) continue;
         const t = this.source(e.slot);
         const serves =
           !!t &&
@@ -326,7 +329,8 @@ export class Model {
         )
       )
         continue;
-      if (this.calleeOf(x.host)) continue;
+      // A loose call's pairing, or one that moves a call its host joins (it then stands over it).
+      if (this.calleeOf(x.host) && !this.effectivePair(x.caller, x)) continue;
       for (const path of new Set([x.path, x.entry.path]))
         add(arrowKey(c.base.component, e.base.component, x.method, path), false, false);
     }
@@ -456,9 +460,31 @@ export class Model {
   }
 
   /**
+   * The person's pairing that decides where a caller's call goes, when one does: while the caller
+   * is read from its facts and still makes the call, and the callee is read from its facts and
+   * serves the entry (a pairing names the callee's entry fact). It stands over the call's host
+   * (a move: the call goes to the paired entry, not to the repo its host names).
+   */
+  effectivePair(slot: number, call: { method: string; path: string; host: string }) {
+    const s = this.source(slot);
+    if (s?.from !== "facts") return undefined;
+    return this.pairs.find((x) => {
+      if (x.caller !== slot || x.method !== call.method || x.path !== call.path) return false;
+      if (x.host !== call.host) return false;
+      const t = this.source(x.callee);
+      return (
+        t?.from === "facts" &&
+        served(this.repos[x.callee]!.base, t.obs.code).some(
+          (y) => y.method === x.entry.method && y.path === x.entry.path,
+        )
+      );
+    });
+  }
+
+  /**
    * Beta.28.1 (field hunt G1, the re-review): the pairings a build must draw. While the caller
-   * is read from its facts and still makes the call to a host no repo answers on, and the callee
-   * is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
+   * is read from its facts and still makes the call (to a host no repo answers on, or one a
+   * repo does: a move), and the callee is read from its facts too and serves the entry (a pairing names the callee's entry fact: a
    * readers read has none), the build draws the arrow, joined by a person (by the call's path or
    * the entry's), and the call's loose end is gone.
    */
@@ -483,7 +509,6 @@ export class Model {
         )
       )
         continue;
-      if (this.calleeOf(x.host)) continue;
       if (
         !served(e.base, t.obs.code).some(
           (y) => y.method === x.entry.method && y.path === x.entry.path,

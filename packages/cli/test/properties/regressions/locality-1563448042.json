@@ -1,0 +1,69 @@
+{
+  "invariant": "locality",
+  "note": "locality: only forge-notify's observation changed, yet verify-write changed Interface/if-cd5141e56a92b1f4 (forge-orders). A person moved forge-orders' call (its host joins forge-payments) to forge-notify's entry; once forge-notify is read from its facts the pairing stands and the arrow moves. The model: a pairing's callee read moves its caller's arrows (beta.28.1).",
+  "seed": 1563448042,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-notify",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/payments",
+              "host": "payments.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 1,
+      "ok": false
+    }
+  ]
+}
