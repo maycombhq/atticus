@@ -7498,6 +7498,10 @@ export const COPY = {
       passages: "Pages",
       none: "Nothing in your wikis or documents (inputs/) shares this question's words.",
       askAi: "To have your assistant word an answer from these, citing them:",
+      // The assistant's answer rests on knowledge items only (atticus knowledge ask, ADR 0083):
+      // with pages and no item for the question, that step would refuse, so the scan is offered.
+      askAiPagesOnly:
+        "Your assistant words an answer from knowledge items, not from pages, and no item matches this question yet. To read your wikis into items:",
       catalogNone: "Nothing in the catalog answers it.",
     },
     // An owner question, sent through the notify adapter.

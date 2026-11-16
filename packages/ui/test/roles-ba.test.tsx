@@ -283,6 +283,51 @@ describe("Ask answered from knowledge", () => {
     expect(html).toContain("<strong>Requesting a firewall rule</strong>");
     expect(html).toContain("From wiki/snow-firewall-request.md (inputs)");
     expect(html).toContain("Raise a Network Access request");
+  });
+
+  const QUOTE = {
+    source: "platform",
+    page: "how-to/firewall.md",
+    section: "Requesting a firewall rule",
+    text: "Raise a Network Access request in the service desk.",
+  };
+  const PASSAGE = {
+    source: "platform",
+    page: "how-to/firewall.md",
+    path: "knowledge/snapshots/platform/2026-11-09/how-to/firewall.md",
+    heading: "Firewall rules › Requesting a firewall rule",
+    line: 5,
+    text: "Raise a Network Access request in the service desk.",
+  };
+  const COMMAND = 'atticus knowledge ask "How do I request a firewall rule?"';
+
+  it("offers the assistant's answer when a knowledge item matches: that step answers from items", () => {
+    const html = renderToStaticMarkup(
+      <KnowledgeAnswerBlock
+        k={{
+          items: [
+            { id: "firewall-rule-request", kind: "request", title: "Firewall rule", quote: QUOTE },
+          ],
+          passages: [PASSAGE],
+          command: COMMAND,
+        }}
+      />,
+    );
+    expect(html).toContain(W.ask.askAi);
     expect(html).toContain("atticus knowledge ask");
+    expect(html).not.toContain(W.ask.askAiPagesOnly);
+  });
+
+  it("with pages only, says the wikis must be read into items first: knowledge ask would refuse", () => {
+    // atticus knowledge ask answers from knowledge items only (ADR 0083): with none for the
+    // question it says "There are no knowledge items yet" or refuses, so it is not offered.
+    const html = renderToStaticMarkup(
+      <KnowledgeAnswerBlock k={{ items: [], passages: [PASSAGE], command: COMMAND }} />,
+    );
+    expect(html).toContain("Raise a Network Access request");
+    expect(html).not.toContain(W.ask.askAi);
+    expect(html).not.toContain("atticus knowledge ask");
+    expect(html).toContain(W.ask.askAiPagesOnly);
+    expect(html).toContain("atticus knowledge scan");
   });
 });

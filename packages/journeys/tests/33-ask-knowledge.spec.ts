@@ -18,7 +18,10 @@ test("answers how to request a firewall rule from the wiki pages in inputs/", as
   await expect(
     k.getByText(/From wiki\/snow-firewall-request\.md \(inputs\)/).first(),
   ).toBeVisible();
-  await expect(k.getByText(/atticus knowledge ask/)).toBeVisible();
+  // The estate has pages and no knowledge items yet: `atticus knowledge ask` answers from items
+  // only and would refuse, so the scan that reads the pages into items is the step offered.
+  await expect(k.getByText(/atticus knowledge scan/)).toBeVisible();
+  await expect(k.getByText(/atticus knowledge ask/)).toHaveCount(0);
   await accessible(page, "Ask Atticus, answered from knowledge");
 });
 

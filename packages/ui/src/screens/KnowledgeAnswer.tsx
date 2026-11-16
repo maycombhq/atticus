@@ -12,6 +12,8 @@ import "./knowledge/knowledge.css";
  */
 
 const A = COPY.roleWork.ask;
+/** The step that reads the wikis' snapshots into knowledge items. */
+const SCAN = "atticus knowledge scan";
 
 export function KnowledgeAnswerBlock({ k }: { k: Api.KnowledgeAnswerViewT }) {
   const none = k.items.length === 0 && k.passages.length === 0;
@@ -74,10 +76,19 @@ export function KnowledgeAnswerBlock({ k }: { k: Api.KnowledgeAnswerViewT }) {
               </ul>
             </div>
           )}
-          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-            {A.askAi} <code className="mono">{k.command}</code>{" "}
-            <CopyButton text={k.command} label={k.command} />
-          </p>
+          {/* `atticus knowledge ask` answers from knowledge items only: with pages and no item
+              it refuses ("There are no knowledge items yet"), so the scan is what is offered. */}
+          {k.items.length > 0 ? (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              {A.askAi} <code className="mono">{k.command}</code>{" "}
+              <CopyButton text={k.command} label={k.command} />
+            </p>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              {A.askAiPagesOnly} <code className="mono">{SCAN}</code>{" "}
+              <CopyButton text={SCAN} label={SCAN} />
+            </p>
+          )}
         </>
       )}
     </section>
