@@ -5,6 +5,7 @@ import {
   authorityRank,
   factsDirOf,
   identifierWords,
+  initialismLinks,
   knowledgeKindOf,
   orgPackDirOf,
   type PageStatus,
@@ -936,7 +937,11 @@ export async function selectTaskKnowledge(
         const places = placesNamed(aboutTexts.join("\n"), input);
         const target = places.some((p) => (input.targets ?? []).includes(p));
         const cos = cosOf(c, item);
-        const always = c.named || target || (isConfirmed && shared.length > 0);
+        // beta.28.3: an acronym one side writes and the other spells out ("SSO", "single
+        // sign-on") is the same name on both: it keeps the candidate as a shared name does.
+        const spelled = initialismLinks(input.changes.join("\n"), aboutTexts.join("\n"));
+        const always =
+          c.named || target || spelled.length > 0 || (isConfirmed && shared.length > 0);
         // Words and meaning (ADR 0132 addendum): two of the words the task changes keep it; one
         // keeps it only when it is close in meaning too; none, only when it is very close. With
         // no meaning model, one word keeps it, as before.
@@ -954,18 +959,24 @@ export async function selectTaskKnowledge(
         const words = terms.slice(0, 4).map((w) => `"${w}"`);
         const where = places.length ? ` It names ${and(places)}, where this task works.` : "";
         const sim = cos === undefined ? "" : `, similarity ${cos.toFixed(2)}`;
+        const short = spelled.map(
+          (l) =>
+            `${l.acronym} (${l.acronymIn === "a" ? "which it writes out" : "which this task writes out"} as "${l.phrase.replace(/\s+/g, " ")}")`,
+        );
         const why = c.named
           ? "The task's step names it."
-          : matched.length
-            ? `It is about ${and(words)}, which this task changes${close && !always ? `, and is close in meaning to its step ("${step}"${sim})` : ""}.${where}`
-            : close && !always
-              ? `It is close in meaning to the task's step ("${step}"${sim}).${where}`
-              : words.length
-                ? `It is about ${and(words)}, as this task is.${where}`
-                : where.trim();
+          : spelled.length
+            ? `It is about ${and(short.slice(0, 2))}, as this task is${close ? `, and is close in meaning to its step ("${step}"${sim})` : ""}.${where}`
+            : matched.length
+              ? `It is about ${and(words)}, which this task changes${close && !always ? `, and is close in meaning to its step ("${step}"${sim})` : ""}.${where}`
+              : close && !always
+                ? `It is close in meaning to the task's step ("${step}"${sim}).${where}`
+                : words.length
+                  ? `It is about ${and(words)}, as this task is.${where}`
+                  : where.trim();
         const score =
           c.score *
-          (1 + 0.25 * Math.min(matched.length, 4)) *
+          (1 + 0.25 * Math.min(matched.length + spelled.length, 4)) *
           (cos === undefined ? 1 : 1 + Math.max(0, cos)) *
           (places.length ? 1.25 : 1) *
           (isConfirmed ? 1.5 : 1);

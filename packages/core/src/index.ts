@@ -67,6 +67,7 @@ export * from "./run-log.js";
 export * from "./printer.js";
 export * from "./zip.js";
 export * from "./words.js";
+export * from "./initialisms.js";
 export * from "./zip-read.js";
 export * from "./tar-read.js";
 export * from "./schema/question.js";

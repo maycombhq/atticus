@@ -465,9 +465,13 @@ describe("keeping a task's knowledge by words and meaning (ADR 0132 addendum)", 
     const root = await plannedAcronym();
     const c = await taskContext(root, ACRONYM_CHANGE, "1.1");
     const ids = c.knowledge.map((k) => k.id);
-    // One common word kept it before, and still does without a model: nothing changes.
+    // One common word kept it before, and still does without a model.
     expect(ids).toContain("order-history-years");
-    expect(ids).not.toContain("sso-login-gate");
+    // beta.28.3: the how-to that says only "SSO" is kept by its letters, with no model: the task
+    // writes the words out ("single sign-on").
+    expect(c.knowledge.find((k) => k.id === "sso-login-gate")?.why).toBe(
+      'It is about SSO (which this task writes out as "single sign-on"), as this task is.',
+    );
     expect(c.knowledge.every((k) => k.matched.meaning === undefined)).toBe(true);
     expect(c.notes).toContain(
       "Knowledge matched by words only: ATTICUS_EMBEDDINGS is off for this process.",
@@ -490,17 +494,19 @@ describe("keeping a task's knowledge by words and meaning (ADR 0132 addendum)", 
     expect(ids).toContain("sso-login-gate");
     expect(ids).not.toContain("order-history-years");
     const gate = c.knowledge.find((k) => k.id === "sso-login-gate")!;
+    // beta.28.3: the letters say why first (SSO is "single sign-on"), then the meaning.
     expect(gate.why).toMatch(
-      /^It is close in meaning to the task's step \("OrderController\.place takes the order only from a shopper signed in through single sign-on", similarity [01]\.\d\d\)\.$/,
+      /^It is about SSO \(which this task writes out as "single sign-on"\), as this task is, and is close in meaning to its step \("OrderController\.place takes the order only from a shopper signed in through single sign-on", similarity [01]\.\d\d\)\.$/,
     );
     expect(gate.matched.meaning).toBeGreaterThanOrEqual(KEEP_BY_MEANING);
     expect(c.notes.some((n) => /matched by words only/.test(n))).toBe(false);
     // The same files give the same list.
     const again = await taskContext(root, ACRONYM_CHANGE, "1.1", { embeddings });
     expect(again.knowledge).toEqual(c.knowledge);
-    // Kept by words alone (the bench's before), it is the list without a model.
+    // Kept by words alone (the bench's before), it is the list without a model: the common-word
+    // item is back, and since beta.28.3 the how-to stays, kept by its letters.
     const words = await taskContext(root, ACRONYM_CHANGE, "1.1", { embeddings, keep: "words" });
     expect(words.knowledge.map((k) => k.id)).toContain("order-history-years");
-    expect(words.knowledge.map((k) => k.id)).not.toContain("sso-login-gate");
+    expect(words.knowledge.map((k) => k.id)).toContain("sso-login-gate");
   });
 });

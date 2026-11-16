@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { identifierWords } from "@maycombhq/core";
+import { acronymsIn, identifierWords, speller } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
 import { ASKED_ONLY_KINDS, endpointName, foldName } from "./sources.js";
 import { namesIn } from "./store.js";
@@ -288,6 +288,90 @@ export function fuse(rankings: Ranking[], k = RRF_K): Map<string, { score: numbe
   return out;
 }
 
+/** The groups whose nodes an acronym and its words are looked for in: what an organisation wrote. */
+const INITIALISM_GROUPS = ["knowledge", "wiki", "document"];
+
+/** At most this many of an input's acronyms, and of its characters, are read for initialisms. */
+const INITIALISM_ACRONYMS = 12;
+const INITIALISM_INPUT = 20_000;
+
+interface InitialismNode {
+  key: string;
+  kind: string;
+  text: string;
+  acronyms: string[];
+}
+
+/** The written knowledge's nodes with the acronyms each writes, read once per open index. */
+const initialismNodes = new WeakMap<object, InitialismNode[]>();
+function initialismNodesOf(ix: CatalogIndex): InitialismNode[] {
+  let nodes = initialismNodes.get(ix.db);
+  if (!nodes) {
+    const rows = ix.db
+      .prepare(
+        `SELECT key, kind, name, detail FROM nodes WHERE grp IN (${INITIALISM_GROUPS.map(() => "?").join(", ")}) ORDER BY key`,
+      )
+      .all(...INITIALISM_GROUPS) as { key: string; kind: string; name: string; detail: string }[];
+    nodes = rows.map((r) => {
+      const text = `${r.name}\n${r.detail}`;
+      return { key: r.key, kind: r.kind, text, acronyms: acronymsIn(text) };
+    });
+    initialismNodes.set(ix.db, nodes);
+  }
+  return nodes;
+}
+
+/**
+ * An acronym and the words it stands for (beta.28.3), as one more ranking: the knowledge, wiki
+ * and document nodes that write an acronym the input spells out ("single sign-on", a page that
+ * says only SSO), or spell out one the input writes (EDW, a page that says only "enterprise data
+ * warehouse"). Read from the letters (core's initialisms), no model and no glossary; most links
+ * first, ties by key. It only ranks: it never resolves a name or makes a link.
+ */
+function initialismRanking(ix: CatalogIndex, raw: string): Ranking | undefined {
+  const input = raw.slice(0, INITIALISM_INPUT);
+  const mine = acronymsIn(input).slice(0, INITIALISM_ACRONYMS);
+  const own = new Set(mine);
+  const spellInput = speller(input);
+  const spelled = new Map<string, string | undefined>();
+  const inInput = (a: string) => {
+    if (!spelled.has(a)) spelled.set(a, spellInput(a));
+    return spelled.get(a);
+  };
+  // A quick look before a node's text is read word by word: the acronym's first two letters
+  // starting two words near each other.
+  const quick = mine.map((a) => {
+    const l = a.toLowerCase();
+    return new RegExp(
+      `(?<![A-Za-z0-9])${l[0]}[a-z0-9']*[ \\t-]+(?:[a-z]{1,3}[ \\t-]+)?${l[1]}`,
+      "i",
+    );
+  });
+  const found: { key: string; links: string[] }[] = [];
+  for (const n of initialismNodesOf(ix)) {
+    const links: string[] = [];
+    for (const a of n.acronyms) {
+      if (own.has(a)) continue;
+      const phrase = inInput(a);
+      if (phrase) links.push(`${a} is "${phrase.replace(/\s+/g, " ")}"`);
+    }
+    let spellNode: ReturnType<typeof speller> | undefined;
+    mine.forEach((a, i) => {
+      if (n.acronyms.includes(a) || !quick[i]!.test(n.text)) return;
+      const phrase = (spellNode ??= speller(n.text))(a);
+      if (phrase) links.push(`${a} is "${phrase.replace(/\s+/g, " ")}"`);
+    });
+    if (links.length) found.push({ key: n.key, links });
+  }
+  if (!found.length) return undefined;
+  found.sort((a, b) => b.links.length - a.links.length || cmp(a.key, b.key));
+  return {
+    name: "an acronym and its words",
+    keys: found.map((f) => f.key),
+    detail: new Map(found.map((f) => [f.key, f.links.slice(0, 2).join(", ")])),
+  };
+}
+
 /**
  * The other names of what the input names (ADR 0116): for each glossary term the input uses by
  * its term or an alias, its other names and the words of the columns and fields it defines; for
@@ -344,9 +428,10 @@ export interface SelectOptions {
   through?: string[];
   /**
    * The lexical layers (ADR 0116), for the eval: an identifier's words (split) and the other
-   * names of what the input names (synonyms). Both on by default.
+   * names of what the input names (synonyms). beta.28.3: an acronym and the words it stands
+   * for (initialisms). All on by default.
    */
-  lexical?: { split?: boolean; synonyms?: boolean };
+  lexical?: { split?: boolean; synonyms?: boolean; initialisms?: boolean };
   /** The k of reciprocal rank fusion: a hit at rank r adds 1 / (k + r). Default RRF_K. */
   rrfK?: number;
   /** A search hit enters a ranking only with this share of the best hit's BM25. Default RANK_FLOOR. */
@@ -626,6 +711,8 @@ function candidatesOf(
     const best = hs[0]?.score ?? 0;
     return hs.filter((h) => h.score >= best * floor).map((h) => h.key);
   };
+  const initialisms =
+    o.lexical?.initialisms === false ? undefined : initialismRanking(ix, `${title}\n${text}`);
   for (const kinds of o.kinds?.length ? [undefined, o.kinds] : [undefined]) {
     const k = { limit, split, ...(kinds ? { kinds } : {}) };
     const rankings: Ranking[] = [{ name: "words", keys: ranked(query, k) }];
@@ -635,6 +722,14 @@ function candidatesOf(
       rankings.push({
         name: `synonyms of "${syn.name}"`,
         keys: ranked(syn.words.join(" "), k),
+      });
+    // beta.28.3: the written knowledge an acronym or its words link to the input.
+    if (initialisms)
+      rankings.push({
+        ...initialisms,
+        keys: initialisms.keys
+          .filter((key) => !kinds || kinds.includes(key.split(":")[1]!))
+          .slice(0, limit),
       });
     // ADR 0116: the nodes nearest the input in meaning, a ranking like the others (never a link).
     if (o.meaning !== false) {
@@ -837,6 +932,8 @@ export function selectContext(
     groups: o.groups ?? null,
     through: o.through ?? null,
     lexical: o.lexical ?? null,
+    // beta.28.3: a selection kept before acronyms ranked isn't this one.
+    initialisms: o.lexical?.initialisms === false ? false : 1,
     rrfK: o.rrfK ?? RRF_K,
     rankFloor: o.rankFloor ?? RANK_FLOOR,
     hops: o.hops ?? 2,

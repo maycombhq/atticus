@@ -40,10 +40,11 @@ describe("the task-knowledge bench", () => {
     expect(rows.find((r) => r.case === "sso: add-sso" && r.mode === "before")!.missing).toEqual([
       "sso-setup",
     ]);
-    // Words alone (no meaning model): the acronym case's how-to shares no word with the task and
-    // is missed; the item sharing one common word is listed.
+    // Words alone (no meaning model): the acronym case's how-to shares no word with the task, and
+    // is listed since beta.28.3 because the task spells out the "SSO" it writes ("single
+    // sign-on"); the item sharing one common word is listed too.
     expect(rows.find((r) => r.case === ACRONYM && r.mode === "per task")).toMatchObject({
-      missing: ["sso-login-gate"],
+      missing: [],
       extra: ["order-history-years"],
     });
     expect(renderTaskKnowledgeTable(rows)).toContain(
@@ -59,10 +60,13 @@ describe("the task-knowledge bench", () => {
       expect(now.precision, c.name).toBe(1);
     }
     // The model rates "SSO" against "single sign-on" too low to keep the how-to by meaning alone
-    // (measured, not hidden): it is still missed, but the common-word item no longer attaches.
+    // (measured, not hidden). Since beta.28.3 the letters keep it: the acronym the page writes is
+    // the words the task writes. The common-word item still doesn't attach.
     expect(rows.find((r) => r.case === ACRONYM && r.mode === "per task")).toMatchObject({
-      missing: ["sso-login-gate"],
+      missing: [],
       extra: [],
+      recall: 1,
+      precision: 1,
     });
     // The same files give the same list.
     const again = await runTaskKnowledgeBench(FX, { embeddings: recorded() });

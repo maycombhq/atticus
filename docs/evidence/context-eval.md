@@ -164,4 +164,4 @@ Each case is a small change on the invented Forge fixtures, planned through the 
 | small, with every other wiki item | 1.1 | before | 1.00 | 0.33 | 3 / 1 | none | order-events-topic, sso-token-claims |
 | small, with every other wiki item | 1.1 | per task | 1.00 | 1.00 | 1 / 1 | none | none |
 | sso acronym: sign-in-to-order | 1.1 | before | 0.00 | 0.00 | 1 / 1 | sso-login-gate | order-history-years |
-| sso acronym: sign-in-to-order | 1.1 | per task | 0.00 | 0.00 | 1 / 1 | sso-login-gate | order-history-years |
+| sso acronym: sign-in-to-order | 1.1 | per task | 1.00 | 0.50 | 2 / 1 | none | order-history-years |
