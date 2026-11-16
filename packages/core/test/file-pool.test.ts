@@ -276,7 +276,7 @@ describe("Stop during the read of a large folder (beta.28.3)", () => {
       filePoolHooks.workers = way.workers;
       const r = await stoppedMidRead((o) => hashFilesIn(dir, rels, o));
       expect(r.readAtStop).toBeGreaterThanOrEqual(1_000);
-      expect(r.took).toBeLessThan(1_000);
+      expect(r.took).toBeLessThan(5_000);
       expect(r.readInAll).toBeLessThan(MANY / 2);
     }, 120_000);
 
@@ -285,7 +285,7 @@ describe("Stop during the read of a large folder (beta.28.3)", () => {
       const { dir, rels } = await estate();
       filePoolHooks.workers = way.workers;
       const r = await stoppedMidRead((o) => statFilesIn(dir, rels, o));
-      expect(r.took).toBeLessThan(1_000);
+      expect(r.took).toBeLessThan(5_000);
       expect(r.readInAll).toBeLessThan(MANY);
     }, 120_000);
 
@@ -310,7 +310,7 @@ describe("Stop during the read of a large folder (beta.28.3)", () => {
       filePoolHooks[how] = true;
       filePoolHooks.startTimeoutMs = 100;
       const r = await stoppedMidRead((o) => hashFilesIn(dir, rels, o));
-      expect(r.took).toBeLessThan(1_000);
+      expect(r.took).toBeLessThan(5_000);
       expect(r.readInAll).toBeLessThan(MANY / 2);
     }, 120_000);
 

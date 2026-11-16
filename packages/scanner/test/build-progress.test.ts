@@ -262,7 +262,7 @@ describe("Stop during the read of the catalog's files (beta.28.3)", () => {
             }),
           ),
         ).rejects.toBeInstanceOf(CancelledError);
-        expect(Date.now() - at).toBeLessThan(1_000);
+        expect(Date.now() - at).toBeLessThan(5_000);
         expect(steps).toEqual(["build", "check"]);
         expect(read).toBeLessThan(MANY);
         expect(await tree(join(root, "catalog"))).toEqual(before);

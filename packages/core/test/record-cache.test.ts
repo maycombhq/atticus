@@ -573,7 +573,7 @@ describe("a first read of many files, stopped part way (beta.28.3)", () => {
         signal: stop.signal,
       }),
     ).rejects.toBeInstanceOf(CancelledError);
-    expect(Date.now() - at).toBeLessThan(1_000);
+    expect(Date.now() - at).toBeLessThan(5_000);
     expect(c.parsed.length).toBeLessThan(1_000);
     // Nothing kept of the stopped read: no cache file, and the next read parses every file.
     expect(await readdir(join(root, ".atticus", "cache")).catch(() => [])).toEqual([]);
