@@ -202,7 +202,7 @@ async function classificationLimit(root: string): Promise<{ levels: string[]; li
 async function inputWithheld(abs: string, c: { levels: string[]; limit: number }) {
   if (!/\.(md|markdown|txt)$/i.test(abs)) return false;
   let head: string;
-  let whole = true;
+  let whole: boolean;
   try {
     const f = await open(abs, "r");
     try {
