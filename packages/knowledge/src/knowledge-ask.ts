@@ -1,6 +1,13 @@
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { AgentDefinition, initialismLinks, knowledgeKindOf, type OrgPack } from "@maycombhq/core";
+import {
+  AgentDefinition,
+  definedInitialisms,
+  initialismBook,
+  knowledgeKindOf,
+  type InitialismBook,
+  type OrgPack,
+} from "@maycombhq/core";
 import {
   buildContextPack,
   resumedAttempt,
@@ -54,16 +61,21 @@ const STOP = new Set(
 
 /**
  * A word folded for comparing, so a singular, its plural and its -ed and -ing forms are one
- * (beta.28.3: "rule" and "rules" were rule and rul; "policy" and "policies" never met): an
- * ending comes off, then a last "e" ("change", "changes", "changed", "changing" are all chang).
+ * (beta.28.3: "rule" and "rules" were rule and rul; "policy" and "policies" never met). A
+ * plural's ending comes off (ies and ied to y; es only after s, x, z, ch, sh), then -ed or -ing,
+ * then the last "e" of a word of five letters or more ("change", "changes", "changed" and
+ * "changing" are all chang; "note" stays note, apart from "not").
  */
 const stem = (w: string) => {
-  // A word ending in "ss" (process, access, address) is not a plural: only "es" comes off it.
-  if (/ss$/.test(w)) return w;
   let s = w;
-  if (w.length > 4) s = /ies$/.test(w) ? w.replace(/ies$/, "y") : w.replace(/(ings?|ed|es|s)$/, "");
-  else if (w.length > 3) s = w.replace(/s$/, "");
-  return s.length > 3 && /[^aeiou]e$/.test(s) ? s.slice(0, -1) : s;
+  if (/ie[sd]$/.test(s) && s.length > 4) s = `${s.slice(0, -3)}y`;
+  else if (/sses$/.test(s)) s = s.slice(0, -2);
+  else if (/(x|z|ch|sh)es$/.test(s)) s = s.slice(0, -2);
+  else if (/s$/.test(s) && !/(ss|us|is)$/.test(s) && s.length > 3) s = s.slice(0, -1);
+  if (s.length > 5 && /ing$/.test(s)) s = s.slice(0, -3);
+  else if (s.length > 4 && /eed$/.test(s)) s = s.slice(0, -1);
+  else if (s.length > 4 && /ed$/.test(s)) s = s.slice(0, -2);
+  return s.length > 4 && /[^e]e$/.test(s) ? s.slice(0, -1) : s;
 };
 
 export const termsOf = (s: string) =>
@@ -94,25 +106,34 @@ export function itemText(r: KnowledgeRecord): string {
   return parts.join(" ");
 }
 
+/** The acronyms these texts define (ADR 0132 addendum of 2026-11-16), as a book to link by. */
+export const initialismsIn = (texts: readonly string[]): InitialismBook =>
+  initialismBook(texts.flatMap((t) => definedInitialisms(t)));
+
 /**
- * Items ranked by the question's words they contain (rarer words count more). beta.28.3: an
- * acronym one writes and the other spells out ("SSO", "single sign-on") counts as a rare word
- * in common, twice over: it is a whole name.
+ * Items ranked by the question's words they contain (rarer words count more). beta.28.3: a name
+ * the knowledge defines ("single sign-on (SSO)"), written as its acronym on one side and as its
+ * words on the other, counts as a rare word in common, twice over: it is a whole name.
  */
-export function rankItems(question: string, items: KnowledgeRecord[]) {
+export function rankItems(
+  question: string,
+  items: KnowledgeRecord[],
+  o: { acronyms?: InitialismBook } = {},
+) {
   const q = [...new Set(termsOf(question))];
   const texts = items.map(itemText);
   const docs = texts.map((t) => new Set(termsOf(t)));
   const idf = new Map(
     q.map((t) => [t, Math.log(1 + items.length / (1 + docs.filter((d) => d.has(t)).length))]),
   );
+  const acronyms = o.acronyms ?? initialismsIn(texts);
   const name = 2 * Math.log(1 + items.length);
   return items
     .map((item, k) => ({
       item,
       score:
         q.reduce((s, t) => s + (docs[k]!.has(t) ? idf.get(t)! : 0), 0) +
-        name * initialismLinks(question, texts[k]!).length,
+        name * acronyms.links(question, texts[k]!).length,
     }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));

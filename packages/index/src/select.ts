@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { acronymsIn, identifierWords, speller } from "@maycombhq/core";
+import {
+  definedInitialisms,
+  identifierWords,
+  initialismBook,
+  type InitialismBook,
+} from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
 import { ASKED_ONLY_KINDS, endpointName, foldName } from "./sources.js";
 import { namesIn } from "./store.js";
@@ -288,87 +293,112 @@ export function fuse(rankings: Ranking[], k = RRF_K): Map<string, { score: numbe
   return out;
 }
 
-/** The groups whose nodes an acronym and its words are looked for in: what an organisation wrote. */
+/** The groups whose nodes define an estate's acronyms: what an organisation wrote. */
 const INITIALISM_GROUPS = ["knowledge", "wiki", "document"];
 
-/** At most this many of an input's acronyms, and of its characters, are read for initialisms. */
-const INITIALISM_ACRONYMS = 12;
-const INITIALISM_INPUT = 20_000;
+/** At most this many of the names an input writes are searched by their other form. */
+const INITIALISM_USES = 12;
 
-interface InitialismNode {
-  key: string;
-  kind: string;
-  text: string;
-  acronyms: string[];
-}
+const initialismBooks = new WeakMap<object, InitialismBook>();
 
-/** The written knowledge's nodes with the acronyms each writes, read once per open index. */
-const initialismNodes = new WeakMap<object, InitialismNode[]>();
-function initialismNodesOf(ix: CatalogIndex): InitialismNode[] {
-  let nodes = initialismNodes.get(ix.db);
-  if (!nodes) {
+/**
+ * The acronyms the estate's own pages define (beta.28.3, ADR 0132 addendum): read from the
+ * knowledge, wiki and document nodes where a page sets an acronym beside its words
+ * ("Enterprise Data Warehouse (EDW)", "SSO: single sign-on"). Read once per index version and
+ * kept in the index's meta; a read-only index reads them each time it is opened.
+ */
+export function initialismsOf(ix: CatalogIndex): InitialismBook {
+  let book = initialismBooks.get(ix.db);
+  if (book) return book;
+  const key = `initialisms:${ix.version}`;
+  const kept = ix.db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
+    { value: string } | undefined;
+  if (kept) {
+    try {
+      book = initialismBook(JSON.parse(kept.value) as { acronym: string; phrase: string }[]);
+    } catch {
+      book = undefined;
+    }
+  }
+  if (!book) {
     const rows = ix.db
       .prepare(
-        `SELECT key, kind, name, detail FROM nodes WHERE grp IN (${INITIALISM_GROUPS.map(() => "?").join(", ")}) ORDER BY key`,
+        `SELECT name, detail FROM nodes WHERE grp IN (${INITIALISM_GROUPS.map(() => "?").join(", ")}) ORDER BY key`,
       )
-      .all(...INITIALISM_GROUPS) as { key: string; kind: string; name: string; detail: string }[];
-    nodes = rows.map((r) => {
-      const text = `${r.name}\n${r.detail}`;
-      return { key: r.key, kind: r.kind, text, acronyms: acronymsIn(text) };
-    });
-    initialismNodes.set(ix.db, nodes);
+      .all(...INITIALISM_GROUPS) as { name: string; detail: string }[];
+    book = initialismBook(rows.flatMap((r) => definedInitialisms(`${r.name}\n${r.detail}`)));
+    try {
+      ix.db.prepare("DELETE FROM meta WHERE key LIKE 'initialisms:%'").run();
+      ix.db
+        .prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)")
+        .run(key, JSON.stringify(book.entries()));
+    } catch {
+      // A read-only index still links; it only doesn't keep the book.
+    }
   }
-  return nodes;
+  initialismBooks.set(ix.db, book);
+  return book;
 }
 
 /**
- * An acronym and the words it stands for (beta.28.3), as one more ranking: the knowledge, wiki
- * and document nodes that write an acronym the input spells out ("single sign-on", a page that
- * says only SSO), or spell out one the input writes (EDW, a page that says only "enterprise data
- * warehouse"). Read from the letters (core's initialisms), no model and no glossary; most links
- * first, ties by key. It only ranks: it never resolves a name or makes a link.
+ * An acronym and the words it stands for (beta.28.3), as one more ranking: for each name the
+ * input writes one way, and the estate's pages define, the nodes that write it the other way
+ * (the input says "single sign-on", the page only SSO; the input says EDW, the page only
+ * "enterprise data warehouse"). The words are searched as a phrase; an acronym found in small
+ * letters is not one ("cab" is no CAB). Best BM25 first, ties by key. It only ranks: it never
+ * resolves a name or makes a link.
  */
-function initialismRanking(ix: CatalogIndex, raw: string): Ranking | undefined {
-  const input = raw.slice(0, INITIALISM_INPUT);
-  const mine = acronymsIn(input).slice(0, INITIALISM_ACRONYMS);
-  const own = new Set(mine);
-  const spellInput = speller(input);
-  const spelled = new Map<string, string | undefined>();
-  const inInput = (a: string) => {
-    if (!spelled.has(a)) spelled.set(a, spellInput(a));
-    return spelled.get(a);
-  };
-  // A quick look before a node's text is read word by word: the acronym's first two letters
-  // starting two words near each other.
-  const quick = mine.map((a) => {
-    const l = a.toLowerCase();
-    return new RegExp(
-      `(?<![A-Za-z0-9])${l[0]}[a-z0-9']*[ \\t-]+(?:[a-z]{1,3}[ \\t-]+)?${l[1]}`,
-      "i",
-    );
-  });
-  const found: { key: string; links: string[] }[] = [];
-  for (const n of initialismNodesOf(ix)) {
-    const links: string[] = [];
-    for (const a of n.acronyms) {
-      if (own.has(a)) continue;
-      const phrase = inInput(a);
-      if (phrase) links.push(`${a} is "${phrase.replace(/\s+/g, " ")}"`);
+function initialismRanking(
+  ix: CatalogIndex,
+  input: string,
+  o: { kinds?: string[]; limit: number },
+): Ranking | undefined {
+  const book = initialismsOf(ix);
+  if (!book.size) return undefined;
+  const uses = book.uses(input);
+  // A name the input writes both ways needs no other form.
+  const wanted = uses
+    .filter(
+      (u) =>
+        !uses.some((x) => x.acronym === u.acronym && x.phrase === u.phrase && x.wrote !== u.wrote),
+    )
+    .slice(0, INITIALISM_USES);
+  if (!wanted.length) return undefined;
+  const kinds = o.kinds?.length ? o.kinds : undefined;
+  const askedOnly = kinds ? [] : [...ASKED_ONLY_KINDS];
+  const best = new Map<string, { rank: number; why: string }>();
+  const text = prep(ix, "SELECT name, detail FROM nodes WHERE key = ?");
+  for (const u of wanted) {
+    const other = u.wrote === "acronym" ? u.phrase : u.acronym.toLowerCase();
+    const why = `${u.acronym} is "${u.phrase}"`;
+    const rows = prep(
+      ix,
+      `SELECT f.key AS key, bm25(fts, 0.0, 10.0, 8.0, 1.0, 0.0) AS rank
+         FROM fts f JOIN nodes n ON n.key = f.key
+         WHERE fts MATCH ?${kinds ? ` AND n.kind IN (${kinds.map(() => "?").join(", ")})` : ""}${
+           askedOnly.length ? ` AND n.kind NOT IN (${askedOnly.map(() => "?").join(", ")})` : ""
+         }
+         ORDER BY rank, f.key LIMIT ?`,
+    ).all(`"${other}"`, ...(kinds ?? []), ...askedOnly, o.limit * 4) as {
+      key: string;
+      rank: number;
+    }[];
+    const written = new RegExp(`(?<![A-Za-z0-9])${u.acronym}s?(?![A-Za-z0-9])`);
+    for (const r of rows) {
+      if (u.wrote === "phrase") {
+        const n = text.get(r.key) as { name: string; detail: string } | undefined;
+        if (!n || !written.test(`${n.name}\n${n.detail}`)) continue;
+      }
+      const was = best.get(r.key);
+      if (!was || r.rank < was.rank) best.set(r.key, { rank: r.rank, why });
     }
-    let spellNode: ReturnType<typeof speller> | undefined;
-    mine.forEach((a, i) => {
-      if (n.acronyms.includes(a) || !quick[i]!.test(n.text)) return;
-      const phrase = (spellNode ??= speller(n.text))(a);
-      if (phrase) links.push(`${a} is "${phrase.replace(/\s+/g, " ")}"`);
-    });
-    if (links.length) found.push({ key: n.key, links });
   }
-  if (!found.length) return undefined;
-  found.sort((a, b) => b.links.length - a.links.length || cmp(a.key, b.key));
+  if (!best.size) return undefined;
+  const found = [...best].sort((a, b) => a[1].rank - b[1].rank || cmp(a[0], b[0]));
   return {
     name: "an acronym and its words",
-    keys: found.map((f) => f.key),
-    detail: new Map(found.map((f) => [f.key, f.links.slice(0, 2).join(", ")])),
+    keys: found.map(([key]) => key).slice(0, o.limit),
+    detail: new Map(found.map(([key, v]) => [key, v.why])),
   };
 }
 
@@ -428,8 +458,8 @@ export interface SelectOptions {
   through?: string[];
   /**
    * The lexical layers (ADR 0116), for the eval: an identifier's words (split) and the other
-   * names of what the input names (synonyms). beta.28.3: an acronym and the words it stands
-   * for (initialisms). All on by default.
+   * names of what the input names (synonyms). beta.28.3: an acronym the estate's pages define
+   * and the words it stands for (initialisms). All on by default.
    */
   lexical?: { split?: boolean; synonyms?: boolean; initialisms?: boolean };
   /** The k of reciprocal rank fusion: a hit at rank r adds 1 / (k + r). Default RRF_K. */
@@ -711,8 +741,6 @@ function candidatesOf(
     const best = hs[0]?.score ?? 0;
     return hs.filter((h) => h.score >= best * floor).map((h) => h.key);
   };
-  const initialisms =
-    o.lexical?.initialisms === false ? undefined : initialismRanking(ix, `${title}\n${text}`);
   for (const kinds of o.kinds?.length ? [undefined, o.kinds] : [undefined]) {
     const k = { limit, split, ...(kinds ? { kinds } : {}) };
     const rankings: Ranking[] = [{ name: "words", keys: ranked(query, k) }];
@@ -723,14 +751,11 @@ function candidatesOf(
         name: `synonyms of "${syn.name}"`,
         keys: ranked(syn.words.join(" "), k),
       });
-    // beta.28.3: the written knowledge an acronym or its words link to the input.
-    if (initialisms)
-      rankings.push({
-        ...initialisms,
-        keys: initialisms.keys
-          .filter((key) => !kinds || kinds.includes(key.split(":")[1]!))
-          .slice(0, limit),
-      });
+    // beta.28.3: what writes, the other way, a name the input writes and the estate defines.
+    if (o.lexical?.initialisms !== false) {
+      const r = initialismRanking(ix, `${title}\n${text}`, { limit, ...(kinds ? { kinds } : {}) });
+      if (r) rankings.push(r);
+    }
     // ADR 0116: the nodes nearest the input in meaning, a ranking like the others (never a link).
     if (o.meaning !== false) {
       const sim = ix.similar(input, {

@@ -202,6 +202,7 @@ async function classificationLimit(root: string): Promise<{ levels: string[]; li
 async function inputWithheld(abs: string, c: { levels: string[]; limit: number }) {
   if (!/\.(md|markdown|txt)$/i.test(abs)) return false;
   let head: string;
+  let whole = true;
   try {
     const f = await open(abs, "r");
     try {
@@ -212,19 +213,23 @@ async function inputWithheld(abs: string, c: { levels: string[]; limit: number }
         .toString("utf8")
         .replace(/^\uFEFF/, "")
         .replace(/\r\n?/g, "\n");
+      whole = bytesRead < b.length;
     } finally {
       await f.close();
     }
   } catch {
     return false;
   }
-  if (!head.startsWith("---\n")) return false;
-  const end = head.search(/\n(---|\.\.\.)[ \t]*(\n|$)/);
-  // Front matter that never ends within what was read can't be judged: withheld.
-  if (end < 0) return true;
+  // As a sync reads it: front matter opens on a first line that is only "---" and ends on the
+  // next line that is only "---" or "...". With no such line there is none (a file that starts
+  // with a rule), unless the file is longer than what was read: that can't be judged.
+  const lines = head.split("\n");
+  if (lines[0]!.trim() !== "---") return false;
+  const close = lines.findIndex((l, i) => i > 0 && (l.trim() === "---" || l.trim() === "..."));
+  if (close < 0) return !whole;
   let fm: unknown;
   try {
-    fm = parse(head.slice(4, end + 1));
+    fm = parse(lines.slice(1, close).join("\n"));
   } catch {
     return true;
   }

@@ -47,11 +47,15 @@ describe("inputs/ files the index must not read before any sync", () => {
     await w("viewers.md", "---\nrestrictions: [board]\n---\n# Board\n\nThe axolotl budget.\n");
     await w("flagged.md", "---\nrestricted: true\n---\n# Flagged\n\nThe axolotl audit.\n");
     await w("odd.md", "---\nclassification: top-secret\n---\n# Odd\n\nThe axolotl codeword.\n");
+    await w("spaced.md", "--- \nclassification: restricted\n--- \n# Spaced\n\nThe axolotl key.\n");
+    // A file that only starts with a rule has no front matter: it is read, as a sync reads it.
+    await w("rule.md", "---\n# Rule\n\nThe axolotl page begins with a rule.\n");
     await w("broken.md", "---\nclassification: [restricted\n---\n# Broken\n\nThe axolotl leak.\n");
     expect(await ids(dir, "axolotl")).toEqual([
       "inputs/internal.md#Internal",
       "inputs/open.md#Open",
     ]);
+    expect(await ids(dir, "rule")).toContain("inputs/rule.md#Rule");
   });
 
   it("goes by the organisation's own levels when pack.yaml lists them", async () => {

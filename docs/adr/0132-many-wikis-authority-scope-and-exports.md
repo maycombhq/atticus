@@ -132,3 +132,27 @@ Without the model (`--omit=optional`, `ATTICUS_EMBEDDINGS=off`, or not every nod
 The task-knowledge bench keeps recall and precision 1.00 on its four cases with the model. Its new acronym case (`fixtures/stages/sso-acronym`: the step says "single sign-on", the how-to only "SSO", no alias) is still a miss: the pinned model rates "SSO" against "single sign-on" at 0.33 (below "login", 0.55) and the how-to against the step at about 0.2, under unrelated pages, so no threshold that keeps precision keeps it; the item sharing only "shopper" is no longer listed. The context bench's recall doesn't change (the search isn't touched). Embedding every node of the filler estate once (`atticus index embed`) took about 210 s on the 2-CPU build machine.
 
 **Not done.** Most of the gain is the words rule the cosine gates (one common word is no longer enough); at these thresholds meaning has not kept a page by itself on the benches. A glossary alias (SSO ↔ single sign-on) helps the search but the keep test doesn't read it yet; that, or a model that knows the acronym, is what the acronym case needs. A page sharing two common words ("refund", "report") still attaches at 4,800 pages. No contract changes: `matched.meaning` and the `matching` note are additive to the planner's task context.
+
+## Addendum (2026-11-16): an acronym a page defines and its words are one name (beta.28.3)
+
+The acronym case above is the common case in a real estate: one page writes "EDW", the task or the question writes "enterprise data warehouse", and a small embedding model doesn't link them.
+
+**Tried first, and dropped: the letters alone.** Taking any run of words whose first letters spell an acronym as its meaning was built and reviewed the same night. On this repo's own docs, cut into 1,903 sections, ordinary prose "spelled" a common three-letter acronym in 1 to 5% of sections ("step still open" for SSO, "approval process is" for API, "catalog schema version" for CSV), and on a 2,725-node index a question about a CAB request ranked an unrelated section first. No tightening of the rule brought chance matches low enough for something that keeps a page on its own.
+
+**The rule (`packages/core/src/initialisms.ts`).** An acronym and its words are linked only where one of the organisation's own pages sets them side by side, and the words' first letters spell the acronym:
+
+- `words (ACR)`: "single sign-on (SSO)", "the Enterprise Data Warehouse (EDW)";
+- `ACR (words)`: "POS (point of sale)";
+- a line of an abbreviations list: `EDW: Enterprise Data Warehouse`, `CAB - Change Advisory Board`, `| SSO | single sign-on |`.
+
+An acronym is two to six capital letters or digits, starting with a letter. A joining word (a, an, and, for, in, of, on, or, the, to) gives a letter or none; the words never start on one. The definitions of the knowledge items, wiki sections and documents the index holds make the estate's book, read once per index version and kept in the index (`meta`, `initialisms:<version>`). A text writes an acronym only in capitals ("cab" is no CAB) and a phrase with any spacing, case or hyphens.
+
+**Where it is used.** Each use only ranks or keeps what a person is shown; none makes a record, a name, a link or a fact.
+
+- The context engine (`selectContext`): for each defined name the input writes one way and not the other, the nodes that write it the other way are one more ranking fused with the others ("an acronym and its words"), the words searched as a phrase, best BM25 first. `lexical.initialisms: false` turns it off. It is part of a selection's cache key.
+- A task's knowledge (`selectTaskKnowledge`): a candidate that writes a defined name the other way from what the task changes is kept, as one sharing one of the task's names is, and its why says the acronym and the words.
+- Ask (`rankPassages`, `rankItems`, `knowledgeAnswer`): the book is read from the pages and items asked over; a link counts as two rare words in common.
+
+**Measured.** The task-knowledge bench's acronym case stays a miss, as it should: nothing in that fixture defines SSO. With one line added to a page of inputs/ ("SSO: single sign-on"), the same task lists the how-to with and without the model (`packages/planner/test/task-knowledge.test.ts`). The context, many-wikis and knowledge benches are unchanged.
+
+**Not done.** An acronym no page defines is not linked: add it to any wiki page or a file in inputs/, in one of the three forms. An acronym whose letters aren't its words' first letters ("XML", "K8s") and a product name that is no acronym still need a glossary alias. A question that writes the acronym in small letters gets no link. Ask Atticus in the app ranks passages by words and these links only: similarity in meaning ranks a change's and a task's knowledge (ADR 0116), not yet the app's Ask. No contract changes.

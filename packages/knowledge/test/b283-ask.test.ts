@@ -59,6 +59,13 @@ describe("a suggested section opens in place by the id the index gives it", () =
     expect(sectionOf(pages, "platform/Release.md#4 notes")?.text).toBe("Not this page.");
   });
 
+  it("opens part 2 of Step, not the section Step 2 beside it", () => {
+    const p = [page("w/a.md", "# Run\n\n## Step\n\nFirst.\n\n## Step 2\n\nSecond.\n")];
+    expect(sectionOf(p, "platform/w/a.md#Step#2")?.text).toBe("First.");
+    expect(sectionOf(p, "platform/w/a.md#Step 2")?.text).toBe("Second.");
+    expect(sectionOf(p, "platform/w/a.md#step-2")?.text).toBe("Second.");
+  });
+
   it("still gives nothing for a heading the page doesn't have", () => {
     expect(sectionOf(pages, "platform/how-to/firewall.md#No such heading")).toBeUndefined();
     expect(sectionOf(pages, "platform/how-to/firewall.md#No such heading#2")).toBeUndefined();
@@ -100,11 +107,28 @@ describe("Ask over the wikis' passages", () => {
       ["policy", "policies"],
       ["process", "processes"],
       ["cache", "cached"],
+      ["issue", "issues"],
+      ["value", "values"],
+      ["queue", "queues"],
+      ["tree", "trees"],
+      ["query", "queried"],
+      ["retries", "retried"],
+      ["applies", "applied"],
+      ["agree", "agreed"],
+      ["sign", "signing"],
     ])
       expect(termsOf(a!), `${a} / ${b}`).toEqual(termsOf(b!));
     // Words that are not each other stay apart.
-    expect(termsOf("access")).not.toEqual(termsOf("accessory"));
-    expect(termsOf("bus")).not.toEqual(termsOf("be"));
+    for (const [a, b] of [
+      ["note", "not"],
+      ["care", "car"],
+      ["rate", "rat"],
+      ["site", "sit"],
+      ["core", "cors"],
+      ["status", "state"],
+      ["access", "accessory"],
+    ])
+      expect(termsOf(a!), `${a} / ${b}`).not.toEqual(termsOf(b!));
   });
 
   it("never lists a heading with no words under it as a passage", () => {
@@ -120,7 +144,7 @@ describe("Ask over the wikis' passages", () => {
     );
   });
 
-  it("finds the section that spells out the acronym asked for, and the one that only writes the acronym", () => {
+  it("finds the section that writes a defined name the other way: the acronym asked for, or its words", () => {
     const pages = [
       page(
         "data/warehouse.md",
@@ -131,15 +155,52 @@ describe("Ask over the wikis' passages", () => {
         "# Identity\n\n## The gate\n\nSend a shopper who isn't logged in to the SSO page of Forge Identity.\n",
       ),
       page("orders/history.md", "# Orders\n\n## History\n\nA shopper's orders are kept.\n"),
+      page(
+        "abbreviations.md",
+        "# Abbreviations\n\n## List\n\n- EDW: Enterprise Data Warehouse\n- SSO: single sign-on\n",
+      ),
     ];
-    expect(rankPassages("Which apps publish to the EDW?", pages).map((s) => s.heading)).toEqual([
+    expect(rankPassages("Which apps publish to the EDW?", pages).map((s) => s.heading)).toContain(
       "Reporting › Nightly load",
-    ]);
+    );
     expect(
-      rankPassages("How does single sign-on work for a new endpoint?", pages).map(
-        (s) => s.heading,
-      )[0],
-    ).toBe("Identity › The gate");
+      rankPassages("How does single sign-on work for a new endpoint?", pages).map((s) => s.heading),
+    ).toContain("Identity › The gate");
+    // With no page defining them, letters alone link nothing: "step still open" is no SSO.
+    const undefinedPages = [
+      ...pages.slice(0, 3),
+      page("orders/steps.md", "# Steps\n\n## Review\n\nA step still open blocks the release.\n"),
+    ];
+    expect(rankPassages("Which apps publish to the EDW?", undefinedPages)).toEqual([]);
+    expect(rankPassages("Who owns SSO?", undefinedPages).map((s) => s.heading)).toEqual([
+      "Identity › The gate",
+    ]);
+  });
+
+  it("shows the sentence found in a long section with odd spacing or no paragraphs at all", () => {
+    const filler = "The forge gateway allowlist is reviewed weekly by the platform team.";
+    const odd = page(
+      "a.md",
+      `# A\n\n## Spaced\n\n${Array(30).fill(filler).join("\n   \n")}\n   \nThe zanzibar token is rotated monthly.\n`,
+    );
+    const one = page(
+      "b.md",
+      `# B\n\n## One paragraph\n\n${Array(40).fill(filler).join(" ")} The quokka token is rotated monthly. ${filler}\n`,
+    );
+    const list = page(
+      "c.md",
+      `# C\n\n## A list\n\n${Array(40).fill(`- ${filler}`).join("\n")}\n- The numbat token is rotated monthly.\n`,
+    );
+    for (const [p, word] of [
+      [odd, "zanzibar"],
+      [one, "quokka"],
+      [list, "numbat"],
+    ] as const) {
+      const text = rankPassages(`${word} rotated`, [p])[0]!.text;
+      expect(text, word).toContain(`The ${word} token is rotated monthly.`);
+      expect(text.length, word).toBeLessThanOrEqual(1500);
+      expect(text, word).toMatch(/^… (The|- The) /);
+    }
   });
 });
 
@@ -195,10 +256,28 @@ describe("Ask over the knowledge items", () => {
       },
     });
     const q = "How do I add single sign-on?";
-    expect(rankItems(q, [kafka, gate]).map((x) => x.item.id)).toEqual(["sso-login-gate"]);
-    expect(knowledgeAnswer(q, { items: [kafka, gate], pages: [] }).items.map((i) => i.id)).toEqual([
+    // Nothing defines SSO: the letters alone link nothing.
+    expect(rankItems(q, [kafka, gate])).toEqual([]);
+    // A page of the wiki does: the item is found and listed.
+    const pages = [page("abbreviations.md", "# Abbreviations\n\n- SSO: single sign-on\n")];
+    expect(knowledgeAnswer(q, { items: [kafka, gate], pages }).items.map((i) => i.id)).toEqual([
       "sso-login-gate",
     ]);
+    // And an item that defines it itself.
+    const defines = item({
+      id: "identity-terms",
+      title: "Forge Identity terms",
+      appliesWhen: "Reading an identity page.",
+      notes: "Single sign-on (SSO) is the only way in.",
+      quote: {
+        source: "platform",
+        page: "identity.md",
+        section: "Terms",
+        text: "Single sign-on (SSO) is the only way in.",
+        snapshot: "2026-10-20",
+      },
+    });
+    expect(rankItems(q, [kafka, gate, defines]).map((x) => x.item.id)).toContain("sso-login-gate");
   });
 });
 

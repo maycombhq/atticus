@@ -5,7 +5,6 @@ import {
   authorityRank,
   factsDirOf,
   identifierWords,
-  initialismLinks,
   knowledgeKindOf,
   orgPackDirOf,
   type PageStatus,
@@ -828,6 +827,7 @@ export async function selectTaskKnowledge(
     };
   }
   const snapshot = snapshotsOf(root);
+  const acronyms = ix.initialisms();
   let matching: string | undefined;
   try {
     for (const input of inputs) {
@@ -937,9 +937,10 @@ export async function selectTaskKnowledge(
         const places = placesNamed(aboutTexts.join("\n"), input);
         const target = places.some((p) => (input.targets ?? []).includes(p));
         const cos = cosOf(c, item);
-        // beta.28.3: an acronym one side writes and the other spells out ("SSO", "single
-        // sign-on") is the same name on both: it keeps the candidate as a shared name does.
-        const spelled = initialismLinks(input.changes.join("\n"), aboutTexts.join("\n"));
+        // beta.28.3: a name the estate's pages define, written as its acronym on one side and
+        // as its words on the other ("SSO", "single sign-on"), is the same name on both: it
+        // keeps the candidate as a shared name does.
+        const spelled = acronyms.links(input.changes.join("\n"), aboutTexts.join("\n"));
         const always =
           c.named || target || spelled.length > 0 || (isConfirmed && shared.length > 0);
         // Words and meaning (ADR 0132 addendum): two of the words the task changes keep it; one
@@ -961,7 +962,7 @@ export async function selectTaskKnowledge(
         const sim = cos === undefined ? "" : `, similarity ${cos.toFixed(2)}`;
         const short = spelled.map(
           (l) =>
-            `${l.acronym} (${l.acronymIn === "a" ? "which it writes out" : "which this task writes out"} as "${l.phrase.replace(/\s+/g, " ")}")`,
+            `${l.acronym} (${l.acronymIn === "a" ? "which it writes out" : "which this task writes out"} as "${l.phrase}")`,
         );
         const why = c.named
           ? "The task's step names it."

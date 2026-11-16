@@ -1,6 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { stateDirOf, type CatalogRecord, type RecordKind } from "@maycombhq/core";
+import {
+  stateDirOf,
+  type CatalogRecord,
+  type InitialismBook,
+  type RecordKind,
+} from "@maycombhq/core";
 import { textSha, type Embedder, type QuantVector } from "@maycombhq/ai";
 import { openDb, type Db } from "./db.js";
 import {
@@ -32,6 +37,7 @@ import {
   type SearchHit,
   type SearchOptions,
   type SelectOptions,
+  initialismsOf,
 } from "./select.js";
 
 export { INDEX_VERSION, type IndexProblem } from "./store.js";
@@ -318,6 +324,11 @@ export class CatalogIndex {
   }
 
   /** Full-text search over every node (ADR 0107 point 2): names and ids rank above prose. */
+  /** The acronyms the estate's pages define, with their words (beta.28.3). */
+  initialisms(): InitialismBook {
+    return initialismsOf(this);
+  }
+
   search(text: string, o: SearchOptions = {}): SearchHit[] {
     return searchIndex(this, text, o);
   }

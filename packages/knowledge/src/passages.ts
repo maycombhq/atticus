@@ -1,7 +1,7 @@
 import { itemTitle } from "./knowledge-store.js";
 import type { KnowledgeRecord } from "./knowledge-scan.js";
-import { initialismLinks } from "@maycombhq/core";
-import { itemText, rankItems, termsOf } from "./knowledge-ask.js";
+import type { InitialismBook } from "@maycombhq/core";
+import { initialismsIn, itemText, rankItems, termsOf } from "./knowledge-ask.js";
 import { visibleText } from "./quotes.js";
 
 /**
@@ -126,19 +126,27 @@ export function sectionOf(pages: readonly PassagePage[], id: string): Passage | 
   const want = id.slice(named + 1).trim();
   if (!want) return sections[0];
   const last = (h: string) => h.split(" › ").at(-1) ?? h;
-  const find = (wanted: string) => {
+  const exact = (wanted: string) => {
     const w = wanted.toLowerCase();
-    return (
-      sections.find((s) => s.heading.toLowerCase() === w || last(s.heading).toLowerCase() === w) ??
-      sections.find(
-        (s) => slug(s.heading) === slug(wanted) || slug(last(s.heading)) === slug(wanted),
-      ) ??
-      sections.find((s) => slug(wanted).endsWith(slug(last(s.heading))) && slug(last(s.heading)))
+    return sections.find(
+      (s) => s.heading.toLowerCase() === w || last(s.heading).toLowerCase() === w,
     );
   };
-  // A long section is indexed in parts, the later ones as `<heading>#2`, `#3`: its section.
-  const part = /^(.*\S)\s*#\d+$/.exec(want);
-  return find(want) ?? (part ? find(part[1]!) : undefined);
+  const loose = (wanted: string) =>
+    sections.find(
+      (s) => slug(s.heading) === slug(wanted) || slug(last(s.heading)) === slug(wanted),
+    ) ??
+    sections.find((s) => slug(wanted).endsWith(slug(last(s.heading))) && slug(last(s.heading)));
+  // A long section is indexed in parts, the later ones as `<heading>#2`, `#3`: its section. The
+  // heading as written comes first, then the part's, before any looser match ("Step#2" is part
+  // 2 of Step, not the section "Step 2").
+  const part = /^(.*\S)\s*#\d+$/.exec(want)?.[1];
+  return (
+    exact(want) ??
+    (part ? exact(part) : undefined) ??
+    (part ? loose(part) : undefined) ??
+    loose(want)
+  );
 }
 
 /**
@@ -147,27 +155,57 @@ export function sectionOf(pages: readonly PassagePage[], id: string): Passage | 
  */
 function shown(text: string, q: readonly string[]): string {
   if (text.length <= MAX_TEXT) return text;
-  const paragraphs = text.split(/\n\s*\n/);
-  let at = 0;
-  for (const para of paragraphs) {
-    const words = new Set(termsOf(para));
-    if (q.some((t) => words.has(t))) break;
-    at += para.length + 2;
+  const has = (s: string) => {
+    const words = new Set(termsOf(s));
+    return q.some((t) => words.has(t));
+  };
+  // The start already shows one of the words: nothing to move.
+  if (has(text.slice(0, MAX_TEXT - 1))) return clip(text);
+  // Where each paragraph starts, then each line of the paragraph that has the word.
+  const starts = [0, ...[...text.matchAll(/\n\s*\n/g)].map((m) => m.index + m[0].length)];
+  let at = -1;
+  for (let i = 0; i < starts.length && at < 0; i++) {
+    const para = text.slice(starts[i]!, starts[i + 1] ?? text.length);
+    if (!has(para)) continue;
+    at = starts[i]!;
+    if (para.length > MAX_TEXT) {
+      let line = at;
+      for (const l of para.split("\n")) {
+        if (has(l)) break;
+        line += l.length + 1;
+      }
+      if (line < at + para.length) at = line;
+    }
   }
-  if (at >= text.length || at + 200 <= MAX_TEXT) return clip(text);
-  return clip(`… ${text.slice(at).trim()}`);
+  if (at < 0) return clip(text);
+  let rest = text.slice(at).trim();
+  // One very long line: from the sentence that has the word, else from the word itself.
+  if (rest.length > MAX_TEXT - 2 && !has(rest.slice(0, MAX_TEXT - 2))) {
+    const sentences = rest.split(/(?<=[.!?])\s+/);
+    let from = 0;
+    for (const sentence of sentences) {
+      if (has(sentence)) break;
+      from += sentence.length + 1;
+    }
+    if (from < rest.length) rest = rest.slice(from).trim();
+  }
+  return `… ${rest}`.length > MAX_TEXT
+    ? `${`… ${rest}`.slice(0, MAX_TEXT - 1).trimEnd()}…`
+    : `… ${rest}`;
 }
 
 /**
  * The sections that share the most of the question's words (rarer words count more), best first.
  * beta.28.3: the whole section is searched, not its first 1,500 characters; a heading with
- * nothing under it is never an answer; and an acronym one side writes and the other spells out
- * ("EDW", "enterprise data warehouse") counts as two rare words in common.
+ * nothing under it is never an answer; and a name the pages define ("Enterprise Data Warehouse
+ * (EDW)"), written as its acronym on one side and its words on the other, counts as two rare
+ * words in common.
  */
 export function rankPassages(
   question: string,
   pages: readonly PassagePage[],
   limit = 5,
+  o: { acronyms?: InitialismBook } = {},
 ): Passage[] {
   const q = [...new Set(termsOf(question))];
   if (!q.length) return [];
@@ -176,6 +214,7 @@ export function rankPassages(
   const idf = new Map(
     q.map((t) => [t, Math.log(1 + all.length / (1 + docs.filter((d) => d.has(t)).length))]),
   );
+  const acronyms = o.acronyms ?? initialismsIn(all.map((s) => `${s.heading}\n${s.text}`));
   const name = Math.log(1 + all.length);
   // A passage needs more than one of the question's words unless the question has one.
   const need = q.length > 2 ? 2 : 1;
@@ -183,7 +222,7 @@ export function rankPassages(
     .map((s, k) => {
       const hits = q.filter((t) => docs[k]!.has(t));
       const heading = new Set(termsOf(s.heading));
-      const names = initialismLinks(question, `${s.heading}\n${s.text}`).length;
+      const names = acronyms.links(question, `${s.heading}\n${s.text}`).length;
       const score =
         hits.reduce((n, t) => n + idf.get(t)! * (heading.has(t) ? 1.5 : 1), 0) + 2 * name * names;
       return { s, hits: hits.length + 2 * names, score };
@@ -213,15 +252,20 @@ export function knowledgeAnswer(
   o: { items: readonly KnowledgeRecord[]; pages: readonly PassagePage[]; limit?: number },
 ): KnowledgeFound {
   const limit = o.limit ?? 5;
+  // The acronyms the pages and the items define, read once for both rankings.
+  const acronyms = initialismsIn([
+    ...o.pages.flatMap((p) => pageSections(p, { whole: true }).map((s) => s.text)),
+    ...o.items.map(itemText),
+  ]);
   const q = termsOf(question);
   const need = new Set(q).size > 2 ? 2 : 1;
-  const items = rankItems(question, [...o.items])
+  const items = rankItems(question, [...o.items], { acronyms })
     .filter((x) => {
       // beta.28.3: counted over everything the item says, as rankItems (and so knowledge ask)
       // reads it; an acronym and its words count as a name in common.
       const text = itemText(x.item);
       const own = new Set(termsOf(text));
-      const names = initialismLinks(question, text).length;
+      const names = acronyms.links(question, text).length;
       return [...new Set(q)].filter((t) => own.has(t)).length + 2 * names >= need;
     })
     .slice(0, limit)
@@ -240,5 +284,5 @@ export function knowledgeAnswer(
           }
         : {}),
     }));
-  return { items, passages: rankPassages(question, o.pages, limit) };
+  return { items, passages: rankPassages(question, o.pages, limit, { acronyms }) };
 }
