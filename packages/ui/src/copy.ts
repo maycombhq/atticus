@@ -1100,6 +1100,17 @@ export const COPY = {
     build: "Build now",
     building: "Building…",
     refusedTitle: "The build waits for you: nothing has been written.",
+    /**
+     * Beta.28.3: a newer Atticus's catalog has a heading of its own. Under "The build waits for
+     * you" it read as though something could be confirmed, when the only way on is to upgrade.
+     */
+    newerTitle:
+      "This catalog was built by a newer Atticus: nothing has been written. Upgrade Atticus to go on.",
+    /** The heading over a refusal, by its reasons. */
+    refusalTitle: (reasons: readonly string[]): string =>
+      reasons.includes("newer-atticus")
+        ? COPY.catalogBuild.newerTitle
+        : COPY.catalogBuild.refusedTitle,
     reason: {
       "large-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"}, more than 10% of a repo's or 200 in one build.`,
@@ -5027,6 +5038,9 @@ export const COPY = {
     /** ADR 0195 point 4: Apply's build refused; it waits for the person's confirm, listed here. */
     applyWaits: (repo: string) =>
       `Nothing applied to ${repo}'s map yet: its build waits for you to confirm what it lists.`,
+    /** Beta.28.3: Apply's build refused a catalog a newer Atticus built; no confirm goes on. */
+    applyNewer: (repo: string) =>
+      `Nothing applied to ${repo}'s map: this catalog was built by a newer Atticus. Upgrade Atticus (npm i -g @maycombhq/atticus@beta), then Apply again.`,
     confirmApply: (n: number) => `Apply, removing ${n} ${n === 1 ? "record" : "records"}`,
     /** ADR 0195 point 4: Apply's hand edits made curated; the facts wait for Apply again. */
     editsChanged:
@@ -5383,6 +5397,9 @@ export const COPY = {
     waitsRemovals: (n: number) =>
       `Saved. The catalog build waits for you to review ${n} removal${n === 1 ? "" : "s"} first.`,
     waitsBuild: "Saved. The catalog build waits for you on Catalog builds.",
+    /** Beta.28.3: nothing on Catalog builds confirms a newer Atticus's catalog. */
+    newerAtticus:
+      "Saved, but nothing was built: this catalog was built by a newer Atticus. Upgrade Atticus (npm i -g @maycombhq/atticus@beta), then build again.",
     reviewRemovals: (n: number) => `Review the ${n} removal${n === 1 ? "" : "s"}`,
     reviewBuild: "Review the build",
     printed: (n: number) => `What it printed (${n} line${n === 1 ? "" : "s"})`,

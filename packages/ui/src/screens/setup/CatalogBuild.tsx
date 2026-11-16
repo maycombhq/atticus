@@ -294,10 +294,12 @@ export function RefusalView(p: {
       : reason === "hand-edits" || reason === "not-upgraded"
         ? nEdits
         : 0;
+  // Beta.28.3: a newer Atticus's catalog under its own heading (nothing there to confirm).
+  const title = B.refusalTitle(r.reasons);
   return (
-    <div className="stack" style={{ gap: 10 }} role="group" aria-label={B.refusedTitle}>
+    <div className="stack" style={{ gap: 10 }} role="group" aria-label={title}>
       <p className="state" role="note" style={{ margin: 0 }}>
-        <strong>{B.refusedTitle}</strong>
+        <strong>{title}</strong>
       </p>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {r.reasons.map((x) => (
@@ -673,7 +675,7 @@ export function LastBuild({ last: l }: { last: Api.BuildReportViewT }) {
         </p>
       )}
       {r && (
-        <ul style={{ margin: 0, paddingLeft: 18 }} aria-label={B.refusedTitle}>
+        <ul style={{ margin: 0, paddingLeft: 18 }} aria-label={B.refusalTitle(r.reasons)}>
           {r.reasons.map((x) => (
             <li key={x}>{B.reason[x]?.(count(x)) ?? x}</li>
           ))}

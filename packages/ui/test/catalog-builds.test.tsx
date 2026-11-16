@@ -631,6 +631,11 @@ describe("a refused build: its list and its ways on, nothing written until confi
       );
       expect(out).toContain(esc(B.reason["newer-atticus"]!(0)));
       expect(out).toContain("npm i -g @maycombhq/atticus@beta");
+      // Beta.28.3: its own heading. The build doesn't wait for anything a person can confirm.
+      expect(out).toContain(`<strong>${esc(B.newerTitle)}</strong>`);
+      expect(out).toContain(`aria-label="${esc(B.newerTitle)}"`);
+      expect(out).not.toContain(esc(B.refusedTitle));
+      expect(out).not.toMatch(/waits for you|confirm/i);
       // Never the advice for a catalog from before the slots, and nothing to confirm.
       expect(out).not.toContain("atticus upgrade --yes");
       expect(out).not.toContain(esc(B.upgradeOn));
@@ -643,6 +648,37 @@ describe("a refused build: its list and its ways on, nothing written until confi
       ]);
       expect(out).not.toMatch(/\d+ (record|file)s?\b/);
     }
+  });
+
+  it("the newer-Atticus heading says who built the catalog, that nothing was written, and to upgrade Atticus (beta.28.3)", () => {
+    expect(B.newerTitle).toMatch(/built by a newer Atticus/);
+    expect(B.newerTitle).toMatch(/nothing has been written/i);
+    expect(B.newerTitle).toMatch(/upgrade Atticus/i);
+    expect(B.newerTitle).not.toMatch(/waits|confirm/i);
+    // Every other refusal keeps the heading it had.
+    expect(B.refusalTitle(["large-removals"])).toBe(B.refusedTitle);
+    expect(B.refusalTitle(["empty"])).toBe(B.refusedTitle);
+    expect(B.refusalTitle(["newer-atticus"])).toBe(B.newerTitle);
+  });
+
+  it("Catalog builds says a newer Atticus's catalog under its own heading, the next build's and the last build's (beta.28.3)", () => {
+    const newer: Api.BuildRefusalViewT = {
+      reasons: ["newer-atticus"],
+      message: "Nothing written: built by a newer Atticus.",
+      command: "npm i -g @maycombhq/atticus@beta",
+    };
+    const out = page({
+      build: view(
+        { upToDate: false, removals: [], refused: newer },
+        report({ outcome: "refused", refused: newer, added: [] }),
+      ),
+    });
+    expect(out).toContain(`<strong>${esc(B.newerTitle)}</strong>`);
+    // The next build's group and the last build's list of reasons are both named by it.
+    expect(out.split(`aria-label="${esc(B.newerTitle)}"`)).toHaveLength(3);
+    expect(out).not.toContain(esc(B.refusedTitle));
+    expect(out).not.toMatch(/waits for you/i);
+    expect(out).not.toContain(">Review the");
   });
 
   it("on Catalog builds, a refusal as not upgraded points to the upgrade step below", () => {

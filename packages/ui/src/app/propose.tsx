@@ -68,6 +68,14 @@ export const CATALOG_BUILDS_HREF = "#/catalog-builds";
  */
 export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
   const R = COPY.panelResults;
+  // Beta.28.3: a catalog a newer Atticus built waits for nothing here: no page reviews or
+  // confirms it, and the way on is to upgrade Atticus.
+  if (refused.reasons.includes("newer-atticus"))
+    return (
+      <p className="ev-say" role="status" style={{ margin: 0 }}>
+        {R.newerAtticus}
+      </p>
+    );
   // Only a large removal waits for a confirm (an empty catalog over a full one has none).
   const n = refused.reasons.includes("large-removals")
     ? (refused.removals?.length ?? refused.allowRemovals ?? 0)
@@ -83,6 +91,13 @@ export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
     </div>
   );
 }
+
+/**
+ * What a refused Apply says as it ends (its flash and its error). Beta.28.3: over a catalog a
+ * newer Atticus built nothing waits for a confirm; it says to upgrade Atticus.
+ */
+export const applyWaitsWords = (repo: string, refused: Api.BuildRefusalViewT): string =>
+  refused.reasons.includes("newer-atticus") ? P.applyNewer(repo) : P.applyWaits(repo);
 
 /** The plan a refusal's confirm sends back with its count (the list it showed), when it has one. */
 const planOf = (r: Api.BuildRefusalViewT) => (r.plan ? { plan: r.plan } : {});
@@ -196,12 +211,12 @@ export function ApplyAndPropose(p: {
       // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
       if (p.scope === "corrections")
         flash({
-          text: (waits ? P.applyWaits(p.repo!) : `${P.applyFailed} ${(e as Error).message}`).slice(
-            0,
-            400,
-          ),
+          text: (waits
+            ? applyWaitsWords(p.repo!, waits)
+            : `${P.applyFailed} ${(e as Error).message}`
+          ).slice(0, 400),
         });
-      throw new Error(waits ? P.applyWaits(p.repo!) : P.applyFailed, { cause: e });
+      throw new Error(waits ? applyWaitsWords(p.repo!, waits) : P.applyFailed, { cause: e });
     } finally {
       // What waits to be applied or proposed (Home's list, the map's bar) is read
       // again once the Apply has ended, not only when it started.

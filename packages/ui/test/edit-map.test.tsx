@@ -9,6 +9,7 @@ import { COPY } from "../src/copy.js";
 import { revealOf } from "../src/screens/architecture/Architecture.js";
 import {
   applyRefused,
+  applyWaitsWords,
   CATALOG_BUILDS_HREF,
   RefusalLink,
   ResultsInPanel,
@@ -600,6 +601,48 @@ describe("the list beside the canvas, and Apply my changes", () => {
         />,
       ),
     ).toContain(esc(COPY.panelResults.reviewBuild));
+  });
+
+  it("a catalog a newer Atticus built: saved, nothing built, upgrade Atticus; nothing to review or confirm (beta.28.3)", () => {
+    const newer = {
+      reasons: ["newer-atticus" as const],
+      message: "Nothing written: built by a newer Atticus.",
+      command: "npm i -g @maycombhq/atticus@beta",
+    } as unknown as Api.BuildRefusalViewT;
+    const R = COPY.panelResults;
+    expect(R.newerAtticus).toMatch(/built by a newer Atticus/);
+    expect(R.newerAtticus).toMatch(/upgrade Atticus/i);
+    for (const out of [
+      html(<RefusalLink refused={newer} />),
+      view({ state: "saved", n: 2, refused: newer }, []),
+    ]) {
+      expect(out).toContain(esc(R.newerAtticus));
+      expect(out).not.toContain(esc(R.waitsBuild));
+      expect(out).not.toContain(esc(R.reviewBuild));
+      expect(out).not.toContain(CATALOG_BUILDS_HREF);
+      expect(out).not.toMatch(/waits for you/i);
+    }
+    // A refused Apply in the panel: the heading of its own, and no confirm.
+    const applied = html(
+      <ResultsInPanel.Provider value={true}>
+        {applyRefused({
+          refused: newer,
+          onAllowRemovals: async () => undefined,
+          onCurate: async () => undefined,
+          onDiscard: async () => undefined,
+        })}
+      </ResultsInPanel.Provider>,
+    );
+    expect(applied).toContain(esc(COPY.catalogBuild.newerTitle));
+    expect(applied).not.toContain(esc(COPY.catalogBuild.refusedTitle));
+    // What the Apply says as it fails (its flash and its error): no build waiting for a confirm.
+    expect(applyWaitsWords("forge-ledger", newer)).toBe(COPY.propose.applyNewer("forge-ledger"));
+    expect(COPY.propose.applyNewer("forge-ledger")).toMatch(/built by a newer Atticus/);
+    expect(COPY.propose.applyNewer("forge-ledger")).toMatch(/upgrade Atticus/i);
+    expect(COPY.propose.applyNewer("forge-ledger")).not.toMatch(/waits|confirm/i);
+    expect(applyWaitsWords("forge-ledger", { ...newer, reasons: ["large-removals"] })).toBe(
+      COPY.propose.applyWaits("forge-ledger"),
+    );
   });
 
   it("a refusal for an empty catalog names no removal count; a large removal does (RefusalLink, beta.28.2 review)", () => {
