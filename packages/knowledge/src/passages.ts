@@ -205,11 +205,13 @@ export function rankPassages(
   question: string,
   pages: readonly PassagePage[],
   limit = 5,
-  o: { acronyms?: InitialismBook } = {},
+  o: { acronyms?: InitialismBook; sections?: readonly Passage[] } = {},
 ): Passage[] {
   const q = [...new Set(termsOf(question))];
   if (!q.length) return [];
-  const all = pages.flatMap((p) => pageSections(p, { whole: true })).filter((s) => s.text);
+  const all = (o.sections ?? pages.flatMap((p) => pageSections(p, { whole: true }))).filter(
+    (s) => s.text,
+  );
   const docs = all.map((s) => new Set(termsOf(`${s.heading} ${s.text}`)));
   const idf = new Map(
     q.map((t) => [t, Math.log(1 + all.length / (1 + docs.filter((d) => d.has(t)).length))]),
@@ -253,8 +255,9 @@ export function knowledgeAnswer(
 ): KnowledgeFound {
   const limit = o.limit ?? 5;
   // The acronyms the pages and the items define, read once for both rankings.
+  const sections = o.pages.flatMap((p) => pageSections(p, { whole: true }));
   const acronyms = initialismsIn([
-    ...o.pages.flatMap((p) => pageSections(p, { whole: true }).map((s) => s.text)),
+    ...sections.map((s) => `${s.heading}\n${s.text}`),
     ...o.items.map(itemText),
   ]);
   const q = termsOf(question);
@@ -284,5 +287,5 @@ export function knowledgeAnswer(
           }
         : {}),
     }));
-  return { items, passages: rankPassages(question, o.pages, limit, { acronyms }) };
+  return { items, passages: rankPassages(question, o.pages, limit, { acronyms, sections }) };
 }

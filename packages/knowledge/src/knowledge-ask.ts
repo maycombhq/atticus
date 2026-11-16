@@ -62,7 +62,7 @@ const STOP = new Set(
 /**
  * A word folded for comparing, so a singular, its plural and its -ed and -ing forms are one
  * (beta.28.3: "rule" and "rules" were rule and rul; "policy" and "policies" never met). A
- * plural's ending comes off (ies and ied to y; es only after s, x, z, ch, sh), then -ed or -ing,
+ * plural's ending comes off (ies and ied to y; es only after ss, x, ch, sh), then -ed or -ing,
  * then the last "e" of a word of five letters or more ("change", "changes", "changed" and
  * "changing" are all chang; "note" stays note, apart from "not").
  */
@@ -70,8 +70,9 @@ const stem = (w: string) => {
   let s = w;
   if (/ie[sd]$/.test(s) && s.length > 4) s = `${s.slice(0, -3)}y`;
   else if (/sses$/.test(s)) s = s.slice(0, -2);
-  else if (/(x|z|ch|sh)es$/.test(s)) s = s.slice(0, -2);
-  else if (/s$/.test(s) && !/(ss|us|is)$/.test(s) && s.length > 3) s = s.slice(0, -1);
+  else if (/(x|ch|sh)es$/.test(s)) s = s.slice(0, -2);
+  else if (/s$/.test(s) && !/ss$/.test(s) && !(s.length > 4 && /(us|is)$/.test(s)) && s.length > 3)
+    s = s.slice(0, -1);
   if (s.length > 5 && /ing$/.test(s)) s = s.slice(0, -3);
   else if (s.length > 4 && /eed$/.test(s)) s = s.slice(0, -1);
   else if (s.length > 4 && /ed$/.test(s)) s = s.slice(0, -2);

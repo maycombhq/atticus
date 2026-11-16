@@ -2,6 +2,26 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.3 (unreleased)
+
+beta.28.3 is knowledge search and fixes. No contract changes and no new file formats: a team may upgrade one member at a time.
+
+### Added
+
+- **An acronym your pages define and the words it stands for are one name (ADR 0132 addendum of 2026-11-16).** Once any wiki page or file in `inputs/` sets the two side by side ("single sign-on (SSO)", "EDW (Enterprise Data Warehouse)", or a line of an abbreviations list such as `CAB: Change Advisory Board`), a page that says only "SSO" reaches a change or a task that says "single sign-on", and the other way round. A task's knowledge says why: "It is about SSO (which this task writes out as "single sign on"), as this task is." Ask Atticus and `atticus knowledge ask` use the same definitions, so asking about "the EDW" finds the page that only writes "enterprise data warehouse". No model is used. An acronym no page defines is not linked: words that only happen to spell it are never taken for its meaning. Add a line to an abbreviations page to teach Atticus one.
+
+### Fixed
+
+- **Ask Atticus finds a sentence anywhere in a long wiki section**, not only in its first 1,500 characters, and shows the part that has it.
+- **A question that uses the singular of a word finds pages that use the plural, and the other way round** ("rule" and "rules", "policy" and "policies", "change", "changed" and "changing"). This also applies to `atticus knowledge ask`.
+- **Ask Atticus lists a knowledge item matched by when it applies, its steps or its rules**, as `atticus knowledge ask` answers from it. It matched on the title, quote and tags only.
+- **Ask Atticus no longer lists a page heading with nothing under it as an answer.**
+- **Ask Atticus no longer offers `atticus knowledge ask` when only wiki pages match**, since that command answers from knowledge items and would refuse. It offers `atticus knowledge scan` instead.
+- **A suggested wiki section opens in place ("Read it here")** when it is a later part of a long section, or when its page's name has a `#` in it. Both gave "not found".
+- **Searching the wikis no longer matches or shows hidden text** (HTML comments, hidden elements) **or a page's front matter**, and no longer takes a `#` comment in a code block for a heading.
+- **A restricted document in `inputs/` stays out of the index even before `inputs/` is synced.** A file whose front matter says `restricted`, lists view restrictions, or gives a classification above the limit was indexed with its text until the next `atticus sources sync`. The index is what AI steps and suggested knowledge select from.
+- **A readers slot written by a newer Atticus is refused for a repo named `build` too.** It was mistaken for `build.json` and built over.
+
 ## 2.0.0-beta.28.2 (2026-11-15)
 
 beta.28.2 writes `catalog/sources/build.json` version 2 (ADR 0197). From this release, an Atticus that meets a `build.json` or slot newer than it reads says so, instead of taking the catalog for one from before beta.27.

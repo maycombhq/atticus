@@ -145,7 +145,7 @@ The acronym case above is the common case in a real estate: one page writes "EDW
 - `ACR (words)`: "POS (point of sale)";
 - a line of an abbreviations list: `EDW: Enterprise Data Warehouse`, `CAB - Change Advisory Board`, `| SSO | single sign-on |`.
 
-An acronym is two to six capital letters or digits, starting with a letter. A joining word (a, an, and, for, in, of, on, or, the, to) gives a letter or none; the words never start on one. The definitions of the knowledge items, wiki sections and documents the index holds make the estate's book, read once per index version and kept in the index (`meta`, `initialisms:<version>`). A text writes an acronym only in capitals ("cab" is no CAB) and a phrase with any spacing, case or hyphens.
+An acronym is three to six capital letters or digits, starting with a letter; one that is an ordinary word, label or keyword in capitals (POST, NOTE, AND, NULL) is never taken, however a page defines it, and neither is one of two letters (IS, OR, UI). A joining word (a, an, and, for, in, of, on, or, the, to) gives a letter or none; the words never start on one. The definitions of the knowledge items, wiki sections and documents the index holds make the estate's book, read once per index version and kept in the index (`meta`, `initialisms:<version>`). A text writes an acronym only in capitals, as a word of its own ("cab" is no CAB, nor is `MAX_CAB_SIZE`), and a phrase with any spacing, case or hyphens, within one sentence.
 
 **Where it is used.** Each use only ranks or keeps what a person is shown; none makes a record, a name, a link or a fact.
 

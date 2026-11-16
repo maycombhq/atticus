@@ -13,7 +13,7 @@
  */
 
 export interface Initialism {
-  /** As written: capital letters and digits, two to six, starting with a letter. */
+  /** As written: capital letters and digits, three to six, starting with a letter. */
   acronym: string;
   /** The words it stands for: lower case, single spaces, hyphens as spaces. */
   phrase: string;
@@ -22,7 +22,7 @@ export interface Initialism {
 /** Words that join a name's words: they give a letter or none ("point of sale" is POS and PS). */
 const JOINING = new Set(["a", "an", "and", "for", "in", "of", "on", "or", "the", "to"]);
 
-const ACR = "[A-Z][A-Z0-9]{1,5}";
+const ACR = "[A-Z][A-Z0-9]{2,5}";
 const WORD = /[A-Za-z][A-Za-z0-9']*/g;
 
 /** The words of a stretch of text with no punctuation but hyphens in it, else undefined. */
@@ -47,12 +47,35 @@ function spells(words: readonly string[], letters: string): boolean {
   return go(0, 0);
 }
 
-/** Lower case, anything but letters and digits as one space, a space at each end: how a phrase is looked for. */
+/**
+ * How a phrase is looked for in a text: lower case, anything but letters and digits as one space,
+ * a space at each end. Where a sentence, a bracket or a paragraph ends there is a bar, so a phrase is
+ * never found across one ("the change. Request access" writes no "change request").
+ */
 export const foldWords = (s: string) =>
   ` ${s
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[.!?;:()[\]{}|]+|\n[ \t\r]*\n/g, " | ")
+    .replace(/[^a-z0-9|]+/g, " ")
     .trim()} `;
+
+/**
+ * Capital words that are ordinary words, labels and keywords, never an estate's own name: a page
+ * may well set words beside one ("POST: place order status tracking"), and a task that writes
+ * "POST /orders" is not about a point of sale terminal.
+ */
+const ORDINARY = new Set(
+  (
+    "add all alter and any are ask asc bad begin but can case close closed column commit copy " +
+    "create data date day debug delete desc done drop each else end error fail false file fix " +
+    "fixme for from full get given good group had has having head help how inner insert int into " +
+    "its join key left like limit list max may min must new next none not note now null off " +
+    "old one only open option options order our out outer pass patch per post put read right row " +
+    "run see select set shall should show start status stop sum table tbd test that the then this " +
+    "tip todo top true two union update use user value values via warn warning was when where " +
+    "who why with yes you"
+  ).split(" "),
+);
 
 /**
  * The acronyms a text defines, each with the words it sets beside it, in the order met:
@@ -87,7 +110,9 @@ export function definedInitialisms(text: string): Initialism[] {
     if (line.length > 4000 || !/[A-Z][A-Z0-9]/.test(line)) continue;
     // words (ACR)
     for (const m of line.matchAll(new RegExp(`\\(\\s*[*_\`]*(${ACR})s?[*_\`]*\\s*\\)`, "g"))) {
-      const before = /([A-Za-z0-9' \t-]+)$/.exec(line.slice(0, m.index).replace(/[*_`]/g, ""));
+      const before = /([A-Za-z0-9' \t-]+)$/.exec(
+        line.slice(Math.max(0, m.index - 200), m.index).replace(/[*_`]/g, ""),
+      );
       const words = before ? wordsOf(before[1]!) : undefined;
       const part = words && fit(m[1]!, words.slice(-12), "end");
       if (part) add(m[1]!, part);
@@ -96,7 +121,8 @@ export function definedInitialisms(text: string): Initialism[] {
     for (const m of line.matchAll(
       new RegExp(`(?<![A-Za-z0-9])(${ACR})s?[*_\`]*\\s*\\(([^()]{3,120})\\)`, "g"),
     )) {
-      const words = wordsOf(m[2]!.replace(/[*_`"“”]/g, "").trim());
+      const all = wordsOf(m[2]!.replace(/[*_`"“”]/g, "").trim());
+      const words = all && /^(the|a|an)$/i.test(all[0] ?? "") ? all.slice(1) : all;
       if (words && spells(words, m[1]!.toLowerCase())) add(m[1]!, words);
     }
     // ACR: words / ACR - words / | ACR | words |
@@ -135,20 +161,25 @@ export interface InitialismBook {
   links(a: string, b: string): InitialismLink[];
 }
 
-/** A book of definitions, each acronym and phrase once, sorted: the same definitions give the same book. */
+/**
+ * A book of definitions, each acronym and phrase once, sorted: the same definitions give the same
+ * book. An acronym that is an ordinary word in capitals (POST, NOTE, AND) is left out, as is a
+ * phrase of one word.
+ */
 export function initialismBook(defs: Iterable<Initialism>): InitialismBook {
   const byKey = new Map<string, Initialism>();
   for (const d of defs) {
-    if (!new RegExp(`^${ACR}$`).test(d.acronym)) continue;
+    if (!new RegExp(`^${ACR}$`).test(d.acronym) || ORDINARY.has(d.acronym.toLowerCase())) continue;
     const phrase = foldWords(d.phrase).trim();
-    if (phrase.split(" ").length < 2) continue;
+    if (phrase.includes("|") || phrase.split(" ").length < 2) continue;
     byKey.set(`${d.acronym}\0${phrase}`, { acronym: d.acronym, phrase });
   }
   const all = [...byKey.keys()].sort().map((k) => byKey.get(k)!);
   const token = new Map<string, RegExp>();
+  // An acronym is written in capitals, as a word of its own (never inside MAX_SSO_RETRIES).
   const writes = (text: string, acronym: string) => {
     let re = token.get(acronym);
-    if (!re) token.set(acronym, (re = new RegExp(`(?<![A-Za-z0-9])${acronym}s?(?![A-Za-z0-9])`)));
+    if (!re) token.set(acronym, (re = new RegExp(`(?<![A-Za-z0-9_])${acronym}s?(?![A-Za-z0-9_])`)));
     return re.test(text);
   };
   const uses = (text: string): InitialismUse[] => {
@@ -161,23 +192,32 @@ export function initialismBook(defs: Iterable<Initialism>): InitialismBook {
     }
     return out;
   };
+  // One text is usually compared with many (a question with every section): it is read once.
+  let last: { text: string; uses: InitialismUse[] } | undefined;
+  const usesOnce = (text: string) => {
+    if (last?.text !== text) last = { text, uses: uses(text) };
+    return last.uses;
+  };
   return {
     size: all.length,
     entries: () => all.map((d) => ({ ...d })),
     uses,
     links(a, b) {
       if (!all.length) return [];
-      const inA = uses(a);
+      const inA = usesOnce(a);
       if (!inA.length) return [];
-      const inB = uses(b);
-      const has = (us: InitialismUse[], d: Initialism, wrote: InitialismUse["wrote"]) =>
-        us.some((u) => u.wrote === wrote && u.acronym === d.acronym && u.phrase === d.phrase);
+      // Only the names a writes can link: b is looked at for those alone.
+      const acronymInA = new Set(inA.filter((u) => u.wrote === "acronym").map((u) => u.acronym));
+      let foldedB: string | undefined;
       const out: InitialismLink[] = [];
-      for (const d of all) {
-        const aA = has(inA, d, "acronym");
-        const bA = has(inB, d, "acronym");
-        if (aA && !bA && has(inB, d, "phrase")) out.push({ ...d, acronymIn: "a" });
-        else if (bA && !aA && has(inA, d, "phrase")) out.push({ ...d, acronymIn: "b" });
+      for (const u of inA) {
+        if (u.wrote === "acronym") {
+          if (writes(b, u.acronym)) continue;
+          if ((foldedB ??= foldWords(b)).includes(` ${u.phrase} `))
+            out.push({ acronym: u.acronym, phrase: u.phrase, acronymIn: "a" });
+        } else if (!acronymInA.has(u.acronym) && writes(b, u.acronym)) {
+          out.push({ acronym: u.acronym, phrase: u.phrase, acronymIn: "b" });
+        }
       }
       return out;
     },

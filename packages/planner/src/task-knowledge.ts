@@ -827,9 +827,9 @@ export async function selectTaskKnowledge(
     };
   }
   const snapshot = snapshotsOf(root);
-  const acronyms = ix.initialisms();
   let matching: string | undefined;
   try {
+    const acronyms = ix.initialisms();
     for (const input of inputs) {
       const places = placesIn ? await taskPlaces(input, placesIn) : undefined;
       /** A source's scope for this task: "" unscoped, the match in words, undefined out of scope. */

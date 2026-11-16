@@ -24,9 +24,16 @@ describe("definedInitialisms", () => {
       { acronym: "POS", phrase: "point of sale" },
       { acronym: "RPO", phrase: "recovery point objective" },
     ]);
-    expect(definedInitialisms("Terminals at the point of sale (PS) queue.")).toEqual([
-      { acronym: "PS", phrase: "point of sale" },
+    expect(definedInitialisms("Terminals at the point of sale terminal (PST) queue.")).toEqual([
+      { acronym: "PST", phrase: "point of sale terminal" },
     ]);
+    expect(definedInitialisms("EDW (the Enterprise Data Warehouse) is loaded nightly.")).toEqual([
+      { acronym: "EDW", phrase: "enterprise data warehouse" },
+    ]);
+    // Two letters are too few: "you and I (UI)" and "is" are everywhere.
+    expect(definedInitialisms("The user interface (UI) and information security (IS).")).toEqual(
+      [],
+    );
   });
 
   it("reads a line of an abbreviations list: a colon, a dash, a table row, bold", () => {
@@ -108,5 +115,48 @@ describe("initialismBook", () => {
     // A word in small letters is not the acronym.
     expect(book.links("the sso page", "single sign-on")).toEqual([]);
     expect(initialismBook([]).links("SSO", "single sign-on")).toEqual([]);
+  });
+
+  it("leaves out an acronym that is an ordinary word in capitals, however a page defines it", () => {
+    const ordinary = initialismBook(
+      definedInitialisms(
+        [
+          "POST: place order status tracking",
+          "The point of sale terminal (POST) is replaced every five years.",
+          "ADD (attention deficit disorder)",
+          "NOTE: nothing ordinary to expect",
+          "GET - gets every thing",
+          "TODO: take over deployment of orders",
+        ].join("\n"),
+      ),
+    );
+    expect(ordinary.entries()).toEqual([]);
+    expect(
+      ordinary.links(
+        "Add POST /orders/{id}/cancel to the gateway",
+        "The point of sale terminal is replaced every five years.",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads an acronym only as a word of its own, and a phrase only within one sentence", () => {
+    expect(book.links("MAX_SSO_RETRIES and SSO_ENABLED", "single sign-on")).toEqual([]);
+    expect(book.links("the SSO page", "Stay single. Sign on to the portal.")).toEqual([]);
+    expect(book.links("the SSOs we run", "every single sign-on, each day")).toHaveLength(1);
+  });
+
+  it("looks at the second text only for the names the first writes, however large the book", () => {
+    const big = initialismBook([
+      ...Array.from({ length: 3000 }, (_, i) => ({
+        acronym: `Q${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + (((i / 26) | 0) % 26))}${String.fromCharCode(65 + ((i / 676) | 0))}`,
+        phrase: `quiet alpha ${i} bravo`,
+      })),
+      { acronym: "EDW", phrase: "enterprise data warehouse" },
+    ]);
+    const section = "The enterprise data warehouse takes a nightly load. ".repeat(40);
+    const t = Date.now();
+    for (let i = 0; i < 2000; i++) big.links("Who owns the EDW load?", `${section}${i}`);
+    expect(Date.now() - t).toBeLessThan(1500);
+    expect(big.links("Who owns the EDW load?", section)).toHaveLength(1);
   });
 });

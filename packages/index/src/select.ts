@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   definedInitialisms,
+  foldWords,
   identifierWords,
   initialismBook,
   type InitialismBook,
@@ -310,7 +311,8 @@ const initialismBooks = new WeakMap<object, InitialismBook>();
 export function initialismsOf(ix: CatalogIndex): InitialismBook {
   let book = initialismBooks.get(ix.db);
   if (book) return book;
-  const key = `initialisms:${ix.version}`;
+  // The 1 is the rule's version: a release that reads definitions differently bumps it.
+  const key = `initialisms:1:${ix.version}`;
   const kept = ix.db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
     { value: string } | undefined;
   if (kept) {
@@ -383,12 +385,15 @@ function initialismRanking(
       key: string;
       rank: number;
     }[];
-    const written = new RegExp(`(?<![A-Za-z0-9])${u.acronym}s?(?![A-Za-z0-9])`);
+    const written = new RegExp(`(?<![A-Za-z0-9_])${u.acronym}s?(?![A-Za-z0-9_])`);
     for (const r of rows) {
-      if (u.wrote === "phrase") {
-        const n = text.get(r.key) as { name: string; detail: string } | undefined;
-        if (!n || !written.test(`${n.name}\n${n.detail}`)) continue;
-      }
+      // What was found is read as written: the acronym in capitals as a word of its own, the
+      // words as one phrase (the search stems words and joins columns: "singles signed on").
+      const n = text.get(r.key) as { name: string; detail: string } | undefined;
+      if (!n) continue;
+      const body = `${n.name}\n${n.detail}`;
+      if (u.wrote === "phrase" ? !written.test(body) : !foldWords(body).includes(` ${u.phrase} `))
+        continue;
       const was = best.get(r.key);
       if (!was || r.rank < was.rank) best.set(r.key, { rank: r.rank, why });
     }
@@ -958,7 +963,7 @@ export function selectContext(
     through: o.through ?? null,
     lexical: o.lexical ?? null,
     // beta.28.3: a selection kept before acronyms ranked isn't this one.
-    initialisms: o.lexical?.initialisms === false ? false : 1,
+    initialisms: o.lexical?.initialisms === false ? false : 2,
     rrfK: o.rrfK ?? RRF_K,
     rankFloor: o.rankFloor ?? RANK_FLOOR,
     hops: o.hops ?? 2,

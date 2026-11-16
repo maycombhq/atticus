@@ -116,6 +116,10 @@ describe("Ask over the wikis' passages", () => {
       ["applies", "applied"],
       ["agree", "agreed"],
       ["sign", "signing"],
+      ["api", "apis"],
+      ["kpi", "kpis"],
+      ["size", "sizes"],
+      ["box", "boxes"],
     ])
       expect(termsOf(a!), `${a} / ${b}`).toEqual(termsOf(b!));
     // Words that are not each other stay apart.
