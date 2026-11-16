@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { CancelledError, parseRecord, withSignal } from "@maycombhq/core";
+import { CancelledError, filePoolHooks, parseRecord, withSignal } from "@maycombhq/core";
 import { BUILD_PASSES, buildCacheHooks, readCatalog } from "@maycombhq/scanner";
 import { JobManager, TOO_LATE, type Job } from "@maycombhq/server";
 import { capturedIo, main } from "../src/main.js";
@@ -336,4 +336,44 @@ describe("atticus catalog build says each step (field hunt G2)", () => {
     },
     T,
   );
+});
+
+/**
+ * Beta.28.3: Stop during a step that reads every file of the catalog. It was heard only when the
+ * next step started; now the read itself ends (the catalog loaded, and the files read to check
+ * the build), nothing is written, and the next Apply runs.
+ */
+describe("Apply's Stop during a read of every file of the catalog (beta.28.3)", () => {
+  afterEach(() => {
+    delete filePoolHooks.onRead;
+    delete filePoolHooks.workers;
+    delete filePoolHooks.minFiles;
+  });
+
+  for (const step of ["Loading the catalog", "Reading the catalog's files to check the build"])
+    for (const workers of [2, 0])
+      it(
+        `stops in "${step}" (${workers ? "workers" : "this thread"}), writing nothing, and frees the lock`,
+        async () => {
+          const root = await metarepo();
+          const before = await catalogText(root);
+          filePoolHooks.workers = workers;
+          filePoolHooks.minFiles = 0;
+          const ctl = new AbortController();
+          const s = sink();
+          // The Stop comes while the step's files are being read, not between two steps.
+          filePoolHooks.onRead = () => {
+            if (stepsOf(s.progress).at(-1) === step) ctl.abort();
+          };
+          await expect(
+            withSignal(ctl.signal, () => verifyCommand(root, "forge-ledger", opts(root), s.io)),
+          ).rejects.toBeInstanceOf(CancelledError);
+          expect(stepsOf(s.progress).at(-1)).toBe(step);
+          expect(await catalogText(root)).toBe(before);
+          delete filePoolHooks.onRead;
+          const again = sink();
+          expect(await verifyCommand(root, "forge-ledger", opts(root), again.io)).toBe(0);
+        },
+        T,
+      );
 });

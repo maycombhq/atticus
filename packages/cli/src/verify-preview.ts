@@ -16,6 +16,7 @@ import {
   recordPath,
   specRelOf,
   stackHelpersOff,
+  stoppableSignal,
   type Api,
   type CatalogRecord,
   pairsFromCorrections,
@@ -320,9 +321,12 @@ export async function verifyWritePreview(
   // projection compares with it, and the guards below use it where every file is still as read.
   await step("Loading the catalog");
   const { readCatalogWithFiles } = await import("@maycombhq/scanner");
+  // Beta.28.3: Stop is heard during this read too (a first read parses every file).
+  const stoppable = stoppableSignal();
   const onFile = await readCatalogWithFiles(join(catalogDirOf(root), "generated"), {
     cacheRoot: root,
     keep: false,
+    ...(stoppable ? { signal: stoppable } : {}),
   });
   const p = await projectFactsIntoCatalog(root, repo, report.accepted, {
     existing: onFile.records,

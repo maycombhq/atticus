@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CancelledError,
+  filePoolHooks,
   writeFileAtomic,
   keepParses,
   type KeptParses,
@@ -524,4 +526,84 @@ describe("a file kept within the timestamp's grain is checked by its hash", () =
     // No longer racy: its hash isn't kept, and the stat alone decides from now on.
     expect(e.sha).toBeUndefined();
   });
+});
+
+/**
+ * Beta.28.3: Stop during a first read of a large folder. Nothing was heard until every file was
+ * read and parsed; with the job's signal the read ends part way (while the sizes and times are
+ * read, or between two lots of files parsed) with CancelledError, and keeps nothing: the next
+ * read parses every file, as a first one does.
+ */
+describe("a first read of many files, stopped part way (beta.28.3)", () => {
+  const MANY = 6_000;
+  async function many() {
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
+    const files = Array.from({ length: MANY }, (_, i) => `forge-${i}.yaml`);
+    for (let i = 0; i < files.length; i += 200)
+      await Promise.all(files.slice(i, i + 200).map((f) => writeFile(join(dir, f), `ok ${f}\n`)));
+    return { root, dir, files };
+  }
+  afterEach(() => {
+    delete filePoolHooks.onRead;
+    delete filePoolHooks.workers;
+  });
+
+  it("a Stop while the files are parsed ends the read, most files unparsed, and nothing is kept", async () => {
+    const { root, dir, files } = await many();
+    const stop = new AbortController();
+    const c = counting();
+    let at = 0;
+    const parse = (text: string, rel: string) => {
+      if (c.parsed.length === 500) {
+        at = Date.now();
+        stop.abort();
+      }
+      return c.parse(text, rel);
+    };
+    await expect(
+      readParsedFiles<string>({
+        dir,
+        files,
+        name: "test",
+        version: "1",
+        parse,
+        cacheRoot: root,
+        signal: stop.signal,
+      }),
+    ).rejects.toBeInstanceOf(CancelledError);
+    expect(Date.now() - at).toBeLessThan(1_000);
+    expect(c.parsed.length).toBeLessThan(1_000);
+    // Nothing kept of the stopped read: no cache file, and the next read parses every file.
+    expect(await readdir(join(root, ".atticus", "cache")).catch(() => [])).toEqual([]);
+    const next = counting();
+    const all = await read(dir, files, next.parse, root);
+    expect(next.parsed).toHaveLength(MANY);
+    expect(all).toHaveLength(MANY);
+  }, 120_000);
+
+  for (const workers of [0, 2])
+    it(`a Stop while the sizes and times are read (${workers ? "workers" : "this thread"}) ends the read before any file is parsed`, async () => {
+      const { root, dir, files } = await many();
+      filePoolHooks.workers = workers;
+      const stop = new AbortController();
+      filePoolHooks.onRead = (n) => {
+        if (n >= 256) stop.abort();
+      };
+      const c = counting();
+      await expect(
+        readParsedFiles<string>({
+          dir,
+          files,
+          name: "test",
+          version: "1",
+          parse: c.parse,
+          cacheRoot: root,
+          signal: stop.signal,
+        }),
+      ).rejects.toBeInstanceOf(CancelledError);
+      expect(c.parsed).toEqual([]);
+      expect(await readdir(join(root, ".atticus", "cache")).catch(() => [])).toEqual([]);
+    }, 120_000);
 });

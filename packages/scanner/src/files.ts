@@ -92,12 +92,15 @@ export interface CatalogFilesRead extends CatalogRead {
  */
 export async function readCatalogWithFiles(
   dir: string,
-  /** `keep: false`: keep no read cache (a preview's, which writes nothing). */
-  o: { cacheRoot?: string; keep?: boolean } = {},
+  /**
+   * `keep: false`: keep no read cache (a preview's, which writes nothing). `signal` (beta.28.3):
+   * a job's Stop ends the read part way with CancelledError, nothing kept.
+   */
+  o: { cacheRoot?: string; keep?: boolean; signal?: AbortSignal } = {},
 ): Promise<CatalogFilesRead> {
   const files = new Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>();
   let kept: KeptParses<CatalogRecord> | undefined;
-  const read = await readCatalogFiles(dir, o.cacheRoot, o.keep, files, (k) => (kept = k));
+  const read = await readCatalogFiles(dir, o.cacheRoot, o.keep, files, (k) => (kept = k), o.signal);
   return { ...read, dir: resolve(dir), files, ...(kept ? { kept } : {}) };
 }
 
@@ -160,6 +163,7 @@ async function readCatalogFiles(
   keep?: boolean,
   withFiles?: Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>,
   kept?: (k: KeptParses<CatalogRecord>) => void,
+  signal?: AbortSignal,
 ): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
@@ -190,6 +194,7 @@ async function readCatalogFiles(
     ...(keep === false ? { keep } : {}),
     ...(withFiles ? { withStats: true } : {}),
     ...(kept ? { kept } : {}),
+    ...(signal ? { signal } : {}),
     parse: parseCatalogText,
   })) {
     if (p.problem === undefined) records.push(p.value!);

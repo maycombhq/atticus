@@ -6,6 +6,7 @@ import {
   acquireLock,
   catalogDirOf,
   currentSignal,
+  stoppableSignal,
   factsDirOf,
   factsRelOf,
   isAdopted,
@@ -681,7 +682,12 @@ export async function writeFactsIntoCatalog(
     // beta.28.1: read once; the guards and the map use this read where every file is still as
     // it found them (each file's size and time), and read the files again where one isn't.
     await progress.step("Loading the catalog");
-    const existing = await readCatalogWithFiles(generated, { cacheRoot: root });
+    // Beta.28.3: Stop is heard during this read too (a first read parses every file).
+    const stoppable = stoppableSignal();
+    const existing = await readCatalogWithFiles(generated, {
+      cacheRoot: root,
+      ...(stoppable ? { signal: stoppable } : {}),
+    });
     mark("read the catalog");
     progress.say(
       `The catalog on file: ${existing.records.length.toLocaleString("en-US")} records.`,

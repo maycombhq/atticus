@@ -18,6 +18,7 @@ import {
   factsDirOf,
   factsRelOf,
   hashFilesIn,
+  stoppableSignal,
   joinSharedMaps,
   keptFilesMayHaveChanged,
   linkEvidenceOf,
@@ -2152,7 +2153,8 @@ function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: Di
   return true;
 }
 
-async function hashFiles(dir: string): Promise<DiskFiles> {
+/** `signal` (beta.28.3): a job's Stop ends the read of every file part way, with CancelledError. */
+async function hashFiles(dir: string, signal?: AbortSignal): Promise<DiskFiles> {
   // The paths first, in the walk's order; then every file read whole and hashed, in a few worker
   // threads for a big folder (beta.28.2, file-pool.ts: through the promise API 100,000 record
   // files took 10 to 13 s), and put in the map in that order.
@@ -2173,7 +2175,7 @@ async function hashFiles(dir: string): Promise<DiskFiles> {
   const mark = phaseClock("hash: ");
   await walk(dir, "");
   mark("walk");
-  const hashed = await hashFilesIn(dir, paths);
+  const hashed = await hashFilesIn(dir, paths, signal ? { signal } : {});
   mark("read and sha256");
   const out: DiskFiles = new Map();
   paths.forEach((r, k) => out.set(r, hashed[k]!));
@@ -3497,7 +3499,11 @@ export async function buildAndWrite(
   await o.onStep?.({ step: "check" });
   mark("build");
   const target = o.target ?? baselineTarget(root);
-  const onDisk = await hashFiles(target.generated);
+  // Beta.28.3: Stop was heard only between steps, so this read of every file (the longest step
+  // before the write on a large estate's first build of the day) ran to its end first. It takes
+  // the job's signal now, for a caller that listens to the steps (and so already stops between
+  // them), until the job says it is writing: nothing has been written here yet.
+  const onDisk = await hashFiles(target.generated, o.onStep ? stoppableSignal() : undefined);
   mark("hash catalog on disk");
   const manifestOnDisk = await readText(target.manifest);
   const manifests = {

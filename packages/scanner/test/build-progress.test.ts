@@ -1,8 +1,10 @@
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { CancelledError, commitCurrent, filePoolHooks, withSignal } from "@maycombhq/core";
 import {
   BUILD_PASSES,
   buildAndWrite,
@@ -172,6 +174,145 @@ describe("the build says its passes and steps (beta.28.1)", () => {
       expect(again.upToDate).toBe(false);
       // A check writes nothing, so it has no write step.
       expect(steps).not.toContain("write");
+    },
+    T,
+  );
+});
+
+/**
+ * Beta.28.3: Stop during the read of every file of the catalog (the `check` step). It was heard
+ * only when the next step started, after every file had been read and hashed. With the job's
+ * signal the read ends part way, in workers or in this thread, and buildAndWrite fails with
+ * CancelledError before its guards: catalog/ is byte for byte as it was. On the Forge metarepo
+ * with 3,000 more record files generated into its catalog, so the read is of many files.
+ */
+describe("Stop during the read of the catalog's files (beta.28.3)", () => {
+  const MANY = 3_000;
+  afterEach(() => {
+    delete filePoolHooks.onRead;
+    delete filePoolHooks.workers;
+    delete filePoolHooks.minFiles;
+  });
+
+  /** Every file under `dir` with the hash of its bytes. */
+  async function tree(dir: string): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const walk = async (d: string, rel: string) => {
+      for (const e of await readdir(d, { withFileTypes: true })) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) await walk(join(d, e.name), r);
+        else
+          out[r] = createHash("sha256")
+            .update(await readFile(join(d, e.name)))
+            .digest("hex");
+      }
+    };
+    await walk(dir, "");
+    return out;
+  }
+
+  /** Forge built once, then a facts file's meta changed (a build to write) and many files more. */
+  async function bigForge() {
+    const root = await forge();
+    const first = await buildAndWrite(root, { command: "atticus catalog build" });
+    expect(first.write).toBeDefined();
+    const extra = join(root, "catalog/generated/Endpoint");
+    await mkdir(extra, { recursive: true });
+    for (let i = 0; i < MANY; i += 200)
+      await Promise.all(
+        Array.from({ length: Math.min(200, MANY - i) }, (_, k) =>
+          writeFile(
+            join(extra, `forge-generated-${i + k}.yaml`),
+            `kind: Endpoint\nid: forge-generated-${i + k}\n${"# forge\n".repeat(30)}`,
+          ),
+        ),
+      );
+    return root;
+  }
+
+  for (const way of [
+    { name: "in workers", workers: 2 },
+    { name: "in this thread", workers: 0 },
+  ])
+    it(
+      `${way.name}: the build stops in its check step, before its guards, and catalog/ is as it was`,
+      async () => {
+        const root = await bigForge();
+        const before = await tree(join(root, "catalog"));
+        filePoolHooks.workers = way.workers;
+        filePoolHooks.minFiles = 0;
+        const stop = new AbortController();
+        const steps: string[] = [];
+        let at = 0;
+        let read = 0;
+        filePoolHooks.onRead = (n) => {
+          read = n;
+          if (steps.at(-1) === "check" && n >= 256 && !stop.signal.aborted) {
+            at = Date.now();
+            stop.abort();
+          }
+        };
+        await expect(
+          withSignal(stop.signal, () =>
+            buildAndWrite(root, {
+              command: "atticus catalog build",
+              onStep: (s) => {
+                steps.push(s.step);
+              },
+            }),
+          ),
+        ).rejects.toBeInstanceOf(CancelledError);
+        expect(Date.now() - at).toBeLessThan(1_000);
+        expect(steps).toEqual(["build", "check"]);
+        expect(read).toBeLessThan(MANY);
+        expect(await tree(join(root, "catalog"))).toEqual(before);
+      },
+      T,
+    );
+
+  it(
+    "once the job says it is writing, a Stop no longer cuts the read short",
+    async () => {
+      const root = await bigForge();
+      filePoolHooks.workers = 2;
+      filePoolHooks.minFiles = 0;
+      const stop = new AbortController();
+      const steps: string[] = [];
+      filePoolHooks.onRead = (n) => {
+        if (steps.at(-1) === "check" && n >= 256) stop.abort();
+      };
+      const r = await withSignal(stop.signal, async () => {
+        // An Edit the map's Apply: its changes are saved, then it builds once.
+        commitCurrent();
+        return buildAndWrite(root, {
+          command: "atticus catalog build",
+          onStep: (s) => {
+            steps.push(s.step);
+          },
+        });
+      });
+      expect(stop.signal.aborted).toBe(true);
+      expect(steps).toContain("guard");
+      expect(r.guard).toBeDefined();
+    },
+    T,
+  );
+
+  it(
+    "a caller that doesn't listen to the steps (it never stopped between them) isn't stopped in one",
+    async () => {
+      const root = await bigForge();
+      filePoolHooks.workers = 2;
+      filePoolHooks.minFiles = 0;
+      const stop = new AbortController();
+      filePoolHooks.onRead = (n) => {
+        if (n >= 256) stop.abort();
+      };
+      const r = await withSignal(stop.signal, () =>
+        buildAndWrite(root, { command: "atticus catalog build" }),
+      );
+      expect(stop.signal.aborted).toBe(true);
+      expect(r.guard).toBeDefined();
     },
     T,
   );

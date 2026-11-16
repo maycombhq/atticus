@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { CancelledError } from "./cancel.js";
 import { hashFilesIn, statFilesIn, type FileHash, type FileStat } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 
@@ -104,11 +105,20 @@ interface Memo {
 /** How many files are read at once: the reads are independent, and waiting in turn is the cost. */
 const AT_ONCE = 64;
 
-/** Run `f` over the items, up to `AT_ONCE` at a time, keeping the order. */
-export async function mapAtOnce<I, O>(items: I[], f: (item: I) => Promise<O>): Promise<O[]> {
+/**
+ * Run `f` over the items, up to `AT_ONCE` at a time, keeping the order. With `signal`, a stop
+ * ends it between two lots with CancelledError (beta.28.3).
+ */
+export async function mapAtOnce<I, O>(
+  items: I[],
+  f: (item: I) => Promise<O>,
+  signal?: AbortSignal,
+): Promise<O[]> {
   const out: O[] = [];
-  for (let i = 0; i < items.length; i += AT_ONCE)
+  for (let i = 0; i < items.length; i += AT_ONCE) {
+    if (signal?.aborted) throw new CancelledError();
     out.push(...(await Promise.all(items.slice(i, i + AT_ONCE).map(f))));
+  }
   return out;
 }
 
@@ -168,13 +178,20 @@ export async function readParsedFiles<T>(o: {
    * then writes some of the files adds their parses with `keepParses` (beta.28.2).
    */
   kept?: (k: KeptParses<T>) => void;
+  /**
+   * Beta.28.3: a job's Stop. A stop while the files' sizes and times are read, their bytes
+   * hashed, or the files read and parsed (a first read of a large catalog) ends the read with
+   * CancelledError; nothing is kept of a stopped read.
+   */
+  signal?: AbortSignal;
 }): Promise<Parsed<T>[]> {
+  const stop = o.signal ? { signal: o.signal } : {};
   const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
   const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
   const full = (rel: string) => join(o.dir, ...rel.split("/"));
   // beta.28.2: in a few worker threads for a big folder (file-pool.ts: 100,000 stats through the
   // promise API took a second and more), the same sizes and times.
-  const stats = await statFilesIn(o.dir, o.files);
+  const stats = await statFilesIn(o.dir, o.files, stop);
   const fresh = new Map<string, Entry>();
   const toRead: number[] = [];
   const toCheck: number[] = [];
@@ -194,8 +211,11 @@ export async function readParsedFiles<T>(o: {
     const hashes: FileHash[] | undefined = await hashFilesIn(
       o.dir,
       toCheck.map((i) => o.files[i]!),
-      { raw: true },
-    ).catch(() => undefined);
+      { raw: true, ...stop },
+    ).catch((e: unknown) => {
+      if (e instanceof CancelledError) throw e;
+      return undefined;
+    });
     toCheck.forEach((i, k) => {
       const rel = o.files[i]!;
       const hit = had.get(rel)!;
@@ -213,26 +233,37 @@ export async function readParsedFiles<T>(o: {
   }
   // Before any byte is read: an edit after this has a later time, less the grain.
   const at = now();
-  const read = await mapAtOnce(toRead, async (i) => {
-    const rel = o.files[i]!;
-    const s = stats[i];
-    try {
-      const bytes = await readFile(full(rel));
-      const r = o.parse(bytes.toString("utf8"), rel);
-      const size = s?.size ?? -1;
-      const mtimeMs = s?.mtimeMs ?? -1;
-      const sha = racy(mtimeMs, at) ? createHash("sha256").update(bytes).digest("hex") : undefined;
-      const e = entryAt(
-        { size, mtimeMs, ...(r.ok ? { value: r.value } : { problem: r.message }) },
-        at,
-        sha,
-      );
-      return { rel, e };
-    } catch (err) {
-      // A file that can't be read at all: the problem is reported, and nothing is kept for it.
-      return { rel, e: { size: -1, mtimeMs: -1, problem: (err as Error).message.split("\n")[0]! } };
-    }
-  });
+  const read = await mapAtOnce(
+    toRead,
+    async (i) => {
+      const rel = o.files[i]!;
+      const s = stats[i];
+      try {
+        const bytes = await readFile(full(rel));
+        const r = o.parse(bytes.toString("utf8"), rel);
+        const size = s?.size ?? -1;
+        const mtimeMs = s?.mtimeMs ?? -1;
+        const sha = racy(mtimeMs, at)
+          ? createHash("sha256").update(bytes).digest("hex")
+          : undefined;
+        const e = entryAt(
+          { size, mtimeMs, ...(r.ok ? { value: r.value } : { problem: r.message }) },
+          at,
+          sha,
+        );
+        return { rel, e };
+      } catch (err) {
+        // A file that can't be read at all: the problem is reported, and nothing is kept for it.
+        return {
+          rel,
+          e: { size: -1, mtimeMs: -1, problem: (err as Error).message.split("\n")[0]! },
+        };
+      }
+    },
+    o.signal,
+  );
+  // Stopped as the last files were read: nothing is kept, as for a stop before them.
+  if (o.signal?.aborted) throw new CancelledError();
   const changed = read.length > 0 || rekept > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
   if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);

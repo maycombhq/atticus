@@ -38,6 +38,8 @@ export function withCommit<T>(commit: () => void, fn: () => Promise<T>): Promise
  * heard it (it says a late Stop itself); false outside one.
  */
 export function commitCurrent(): boolean {
+  const signal = store.getStore();
+  if (signal) committed.add(signal);
   const c = commits.getStore();
   c?.();
   return !!c;
@@ -46,6 +48,19 @@ export function commitCurrent(): boolean {
 /** The signal of the job this code runs in, if it runs in one. */
 export function currentSignal(): AbortSignal | undefined {
   return store.getStore();
+}
+
+/** The signals whose work has said it is writing (`commitCurrent`). */
+const committed = new WeakSet<AbortSignal>();
+
+/**
+ * Beta.28.3: the signal a long read may stop on part way (the hash of every file of the
+ * catalog): the job's, until its work says it has started writing. From then there is none, so a
+ * read that is part of a write is never cut short and nothing is left half written.
+ */
+export function stoppableSignal(): AbortSignal | undefined {
+  const signal = store.getStore();
+  return signal && !committed.has(signal) ? signal : undefined;
 }
 
 /** Stop here when the job was cancelled. */

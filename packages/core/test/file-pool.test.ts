@@ -1,9 +1,20 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, stat, utimes, writeFile, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { filePoolHooks, hashFilesIn, sha256Of, statFilesIn, textShaOf } from "../src/index.js";
+import {
+  CancelledError,
+  commitCurrent,
+  filePoolHooks,
+  hashFilesIn,
+  sha256Of,
+  statFilesIn,
+  stoppableSignal,
+  textShaOf,
+  withSignal,
+} from "../src/index.js";
 
 /**
  * beta.28.2: the catalog's record files are read and hashed off the main thread, in a few worker
@@ -200,4 +211,141 @@ describe("stat of a folder's files, in this thread or in workers (beta.28.2)", (
         );
       }
     });
+});
+
+/**
+ * Beta.28.3: Stop during the read. A job's Stop was heard only between steps, so the read of
+ * every file of a large catalog (the first one on a machine, with nothing in the page cache) ran
+ * to its end first. The read takes the job's signal now: the workers are stopped where they are,
+ * this thread's read between two files, the wait for workers that never start at once; the call
+ * fails with CancelledError, and no reader is left running. Over 20,000 generated files.
+ */
+describe("Stop during the read of a large folder (beta.28.3)", () => {
+  const MANY = 20_000;
+  let big: { dir: string; rels: string[] } | undefined;
+  /** 20,000 small record files in 100 folders, made once. */
+  async function estate() {
+    if (big) return big;
+    const dir = await mkdtemp(join(tmpdir(), "atticus-file-pool-big-"));
+    made.push(dir);
+    const rels: string[] = [];
+    for (let f = 0; f < 100; f++) {
+      mkdirSync(join(dir, `forge-${f}`));
+      for (let i = 0; i < MANY / 100; i++) {
+        const rel = `forge-${f}/endpoint-${i}.yaml`;
+        writeFileSync(
+          join(dir, `forge-${f}`, `endpoint-${i}.yaml`),
+          `kind: Endpoint\nid: forge-${f}.endpoint-${i}\nname: GET /forge/${f}/orders/${i}\n${"# ledger line\n".repeat(40)}`,
+        );
+        rels.push(rel);
+      }
+    }
+    return (big = { dir, rels });
+  }
+  afterEach(() => {
+    delete filePoolHooks.onRead;
+    delete filePoolHooks.neverReady;
+    delete filePoolHooks.failStart;
+    delete filePoolHooks.startTimeoutMs;
+  });
+
+  /** Stop once some of the files are read, and none of the rest: how long the stop took, and how far it got. */
+  async function stoppedMidRead(read: (o: { signal: AbortSignal }) => Promise<unknown>) {
+    const stop = new AbortController();
+    let at = 0;
+    let readAtStop = 0;
+    let readInAll = 0;
+    filePoolHooks.onRead = (n) => {
+      readInAll = Math.max(readInAll, n);
+      if (n >= 1_000 && !stop.signal.aborted) {
+        readAtStop = n;
+        at = Date.now();
+        stop.abort();
+      }
+    };
+    await expect(read({ signal: stop.signal })).rejects.toBeInstanceOf(CancelledError);
+    const took = Date.now() - at;
+    // What was under way when the stop came may still be counted; nothing is started after it.
+    await new Promise((r) => setTimeout(r, 200));
+    return { took, readAtStop, readInAll };
+  }
+
+  for (const way of WAYS)
+    it(`${way.name}: a Stop mid-read ends the hash within a second, most files unread`, async () => {
+      const { dir, rels } = await estate();
+      filePoolHooks.workers = way.workers;
+      const r = await stoppedMidRead((o) => hashFilesIn(dir, rels, o));
+      expect(r.readAtStop).toBeGreaterThanOrEqual(1_000);
+      expect(r.took).toBeLessThan(1_000);
+      expect(r.readInAll).toBeLessThan(MANY / 2);
+    }, 120_000);
+
+  for (const way of [WAYS[0], WAYS[2]])
+    it(`${way.name}: a Stop mid-read ends the read of sizes and times too`, async () => {
+      const { dir, rels } = await estate();
+      filePoolHooks.workers = way.workers;
+      const r = await stoppedMidRead((o) => statFilesIn(dir, rels, o));
+      expect(r.took).toBeLessThan(1_000);
+      expect(r.readInAll).toBeLessThan(MANY);
+    }, 120_000);
+
+  it("workers that never start: a Stop during the wait for them ends the read at once, not after the wait", async () => {
+    const { dir, rels } = await estate();
+    filePoolHooks.workers = 2;
+    filePoolHooks.neverReady = true;
+    filePoolHooks.startTimeoutMs = 30_000;
+    const stop = new AbortController();
+    const t0 = Date.now();
+    setTimeout(() => stop.abort(), 100);
+    await expect(hashFilesIn(dir, rels, { signal: stop.signal })).rejects.toBeInstanceOf(
+      CancelledError,
+    );
+    expect(Date.now() - t0).toBeLessThan(2_000);
+  }, 120_000);
+
+  for (const how of ["neverReady", "failStart"] as const)
+    it(`workers that never start (${how}): this thread's read in their place hears the Stop too`, async () => {
+      const { dir, rels } = await estate();
+      filePoolHooks.workers = 2;
+      filePoolHooks[how] = true;
+      filePoolHooks.startTimeoutMs = 100;
+      const r = await stoppedMidRead((o) => hashFilesIn(dir, rels, o));
+      expect(r.took).toBeLessThan(1_000);
+      expect(r.readInAll).toBeLessThan(MANY / 2);
+    }, 120_000);
+
+  it("a signal stopped already reads nothing", async () => {
+    const { dir, rels } = await estate();
+    const stop = new AbortController();
+    stop.abort();
+    let read = 0;
+    filePoolHooks.onRead = (n) => (read = n);
+    for (const workers of [0, 2]) {
+      filePoolHooks.workers = workers;
+      await expect(hashFilesIn(dir, rels, { signal: stop.signal })).rejects.toBeInstanceOf(
+        CancelledError,
+      );
+    }
+    expect(read).toBe(0);
+  }, 120_000);
+
+  it("with no signal, or one never stopped, every file is read as before", async () => {
+    const { dir, rels } = await estate();
+    filePoolHooks.workers = 2;
+    const plain = await hashFilesIn(dir, rels);
+    const withOne = await hashFilesIn(dir, rels, { signal: new AbortController().signal });
+    expect(withOne).toEqual(plain);
+    expect(plain).toHaveLength(MANY);
+  }, 120_000);
+
+  it("the job's signal is one a read may stop on until the job says it is writing", async () => {
+    expect(stoppableSignal()).toBeUndefined();
+    const stop = new AbortController();
+    await withSignal(stop.signal, async () => {
+      expect(stoppableSignal()).toBe(stop.signal);
+      // The write has started: a Stop is too late, and no read of the write is cut short.
+      commitCurrent();
+      expect(stoppableSignal()).toBeUndefined();
+    });
+  });
 });

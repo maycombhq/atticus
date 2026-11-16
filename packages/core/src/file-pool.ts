@@ -4,6 +4,7 @@ import { open, stat } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
+import { CancelledError } from "./cancel.js";
 
 /**
  * Reading and hashing many small files (beta.28.2): a catalog's 100,000 record files took 10 to
@@ -15,6 +16,11 @@ import { Worker } from "node:worker_threads";
  * the order of the paths, whatever the order the workers finish in. Every byte of every file is
  * read: nothing is taken from a file's size and time. A small folder, or a process where a worker
  * can't start, is read in this thread instead, to the same results.
+ *
+ * Beta.28.3: a read given a `signal` (a job's Stop) ends when it is stopped, with CancelledError:
+ * the workers are ended where they are (no more than the file each has open is read on), this
+ * thread's read stops between two files, and the wait for workers that never start ends at once.
+ * It only reads, so a stopped read leaves nothing behind.
  */
 
 /** A file's size and time (ms, floored), as `stat` gives them. */
@@ -42,6 +48,8 @@ export const filePoolHooks: {
   neverReady?: boolean;
   /** How long the workers have to say they are ready (default `START_TIMEOUT_MS`). */
   startTimeoutMs?: number;
+  /** A test hears how many files are read so far (in workers a batch at a time). */
+  onRead?: (files: number) => void;
 } = {};
 
 /**
@@ -133,6 +141,23 @@ type Row = [number, number] | [number, number, string] | null;
 interface Want {
   hash: boolean;
   raw?: boolean;
+  /** Stops the read (a job's Stop): it fails with CancelledError. */
+  signal?: AbortSignal;
+}
+
+/** A promise that fails with CancelledError when `signal` stops; `off` stops listening. */
+function stopOf(signal: AbortSignal | undefined): { stopped: Promise<never>; off: () => void } {
+  let off = () => {};
+  const stopped = new Promise<never>((_, reject) => {
+    if (!signal) return;
+    const stop = () => reject(new CancelledError());
+    if (signal.aborted) return stop();
+    signal.addEventListener("abort", stop, { once: true });
+    off = () => signal.removeEventListener("abort", stop);
+  });
+  // Nobody may be waiting on it when it fails (the read ended first).
+  stopped.catch(() => undefined);
+  return { stopped, off };
 }
 
 /** The folder's files through `n` workers, each given a batch at a time; rows in the paths' order. */
@@ -155,6 +180,7 @@ async function throughWorkers(
   // `START_TIMEOUT_MS` the workers are stopped and this thread reads, so a build never hangs.
   let started: boolean;
   let timer: NodeJS.Timeout | undefined;
+  const { stopped, off } = stopOf(want.signal);
   try {
     for (let i = 0; i < n; i++) workers.push(new Worker(code, { eval: true }));
     const ready = Promise.all(
@@ -170,19 +196,28 @@ async function throughWorkers(
     const late = new Promise<boolean>((resolve) => {
       timer = setTimeout(() => resolve(false), filePoolHooks.startTimeoutMs ?? START_TIMEOUT_MS);
     });
-    started = await Promise.race([ready, late]);
-  } catch {
+    started = await Promise.race([ready, late, stopped]);
+  } catch (e) {
+    // Stopped while the workers started (or never did): they are ended, and nothing is read.
+    if (e instanceof CancelledError) {
+      off();
+      clearTimeout(timer);
+      await Promise.all(workers.map((w) => w.terminate()));
+      throw e;
+    }
     started = false;
   } finally {
     clearTimeout(timer);
   }
   if (!started) {
+    off();
     await Promise.all(workers.map((w) => w.terminate()));
     return inThread(dir, rels, want);
   }
   let next = 0;
+  let read = 0;
   try {
-    await Promise.all(
+    const all = Promise.all(
       workers.map(
         (w) =>
           new Promise<void>((resolve, reject) => {
@@ -208,6 +243,10 @@ async function throughWorkers(
                   return reject(e);
                 }
                 m.out!.forEach((r, k) => (rows[m.id + k] = r));
+                read += m.out!.length;
+                filePoolHooks.onRead?.(read);
+                // Stopped: no worker is given another batch (they are ended below).
+                if (want.signal?.aborted) return;
                 give();
               },
             );
@@ -220,7 +259,13 @@ async function throughWorkers(
           }),
       ),
     );
+    // A read that loses to the Stop fails later (its workers ended): nobody waits on it then.
+    all.catch(() => undefined);
+    await Promise.race([all, stopped]);
   } finally {
+    off();
+    next = rels.length;
+    // Ended where they are: a worker reads on no further than the file it has open.
     await Promise.all(workers.map((w) => w.terminate()));
   }
   return rows;
@@ -230,17 +275,30 @@ async function throughWorkers(
 async function inThread(dir: string, rels: readonly string[], want: Want): Promise<Row[]> {
   const rows = new Array<Row>(rels.length);
   let next = 0;
-  await Promise.all(
+  let read = 0;
+  const signal = want.signal;
+  // Every reader is waited for, stopped or failed, so none reads on after this returns.
+  const ends = await Promise.allSettled(
     Array.from({ length: Math.min(READ_AT_ONCE, rels.length) }, async () => {
       for (let k = next++; k < rels.length; k = next++) {
+        // Stopped (a job's Stop): between two files, and no reader starts another.
+        if (signal?.aborted) {
+          next = rels.length;
+          throw new CancelledError();
+        }
         const full = join(dir, ...rels[k]!.split("/"));
         if (!want.hash) {
           const s = await stat(full).catch(() => undefined);
           rows[k] = s ? [s.size, Math.floor(s.mtimeMs)] : null;
+          filePoolHooks.onRead?.(++read);
           continue;
         }
         // Its size and time from the open file, as readFile itself looks them up.
-        const fh = await open(full, "r");
+        const fh = await open(full, "r").catch((e: unknown) => {
+          // A file that can't be opened fails the read: no reader starts another.
+          next = rels.length;
+          throw e;
+        });
         try {
           const s = await fh.stat();
           const bytes = await fh.readFile();
@@ -248,16 +306,24 @@ async function inThread(dir: string, rels: readonly string[], want: Want): Promi
             ? createHash("sha256").update(bytes).digest("hex")
             : textShaOf(bytes);
           rows[k] = [s.size, Math.floor(s.mtimeMs), sha];
+          filePoolHooks.onRead?.(++read);
+        } catch (e) {
+          // A file that can't be read fails the read: no reader starts another.
+          next = rels.length;
+          throw e;
         } finally {
           await fh.close();
         }
       }
     }),
   );
+  if (signal?.aborted) throw new CancelledError();
+  for (const e of ends) if (e.status === "rejected") throw e.reason;
   return rows;
 }
 
 function rowsOf(dir: string, rels: readonly string[], want: Want): Promise<Row[]> {
+  if (want.signal?.aborted) return Promise.reject(new CancelledError());
   const n = workersFor(rels.length);
   return n > 0 ? throughWorkers(n, dir, rels, want) : inThread(dir, rels, want);
 }
@@ -267,26 +333,33 @@ function rowsOf(dir: string, rels: readonly string[], want: Want): Promise<Row[]
  * (`textShaOf`), size and time, in the order of `rels`. A file that can't be opened or read fails
  * the call with that error (its `code`: ENOENT for one gone since it was listed). With `raw`, the
  * hash is of the file's bytes as they are (sha256, no line endings made LF): a parse kept by it
- * is of exactly those bytes (record-cache.ts).
+ * is of exactly those bytes (record-cache.ts). With `signal`, a stop ends the read part way and
+ * fails the call with CancelledError (beta.28.3).
  */
 export async function hashFilesIn(
   dir: string,
   rels: readonly string[],
-  o: { raw?: boolean } = {},
+  o: { raw?: boolean; signal?: AbortSignal } = {},
 ): Promise<FileHash[]> {
-  return (await rowsOf(dir, rels, { hash: true, raw: o.raw === true })).map((r) => ({
+  const want: Want = { hash: true, raw: o.raw === true, ...(o.signal ? { signal: o.signal } : {}) };
+  return (await rowsOf(dir, rels, want)).map((r) => ({
     sha: r![2]!,
     size: r![0],
     mtimeMs: r![1],
   }));
 }
 
-/** Every named file's size and time (ms, floored), in the order of `rels`; none for one not there. */
+/**
+ * Every named file's size and time (ms, floored), in the order of `rels`; none for one not there.
+ * With `signal`, a stop ends the read part way and fails the call with CancelledError.
+ */
 export async function statFilesIn(
   dir: string,
   rels: readonly string[],
+  o: { signal?: AbortSignal } = {},
 ): Promise<(FileStat | undefined)[]> {
-  return (await rowsOf(dir, rels, { hash: false })).map((r) =>
+  const want: Want = { hash: false, ...(o.signal ? { signal: o.signal } : {}) };
+  return (await rowsOf(dir, rels, want)).map((r) =>
     r ? { size: r[0], mtimeMs: r[1] } : undefined,
   );
 }
