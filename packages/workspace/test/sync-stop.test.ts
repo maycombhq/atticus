@@ -240,6 +240,89 @@ setTimeout(() => {}, 60_000);
     60_000,
   );
 
+  /**
+   * Beta.28.3: the test above failed in CI now and then with the git still running. The git was
+   * kept (core's trees, which listen for the signals) only after it had started, so a terminal
+   * closed in the milliseconds between ended Atticus by the signal's default and left the git,
+   * in its own group, running. Here the terminal closes at exactly that moment, every time:
+   * the signal comes as git's start returns, before anything else of the runner has run.
+   */
+  it.skipIf(process.platform === "win32")(
+    "a terminal closed at the moment git starts takes git with Atticus too",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-fake-git-"));
+      const pids = join(dir, "pids");
+      const ready = join(dir, "ready");
+      // The fake git says it runs (its shell, and a child of its own) before the test looks.
+      await writeFile(
+        join(dir, "git"),
+        `#!/bin/sh\nsleep 600 &\necho $$ $! > "${pids}"\nwait\n`,
+        "utf8",
+      );
+      await chmod(join(dir, "git"), 0o755);
+      const built = JSON.stringify(
+        pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../dist/git.js")).href,
+      );
+      const script = join(dir, "app.mjs");
+      await writeFile(
+        script,
+        `import cp from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const execFile = cp.execFile;
+cp.execFile = (...a) => {
+  const child = execFile(...a);
+  if (a[0] === "git") {
+    // The fake git is up (so it is there to be left behind), then the terminal closes.
+    const end = Date.now() + 20_000;
+    while (!existsSync(${JSON.stringify(pids)}) && Date.now() < end) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    writeFileSync(${JSON.stringify(ready)}, "1");
+    process.kill(process.pid, "SIGHUP");
+  }
+  return child;
+};
+syncBuiltinESMExports();
+const { createGit } = await import(${built});
+const git = createGit({ env: { ...process.env, PATH: ${JSON.stringify(`${dir}:`)} + process.env.PATH } });
+git(["fetch", "origin"], ${JSON.stringify(dir)}, { signal: new AbortController().signal }).catch(() => {});
+setTimeout(() => {}, 60_000);
+`,
+        "utf8",
+      );
+      const app = spawn(process.execPath, [script], { stdio: "ignore" });
+      const ended = await new Promise<NodeJS.Signals | null>((r) =>
+        app.on("exit", (_c, s) => r(s)),
+      );
+      expect(ended).toBe("SIGHUP");
+      expect(existsSync(ready)).toBe(true);
+      const [shell, child] = (await readFile(pids, "utf8")).trim().split(" ").map(Number);
+      expect(shell).toBeGreaterThan(0);
+      const zombie = (pid: number) => {
+        try {
+          return /^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+        } catch {
+          return false;
+        }
+      };
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return !zombie(pid);
+        } catch {
+          return false;
+        }
+      };
+      for (let i = 0; i < 750 && (alive(shell!) || alive(child!)); i++)
+        await new Promise((r) => setTimeout(r, 20));
+      const left = [shell!, child!].filter(alive);
+      // Nothing of the test's is left behind, whatever it finds.
+      for (const pid of left) process.kill(pid, "SIGKILL");
+      expect(left).toEqual([]);
+      await rm(dir, { recursive: true, force: true });
+    },
+    60_000,
+  );
+
   it("a signal stopped already runs nothing", async () => {
     const stop = new AbortController();
     stop.abort();

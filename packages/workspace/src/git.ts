@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { killProcessTree, trackTree } from "@maycombhq/core";
+import { killProcessTree, startTree } from "@maycombhq/core";
 
 export class GitError extends Error {
   constructor(
@@ -59,49 +59,56 @@ export function createGit(opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv } 
         return;
       }
       let stopped = false;
-      const child = execFile(
-        "git",
-        [...pre, ...args],
-        {
-          cwd,
-          env,
-          timeout: opts.timeoutMs ?? 10 * 60_000,
-          maxBuffer: 64 * 1024 * 1024,
-          windowsHide: true,
-          encoding: "utf8",
-          // A git that may be stopped runs in its own process group (POSIX), so the stop takes
-          // what it started too. Only then: a terminal's Ctrl+C still reaches a plain git.
-          ...(signal && process.platform !== "win32" ? { detached: true } : {}),
-        },
-        (err, stdout, stderr) => {
-          signal?.removeEventListener("abort", onAbort);
-          untrack?.();
-          if (stopped) {
-            reject(new GitStoppedError(args));
-            return;
-          }
-          if (err) {
-            const code = typeof err.code === "number" ? err.code : null;
-            const detail = (stderr || err.message).trim().split(/\r?\n/).slice(-3).join(" ");
-            reject(new GitError(`git ${args[0] ?? ""} failed: ${detail}`, args, code, stderr));
-            return;
-          }
-          resolve({ stdout, stderr });
-        },
-      );
+      let untrack: (() => void) | undefined;
+      const start = () =>
+        execFile(
+          "git",
+          [...pre, ...args],
+          {
+            cwd,
+            env,
+            timeout: opts.timeoutMs ?? 10 * 60_000,
+            maxBuffer: 64 * 1024 * 1024,
+            windowsHide: true,
+            encoding: "utf8",
+            // A git that may be stopped runs in its own process group (POSIX), so the stop takes
+            // what it started too. Only then: a terminal's Ctrl+C still reaches a plain git.
+            ...(signal && process.platform !== "win32" ? { detached: true } : {}),
+          },
+          (err, stdout, stderr) => {
+            signal?.removeEventListener("abort", onAbort);
+            untrack?.();
+            if (stopped) {
+              reject(new GitStoppedError(args));
+              return;
+            }
+            if (err) {
+              const code = typeof err.code === "number" ? err.code : null;
+              const detail = (stderr || err.message).trim().split(/\r?\n/).slice(-3).join(" ");
+              reject(new GitError(`git ${args[0] ?? ""} failed: ${detail}`, args, code, stderr));
+              return;
+            }
+            resolve({ stdout, stderr });
+          },
+        );
+      // Beta.27 review: in its own group, the git no longer hears the terminal (Ctrl+C, the
+      // terminal closed under atticus ui): kept with core's trees, it is stopped with Atticus
+      // (a stop, as Stop is) and killed when Atticus exits, never left running past the lock.
+      // Beta.28.3: kept from before it starts (startTree). Tracked only after its start, a
+      // terminal closed in between ended Atticus and left the git running.
+      let child: ReturnType<typeof start>;
+      if (signal) {
+        const kept = startTree(start, (c) => (s) => {
+          stopped = true;
+          killProcessTree(c, s);
+        });
+        child = kept.child;
+        untrack = kept.untrack;
+      } else child = start();
       const onAbort = () => {
         stopped = true;
         killProcessTree(child);
       };
-      // Beta.27 review: in its own group, the git no longer hears the terminal (Ctrl+C, the
-      // terminal closed under atticus ui): kept with core's trees, it is stopped with Atticus
-      // (a stop, as Stop is) and killed when Atticus exits, never left running past the lock.
-      const untrack = signal
-        ? trackTree(child, (s) => {
-            stopped = true;
-            killProcessTree(child, s);
-          })
-        : undefined;
       signal?.addEventListener("abort", onAbort, { once: true });
     });
 }

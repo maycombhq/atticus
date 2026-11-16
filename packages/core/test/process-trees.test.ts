@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { constants as osConstants, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -25,10 +25,18 @@ afterEach(async () => {
   for (const d of made.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
+/** Ended, not yet reaped (a container's init may reap late): gone, as far as these tests go. */
+const zombie = (pid: number) => {
+  try {
+    return /^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+  } catch {
+    return false;
+  }
+};
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
-    return true;
+    return !zombie(pid);
   } catch {
     return false;
   }
@@ -44,7 +52,7 @@ const until = async (ok: () => boolean | Promise<boolean>, ms = 15_000) => {
  * A node that starts a tracked `sleep` in its own group, writes its pid, then does `then`;
  * `before` runs first (a library loaded, process.kill patched).
  */
-async function parent(then: string, before = "") {
+async function parent(then: string, before = "", sh = "sleep 600 & wait") {
   const dir = await mkdtemp(join(tmpdir(), "atticus-trees-"));
   made.push(dir);
   const script = join(dir, "parent.mjs");
@@ -52,13 +60,13 @@ async function parent(then: string, before = "") {
   const tree =
     process.platform === "win32"
       ? `spawn(process.execPath, ["-e", "setTimeout(() => {}, 600000)"], { stdio: "ignore" })`
-      : `spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" })`;
+      : `spawn("sh", ["-c", ${JSON.stringify(sh)}], { detached: true, stdio: "ignore" })`;
   await writeFile(
     script,
     `import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 ${before}
-const { trackTree, onAtticusSignal } = await import(${mod});
+const { trackTree, onAtticusSignal, processTreeHooks } = await import(${mod});
 const child = ${tree};
 const untrack = trackTree(child);
 child.on("exit", untrack);
@@ -73,7 +81,30 @@ setTimeout(() => {}, 60_000);
   );
   await until(() => existsSync(pidFile));
   const pid = Number(await readFile(pidFile, "utf8"));
-  return { pid, ended };
+  return { pid, ended, dir };
+}
+
+/** A node running `body` with the built module's exports and `spawn`; how it ended. */
+async function node(body: string) {
+  const dir = await mkdtemp(join(tmpdir(), "atticus-trees-"));
+  made.push(dir);
+  const script = join(dir, "node.mjs");
+  await writeFile(
+    script,
+    `import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const { startTree, trackTree } = await import(${mod});
+const pidFile = ${JSON.stringify(join(dir, "pid"))};
+${body}
+setTimeout(() => {}, 60_000);
+`,
+  );
+  const p = spawn(process.execPath, [script], { stdio: "ignore" });
+  const how = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) =>
+    p.on("exit", (code, signal) => r({ code, signal })),
+  );
+  const pid = Number(await readFile(join(dir, "pid"), "utf8").catch(() => "0"));
+  return { pid, how };
 }
 
 describe("trees Atticus started, when Atticus stops", () => {
@@ -82,6 +113,69 @@ describe("trees Atticus started, when Atticus stops", () => {
     async () => {
       const { pid, ended } = await parent(`process.kill(process.pid, "SIGHUP");`);
       expect(alive(pid)).toBe(true);
+      const how = await ended;
+      expect(how.signal).toBe("SIGHUP");
+      await until(() => !alive(pid));
+      expect(alive(pid)).toBe(false);
+    },
+    60_000,
+  );
+
+  /**
+   * Beta.28.3 (the closed-terminal test CI had to run again): a child was kept only after it had
+   * started, so a terminal closed in between ended Atticus by the signal's default, and the
+   * child, in its own group, ran on. Here the signal comes at exactly that moment, every time.
+   */
+  it.runIf(posix)(
+    "a terminal closed as a tree starts, before it is kept, still stops it",
+    async () => {
+      const { pid, how } = await node(
+        `const { child, untrack } = startTree(() => {
+  const c = spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" });
+  writeFileSync(pidFile, String(c.pid));
+  process.kill(process.pid, "SIGHUP");
+  return c;
+});
+child.on("exit", untrack);`,
+      );
+      expect(pid).toBeGreaterThan(0);
+      expect(how.signal).toBe("SIGHUP");
+      await until(() => !alive(pid));
+      expect(alive(pid)).toBe(false);
+    },
+    60_000,
+  );
+
+  it.runIf(posix)(
+    "a tree started after the signal is stopped at once, and Atticus ends without waiting out the grace",
+    async () => {
+      const began = Date.now();
+      const { pid, how } = await node(
+        `const first = spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" });
+first.on("exit", trackTree(first));
+setTimeout(() => {
+  process.emit("SIGHUP", "SIGHUP");
+  const late = spawn("sh", ["-c", "sleep 600 & wait"], { detached: true, stdio: "ignore" });
+  writeFileSync(pidFile, String(late.pid));
+  late.on("exit", trackTree(late));
+}, 300);`,
+      );
+      expect(pid).toBeGreaterThan(0);
+      expect(how.signal).toBe("SIGHUP");
+      expect(alive(pid)).toBe(false);
+      expect(Date.now() - began).toBeLessThan(8_000);
+    },
+    60_000,
+  );
+
+  it.runIf(posix)(
+    "a tree that ignores the stop is killed when the grace is over and Atticus ends by the signal",
+    async () => {
+      const { pid, ended } = await parent(
+        `processTreeHooks.signalGraceMs = 400; process.kill(process.pid, "SIGHUP");`,
+        "",
+        "trap '' TERM; sleep 600 & wait",
+      );
       const how = await ended;
       expect(how.signal).toBe("SIGHUP");
       await until(() => !alive(pid));

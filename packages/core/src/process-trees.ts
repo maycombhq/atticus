@@ -9,6 +9,13 @@ import { constants as osConstants } from "node:os";
  * listener (onStopping: taskrun aborts its model call), and lets the signal end Atticus once nothing
  * holds on (or after TREE_SIGNAL_GRACE_MS). When Atticus exits, every tree still running is killed
  * outright. Shared by taskrun's builds and workspace's git (it was taskrun's own).
+ *
+ * Beta.28.3: three ways a tree outlived Atticus when the terminal closed at the wrong moment.
+ * The handlers were hooked only once the child was tracked, after it had started: a signal in
+ * between (seen in CI, a few milliseconds wide) ended Atticus as if nothing ran, and the child,
+ * in its own group, never heard it (startTree hooks first). A tree started after the signal was
+ * never stopped, and Atticus ending by the signal (no exit handlers run then) killed nothing of
+ * what still ran after the grace, nor what a stopped tree's leader left behind in its group.
  */
 
 /** How a tracked tree is stopped: its own way (git's tree, a build's group), by the signal. */
@@ -24,6 +31,11 @@ export const TREE_SIGNAL_GRACE_MS = 10_000;
 let holds = 0;
 /** The signal that ends Atticus once nothing holds on (nobody else listened for it). */
 let pending: NodeJS.Signals | undefined;
+/** The trees a signal that ends Atticus stopped: what is left of each goes when Atticus does. */
+const stoppedBySignal = new Set<StopTree>();
+
+/** A test's shorter grace (TREE_SIGNAL_GRACE_MS otherwise). */
+export const processTreeHooks: { signalGraceMs?: number } = {};
 
 /**
  * Stop every tracked tree (SIGTERM, each its own way) and tell each listener: Atticus is
@@ -117,9 +129,10 @@ const onSignal = (sig: NodeJS.Signals) => {
   if (atticusHandles(sig)) return;
   // Nobody else (atticus task run, a terminal closed under atticus ui): the signal ends Atticus as
   // it would have, once the trees have ended and the runs recorded the stop, or after the grace.
+  for (const [, stop] of live) stoppedBySignal.add(stop);
   if (!pending) {
     pending = sig;
-    setTimeout(raise, TREE_SIGNAL_GRACE_MS).unref?.();
+    setTimeout(raise, processTreeHooks.signalGraceMs ?? TREE_SIGNAL_GRACE_MS).unref?.();
   }
   settle();
 };
@@ -127,6 +140,18 @@ function raise() {
   const sig = pending;
   if (!sig) return;
   pending = undefined;
+  // Ending by a signal runs no exit handler: what still runs (a tree that ignored the stop, the
+  // grace over) is killed here, and off Windows what a stopped tree's leader left in its group.
+  killLive();
+  if (process.platform !== "win32")
+    for (const stop of stoppedBySignal) {
+      try {
+        stop("SIGKILL");
+      } catch {
+        // gone already
+      }
+    }
+  stoppedBySignal.clear();
   unhook();
   try {
     process.kill(process.pid, sig);
@@ -140,17 +165,20 @@ function settle() {
   if (pending) raise();
   else unhook();
 }
-/** Atticus exits: what still runs is killed outright (synchronous: nothing waits on exit). */
-const onExit = () => {
+/** What still runs is killed outright (synchronous: nothing waits on exit). */
+function killLive() {
   for (const [child, stop] of live) {
     if (child.exitCode !== null || child.signalCode !== null) continue;
+    stoppedBySignal.delete(stop);
     try {
       stop("SIGKILL");
     } catch {
       // gone already
     }
   }
-};
+}
+/** Atticus exits: what still runs is killed outright. */
+const onExit = () => killLive();
 let hooked = false;
 function hook() {
   if (hooked) return;
@@ -168,11 +196,21 @@ function unhook() {
 /**
  * Keep a child in its own process group until it ends: stopped with Atticus (a signal,
  * stopTrackedTrees) by `stop`, killed by it with SIGKILL when Atticus exits. Gives back the way
- * to let go of it (when it has ended).
+ * to let go of it (when it has ended). One tracked after a signal that ends Atticus is stopped
+ * at once. A child started in its own group is started through `startTree`, never tracked after
+ * the fact: a signal between its start and this call would end Atticus and leave it running.
  */
 export function trackTree(child: ChildProcess, stop: StopTree = (s) => stopProcessGroup(child, s)) {
   live.set(child, stop);
   hook();
+  if (pending) {
+    stoppedBySignal.add(stop);
+    try {
+      stop("SIGTERM");
+    } catch {
+      // gone already
+    }
+  }
   let done = false;
   return () => {
     if (done) return;
@@ -180,6 +218,25 @@ export function trackTree(child: ChildProcess, stop: StopTree = (s) => stopProce
     live.delete(child);
     settle();
   };
+}
+
+/**
+ * Start a child in its own process group and keep it (trackTree), with the signals' handlers in
+ * place before it starts: from its first moment a closed terminal, Ctrl+C or SIGTERM stops it
+ * with Atticus. `stop` is how it is stopped (its group by default). A start that throws keeps
+ * nothing.
+ */
+export function startTree<C extends ChildProcess>(
+  start: () => C,
+  stop?: (child: C) => StopTree,
+): { child: C; untrack: () => void } {
+  const release = holdStop();
+  try {
+    const child = start();
+    return { child, untrack: trackTree(child, stop?.(child)) };
+  } finally {
+    release();
+  }
 }
 
 /**

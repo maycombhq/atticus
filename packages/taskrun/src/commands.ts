@@ -6,7 +6,7 @@ import {
   stopProcessGroup,
   stopTrackedTrees,
   TREE_SIGNAL_GRACE_MS,
-  trackTree,
+  startTree,
 } from "@maycombhq/core";
 
 /**
@@ -116,15 +116,19 @@ export function shellCommandRunner(): CommandRunner {
         resolve({ exitCode: null, stdout: "", stderr: "Stopped.", stopped: true });
         return;
       }
-      const child = spawn(command, {
-        cwd,
-        shell: true,
-        env: { ...process.env, ...o.env },
-        windowsHide: true,
-        // Its own process group off Windows, so a timeout stops the build, not only the shell.
-        detached: process.platform !== "win32",
-      });
-      const untrack = trackTree(child, (s) => stopTree(child, s));
+      // Beta.28.3: kept from before it starts, so a terminal closed as it starts stops it too.
+      const { child, untrack } = startTree(
+        () =>
+          spawn(command, {
+            cwd,
+            shell: true,
+            env: { ...process.env, ...o.env },
+            windowsHide: true,
+            // Its own process group off Windows, so a timeout stops the build, not only the shell.
+            detached: process.platform !== "win32",
+          }),
+        (c) => (s) => stopTree(c, s),
+      );
       const out = tail();
       const err = tail();
       let done = false;
