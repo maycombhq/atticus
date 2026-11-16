@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## 2.0.0-beta.28.3 (unreleased)
+## 2.0.0-beta.28.3 (2026-11-16)
 
 beta.28.3 is knowledge search and fixes. No contract changes and no new file formats: a team may upgrade one member at a time.
 

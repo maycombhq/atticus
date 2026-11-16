@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.32 (pre-release, with Atticus 2.0.0-beta.28.3)
+
+- **Ships with Atticus 2.0.0-beta.28.3, and needs it.** The app in its tab shows beta.28.3's fixes: a suggested wiki section opens in place when it is a later part of a long section, Ask Atticus finds a sentence anywhere in a long section and no longer offers a command that would refuse, and a catalog built by a newer Atticus says so in its heading. No change to the extension's own commands or views.
+
 ## 0.7.31 (pre-release, with Atticus 2.0.0-beta.28.2)
 
 - **Ships with Atticus 2.0.0-beta.28.2, and needs it.** The app in its tab reads beta.28.2's local API (3.15): an Apply or build over a catalog a newer Atticus wrote is refused with "upgrade Atticus", never a write, and a catalog emptied by a build is refused without offering a count to confirm. Apply and the pairing preview are faster on a large estate.
