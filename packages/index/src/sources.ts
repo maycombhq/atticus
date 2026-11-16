@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { open, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { gapNameOf } from "./gaps.js";
@@ -175,6 +175,79 @@ async function inputsSkipped(kdir: string): Promise<Set<string>> {
   }
 }
 
+const DEFAULT_LEVELS = ["public", "internal", "confidential", "restricted"];
+
+/** The classification levels the org pack lists (pack.yaml), and the highest one read. */
+async function classificationLimit(root: string): Promise<{ levels: string[]; limit: number }> {
+  let levels = DEFAULT_LEVELS;
+  try {
+    const pack = parse(await readFile(join(orgPackDirOf(root), "pack.yaml"), "utf8")) as {
+      classification?: unknown;
+    } | null;
+    const own = pack?.classification;
+    if (Array.isArray(own) && own.length && own.every((l) => typeof l === "string"))
+      levels = own as string[];
+  } catch {
+    // No pack.yaml, or one that doesn't read: the default levels.
+  }
+  return { levels, limit: levels.includes("internal") ? levels.indexOf("internal") : 0 };
+}
+
+/**
+ * Whether a file of inputs/ says, in its own front matter, that it must not be read (beta.28.3):
+ * a classification above the limit or not a level, view restrictions, or front matter that
+ * doesn't read (it may hold either). The check `atticus sources sync` makes (ADR 0122), made
+ * here too, so a file never synced, or dropped in since the last sync, isn't indexed meanwhile.
+ */
+async function inputWithheld(abs: string, c: { levels: string[]; limit: number }) {
+  if (!/\.(md|markdown|txt)$/i.test(abs)) return false;
+  let head: string;
+  try {
+    const f = await open(abs, "r");
+    try {
+      const b = Buffer.alloc(16_384);
+      const { bytesRead } = await f.read(b, 0, b.length, 0);
+      head = b
+        .subarray(0, bytesRead)
+        .toString("utf8")
+        .replace(/^\uFEFF/, "")
+        .replace(/\r\n?/g, "\n");
+    } finally {
+      await f.close();
+    }
+  } catch {
+    return false;
+  }
+  if (!head.startsWith("---\n")) return false;
+  const end = head.search(/\n(---|\.\.\.)[ \t]*(\n|$)/);
+  // Front matter that never ends within what was read can't be judged: withheld.
+  if (end < 0) return true;
+  let fm: unknown;
+  try {
+    fm = parse(head.slice(4, end + 1));
+  } catch {
+    return true;
+  }
+  if (fm === null || fm === undefined) return false;
+  if (typeof fm !== "object" || Array.isArray(fm)) return true;
+  const m = fm as Record<string, unknown>;
+  if (
+    m.restricted === true ||
+    (typeof m.restricted === "string" && /^(true|yes)$/i.test(m.restricted))
+  )
+    return true;
+  const r = m.restrictions ?? m["view-restrictions"];
+  if (
+    (Array.isArray(r) && r.length > 0) ||
+    (typeof r === "string" && r.trim() !== "" && !/^none$/i.test(r))
+  )
+    return true;
+  if (m.classification === undefined || m.classification === null) return false;
+  const level =
+    typeof m.classification === "string" ? c.levels.indexOf(m.classification.trim()) : -1;
+  return level < 0 || level > c.limit;
+}
+
 /** The pages the knowledge scan has read, by source (knowledge/scan.yaml's page hashes). */
 async function scannedPages(kdir: string): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
@@ -346,7 +419,12 @@ export async function listSources(root: string): Promise<SourceFile[]> {
     const files: string[] = [];
     await walk(join(root, "inputs"), (n) => DOCUMENT_EXTENSIONS.test(n), files);
     const skipped = await inputsSkipped(kdir);
-    add("document")(files.filter((f) => !skipped.has(rel(root, f))));
+    // beta.28.3: and those whose own front matter says they must not be read, synced or not.
+    const limit = await classificationLimit(root);
+    const read: string[] = [];
+    for (const f of files)
+      if (!skipped.has(rel(root, f)) && !(await inputWithheld(f, limit))) read.push(f);
+    add("document")(read);
   }
   const out: SourceFile[] = [];
   const seen = new Set<string>();

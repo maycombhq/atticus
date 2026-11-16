@@ -18,6 +18,7 @@ import type { JudgmentStore, OrgPack } from "@maycombhq/core";
 import { scanKnowledge, type FailedItem, type KnowledgeRecord } from "./knowledge-scan.js";
 import { reviewItem, writeReview } from "./reviews.js";
 import type { Snapshot } from "./snapshot.js";
+import { visibleLines } from "./passages.js";
 
 /**
  * Searching the wikis (ADR 0101). A developer looks for a term or phrase across every snapshot:
@@ -64,6 +65,7 @@ const words = (s: string) =>
 /**
  * The sections that mention a phrase: one with the phrase on a line, or every word of it
  * somewhere in the section. One match per section, at its first line that has it.
+ * Only what a person sees of a page is searched; a "#" line in a code block is no heading.
  */
 export function searchPages(snapshots: Snapshot[], phrase: string): PageMatch[] {
   const want = fold(phrase);
@@ -72,9 +74,12 @@ export function searchPages(snapshots: Snapshot[], phrase: string): PageMatch[] 
   const out: PageMatch[] = [];
   for (const s of snapshots)
     for (const p of s.pages) {
-      const lines = (p.text ?? "").split(/\r?\n/);
+      // beta.28.3: what a person sees of the page, as Ask reads it: hidden text and front matter
+      // are never matched or shown, each line where it was.
+      const { lines, from } = visibleLines(p.text ?? "");
       let section = "";
-      let start = 0;
+      let start = from;
+      let inFence = false;
       const flush = (end: number) => {
         const body = lines.slice(start, end);
         const hit = body.findIndex((l) => fold(l).includes(want));
@@ -90,7 +95,8 @@ export function searchPages(snapshots: Snapshot[], phrase: string): PageMatch[] 
         });
       };
       lines.forEach((l, i) => {
-        const h = /^#{1,6}\s+(.*)$/.exec(l);
+        if (/^\s*(```|~~~)/.test(l)) inFence = !inFence;
+        const h = inFence || i < from ? null : /^#{1,6}\s+(.*)$/.exec(l);
         if (h && i > start) {
           flush(i);
           start = i;

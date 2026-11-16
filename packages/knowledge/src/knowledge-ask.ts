@@ -1,6 +1,6 @@
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { AgentDefinition, knowledgeKindOf, type OrgPack } from "@maycombhq/core";
+import { AgentDefinition, initialismLinks, knowledgeKindOf, type OrgPack } from "@maycombhq/core";
 import {
   buildContextPack,
   resumedAttempt,
@@ -52,15 +52,19 @@ const STOP = new Set(
   ),
 );
 
-const stem = (w: string) =>
+/**
+ * A word folded for comparing, so a singular, its plural and its -ed and -ing forms are one
+ * (beta.28.3: "rule" and "rules" were rule and rul; "policy" and "policies" never met): an
+ * ending comes off, then a last "e" ("change", "changes", "changed", "changing" are all chang).
+ */
+const stem = (w: string) => {
   // A word ending in "ss" (process, access, address) is not a plural: only "es" comes off it.
-  /ss$/.test(w)
-    ? w
-    : w.length > 4
-      ? w.replace(/(ings?|ed|es|s)$/, "")
-      : w.length > 3
-        ? w.replace(/s$/, "")
-        : w;
+  if (/ss$/.test(w)) return w;
+  let s = w;
+  if (w.length > 4) s = /ies$/.test(w) ? w.replace(/ies$/, "y") : w.replace(/(ings?|ed|es|s)$/, "");
+  else if (w.length > 3) s = w.replace(/s$/, "");
+  return s.length > 3 && /[^aeiou]e$/.test(s) ? s.slice(0, -1) : s;
+};
 
 export const termsOf = (s: string) =>
   s
@@ -76,7 +80,8 @@ const appliesOf = (r: KnowledgeRecord) =>
 const handlerOf = (r: KnowledgeRecord) =>
   r.kind === "Party" ? r.owner : r.kind === "Product" ? r.ownedBy : r.handledBy;
 
-function itemText(r: KnowledgeRecord): string {
+/** Everything an item says, as a question's words are looked for in it. */
+export function itemText(r: KnowledgeRecord): string {
   const parts: string[] = [itemTitle(r), appliesOf(r) ?? "", handlerOf(r) ?? "", ...r.tags];
   if (r.kind === "Party") parts.push(...r.responsibilities, ...r.owns, ...r.uses);
   if (r.kind === "Product")
@@ -89,17 +94,25 @@ function itemText(r: KnowledgeRecord): string {
   return parts.join(" ");
 }
 
-/** Items ranked by the question's words they contain (rarer words count more). */
+/**
+ * Items ranked by the question's words they contain (rarer words count more). beta.28.3: an
+ * acronym one writes and the other spells out ("SSO", "single sign-on") counts as a rare word
+ * in common, twice over: it is a whole name.
+ */
 export function rankItems(question: string, items: KnowledgeRecord[]) {
   const q = [...new Set(termsOf(question))];
-  const docs = items.map((r) => new Set(termsOf(itemText(r))));
+  const texts = items.map(itemText);
+  const docs = texts.map((t) => new Set(termsOf(t)));
   const idf = new Map(
     q.map((t) => [t, Math.log(1 + items.length / (1 + docs.filter((d) => d.has(t)).length))]),
   );
+  const name = 2 * Math.log(1 + items.length);
   return items
     .map((item, k) => ({
       item,
-      score: q.reduce((s, t) => s + (docs[k]!.has(t) ? idf.get(t)! : 0), 0),
+      score:
+        q.reduce((s, t) => s + (docs[k]!.has(t) ? idf.get(t)! : 0), 0) +
+        name * initialismLinks(question, texts[k]!).length,
     }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
