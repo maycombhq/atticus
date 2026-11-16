@@ -212,6 +212,36 @@ describe("the build refuses a catalog a newer Atticus wrote, and writes nothing 
   );
 
   it(
+    "a newer readers slot of a repo named build (readers/build.json) is a slot, not a build.json",
+    async () => {
+      // Forge's build tooling lives in a repo whose id is `build`: its readers slot is
+      // catalog/sources/readers/build.json, which only its name shares with build.json.
+      const root = await built();
+      const path = readersSlotPath(root, "build");
+      const own = await readFile(readersSlotPath(root, "forge-infra"), "utf8");
+      await writeFile(path, own.replace('"slotVersion": 1', '"slotVersion": 2'));
+      const files = await newerCatalogFiles(root);
+      expect(files).toEqual([
+        {
+          path: "catalog/sources/readers/build.json",
+          name: "catalog/sources/readers/build.json",
+          field: "slotVersion",
+          version: 2,
+          reads: 1,
+        },
+      ]);
+      const before = await tree(root);
+      const r = await buildAndWrite(root, { command: "atticus catalog build" });
+      expect(r.guard.refused?.reasons).toEqual(["newer-atticus"]);
+      expect(r.guard.refused!.message).toContain(
+        "(catalog/sources/readers/build.json slotVersion 2; this Atticus reads up to 1)",
+      );
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
     "a newer Atticus's build cut short (its undo copy's next-build.json) refuses, not not-upgraded",
     async () => {
       const root = await built();

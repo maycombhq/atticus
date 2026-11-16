@@ -2257,7 +2257,9 @@ export async function newerCatalogFiles(
   }
   for (const abs of slotFiles) {
     const rel = relOf(root, abs);
-    out.push(...(await newerFileAt(abs, rel, rel.endsWith("/build.json") ? "build.json" : rel)));
+    // Only a build.json is called so: a repo named `build` has a readers slot of that name.
+    const manifest = versionedFormatOf(rel)?.field === "version";
+    out.push(...(await newerFileAt(abs, rel, manifest ? "build.json" : rel)));
   }
   if (o.undoDir) {
     // The latest undo copy by its folder's number alone (review of beta.28.2): parsing every
@@ -2303,7 +2305,7 @@ export async function newerInUndoPlan(undoDir: string, plan: UndoPlan): Promise<
   for (const f of plan.files) {
     if (f.to !== "file" || !versionedFormatOf(f.path)) continue;
     const abs = join(undoDir, String(f.from), "files", ...f.path.split("/"));
-    const name = f.path.endsWith("/build.json") ? "build.json" : f.path;
+    const name = versionedFormatOf(f.path)?.field === "version" ? "build.json" : f.path;
     out.push(
       ...(await newerFileAt(abs, f.path, `${name} in undo copy ${f.from}`)).map((x) => ({
         ...x,

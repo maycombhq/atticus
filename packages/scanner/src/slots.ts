@@ -550,8 +550,8 @@ export interface NewerFile {
 export function versionedFormatOf(
   rel: string,
 ): { field: string; reads: number; also?: { field: string; reads: number } } | undefined {
-  if (/(^|\/)build\.json$/.test(rel) || /(^|\/)next-build\.json$/.test(rel))
-    return { field: "version", reads: BUILD_MANIFEST_READS };
+  // The slots first, by their folder: a repo named `build` has its readers slot at
+  // readers/build.json, which is a slot (`slotVersion`), not a build.json.
   if (/(^|\/)facts\/[^/]+\.meta\.json$/.test(rel))
     return {
       field: "slotVersion",
@@ -560,6 +560,8 @@ export function versionedFormatOf(
     };
   if (/(^|\/)readers\/[^/]+\.json$/.test(rel) || /(^|\/)legacy\/joins\.json$/.test(rel))
     return { field: "slotVersion", reads: SLOT_VERSION };
+  if (/(^|\/)build\.json$/.test(rel) || /(^|\/)next-build\.json$/.test(rel))
+    return { field: "version", reads: BUILD_MANIFEST_READS };
   return undefined;
 }
 
