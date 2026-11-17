@@ -2,6 +2,30 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.4 (2026-11-17)
+
+beta.28.4 answers a day of field reports from a 40-repo estate. One additive change to the local API (3.16.0, ADRs 0198 and 0199); no new file formats: a team may upgrade one member at a time.
+
+### Fixed
+
+- **A build no longer spends minutes in pass 3 on an estate whose APIs name thousands of distinct fields.** The glossary read every term once for each term; it now reads them once. On a 40-repo, 13,500-record estate with 6,000 field names the pass went from about 40 seconds to under one, with the same catalog byte for byte. This is one cause of a slow Apply, measured; it may not be the only one on a given estate, which is what the next entry is for.
+- **A build says where its time goes.** It names each stage inside its passes as it starts ("pass 3 of 8, the glossary… (29 s in)"), hears Stop at each, and a write or preview that ran 30 seconds or more ends with its three slowest steps: "The slowest steps: the glossary, in pass 3 of the build (9 min 43 s); loading the catalog (18 s)." `atticus catalog build` hears Stop inside the build's passes too.
+- **With corrections waiting in several repos, the map's bar offers each repo its own Apply**, and "Apply to the N repos waiting", which applies only those repos. It offered only "Apply to every repo's map", which applied every repo read, one full build each: hours on a large estate.
+- **An Apply over several repos says "Repo 3 of 7" as each starts, and about how long is left**, in the Console, under the top bar and on `atticus verify --all`. It ends showing its real count, not "1 of 1".
+- **Stop works during an Apply over several repos.** After the first repo's write Stop did nothing, so the run could not be ended from the app. Now a repo being written finishes whole, the run ends before the next repo, and it says which repos were not applied. Stop pressed during a write says once that it was heard and shows "Stopping after this repo…" until the run ends.
+- **Closing the app during an Apply over several repos ends the run after the repo being written.** It ran on unseen through every remaining repo.
+- **The Apply after a declaration or an owner set says how many repos it runs** ("Apply to all 40 repos read") and warns when they are many. It still applies every repo read.
+- **Discover a folder of clones takes seconds, not hours.** Every file was matched against every line of a clone's `.gitignore` the slow way; a folder of 43 clones went from 326 seconds to about 4, and to under a second when the manifest lists most of them. It now runs as a job that says the folder it is on, can be stopped, skips a folder that takes over a minute with the reason, and does not read repos the manifest already lists. The same faster matching is used by every read of a repo; it answers exactly as before (compared on over 100,000 generated patterns). `atticus repos discover --json` lists already-listed repos under `listed`, no longer under `repos`.
+- **Connecting two boxes says where a pairing stands.** The panel said "every call is paired by a person already" with no arrow on the map. It now says whether the paired calls are drawn, or waiting for the repo's Apply (offered right there), or paired with another box (named), or inside one component (no arrow is drawn); it names who paired each call and never calls an AI pairing a person's, and refreshes after its own Apply. Edit the map's "no call left to pair" says only what is known.
+- **A stopped folder read leaves no old list on the page**, leaving the page stops the read, a folder that can't be listed says why, and one repo written with either slash, percent-encoding or a default port is recognised as already listed.
+- **When one repo of a run fails and another is applied with facts left out, the bar says how many were left out.**
+
+### Known
+
+- **One repo's Apply is still one full build**, and an Apply over several repos still builds once per repo: building once gives different per-repo maps than applying in turn, so it needs decisions first (`docs/design/apply-once.md`).
+- **A clone whose origin is the ssh form of an Azure DevOps repo listed by its https form is read and offered again** (never hidden).
+- **Only five undo copies are kept**, so an Apply over six or more repos can't be undone back to where it started.
+
 ## 2.0.0-beta.28.3 (2026-11-16)
 
 beta.28.3 is knowledge search and fixes. No contract changes and no new file formats: a team may upgrade one member at a time.
