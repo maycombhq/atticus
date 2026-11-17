@@ -701,9 +701,14 @@ export function topUpWords(sets: readonly RuleSet[]): string {
 /**
  * ADR 0169: what to do with the model classes a read is told are reached (a list in a data
  * block beside it): write their fields; and never sweep an entry point away as reviewed.
+ * ADR 0164, addendum of 2026-11-17: a field is named as its class writes it, and the field that
+ * holds a class is recorded with its type, which is what the contract check places fields by.
+ * Said here and not in FACT_RULES: an 8000-token batch of code has no room for a rule more.
+ * And in no more characters than the rule had (444): `instructionTokens` doesn't count it, so
+ * a longer one would come out of what a prompt keeps for the facts on file.
  */
 export const MODELS_RULE =
-  "The model classes listed as reached are the request, response and message classes the entry points and calls named in the list take, return, send or receive: read each and write a field fact for each of their fields (name, type, required, side), owned by that entry or call, cited on the field's declaration. Never mark an entry point (a controller, route, handler or listener) or a folder holding one reviewed with nothing to record: read it.";
+  "Model classes listed as reached are bodies of the entries and calls listed: read each; write a field fact per field (name, type, required, side), owned by that entry or call, cited on its declaration by its wire name, never a dotted path, including a field that holds another class or a list of one, with `type` as declared. Never mark an entry point (controller, route, handler, listener) or its folder reviewed, nothing to record: read it.";
 
 export function mapBatchInstructions(o: {
   repo: string;

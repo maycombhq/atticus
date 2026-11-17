@@ -33,6 +33,8 @@ import {
   type FileChange,
   type StaleCite,
   type FactCorrection,
+  looseFieldClasses,
+  type LooseClass,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { apigeePassThrough, authChecks, authPolicyMismatch } from "./apigee-policy.js";
@@ -521,6 +523,13 @@ export interface VerifyReport {
    * id order; left out when there are none.
    */
   componentsPlaced?: PlacedComponent[];
+  /**
+   * A note, not a rejection (ADR 0164, addendum of 2026-11-17): per entry or call and side, each
+   * class of its request, response or message that no field of that payload reaches (no field's
+   * type names it), so the contract check can't say where its fields sit and leaves a difference
+   * on them unconfirmed. Left out when there are none.
+   */
+  fieldsUnplaced?: LooseClass[];
 }
 
 /** A fact placed in its repo's component: its id, the component it named, where, and the cite. */
@@ -1972,6 +1981,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       cite: `${f.cite.file}:${f.cite.line}`,
     }))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const unplacedFields = looseFieldClasses(accepted);
   const unrecorded = buildUnrecorded(
     [...touched].filter((p) => isBuildFileIn(p, namedPoms) && insideRepo(p) && !isSecretPath(p)),
     (p) => linesOf(p),
@@ -2016,5 +2026,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     frameworkGaps: frameworkGaps(accepted, rules.frameworks),
     ...(unrecorded.length ? { buildUnrecorded: unrecorded } : {}),
     ...(placed.length ? { componentsPlaced: placed } : {}),
+    ...(unplacedFields.length ? { fieldsUnplaced: unplacedFields } : {}),
   };
 }

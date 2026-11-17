@@ -113,7 +113,12 @@ describe("atticus map <repo> --estimate reads reachable models first (ADR 0169)"
     );
     expect(t).toContain(`${J}/model/Address.java (Address), from ${J}/model/ListingRequest.java`);
     for (const p of UNREACHED) expect(t).toContain(p.slice(p.lastIndexOf("/") + 1));
-    expect(t).toMatch(/write a field fact for each of their fields \(name, type, required, side\)/);
+    expect(t).toMatch(/write a field fact per field \(name, type, required, side\)/);
+    // ADR 0164, addendum of 2026-11-17: what places a field in its body.
+    expect(t).toContain("never a dotted path");
+    expect(t).toContain(
+      "a field that holds another class or a list of one, with `type` as declared",
+    );
     const plan = (await loadReadPlan(root, REPO))!;
     expect(plan.notReached?.files).toEqual(UNREACHED);
     expect(plan.notReached?.why).toMatch(/no entry point, call or field fact reaches/);
@@ -188,7 +193,7 @@ describe("atticus map <repo> in batches reads reachable models first (ADR 0169)"
     expect(all).toContain(
       `${J}/model/ListingRequest.java (ListingRequest), from ${J}/api/HouseController.java`,
     );
-    expect(all).toMatch(/write a field fact for each of their fields/);
+    expect(all).toMatch(/write a field fact per field/);
     // the controller comes before the models it reaches
     expect(all.indexOf(`${J}/api/HouseController.java lines`)).toBeLessThan(
       all.indexOf(`${REACHED[0]} lines`),

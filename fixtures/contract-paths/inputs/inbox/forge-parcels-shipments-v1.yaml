@@ -1,0 +1,113 @@
+openapi: 3.0.3
+info:
+  title: Forge Parcels Shipments API
+  version: 1.4.0
+servers:
+  - url: https://parcels.forge.example/parcels/v1
+paths:
+  /shipments:
+    post:
+      operationId: createShipments
+      summary: Book shipments for parcels handed in at a counter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentsRequest"
+      responses:
+        "200":
+          description: The shipments, one per parcel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentsResponse"
+        "400":
+          description: The request doesn't read
+components:
+  schemas:
+    ShipmentsRequest:
+      type: object
+      required:
+        - receipt
+        - cargo
+      properties:
+        receipt:
+          $ref: "#/components/schemas/RequestReceipt"
+        cargo:
+          $ref: "#/components/schemas/ShipmentsRequestCargo"
+    RequestReceipt:
+      type: object
+      required:
+        - receiptNo
+      properties:
+        receiptNo:
+          type: string
+        counter:
+          type: string
+    ShipmentsRequestCargo:
+      type: object
+      required:
+        - shipments
+      properties:
+        shipments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParcelOrder"
+    ParcelOrder:
+      type: object
+      required:
+        - parcelId
+      properties:
+        parcelId:
+          type: string
+        service:
+          type: string
+        declaredValue:
+          type: number
+    ShipmentsResponse:
+      type: object
+      properties:
+        receipt:
+          $ref: "#/components/schemas/ResponseReceipt"
+        cargo:
+          $ref: "#/components/schemas/ShipmentsResponseCargo"
+    ResponseReceipt:
+      type: object
+      properties:
+        receiptNo:
+          type: string
+        stamps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stamp"
+    Stamp:
+      type: object
+      properties:
+        depot:
+          type: string
+          enum: [NORTH, SOUTH, EAST]
+        stampedAt:
+          type: string
+        clerk:
+          type: string
+        lane:
+          type: string
+    ShipmentsResponseCargo:
+      type: object
+      properties:
+        shipments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Shipment"
+    Shipment:
+      type: object
+      properties:
+        shipmentId:
+          type: string
+        weightGrams:
+          type: number
+        stamps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stamp"

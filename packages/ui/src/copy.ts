@@ -4326,7 +4326,7 @@ export const COPY = {
   mismatches: {
     title: "Mismatches",
     intro:
-      "The payload on both sides of every link compared: each REST call, each hop through a gateway, each topic's publisher and listeners, and each call to an outside system, from the fields your assistant read and the specs on file. A difference that a mapping nobody traced touches is unconfirmed, never a mismatch. Read from the facts and the specs; nothing is written.",
+      "The payload on both sides of every link compared: each REST call, each hop through a gateway, each topic's publisher and listeners, and each call to an outside system, from the fields your assistant read and the specs on file. A difference that a mapping nobody traced touches, or that rests on a field whose place in its payload isn't on record, is unconfirmed, never a mismatch. Read from the facts and the specs; nothing is written.",
     empty:
       "No link has a payload on both sides yet. Your assistant records what each call sends and each entry takes when it reads a repo (/atticus-map); atticus verify <repo> --write reads the repo's specs; atticus intake add takes a vendor's or another team's.",
     noneShown: "None of this kind: pick another in the list.",
@@ -6561,8 +6561,9 @@ export const COPY = {
   why: {
     // ADR 0164: the contract check's findings on a call of the link.
     contracts: "Contract",
+    // Addendum of 2026-11-17: the unconfirmed are no mismatches, and are counted apart.
     contractsOf: (m: number, u: number) =>
-      `${m} mismatch${m === 1 ? "" : "es"}${u ? `, ${u} unconfirmed` : ""} between what each side sends and takes`,
+      `${m === 0 ? "No mismatch" : `${m} mismatch${m === 1 ? "" : "es"}`} between what each side sends and takes${u ? `; ${u} ${m === 0 ? "" : "more "}unconfirmed (a mapping isn't traced, or a field's place in its payload isn't on record)` : ""}`,
     contractsAll: "All mismatches",
     open: "Why is this linked?",
     openOf: (link: string) => `Why is ${link} linked?`,

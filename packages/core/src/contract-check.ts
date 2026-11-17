@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { factIdPart } from "./facts.js";
 import { isHeaderName, typeFamily } from "./facts-join-prototype.js";
+import { placeFields } from "./field-places.js";
 import type { FactEnd, FactJoin, FactsJoinResult } from "./facts-join.js";
 import type { VendorCallMatch } from "./facts-join-vendor.js";
 import { normalizePath } from "./identity.js";
@@ -149,7 +150,11 @@ export interface ContractMismatch {
   /** What it reaches: an entry of the estate, or an outside system. */
   entry?: FactEnd;
   system?: string;
-  /** `mismatch`: the two sides disagree; `unconfirmed`: a mapping on the way isn't traced. */
+  /**
+   * `mismatch`: the two sides disagree; `unconfirmed`: a mapping on the way isn't traced, or the
+   * difference rests on a field whose place in its payload the facts don't give (the message
+   * says which).
+   */
   status: "mismatch" | "unconfirmed";
   kind: ContractKind;
   side?: "request" | "response" | "message";
@@ -160,7 +165,7 @@ export interface ContractMismatch {
   receiver: ContractEnd;
   /** The mapping lines the comparison went through (`repo path:line`), in order. */
   via?: string[];
-  /** The mapping that isn't traced, when `unconfirmed`. */
+  /** The mapping that isn't traced, when `unconfirmed` for that reason. */
   untraced?: string;
   message: string;
 }
@@ -250,6 +255,21 @@ export const CONTRACT_WORDS = {
     `${s} lists the error ${status} (${sAt}), which ${r} never answers`,
   unconfirmed: (message: string, untraced: string) =>
     `${message}; unconfirmed: the mapping at ${untraced} isn't traced`,
+  /** Addendum of 2026-11-17: a difference that rests on a place the facts don't give. */
+  unplaced: (message: string, why: string) => `${message}; unconfirmed: ${why}`,
+  place: (why: string) => `its place in the payload isn't on record: ${why}`,
+  shared: (n: number, tail: string, r: string) =>
+    `${n} fields of ${r} are named ${tail}, and nothing on record says which this one is`,
+  noRoot: (s: string, side: string) =>
+    `${s}'s ${side} fields on record don't start at the payload's root`,
+  nothingInside: (s: string, name: string) => `${s} has no fields on record inside ${name}`,
+  unlisted: (r: string, name: string) => `${r} lists nothing inside ${name}`,
+  itemsUnread: (r: string, name: string) => `what the items of ${name} are isn't recorded for ${r}`,
+  elsewhere: (names: readonly string[]) =>
+    `a field of that name is only at ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
+  renamed: (name: string) => `matched under another parent name (${name})`,
+  sameAt: (names: readonly string[]) =>
+    `the same at ${names.length} more place${names.length === 1 ? "" : "s"}: ${names.slice(0, 20).join(", ")}${names.length > 20 ? ` and ${names.length - 20} more` : ""}`,
 };
 
 // ------------------------------------------------------------------ faces
@@ -270,6 +290,19 @@ interface WireField {
   via: string[];
   /** The untraced mapping it rests on (`repo path:line`), when one touches it. */
   untraced?: string;
+  /** Why its place in the payload isn't sure, in words (addendum of 2026-11-17). */
+  unplaced?: string;
+  /** The doubt holds whatever the other side has (a map, a clash): see `placeDoubt`. */
+  decides?: true;
+  /** A second turn round a class that holds itself: compared where it matches, never reported alone. */
+  again?: true;
+  /**
+   * Its path is built from a root on record (a class that holds others), or is a spec's own: see
+   * `findOf`. `root` is that root class, for code; `fact` the field fact it is of.
+   */
+  sure?: true;
+  root?: string;
+  fact?: string;
 }
 
 type Side = "request" | "response" | "message";
@@ -348,12 +381,6 @@ function wireOf(
   const out = new Map<string, WireField>();
   const dropped = new Set<string>();
   const extraVia = new Map<string, string[]>();
-  const nameOf = (f: Field, depth = 0): string => {
-    const t = f.mappedTo ? byId.get(f.mappedTo) : undefined;
-    if (t && depth < 6 && ENVELOPE_TRANSFORM.test(f.transform ?? ""))
-      return `${nameOf(t, depth + 1)}.${f.name}`;
-    return f.name;
-  };
   for (const f of own) {
     const t = f.mappedTo ? byId.get(f.mappedTo) : undefined;
     if (!t || ENVELOPE_TRANSFORM.test(f.transform ?? "")) continue;
@@ -362,25 +389,38 @@ function wireOf(
     dropped.add(gone.id);
     extraVia.set(kept.id, [...(extraVia.get(kept.id) ?? []), where(repo, atOf(gone))]);
   }
-  for (const f of [...own].sort((a, b) => cmp(a.id, b.id))) {
-    if (dropped.has(f.id)) continue;
-    const name = nameOf(f);
-    const t = f.mappedTo ? byId.get(f.mappedTo) : undefined;
-    const envelope = t && ENVELOPE_TRANSFORM.test(f.transform ?? "");
+  const travelling = own.filter((f) => !dropped.has(f.id));
+  // Each field's place from the payload's root: the fields that hold its class, by their type.
+  const places = placeFields(travelling, side);
+  for (const f of [...travelling].sort((a, b) => cmp(a.id, b.id))) {
     const untraced = !!f.transform && !f.mappedTo && !ENVELOPE_TRANSFORM.test(f.transform);
-    const k = keyOf(name);
-    if (out.has(k)) continue;
-    out.set(k, {
-      key: k,
-      tail: tailOf(name),
-      name,
-      ...(f.type ? { type: f.type } : {}),
-      ...(f.required !== undefined ? { required: f.required } : {}),
-      header: side !== "message" && isHeaderName(f.name),
-      at: atOf(f),
-      via: [...(envelope ? [where(repo, atOf(t!))] : []), ...(extraVia.get(f.id) ?? [])],
-      ...(untraced ? { untraced: where(repo, atOf(f)) } : {}),
-    });
+    for (const place of places.of(f)) {
+      const k = keyOf(place.name);
+      if (out.has(k)) continue;
+      out.set(k, {
+        key: k,
+        tail: tailOf(place.name),
+        name: place.name,
+        ...(f.type ? { type: f.type } : {}),
+        ...(f.required !== undefined ? { required: f.required } : {}),
+        header: side !== "message" && isHeaderName(f.name),
+        at: atOf(f),
+        via: [
+          ...place.via.flatMap((id) => {
+            const p = byId.get(id);
+            return p ? [where(repo, atOf(p))] : [];
+          }),
+          ...(extraVia.get(f.id) ?? []),
+        ],
+        ...(untraced ? { untraced: where(repo, atOf(f)) } : {}),
+        ...(place.unplaced ? { unplaced: place.unplaced } : {}),
+        ...(place.decides ? { decides: true as const } : {}),
+        ...(place.again ? { again: true as const } : {}),
+        ...(place.sure ? { sure: true as const } : {}),
+        ...(place.root ? { root: place.root } : {}),
+        fact: f.id,
+      });
+    }
   }
   return [...out.values()].sort((a, b) => cmp(a.key, b.key));
 }
@@ -508,6 +548,7 @@ function specFace(
       ...(f.number !== undefined && s.format === "protobuf" ? { number: f.number } : {}),
       at: f.at,
       via: [],
+      sure: true,
     });
   }
   const errors = new Map((s.errors ?? []).map((e) => [e.status, e.at] as const));
@@ -615,8 +656,11 @@ function push(
   s: { face: Face; w?: WireField; value?: string },
   r: { face: Face; w?: WireField; value?: string },
   message: string,
+  /** Why the difference can't be told for sure, in words, beside an untraced mapping. */
+  doubt?: string,
 ) {
   const untraced = s.w?.untraced ?? r.w?.untraced;
+  const why = untraced ? undefined : doubt;
   const end = (x: typeof s): ContractEnd => ({
     ...(x.face.repo ? { repo: x.face.repo } : {}),
     ...(x.face.system ? { system: x.face.system } : {}),
@@ -630,10 +674,11 @@ function push(
   const same = `${ctx.key}|${kind}|${side ?? ""}|${keyOf(name)}|${line ?? ""}`;
   if (line && ctx.said.has(same)) return;
   ctx.said.add(same);
-  ctx.out.push({
+  const fact = r.face.role === "code" ? r.w?.fact : s.face.role === "code" ? s.w?.fact : undefined;
+  const finding: ContractMismatch = {
     ...ctx.base,
     id: `${ctx.key}#${ctx.boundary}:${kind}:${side ?? "-"}:${keyOf(name) || name}`,
-    status: untraced ? "unconfirmed" : "mismatch",
+    status: untraced || why ? "unconfirmed" : "mismatch",
     kind,
     ...(side ? { side } : {}),
     ...(kind.startsWith("error") ? { error: name } : { field: name }),
@@ -641,16 +686,267 @@ function push(
     receiver: end(r),
     ...(via.length ? { via: [...new Set(via)] } : {}),
     ...(untraced ? { untraced } : {}),
-    message: untraced ? CONTRACT_WORDS.unconfirmed(message, untraced) : message,
-  });
+    message: untraced
+      ? CONTRACT_WORDS.unconfirmed(message, untraced)
+      : why
+        ? CONTRACT_WORDS.unplaced(message, why)
+        : message,
+  };
+  if (fact)
+    ofFact.set(
+      finding,
+      `${ctx.boundary}|${kind}|${side ?? ""}|${finding.status}|${fact}|${untraced ?? why ?? ""}`,
+    );
+  ctx.out.push(finding);
 }
 
-/** Match a sender's field to the receiver's: the same path, else the one field with its last segment. */
-function matchOf(w: WireField, list: readonly WireField[]): WireField | undefined {
-  const same = list.find((x) => x.key === w.key);
-  if (same) return same;
-  const tails = list.filter((x) => x.tail === w.tail);
-  return tails.length === 1 ? tails[0] : undefined;
+/** The fact, boundary, kind and reason a finding is of: the same for each place of one fact. */
+const ofFact = new WeakMap<ContractMismatch, string>();
+/** The other places a collapsed finding stands for (their fields), for `newFindings`. */
+const otherPlaces = new WeakMap<ContractMismatch, string[]>();
+
+/**
+ * One fact that sits at several places (a class two fields hold) and differs the same way at
+ * each is one finding: the first place by name, with the others listed in its words.
+ */
+function collapse(list: readonly ContractMismatch[]): ContractMismatch[] {
+  const groups = new Map<string, ContractMismatch[]>();
+  const out: ContractMismatch[] = [];
+  for (const f of list) {
+    const k = ofFact.get(f);
+    if (k === undefined) {
+      out.push(f);
+      continue;
+    }
+    const g = groups.get(k);
+    if (g) g.push(f);
+    else groups.set(k, [f]);
+  }
+  for (const g of groups.values()) {
+    g.sort((a, b) => cmp(a.id, b.id));
+    const [first, ...rest] = g;
+    if (!rest.length) {
+      out.push(first!);
+      continue;
+    }
+    const names = rest.map((f) => f.field ?? "");
+    const one = { ...first!, message: `${first!.message}; ${CONTRACT_WORDS.sameAt(names)}` };
+    otherPlaces.set(one, names);
+    out.push(one);
+  }
+  return out;
+}
+
+/** A face's fields by path and by last segment, worked out once per list. */
+const listIndex = new WeakMap<
+  readonly WireField[],
+  { byKey: Map<string, WireField>; byTail: Map<string, WireField[]>; holders: Set<string> }
+>();
+function indexOfList(list: readonly WireField[]) {
+  let ix = listIndex.get(list);
+  if (!ix) {
+    ix = { byKey: new Map(), byTail: new Map(), holders: new Set() };
+    for (const x of list) {
+      // Every path a field sits under: what has something listed inside it.
+      for (let i = x.key.indexOf("."); i >= 0; i = x.key.indexOf(".", i + 1))
+        ix.holders.add(x.key.slice(0, i));
+      if (!ix.byKey.has(x.key)) ix.byKey.set(x.key, x);
+      const t = ix.byTail.get(x.tail);
+      if (t) t.push(x);
+      else ix.byTail.set(x.tail, [x]);
+    }
+    listIndex.set(list, ix);
+  }
+  return ix;
+}
+
+/** How many trailing segments two paths share. */
+function sharedEnd(a: string, b: string): number {
+  const x = a.split(".");
+  const y = b.split(".");
+  let n = 0;
+  while (n < x.length && n < y.length && x[x.length - 1 - n] === y[y.length - 1 - n]) n++;
+  return n;
+}
+
+/** The root classes of a side that the other side bears out: a field of theirs sits at the same path there. */
+const anchoredRoots = new WeakMap<
+  readonly WireField[],
+  WeakMap<readonly WireField[], Set<string>>
+>();
+function anchored(own: readonly WireField[], list: readonly WireField[]): Set<string> {
+  let by = anchoredRoots.get(own);
+  if (!by) anchoredRoots.set(own, (by = new WeakMap()));
+  let got = by.get(list);
+  if (!got) {
+    got = new Set();
+    const ix = indexOfList(list);
+    for (const x of own) if (x.sure && x.root && ix.byKey.has(x.key)) got.add(x.root);
+    by.set(list, got);
+  }
+  return got;
+}
+
+/**
+ * Whether a field's place is sure against the other side: a spec's always; a code field's when
+ * its path is built from a root class on record and that root is borne out there (one of its
+ * fields is at the same path on the other side). A class that holds others and that nothing
+ * holds may still sit under a field nobody recorded: until a path of it matches, it is a guess.
+ */
+const sureOf = (
+  w: WireField,
+  own: readonly WireField[] | undefined,
+  list: readonly WireField[],
+): boolean => !!w.sure && (w.root === undefined || (!!own && anchored(own, list).has(w.root)));
+
+/** The same depth and the same last segment, one segment before it another: a parent under another name. */
+function parentRenamed(a: string, b: string): boolean {
+  const x = a.split(".");
+  const y = b.split(".");
+  if (x.length !== y.length || x.length < 2) return false;
+  let differ = 0;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) differ++;
+  return differ === 1 && x[x.length - 1] === y[y.length - 1];
+}
+
+/**
+ * Find a field on the other side (`own` is the side `w` is of).
+ *
+ * The same path, always. Else, by how sure the places are:
+ *
+ * - **Where the field's place or the other's is not sure** (a fragment: a class recorded without
+ *   what holds it; a flat class nothing says is the root): the fields with its last segment of
+ *   which one path is the end of the other, one of several being told from the rest when `own`
+ *   has no field at its very path, or by the longest shared end (`many` when none can be told);
+ *   else, for a field whose own place isn't sure, the one field of that last segment anywhere,
+ *   unless `own` has a field at that path.
+ * - **Where both are sure**: only a field at the same depth whose path differs in one segment
+ *   that isn't the last (a parent recorded under its Java name), when there is one such and
+ *   `own` has no field there.
+ *
+ * `elsewhere` is the fields of that last segment `own` doesn't have at their very path, when
+ * nothing matched: the name is on the other side, somewhere else.
+ */
+function findOf(
+  w: WireField,
+  list: readonly WireField[],
+  own?: readonly WireField[],
+): { hit?: WireField; many?: number; elsewhere?: WireField[] } {
+  const ix = indexOfList(list);
+  const same = ix.byKey.get(w.key);
+  if (same) return { hit: same };
+  const all = ix.byTail.get(w.tail) ?? [];
+  if (!all.length) return {};
+  const claimed = own ? indexOfList(own).byKey : undefined;
+  const unclaimed = claimed ? all.filter((x) => !claimed.has(x.key)) : all;
+  const wSure = sureOf(w, own, list);
+  const ends = (a: string, b: string) => a === b || a.endsWith(`.${b}`);
+  const fragments = all.filter(
+    (x) => (!wSure || !sureOf(x, list, own ?? [])) && (ends(x.key, w.key) || ends(w.key, x.key)),
+  );
+  if (fragments.length === 1) return { hit: fragments[0]! };
+  if (fragments.length > 1) {
+    const free = claimed ? fragments.filter((x) => !claimed.has(x.key)) : fragments;
+    if (free.length === 1) return { hit: free[0]! };
+    let best = 0;
+    let winners: WireField[] = [];
+    for (const x of free.length ? free : fragments) {
+      const n = sharedEnd(w.key, x.key);
+      if (n > best) {
+        best = n;
+        winners = [x];
+      } else if (n === best) winners.push(x);
+    }
+    return winners.length === 1 ? { hit: winners[0]! } : { many: fragments.length };
+  }
+  if (wSure) {
+    const renamed = unclaimed.filter((x) => parentRenamed(w.key, x.key));
+    if (renamed.length === 1) return { hit: renamed[0]! };
+  } else if (all.length === 1 && unclaimed.length === 1) return { hit: all[0]! };
+  return unclaimed.length ? { elsewhere: unclaimed } : {};
+}
+
+/** Match a field to the other side's (`findOf`'s hit); `own` is the side the field is of. */
+function matchOf(
+  w: WireField,
+  list: readonly WireField[],
+  own?: readonly WireField[],
+): WireField | undefined {
+  return findOf(w, list, own).hit;
+}
+
+/**
+ * Whether a doubt about a field's place leaves a difference on it unconfirmed (addendum of
+ * 2026-11-17, the reviews). A doubt that `decides` (a map, a generic type nobody recorded, two
+ * parents that disagree) always does. One that only says the place isn't on record (a class
+ * nothing points at, more places than are compared) does not when the difference doesn't depend
+ * on the place: a field the other side has under no name anywhere is missing wherever its class
+ * sits; a type or `required` compared with the only field of that name is compared with the
+ * right field.
+ */
+function placeDoubt(
+  w: WireField | undefined,
+  across: readonly WireField[] | undefined,
+  matched?: WireField,
+): string | undefined {
+  if (!w?.unplaced) return undefined;
+  const why = CONTRACT_WORDS.place(w.unplaced);
+  if (w.decides) return why;
+  const namesakes = across ? (indexOfList(across).byTail.get(w.tail)?.length ?? 0) : 0;
+  return namesakes === (matched ? 1 : 0) ? undefined : why;
+}
+
+/**
+ * Why a field that matched nothing can't be called different for its name's sake: several
+ * fields share it and none can be told from the others; or the name is on the other side only
+ * somewhere else. That may be a part recorded under another name, or a class taken for the root
+ * that sits under a field nobody recorded (one chance match bears a root out), so it is never
+ * called missing outright, a root field no more than a nested one. `any` (for a required field
+ * nothing sends): a field of the sender whose path is the end of this one counts too, though
+ * `own` has a field at its path: the sender's class may sit inside the part, and which of the
+ * two its one field is can't be told.
+ */
+function sharedName(
+  w: WireField,
+  list: readonly WireField[],
+  face: Face,
+  own?: readonly WireField[],
+  any = false,
+): string | undefined {
+  const f = findOf(w, list, own);
+  if (f.hit) return undefined;
+  if (f.many) return CONTRACT_WORDS.shared(f.many, w.name.split(".").pop() ?? w.name, face.what);
+  const elsewhere =
+    f.elsewhere ??
+    (any
+      ? indexOfList(list)
+          .byTail.get(w.tail)
+          ?.filter((x) => w.key.endsWith(`.${x.key}`))
+      : undefined);
+  return elsewhere?.length ? CONTRACT_WORDS.elsewhere(elsewhere.map((x) => x.name)) : undefined;
+}
+
+/**
+ * A field the other side lacks, inside a part that side names and lists nothing inside (an
+ * object with no properties, a list of anything, a spec read no deeper): unknown, not different
+ * (ADR 0125's rule, for a part of a payload).
+ */
+function unlisted(w: WireField, list: readonly WireField[], face: Face): string | undefined {
+  const ix = indexOfList(list);
+  for (let i = w.key.lastIndexOf("."); i > 0; i = w.key.lastIndexOf(".", i - 1)) {
+    const part = ix.byKey.get(w.key.slice(0, i));
+    if (!part) continue;
+    const fam = family(part.type);
+    if (ix.holders.has(part.key)) return undefined;
+    // A list whose items nobody recorded may be of scalars (then the field is no field of
+    // theirs) or of objects: the spec's reader keeps no item type, so it can't be told.
+    return fam === "array"
+      ? CONTRACT_WORDS.itemsUnread(face.what, part.name)
+      : fam === undefined
+        ? CONTRACT_WORDS.unlisted(face.what, part.name)
+        : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -665,7 +961,9 @@ function strayUntraced(
   across: readonly WireField[],
   like?: WireField,
 ): string | undefined {
-  const stray = (list ?? []).filter((x) => x.untraced && !matched.has(x) && !matchOf(x, across));
+  const stray = (list ?? []).filter(
+    (x) => x.untraced && !matched.has(x) && !matchOf(x, across, list),
+  );
   if (!stray.length) return undefined;
   const fam = family(like?.type);
   const same = fam ? stray.find((x) => family(x.type) === fam) : undefined;
@@ -697,16 +995,16 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
         const matched = new Set<WireField>();
         const sentMatched = new Set<WireField>();
         for (const w of sent) {
-          const t = matchOf(w, took);
+          const t = matchOf(w, took, sent);
           if (t) {
             matched.add(t);
             sentMatched.add(w);
           }
         }
         for (const w of sent) {
-          const t = matchOf(w, took);
+          const t = matchOf(w, took, sent);
           if (!t) {
-            if (header) continue;
+            if (header || w.again) continue;
             const u = hopUntraced(ctx.hop, side, w.key) ?? strayUntraced(took, matched, sent, w);
             push(
               ctx,
@@ -716,23 +1014,101 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
               { face: S, w: marked(w, u) },
               { face: R },
               CONTRACT_WORDS.extra(side, w.name, S.what, w.at, R.what),
+              sharedName(w, took, R, sent) ?? unlisted(w, took, R) ?? placeDoubt(w, took),
             );
             continue;
           }
-          fieldPair(ctx, side, w, t, S, R);
+          fieldPair(ctx, side, w, t, S, R, sent, took);
         }
+        // What the sender's fields say of the payload's shape (addendum of 2026-11-17).
+        const pairs = header
+          ? []
+          : sent.flatMap((w) => {
+              const t = matchOf(w, took, sent);
+              return t ? [{ w, t }] : [];
+            });
+        // Indexed once (third review): the pairs by the path their receiving field sits at and
+        // by every part it sits inside, so each required field looks its own up.
+        type Pair = (typeof pairs)[number];
+        const pairAt = new Map<string, Pair>();
+        const pairsInside = new Map<string, Pair[]>();
+        for (const p of pairs) {
+          if (!pairAt.has(p.t.key)) pairAt.set(p.t.key, p);
+          for (let i = p.t.key.indexOf("."); i >= 0; i = p.t.key.indexOf(".", i + 1)) {
+            const part = p.t.key.slice(0, i);
+            const list = pairsInside.get(part);
+            if (list) list.push(p);
+            else pairsInside.set(part, [p]);
+          }
+        }
+        const tookAt = indexOfList(took).byKey;
+        const sentHolders = indexOfList(sent).holders;
+        const sentNames = sent.map((x) => x.name).join(", ");
+        const anyUntraced = sent.some((x) => x.untraced);
+        /** The parts a field sits inside, nearest first. */
+        const partsOf = (key: string) => {
+          const out: string[] = [];
+          for (let i = key.lastIndexOf("."); i > 0; i = key.lastIndexOf(".", i - 1))
+            out.push(key.slice(0, i));
+          return out;
+        };
+        // Recorded without its envelope: every field that matched sits deeper on the other side,
+        // all under one same prefix; and more than one chance namesake says so (two matches, or
+        // no field left that matched nothing).
+        const lacks = pairs.map((p) =>
+          p.t.key.endsWith(`.${p.w.key}`) ? p.t.key.slice(0, -(p.w.key.length + 1)) : undefined,
+        );
+        const noRoot =
+          S.role === "code" &&
+          pairs.length > 0 &&
+          lacks.every((x) => x !== undefined && x === lacks[0]) &&
+          (pairs.length >= 2 || sent.every((w) => !!matchOf(w, took, sent)));
         for (const t of took)
-          if (t.required === true && !matched.has(t) && !matchOf(t, sent)) {
+          if (t.required === true && !t.again && !matched.has(t) && !matchOf(t, sent, took)) {
+            // A field inside it is sent, so it is: one the sender places inside it (the same
+            // path, or a path under the part's own), or any when the sender's root is unknown.
+            if (
+              (pairsInside.get(t.key) ?? []).some(
+                (p) => noRoot || p.w.key === p.t.key || p.w.key.startsWith(`${t.key}.`),
+              )
+            )
+              continue;
+            // Required inside a part that may be left out, of which nothing is sent: not owed.
+            const parts = partsOf(t.key);
+            if (
+              parts.some((part) => {
+                const a = tookAt.get(part);
+                return a?.required === false && pairAt.get(part)?.t !== a && !pairsInside.has(part);
+              })
+            )
+              continue;
+            // Its nearest part the sender names, with nothing on record inside it.
+            const holder = parts.map((part) => pairAt.get(part)).find((p) => !!p);
+            const doubt =
+              sharedName(t, sent, S, took, true) ??
+              // Under the prefix every sent field lacks it is missing wherever the root is.
+              (noRoot && !`${t.key}.`.startsWith(`${lacks[0]}.`)
+                ? CONTRACT_WORDS.noRoot(S.what, side)
+                : S.role === "code" &&
+                    holder &&
+                    !sentHolders.has(holder.w.key) &&
+                    // A part sent as a string or a number has nothing inside it to read.
+                    [undefined, "array"].includes(family(holder.w.type))
+                  ? CONTRACT_WORDS.nothingInside(S.what, holder.w.name)
+                  : undefined) ??
+              placeDoubt(t, sent);
             const u =
-              hopUntraced(ctx.hop, side, t.key) ?? strayUntraced(sent, sentMatched, took, t);
+              hopUntraced(ctx.hop, side, t.key) ??
+              (anyUntraced ? strayUntraced(sent, sentMatched, took, t) : undefined);
             push(
               ctx,
               "field-not-sent",
               side,
               t.name,
-              { face: S, value: sent.map((x) => x.name).join(", ") },
+              { face: S, value: sentNames },
               { face: R, w: marked(t, u) },
               CONTRACT_WORDS.notSent(side, t.name, R.what, t.at, S.what),
+              doubt,
             );
           }
       }
@@ -746,16 +1122,17 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
     const matched = new Set<WireField>();
     const tookMatched = new Set<WireField>();
     for (const t of took) {
-      const w = matchOf(t, sent);
+      const w = matchOf(t, sent, took);
       if (w) {
         matched.add(w);
         tookMatched.add(t);
       }
     }
     for (const t of took) {
-      const w = matchOf(t, sent);
+      const w = matchOf(t, sent, took);
       const u = w ? undefined : strayUntraced(sent, matched, took, t);
-      if (w) fieldPair(ctx, "message", w, t, S, R);
+      if (w) fieldPair(ctx, "message", w, t, S, R, sent, took);
+      else if (t.again) continue;
       else if (R.role !== "code" && t.required === true)
         push(
           ctx,
@@ -765,6 +1142,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
           { face: S, value: sent.map((x) => x.name).join(", ") },
           { face: R, w: marked(t, u) },
           CONTRACT_WORDS.notSent("message", t.name, R.what, t.at, S.what),
+          sharedName(t, sent, S, took) ?? unlisted(t, sent, S) ?? placeDoubt(t, sent),
         );
       else if (R.role === "code" || S.role !== "code")
         push(
@@ -775,11 +1153,12 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
           { face: S, value: sent.map((x) => x.name).join(", ") },
           { face: R, w: marked(t, u) },
           CONTRACT_WORDS.messageMissing(t.name, R.what, t.at, S.what),
+          sharedName(t, sent, S, took) ?? unlisted(t, sent, S) ?? placeDoubt(t, sent),
         );
     }
     if (R.role !== "code")
       for (const w of sent)
-        if (!matched.has(w) && !matchOf(w, took))
+        if (!w.again && !matched.has(w) && !matchOf(w, took, sent))
           push(
             ctx,
             "field-extra",
@@ -788,6 +1167,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             { face: S, w: marked(w, strayUntraced(took, tookMatched, sent, w)) },
             { face: R },
             CONTRACT_WORDS.messageExtra(w.name, S.what, w.at, R.what),
+            sharedName(w, took, R, sent) ?? unlisted(w, took, R) ?? placeDoubt(w, took),
           );
   }
   const read = S.sides.response?.filter((w) => !w.header);
@@ -797,15 +1177,16 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
     const matched = new Set<WireField>();
     const readMatched = new Set<WireField>();
     for (const w of read) {
-      const t = matchOf(w, back);
+      const t = matchOf(w, back, read);
       if (t) {
         matched.add(t);
         readMatched.add(w);
       }
     }
     for (const w of read) {
-      const t = matchOf(w, back);
+      const t = matchOf(w, back, read);
       if (!t) {
+        if (w.again) continue;
         const u = hopUntraced(ctx.hop, "response", w.key) ?? strayUntraced(back, matched, read, w);
         push(
           ctx,
@@ -815,15 +1196,16 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
           { face: S, w: marked(w, u) },
           { face: R },
           CONTRACT_WORDS.missing(w.name, S.what, w.at, R.what),
+          sharedName(w, back, R, read) ?? unlisted(w, back, R) ?? placeDoubt(w, back),
         );
         continue;
       }
-      fieldPair(ctx, "response", w, t, S, R);
+      fieldPair(ctx, "response", w, t, S, R, read, back);
     }
     // A published spec documents all it returns; a caller reading less is normal.
     if (S.role === "published")
       for (const t of back)
-        if (!matched.has(t) && !matchOf(t, read))
+        if (!t.again && !matched.has(t) && !matchOf(t, read, back))
           push(
             ctx,
             "field-extra",
@@ -832,6 +1214,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             { face: S },
             { face: R, w: marked(t, strayUntraced(read, readMatched, back, t)) },
             CONTRACT_WORDS.undocumented(t.name, R.what, t.at, S.what),
+            sharedName(t, read, S, back) ?? unlisted(t, read, S) ?? placeDoubt(t, read),
           );
   }
   // Error statuses, where both sides list some.
@@ -875,7 +1258,21 @@ const errAt = (at: string): WireField => ({
 });
 
 /** One field both sides have: its type's family, whether it must be there, and its number. */
-function fieldPair(ctx: Ctx, side: Side, w: WireField, t: WireField, S: Face, R: Face) {
+function fieldPair(
+  ctx: Ctx,
+  side: Side,
+  w: WireField,
+  t: WireField,
+  S: Face,
+  R: Face,
+  sList: readonly WireField[],
+  rList: readonly WireField[],
+) {
+  const doubt =
+    placeDoubt(w, rList, t) ??
+    placeDoubt(t, sList, w) ??
+    // Paired because only the parent's name differs: the pair holds, a difference on it doesn't.
+    (w.key !== t.key && parentRenamed(w.key, t.key) ? CONTRACT_WORDS.renamed(t.name) : undefined);
   const a = family(w.type);
   const b = family(t.type);
   if (a && b && a !== b)
@@ -887,6 +1284,7 @@ function fieldPair(ctx: Ctx, side: Side, w: WireField, t: WireField, S: Face, R:
       { face: S, w },
       { face: R, w: t },
       CONTRACT_WORDS.type(side, w.name, S.what, w.type!, w.at, R.what, t.type!, t.at),
+      doubt,
     );
   if (side === "response") {
     if (w.required === true && t.required === false)
@@ -898,6 +1296,7 @@ function fieldPair(ctx: Ctx, side: Side, w: WireField, t: WireField, S: Face, R:
         { face: S, w },
         { face: R, w: t },
         CONTRACT_WORDS.required(side, w.name, S.what, w.at, R.what, t.at),
+        doubt,
       );
   } else if (w.required === false && t.required === true)
     push(
@@ -908,6 +1307,7 @@ function fieldPair(ctx: Ctx, side: Side, w: WireField, t: WireField, S: Face, R:
       { face: S, w },
       { face: R, w: t },
       CONTRACT_WORDS.required(side, w.name, S.what, w.at, R.what, t.at),
+      doubt,
     );
 }
 
@@ -1052,7 +1452,8 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
       ...(o?.hop ? { hop: o.hop } : {}),
       gateway: o?.gateway ?? false,
     }));
-    const mine = findings.slice(start);
+    const mine = collapse(findings.splice(start));
+    findings.push(...mine);
     links.push({
       ...link,
       compared,
@@ -1356,8 +1757,15 @@ export function newFindings(
   next: readonly ContractMismatch[],
   prev: readonly ContractMismatch[],
 ): ContractMismatch[] {
-  const k = (f: ContractMismatch) =>
-    `${f.call.repo}|${f.call.fact}|${f.kind}|${f.side ?? ""}|${keyOf(f.field ?? f.error ?? "")}`;
-  const had = new Set(prev.map(k));
-  return next.filter((f) => !had.has(k(f)));
+  const k = (f: ContractMismatch, field = f.field) =>
+    `${f.call.repo}|${f.call.fact}|${f.kind}|${f.side ?? ""}|${keyOf(field ?? f.error ?? "")}`;
+  // A finding of one fact at several places stands for each of them (`collapse`): what the
+  // older spec had is each previous finding's place and the others it lists; a finding is new
+  // when its own place or any place it lists wasn't there. The places are kept beside the
+  // findings of this process's own checks (both specs are checked in one run); a finding from
+  // anywhere else (read back, copied) vouches for its own field only, so what it may have
+  // listed counts as new rather than be missed.
+  const places = (f: ContractMismatch) => [k(f), ...(otherPlaces.get(f) ?? []).map((x) => k(f, x))];
+  const had = new Set(prev.flatMap(places));
+  return next.filter((f) => places(f).some((x) => !had.has(x)));
 }

@@ -262,7 +262,8 @@ export function JoinView({
 
 /**
  * The contract check's findings on one call of the link (ADR 0164): each mismatch, or a
- * difference a mapping nobody traced leaves unconfirmed, with both lines; a way to all of them.
+ * difference left unconfirmed (a mapping nobody traced, or a field whose place in its payload
+ * isn't on record), with both lines; a way to all of them.
  */
 export function ContractFindings({ list }: { list: readonly Api.ContractMismatchViewT[] }) {
   if (!list.length) return null;

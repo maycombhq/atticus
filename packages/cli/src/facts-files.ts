@@ -258,6 +258,11 @@ export interface VerifySummary {
    * Left out when there are none.
    */
   componentsPlaced?: VerifyReport["componentsPlaced"];
+  /**
+   * A note, not a rejection (ADR 0164, addendum of 2026-11-17): the classes of a payload no field
+   * of it reaches, whose fields the contract check can't place. Left out when there are none.
+   */
+  fieldsUnplaced?: VerifyReport["fieldsUnplaced"];
 }
 
 /**
@@ -501,6 +506,7 @@ export async function writeVerifyFiles(
   if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
   if (report.buildUnrecorded?.length) summary.buildUnrecorded = report.buildUnrecorded;
   if (report.componentsPlaced?.length) summary.componentsPlaced = report.componentsPlaced;
+  if (report.fieldsUnplaced?.length) summary.fieldsUnplaced = report.fieldsUnplaced;
   await writeFileAtomic(join(dir, `${repo}.verify.yaml`), stringify(summary));
   return summary;
 }

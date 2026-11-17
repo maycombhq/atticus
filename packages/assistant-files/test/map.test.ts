@@ -32,6 +32,7 @@ import {
   taughtFrameworksText,
   type FrameworkTopic,
   type RuleTopic,
+  MODELS_RULE,
 } from "../src/index.js";
 
 const FORGE = join(
@@ -198,6 +199,26 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     expect(mapCommand().body).toContain(FACT_RULES);
     // A batch told nothing of its files gets every rule, as before.
     expect(batch()).toContain(FACT_RULES);
+  });
+
+  it("tells a reader of model classes what places a field: its own name, and the field that holds its class (ADR 0164 addendum)", () => {
+    expect(MODELS_RULE).toContain(
+      "read each; write a field fact per field (name, type, required, side)",
+    );
+    expect(MODELS_RULE).toContain("by its wire name, never a dotted path");
+    expect(MODELS_RULE).toContain(
+      "including a field that holds another class or a list of one, with `type` as declared",
+    );
+    // No longer than it was before the addendum (444 characters): a batch's room doesn't count
+    // it, so every word more would come out of what a prompt keeps for the facts on file.
+    expect(MODELS_RULE.length).toBeLessThanOrEqual(444);
+    const step = mapCommand().body;
+    expect(step).toContain("never a dotted path");
+    expect(step).toContain(
+      "A field that holds another class, or a list of one, is a field fact too, with `type` as declared (`List<CaseStatus>`)",
+    );
+    // Beside the model classes, not in FACT_RULES: an 8000-token batch has no room for a rule more.
+    expect(FACT_RULES).not.toContain("never a dotted path");
   });
 
   it("puts every rule in at least one kind of batch", () => {

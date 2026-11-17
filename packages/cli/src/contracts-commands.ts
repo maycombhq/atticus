@@ -15,7 +15,7 @@ export const CONTRACTS_WORDS = {
   counts: (m: number, u: number) =>
     m === 0 && u === 0
       ? "No mismatches."
-      : `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed (a mapping on the way isn't traced).`,
+      : `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed (a mapping on the way isn't traced, or a field's place in its payload isn't on record).`,
   none: "No link has a payload on both sides yet: the field facts say what a call sends and an entry takes (atticus map <repo>), and a spec on file says what an API publishes (verify --write reads a repo's specs; atticus intake add takes a vendor's or a team's).",
   unlinked: (n: number) =>
     `${n} call${n === 1 ? " joins" : "s join"} nothing yet, so ${n === 1 ? "its" : "their"} payload isn't checked against the other side: answer their target questions or re-read them (atticus doctor --counts says why each is left).`,

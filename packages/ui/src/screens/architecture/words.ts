@@ -90,7 +90,8 @@ export const WORDS = {
   gap: {
     // ADR 0164: the contract check found the two sides' payloads apart.
     "contract-mismatch": "The two sides' payloads don't match",
-    "contract-unconfirmed": "The payloads may not match: a mapping isn't traced",
+    "contract-unconfirmed":
+      "The payloads may not match: a mapping isn't traced, or a field's place isn't on record",
     inferred: "Seen at one end only",
     "no-repo": "No repo known",
     "no-system": "No system known",

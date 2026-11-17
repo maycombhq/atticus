@@ -29,6 +29,33 @@ A side that says nothing about a payload is unknown, never different.
 - **A repo's own specs**: `atticus verify <repo> --write` reads the checkout for OpenAPI, `.proto`, Avro (`.avsc`), JSON Schema and AsyncAPI files, in any folder, as they are at the commit the facts were read at (files committed there; an uncommitted edit or a file never added isn't read), and keeps them in `facts/<repo>.specs.yaml`. An OpenAPI operation the repo's own entries serve is its published contract (a gateway proxy's spec); another is the repo's copy of an API it calls.
 - **Another team's or a vendor's**: `atticus intake add <file>` takes an OpenAPI spec, a `.proto` or an `.avsc`. The newest is compared, and the system's Outside systems page marks what a new version brought.
 
+## Where a field sits
+
+Your assistant records each class's fields by their own names, in the class's own file: `depot`, not `receipt.stamps[].depot`. The check works out the path itself, from the facts on file: a field whose type names a class (`List<Stamp> stamps`) holds that class's fields, `[]` for a list, through as many levels as the body has. A class two fields hold is at both places. Classes nothing holds that hold others (a body and an error body, a base class and the class that extends it) are each a root.
+
+**How fields are matched.** The same path on both sides, first. A field whose place is sure (its path was built from a root class that the other side bears out, or it is a spec's) matches only there, or a field whose parent was recorded under another name at the same depth. A field whose place isn't sure (a class recorded without what holds it, or a flat class) may match a deeper field with the same ending, or the one field of that name.
+
+A difference is a **mismatch** whenever it doesn't depend on where the field sits: a field the other side has under no name at all, or a type compared with the only field of that name. One fact that differs the same way at several places (a shared `Money` class) is one finding that lists the places. A difference is **unconfirmed**, and its line says why, only where the facts can't tell:
+
+| It says                                                                 | Means                                                                                                  |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `X is not reached from the response's fields`                           | No recorded field holds class X, and the other side has that name in more than one place               |
+| `X is reached only from classes it holds itself`                        | The classes hold each other and nothing else holds them                                                |
+| `N fields of … are named status, and nothing on record says which`      | The other side has several fields of that name and nothing says which this one is                      |
+| `a field of that name is only at …`                                     | The field's place is known and the other side has that name only somewhere else                        |
+| `matched under another parent name (…)`                                 | The pair differs only in a parent's name, so a type that differs on it isn't certain                   |
+| `… lists nothing inside details`                                        | The other side names that part and lists no field inside it: unknown, not different                    |
+| `what the items of tags are isn't recorded for …`                       | The other side has that list, and its reader keeps no item type                                        |
+| `…'s request fields on record don't start at the payload's root`        | Only fields from inside the body were recorded, so a required field around them can't be called unsent |
+| `… has no fields on record inside payload`                              | The call names that part and nothing inside it was read                                                |
+| `X is held in a map` / `held inside Page<…>`                            | Its keys are data, or the wrapper's own fields weren't read: no path can be named                      |
+| `a mapping puts it inside data and its class X is held by …`            | An envelope mapping and the field's type name different parents                                        |
+| `its name a.b doesn't start where its class X sits`                     | A dotted name the reader wrote that doesn't fit the path built for its class                           |
+| `X is at more places than the 64 compared` / `more than 10 levels deep` | Further than the check follows                                                                         |
+| `X is held in too many ways to follow`                                  | The classes are too tangled to place                                                                   |
+
+`atticus verify <repo>` lists the classes it can't place (`fieldsUnplaced` in `facts/<repo>.verify.yaml`), as a note: the repo still verifies. To put one right, have your assistant add the field that holds the class (with its `type` as declared) to the repo's facts and verify again; a new read does it by itself, since `/atticus-map` now asks for those fields. You don't need to do either for the false mismatches to go: the check reads the facts you already have, so **Apply** is enough.
+
 ## Wrapping
 
 Nothing is configured: the check follows the mappings the code shows, each a cited field fact.

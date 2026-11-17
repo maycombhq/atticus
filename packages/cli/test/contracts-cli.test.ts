@@ -147,7 +147,7 @@ describe("atticus join contracts", () => {
     expect(await joinContracts(root, {}, c.io)).toBe(0);
     expect(c.out.slice(0, 3)).toEqual([
       "11 links checked; 4 had a payload on both sides to compare.",
-      "10 mismatches, 1 unconfirmed (a mapping on the way isn't traced).",
+      "10 mismatches, 1 unconfirmed (a mapping on the way isn't traced, or a field's place in its payload isn't on record).",
       "Mismatches:",
     ]);
     expect(c.out).toContain(

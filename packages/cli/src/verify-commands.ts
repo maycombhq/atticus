@@ -879,6 +879,19 @@ export async function verifyCommand(
       `(componentsPlaced in ${verifyYaml})`,
     );
   }
+  // ADR 0164, addendum of 2026-11-17: a payload's class no field of it reaches.
+  const loose = report.fieldsUnplaced ?? [];
+  if (loose.length) {
+    io.out(
+      `${loose.length} ${loose.length === 1 ? "class of a payload isn't" : "classes of payloads aren't"} reached from ${loose.length === 1 ? "its" : "their"} payload's fields (a note, not a rejection; under fieldsUnplaced in ${verifyYaml}): the contract check can't say where ${loose.length === 1 ? "its" : "their"} fields sit, so a difference on them stays unconfirmed. Record the field that holds each, with its type as declared:`,
+    );
+    show(
+      loose.map(
+        (l) => `${l.class} (${l.file}), ${l.fields.length} of ${l.owner}'s ${l.side}: ${l.why}`,
+      ),
+      `(fieldsUnplaced in ${verifyYaml})`,
+    );
+  }
   // G4: with the framework models off, nothing is offered to learn.
   const learn = off.has("framework-models")
     ? []

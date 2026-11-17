@@ -226,6 +226,14 @@ describe("the warning on a link and in Why is this linked?", () => {
     } as Api.HierEdgeT;
     const out = html(<WhyLinked link={edge} contracts={VIEW.findings} />);
     expect(out).toContain(esc(COPY.why.contractsOf(1, 1)));
+    // Addendum of 2026-11-17: the unconfirmed are counted and worded apart from the mismatches.
+    expect(COPY.why.contractsOf(1, 1)).toBe(
+      "1 mismatch between what each side sends and takes; 1 more unconfirmed (a mapping isn't traced, or a field's place in its payload isn't on record)",
+    );
+    expect(COPY.why.contractsOf(2, 0)).toBe("2 mismatches between what each side sends and takes");
+    expect(COPY.why.contractsOf(0, 2)).toBe(
+      "No mismatch between what each side sends and takes; 2 unconfirmed (a mapping isn't traced, or a field's place in its payload isn't on record)",
+    );
     expect(out).toContain(esc(VIEW.findings[1]!.message));
     expect(out).toContain('href="#/mismatches"');
     expect(html(<ContractFindings list={[]} />)).toBe("");
