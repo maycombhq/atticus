@@ -265,7 +265,7 @@ describe("a repo typed like a gateway that the join doesn't take for one (review
       "forge-edge-kong's type is api-gateway in org-pack/profiles/forge/repos.manifest.yaml. Its entries count as gateway routes only when its type is gateway (or gateway-internal, gateway-external), or when they are read from a proxy bundle folder.",
     );
     expect(out).toContain(
-      "If forge-edge-kong is a gateway, set type: gateway for it in org-pack/profiles/forge/repos.manifest.yaml, then draw the line again: its 3 entries are then listed as routes to tick. It is read by the gateway type's reading rules from then on.",
+      "If forge-edge-kong is a gateway, set type: gateway for it in org-pack/profiles/forge/repos.manifest.yaml, then draw the line again: its 3 entries are then listed as routes to tick.",
     );
     expect(out).not.toContain(D.notGateway("forge-edge-kong"));
     expect(out).not.toContain('type="checkbox"');

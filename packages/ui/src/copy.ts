@@ -5793,7 +5793,7 @@ export const COPY = {
     looksLikeGateway: (repo: string, type: string, manifest: string) =>
       `${repo}'s type is ${type} in ${manifest}. Its entries count as gateway routes only when its type is gateway (or gateway-internal, gateway-external), or when they are read from a proxy bundle folder.`,
     looksLikeGatewayDo: (repo: string, manifest: string, entries: number) =>
-      `If ${repo} is a gateway, set type: gateway for it in ${manifest}, then draw the line again: its ${entries === 1 ? "one entry is" : `${entries} entries are`} then listed as routes to tick. It is read by the gateway type's reading rules from then on.`,
+      `If ${repo} is a gateway, set type: gateway for it in ${manifest}, then draw the line again: its ${entries === 1 ? "one entry is" : `${entries} entries are`} then listed as routes to tick.`,
     /** A system only the code names: no profile has it, so nothing can be declared of it yet. */
     noProfile: (label: string, id: string) =>
       `${label} is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id ${id}, then draw the line again.`,
