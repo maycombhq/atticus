@@ -53,13 +53,42 @@ It is a `work` job, not a `local` one: it writes nothing, so it neither takes Ap
 
 The page (`AddRepos.tsx`) follows the job: it says the folder it is on, offers Stop, and lists each skipped folder with why. `atticus repos discover <folder>` prints the same line a folder (progress: standard error, never among `--json`'s data) and "Already listed: <folder> (<id>)".
 
+### 5. A paired call says where it stands
+
+What the data meant, as read in the code: a call's `paired` status is a person's `link` line in the repo's corrections file **with this box** (`pairedHere` in `packages/core/src/link-candidates.ts` already compares the box), and it is given before the catalog is looked at, so a call paired with this box was `paired` whether or not the map had its arrow. A call a person paired with **another** box was never `paired`: it is `joined` (the map draws it there) or `undrawn` (it doesn't yet), with `pairedBy` and `joins`. So "every call is paired with this box by a person already" named the right box, and was silent on the one thing the person was looking at: the arrow.
+
+Applied is told from the catalog, not from a clock:
+
+- `CandidateCallView.drawn` (new, optional, for `paired`): true when the built catalog has the arrow to this box (a current Interface, not suppressed, whose caller evidence cites the call's line and whose `to` is this box, else the join's own Interface id in the catalog), false when it doesn't. An old arrow of the same call to another box is not this pairing's arrow. With no catalog built, false.
+- `LinkCandidatesView.applyPending` (new, optional): the repo's corrections file is newer than its last Apply, by the rule a proposal's `applyFirst` already uses (the corrections file's time against the repo's spec header, else its `verify.yaml`).
+
+`drawn` decides what is said; `applyPending` only chooses the words for "not drawn". A file's time alone would have been wrong on the reporting estate: an Apply that is stopped after it rewrote the repo's files and before the catalog was built leaves the files newer than the corrections and the map without the arrow.
+
+The panel (`PairedStanding` in `Connect.tsx`) says, from the copy file:
+
+| Where the calls stand                                                       | What is said                                                                                                | What is offered                                 |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Paired with this box, on the map                                            | how many, and that the arrow from A to B is on the Estate map                                               | how to undo one                                 |
+| Paired with this box, not on the map, corrections newer than the last Apply | how many, that the pairings are in A's corrections written since A was last applied                         | Apply to A's map, right there                   |
+| Paired with this box, not on the map, though A was applied since            | that the Apply may have been stopped or refused before it wrote the map, or the link was deleted on the map | Apply to A's map, which says what it leaves out |
+| Some on the map, some not                                                   | how many of each                                                                                            | Apply to A's map                                |
+| Paired with an API the box no longer has                                    | that no arrow can be drawn                                                                                  | undo, then pair again                           |
+| Paired by a person with another box                                         | how many, and each box with its count                                                                       | pair here (replaces their word), or how to undo |
+
+A row of a call paired with another box that the map doesn't draw yet says whose pairing it is, not only that "the read ties it" there.
+
+Edit the map's "has no call left to pair with this box: each is paired by a person already" had the same fault and a second one: it was also said of calls nobody paired (they go to the box by the code's own arrow) and of a repo with no call at all. It now says how many go there already by an arrow read from the code, how many a person paired that are on the map, and how many wait for the repo's Apply.
+
 ## Consequences
 
 - A second read of the same folder costs one `git config` a listed clone.
 - A folder whose clone has no origin and isn't listed by its path is read, as before.
 - QUESTIONS.md no longer asks who owns a repo the manifest already has an owner for.
+- Reading the candidates costs one more `stat` of two small files. Nothing new is read from the catalog: `drawnOf` already read it.
 - The 60 s bound is not a setting. A clone too large to list in a minute can still be added by its clone URL, which reads nothing.
 
 ## Not verified
+
+- The reported case itself (an Apply stopped part way on the owner's estate) was not reproduced: the tests cover a pairing written and not applied, and the same one applied, on the invented token-host estate with a real catalog.
 
 - No run in a browser, and none on Windows, where a folder's listing costs more than on Linux. The generated folder is not the owner's estate: the cause was found by measuring, and it matches the report's shape (time growing with files × `.gitignore` lines), but the owner's own folder was not read.

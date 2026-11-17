@@ -321,6 +321,134 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
   });
 });
 
+// Field report (beta.28.3): "it says it's already paired, but I don't see the line". The panel
+// said every call was paired with the box by a person, and the map had no arrow: the pairings
+// were in the corrections file, and the repo hadn't been applied since. Each standing a paired
+// call can have is said as it is, with what resolves it (ADR 0198).
+describe("calls a person paired, by where each stands", () => {
+  const box = { repo: "forge-ledger" };
+  const paired = (n: number, o: Partial<Api.CandidateCallViewT> = {}): Api.CandidateCallViewT => ({
+    fact: `call.post.entries-${n}`,
+    callType: "rest",
+    method: "POST",
+    path: `/entries/${n}`,
+    at: `src/main/java/forge/billing/LedgerClient.java:${10 * n}`,
+    status: "paired",
+    paired: "e-entries",
+    drawn: true,
+    ...o,
+  });
+  const view = (
+    calls: Api.CandidateCallViewT[],
+    o: Partial<Api.LinkCandidatesViewT> = {},
+  ): Api.LinkCandidatesViewT => ({
+    from: "forge-billing",
+    to: box,
+    toName: "forge-ledger",
+    calls,
+    apis: [{ id: "e-entries", kind: "entry", method: "POST", path: "/entries/{id}" }],
+    ...o,
+  });
+  const html = (d: Api.LinkCandidatesViewT) =>
+    renderToStaticMarkup(
+      <Pairing from="forge-billing" box={box} cands={{ state: "ready", data: d }} />,
+    );
+  const show = (d: Api.LinkCandidatesViewT) => un(html(d));
+
+  it("paired with this box and on the map: says so, and where to see it", () => {
+    const out = show(view([paired(1), paired(2)]));
+    expect(out).toContain(C.pairedOnMap(2, "forge-billing", "forge-ledger"));
+    expect(C.pairedOnMap(2, "forge-billing", "forge-ledger")).toBe(
+      "A person paired 2 calls of forge-billing with forge-ledger, and the map draws them: the arrow from forge-billing to forge-ledger on the Estate map (pick the arrow to see its calls). To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // Nothing to apply: no Apply is offered.
+    expect(out).not.toContain(COPY.propose.apply("forge-billing"));
+    expect(out).not.toContain("is paired with forge-ledger by a person already");
+  });
+
+  it("paired with this box, the corrections newer than the last Apply: waiting, with the Apply right there", () => {
+    const out = show(
+      view([paired(1, { drawn: false }), paired(2, { drawn: false })], { applyPending: true }),
+    );
+    expect(out).toContain(C.pairedWaiting(2, "forge-billing", "forge-ledger", true));
+    expect(C.pairedWaiting(2, "forge-billing", "forge-ledger", true)).toBe(
+      "A person paired 2 calls of forge-billing with forge-ledger, but the map doesn't draw them yet: the pairings are in forge-billing's corrections, written since forge-billing was last applied. Apply to forge-billing's map, below, draws the arrow.",
+    );
+    expect(out).toContain(COPY.propose.apply("forge-billing"));
+    expect(out).not.toContain(C.pairedOnMap(2, "forge-billing", "forge-ledger"));
+  });
+
+  it("paired with this box, applied since, and still not on the map: says what may have happened, and offers Apply", () => {
+    const out = show(view([paired(1, { drawn: false })]));
+    expect(out).toContain(C.pairedWaiting(1, "forge-billing", "forge-ledger", false));
+    expect(C.pairedWaiting(1, "forge-billing", "forge-ledger", false)).toBe(
+      "A person paired 1 call of forge-billing with forge-ledger, but the map draws no arrow for it, though forge-billing's files say it was applied since: that Apply may have been stopped or refused before it wrote the map, or the link was deleted on the map. Apply to forge-billing's map, below, runs it again and says what it leaves out.",
+    );
+    expect(out).toContain(COPY.propose.apply("forge-billing"));
+  });
+
+  it("a mix: how many the map draws and how many wait, with the Apply", () => {
+    const out = show(
+      view([paired(1), paired(2), paired(3, { drawn: false })], { applyPending: true }),
+    );
+    expect(out).toContain(C.pairedMix(2, 1, "forge-billing", "forge-ledger", true));
+    expect(C.pairedMix(2, 1, "forge-billing", "forge-ledger", true)).toBe(
+      "A person paired 3 calls of forge-billing with forge-ledger: the map draws 2 (the arrow from forge-billing to forge-ledger on the Estate map), and 1 isn't drawn yet: it is in forge-billing's corrections, written since forge-billing was last applied. Apply to forge-billing's map, below, draws it.",
+    );
+    expect(out).toContain(COPY.propose.apply("forge-billing"));
+  });
+
+  it("paired by a person with another box: names the box, how many, and how to undo one", () => {
+    const elsewhere: Api.CandidateCallViewT[] = [
+      // Drawn there: listed to move here.
+      paired(1, { status: "joined", joins: "forge-cards", pairedBy: "sam", drawn: undefined }),
+      // Not drawn there yet: loose, and said to be a person's.
+      paired(2, { status: "undrawn", joins: "forge-risk", pairedBy: "sam", drawn: undefined }),
+    ].map(({ paired: _p, drawn: _d, ...c }) => c);
+    const out = show(view(elsewhere));
+    expect(out).toContain(C.pairedElsewhere(2, "forge-cards (1), forge-risk (1)", "forge-billing"));
+    expect(C.pairedElsewhere(2, "forge-cards (1), forge-risk (1)", "forge-billing")).toBe(
+      "A person paired 2 calls of forge-billing with another box: forge-cards (1), forge-risk (1). Each is listed below with who paired it; pairing one here replaces their word. To free one without pairing it here, undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // The row of the one not drawn yet says whose it is, not only that the read ties it there.
+    expect(out).toContain(C.pairedUndrawn("sam", "forge-risk"));
+    expect(out).not.toContain(C.undrawnWhy("forge-risk"));
+    // Nothing is paired with this box: nothing is said of it.
+    expect(out).not.toContain("with forge-ledger, and the map draws");
+  });
+
+  it("every standing at once: each said with its count", () => {
+    const {
+      paired: _p,
+      drawn: _d,
+      ...other
+    } = paired(4, {
+      status: "joined",
+      joins: "forge-cards",
+      pairedBy: "sam",
+    });
+    const out = show(
+      view([paired(1), paired(2, { drawn: false }), paired(3, { drawn: false }), other], {
+        applyPending: true,
+      }),
+    );
+    expect(out).toContain(C.pairedMix(1, 2, "forge-billing", "forge-ledger", true));
+    expect(out).toContain(C.pairedElsewhere(1, "forge-cards (1)", "forge-billing"));
+  });
+
+  it("a pairing whose API the box no longer has: nothing an Apply can draw, said so", () => {
+    const { paired: _p, ...gone } = paired(1, { drawn: false });
+    const out = show(view([gone]));
+    expect(out).toContain(C.pairedGone(1, "forge-billing", "forge-ledger"));
+    expect(out).not.toContain(COPY.propose.apply("forge-billing"));
+  });
+
+  it("the standing is a status a screen reader hears, in plain words", () => {
+    const out = html(view([paired(1, { drawn: false })], { applyPending: true }));
+    expect(out).toMatch(/<p role="status" class="ev-say">A person paired 1 call/);
+  });
+});
+
 describe("which boxes connect", () => {
   const node = (o: Partial<Api.HierNodeT>): Api.HierNodeT =>
     ({

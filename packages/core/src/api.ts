@@ -659,6 +659,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the answer. With or without `job`, a folder's repo a manifest lists already is told by its
  *   clone URL and not read (it is in `listed`, as before), and a folder that takes over a minute
  *   to read is in `skipped` with that reason. Additive only.
+ *   Also in 3.16.0 (ADR 0198, "it says it's paired, but I don't see the line"): GET
+ *   /api/links/candidates says of each `paired` call whether the map draws its arrow to this box
+ *   (`drawn`), and of the view whether A's corrections are newer than A's last Apply
+ *   (`applyPending`). Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
@@ -5344,6 +5348,11 @@ export const CandidateCallView = z.object({
   ]),
   why: z.string().optional(),
   paired: z.string().optional(),
+  /**
+   * 3.16 (ADR 0198): for `paired`, whether the map draws its arrow to this box: true once the
+   * catalog has it (the repo was applied since the pairing), false while it doesn't.
+   */
+  drawn: z.boolean().optional(),
   /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
   joins: z.string().optional(),
   /** 3.14: for `here`, the API of this box the call goes to now. */
@@ -5385,6 +5394,11 @@ export const LinkCandidatesView = z.object({
     .optional(),
   /** An open target question of A that one /** answer to B would close, with the calls it covers. */
   rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
+  /**
+   * 3.16 (ADR 0198): A's corrections file is newer than A's last Apply (as a proposal's
+   * `applyFirst` tells it): what a person paired or corrected since isn't on the map yet.
+   */
+  applyPending: z.boolean().optional(),
 });
 /** ADR 0178 part 2: Copilot matches A's loose calls with B's APIs; a person ticks the proposals. */
 export const MatchLinksRequest = z.object({ from: z.string().min(1), to: LinkBox });

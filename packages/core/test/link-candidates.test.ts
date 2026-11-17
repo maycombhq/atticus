@@ -304,6 +304,58 @@ describe("the candidates of two boxes", () => {
     });
   });
 
+  // Field report (beta.28.3): "it says it's already paired, but I don't see the line". A
+  // pairing is a line in the corrections file; the arrow is the catalog's, drawn by Apply. A
+  // paired call says whether the map draws it (`drawn`), once the catalog was read.
+  it("says of a call a person paired with this box whether the map draws its arrow yet", () => {
+    const pairs = {
+      "c-request-refund": {
+        repo: "forge-gw",
+        entry: "e-refunds-request",
+        method: "POST",
+        path: "/v2/refunds/request",
+        by: "pat",
+      },
+      "c-cancel-payment": {
+        repo: "forge-gw",
+        entry: "e-payments-cancel",
+        method: "POST",
+        path: "/v2/payments/cancel",
+        by: "pat",
+      },
+    };
+    const join = joinFacts({ repos, pairs: { "forge-refunds": pairs }, explain: true });
+    const base = {
+      from: "forge-refunds",
+      facts: refunds.facts,
+      join,
+      apis,
+      pairs,
+      to: { repo: "forge-gw" },
+    };
+    const of = (c: ReturnType<typeof linkCandidates>, id: string) =>
+      c.calls.find((x) => x.fact === id)!;
+    // The catalog not read: nothing is said either way.
+    expect("drawn" in of(linkCandidates(base), "c-request-refund")).toBe(false);
+    // The catalog has the arrow of one (its Interface cites the call's line, to this box), and
+    // nothing of the other: applied, and waiting for Apply.
+    const one = linkCandidates({
+      ...base,
+      drawn: (j) => j.call.fact === "c-request-refund",
+      drawnTo: (call) => (call === "c-request-refund" ? "forge-gw" : undefined),
+    });
+    expect(of(one, "c-request-refund")).toMatchObject({ status: "paired", drawn: true });
+    expect(of(one, "c-cancel-payment")).toMatchObject({ status: "paired", drawn: false });
+    // The catalog still draws the call's old arrow to another box: the pairing isn't drawn.
+    const old = linkCandidates({
+      ...base,
+      drawn: () => true,
+      drawnTo: (call) => (call === "c-request-refund" ? "forge-ledger" : undefined),
+    });
+    expect(of(old, "c-request-refund")).toMatchObject({ status: "paired", drawn: false });
+    expect(of(old, "c-cancel-payment")).toMatchObject({ status: "paired", drawn: true });
+  });
+
   it("reads a repo's pairings from its corrections, newest first, met by id or by what is cited", () => {
     const link = (at: string, path: string, fact = "c-request-refund"): FactCorrection => ({
       schemaVersion: 1,

@@ -9,6 +9,7 @@ import { RefusalLink } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
 import { MapIcon } from "./MapBar.js";
+import { pairedStanding } from "./paired-standing.js";
 import {
   addKeys,
   countsWords,
@@ -431,6 +432,18 @@ const candidatesPath = (from: string, to: Api.LinkBoxT) =>
     to.repo ? `to=${encodeURIComponent(to.repo)}` : `system=${encodeURIComponent(to.system!)}`
   }`;
 
+/**
+ * ADR 0198: why an add has no call to pair, in words that are true of each call: one going to
+ * the box by the code's own arrow was never "paired by a person", and a person's pairing says
+ * whether the map draws it yet.
+ */
+export function nothingLeftWords(v: Api.LinkCandidatesViewT, fromLabel: string): string {
+  const s = pairedStanding(v);
+  const here = v.calls.filter((c) => c.status === "here").length;
+  if (!here && !s.drawn && !s.waiting && !s.gone) return E.add.noCallsOnRecord(fromLabel);
+  return E.add.noCallsLeft(fromLabel, { here, drawn: s.drawn, waiting: s.waiting, gone: s.gone });
+}
+
 /** A repo's pairing with the box picked: its calls and the box's APIs read, then the rows. */
 function PairFields(p: {
   from: string;
@@ -499,7 +512,9 @@ function PairFields(p: {
   if (!p.rows.length)
     return (
       <p className="ev-say" role="status" style={{ margin: 0 }}>
-        {E.add.noCalls(p.fromLabel)}
+        {p.redirect
+          ? E.add.noCallsOnRecord(p.fromLabel)
+          : nothingLeftWords(cands.data, p.fromLabel)}
       </p>
     );
   return (

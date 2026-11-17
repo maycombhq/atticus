@@ -12,6 +12,8 @@ import {
   type Loaded,
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
+import { ApplyAndPropose } from "../../app/propose.js";
+import { pairedStanding } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { appStep, WrittenNext } from "../../app/app-step.js";
@@ -184,6 +186,47 @@ export function AiPairedBetween(p: { from: string; box: Api.LinkBoxT }) {
  */
 export function undoneWords(w: Pick<Api.ConnectLinksResultT, "rule">): string {
   return w.rule ? C.undoneRuleStays(w.rule.question, w.rule.target) : C.undone;
+}
+
+/**
+ * The paired calls' standing in plain words, each with what resolves it: where the arrow is,
+ * the Apply that draws it (offered right here), or the box it is paired with and how to undo.
+ * Nothing when no call is a person's pairing.
+ */
+export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
+  const v = p.view;
+  const s = pairedStanding(v);
+  const ahead = v.applyPending === true;
+  if (!s.drawn && !s.waiting && !s.gone && !s.elsewhere.length) return null;
+  return (
+    <div className="stack">
+      {s.drawn > 0 && s.waiting === 0 && (
+        <p role="status" className="ev-say">
+          {C.pairedOnMap(s.drawn, v.from, v.toName)}
+        </p>
+      )}
+      {s.waiting > 0 && (
+        <>
+          <p role="status" className="ev-say">
+            {s.drawn > 0
+              ? C.pairedMix(s.drawn, s.waiting, v.from, v.toName, ahead)
+              : C.pairedWaiting(s.waiting, v.from, v.toName, ahead)}
+          </p>
+          <ApplyAndPropose scope="corrections" repo={v.from} />
+        </>
+      )}
+      {s.gone > 0 && (
+        <p role="status" className="ev-say">
+          {C.pairedGone(s.gone, v.from, v.toName)}
+        </p>
+      )}
+      {s.elsewhere.length > 0 && (
+        <p role="status" className="ev-say">
+          {C.pairedElsewhere(s.elsewhere.length, linkedWords(s.elsewhere), v.from)}
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** The pairing table and its actions, from the candidates as loaded (tests render each state). */
@@ -418,7 +461,10 @@ export function Pairing(p: {
           </span>
         </label>
         {c.status === "undrawn" && c.joins ? (
-          <span className="box-why">{C.undrawnWhy(c.joins)}</span>
+          // ADR 0198: a person's pairing with that box, not applied yet, is said to be theirs.
+          <span className="box-why">
+            {c.pairedBy ? C.pairedUndrawn(c.pairedBy, c.joins) : C.undrawnWhy(c.joins)}
+          </span>
         ) : c.status === "outside" && c.joins && c.joins !== p.box.system ? (
           <span className="box-why">{C.outsideWhy(c.joins)}</span>
         ) : c.status === "joined" && c.joins ? (
@@ -520,9 +566,7 @@ export function Pairing(p: {
       {!d.noCalls && !loose.length && !movable.length && here.length > 0 && (
         <p className="ev-say">{C.allHere(d.toName)}</p>
       )}
-      {!d.noCalls && !loose.length && !movable.length && !here.length && d.calls.length > 0 && (
-        <p className="ev-say">{C.allPaired(d.toName)}</p>
-      )}
+      {!d.noCalls && <PairedStanding view={d} />}
       {loose.length > 0 && d.apis.length > 0 && (
         <>
           <p className="ev-say">{C.tally(tally.confident, tally.suggested, tally.none)}</p>

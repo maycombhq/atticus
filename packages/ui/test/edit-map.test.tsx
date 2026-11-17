@@ -28,6 +28,7 @@ import {
   PairRowsView,
   EditMapToggle,
   EditMapView,
+  nothingLeftWords,
   reReadAsk,
   StageLinkView,
   type ApplyState,
@@ -981,8 +982,61 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
         <MoveCallsView fromLabel="a" toName="b" rows={[]} apis={[]} open={false} onPick={noop} />,
       ),
     ).toBe("");
-    // Said only when no call is left at all: each is paired by a person.
-    expect(E.add.noCalls("forge_instruments_1-0")).toContain("paired by a person");
+  });
+
+  // Field report (beta.28.3, ADR 0198): "has no call left to pair with this box: each is paired
+  // by a person already" was said of calls nobody paired (they go there by the code's own
+  // arrow) and of pairings the map doesn't draw yet. What is said is what each call is.
+  it("says why no call is left to pair, by what each call is", () => {
+    const of = (
+      calls: Partial<Api.CandidateCallViewT>[],
+      o: Partial<Api.LinkCandidatesViewT> = {},
+    ): Api.LinkCandidatesViewT => ({
+      from: "forge-billing",
+      to: { repo: "forge-ledger" },
+      toName: "forge-ledger",
+      calls: calls.map((c, i) => ({
+        fact: `call.${i}`,
+        callType: "rest",
+        path: `/entries/${i}`,
+        at: `src/LedgerClient.java:${i + 1}`,
+        status: "paired",
+        ...c,
+      })),
+      apis: [{ id: "e-entries", kind: "entry", path: "/entries/{id}" }],
+      ...o,
+    });
+    // Nobody paired these: the code's own arrows go there.
+    const here = nothingLeftWords(of([{ status: "here" }, { status: "here" }]), "forge-billing");
+    expect(here).toBe(
+      "forge-billing has no call left to pair with this box: 2 go to it already, with an arrow read from the code.",
+    );
+    expect(here).not.toContain("paired by a person");
+    // A person's pairings, on the map.
+    expect(nothingLeftWords(of([{ paired: "e-entries", drawn: true }]), "forge-billing")).toBe(
+      "forge-billing has no call left to pair with this box: 1 is paired with it by a person and on the map. To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // A person's pairings the map doesn't draw yet: said, with the Apply that draws them.
+    expect(
+      nothingLeftWords(
+        of(
+          [
+            { paired: "e-entries", drawn: false },
+            { paired: "e-entries", drawn: false },
+            { status: "here" },
+          ],
+          { applyPending: true },
+        ),
+        "forge-billing",
+      ),
+    ).toBe(
+      "forge-billing has no call left to pair with this box: 1 goes to it already, with an arrow read from the code and 2 are paired with it by a person and not on the map yet (Apply forge-billing from Corrections to apply, at the top of the map, to draw them). To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // No call of a kind that is paired at all.
+    expect(nothingLeftWords(of([]), "forge-billing")).toBe(E.add.noCallsOnRecord("forge-billing"));
+    expect(E.add.noCallsOnRecord("forge-billing")).toBe(
+      "forge-billing has no REST, SOAP, gRPC or GraphQL call on record, so there is nothing to pair with this box.",
+    );
   });
 
   it("names every call's API field, and a box with no repo can't be redirected by pairing", () => {

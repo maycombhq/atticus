@@ -1,4 +1,4 @@
-import { access, mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
@@ -17,6 +17,8 @@ import {
   loadOrgPack,
   orgPackDirOf,
   QuestionError,
+  SPEC_HEADER_FILE,
+  specDirOf,
   TARGETS_STEP_ID,
   withSharedFileLock,
   writeFileAtomic,
@@ -370,7 +372,7 @@ async function candidatesIn(
 ) {
   const drawn = await drawnOf(root, from, c.facts, s);
   const inBox = inBoxOf(c.op, to);
-  return linkCandidates({
+  const cands = linkCandidates({
     from,
     facts: c.facts,
     // Asked with the join (context's default).
@@ -382,6 +384,32 @@ async function candidatesIn(
     ...(drawn ? { drawn: drawn.join, drawnOutside: drawn.outside, drawnTo: drawn.to } : {}),
     inBox,
   });
+  if (drawn) return cands;
+  // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0198).
+  return {
+    ...cands,
+    calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
+  };
+}
+
+/**
+ * ADR 0198: whether a repo's corrections file is newer than the repo's last Apply, told as a
+ * proposal's `applyFirst` tells it (ui-api.ts): Apply rewrites the repo's spec header each time
+ * it writes the map; a repo with no header yet goes by its verify.yaml. False with no
+ * corrections file.
+ */
+export async function correctionsAheadOf(root: string, repo: string): Promise<boolean> {
+  const mtime = (p: string) =>
+    stat(p).then(
+      (x) => x.mtimeMs,
+      () => undefined,
+    );
+  const saved = await mtime(join(factsDirOf(root), `${repo}.corrections.jsonl`));
+  if (saved === undefined) return false;
+  const applied =
+    (await mtime(join(specDirOf(root, repo), SPEC_HEADER_FILE))) ??
+    (await mtime(join(factsDirOf(root), `${repo}.verify.yaml`)));
+  return applied === undefined || saved > applied;
 }
 
 /** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
@@ -411,6 +439,7 @@ export async function candidatesOf(
         : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
     ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
     ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
+    ...((await correctionsAheadOf(root, from)) ? { applyPending: true } : {}),
   };
   return { view, facts: c.facts };
 }

@@ -60,6 +60,13 @@ export interface CandidateCall {
   /** For paired: the API it is paired with. */
   paired?: string;
   /**
+   * For paired (the field report of beta.28.3, "it says it's paired, but I don't see the line"):
+   * whether the map draws its arrow to this box. A pairing is a line in the corrections file;
+   * the arrow is the catalog's, drawn by the repo's next Apply. Left out when the caller read no
+   * catalog (`drawn` and `drawnTo` not given).
+   */
+  drawn?: boolean;
+  /**
    * Beta.28.1: the box the join ties it to now (a repo, or an outside target), for a call that
    * is joined, undrawn or outside: where it goes, or would go, before it is moved.
    */
@@ -318,7 +325,23 @@ export function linkCandidates(o: {
             normalizePath(x.path) === normalizePath(p.path) &&
             (!p.method || !x.method || x.method.toUpperCase() === p.method.toUpperCase()),
         );
-      calls.push({ ...base, status: "paired", ...(api ? { paired: api.id } : {}) });
+      // Whether the map draws it: the catalog's Interface citing the call's line goes to this
+      // box (an old arrow to another box is not this pairing's), else the join's own Interface
+      // is in the catalog and goes here.
+      const tied = joined.get(f.id);
+      const box = o.drawnTo?.(f.id);
+      const drawn =
+        o.drawn === undefined && o.drawnTo === undefined
+          ? undefined
+          : box !== undefined
+            ? isHere(box)
+            : !!tied && tied.drawn && isHere(tied.to);
+      calls.push({
+        ...base,
+        status: "paired",
+        ...(api ? { paired: api.id } : {}),
+        ...(drawn !== undefined ? { drawn } : {}),
+      });
       continue;
     }
     // Beta.28.1 (field report 4): no call is hidden. One the join ties to something is listed

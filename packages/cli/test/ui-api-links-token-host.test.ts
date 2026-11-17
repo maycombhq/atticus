@@ -119,12 +119,21 @@ describe("Connect to… from a proxy whose target host is a token (field report 
     });
     expect(w.status, JSON.stringify(w.body)).toBe(200);
     expect(Api.ConnectLinksResult.parse(w.body).lines.length).toBe(4);
+    // Field report (beta.28.3): "it says it's already paired, but I don't see the line". The
+    // pairings are in the corrections file and the catalog has no arrow of them yet: each call
+    // says so (`drawn: false`), and the view that the repo's corrections wait for its Apply.
+    const waiting = await candidates(`to=${SERVICE}`);
+    expect(waiting.calls.map((c) => [c.status, c.drawn])).toEqual(Array(4).fill(["paired", false]));
+    expect(waiting.applyPending).toBe(true);
     await verify(PROXY);
     const drawn = (await interfaces()).filter((i) => i.from === "instruments-proxy");
     expect(drawn.map((i) => i.to)).toEqual(Array(4).fill(SERVICE));
     for (const i of drawn) expect(i.flags).toContain("joined-by-person");
     const after = await candidates(`to=${SERVICE}`);
     expect(after.calls.map((c) => c.status)).toEqual(Array(4).fill("paired"));
+    // Applied: the map draws each, and nothing waits.
+    expect(after.calls.map((c) => c.drawn)).toEqual(Array(4).fill(true));
+    expect(after.applyPending).toBeUndefined();
   });
 
   it("lists a call with an arrow as movable from another box, never hidden", async () => {

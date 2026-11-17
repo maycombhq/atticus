@@ -20,6 +20,13 @@ const CANARY_WHAT: Record<string, string> = {
   config: "a config key",
 };
 
+/** ADR 0198: how a pairing is undone, and what the Apply offered under a pairing does. */
+const COPY_UNDO = (from: string) =>
+  `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
+const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
+const APPLY_AGAIN = (from: string) =>
+  `that Apply may have been stopped or refused before it wrote the map, or the link was deleted on the map. Apply to ${from}'s map, below, runs it again and says what it leaves out.`;
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -5483,8 +5490,37 @@ export const COPY = {
       calls: (from: string) => `${from}'s calls, each with the API it goes to`,
       callApi: (call: string) => `The API ${call} goes to`,
       notPaired: "Not this call",
-      noCalls: (from: string) =>
-        `${from} has no call left to pair with this box: each is paired by a person already. Undo one from its line in the corrections to pair it again.`,
+      /**
+       * ADR 0198: why no call is left to pair, by what each call is: going there already by the
+       * code's own arrow (nobody paired it), paired by a person and on the map, paired and not
+       * on the map yet (the repo's next Apply draws it), or paired with an API the box lost.
+       */
+      noCallsLeft: (
+        from: string,
+        n: { here: number; drawn: number; waiting: number; gone: number },
+      ) => {
+        const are = (k: number) => (k === 1 ? "1 is" : `${k} are`);
+        const parts = [
+          ...(n.here
+            ? [
+                `${n.here === 1 ? "1 goes" : `${n.here} go`} to it already, with an arrow read from the code`,
+              ]
+            : []),
+          ...(n.drawn ? [`${are(n.drawn)} paired with it by a person and on the map`] : []),
+          ...(n.waiting
+            ? [
+                `${are(n.waiting)} paired with it by a person and not on the map yet (Apply ${from} from Corrections to apply, at the top of the map, to draw ${n.waiting === 1 ? "it" : "them"})`,
+              ]
+            : []),
+          ...(n.gone
+            ? [`${are(n.gone)} paired by a person with an API it no longer has on record`]
+            : []),
+        ];
+        const person = n.drawn + n.waiting + n.gone > 0;
+        return `${from} has no call left to pair with this box: ${listWords(parts)}.${person ? ` To pair one again, first undo it: ${COPY_UNDO(from)}.` : ""}`;
+      },
+      noCallsOnRecord: (from: string) =>
+        `${from} has no REST, SOAP, gRPC or GraphQL call on record, so there is nothing to pair with this box.`,
       /** Beta.28.1 (field report 4): the calls with an arrow already, to move to this box. */
       moveTitle: (n: number) =>
         n === 1
@@ -5789,8 +5825,44 @@ export const COPY = {
      */
     noLoose: (where: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
-    allPaired: (to: string) =>
-      `Every call of this repo is paired with ${to} by a person already: undo one from its line in the corrections to pair it again.`,
+    /**
+     * ADR 0198 (field report, beta.28.3: "it says it's already paired, but I don't see the
+     * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's
+     * corrections; the arrow is drawn by the repo's next Apply. Each standing is said as it is,
+     * with what resolves it.
+     */
+    /** How a person undoes a pairing: the box's own list of corrections. */
+    undoHow: (from: string) => COPY_UNDO(from),
+    /** Paired with this box, and the catalog has the arrow. */
+    pairedOnMap: (n: number, from: string, to: string) =>
+      `A person paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, and the map draws ${n === 1 ? "it" : "them"}: the arrow from ${from} to ${to} on the Estate map (pick the arrow to see its calls). To pair one again, first undo it: ${COPY_UNDO(from)}.`,
+    /**
+     * Paired with this box, and the catalog has no arrow for it. `ahead`: the corrections are
+     * newer than the repo's last Apply (it only waits); else an Apply ran since and the map
+     * still has none, and why can't be told from here.
+     */
+    pairedWaiting: (n: number, from: string, to: string, ahead: boolean) =>
+      `A person paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, ${
+        ahead
+          ? `but the map doesn't draw ${n === 1 ? "it" : "them"} yet: the pairing${n === 1 ? " is" : "s are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, "the arrow")}`
+          : `but the map draws no arrow for ${n === 1 ? "it" : "them"}, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
+      }`,
+    /** Some drawn, some not. */
+    pairedMix: (drawn: number, waiting: number, from: string, to: string, ahead: boolean) =>
+      `A person paired ${drawn + waiting} calls of ${from} with ${to}: the map draws ${drawn} (the arrow from ${from} to ${to} on the Estate map), and ${waiting} ${waiting === 1 ? "isn't" : "aren't"} drawn yet${
+        ahead
+          ? `: ${waiting === 1 ? "it is" : "they are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, waiting === 1 ? "it" : "them")}`
+          : `, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
+      }`,
+    /** Paired with this box, to an API the box no longer has on record: no Apply draws it. */
+    pairedGone: (n: number, from: string, to: string) =>
+      `A person paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with an API ${to} no longer has on record, so no arrow can be drawn for ${n === 1 ? "it" : "them"}. Undo the pairing (${COPY_UNDO(from)}), then pair the call again here.`,
+    /** Paired by a person with another box (or boxes): `where` names each with how many. */
+    pairedElsewhere: (n: number, where: string, from: string) =>
+      `A person paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with another box: ${where}. ${n === 1 ? "It is" : "Each is"} listed below with who paired it; pairing ${n === 1 ? "it" : "one"} here replaces their word. To free ${n === 1 ? "it" : "one"} without pairing it here, undo it: ${COPY_UNDO(from)}.`,
+    /** A row: a person's pairing with another box that the map doesn't draw yet. */
+    pairedUndrawn: (by: string, box: string) =>
+      `paired by a person (${by}) with ${box}, and not on the map yet (the repo's next Apply draws it): pairing it here replaces their word`,
     /** One box the calls go to now, and how many: `forge-ledger (3)`. */
     linkedTo: (box: string, n: number) => `${box} (${n})`,
     /** The calls that have an arrow elsewhere, to move to this box. */

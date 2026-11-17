@@ -40625,6 +40625,9 @@
                 "paired": {
                   "type": "string"
                 },
+                "drawn": {
+                  "type": "boolean"
+                },
                 "joins": {
                   "type": "string"
                 },
@@ -40806,6 +40809,9 @@
               "calls"
             ],
             "additionalProperties": false
+          },
+          "applyPending": {
+            "type": "boolean"
           }
         },
         "required": [
