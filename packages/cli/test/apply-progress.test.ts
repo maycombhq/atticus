@@ -82,14 +82,14 @@ afterEach(() => {
 });
 
 /**
- * The build's lines: each pass, then each stage inside it (beta.28.4), but for the federated
- * catalogs this metarepo has none of.
+ * The build's lines: each pass, then each stage inside it that runs (beta.28.4): this metarepo
+ * has no federated catalog and no shared map, so neither stage is said.
  */
 const passLines = () =>
   BUILD_PASSES.flatMap((what, i) => [
     `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length} (${what})`,
     ...(BUILD_STAGES[i + 1] ?? [])
-      .filter((stage) => stage !== "federated catalogs")
+      .filter((stage) => stage !== "federated catalogs" && stage !== "shared maps")
       .map((stage) => `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length}, ${stage}`),
   ]);
 

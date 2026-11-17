@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CancelledError, withCommit } from "@maycombhq/core";
-import { durationWords, writeProgress } from "../src/write-progress.js";
+import { CancelledError, withCommit, withSignal } from "@maycombhq/core";
+import {
+  buildPassBrief,
+  buildPassLine,
+  buildStageLine,
+  catalogBuildProgress,
+  durationWords,
+  writeProgress,
+} from "../src/write-progress.js";
 
 /**
  * Beta.28.1 ("nothing slow runs silently", the owner's field report 1): Apply's write stage said
@@ -67,10 +74,11 @@ describe("writeProgress", () => {
     await p.step("Loading the catalog");
     vi.advanceTimersByTime(18_000);
     await p.step(
-      "Building the catalog: pass 3 of 8 (the merge, intake, features and the glossary)",
+      buildPassLine(3, 8, "the merge, intake, features and the glossary"),
+      buildPassBrief(3),
     );
     vi.advanceTimersByTime(1_000);
-    await p.step("Building the catalog: pass 3 of 8, the glossary");
+    await p.step(buildStageLine(3, 8, "the glossary"), buildPassBrief(3, "the glossary"));
     vi.advanceTimersByTime(583_000);
     await p.step("Writing contracts");
     vi.advanceTimersByTime(400);
@@ -78,7 +86,7 @@ describe("writeProgress", () => {
     vi.advanceTimersByTime(4_000);
     p.end({ done: true });
     expect(lines.slice(-2)).toEqual([
-      "The slowest steps: building the catalog: pass 3 of 8, the glossary (9 min 43 s); loading the catalog (18 s); rendering the map (4 s).",
+      "The slowest steps: the glossary, in pass 3 of the build (9 min 43 s); loading the catalog (18 s); rendering the map (4 s).",
       "The write took 10 min 6 s.",
     ]);
     // Work that didn't finish says them too (a Stop, a refusal): where the time went so far.
@@ -116,6 +124,20 @@ describe("writeProgress", () => {
     expect(twice.slice(-2)).toEqual([
       "The slowest steps: reading the build's inputs (35 s).",
       "The build took 35 s.",
+    ]);
+    // A pass with no stage of its own is named as the build's pass.
+    const pass: string[] = [];
+    const b = writeProgress((l) => pass.push(l), {
+      yieldNow: noYield,
+      quietMs: 0,
+      heartbeatMs: 0,
+    });
+    await b.step(buildPassLine(5, 8, "the legacy records"), buildPassBrief(5));
+    vi.advanceTimersByTime(40_000);
+    b.end();
+    expect(pass).toEqual([
+      "Building the catalog: pass 5 of 8 (the legacy records)… (0 s in)",
+      "The slowest steps: pass 5 of the build (40 s).",
     ]);
     const quick: string[] = [];
     const k = writeProgress((l) => quick.push(l), { yieldNow: noYield, quietMs: 0, title: "It" });
@@ -288,5 +310,31 @@ describe("writeProgress", () => {
       },
     );
     expect(told).toBe(1);
+  });
+
+  it("atticus catalog build's progress hears Stop inside the build's passes too (tick), until the write", async () => {
+    // Beta.28.4: the build was given onPass and onStage, but nothing to give way at.
+    vi.useRealTimers();
+    const ctl = new AbortController();
+    await withSignal(ctl.signal, async () => {
+      const lines: string[] = [];
+      const { progress, hooks } = catalogBuildProgress({ err: (l) => lines.push(l) });
+      await hooks.onStep({ step: "build" });
+      await hooks.onPass(3, 8, "the merge, intake, features and the glossary");
+      await hooks.onStage(3, 8, "the merge, intake, features and the glossary", "the glossary");
+      await hooks.tick();
+      ctl.abort();
+      await expect(hooks.tick()).rejects.toBeInstanceOf(CancelledError);
+      progress.end();
+    });
+    // Once the catalog is being written, a tick no longer stops anything.
+    const late = new AbortController();
+    await withSignal(late.signal, async () => {
+      const { progress, hooks } = catalogBuildProgress({ err: () => undefined });
+      await hooks.onStep({ step: "write", files: 3 });
+      late.abort();
+      await hooks.tick();
+      progress.end();
+    });
   });
 });

@@ -167,7 +167,8 @@ describe("the build says its passes and steps (beta.28.1)", () => {
           "the features",
           "the glossary",
         ]);
-        expect(of(4)).toEqual(["link evidence", "shared maps"]);
+        // A stage is said only when it runs: no shared map is on file here.
+        expect(of(4)).toEqual(["link evidence"]);
         expect(of(8)).toEqual(["the record files", "build.json"]);
         // Each is one of the stages the build lists for its pass.
         for (const [n, , , stage] of heard) expect(BUILD_STAGES[n]).toContain(stage);
@@ -217,7 +218,7 @@ describe("the build says its passes and steps (beta.28.1)", () => {
           },
         });
         expect(ticks.get(3)).toBeGreaterThanOrEqual(5);
-        expect(ticks.get(4)).toBeGreaterThanOrEqual(2);
+        expect(ticks.get(4)).toBeGreaterThanOrEqual(1);
         // The legacy records (pass 5) give way as they are read.
         expect(ticks.get(5)).toBeGreaterThan(0);
         expect(ticks.get(8)).toBeGreaterThan(withTicks.files.size);
@@ -238,6 +239,66 @@ describe("the build says its passes and steps (beta.28.1)", () => {
       } finally {
         delete buildTickHooks.everyMs;
         buildCacheHooks.off = false;
+      }
+    },
+    T,
+  );
+
+  it(
+    "buildAndWrite gives way inside its build too (tick), and a Stop there writes nothing, with the build cache on",
+    async () => {
+      // Beta.28.4: `atticus catalog build` heard Stop only between passes. The build cache is
+      // on, as a person's build has it: a build stopped part way keeps nothing of itself.
+      const root = await forge();
+      const stop = new Error("stopped");
+      buildTickHooks.everyMs = 0;
+      try {
+        const passes: number[] = [];
+        const steps: string[] = [];
+        await expect(
+          buildAndWrite(root, {
+            command: "atticus catalog build",
+            onStep: (s) => void steps.push(s.step),
+            onPass: (n) => void passes.push(n),
+            tick: () => (passes.at(-1) === 5 ? Promise.reject(stop) : Promise.resolve()),
+          }),
+        ).rejects.toBe(stop);
+        // Stopped among the legacy records: pass 6 never started, and no step after the build.
+        expect(passes).toEqual([1, 2, 3, 4, 5]);
+        expect(steps).toEqual(["build"]);
+        await expect(readdir(join(root, "catalog/generated"))).rejects.toThrow();
+        // The next build runs every pass (nothing was kept of the stopped one) and writes what
+        // a build that was never stopped writes.
+        const again: number[] = [];
+        let ticks = 0;
+        const r = await buildAndWrite(root, {
+          command: "atticus catalog build",
+          onPass: (n) => void again.push(n),
+          tick: async () => {
+            ticks++;
+          },
+        });
+        expect(again).toEqual(BUILD_PASSES.map((_, i) => i + 1));
+        expect(ticks).toBeGreaterThan(0);
+        expect(r.guard.refused).toBeUndefined();
+        const other = await forge();
+        delete buildTickHooks.everyMs;
+        const plain = await buildAndWrite(other, { command: "atticus catalog build" });
+        expect([...r.build.files]).toEqual([...plain.build.files]);
+        // A build of the same inputs is then the one kept, whole: no pass runs, nothing to stop.
+        // (The first write changed a slot the build reads, the legacy joins: built until
+        // nothing changes first.)
+        for (let n = 0, w = r.write; n < 3 && w && (w.written || w.slots.length); n++)
+          w = (await buildAndWrite(root, { command: "atticus catalog build" })).write;
+        const third: number[] = [];
+        await buildAndWrite(root, {
+          command: "atticus catalog build",
+          onPass: (n) => void third.push(n),
+          tick: () => Promise.reject(stop),
+        });
+        expect(third).toEqual([]);
+      } finally {
+        delete buildTickHooks.everyMs;
       }
     },
     T,

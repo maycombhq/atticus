@@ -109,7 +109,7 @@ import {
 } from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
 import { writeRepoSpecs } from "./contract-check-files.js";
-import { buildPassLine, buildStageLine, writeProgress } from "./write-progress.js";
+import { buildPassBrief, buildPassLine, buildStageLine, writeProgress } from "./write-progress.js";
 
 /**
  * The map (ADR 0124, A3b): a repo's verified facts written into the catalog everything
@@ -518,7 +518,7 @@ export async function projectFactsIntoCatalog(
      * comparison), and awaited: the write's and the preview's progress (`writeProgress`), which
      * may stop the work there. It only listens.
      */
-    step?: (what: string) => Promise<void>;
+    step?: (what: string, brief?: string) => Promise<void>;
     /**
      * Beta.28.1 (the review): awaited where a long pass gives way (each repo projected, inside the
      * estate join): the heartbeat and the lines get out there, and a Stop may throw. It only
@@ -566,9 +566,10 @@ export async function projectFactsIntoCatalog(
     {
       ...(given.step
         ? {
-            onPass: (n, of, what) => step(buildPassLine(n, of, what)),
+            onPass: (n, of, what) => step(buildPassLine(n, of, what), buildPassBrief(n)),
             // Beta.28.4: each stage inside a pass too, so the last line names what is running.
-            onStage: (n, of, _what, stage) => step(buildStageLine(n, of, stage)),
+            onStage: (n, of, _what, stage) =>
+              step(buildStageLine(n, of, stage), buildPassBrief(n, stage)),
           }
         : {}),
       ...(given.tick ? { tick: given.tick } : {}),
@@ -741,7 +742,7 @@ export async function writeFactsIntoCatalog(
       contracts,
       commit: snapshotCommit,
       ...(o.readComplete ? { readComplete: true } : {}),
-      step: (what) => progress.step(what),
+      step: (what, brief) => progress.step(what, brief),
       tick: () => progress.tick(),
     });
     mark("projection");

@@ -23,8 +23,12 @@ import { CancelledError, commitCurrent, currentSignal } from "@maycombhq/core";
  */
 
 export interface WriteProgress {
-  /** Start a step: ends the one before, says this one, and stops here when Stop was asked. */
-  step(what: string): Promise<void>;
+  /**
+   * Start a step: ends the one before, says this one, and stops here when Stop was asked.
+   * `brief` is what the end's line of the slowest steps calls it, when the step's own words
+   * don't read well in a list (a build's pass).
+   */
+  step(what: string, brief?: string): Promise<void>;
   /** A plain line (a count a step found). */
   say(line: string): void;
   /**
@@ -104,11 +108,11 @@ export function writeProgress(
   const every = o.heartbeatMs ?? writeProgressHooks.heartbeatMs ?? 30_000;
   const yieldNow = o.yieldNow ?? macrotask;
   const began = Date.now();
-  let current: { what: string; at: number } | undefined;
+  let current: { what: string; at: number; brief?: string } | undefined;
   /** Each step that ended, with the time it took. */
   const took: { what: string; ms: number }[] = [];
   const close = (now: number) => {
-    if (current) took.push({ what: current.what, ms: now - current.at });
+    if (current) took.push({ what: current.brief ?? current.what, ms: now - current.at });
   };
   let beat: ReturnType<typeof setInterval> | undefined;
   let committed = false;
@@ -143,7 +147,7 @@ export function writeProgress(
     beat = undefined;
   };
   return {
-    async step(what) {
+    async step(what, brief) {
       if (o.signal?.aborted) {
         if (!committed) {
           stopBeat();
@@ -160,7 +164,7 @@ export function writeProgress(
       stopBeat();
       const now = Date.now();
       close(now);
-      current = { what, at: now };
+      current = { what, at: now, ...(brief ? { brief } : {}) };
       if (!loud && now - began >= quiet) {
         if (quietTimer !== undefined) clearTimeout(quietTimer);
         quietTimer = undefined;
@@ -218,6 +222,13 @@ export const buildStageLine = (n: number, of: number, stage: string) =>
   `Building the catalog: pass ${n} of ${of}, ${stage}`;
 
 /**
+ * What the line of the slowest steps calls a build's pass or a stage of it: "the glossary, in
+ * pass 3 of the build", "pass 5 of the build" (the step's own line has a colon and brackets).
+ */
+export const buildPassBrief = (n: number, stage?: string) =>
+  stage ? `${stage}, in pass ${n} of the build` : `pass ${n} of the build`;
+
+/**
  * Beta.28.1 (field hunt G2): `atticus catalog build` (and the app's builds that run it: Catalog
  * builds' confirm, Edit the map's "Building the catalog once") says its steps as verify --write
  * does: the build's inputs read, each pass, the check of the files on disk, the guards, and the
@@ -233,6 +244,7 @@ export function catalogBuildProgress(io: {
     onStep: (s: { step: "build" | "check" | "guard" | "write"; files?: number }) => Promise<void>;
     onPass: (n: number, of: number, what: string) => Promise<void>;
     onStage: (n: number, of: number, what: string, stage: string) => Promise<void>;
+    tick: () => Promise<void>;
   };
 } {
   const signal = currentSignal();
@@ -257,8 +269,11 @@ export function catalogBuildProgress(io: {
           progress.commit();
         }
       },
-      onPass: (n, of, what) => progress.step(buildPassLine(n, of, what)),
-      onStage: (n, of, _what, stage) => progress.step(buildStageLine(n, of, stage)),
+      onPass: (n, of, what) => progress.step(buildPassLine(n, of, what), buildPassBrief(n)),
+      onStage: (n, of, _what, stage) =>
+        progress.step(buildStageLine(n, of, stage), buildPassBrief(n, stage)),
+      // Beta.28.4: Stop is heard where the build gives way too, until the write.
+      tick: () => progress.tick(),
     },
   };
 }

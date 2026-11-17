@@ -202,7 +202,7 @@ export async function verifyWritePreview(
      * Beta.28.1: told each step as it starts (the check of the facts, the build pass by pass),
      * and awaited: a job's progress, which may stop the preview there. It only listens.
      */
-    step?: (what: string) => Promise<void>;
+    step?: (what: string, brief?: string) => Promise<void>;
     /** Beta.28.1 (the review): awaited inside the build's long passes (a Stop may throw). */
     tick?: () => Promise<void>;
   } = {},

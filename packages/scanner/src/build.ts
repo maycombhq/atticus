@@ -890,7 +890,8 @@ export const BUILD_PASSES = [
  * Beta.28.4 (the owner's field report: a write sat in pass 3 for minutes with no line said): the
  * stages inside the passes that have more than one, by pass (1-based), as `onStage` names them.
  * A stage is one computation; the line said as it starts names what is running until the next.
- * "federated catalogs" is said only by a build that has some.
+ * A stage is said only by a build that runs it: "federated catalogs" with some, "link evidence"
+ * with a repo read from facts, "shared maps" with a shared map on file.
  */
 export const BUILD_STAGES: Readonly<Record<number, readonly string[]>> = {
   3: [
@@ -1176,8 +1177,8 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   await pass(4);
   let linkEvidence: LinkEvidenceResult | undefined;
   let shared: SharedJoinResult | undefined;
-  await stage("link evidence");
   if (projection) {
+    await stage("link evidence");
     linkEvidence = linkEvidenceOf({
       join: projection.whole,
       repos: projection.repos,
@@ -1185,9 +1186,8 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       traffic: i.traffic,
     });
     records = applyLinkEvidence(records, linkEvidence.marks);
-  }
-  await stage("shared maps");
-  if (projection) {
+    // Said only when there is a shared map to join (none: their marks are only taken off).
+    if (i.shared.maps.length) await stage("shared maps");
     const systems = outsideProfileSystemsOf(op);
     shared = i.shared.maps.length
       ? joinSharedMaps({
@@ -3532,6 +3532,12 @@ export async function buildAndWrite(
     /** Beta.28.4: the build's own too (BuildProgress): each stage inside a pass. */
     onStage?: BuildProgress["onStage"];
     /**
+     * Beta.28.4: the build's own too: awaited where the build gives way (inside its long passes
+     * and at each stage), so a Stop is heard there. Only the build awaits it, and the build
+     * writes nothing: nothing of this function's is written before the `write` step.
+     */
+    tick?: BuildProgress["tick"];
+    /**
      * The target's records as the caller read them under its lock (`readCatalogWithFiles`): the
      * guards use them, and the result's `catalog` is worked out from them, where every file
      * still has the size and time that read found (beta.28.1: one read of the catalog a write).
@@ -3560,6 +3566,7 @@ export async function buildAndWrite(
       {
         ...(o.onPass ? { onPass: o.onPass } : {}),
         ...(o.onStage ? { onStage: o.onStage } : {}),
+        ...(o.tick ? { tick: o.tick } : {}),
       },
     ));
   // The target's record files and build.json, read once for the guards, the report and the
