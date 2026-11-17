@@ -145,7 +145,7 @@ export const contractsPathWhen = (o: { ready: boolean; drawn: boolean }): string
 export function revealOf(o: {
   adding: boolean;
   connecting: { from: string } | undefined;
-  declaring: { system: string } | undefined;
+  declaring: { system: string; target?: string } | undefined;
   owning: string | undefined;
   pickedLink: { id: string } | undefined;
   pickedBox: string | undefined;
@@ -157,7 +157,8 @@ export function revealOf(o: {
     o.editing ? "edit" : "",
     o.pickedBox ? `box:${o.pickedBox}` : "",
     o.connecting?.from ?? "",
-    o.declaring?.system ?? "",
+    // ADR 0200: a line drawn from the same system to another repo opens the details again.
+    o.declaring ? `${o.declaring.system}${o.declaring.target ? `>${o.declaring.target}` : ""}` : "",
     o.owning ?? "",
     o.pickedLink?.id ?? "",
   ]
@@ -228,7 +229,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // G2 (ADR 0174): setting a repo's owner and system.
   const [owning, setOwning] = useState<string | undefined>();
   // G3 (ADR 0174): declaring a system's link, and adding to the picture.
-  const [declaring, setDeclaring] = useState<{ system: string; label: string } | undefined>();
+  // ADR 0200: `target`, the repo a line drawn from the system ended on.
+  const [declaring, setDeclaring] = useState<
+    { system: string; label: string; target?: string } | undefined
+  >();
   const [adding, setAdding] = useState(false);
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
@@ -998,7 +1002,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     const c = connectDrawn(find(a), find(b));
                     // Said, not silently dropped: why a line connects nothing.
                     if ("say" in c) return flash({ text: c.say });
-                    setConnecting(c);
+                    // ADR 0200: from an outside system, Declare a link, the ends as drawn. One
+                    // panel for the line: the other kind, open for another line, closes.
+                    if ("declare" in c) {
+                      setConnecting(undefined);
+                      setDeclaring(c.declare);
+                    } else {
+                      setDeclaring(undefined);
+                      setConnecting(c);
+                    }
                   }}
                   aside={
                     // Beta.28: results here are one line and one button; the rest full width.
@@ -1150,9 +1162,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         )}
                         {declaring && (
                           <DeclarePanel
-                            key={declaring.system}
+                            key={`${declaring.system}>${declaring.target ?? ""}`}
                             system={declaring.system}
                             label={declaring.label}
+                            {...(declaring.target ? { target: declaring.target } : {})}
                             onClose={() => setDeclaring(undefined)}
                           />
                         )}
@@ -1265,26 +1278,46 @@ const choiceOf = (n: Api.HierNodeT, b: Api.LinkBoxT): BoxChoice =>
     ? { label: `${WORDS.kindWord.repo}: ${b.repo}`, box: b }
     : { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b };
 
+/** What a line drawn on the canvas opens: Connect, Declare a link, or words for why neither. */
+export type DrawnLine =
+  | { from: string; initial: BoxChoice }
+  | { declare: { system: string; label: string; target: string } }
+  | { say: string };
+
 /**
- * G1 (ADR 0174): what a line drawn on the canvas from box `a` to box `b` opens, or what to say
- * when it connects nothing. A line is drawn from a repo (or its component, or a system holding
- * one repo) to another box; drawn the other way round from an outside system, the ends swap; a
- * system with several repos at either end, two outside systems, or one repo to itself, said.
+ * G1 (ADR 0174), ADR 0200: what a line drawn on the canvas from box `a` to box `b` opens. The
+ * box the line starts on is the caller, always: what a person drew is never turned round.
+ *
+ * - From a repo (or its component, or a system holding one repo) to another box: Connect, the
+ *   repo's calls paired with the other box's APIs.
+ * - From an outside system (no code in the estate, so no call to pair) to a repo: Declare a
+ *   link, the system as the caller and the repo's gateway routes to pick from.
+ * - A system with several repos or none at either end, two outside systems, one repo to itself,
+ *   or a box that is none of these: said, by name, with what to do.
  */
 export function connectDrawn(
   a: Api.HierNodeT | undefined,
   b: Api.HierNodeT | undefined,
-): { from: string; initial: BoxChoice } | { say: string } {
-  let from = drawnBoxOf(a);
-  let to = drawnBoxOf(b);
-  let toNode = b;
-  if (from?.system && to?.repo) {
-    [from, to] = [to, from];
-    toNode = a;
+): DrawnLine {
+  const C = COPY.connect;
+  const from = drawnBoxOf(a);
+  const to = drawnBoxOf(b);
+  // An end that is no one box: a system of the estate with several repos, or with none.
+  for (const n of [a, b]) {
+    if (!n || drawnBoxOf(n) || !boxOf(n)?.system) continue;
+    const repos = n.properties.repos;
+    return {
+      say:
+        Array.isArray(repos) && repos.length > 1 ? C.dropSeveral(n.label) : C.dropNoRepo(n.label),
+    };
   }
-  if (!from?.repo || !to || !toNode) return { say: COPY.connect.dropNeedsRepo };
-  if (to.repo === from.repo) return { say: COPY.connect.dropSameRepo };
-  return { from: from.repo, initial: choiceOf(toNode, to) };
+  if (!a || !b || !from || !to) return { say: C.dropNeedsRepo };
+  if (from.system)
+    return to.repo
+      ? { declare: { system: from.system, label: a.label, target: to.repo } }
+      : { say: C.dropTwoOutside(a.label, b.label) };
+  if (to.repo === from.repo) return { say: C.dropSameRepo };
+  return { from: from.repo!, initial: choiceOf(b, to) };
 }
 
 export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {

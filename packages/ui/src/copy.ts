@@ -5743,6 +5743,59 @@ export const COPY = {
       `No profile has ${system} as a System yet, so writing this adds it to ${file} first (a person's word, for review), then declares the link on it.`,
     created: (system: string, file: string) =>
       `Added ${system} as a System in ${file} first, then declared the link on it.`,
+    /**
+     * ADR 0200 (a field report on beta.28.4): a line drawn from an outside system to a repo
+     * opens this panel with the system as the caller, as it was drawn, and the repo's gateway
+     * routes listed to pick from.
+     */
+    ends: (system: string, to: string) => `From ${system} to ${to}`,
+    callIntro: (system: string) =>
+      `Pick the gateway and the routes ${system} calls: each route is one line in the profile. After Apply the arrow is drawn dashed from ${system} to what the route forwards to (the service behind the gateway), or to the gateway's own box where its forwarding isn't read.`,
+    gateway: "The gateway it calls",
+    gatewayNone: "Pick a gateway",
+    gatewayOption: (repo: string, n: number) =>
+      `${repo} (${n === 1 ? "one route" : `${n} routes`})`,
+    notGatewayOption: (repo: string) => `${repo} (no gateway route)`,
+    noGateways:
+      "No repo read so far has a gateway route, so there is none to pick from. Read the gateway's repo first (Add to the picture…), or type the route below if you know it.",
+    routesLoading: "Reading the routes…",
+    routesFailed: (why: string) => `The routes couldn't be read: ${why}`,
+    again: "Try again",
+    routesOf: (repo: string, n: number) =>
+      `Routes of ${repo} (${n === 1 ? "one" : n}): tick each one it calls`,
+    findRoute: "Find a route by method, path or handler",
+    noMatch: (q: string) => `No route of this gateway matches "${q}".`,
+    shown: (shown: number, all: number) => `${shown} of ${all} shown`,
+    pickShown: (n: number) => (n === 1 ? "Tick the one shown" : `Tick the ${n} shown`),
+    unpickAll: "Untick all",
+    handler: (h: string) => `handler ${h}`,
+    declaredAlready: "declared already",
+    declaredList: (system: string, n: number) =>
+      `Declared already (${n}), not offered again: undo one under Corrections and declarations on ${system}'s box.`,
+    allDeclared: (system: string, repo: string) =>
+      `${system} is declared to call every route of ${repo} already.`,
+    also: (repos: readonly string[]) =>
+      `the same words name a route of ${repos.join(", ")} too, so the declaration lands there as well`,
+    notGateway: (repo: string) =>
+      `Declaring who calls an entry of ${repo} isn't supported yet: only a gateway's routes can be declared.`,
+    notGatewayEntries: (repo: string, n: number) =>
+      n === 0
+        ? `${repo} has no entry on record.`
+        : `${repo} has ${n === 1 ? "one entry" : `${n} entries`} on record, ${n === 1 ? "and it is no" : "none of them a"} gateway route.`,
+    notGatewayDo: (system: string, repo: string, gateways: boolean) =>
+      `What works today: ${gateways ? `if ${system} reaches ${repo} through a gateway, pick that gateway above and the route it calls; ` : ""}if ${repo} calls ${system}, draw the line the other way, from ${repo} to ${system}, to pair ${repo}'s calls with ${system}'s spec; if ${system} sends ${repo} messages, choose "Publishes to a topic or queue" above.`,
+    notRead: {
+      "not-read": (repo: string) =>
+        `${repo} has nothing on record yet, so its routes can't be listed. Read it first:`,
+      unverified: (repo: string) =>
+        `${repo}'s facts are read but not all verified, so its routes aren't listed yet. Verify them first:`,
+    } as Record<string, (repo: string) => string>,
+    typed: "A route that isn't listed? Type it",
+    picked: (n: number) =>
+      n === 0 ? "No route ticked yet." : n === 1 ? "One route ticked." : `${n} routes ticked.`,
+    confirmN: (n: number) => (n <= 1 ? "Write it" : `Write ${n} declarations`),
+    pickFirst: "Tick a route, or type one, to preview and write it.",
+    emptyRoutes: "Tick a route, or type one, first.",
   },
   corrections: {
     title: "Corrections and declarations",
@@ -5844,7 +5897,14 @@ export const COPY = {
     /** The two ends of the line, as a screen reader says them (the panel draws from → to). */
     ends: (from: string, to: string) => `From ${from} to ${to}`,
     dropNeedsRepo:
-      "A line connects a repo's calls to another box: start or end it on a repo, a component in one, or a system that holds one repo. A system with several repos: open it (double-click) and draw from the repo. Two outside systems can't be connected here: declare the link on the system's box instead.",
+      "A line is drawn from the caller to what it calls, between repos, components and systems: start it on a repo, a component in one, a system that holds one repo, or an outside system, and end it on another. Nothing was connected.",
+    /** ADR 0200: each line that connects nothing says why, by the boxes' names, and what to do. */
+    dropSeveral: (system: string) =>
+      `${system} holds several repos, so the line can't say which one is meant. Open ${system} (double-click it) and draw the line to or from the repo inside.`,
+    dropNoRepo: (system: string) =>
+      `${system} is a system of the estate with no repo on the map yet, so there is no call or API of it to connect. Add its repo with Add to the picture…, then draw the line to or from the repo.`,
+    dropTwoOutside: (a: string, b: string) =>
+      `Neither ${a} nor ${b} has code in the estate, so there is no call to pair and no gateway route to declare between them. To say what ${a} does that the code can't show, pick ${a} and choose Declare a link….`,
     dropSameRepo:
       "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
     intro:
