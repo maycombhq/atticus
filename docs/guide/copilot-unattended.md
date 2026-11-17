@@ -36,6 +36,28 @@ Check it with `atticus doctor`: the **Copilot ACP** line says whether the server
 and whether it is signed in. Doctor starts the server for that and opens no session: nothing runs
 and no tokens are spent.
 
+### If it won't start
+
+A run that can't start the server stops before its first session, changes nothing, and says what
+the server did in the server's own words. Node's and npm's warnings (`(node:1234)
+ExperimentalWarning: …`) are set aside: they are never the reason. `atticus doctor`'s **Copilot
+ACP** line starts the server the same way and says the same, so you can check a fix without a run.
+
+| What the run says                                                            | What it means, and what to do                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| it ended before it answered … and said: `error: required option '--stdio' …` | The server wants another option. Add it to `command` (the message shows the corrected line). For `--stdio` alone Atticus starts the server once more with it and says "The Copilot language server asked for --stdio; started again with it"; add `--stdio` to `command` to skip that second start.                                                                                     |
+| it ended before it answered … and said: `error: unknown option '--acp'`      | This program has no Agent Client Protocol mode: an old Copilot language server, or another program. Check `command`, and that the server's `--help` lists `--acp`.                                                                                                                                                                                                                      |
+| it ended before it answered … and said: `npm error …`                        | npx couldn't fetch or run the package (often a proxy). Install the server once, `npm i -g @github/copilot-language-server`, and set `command: copilot-language-server`.                                                                                                                                                                                                                 |
+| it ended before it answered … and printed nothing but warnings (or nothing)  | The server gave no reason. Run the command the message shows yourself to see what it does.                                                                                                                                                                                                                                                                                              |
+| it was still running after 60s, the limit for starting, and had not answered | The server was still starting, or waiting. Atticus can't tell which. Through npx it may be fetching or checking the package on every start (slow through a proxy); a first start can be slow too. Either install the server once (as above) and set `command: copilot-language-server`, or give it longer: set the environment variable `ATTICUS_COPILOT_START_TIMEOUT_MS` (see below). |
+| the program … wasn't found on this machine                                   | `command` names a program that isn't installed or isn't on the PATH. Give one that is, or its full path in double quotes.                                                                                                                                                                                                                                                               |
+
+**The start limit.** The server has 60 seconds to start and answer. To change that on a machine,
+set the environment variable `ATTICUS_COPILOT_START_TIMEOUT_MS` to a number of milliseconds from
+1000 to 1800000 (`180000` is three minutes), then open a new terminal. It is this machine's
+setting, not runtime.yaml's: how long a start takes depends on the machine and its network. The
+run and `atticus doctor` both use it. A value that isn't such a number is refused, in words.
+
 ## Using it
 
 ```text
