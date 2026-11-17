@@ -18,6 +18,12 @@ const polls = [
     progress: { done: 2, total: 3, message: "Loading the catalog…" },
   },
   {
+    state: "running",
+    errors: [],
+    stopping: true,
+    progress: { done: 2, total: 3, message: "Stopping after this repo…" },
+  },
+  {
     state: "done",
     errors: [],
     progress: { done: 1, total: 1, message: "Done" },
@@ -44,5 +50,7 @@ it("tells the page the running job's progress on each look, and not its end", as
   expect(heard).toEqual([
     { done: 1, total: 3, message: "Repo 1 of 3: forge-atlas…" },
     { done: 2, total: 3, message: "Loading the catalog…" },
+    // Stop was asked: the page hears the job is stopping.
+    { done: 2, total: 3, message: "Stopping after this repo…", stopping: true },
   ]);
 });

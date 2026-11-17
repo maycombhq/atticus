@@ -27,6 +27,8 @@ const [R1, R2, R3] = [bigRepoId(0), bigRepoId(1), bigRepoId(2)];
 /** The estate with the three repos' changes waiting, and what it is after 1, 2 and 3 applies. */
 let waiting: string;
 const after: Map<string, Buffer>[] = [];
+const HEARD = "Stop heard: the run ends when this repo's write has finished.";
+const STOPPING_AFTER = "Stopping after this repo…";
 
 /** Every file a run leaves but this machine's state, the clones, and the questions (dated). */
 async function filesOf(dir: string): Promise<Map<string, Buffer>> {
@@ -98,8 +100,14 @@ type Ended = {
   };
 };
 /** Start `path` on a fresh copy, ask Stop when `when` says so of a printed line, and follow it. */
-async function run(path: string, body: unknown, when?: (line: string, all: string[]) => boolean) {
+async function run(
+  path: string,
+  body: unknown,
+  when?: (line: string, all: string[]) => boolean,
+  prepare?: (root: string) => Promise<void>,
+) {
   const root = await copy();
+  await prepare?.(root);
   const s = await startServer({
     root,
     port: 0,
@@ -116,13 +124,17 @@ async function run(path: string, body: unknown, when?: (line: string, all: strin
     });
   const printed: string[] = [];
   let asked = false;
+  /** The job as the page sees it just after Stop, pressed three times. */
+  let afterStop: { stopping?: boolean; message: string } | undefined;
   const off = s.jobs.subscribe((c) => {
     if (c.type !== "lines") return;
     for (const l of c.lines) {
       printed.push(l);
       if (!asked && when?.(l, printed)) {
         asked = true;
-        expect(s.jobs.cancel(c.job.id)).toBe(true);
+        for (let press = 0; press < 3; press++) expect(s.jobs.cancel(c.job.id)).toBe(true);
+        const j = s.jobs.get(c.job.id)!;
+        afterStop = { ...(j.stopping ? { stopping: true } : {}), message: j.progress.message };
       }
     }
   });
@@ -140,7 +152,7 @@ async function run(path: string, body: unknown, when?: (line: string, all: strin
       300_000,
     )) as unknown as Ended;
   };
-  return { root, ended, printed, asked, applyOne };
+  return { root, ended, printed, asked, afterStop, applyOne };
 }
 const ALL = { repos: [R1, R2, R3] };
 /** True once the run is on its second repo. */
@@ -196,9 +208,12 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
       (l, all) => onSecond(all) && l.startsWith("Writing contracts"),
     );
     expect(r.asked).toBe(true);
-    // Said too late for the write under way, then stopping once that write has ended.
-    expect(r.printed.indexOf(TOO_LATE)).toBeGreaterThan(-1);
-    expect(r.printed.indexOf(STOPPING)).toBeGreaterThan(r.printed.indexOf(TOO_LATE));
+    // Said heard, once for three presses, in the run's own words (never "too late": the run
+    // does stop), and the job says it is stopping from then on, so the page's Stop stays so.
+    expect(r.printed.filter((l) => l === HEARD)).toHaveLength(1);
+    expect(r.printed).not.toContain(TOO_LATE);
+    expect(r.afterStop).toEqual({ stopping: true, message: STOPPING_AFTER });
+    expect(r.printed.indexOf(STOPPING)).toBeGreaterThan(r.printed.indexOf(HEARD));
     expect(r.printed.some((l) => l.startsWith("Rendering the map"))).toBe(true);
     expect(r.printed.some((l) => l.startsWith("Repo 3 of 3"))).toBe(false);
     expect(r.ended.state).toBe("cancelled");
@@ -218,8 +233,10 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
       (l, all) => all.some((x) => x.startsWith("Repo 3 of 3")) && l.startsWith("Writing contracts"),
     );
     expect(r.asked).toBe(true);
-    expect(r.printed).toContain(TOO_LATE);
+    expect(r.printed).toContain(HEARD);
+    expect(r.printed).not.toContain(STOPPING);
     expect(r.ended.state).toBe("done");
+    expect(r.ended.progress.message).toBe("Done");
     expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
     expect(r.ended.result?.stopped).toBeUndefined();
     expect(differences(await filesOf(r.root), after[2]!)).toEqual([]);

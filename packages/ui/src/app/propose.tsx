@@ -529,7 +529,9 @@ export async function runApplyAll(
                   note: {
                     ok: true,
                     working: true,
-                    text: COPY.appStep.applyingRepo(p.done, p.total),
+                    text: p.stopping
+                      ? COPY.appStep.stoppingRun(p.done, p.total)
+                      : COPY.appStep.applyingRepo(p.done, p.total),
                   },
                 }
               : was,
@@ -683,7 +685,9 @@ export const OWN_WRITE_ECHO_MS = 2000;
  * too. Round 3: only for the files it is about, once a burst, and (round 4) the events heard just
  * after the app's own write once, when that write's echo window ends; and Apply to every repo's map stays while it runs (the job's writes read the
  * bar again, and it may then name one repo or none) and, when it applied only some, with its
- * errors and Sync until dismissed or the next Apply. The bar holds the run, so a reload loses none.
+ * errors and Sync until dismissed or the next Apply. The bar holds the run in its own state, so
+ * the bar reading its list again loses none (a reload of the page does: the job's Console entry
+ * still has it).
  */
 export function CorrectionsToApply() {
   const plan = useApi<Plan>("/api/propose?scope=work");

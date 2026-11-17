@@ -5086,6 +5086,9 @@ export const COPY = {
     inTerminal: "In a terminal",
     applyAll: "Apply to every repo's map",
     applyingAll: "Applying…",
+    /** Beta.28.4: Stop was asked of a run over several repos, and it is ending. */
+    stoppingRun: (done: number, of: number) =>
+      `Stopping: ${done} of ${of} repos done. A repo being written finishes its write first; the repos after it are not applied.`,
     /** Beta.28.4: Stop ended a run over several repos between two of them. */
     stoppedAfter: (applied: number, of: number, notApplied: string) =>
       `Stopped: ${applied} of ${of} repos applied. Not applied: ${notApplied}; each keeps its own Apply button.`,

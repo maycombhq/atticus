@@ -31,7 +31,8 @@ let job: {
   reject: (e: Error) => void;
 };
 /** What the page hears of the running job's progress (the repo it is on). */
-let progress: ((p: { done: number; total: number; message: string }) => void) | undefined;
+let progress:
+  ((p: { done: number; total: number; message: string; stopping?: boolean }) => void) | undefined;
 vi.mock("../src/app/job.js", async () => ({
   ...(await vi.importActual<object>("../src/app/job.js")),
   followJob: (
@@ -302,4 +303,27 @@ it("stopped part way: says how many were applied, names the rest, and keeps thei
   expect(T.stoppedAfter(0, 2, "forge-ledger, forge-teller")).toBe(
     "Stopped: 0 of 2 repos applied. Not applied: forge-ledger, forge-teller; each keeps its own Apply button.",
   );
+});
+
+// Beta.28.4 (the review): Stop asked while a repo is being written looked ignored. The job says
+// it is stopping, and the bar says what that means until the run ends.
+it("while it is stopping, says the repo being written finishes first", async () => {
+  let held: { running?: boolean; note?: { ok: boolean; text: string; working?: boolean } } = {};
+  const set = (s: unknown) => {
+    held =
+      typeof s === "function" ? (s as (w: typeof held) => typeof held)(held) : (s as typeof held);
+  };
+  const ran = runApplyAll(set as never, THREE);
+  await settle();
+  progress!({ done: 1, total: 3, message: "Stopping after this repo…", stopping: true });
+  expect(held).toMatchObject({
+    running: true,
+    note: {
+      ok: true,
+      working: true,
+      text: "Stopping: 1 of 3 repos done. A repo being written finishes its write first; the repos after it are not applied.",
+    },
+  });
+  job.resolve({ code: 0, lines: [] });
+  await ran;
 });

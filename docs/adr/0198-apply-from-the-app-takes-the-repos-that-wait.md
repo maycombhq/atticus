@@ -26,11 +26,11 @@ On an estate of 40 repos read, with corrections waiting in a few, the owner clic
 5. The command line does not change. `atticus verify --all [--write]` means every repo read so far. No flag passes a list; a person names one repo with `atticus verify <repo> --write`.
 
 6. Stop is heard between the repos of a run. Before this ADR a job's Stop was heard until its first catalog write started and never again, so a run over several repos could not be stopped once its first repo had written. Now:
-   - Stop asked while repo K is being written lets that write finish whole. The run then ends before repo K+1 starts.
+   - Stop asked while repo K is being written lets that write finish whole. The run then ends before repo K+1 starts. The job answers once, however often Stop is pressed: "Stop heard: the run ends when this repo's write has finished." From then until that write ends, the job's state is stopping and its progress message is "Stopping after this repo…", so the Stop button, the strip and the map's bar all show that the Stop was heard.
    - Stop asked while repo K is still being read or built ends the run there. Nothing of repo K is in the catalog, as with one repo's Apply.
    - Stop asked during the last repo's write is too late, as before, and the run ends done.
    - A stopped run's job ends `cancelled`, never failed. Its result has `stopped: true`, the repos applied whole under `applied`, and the repos not applied (those never reached included) under `notApplied`. The scan's lock is free.
-   - The mechanism is a release beside the commit point: work made of several writes says when one has ended (`releaseCurrent` in `packages/core/src/cancel.ts`, `release` on the job in `packages/server/src/jobs.ts`). Only the run over several repos calls it, and only between two repos. Every other job is unchanged: past its commit point it is never stopped.
+   - The mechanism is a release beside the commit point: work made of several writes says when one has ended (`releaseCurrent` in `packages/core/src/cancel.ts`, `release` on the job in `packages/server/src/jobs.ts`). Only the run over several repos calls it, and only between two repos. That run's job is started as one of several writes (`severalWrites` in the job's start options, with its words), which is what makes it answer a Stop during a write as above. Every other job is unchanged: past its commit point it is never stopped, and it says "Stop came after the write had started" each time, as before.
    - On the command line `atticus verify --all --write` has no Stop of its own. Ctrl+C ends the process, as it did.
 
 ## Why a list from the page, and not "the repos that wait" worked out by the server

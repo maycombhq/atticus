@@ -452,3 +452,144 @@ describe("JobManager release (beta.28.4)", () => {
     expect(releaseCurrent()).toBe(false);
   });
 });
+
+/**
+ * Beta.28.4 (the review of Stop between repos): a job started as one of several writes answers a
+ * Stop asked during a write once, in its own words, and says it is stopping from then on, so the
+ * Stop button and the strip don't read as if nothing was heard. Any other job is word for word
+ * as before.
+ */
+describe("JobManager: a job of several writes says a Stop during a write was heard (beta.28.4)", () => {
+  const WORDS = {
+    heard: "Stop heard: the run ends when this repo's write has finished.",
+    stopping: "Stopping after this repo…",
+  };
+  const gate = () => {
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    return { held, go };
+  };
+
+  it("says so once however often Stop is pressed, stays stopping, and stops at the release", async () => {
+    const published: { type: string; message?: string }[] = [];
+    const jobs = new JobManager((e) => void published.push(e as never));
+    const write = gate();
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        c.progress(1, 3, "1 of 3 repos done, applying forge-ledger");
+        c.commit();
+        await write.held;
+        // A step of the write said meanwhile never takes the stopping words away.
+        c.line("Writing contracts… (4 s in)", { now: true });
+        c.progress(2, 3, "2 of 3 repos done");
+        expect(c.signal.aborted).toBe(false);
+        c.release();
+        expect(c.signal.aborted).toBe(true);
+        return { result: { stopped: true } };
+      },
+      { severalWrites: WORDS },
+    );
+    expect(jobs.cancel(job.id)).toBe(true);
+    expect(jobs.get(job.id)).toMatchObject({
+      state: "running",
+      stopping: true,
+      progress: { done: 1, total: 3, message: WORDS.stopping },
+    });
+    expect(published.at(-1)).toMatchObject({ type: "job.progress", message: WORDS.stopping });
+    expect(jobs.cancel(job.id)).toBe(true);
+    expect(jobs.cancel(job.id)).toBe(true);
+    write.go();
+    const done = await jobs.settle(job.id);
+    const lines = jobs.linesOf(job.id)!.lines;
+    expect(lines.filter((l) => l === WORDS.heard)).toHaveLength(1);
+    expect(lines).not.toContain(TOO_LATE);
+    expect(lines.indexOf(STOPPING)).toBeGreaterThan(lines.indexOf(WORDS.heard));
+    expect(done.state).toBe("cancelled");
+    expect(done.progress).toEqual({ done: 2, total: 3, message: STOPPED });
+    expect(done.stopping).toBeUndefined();
+  });
+
+  it("a Stop asked just before a write's commit is said the same way, and acted on at the release", async () => {
+    const jobs = new JobManager(() => undefined);
+    const read = gate();
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        await read.held;
+        c.commit();
+        expect(jobs.get(job.id)).toMatchObject({
+          stopping: true,
+          progress: { message: WORDS.stopping },
+        });
+        c.release();
+        return {};
+      },
+      { severalWrites: WORDS },
+    );
+    jobs.cancel(job.id);
+    read.go();
+    expect((await jobs.settle(job.id)).state).toBe("cancelled");
+    const lines = jobs.linesOf(job.id)!.lines;
+    expect(lines).toContain(WORDS.heard);
+    expect(lines).not.toContain(TOO_LATE);
+  });
+
+  it("during its last write (no release follows) it ends done, saying how it ended, never stopping", async () => {
+    const jobs = new JobManager(() => undefined);
+    const write = gate();
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        c.commit();
+        await write.held;
+        c.progress(3, 3, "Done");
+        return {};
+      },
+      { severalWrites: WORDS },
+    );
+    jobs.cancel(job.id);
+    write.go();
+    const done = await jobs.settle(job.id);
+    expect(done.state).toBe("done");
+    expect(done.progress.message).toBe("Done");
+    expect(done.stopping).toBeUndefined();
+  });
+
+  it("before any write it stops at once, as every job does", async () => {
+    const jobs = new JobManager(() => undefined);
+    const read = gate();
+    const job = jobs.start(
+      "local",
+      async () => {
+        await read.held;
+        throwIfCancelled();
+        return {};
+      },
+      { severalWrites: WORDS },
+    );
+    jobs.cancel(job.id);
+    expect(jobs.get(job.id)!.progress.message).toBe(STOPPING);
+    read.go();
+    expect((await jobs.settle(job.id)).state).toBe("cancelled");
+    expect(jobs.linesOf(job.id)!.lines).not.toContain(WORDS.heard);
+  });
+
+  it("a job of one write is word for word as before: too late, each time, and never stopping", async () => {
+    const jobs = new JobManager(() => undefined);
+    const write = gate();
+    const job = jobs.start("local", async (c) => {
+      c.progress(0, 1, "Applying to forge-ledger");
+      c.commit();
+      await write.held;
+      return {};
+    });
+    jobs.cancel(job.id);
+    jobs.cancel(job.id);
+    expect(jobs.get(job.id)!.stopping).toBeUndefined();
+    expect(jobs.get(job.id)!.progress.message).toBe("Applying to forge-ledger");
+    write.go();
+    expect((await jobs.settle(job.id)).state).toBe("done");
+    expect(jobs.linesOf(job.id)!.lines.filter((l) => l === TOO_LATE)).toHaveLength(2);
+  });
+});

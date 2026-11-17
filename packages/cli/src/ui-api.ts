@@ -690,6 +690,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   const asJob = (
     what: string,
     work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
+    o: { severalWrites?: { heard: string; stopping: string } } = {},
   ) => {
     // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
     // while Apply writes facts or Propose commits them. The refusal names the one that runs.
@@ -730,7 +731,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           errors: res.code === 0 ? [] : res.err.length ? appLines(res.err) : lines,
         };
       },
-      { title: what },
+      { title: what, ...(o.severalWrites ? { severalWrites: o.severalWrites } : {}) },
     );
     localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };
