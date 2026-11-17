@@ -359,6 +359,10 @@ const RETRIES = 3;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const tokensText = (n: number) => n.toLocaleString("en-US");
+/** 2nd, 3rd, 4th, 11th, 21st. */
+const ordinal = (n: number) =>
+  `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+
 const firstLine = (e: unknown) => String((e as Error)?.message ?? e).split("\n")[0]!;
 
 export async function readMapAllState(root: string): Promise<MapAllState | undefined> {
@@ -1443,6 +1447,8 @@ export async function mapAllCommand(
    * verify is run when asked.
    */
   let lastVerified: { repo: string; v: VerifyJson; snap: Snap; written: string } | undefined;
+  /** How many times this run applied each repo (its parts' applies; the join counts its own). */
+  const applied = new Map<string, number>();
   const verifiedJustNow = async (item: PlanItem): Promise<VerifyJson | undefined> => {
     const l = lastVerified;
     if (mode !== "copilot-acp" || !l || l.repo !== item.repo) return undefined;
@@ -1453,6 +1459,15 @@ export async function mapAllCommand(
   /** What `atticus verify <repo> --write` runs, said in one paragraph. */
   const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
     lastVerified = undefined;
+    // Beta.28.5: the build's steps that follow are this apply's, said with its count for the
+    // repo in this run, so a run that applies one repo again and again shows as that, not as
+    // one long build ("Applying forge-ledger (atticus verify forge-ledger --write), the 3rd
+    // time in this run…"). A progress line, never standard output.
+    const nth = (applied.get(item.repo) ?? 0) + 1;
+    applied.set(item.repo, nth);
+    (io.progress ?? io.err)(
+      `Applying ${item.repo} (atticus verify ${item.repo} --write)${nth > 1 ? `, the ${ordinal(nth)} time in this run` : ""}…`,
+    );
     const c = capturedStep(io);
     try {
       // The review of beta.28.1 (S6): a read in progress is written only whole, so a retry of

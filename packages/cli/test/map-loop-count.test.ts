@@ -262,6 +262,14 @@ describe("how many applies and builds one repo's map runs (beta.28.5)", () => {
     // The passes ran for the first part, whose facts are new, and for the last, whose read is
     // complete (the snapshot says so); every other apply took the last build.
     expect({ built: n.built(), kept: n.kept() }).toEqual({ built: 2, kept: 4 });
+    // Each apply is said with its count for the repo, so a loop reads as a loop.
+    expect(r.progress.filter((l) => l.startsWith("Applying "))).toEqual([
+      "Applying forge-ledger (atticus verify forge-ledger --write)…",
+      "Applying forge-ledger (atticus verify forge-ledger --write), the 2nd time in this run…",
+      "Applying forge-ledger (atticus verify forge-ledger --write), the 3rd time in this run…",
+      "Applying forge-ledger (atticus verify forge-ledger --write), the 4th time in this run…",
+      "Applying forge-ledger (atticus verify forge-ledger --write), the 5th time in this run…",
+    ]);
   }, 120_000);
 
   it("a part given again applies what the first session left once, not twice in a row", async () => {
