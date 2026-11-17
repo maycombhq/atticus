@@ -16,6 +16,7 @@ import {
   joinConventions,
   loadOrgPack,
   orgPackDirOf,
+  orgPackRelOf,
   parseCorrections,
   undeclareLink,
   type Declared,
@@ -33,6 +34,7 @@ import {
 } from "@maycombhq/server";
 import { safeMessage } from "./file-lock.js";
 import { readRepos } from "./target-answer.js";
+import { looksLikeGatewayType } from "./ui-api-links.js";
 
 /**
  * G3 (ADR 0174): add a box, declare a link the code can't show, and every box's corrections with
@@ -282,8 +284,13 @@ export function uiDeclaredRoutes(
       if (!asked) throw badRequest("Say system=<id>, and repo=<repo> for its routes.");
       const op = await loadOrgPack(orgPackDirOf(ctx.root));
       const system = boxSystemOf(op, asked);
-      if (repo !== null && !estateRepos(op).some((r) => r.id === repo))
-        throw notFound(`No repo of the manifest is ${repo}.`);
+      const known = repo === null ? undefined : estateRepos(op).find((r) => r.id === repo);
+      if (repo !== null && !known) throw notFound(`No repo of the manifest is ${repo}.`);
+      // A system only the code names is in no profile, and no repo's box either: its
+      // declaration would be refused, so the panel is told before anything is ticked.
+      const inProfile =
+        op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === system)) ||
+        !!systemToCreate(op, system);
       const estate = await estateFacts(ctx.root, op, "");
       const input = {
         repos: joinReposOf(op, estate.repos),
@@ -297,6 +304,7 @@ export function uiDeclaredRoutes(
         status: 200,
         body: {
           system,
+          inProfile,
           gateways: declarableGateways(input),
           ...(repo && t
             ? {
@@ -305,6 +313,16 @@ export function uiDeclaredRoutes(
                   gateway: t.gateway,
                   routes: t.routes,
                   entries: t.entries,
+                  ...(known?.type ? { type: known.type } : {}),
+                  ...(known
+                    ? {
+                        manifest: `${orgPackRelOf(ctx.root)}/profiles/${known.platform}/repos.manifest.yaml`,
+                      }
+                    : {}),
+                  // Connect would call its entries routes; the join doesn't. Said, with the fix.
+                  ...(!t.gateway && looksLikeGatewayType(known?.type)
+                    ? { looksLikeGateway: true }
+                    : {}),
                   ...(estate.repos.some((r) => r.repo === repo)
                     ? {}
                     : {

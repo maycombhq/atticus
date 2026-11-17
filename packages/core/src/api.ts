@@ -684,7 +684,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   repo's routes to pick from (`target`: each with its method, path, handler, the line it was
  *   read from, the words that declare it, whether the system declared it already, and any other
  *   repo the same words land on), or that it has none (`gateway: false`, with its entries
- *   counted): a declared call lands only on a gateway route. POST /api/declared-links, for
+ *   counted, its manifest `type`, and `looksLikeGateway` when that type reads like a gateway's
+ *   but isn't one the join takes): a declared call lands only on a gateway route. `inProfile`
+ *   is false for a system only the code names, whose declaration would be refused. POST /api/declared-links, for
  *   `kind: call`, takes `routes` (1 to 200) in place of `route`: each is one line of the
  *   profile, written once, in a fixed order (sorted) whatever order they come in, in one write;
  *   409 and nothing written when the profile has one already; 400 with neither or both. A
@@ -6062,6 +6064,12 @@ export const DeclarableRouteView = z.object({
 export const DeclarableRoutesView = z.object({
   /** The system the box is (a repo's id is the system its box is drawn as). */
   system: z.string(),
+  /**
+   * A profile has the system, or the write adds it first (a repo's own box, 3.14 `created`).
+   * False for a system only the code names: a declaration from it is refused (404) until a
+   * system of that id is added to a profile (POST /api/boxes).
+   */
+  inProfile: z.boolean(),
   gateways: z.array(z.object({ repo: z.string(), routes: z.number().int().min(0) })),
   target: z
     .object({
@@ -6070,6 +6078,16 @@ export const DeclarableRoutesView = z.object({
       routes: z.array(DeclarableRouteView),
       /** How many entries the repo has on record, routes or not. */
       entries: z.number().int().min(0),
+      /** The repo's type as its manifest says it, and the manifest's file. */
+      type: z.string().optional(),
+      manifest: z.string().optional(),
+      /**
+       * `gateway` is false, and the repo's type reads like a gateway's (as GET
+       * /api/links/candidates tells a route): the join takes only the type `gateway` (or
+       * `gateway-…`) or a proxy bundle folder, so setting the type to `gateway` in `manifest`
+       * makes its entries routes.
+       */
+      looksLikeGateway: z.boolean().optional(),
       /** Nothing of the repo is on record: why, and the step that reads it. */
       notRead: z
         .object({ why: z.enum(["not-read", "unverified"]), command: z.string() })

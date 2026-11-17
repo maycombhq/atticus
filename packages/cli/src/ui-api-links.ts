@@ -133,6 +133,14 @@ export function settingsOf(facts: readonly Fact[]): Record<string, string> {
   return out;
 }
 
+/**
+ * Whether a repo's manifest type reads like a gateway's: what Connect goes by to call a box's
+ * entries routes. Looser than the join, which takes only `gateway` (or `gateway-…`) and proxy
+ * bundle folders; Declare a link says so when the two disagree (ADR 0200).
+ */
+export const looksLikeGatewayType = (type: string | undefined): boolean =>
+  /gateway|proxy|apigee/i.test(type ?? "");
+
 async function boxApis(
   root: string,
   op: Awaited<ReturnType<typeof loadOrgPack>>,
@@ -143,7 +151,7 @@ async function boxApis(
     const known = estateRepos(op).find((r) => r.id === to.repo);
     if (!known) throw notFound(`No repo of the manifest is ${to.repo}.`);
     const facts = estate.repos.find((r) => r.repo === to.repo)?.facts ?? [];
-    const gateway = /gateway|proxy|apigee/i.test(known.type ?? "");
+    const gateway = looksLikeGatewayType(known.type);
     // A gateway's route forwards somewhere: the call made `from` the route says where.
     const forwardsOf = (entry: string) => {
       const f = facts.find(

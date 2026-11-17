@@ -42917,6 +42917,9 @@
           "system": {
             "type": "string"
           },
+          "inProfile": {
+            "type": "boolean"
+          },
           "gateways": {
             "type": "array",
             "items": {
@@ -42994,6 +42997,15 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               },
+              "type": {
+                "type": "string"
+              },
+              "manifest": {
+                "type": "string"
+              },
+              "looksLikeGateway": {
+                "type": "boolean"
+              },
               "notRead": {
                 "type": "object",
                 "properties": {
@@ -43026,6 +43038,7 @@
         },
         "required": [
           "system",
+          "inProfile",
           "gateways"
         ],
         "additionalProperties": false
