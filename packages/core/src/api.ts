@@ -651,8 +651,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   when catalog/sources/build.json is there but doesn't read (edited or merged by hand). Its
  *   `command` is the build again with `--discard-edits` of every record file, never the curate.
  *   Additive only.
+ * 3.16.0 (after beta.28.3, ADR 0198, two field reports on a 40-repo estate): POST
+ *   /api/setup/repos/plan takes `job: true` for a folder of clones: 202 JobAccepted at once, the
+ *   job says each folder as it comes to it ("Reading forge-ledger (4 of 40)…") and hears Stop
+ *   between folders, and its result's `answer` is the ReposPlanView (or `problem`); the refusals
+ *   the request knows at once (no such folder, several platforms and none chosen) still come as
+ *   the answer. With or without `job`, a folder's repo a manifest lists already is told by its
+ *   clone URL and not read (it is in `listed`, as before), and a folder that takes over a minute
+ *   to read is in `skipped` with that reason. Additive only.
  */
-export const API_VERSION = "3.15.0";
+export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -5712,6 +5720,11 @@ export const ReposPlanRequest = z
     urls: z.string().max(200_000).optional(),
     dir: z.string().min(1).max(4096).optional(),
     platform: RecordId.optional(),
+    /**
+     * 3.16.0 (ADR 0198): read as a job. 202 JobAccepted at once; the job says each folder as it
+     * comes to it, hears Stop between folders, and its result's `answer` is the ReposPlanView.
+     */
+    job: z.boolean().optional(),
   })
   .refine((b) => !!b.urls?.trim() !== !!b.dir, "send urls or dir, one of them");
 export const PlannedRepoView = z.object({
@@ -8638,10 +8651,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "planRepos",
       summary:
-        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing",
+        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing. 3.16.0 (ADR 0198): a folder's repo a manifest lists already is told by its clone URL and not read (`listed`), a folder that takes over a minute to read is skipped saying so (`skipped`), and with `job: true` the read is a job: 202 JobAccepted at once, a line a folder, Stop heard between folders, the plan in the job's result `answer` (or `problem`)",
       tag: "run",
       body: ReposPlanRequest,
       ok: { status: 200, schema: "ReposPlanView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job: true`)" },
       errors: [400, 404, 409, 422],
     },
   },

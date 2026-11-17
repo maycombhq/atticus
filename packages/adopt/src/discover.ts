@@ -1,14 +1,16 @@
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { isSeq, parse, parseDocument, stringify } from "yaml";
 import {
   eolOf,
   inEol,
   RepoManifest,
+  throwIfCancelled,
+  walkRepo,
   WORKSPACE_SCHEMA_VERSION,
   type ManifestRepo,
 } from "@maycombhq/core";
-import { DEFAULT_IGNORES, fsRepo, memoryRepo, type RepoHandle } from "@maycombhq/sdk";
+import { DEFAULT_IGNORES, fsRepo, globToRegExp, memoryRepo, type RepoHandle } from "@maycombhq/sdk";
 import { cloneUrlKey, createGit, type GitRunner } from "@maycombhq/workspace";
 import { detectRepoType, type Detection } from "./detect.js";
 import { AdoptError } from "./errors.js";
@@ -80,8 +82,14 @@ export interface DiscoveredRepo {
 export interface DiscoverResult {
   platform: string;
   repos: DiscoveredRepo[];
-  /** Folders looked at that aren't repos. */
+  /** Folders looked at that aren't repos, and folders that took too long to read, with why. */
   skipped: { path: string; reason: string }[];
+  /**
+   * Folders that are a repo the manifest lists already (the same clone URL, or the same path for
+   * a repo kept in place), with the id it has there: told before anything of them is read, and
+   * left out of `repos` and the questions. Local sources only.
+   */
+  listed: { path: string; id: string; url: string }[];
   questions: OwnerQuestion[];
   /**
    * Round 50: found repos given another id because the manifest lists theirs already for another
@@ -110,7 +118,55 @@ export interface DiscoverOptions {
   inPlace?: boolean;
   /** The git runner origin is asked of (local, no network); default the git on PATH. */
   git?: GitRunner;
+  /**
+   * Repos listed somewhere else than this platform's manifest (the app gives every platform's):
+   * a folder that is one of them is `listed` too, and isn't read.
+   */
+  known?: readonly { id: string; url: string }[];
+  /**
+   * Told of each folder as discovery comes to it, before it is read: its name, where it is
+   * among the folders (`index` of `total`, from 1), and the id it has when the manifest lists it
+   * already (then it isn't read).
+   */
+  onFolder?: (f: {
+    folder: string;
+    index: number;
+    total: number;
+    listed?: string;
+    // Waited for when it gives a promise (the app's job says its line, and hears Stop, there).
+  }) => unknown;
+  /**
+   * How long one folder may take to read, in milliseconds (default a minute): past it the folder
+   * is skipped, saying so, and the rest are still read.
+   */
+  repoTimeoutMs?: number;
+  /** The clock the bound is read from; default the machine's. Tests give their own. */
+  clock?: () => number;
 }
+
+/** How long one folder may take to read before it is skipped. */
+export const REPO_READ_MS = 60_000;
+
+/** A folder took longer to read than it may. */
+class TooSlow extends Error {}
+
+/** The time one folder has: `check` throws once it is spent. */
+interface Bound {
+  check(): void;
+}
+
+function boundOf(ms: number, clock: () => number): Bound {
+  const until = clock() + ms;
+  return {
+    check() {
+      if (clock() > until) throw new TooSlow();
+    },
+  };
+}
+
+/** Why a folder that took too long was skipped, and what to do instead. */
+const tooSlowReason = (ms: number) =>
+  `took too long to read (over ${ms / 1000} second${ms === 1000 ? "" : "s"}); add it by its clone URL`;
 
 /**
  * An http(s) URL without its credentials (`user:password@`, or a token as the user): Git's
@@ -171,10 +227,14 @@ const SELF_IGNORE = [".git", "node_modules", ".atticus", "openspec", "specs", ".
  * nested clones and worktrees (a `.git` folder or file), by path. node_modules and build output
  * aren't walked.
  */
-async function hiddenAndNested(dir: string): Promise<{ hidden: string[]; nested: string[] }> {
+async function hiddenAndNested(
+  dir: string,
+  bound?: Bound,
+): Promise<{ hidden: string[]; nested: string[] }> {
   const hidden = new Set<string>();
   const nested: string[] = [];
   const walk = async (abs: string, rel: string) => {
+    bound?.check();
     let entries;
     try {
       entries = await readdir(abs, { withFileTypes: true });
@@ -201,39 +261,93 @@ async function hiddenAndNested(dir: string): Promise<{ hidden: string[]; nested:
 /**
  * The folder as detection reads it: no file under a hidden folder, node_modules, or a nested
  * clone or worktree, so an assistant's worktree under `.claude/` (and the test fixtures in it)
- * never decides what a repo is.
+ * never decides what a repo is. Listed as `fsRepo` lists a checkout (the same walker, the same
+ * order, .gitignore honoured, a file over 5 MB left out), but those folders aren't walked at all
+ * rather than walked and left out, and the walk stops once the folder's time is spent (`bound`).
  */
 async function visibleRepo(
   name: string,
   dir: string,
   ignore: readonly string[] = DEFAULT_IGNORES,
+  bound?: Bound,
 ): Promise<RepoHandle> {
-  const { hidden, nested } = await hiddenAndNested(dir);
+  const { hidden, nested } = await hiddenAndNested(dir, bound);
   const h = fsRepo(name, dir, "0000000", { ignore: [...new Set([...ignore, ...hidden])] });
-  const shown = (p: string) => {
-    const folders = p.split("/").slice(0, -1);
-    return (
-      !folders.some((s) => s.startsWith(".") || s === "node_modules") &&
-      !nested.some((n) => p.startsWith(`${n}/`))
-    );
+  const root = resolve(dir);
+  const left = new Set(ignore);
+  const inner = new Set(nested);
+  let files: string[] | undefined;
+  const all = async () => {
+    if (!files) {
+      const out: string[] = [];
+      await walkRepo(
+        root,
+        async (p) => {
+          bound?.check();
+          out.push(p);
+        },
+        {
+          skipFolder: (above, folder) => {
+            bound?.check();
+            return (
+              left.has(folder) ||
+              folder.startsWith(".") ||
+              folder === "node_modules" ||
+              inner.has([...above, folder].join("/"))
+            );
+          },
+        },
+      );
+      files = out.sort();
+    }
+    return files;
   };
+  /** Each matched file's size, read once: one over the limit isn't listed (as fsRepo). */
+  const sizes = new Map<string, number>();
   return {
     name: h.name,
     commit: h.commit,
     async *listFiles(globs) {
-      for await (const p of h.listFiles(globs)) if (shown(p)) yield p;
+      const matchers = globs.map(globToRegExp);
+      for (const p of await all()) {
+        bound?.check();
+        if (!matchers.some((m) => m.test(p))) continue;
+        if (!sizes.has(p))
+          sizes.set(p, (await stat(join(root, ...p.split("/"))).catch(() => undefined))?.size ?? 0);
+        if (sizes.get(p)! > h.maxFileBytes) continue;
+        yield p;
+      }
     },
     readText: (p) => h.readText(p),
   };
 }
 
-async function localCandidates(dir: string): Promise<{
-  repos: { dir: string; repo: RepoHandle; modules?: string[] }[];
-  skipped: DiscoverResult["skipped"];
-}> {
+/** What reading a folder of clones needs from the discovery it is part of. */
+interface LocalRead {
+  /** The repo a folder is in a manifest already, told by its clone URL alone (nothing read). */
+  listedAs(dir: string): Promise<{ id: string; url: string } | undefined>;
+  onFolder?: DiscoverOptions["onFolder"];
+  /** The time one folder has, from now. */
+  bound(): Bound;
+  /** That time, for the words of a folder skipped for it. */
+  timeoutMs: number;
+}
+
+/** A repo found in the folder: read (its detection), or listed already and not read. */
+interface LocalRepo {
+  dir: string;
+  modules?: string[];
+  detection?: Detection;
+  listed?: { id: string; url: string };
+}
+
+async function localCandidates(
+  dir: string,
+  read: LocalRead,
+): Promise<{ repos: LocalRepo[]; skipped: DiscoverResult["skipped"] }> {
   const skipped: DiscoverResult["skipped"] = [];
-  const repos: { dir: string; repo: RepoHandle; modules?: string[] }[] = [];
-  const builds: string[] = [];
+  const repos: LocalRepo[] = [];
+  const builds: { name: string; detection: Detection }[] = [];
   const listed = (await readdir(dir, { withFileTypes: true }))
     .filter(
       (e) =>
@@ -272,42 +386,88 @@ async function localCandidates(dir: string): Promise<{
     real.set(to, e.name);
     entries.push(e.name);
   }
-  // A folder that is itself a clone (or a worktree of one) is one repo (below).
+  /** One folder's files and what they say it is; undefined, and skipped, when it took too long. */
+  const readFolder = async (
+    name: string,
+    at: string,
+    ignore: readonly string[] = DEFAULT_IGNORES,
+  ): Promise<Detection | undefined> => {
+    try {
+      const bound = read.bound();
+      return await detectRepoType(await visibleRepo(name, at, ignore, bound));
+    } catch (e) {
+      if (!(e instanceof TooSlow)) throw e;
+      skipped.push({ path: name, reason: tooSlowReason(read.timeoutMs) });
+      return undefined;
+    }
+  };
+  // A folder that is itself a clone (or a worktree of one) is one repo (below). The manifest
+  // may list it already: then its subfolders are its modules there, and aren't read.
   const selfClone = await exists(join(dir, ".git"));
-  for (const name of entries) {
+  const selfListed = selfClone ? await read.listedAs(dir) : undefined;
+  for (const [i, name] of entries.entries()) {
+    // Stop is heard between folders: nothing is written until every folder is read.
+    throwIfCancelled();
     const sub = join(dir, name);
-    const repo = await visibleRepo(name, sub);
     const isClone = await isDir(join(sub, ".git"));
+    const worktree = selfClone && !isClone && (await exists(join(sub, ".git")));
+    // The field report of beta.28.3: a repo a manifest lists already is told by its clone URL
+    // (Git's own config, one small file) before any of its files are listed or read. Inside a
+    // clone only another clone is a repo; a plain subfolder is one of its modules.
+    const was = worktree || (selfClone && !isClone) ? undefined : await read.listedAs(sub);
+    await read.onFolder?.({
+      folder: name,
+      index: i + 1,
+      total: entries.length,
+      ...(was ? { listed: was.id } : {}),
+    });
+    throwIfCancelled();
     // A worktree inside a clone is a checkout of the clone's own branches: not a module.
-    if (selfClone && !isClone && (await exists(join(sub, ".git")))) {
+    if (worktree) {
       skipped.push({
         path: name,
         reason: "a git worktree (a checkout of another clone), not a repo",
       });
       continue;
     }
-    const det = await detectRepoType(repo);
-    if (isClone) repos.push({ dir: sub, repo });
-    else if (det.type !== "unknown" || det.component) builds.push(name);
+    if (was) {
+      repos.push({ dir: sub, listed: was });
+      continue;
+    }
+    if (selfListed && !isClone) continue;
+    const det = await readFolder(name, sub);
+    if (!det) continue;
+    if (isClone) repos.push({ dir: sub, detection: det });
+    else if (det.type !== "unknown" || det.component) builds.push({ name, detection: det });
     else skipped.push({ path: name, reason: "no build file, code or platform files" });
   }
-  skipped.sort((a, b) => (a.path < b.path ? -1 : 1));
+  const sorted = () => skipped.sort((a, b) => (a.path < b.path ? -1 : 1));
   // A folder that is itself a clone is one repo: its subfolders that build are its modules,
   // and a clone inside it is a repo of its own (ADR 0057).
   if (selfClone) {
-    const self = await visibleRepo(basename(resolve(dir)), dir, SELF_IGNORE);
-    return { repos: [{ dir, repo: self, modules: builds }, ...repos], skipped };
+    if (selfListed) return { repos: [{ dir, listed: selfListed }, ...repos], skipped: sorted() };
+    const det = await readFolder(basename(resolve(dir)), dir, SELF_IGNORE);
+    return {
+      repos: [
+        ...(det ? [{ dir, detection: det, modules: builds.map((b) => b.name) }] : []),
+        ...repos,
+      ],
+      skipped: sorted(),
+    };
   }
+  sorted();
   // Otherwise each subfolder that builds is a repo of its own (a folder of clones).
-  for (const name of builds)
-    repos.push({ dir: join(dir, name), repo: await visibleRepo(name, join(dir, name)) });
+  for (const b of builds) repos.push({ dir: join(dir, b.name), detection: b.detection });
   repos.sort((a, b) => (basename(a.dir) < basename(b.dir) ? -1 : 1));
   // The folder itself is one repo when it has no repos inside but builds something.
   if (repos.length === 0) {
-    const self = await visibleRepo(basename(resolve(dir)), dir, SELF_IGNORE);
-    const det = await detectRepoType(self);
+    const was = await read.listedAs(dir);
+    if (was) return { repos: [{ dir, listed: was }], skipped: [] };
+    const before = skipped.length;
+    const det = await readFolder(basename(resolve(dir)), dir, SELF_IGNORE);
+    if (!det) return { repos: [], skipped: skipped.slice(before) };
     if ((await isDir(join(dir, ".git"))) || det.type !== "unknown" || det.component)
-      return { repos: [{ dir, repo: self }], skipped: [] };
+      return { repos: [{ dir, detection: det }], skipped: [] };
   }
   return { repos, skipped };
 }
@@ -374,12 +534,15 @@ function entryOut(r: ManifestRepo): Record<string, unknown> {
   return out;
 }
 
-/** Repos the same once their clone URLs are compared as keys (an in-place path: as written). */
-function sameRepo(a: ManifestRepo, b: ManifestRepo): boolean {
-  const ka = cloneUrlKey(a.url);
-  const kb = cloneUrlKey(b.url);
-  return ka !== undefined && kb !== undefined ? ka === kb : a.url.trim() === b.url.trim();
+/** Clone URLs the same once compared as keys (an in-place path: as written). */
+function sameUrl(a: string, b: string): boolean {
+  const ka = cloneUrlKey(a);
+  const kb = cloneUrlKey(b);
+  return ka !== undefined && kb !== undefined ? ka === kb : a.trim() === b.trim();
 }
+
+/** Repos the same: their clone URLs are. */
+const sameRepo = (a: { url: string }, b: { url: string }) => sameUrl(a.url, b.url);
 
 const HEADER =
   "# Proposed by atticus repos discover. Types come from each repo's files; owners marked\n# `unassigned` and missing systems are questions (see QUESTIONS.md). Review before use.\n";
@@ -419,22 +582,56 @@ export async function reposDiscover(
     return id;
   };
 
+  const manifestPath = join(p.orgPackDir, "profiles", platform, "repos.manifest.yaml");
+  const current = await existingManifest(manifestPath);
+  const kept = current?.repos ?? [];
+  const listed: DiscoverResult["listed"] = [];
+  /** Ids found folders took that aren't added: a later folder of the same name is still `-2`. */
+  const reserved: string[] = [];
+
   if ("dir" in source) {
-    const c = await localCandidates(source.dir);
+    const dirOf = source.dir;
+    // Each folder's URL as the manifest would hold it, asked once: a repo kept in place by its
+    // path, a clone by its origin (Git's config, local), else the folder.
+    const urls = new Map<string, Promise<string>>();
+    const urlOf = (dir: string) => {
+      let url = urls.get(dir);
+      if (!url) {
+        const rel = toPosix(relative(root, dir));
+        const inside = !rel.startsWith("..") && !isAbsolute(rel);
+        url =
+          o.inPlace && inside
+            ? Promise.resolve(rel === "" ? "." : `./${rel}`)
+            : originUrl(dir, git).then((origin) => origin ?? toPosix(resolve(dir)));
+        urls.set(dir, url);
+      }
+      return url;
+    };
+    const known = [...kept, ...(o.known ?? [])];
+    const timeoutMs = o.repoTimeoutMs ?? REPO_READ_MS;
+    const clock = o.clock ?? Date.now;
+    const c = await localCandidates(dirOf, {
+      listedAs: async (dir) => {
+        if (!known.length) return undefined;
+        const url = await urlOf(dir);
+        const had = known.find((k) => sameUrl(k.url, url));
+        return had ? { id: had.id, url } : undefined;
+      },
+      ...(o.onFolder ? { onFolder: o.onFolder } : {}),
+      bound: () => boundOf(timeoutMs, clock),
+      timeoutMs,
+    });
     skipped = c.skipped;
-    for (const { dir, repo, modules } of c.repos) {
-      const det = await detectRepoType(repo);
-      const rel = toPosix(relative(root, dir));
-      const inside = !rel.startsWith("..") && !isAbsolute(rel);
-      const url =
-        o.inPlace && inside
-          ? rel === ""
-            ? "."
-            : `./${rel}`
-          : ((await originUrl(dir, git)) ?? toPosix(resolve(dir)));
+    for (const { dir, detection: det, modules, listed: was } of c.repos) {
+      const id = uniqueId(dir === dirOf ? basename(resolve(dir)) : basename(dir));
+      if (was || !det) {
+        if (was) listed.push({ path: toPosix(relative(dirOf, dir)) || ".", ...was });
+        reserved.push(id);
+        continue;
+      }
       const entry: ManifestRepo = {
-        id: uniqueId(dir === source.dir ? basename(resolve(dir)) : basename(dir)),
-        url,
+        id,
+        url: await urlOf(dir),
         defaultBranch: (await headBranch(dir)) ?? "main",
         branches: [],
         type: det.type,
@@ -474,13 +671,11 @@ export async function reposDiscover(
     }
   }
 
-  const manifestPath = join(p.orgPackDir, "profiles", platform, "repos.manifest.yaml");
-  const current = await existingManifest(manifestPath);
-  // Round 50: a found repo the manifest lists already (the same clone URL) is left out; one whose
-  // id it lists for another repo gets an id of its own, and the result says so.
-  const kept = current?.repos ?? [];
+  // Round 50: a found repo the manifest lists already (the same clone URL) is left out (a
+  // folder's before it is read, above); one whose id it lists for another repo gets an id of its
+  // own, and the result says so.
   const renamed: DiscoverResult["renamed"] = [];
-  const taken = new Set([...kept.map((r) => r.id), ...found.map((f) => f.entry.id)]);
+  const taken = new Set([...kept.map((r) => r.id), ...found.map((f) => f.entry.id), ...reserved]);
   const added: DiscoveredRepo[] = [];
   for (const f of found) {
     if (kept.some((k) => sameRepo(k, f.entry))) continue;
@@ -502,6 +697,7 @@ export async function reposDiscover(
     platform,
     repos: found,
     skipped,
+    listed,
     questions,
     renamed,
     wrote: "nothing",

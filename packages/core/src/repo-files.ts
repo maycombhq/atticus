@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { globMatcher, type GlobMatcher } from "./glob.js";
+import { hasLineEnd, plainGlob, plainTest, type PlainGlob } from "./glob-plain.js";
 
 /**
  * A checkout's files as every reader of a repo sees them (review round 49): the verifier and its
@@ -119,6 +120,11 @@ export interface IgnoreRule {
   re: GlobMatcher;
   negate: boolean;
   dirOnly: boolean;
+  /**
+   * The line as a test of the path's own text, when it is one (`node_modules`, `*.class`): what
+   * most lines are, so a large clone's files are told without the automaton. Same answer as `re`.
+   */
+  plain?: PlainGlob;
 }
 
 /** The rules of one .gitignore file (git's syntax: #, !, a trailing /, a leading or inner /). */
@@ -137,7 +143,15 @@ export function ignoreRules(text: string, base: string): IgnoreRule[] {
     if (!line) continue;
     const anchored = line.includes("/");
     try {
-      out.push({ base, re: globMatcher(line.replace(/^\//, ""), !anchored), negate, dirOnly });
+      const glob = line.replace(/^\//, "");
+      const plain = plainGlob(glob, !anchored);
+      out.push({
+        base,
+        re: globMatcher(glob, !anchored),
+        negate,
+        dirOnly,
+        ...(plain ? { plain } : {}),
+      });
     } catch {
       // A line git would read some other way is left out rather than guessed at.
     }
@@ -147,14 +161,16 @@ export function ignoreRules(text: string, base: string): IgnoreRule[] {
 
 /** Whether git would ignore a path by these rules: the last rule that matches decides. */
 export function ignoredBy(rules: readonly IgnoreRule[], path: string, isDir: boolean): boolean {
-  let out = false;
-  for (const r of rules) {
+  // From the last line back: the first that matches is the one that decides.
+  const plainPath = !hasLineEnd(path);
+  for (let i = rules.length - 1; i >= 0; i--) {
+    const r = rules[i]!;
     if (r.dirOnly && !isDir) continue;
     if (r.base && !path.startsWith(`${r.base}/`)) continue;
     const rel = r.base ? path.slice(r.base.length + 1) : path;
-    if (r.re.test(rel)) out = !r.negate;
+    if (r.plain && plainPath ? plainTest(r.plain, rel) : r.re.test(rel)) return !r.negate;
   }
-  return out;
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -15,6 +15,9 @@ vi.mock("react", async () => {
 });
 const sent: { path: string; body?: unknown }[] = [];
 let planReply: unknown;
+/** Set to hold a folder's read open (its job running) until the test ends it. */
+let held: { resolve: (v: unknown) => void; reject: (e: unknown) => void } | undefined | true;
+const followed: { onLine?: (l: string) => void; write?: boolean }[] = [];
 const EDIT = {
   path: "org-pack/runtime.yaml",
   changes: [{ was: "adapters: {}" }, { now: "adapters:" }, { now: "  gitHost: manual" }],
@@ -30,12 +33,32 @@ vi.mock("../src/api/client.js", async () => {
       if (path === "/api/setup/repos/plan") return planReply;
       return { ...EDIT, written: o?.body?.preview !== true };
     },
+    stopJob: async (id: string) => {
+      sent.push({ path: `/api/jobs/${id}/cancel` });
+    },
+    // A folder is read as a job (beta.28.3's field report): the page hears the job's id and
+    // each line it says, and its answer is the plan (or JobStopped, once Stop ended it).
+    callAsJob: async (
+      path: string,
+      body: Record<string, unknown>,
+      o: { onJob?: (id: string) => void; onLine?: (l: string) => void; write?: boolean },
+    ) => {
+      sent.push({ path, body: { ...body, job: true } });
+      followed.push(o);
+      o.onJob?.("job-7");
+      if (!held) return planReply;
+      return new Promise((resolve, reject) => {
+        held = { resolve, reject };
+      });
+    },
   };
 });
 const { COPY } = await import("../src/copy.js");
 const { DiffLines, EditPreview } = await import("../src/screens/setup/EditPreview.js");
 const { Propose } = await import("../src/app/propose.js");
 const { AddRepos, PlanTable, reposToAdd } = await import("../src/screens/setup/AddRepos.js");
+const { JobWait } = await import("../src/app/job-wait.js");
+const { Note } = await import("../src/screens/know/common.js");
 const { AdapterForm, adapterValue, settingsOf, shown } =
   await import("../src/screens/setup/Adapters.js");
 const { CreateMetarepoForm } = await import("../src/screens/setup/CreateMetarepo.js");
@@ -295,9 +318,111 @@ describe("discovering a folder of clones", () => {
     await flush();
     await flush();
     expect(sent.map((s) => s.body)).toEqual([
-      { dir: "/work/clones" },
-      { dir: "/work/clones", platform: "northwind" },
+      { dir: "/work/clones", job: true },
+      { dir: "/work/clones", platform: "northwind", job: true },
     ]);
+  });
+
+  /** The form in folder mode with a folder typed, and its submit. */
+  const folderForm = () => {
+    const m = mount(AddRepos as never, {} as never);
+    const els = () => all(m.tree);
+    (
+      els().filter((e) => e.type === "input" && e.props.type === "radio")[1]!.props
+        .onChange as () => void
+    )();
+    m.render();
+    (els().find((e) => e.props.id === "add-repos-dir")!.props.onChange as (e: unknown) => void)({
+      target: { value: "/work/clones" },
+    });
+    m.render();
+    const submit = () =>
+      (els().find((e) => e.type === "form")!.props.onSubmit as (e: unknown) => void)({
+        preventDefault: () => undefined,
+      });
+    return { m, els, submit };
+  };
+
+  // Field report (beta.28.3): the read of a folder of ~40 clones "took hours and did not
+  // respond". It is a job: the page says the folder it is on, and offers Stop.
+  it("says which folder it is reading while it reads, and stops on Stop", async () => {
+    sent.length = 0;
+    followed.length = 0;
+    held = true;
+    const { m, els, submit } = folderForm();
+    submit();
+    await flush();
+    m.render();
+    // A read: its end is no write (so Stop ends it as stopped, and no page reloads for it).
+    expect(followed[0]!.write).toBe(false);
+    const waitOf = () => els().find((x) => x.type === JobWait);
+    expect(waitOf()!.props.what).toBe(S.readingFolder);
+    followed[0]!.onLine!("Reading forge-ledger (4 of 40)… (0 s in)");
+    m.render();
+    expect(waitOf()!.props.line).toBe("Reading forge-ledger (4 of 40)… (0 s in)");
+    // As the person sees it: the wait's words, the folder it is on, and Stop.
+    const shown = html(<JobWait {...(waitOf()!.props as Parameters<typeof JobWait>[0])} />);
+    expect(shown).toContain(esc(COPY.app.jobWait.now("Reading forge-ledger (4 of 40)… (0 s in)")));
+    expect(shown).toContain(`aria-label="${COPY.app.jobWait.stopLabel(S.readingFolder)}"`);
+    (waitOf()!.props.onStop as () => void)();
+    await flush();
+    expect(sent.at(-1)!.path).toBe("/api/jobs/job-7/cancel");
+    m.render();
+    expect(waitOf()!.props.stopping).toBe(true);
+    const { JobStopped } = await import("../src/api/client.js");
+    (held as unknown as { reject: (e: unknown) => void }).reject(new JobStopped());
+    held = undefined;
+    await flush();
+    await flush();
+    m.render();
+    expect(waitOf()).toBeUndefined();
+    const note = els().find((x) => x.type === Note)!.props.note as { ok: boolean; text: string };
+    expect(note).toMatchObject({ ok: true, text: COPY.app.jobWait.stopped });
+  });
+
+  it("lists what the manifest has already and each folder skipped, with why", async () => {
+    held = undefined;
+    const { m, submit } = folderForm();
+    planReply = {
+      platform: "forge",
+      platforms: ["forge"],
+      repos: [
+        {
+          id: "forge-statements",
+          url: "https://git.forge.example/forge/forge-statements.git",
+          type: "frontend",
+        },
+      ],
+      listed: [{ url: "https://git.forge.example/forge/forge-ledger.git", id: "forge-ledger" }],
+      refused: [],
+      skipped: [
+        {
+          path: "forge-monolith",
+          reason: "took too long to read (over 60 seconds); add it by its clone URL",
+        },
+        { path: "notes", reason: "no build file, code or platform files" },
+      ],
+    };
+    submit();
+    await flush();
+    await flush();
+    m.render();
+    const table = all(m.tree).find((x) => x.type === PlanTable)!;
+    const out = html(<PlanTable {...(table.props as Parameters<typeof PlanTable>[0])} />);
+    expect(out).toContain(S.toAdd(1));
+    expect(out).toContain(
+      esc(S.listed("https://git.forge.example/forge/forge-ledger.git", "forge-ledger")),
+    );
+    expect(out).toContain(`<summary>${esc(S.skipped(2))}</summary>`);
+    expect(out).toContain(
+      esc(
+        S.skippedWhy(
+          "forge-monolith",
+          "took too long to read (over 60 seconds); add it by its clone URL",
+        ),
+      ),
+    );
+    expect(out).toContain(esc(S.skippedWhy("notes", "no build file, code or platform files")));
   });
 });
 

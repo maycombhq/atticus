@@ -7230,9 +7230,11 @@ export const COPY = {
       "As your Git host shows them, such as https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-ledger. Credentials and a browser link's ?path= are taken out.",
     dir: "Folder of clones",
     dirHint:
-      "Its full path. Every repo in it is read from its files, as atticus repos discover does.",
+      "Its full path. Each repo in it that the manifest doesn't list yet is read from its files, as atticus repos discover does; one the manifest lists already is told by its clone URL and not read again.",
     read: "Read the list",
     reading: "Reading…",
+    // A folder is read as a job: the page says the folder it is on, and offers Stop.
+    readingFolder: "Reading the folder of clones…",
     platformLabel: "Platform",
     platformNone: "Choose one",
     choosePlatform: (n: number) =>
@@ -7250,7 +7252,9 @@ export const COPY = {
       `${from} is taken (${why}), so this one is the id shown.`,
     listed: (url: string, id: string) => `${url} is listed already, as ${id}: left out.`,
     refused: (given: string, why: string) => `${given}: ${why}.`,
-    skipped: (n: number) => `${n} folder${n === 1 ? "" : "s"} looked at aren't repos.`,
+    skipped: (n: number) =>
+      `${n} folder${n === 1 ? " wasn't" : "s weren't"} read as ${n === 1 ? "a repo" : "repos"}: see why.`,
+    skippedWhy: (path: string, reason: string) => `${path}: ${reason}.`,
     nothingNew: "Nothing new to add: the manifest lists all of them already.",
     noneTicked: "Tick at least one repo to add.",
     // A repo's type.
