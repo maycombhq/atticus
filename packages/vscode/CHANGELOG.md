@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.34 (pre-release, with Atticus 2.0.0-beta.28.5)
+
+- **Ships with Atticus 2.0.0-beta.28.5, and needs it.** The app in its tab shows beta.28.5's fixes: a link's nested fields are no longer called mismatches, a line drawn from an outside system opens Declare a link with the gateway's routes to tick, and Connect never offers "Write 0 pairs". No change to the extension's own commands or views.
+
 ## 0.7.33 (pre-release, with Atticus 2.0.0-beta.28.4)
 
 - **Ships with Atticus 2.0.0-beta.28.4, and needs it.** The app in its tab shows beta.28.4's fixes: each waiting repo has its own Apply, an Apply over several repos says "Repo 3 of 7" and can be stopped, a build names its stages and its slowest steps, Discover a folder of clones takes seconds, and connecting two boxes says whether a pairing is on the map or waiting for Apply. No change to the extension's own commands or views.

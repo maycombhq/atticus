@@ -83,6 +83,9 @@ async function tree(dir: string): Promise<Record<string, string>> {
     for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
       const r = `${rel}${e.name}`;
       if (r === ".index/build-cache" || r === ".index/build-report.json") continue;
+      // The kept hashes of the record files (beta.28.5) are this machine's cache too: git-ignored,
+      // written by the build's check of the catalog on file, and no part of the catalog.
+      if (r === ".atticus/cache" || r === ".atticus/.gitignore") continue;
       if (e.isDirectory()) await walk(join(d, e.name), `${r}/`);
       else out[r] = await readFile(join(d, e.name), "utf8");
     }

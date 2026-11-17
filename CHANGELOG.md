@@ -2,6 +2,38 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.28.5 (2026-11-17)
+
+beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
+
+### Fixed
+
+- **Nested fields a spec has are no longer called mismatches on a link.** Facts record a class's fields flat and a spec nests them (`receipt.depot_token`), so a link whose fields were all there showed dozens of "missing" fields. The contract check now places each class's fields under the field whose type names the class and compares whole paths, from the facts already on file (ADR 0164 addendum). A field whose name the other side has only somewhere else is shown as unconfirmed and says where; a class used with type arguments (`Result<Customer>`, `Result<Account>`) is placed under each holder; one field that differs at several places of a shared class is one finding that lists the places; and `atticus verify` notes a payload class no field reaches. A link's panel counts unconfirmed differences apart from mismatches and says why each is unconfirmed.
+- **A newer spec of an outside system is compared by full field path**, so a newly dropped field is not hidden by an older finding of the same name, including one more place of a shared class.
+- **Mapping one repo no longer spends hours applying every other repo.** A map ends by applying every repo with facts; each of those applies ran every build pass again whenever the one before it had raised, refreshed or retired an open question, which every apply does. A build now reuses the last one unless an answered question, the facts or the inputs changed, with the same catalog byte for byte.
+- **A build's check of the catalog on file opens only the record files that changed.** "Reading the catalog's files to check the build" hashed every record file on every build (20 to 34 seconds of each Apply on the field estate). Hashes are kept under `.atticus/cache` by size, times and file identity, and a file is read again whenever any of those moved.
+- **Writing a repo's specs reads only the files that are specs once the others are known**, and parses each OpenAPI file once, not once per operation.
+- **A file another program holds no longer ends a run with "EPERM … .tmp".** On Windows the write waits up to 45 seconds and says once which file is open elsewhere; Stop or Ctrl+C ends the wait; after the first held file later waits are short. If it stays held, that repo is named with the command that applies it, the run goes on to the next repo, and it exits 1 at the end. This holds for `atticus map --all`'s last step and for `atticus verify --all`.
+- **No fact is lost when a write fails part-way.** Verify wrote the facts file and then the rejected file; had the second failed, facts moved out were in neither. The rejected file is written first, left alone when unchanged, and a repo's stale temporary files are swept.
+- **A map's last step says "Repo 7 of 41" with the time left** and stops between repos on Ctrl+C, naming the repos not applied. A part given again under Copilot ACP is applied once, not twice.
+- **A line you draw is never turned round.** A line from an outside system to a repo opened Connect with the ends swapped and a "Write 0 pairs" button. It now opens Declare a link with the system as the caller (ADR 0200).
+- **A gateway's routes are picked, not typed.** Declare a link › Calls a gateway route lists the gateways, then the routes of the one picked (method, path, handler) with a search; several are ticked, previewed together and written in one go. Routes declared already are marked; routes the same words name are one row; typing a route still works. A repo whose type only reads like a gateway's is told how to be made one, and a system no profile has is told the step that adds it, before anything is ticked.
+- **Connect never offers "Write 0 pairs".** With nothing to pair it says why and what to do instead, and a line that connects nothing says why by name (several repos, no repo, two outside systems).
+- **A Copilot ACP server that fails to start says why.** A server that exits early is reported with its own words, redacted, and advice; a server that asks for `--stdio` is started once more with it; `ATTICUS_COPILOT_START_TIMEOUT_MS` lengthens the wait for a slow first start; `atticus doctor` checks the start; a server that closed its output is ended.
+- **`/atticus-map` asks for each model class's fields by wire name and for the field that holds each class**, so later maps record where a class sits.
+
+### Changed
+
+- **Local API 3.17.0 (ADR 0200, additive):** `GET /api/declared-links/routes`; `POST /api/declared-links` takes `routes` for several gateway routes in one write.
+
+### Known
+
+- **A map still ends with one apply per repo with facts.** Each is now cheap when nothing of that repo changed, but building once and writing per repo needs the decisions in `docs/design/apply-once.md`.
+- **Intake is not faster in itself** (about 10 seconds on the field estate); it now runs only when a build really runs.
+- **Only a gateway's routes can be declared as called.** Declaring who calls an ordinary service's entry needs a profile format change (C6) and its own ADR.
+- **The contract check still pairs a field with its namesake under a differently named parent of the same depth** (`billing.city` with `shipping.city`); the missing parent is reported, and a type difference on such a pair is unconfirmed.
+- **The kept hashes rely on a file's change time**, which was checked by reading for Windows, not run there. Where it does not hold, the check is as correct as before and as slow as before.
+
 ## 2.0.0-beta.28.4 (2026-11-17)
 
 beta.28.4 answers a day of field reports from a 40-repo estate. One additive change to the local API (3.16.0, ADRs 0198 and 0199); no new file formats: a team may upgrade one member at a time.
