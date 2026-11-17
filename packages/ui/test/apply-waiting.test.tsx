@@ -270,3 +270,36 @@ it("while it runs, says how many repos of how many are done", async () => {
   await ran;
   expect(held.note?.text).toBe(T.appliedWaiting(3));
 });
+
+// Beta.28.4: Stop between two repos. The job ends stopped with what it applied whole; the page
+// says so in its own words, and the repos not applied keep their buttons.
+it("stopped part way: says how many were applied, names the rest, and keeps their own Apply", async () => {
+  applyFirst = served = THREE;
+  const m = mount(CorrectionsToApply as never, {} as never);
+  (waiting(m.tree)!.props.onRun as () => void)();
+  served = ["forge-ledger", "forge-teller"];
+  const said = "Stopped after 1 of 3 repos. Not applied: forge-ledger, forge-teller.";
+  job.reject(
+    new JobFailed(said, [said], undefined, 1, {
+      code: 1,
+      stopped: true,
+      applied: ["forge-card-vault"],
+      notApplied: ["forge-ledger", "forge-teller"],
+    }),
+  );
+  await settle();
+  m.render();
+  const run = waiting(m.tree)!.props.run as { note: { ok: boolean; text: string } };
+  expect(run.note).toEqual({
+    ok: false,
+    text: "Stopped: 1 of 3 repos applied. Not applied: forge-ledger, forge-teller; each keeps its own Apply button.",
+  });
+  expect(each(m.tree).map((e) => [e.props.repo, e.props.disabled])).toEqual([
+    ["forge-ledger", false],
+    ["forge-teller", false],
+  ]);
+  // Stopped before the first repo was applied: none applied, said the same way.
+  expect(T.stoppedAfter(0, 2, "forge-ledger, forge-teller")).toBe(
+    "Stopped: 0 of 2 repos applied. Not applied: forge-ledger, forge-teller; each keeps its own Apply button.",
+  );
+});

@@ -4,7 +4,7 @@
 - Date: 2026-11-16
 - Release: the patch after 2.0.0-beta.28.3
 - Amends: ADR 0188 (the route `POST /api/facts/apply-all`)
-- Contracts: C4 only, additive (Local API 3.16.0). One optional request field and two optional result fields. No catalog, rule, plugin, AI runtime or org-pack schema changes, and no file format changes. `atticus verify --all` is unchanged on the command line.
+- Contracts: C4 only, additive (Local API 3.16.0). One optional request field and three optional result fields. No catalog, rule, plugin, AI runtime or org-pack schema changes, and no file format changes. `atticus verify --all` is unchanged on the command line.
 
 ## Context
 
@@ -25,6 +25,14 @@ On an estate of 40 repos read, with corrections waiting in a few, the owner clic
 4. The map's bar and Home send the repos that wait. They also offer each waiting repo its own Apply.
 5. The command line does not change. `atticus verify --all [--write]` means every repo read so far. No flag passes a list; a person names one repo with `atticus verify <repo> --write`.
 
+6. Stop is heard between the repos of a run. Before this ADR a job's Stop was heard until its first catalog write started and never again, so a run over several repos could not be stopped once its first repo had written. Now:
+   - Stop asked while repo K is being written lets that write finish whole. The run then ends before repo K+1 starts.
+   - Stop asked while repo K is still being read or built ends the run there. Nothing of repo K is in the catalog, as with one repo's Apply.
+   - Stop asked during the last repo's write is too late, as before, and the run ends done.
+   - A stopped run's job ends `cancelled`, never failed. Its result has `stopped: true`, the repos applied whole under `applied`, and the repos not applied (those never reached included) under `notApplied`. The scan's lock is free.
+   - The mechanism is a release beside the commit point: work made of several writes says when one has ended (`releaseCurrent` in `packages/core/src/cancel.ts`, `release` on the job in `packages/server/src/jobs.ts`). Only the run over several repos calls it, and only between two repos. Every other job is unchanged: past its commit point it is never stopped.
+   - On the command line `atticus verify --all --write` has no Stop of its own. Ctrl+C ends the process, as it did.
+
 ## Why a list from the page, and not "the repos that wait" worked out by the server
 
 The page shows the person a list and a button that says how many repos it will apply. If the server worked the set out again when the job started, a correction saved in between (by a colleague's pull, an assistant or the command line) could add a repo the person did not see. Sending the list makes the click mean what the page said. The server still checks each name, because the list comes from a browser.
@@ -33,7 +41,7 @@ The page shows the person a list and a button that says how many repos it will a
 
 - One local step at a time. A second Apply while one runs is refused with 409, as before.
 - Each repo is still applied by `verify <repo> --write`, with its own build, guards, undo copy and lock. A repo whose build is refused, or whose facts are rejected, is reported as before and the run goes on to the next repo.
-- Stop. A job's Stop is heard until its first catalog write starts and not after it (beta.28.1). In a run over several repos this means Stop is not heard between repos once the first has written. That is how the route behaved before this ADR. It matters more now that the run says how long it has left, so it is recorded here as a known gap. `docs/design/apply-once.md` describes it with the single-build design.
+- A write is never cut short. Stop asked while a repo's catalog write is under way still lets that write finish whole (beta.28.1), for one repo's Apply and for a run over several.
 
 ## Compatibility
 

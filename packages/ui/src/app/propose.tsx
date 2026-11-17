@@ -563,13 +563,20 @@ export async function runApplyAll(
       // Round 41: a refusal to start (409: another local step runs) is the server's own words.
       e instanceof ApiError && e.problem.status === 409
         ? P.notStarted(e.problem.detail ?? e.problem.title)
-        : applied.length && notApplied.length
-          ? COPY.appStep.appliedSome(
+        : // Beta.28.4: Stop ended it between two repos: what was applied whole, and the rest.
+          result?.stopped === true && notApplied.length
+          ? COPY.appStep.stoppedAfter(
               applied.length,
               applied.length + notApplied.length,
               notApplied.join(", "),
             )
-          : message(e);
+          : applied.length && notApplied.length
+            ? COPY.appStep.appliedSome(
+                applied.length,
+                applied.length + notApplied.length,
+                notApplied.join(", "),
+              )
+            : message(e);
     set({
       running: false,
       lines: [message(e)],

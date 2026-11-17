@@ -109,6 +109,7 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
         let leftOut = 0;
         let leftOutRepos = 0;
         let total = 0;
+        let stopped = false;
         const ran = await captured((io) =>
           verifyAllCommand(
             root,
@@ -122,6 +123,11 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
               onStart: (repo, done, of) => {
                 total = of;
                 if (of > 1) count(done, of, `${done} of ${of} repos done, applying ${repo}`);
+              },
+              // Beta.28.4: Stop ended the run before these repos: not applied, by name.
+              onStopped: (notReached) => {
+                stopped = true;
+                notApplied.push(...notReached);
               },
               onRepo: (repo, code, out) => {
                 codes.push(code);
@@ -137,8 +143,14 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
           ),
         );
         // Beta.28.4: which repos it applied and which it didn't, by name, for the page to say.
-        const each = codes.length ? { applied, notApplied } : {};
-        const done = ran.code !== 0 && codes.length > 0 && leftOutRepos > 0 && !notApplied.length;
+        // Stopped (the job ends stopped, whatever its code): said in its result too.
+        const each = stopped
+          ? { applied, notApplied, stopped: true, ...(leftOut ? { leftOut, leftOutRepos } : {}) }
+          : codes.length
+            ? { applied, notApplied }
+            : {};
+        const done =
+          !stopped && ran.code !== 0 && codes.length > 0 && leftOutRepos > 0 && !notApplied.length;
         if (!done) return { ...ran, extra: each };
         return { ...ran, code: 0, extra: { ...each, leftOut, leftOutRepos } };
       });

@@ -49193,6 +49193,10 @@
               "type": "string"
             }
           },
+          "stopped": {
+            "type": "boolean",
+            "const": true
+          },
           "next": {}
         },
         "required": [

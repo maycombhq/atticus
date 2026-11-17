@@ -62,12 +62,11 @@ Each repo's Apply takes and releases the scan's lock, so another writer (a termi
 
 ## Stop
 
-A job's Stop is heard until its work says it is writing (`commitCurrent`, beta.28.1). After that it is too late, and the job says so. In today's run over several repos the first repo's write sets that state for the whole job, and nothing clears it. **Stop is therefore not heard between repos after the first write.** A run that says "about 4 h left" cannot be stopped from the app. This is how the route behaved before ADR 0198, and the change that came with ADR 0198 did not alter it.
+A job's Stop is heard until its work says it is writing (`commitCurrent`, beta.28.1). After that it is too late, and the job says so. Until ADR 0198 the first repo's write set that state for the whole job and nothing cleared it, so Stop was not heard between repos after the first write.
 
-Two ways to fix it:
+This is fixed with today's run (ADR 0198, point 6). The run says when a repo's write has ended (`releaseCurrent`), a Stop asked during that write is acted on then, and `verifyAllCommand` ends before the next repo, saying which repos are not applied. `packages/cli/test/apply-all-stop.test.ts` holds it over a three-repo run, and holds that one repo's own Apply is still never cut short.
 
-- With today's run: let the job leave the writing state when a repo's write ends (`packages/server/src/jobs.ts` and `packages/core/src/cancel.ts`), remember a Stop asked meanwhile, and have `verifyAllCommand` stop before the next repo with a line saying how many repos were applied and which still wait. This is small and worth doing on its own.
-- With build-once: Stop is heard through every repo's check and through the build, up to the one write. This is the behaviour a person expects, and it comes with the design.
+With build-once, Stop would be heard through every repo's check and through the build, up to the one write. The release is then not needed for this run, but it stays correct.
 
 ## The approach
 

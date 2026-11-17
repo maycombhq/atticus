@@ -3,6 +3,7 @@ import {
   printToCurrent,
   withCommit,
   withPrinter,
+  withRelease,
   withSignal,
   type PrintOptions,
 } from "@maycombhq/core";
@@ -57,6 +58,13 @@ export interface JobControl {
    * said the same way.
    */
   commit(): void;
+  /**
+   * Beta.28.4: the write `commit()` started has ended whole, and the work may go on to another
+   * (an Apply over several repos, between two repos). Stop is heard again; one asked during that
+   * write is acted on now: the signal aborts and `cancelled` is true, so the work stops before
+   * its next write and the job ends stopped. Work that never calls it is as before.
+   */
+  release(): void;
   readonly cancelled: boolean;
   /**
    * Beta.27 review: the job's signal, aborted on Stop. Work that starts a process (git, a
@@ -149,6 +157,8 @@ export class JobManager {
   private ends = new Map<string, () => void>();
   /** Jobs past their commit point (beta.28.1): a Stop now is too late. */
   private committedIds = new Set<string>();
+  /** Beta.28.4: jobs asked to stop during a write: acted on if the work releases that write. */
+  private lateStops = new Set<string>();
   /** The message a job said before a Stop not yet heard (the hunt of beta.28.1, S3). */
   private beforeStop = new Map<string, string>();
   private recorders = new Map<string, JobRecorder>();
@@ -317,6 +327,8 @@ export class JobManager {
       this.committedIds.add(id);
       // A Stop asked before the work heard it: too late now, said as such.
       if (cancelled.delete(id)) {
+        // Beta.28.4: kept, for work that says when this write has ended (`release`).
+        this.lateStops.add(id);
         delete job.stopping;
         // The hunt of beta.28.1 (S3): the Stop is taken back, so is its "Stopping…".
         const was = this.beforeStop.get(id);
@@ -329,6 +341,11 @@ export class JobManager {
         this.tell({ type: "state", job });
       }
     };
+    const release = () => {
+      if (!this.committedIds.delete(id)) return;
+      // A Stop asked during the write that just ended: acted on now, between two writes.
+      if (this.lateStops.delete(id)) this.cancel(id);
+    };
     const control: JobControl = {
       progress: (done, total, given) => {
         // Stopping, it says so until it ends, whatever step it reaches meanwhile.
@@ -339,6 +356,7 @@ export class JobManager {
       },
       line,
       commit,
+      release,
       get cancelled() {
         return cancelled.has(id);
       },
@@ -348,7 +366,9 @@ export class JobManager {
     void (async () => {
       try {
         const out = await withPrinter(line, () =>
-          withSignal(abort.signal, () => withCommit(commit, () => work(control))),
+          withSignal(abort.signal, () =>
+            withCommit(commit, () => withRelease(release, () => work(control))),
+          ),
         );
         if (out?.result) job.result = out.result;
         if (out?.errors?.length) job.errors.push(...out.errors);
@@ -362,6 +382,7 @@ export class JobManager {
       }
       this.aborts.delete(id);
       this.committedIds.delete(id);
+      this.lateStops.delete(id);
       this.beforeStop.delete(id);
       // Printed nothing as it ran: what it ended with is its lines.
       const p = this.printed.get(id);
@@ -433,6 +454,8 @@ export class JobManager {
     // Beta.28.1: past the work's commit point, Stop is too late: said, and the work goes on.
     if (this.committedIds.has(id)) {
       this.print(j, TOO_LATE);
+      // Beta.28.4: kept, for work that says when this write has ended (`release`).
+      this.lateStops.add(id);
       return true;
     }
     this.cancelledIds.add(id);

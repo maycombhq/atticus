@@ -657,7 +657,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   400, and no job, when a repo listed has no facts on file. Without `repos` it applies every
  *   repo read so far, as before. Its job's result (FactsApplyResult) gains `applied` and
  *   `notApplied`, the repos by name. While it runs over several repos its job's `progress` counts
- *   them (`done` of `total`: the repos finished). Additive only.
+ *   them (`done` of `total`: the repos finished). Stop is heard between its repos: a repo's
+ *   write under way finishes whole, then the job ends `cancelled` with `stopped: true` in its
+ *   result and the repos never reached under `notApplied`. Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
@@ -2291,6 +2293,12 @@ export const FactsApplyResult = z.object({
    */
   applied: z.array(z.string()).optional(),
   notApplied: z.array(z.string()).optional(),
+  /**
+   * 3.16.0 (ADR 0198), POST /api/facts/apply-all's: Stop ended the run between two repos (its
+   * job's state is `cancelled`). `applied` are applied whole; `notApplied` includes the repos it
+   * never reached.
+   */
+  stopped: z.literal(true).optional(),
   next: z.unknown().optional(),
 });
 export type FactsApplyResultT = z.infer<typeof FactsApplyResult>;
