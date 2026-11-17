@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   CancelledError,
+  FileHeldError,
   catalogDirOf,
   currentSignal,
   factsDirOf,
@@ -337,11 +338,22 @@ export async function verifyAllCommand(
         io,
       );
     } catch (e) {
-      // Stop asked while this repo was read or built: its write never started (the write's own
-      // steps stop there and free the lock). Any other error is the command's, as before.
-      if (!(e instanceof CancelledError) || !signal?.aborted) throw e;
-      stoppedAt = i;
-      break;
+      // Beta.28.5 (the owner's field report: a run of forty repos ended on one file another
+      // program held): that repo is said, with its own command, and the run goes on. Its files
+      // are a consistent set (the rejected file is written before the facts file, and a held
+      // file is left as it was); a catalog written before the error is whole.
+      if (e instanceof FileHeldError) {
+        io.err(
+          `${repo}: not ${each.write ? "applied" : "verified"}: ${e.message} Run it once that is put right: atticus verify ${repo}${each.write ? " --write" : ""}`,
+        );
+        code = 1;
+      } else {
+        // Stop asked while this repo was read or built: its write never started (the write's
+        // own steps stop there and free the lock). Any other error is the command's, as before.
+        if (!(e instanceof CancelledError) || !signal?.aborted) throw e;
+        stoppedAt = i;
+        break;
+      }
     }
     spent = clock() - began;
     onRepo?.(repo, code, leftOut);

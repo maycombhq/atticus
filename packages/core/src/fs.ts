@@ -75,6 +75,19 @@ export async function writeFileAtomic(
 }
 
 /**
+ * Write a file unless it already holds exactly these bytes: then it is left alone, its time
+ * too, and false is returned (beta.28.5: a run that works out a file's content again never
+ * replaces the file with itself; on Windows each replacement is a chance to meet a program that
+ * holds the file, and a time that moved for nothing makes every reader of it read it again).
+ */
+export async function writeFileIfDiffers(path: string, data: string): Promise<boolean> {
+  const now = await readFile(path).catch(() => undefined);
+  if (now !== undefined && now.equals(Buffer.from(data, "utf8"))) return false;
+  await writeFileAtomic(path, data);
+  return true;
+}
+
+/**
  * Copy a file the way `writeFileAtomic` writes one: to a temporary file beside the target, then
  * renamed over it. The copy is made by the system (a copy-on-write clone where the file system
  * has them, APFS, Btrfs or XFS; else a copy in the kernel), so the bytes never pass through
