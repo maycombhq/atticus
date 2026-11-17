@@ -269,8 +269,11 @@ export async function verifyAllCommand(
      * passes it: `atticus verify --all` stays every repo read so far.
      */
     only?: readonly string[];
-    /** Beta.28.4: told as each repo starts: its place (from 1) and how many there are. */
-    onStart?: (repo: string, n: number, of: number) => void;
+    /**
+     * Beta.28.4: told as each repo starts, after its "Repo N of M" line: how many repos are
+     * done (finished, whatever their outcome) and how many there are.
+     */
+    onStart?: (repo: string, done: number, of: number) => void;
     /** The run's clock, in milliseconds (tests pass one); the time by default. */
     clock?: () => number;
   },
@@ -296,13 +299,13 @@ export async function verifyAllCommand(
   const began = clock();
   let spent = 0;
   for (const [i, repo] of repos.entries()) {
-    onStart?.(repo, i + 1, repos.length);
     // The estimate is the repos done so far, nothing else: said as "at this rate", since a big
     // repo after small ones takes longer than it says.
     if (repos.length > 1)
       (io.progress ?? io.err)(
         `Repo ${i + 1} of ${repos.length}: ${repo}…${i ? ` (${i} done in ${durationWords(spent)}; ${timeLeftWords((spent / i) * (repos.length - i))} left at this rate)` : ""}`,
       );
+    onStart?.(repo, i, repos.length);
     let leftOut = 0;
     const code = await verifyCommand(
       root,

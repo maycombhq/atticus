@@ -288,10 +288,10 @@ describe("a step the app runs says why, and what to press next", () => {
     type Listed = Ended & { result?: { applied?: string[]; notApplied?: string[] } };
     try {
       // None has a clone here, so each ends at once saying so: enough to tell which ran, and when.
-      const counted: [number, number][] = [];
+      const counted: [number, number, string][] = [];
       const off = srv.jobs.subscribe((c) => {
         if (c.type === "state" && c.job.kind === "local" && c.job.state === "running")
-          counted.push([c.job.progress.done, c.job.progress.total]);
+          counted.push([c.job.progress.done, c.job.progress.total, c.job.progress.message]);
       });
       const started = await call("/api/facts/apply-all", "POST", {
         repos: ["forge-web", "forge-customers"],
@@ -318,8 +318,10 @@ describe("a step the app runs says why, and what to press next", () => {
         / left at this rate\)$/,
       );
       expect(said).not.toMatch(/Repo \d of \d/);
-      expect(counted).toContainEqual([1, 2]);
-      expect(counted).toContainEqual([2, 2]);
+      // The count is of repos finished (never the one under way), with the repo it is on in words.
+      expect(counted).toContainEqual([0, 2, "0 of 2 repos done, applying forge-customers"]);
+      expect(counted).toContainEqual([1, 2, "1 of 2 repos done, applying forge-web"]);
+      expect(counted).toContainEqual([2, 2, "2 of 2 repos done"]);
 
       // A repo with no facts on file, a name that isn't one, an empty list: 400, and no job.
       const before = srv.jobs.list().length;

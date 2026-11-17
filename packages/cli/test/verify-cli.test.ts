@@ -89,7 +89,7 @@ describe("atticus verify --all", () => {
       {
         commit: "0123abc",
         clock: () => times.shift()!,
-        onStart: (repo, n, of) => starts.push([repo, n, of]),
+        onStart: (repo, done, of) => starts.push([repo, done, of]),
       },
       { ...o.io, progress: (l) => progress.push(l) },
     );
@@ -99,9 +99,9 @@ describe("atticus verify --all", () => {
       "Repo 3 of 3: forge-zeta… (2 done in 40 min; about 20 min left at this rate)",
     ]);
     expect(starts).toEqual([
-      ["forge-atlas", 1, 3],
-      ["forge-ledger", 2, 3],
-      ["forge-zeta", 3, 3],
+      ["forge-atlas", 0, 3],
+      ["forge-ledger", 1, 3],
+      ["forge-zeta", 2, 3],
     ]);
     // Never on standard output (a script reads that), and the last line is the count as before.
     expect(o.out.join("\n")).not.toMatch(/Repo \d of/);

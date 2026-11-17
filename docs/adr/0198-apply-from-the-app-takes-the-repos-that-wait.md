@@ -21,7 +21,7 @@ On an estate of 40 repos read, with corrections waiting in a few, the owner clic
    - The order is fixed: id order, whatever order the list came in. Duplicates count once.
    - Without `repos` the route does what it did: every repo read so far. The step a page names as `atticus verify --all --write` (after a declaration or an owner set) still uses it that way.
 2. The job's result (`FactsApplyResult`) gains `applied` and `notApplied`: the repos by name, each in id order. A repo that wrote with rejected facts left out counts as applied, as it does for one repo's Apply (beta.28.1).
-3. While the job runs over several repos, its existing `progress` counts them: `total` is the number of repos and `done` is the repo it is on. The Console and the strip under the top bar already show `done of total` for any job. Each repo's start is also printed as a line, with an estimate of the time left once one repo has finished.
+3. While the job runs over several repos, its existing `progress` counts them: `total` is the number of repos and `done` is how many have finished; its message names the repo being applied. The Console and the strip under the top bar already show `done of total` for any job. Each repo's start is also printed as a line, with an estimate of the time left once one repo has finished.
 4. The map's bar and Home send the repos that wait. They also offer each waiting repo its own Apply.
 5. The command line does not change. `atticus verify --all [--write]` means every repo read so far. No flag passes a list; a person names one repo with `atticus verify <repo> --write`.
 

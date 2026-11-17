@@ -657,7 +657,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   400, and no job, when a repo listed has no facts on file. Without `repos` it applies every
  *   repo read so far, as before. Its job's result (FactsApplyResult) gains `applied` and
  *   `notApplied`, the repos by name. While it runs over several repos its job's `progress` counts
- *   them (`done` of `total`: the repo it is on). Additive only.
+ *   them (`done` of `total`: the repos finished). Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;

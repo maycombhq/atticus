@@ -242,7 +242,7 @@ it("another step is running (409): it says it didn't start, in the server's word
 
 // Beta.28.4: the run said nothing of how far it was. The page says which repo it is on, from the
 // job's own count; the Console has each step and the time left.
-it("while it runs, says which repo of how many it is on", async () => {
+it("while it runs, says how many repos of how many are done", async () => {
   let held: { running?: boolean; note?: { ok: boolean; text: string; working?: boolean } } = {};
   const set = (s: unknown) => {
     held =
@@ -253,13 +253,17 @@ it("while it runs, says which repo of how many it is on", async () => {
   expect(held.note?.text).toBe(COPY.app.working);
   progress!({ done: 0, total: 1, message: "Applying to 3 repos" });
   expect(held.note?.text).toBe(COPY.app.working);
+  progress!({ done: 0, total: 3, message: "0 of 3 repos done, applying forge-card-vault" });
+  expect(held.note?.text).toBe(
+    "0 of 3 repos done. The Console shows the repo being applied, each step and about how long is left.",
+  );
   progress!({ done: 2, total: 3, message: "Loading the catalog… (4 s in)" });
   expect(held).toMatchObject({
     running: true,
     note: {
       ok: true,
       working: true,
-      text: "Applying repo 2 of 3. The Console shows each step and about how long is left.",
+      text: "2 of 3 repos done. The Console shows the repo being applied, each step and about how long is left.",
     },
   });
   job.resolve({ code: 0, lines: [] });

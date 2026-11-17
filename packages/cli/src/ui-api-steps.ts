@@ -33,7 +33,7 @@ interface Ran {
 /**
  * Starts a local job (ui-api.ts's, one at a time with Apply, Propose and Bring in). Beta.28.4:
  * work made of several counted parts (the repos of an Apply) says which it is on with `count`,
- * and the job's progress carries it (the strip under the top bar shows "3 of 7").
+ * and the job's progress carries it (the strip under the top bar shows "2 of 7": two done).
  */
 export type LocalJob = (
   what: string,
@@ -108,6 +108,7 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
         const notApplied: string[] = [];
         let leftOut = 0;
         let leftOutRepos = 0;
+        let total = 0;
         const ran = await captured((io) =>
           verifyAllCommand(
             root,
@@ -116,12 +117,15 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
               verbose: false,
               json: false,
               ...(only ? { only } : {}),
-              // Beta.28.4: the job's own progress counts the repos, when there are several.
-              onStart: (repo, n, of) => {
-                if (of > 1) count(n, of, `Repo ${n} of ${of}: ${repo}…`);
+              // Beta.28.4: the job's own progress counts the repos finished, when there are
+              // several, and says the repo it is on (the strip under the top bar shows both).
+              onStart: (repo, done, of) => {
+                total = of;
+                if (of > 1) count(done, of, `${done} of ${of} repos done, applying ${repo}`);
               },
               onRepo: (repo, code, out) => {
                 codes.push(code);
+                if (total > 1) count(codes.length, total, `${codes.length} of ${total} repos done`);
                 (code === 0 || code === APPLIED_WITH_LEFT_OUT ? applied : notApplied).push(repo);
                 if (code === APPLIED_WITH_LEFT_OUT) {
                   leftOut += out;

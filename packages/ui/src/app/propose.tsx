@@ -519,9 +519,9 @@ export async function runApplyAll(
       repos ? { repos: [...repos] } : {},
       undefined,
       (jobId) => set((was) => ({ ...was, jobId })),
-      // Beta.28.4: which repo it is on, from the job's own count, while it runs.
+      // Beta.28.4: how many repos are done, from the job's own count, while it runs.
       (p) => {
-        if (p.total > 1 && p.done > 0)
+        if (p.total > 1)
           set((was) =>
             was.running
               ? {
