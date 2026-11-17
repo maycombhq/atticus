@@ -36,7 +36,77 @@ const view = (calls: Api.CandidateCallViewT[]): Api.LinkCandidatesViewT => ({
   applyPending: true,
 });
 
+const { all } = await import("./support/hooks.js");
+
 describe("the Connect panel after its own Apply", () => {
+  // The second review (S2): the read after the Apply must not throw away what the person
+  // picked and ticked meanwhile for calls that are still loose.
+  it("keeps the person's picks and ticks for calls still loose, and starts only new calls", () => {
+    const loose = (fact: string, o: Partial<Api.CandidateCallViewT> = {}) =>
+      call({ fact, status: "unresolved", paired: undefined, pairedBy: undefined, ...o });
+    const apis: Api.LinkCandidatesViewT["apis"] = [
+      { id: "e-entries", kind: "entry", method: "POST", path: "/entries" },
+      { id: "e-other", kind: "entry", method: "POST", path: "/other" },
+    ];
+    const first = {
+      ...view([
+        call({ drawn: false }),
+        loose("c-loose", { suggestion: { api: "e-entries", score: 0.6, why: "names-alike" } }),
+      ]),
+      apis,
+    };
+    const props = {
+      from: "forge-billing",
+      box: { repo: "forge-ledger" },
+      cands: { state: "ready", data: first, reload: () => undefined } as Record<string, unknown>,
+    };
+    const m = mount(Pairing as never, props as never);
+    const els = () => all(m.tree);
+    const select = () =>
+      els().find((e) => e.type === "select" && String(e.props["aria-label"]).includes("/entries"))!;
+    const box = () =>
+      els().find(
+        (e) =>
+          e.type === "input" &&
+          e.props.type === "checkbox" &&
+          String(e.props["aria-label"]).includes("/entries"),
+      )!;
+    // Started with the suggestion, not ticked (names alike is a hint).
+    expect(select().props.value).toBe("e-entries");
+    expect(box().props.checked).toBe(false);
+    // The person picks another API (which ticks it).
+    (select().props.onChange as (e: unknown) => void)({ target: { value: "e-other" } });
+    m.render();
+    expect(select().props.value).toBe("e-other");
+    expect(box().props.checked).toBe(true);
+    // The Apply ended and the calls were read again: the paired call is drawn now, the loose
+    // one is still loose, and a call read since is new.
+    props.cands = {
+      state: "ready",
+      reload: () => undefined,
+      data: {
+        ...first,
+        applyPending: undefined,
+        calls: [
+          call({ drawn: true }),
+          loose("c-loose", { suggestion: { api: "e-entries", score: 0.6, why: "names-alike" } }),
+          loose("c-new", {
+            path: "/other",
+            suggestion: { api: "e-other", score: 0.95, why: "same-path" },
+            confident: true,
+          }),
+        ],
+      },
+    };
+    m.render();
+    expect(select().props.value).toBe("e-other");
+    expect(box().props.checked).toBe(true);
+    const fresh = els().find(
+      (e) => e.type === "select" && String(e.props["aria-label"]).includes("/other"),
+    )!;
+    expect(fresh.props.value).toBe("e-other");
+  });
+
   it("reads the calls again when work changed while a pairing waited for Apply", () => {
     let reloads = 0;
     mount(

@@ -276,11 +276,35 @@ export function Pairing(p: {
   const reload = useRef(p.cands.reload);
   reload.current = p.cands.reload;
   useEffect(() => (waits ? onWorkChanged(() => reload.current?.()) : undefined), [waits]);
+  // The second review (S2): a read of the same two boxes again (after the panel's own Apply)
+  // keeps what the person picked and ticked for calls that are still listed; only a call that
+  // wasn't listed before starts with its suggestion. Another pair of boxes starts afresh.
+  const listed = useRef<{ boxes: string; calls: Set<string> }>({ boxes: "", calls: new Set() });
   useEffect(() => {
     if (!v) return;
     const i = initialPicks(v);
-    setPicked(i.picked);
-    setTicked(i.ticked);
+    const boxes = `${v.from}>${v.to.repo ?? ""}>${v.to.system ?? ""}`;
+    const before = listed.current.boxes === boxes ? listed.current.calls : new Set<string>();
+    const now = new Set(
+      v.calls.filter((c) => c.status !== "paired" && c.status !== "here").map((c) => c.fact),
+    );
+    listed.current = { boxes, calls: now };
+    if (!before.size) {
+      setPicked(i.picked);
+      setTicked(i.ticked);
+      return;
+    }
+    setPicked((old) => {
+      const out: Record<string, string> = {};
+      for (const id of now) {
+        const pick = before.has(id) ? old[id] : i.picked[id];
+        if (pick !== undefined) out[id] = pick;
+      }
+      return out;
+    });
+    setTicked(
+      (old) => new Set([...now].filter((id) => (before.has(id) ? old.has(id) : i.ticked.has(id)))),
+    );
   }, [v]);
   const loose = useMemo(
     () =>
