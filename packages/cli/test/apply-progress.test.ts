@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { CancelledError, filePoolHooks, parseRecord, withSignal } from "@maycombhq/core";
-import { BUILD_PASSES, buildCacheHooks, readCatalog } from "@maycombhq/scanner";
+import { BUILD_PASSES, BUILD_STAGES, buildCacheHooks, readCatalog } from "@maycombhq/scanner";
 import { JobManager, TOO_LATE, type Job } from "@maycombhq/server";
 import { capturedIo, main } from "../src/main.js";
 import { verifyCommand } from "../src/verify-commands.js";
@@ -81,6 +81,18 @@ afterEach(() => {
   buildCacheHooks.off = false;
 });
 
+/**
+ * The build's lines: each pass, then each stage inside it that runs (beta.28.4): this metarepo
+ * has no federated catalog and no shared map, so neither stage is said.
+ */
+const passLines = () =>
+  BUILD_PASSES.flatMap((what, i) => [
+    `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length} (${what})`,
+    ...(BUILD_STAGES[i + 1] ?? [])
+      .filter((stage) => stage !== "federated catalogs" && stage !== "shared maps")
+      .map((stage) => `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length}, ${stage}`),
+  ]);
+
 const stepsOf = (lines: readonly string[]) =>
   lines.filter((l) => l.endsWith(" in)")).map((l) => l.replace(/… \(.* in\)$/, ""));
 
@@ -92,9 +104,7 @@ describe("Apply's write stage says each step (beta.28.1)", () => {
       const s = sink();
       expect(await verifyCommand(root, "forge-ledger", opts(root), s.io)).toBe(0);
       const steps = stepsOf(s.progress);
-      const passes = BUILD_PASSES.map(
-        (what, i) => `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length} (${what})`,
-      );
+      const passes = passLines();
       expect(steps).toEqual([
         "Loading the catalog",
         "Reading the repo's contract files",
@@ -289,9 +299,7 @@ describe("atticus catalog build says each step (field hunt G2)", () => {
       const { catalogBuild } = await import("../src/catalog-build-commands.js");
       const s = sink();
       expect(await catalogBuild(root, {}, s.io)).toBe(0);
-      const passes = BUILD_PASSES.map(
-        (what, i) => `Building the catalog: pass ${i + 1} of ${BUILD_PASSES.length} (${what})`,
-      );
+      const passes = passLines();
       expect(stepsOf(s.progress)).toEqual([
         "Reading the build's inputs",
         ...passes,

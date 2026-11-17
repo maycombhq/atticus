@@ -61,7 +61,8 @@ const quiet = { out: () => undefined, err: () => undefined };
  * spinner) and Stop is heard between steps; asked without, nothing is said.
  */
 export interface LinkSteps {
-  step(what: string): Promise<void>;
+  /** `brief`: what the end's line of the slowest steps calls the step (a build's pass). */
+  step(what: string, brief?: string): Promise<void>;
   say(line: string): void;
   /** Give way inside a step (the estate join): its line gets out, and Stop is heard there. */
   tick(): Promise<void>;
@@ -100,8 +101,8 @@ export function linksJob(
     );
     try {
       const answer = await work({
-        step: async (what) => {
-          await p.step(what);
+        step: async (what, brief) => {
+          await p.step(what, brief);
           await linksJobHooks.onStep?.(what);
         },
         say: (l) => p.say(l),

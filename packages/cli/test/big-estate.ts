@@ -45,6 +45,22 @@ export interface BigEstateOptions {
    * one, the default, the estate's flows are one feature). Each cluster needs two repos or more.
    */
   clusters?: number;
+  /**
+   * Distinct field names across the estate, each of two words (`barenTok` and the like): a real
+   * estate's payloads name thousands of things, and each such name is a glossary term (the
+   * owner's field report of beta.28.3, field-estate.ts). 0, the default: the four names every
+   * entry has always had.
+   */
+  fieldNames?: number;
+  /**
+   * Gateway proxies (the first ones) that each hold the same access file, `userAccess.json`:
+   * `termValues` lines, each naming an access profile, read as `term` facts no note gives a role
+   * (`unknown`), so the same values are written in every one of them at the same lines. None by
+   * default.
+   */
+  termRepos?: number;
+  /** Values in that file (90). */
+  termValues?: number;
 }
 
 export const BIG_COMMIT = "1111aaa";
@@ -103,6 +119,45 @@ function prng(seed: number): () => number {
   };
 }
 
+/** Invented syllables, for names no real estate has. */
+const SYLLABLES = [
+  "ba",
+  "ren",
+  "tok",
+  "mi",
+  "sul",
+  "dar",
+  "vex",
+  "lo",
+  "pim",
+  "gar",
+  "hen",
+  "nuv",
+  "kel",
+  "zor",
+  "fin",
+  "wex",
+];
+const inventedWord = (n: number) =>
+  SYLLABLES[n % 16]! + SYLLABLES[Math.floor(n / 16) % 16]! + SYLLABLES[Math.floor(n / 256) % 16]!;
+/** Every how many field names one is a shortening of the name before it. */
+const SHORTENED_EVERY = 50;
+/** Whether the v-th field name shortens the one before it (`barento…` for `barentok…`). */
+export const bigFieldShortens = (v: number) => v % SHORTENED_EVERY === 7;
+/**
+ * The v-th field name of two invented words, in camel case. One in fifty is the name before it
+ * with its first word cut short by a letter, as payloads write `holderNm` beside `holderName`:
+ * the glossary takes it for a shortening of that term, not a term of its own.
+ */
+export const bigFieldName = (v: number): string => {
+  const of = bigFieldShortens(v) ? v - 1 : v;
+  const first = inventedWord(of % 211);
+  const second = inventedWord(300 + Math.floor(of / 211));
+  return `${bigFieldShortens(v) ? first.slice(0, -1) : first}${second[0]!.toUpperCase()}${second.slice(1)}`;
+};
+/** The v-th access profile of the shared access file. */
+export const bigTermValue = (v: number) => `FORGE_PROFILE_${String(v).padStart(3, "0")}`;
+
 /** Lines of the checkout's files, by path, as a repo's facts cite them. */
 type Files = Map<string, string[]>;
 
@@ -144,11 +199,16 @@ export function bigRepoFacts(
       handler: `handle${k}`,
       cite: { ...c, value: path, quote: `@${ANNOTATION[method]}("${path}")` },
     });
-    for (const [side, names] of [
-      ["request", ["accountId", "amount"]],
-      ["response", ["status", "reference"]],
-    ] as const)
-      for (const name of names) {
+    for (const [s, [side, names]] of (
+      [
+        ["request", ["accountId", "amount"]],
+        ["response", ["status", "reference"]],
+      ] as const
+    ).entries())
+      for (const [n, given] of names.entries()) {
+        const name = o.fieldNames
+          ? bigFieldName((r * o.entries * 4 + k * 4 + s * 2 + n) % o.fieldNames)
+          : given;
         const fc = cited(files, file, `        private String ${name}; // ${side}`);
         push({
           kind: "field",
@@ -260,6 +320,9 @@ const defaults = (o: BigEstateOptions) => ({
   gateways: Math.min(o.gateways ?? 0, o.repos ?? 60),
   routes: Math.min(o.routes ?? 40, o.entries ?? 360),
   clusters: o.clusters ?? 1,
+  fieldNames: o.fieldNames ?? 0,
+  termRepos: Math.min(o.termRepos ?? 0, o.gateways ?? 0, o.repos ?? 60),
+  termValues: o.termValues ?? 90,
 });
 
 /** Gateway proxy g's facts: its routes, each forwarding to the deploy token, and the token. */
@@ -321,6 +384,23 @@ export function bigGatewayFacts(g: number, o: ReturnType<typeof defaults>): Fact
         ],
       },
     });
+  }
+  // The access file every one of the first `termRepos` proxies holds: the same values at the
+  // same lines, each a term no note gives a role.
+  if (g < o.termRepos) {
+    cited(files, "userAccess.json", `{ "profiles": [`);
+    for (let v = 0; v < o.termValues; v++) {
+      const value = bigTermValue(v);
+      const c = cited(files, "userAccess.json", `  "${value}",`);
+      push({
+        kind: "term",
+        id: `term.profile.p-${v}`,
+        term: "profile",
+        value,
+        role: "unknown",
+        cite: { ...c, value, quote: `"${value}",` },
+      });
+    }
   }
   return facts;
 }
