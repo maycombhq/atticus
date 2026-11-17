@@ -29,7 +29,16 @@
 // A session may have "then": [[steps], ...]: the steps of its second prompt, third, and so on, in
 // the same session (a prompt past them plays none).
 // A path may start with ${cwd} (the session's folder); a relative path is taken under it.
-import { appendFileSync, readFileSync } from "node:fs";
+// "start" in the script: what the process does as it starts in --acp mode, before any message
+// (each start is logged with its words, { "event": "start", "argv": [...] }):
+//   { "warn": true }             prints a Node warning to stderr first, as a real server does
+//   { "needs": "--stdio" }       without that word: "error: required option '--stdio' not
+//                                specified" on stderr and exit code 1, as commander says it
+//   { "stderr": ["line", ...] }  printed to stderr
+//   { "exit": <code> }           then the process ends with that code, answering nothing
+//   { "crlf": true }             stderr lines end \r\n, as on Windows
+//   { "mute": true }             stdout is closed and the process stays (it can never answer)
+import { appendFileSync, closeSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -45,6 +54,33 @@ if (!process.argv.includes("--acp")) {
 const script = JSON.parse(readFileSync(process.env.MOCK_ACP_SCRIPT, "utf8"));
 const LOG = process.env.MOCK_ACP_LOG;
 const log = (o) => LOG && appendFileSync(LOG, `${JSON.stringify(o)}\n`);
+
+log({ event: "start", argv: process.argv.slice(2) });
+if (script.start) {
+  const st = script.start;
+  const nl = st.crlf ? "\r\n" : "\n";
+  const lines = [];
+  if (st.warn)
+    lines.push(
+      `(node:${process.pid}) ExperimentalWarning: SQLite is an experimental feature and might change at any time`,
+      "(Use `node --trace-warnings ...` to show where the warning was created)",
+    );
+  const lacks = st.needs && !process.argv.includes(st.needs);
+  if (lacks) lines.push(`error: required option '${st.needs}' not specified`);
+  else lines.push(...(st.stderr ?? []));
+  const code = lacks ? 1 : st.exit;
+  const text = lines.map((l) => l + nl).join("");
+  // Windows writes a pipe asynchronously: the process ends only once the words are out.
+  if (code !== undefined) {
+    await new Promise((r) => process.stderr.write(text, r));
+    process.exit(code);
+  }
+  if (text) process.stderr.write(text);
+  if (st.mute) {
+    process.stdout.on("error", () => undefined);
+    closeSync(1);
+  }
+}
 const logged = () => {
   try {
     return readFileSync(LOG, "utf8")

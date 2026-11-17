@@ -272,6 +272,11 @@ export interface AcpServer {
   started: Promise<void>;
   /** beta.28 review: how the process ended, once it has (its exit code or signal). */
   exited?(): { code: number | null; signal: string | null } | undefined;
+  /**
+   * beta.28.5: resolves once an ended process's last words are in `stderr()` (its pipes closed,
+   * or a moment after it ended when something it started still holds them).
+   */
+  settled?(): Promise<void>;
 }
 
 /**
@@ -357,9 +362,22 @@ export const spawnAcpServer: AcpSpawner = (o) => {
     close(`the Copilot language server couldn't be run: ${e.message}`);
   });
   let exit: { code: number | null; signal: string | null } | undefined;
+  let piped: () => void = () => {};
+  const pipesClosed = new Promise<void>((res) => (piped = res));
+  child.on("close", () => piped());
   child.on("exit", (code, signal) => {
     exit = { code, signal };
     close(`the Copilot language server ended (${code ?? signal ?? "no code"})`);
+  });
+  // beta.28.5: its output closed while it runs on: no answer can come. The exit, when that is
+  // what closed it, is heard within the moment and named instead.
+  child.stdout?.on("close", () => {
+    const t = setTimeout(
+      () => close("the Copilot language server closed its output and is still running"),
+      500,
+    );
+    t.unref();
+    closes.push(() => clearTimeout(t));
   });
   for (const s of [child.stdin, child.stdout, child.stderr]) s?.on("error", () => undefined);
   child.stderr?.setEncoding("utf8").on("data", (d: string) => {
@@ -372,6 +390,8 @@ export const spawnAcpServer: AcpSpawner = (o) => {
     started,
     stderr: () => err,
     exited: () => exit,
+    settled: () =>
+      Promise.race([pipesClosed, new Promise<void>((res) => setTimeout(res, 400).unref())]),
     transport: {
       send: (t) => {
         if (!closed) child.stdin?.write(`${t}\n`);
@@ -479,6 +499,11 @@ export interface AcpSessionOptions {
   /** The most tool calls before the session is cancelled. */
   maxTurns?: number;
   timeoutMs?: number;
+  /**
+   * beta.28.5: how long the server has to start and answer `initialize`. Without it, the
+   * environment's ATTICUS_COPILOT_START_TIMEOUT_MS, else 60 s (`startTimeoutOf`).
+   */
+  startTimeoutMs?: number;
   signal?: AbortSignal;
   /** Short progress lines for the console. */
   onProgress?: (line: string) => void;
@@ -581,13 +606,304 @@ const signInLines = (stderr: string) =>
     .filter((l) => /https?:\/\/|code|sign|log.?in|auth/i.test(l))
     .slice(-5);
 
+// ------------------------------------------------------------------ starting the server
+
+/** beta.28.5: the environment variable for how long the server has to start (milliseconds). */
+export const START_TIMEOUT_ENV = "ATTICUS_COPILOT_START_TIMEOUT_MS";
+export const START_TIMEOUT = { default: 60_000, min: 1_000, max: 30 * 60_000 } as const;
+
+/**
+ * beta.28.5: how long the server has to start and answer `initialize`: the environment's
+ * ATTICUS_COPILOT_START_TIMEOUT_MS, else 60 s. A value that isn't a number of milliseconds within
+ * the bounds is refused in words, rather than a run quietly waiting some other time.
+ */
+export function startTimeoutOf(env: Record<string, string | undefined> = process.env): number {
+  const raw = env[START_TIMEOUT_ENV]?.trim();
+  if (!raw) return START_TIMEOUT.default;
+  const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!(n >= START_TIMEOUT.min && n <= START_TIMEOUT.max))
+    throw new AcpSetupError(
+      `${START_TIMEOUT_ENV} is "${short(raw, 40)}": give it a whole number of milliseconds from ${START_TIMEOUT.min} to ${START_TIMEOUT.max} (how long the Copilot language server has to start; ${START_TIMEOUT.default} when it isn't set).`,
+    );
+  return n;
+}
+
+/** A line Node or npm prints that is no one's error: a warning, or where to trace it. */
+const isWarningLine = (l: string) =>
+  /^\(node:\d+\)\s.*Warning:/.test(l) ||
+  /^\(Use `node --trace-[a-z-]+ \.\.\.` to show where/.test(l) ||
+  /^npm (warn|notice)\b/i.test(l);
+
+/**
+ * beta.28.5: what the server printed on stderr, with Node's and npm's warnings set aside
+ * (`(node:123) ExperimentalWarning: …` and its `(Use `node --trace-warnings ...` …)` line), so
+ * the line that says what went wrong is the one a person is shown. Lines end \n or \r\n.
+ */
+export function serverWords(stderr: string): { lines: string[]; warnings: number } {
+  const all = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const lines = all.filter((l) => !isWarningLine(l));
+  return { lines, warnings: all.length - lines.length };
+}
+
+/** What a start that failed is told as: what happened, and what to do about it. */
+export interface AcpStartProblem {
+  problem: string;
+  advice: string;
+}
+
+const NPM_PACKAGE = "@github/copilot-language-server";
+const INSTALL_ONCE = `install the server once (npm i -g ${NPM_PACKAGE}) and set command: copilot-language-server under copilotAcp in runtime.yaml`;
+const isNpx = (command: string) =>
+  /^npx(\.cmd|\.exe)?$/i.test(basename(command.replace(/\\/g, "/")));
+const seconds = (ms: number) => `${Math.round(ms / 100) / 10}s`;
+const shown = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+
+/** What the server did as it failed to start. */
+type StartFailure =
+  | { kind: "not-found"; why: string }
+  | { kind: "spawn"; why: string }
+  | { kind: "exited"; exit?: { code: number | null; signal: string | null }; why?: string }
+  | { kind: "closed" }
+  | { kind: "timeout"; ms: number }
+  | { kind: "answered"; why: string };
+
+/**
+ * beta.28.5: a failed start in a person's words, from what was seen and nothing else: how the
+ * process ended (or that it was still running), its own last words, and advice that fits, naming
+ * the runtime.yaml line to change. `line` is copilotAcp.command as written; `command` and `args`
+ * what was run.
+ */
+export function startProblemOf(o: {
+  line: string;
+  command: string;
+  args: readonly string[];
+  stderr: string;
+  failure: StartFailure;
+}): AcpStartProblem {
+  const { line, command, args, failure: f } = o;
+  const heard = serverWords(o.stderr);
+  const text = heard.lines.join("\n");
+  const ran = [command, ...args].map(shown).join(" ");
+  const check = `Check copilotAcp.command in runtime.yaml: run ${ran} yourself to see what it does.`;
+  const notFound = (why: string): AcpStartProblem => ({
+    problem: `the program ${command} wasn't found on this machine (${why})`,
+    advice: `Set copilotAcp.command in runtime.yaml to a program that is installed here, or to its full path (in double quotes when it has spaces).${isNpx(command) ? " npx comes with Node.js." : ""}`,
+  });
+  if (f.kind === "not-found") return notFound(f.why);
+  if (f.kind === "spawn") return { problem: `it couldn't be run (${f.why})`, advice: check };
+  if (f.kind === "answered")
+    return { problem: `it answered initialize with an error: ${f.why}`, advice: check };
+  if (f.kind === "timeout") {
+    const had = heard.lines.length
+      ? ` (it had said: ${short(heard.lines.slice(-3).join(" "), 300)})`
+      : heard.warnings
+        ? " (it had printed nothing but warnings)"
+        : "";
+    const longer = `set the environment variable ${START_TIMEOUT_ENV} (milliseconds; 180000 is three minutes) and run again`;
+    return {
+      problem: `it was still running after ${seconds(f.ms)}, the limit for starting, and had not answered${had}`,
+      advice: isNpx(command)
+        ? `Atticus can't tell why from here. It may be npx fetching or checking the package on each start (slow through a proxy), or a slow first start. Either ${INSTALL_ONCE}, or give it longer: ${longer}. atticus doctor starts it the same way, without a session.`
+        : `Atticus can't tell why from here. It may be a slow first start, or it is waiting for something: run ${ran} yourself to see. To give it longer, ${longer}. Check copilotAcp.command in runtime.yaml; atticus doctor starts it the same way, without a session.`,
+    };
+  }
+  if (f.kind === "closed")
+    return {
+      problem: `it closed its output before it answered, and is still running${heard.lines.length ? ` (it said: ${short(heard.lines.slice(-3).join(" "), 300)})` : ""}`,
+      advice: check,
+    };
+  // It ended. A shell that didn't find the program says so itself (cmd.exe exits 1, sh 127).
+  const missing =
+    /is not recognized as an internal or external command/i.test(text) ||
+    (f.exit?.code === 127 && /not found/i.test(text)) ||
+    /: command not found\s*$/im.test(text);
+  if (missing) return notFound(short(heard.lines[0] ?? "not found", 120));
+  const how = f.exit
+    ? f.exit.signal
+      ? `ended by ${f.exit.signal}`
+      : f.exit.code !== null
+        ? `exit code ${f.exit.code}`
+        : "no exit code"
+    : (f.why ?? "no exit code");
+  const npm = heard.lines.filter((l) => /^npm (error|ERR!)/i.test(l));
+  // npm's last lines are where its log is: its first say what happened.
+  const quoted = npm.length ? npm.slice(0, 2) : heard.lines.slice(-3);
+  const said = quoted.length
+    ? `said: ${short(quoted.join(" "), 300)}`
+    : heard.warnings
+      ? "printed nothing but warnings"
+      : "printed nothing";
+  const problem = `it ended before it answered (${how}) and ${said}`;
+  const flagOf = (re: RegExp) => {
+    const m = re.exec(text);
+    return m
+      ? { flag: /--[\w-]+/.exec(m[1]!)?.[0] ?? m[1]!.trim().split(/[\s,]+/)[0]!, raw: m[1]! }
+      : undefined;
+  };
+  const required = flagOf(/required option\s+['"`]([^'"`]+)['"`]/i);
+  if (required && !args.includes(required.flag))
+    return {
+      problem,
+      advice: /[<[]/.test(required.raw)
+        ? `It asks for the option ${required.flag}, with a value. Add it to copilotAcp.command in runtime.yaml.`
+        : `It asks for the option ${required.flag}. Add it to copilotAcp.command in runtime.yaml (command: ${line} ${required.flag}).`,
+    };
+  const unknown = flagOf(/(?:unknown|unrecognized|bad) option:?\s+['"`]?(--?[\w-]+)/i);
+  if (unknown?.flag === "--acp")
+    return {
+      problem,
+      advice: `This program doesn't know --acp, the option that starts its Agent Client Protocol mode: it is a Copilot language server too old to have it, or another program. Check copilotAcp.command in runtime.yaml, and that ${shown(command)} --help lists --acp.`,
+    };
+  if (unknown) {
+    const w = words(line.trim()).words;
+    const without = line
+      .trim()
+      .split(/\s+/)
+      .filter((x) => x !== unknown.flag)
+      .join(" ");
+    if (w.includes(unknown.flag))
+      return {
+        problem,
+        advice: `It doesn't know the option ${unknown.flag}. Take it out of copilotAcp.command in runtime.yaml (command: ${without}).`,
+      };
+  }
+  if (npm.length && isNpx(command))
+    return {
+      problem,
+      advice: `npx couldn't fetch or run the package (npm's own error, above). Where this machine reaches npm through a proxy, ${INSTALL_ONCE}, so nothing is fetched at each start.`,
+    };
+  return { problem, advice: check };
+}
+
+/** beta.28.5: the server asked, in these words, for --stdio beside --acp. */
+const asksForStdio = (stderr: string) =>
+  /required option\s+['"`]--stdio['"`]/i.test(serverWords(stderr).lines.join("\n"));
+
+export const STDIO_NOTE =
+  "The Copilot language server asked for --stdio; started again with it. Add --stdio to copilotAcp.command in runtime.yaml to skip this.";
+
+/**
+ * beta.28.5: the commands that asked for --stdio and then answered with it, in this process, so
+ * the next session of a run starts with it at once (a run starts the server once per part).
+ */
+const stdioAsked = new Set<string>();
+/** Tests: what this process learned about starting servers is forgotten. */
+export const forgetAcpStarts = () => stdioAsked.clear();
+
+/** beta.28.5: a start that failed: an AcpSetupError that keeps what happened and what to do. */
+export class AcpStartError extends AcpSetupError {
+  constructor(
+    line: string,
+    readonly start: AcpStartProblem,
+    readonly again?: string,
+  ) {
+    super(
+      `Atticus couldn't start the Copilot language server (${line}${again ? `, then with ${again} as it asked` : ""}): ${start.problem}. ${start.advice}`,
+    );
+    this.name = "AcpStartError";
+  }
+}
+
+const TIMED_OUT: unique symbol = Symbol("timed out");
+
+type AcpInit = Awaited<ReturnType<AcpClient["initialize"]>>;
+
+/**
+ * beta.28.5: the server started and `initialize` answered, for a run and for doctor alike. One
+ * that ends, closes its output or can't be run fails at once with its own words; one still
+ * running at the limit fails as slow. One that ended saying exactly that --stdio is required,
+ * when the command hasn't it, is started once more with it (Atticus speaks to it over stdio
+ * either way, and docs/guide/copilot-unattended.md says to add it): never a third time.
+ */
+async function startAcp(o: {
+  line: string;
+  cwd: string;
+  env: Record<string, string | undefined>;
+  spawn?: AcpSpawner | undefined;
+  limitMs: number;
+  /** A client for this server; called again for a second start. */
+  connect: (server: AcpServer) => AcpClient;
+  info: { name: string; version: string };
+  /** Resolves when the person stopped it. */
+  cut?: Promise<typeof CUT>;
+  say?: (line: string) => void;
+}): Promise<
+  | {
+      server: AcpServer;
+      client: AcpClient;
+      init: AcpInit;
+      command: string;
+      args: string[];
+      again?: string;
+    }
+  | typeof CUT
+> {
+  const parsed = commandLineOf(o.line);
+  const command = parsed.command;
+  let args = parsed.args;
+  let again: string | undefined;
+  if (stdioAsked.has(o.line) && !args.includes("--stdio")) args = [...args, "--stdio"];
+  for (;;) {
+    const server = (o.spawn ?? spawnAcpServer)({ command, args, cwd: o.cwd, env: o.env });
+    const client = o.connect(server);
+    let closed: string | undefined;
+    server.transport.onClose((why) => (closed ??= why));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<typeof TIMED_OUT>((res) => {
+      timer = setTimeout(() => res(TIMED_OUT), o.limitMs);
+    });
+    const hello = server.started.then(() => client.initialize(o.info));
+    hello.catch(() => undefined);
+    let failure: StartFailure;
+    try {
+      const r = await Promise.race([hello, limit, ...(o.cut ? [o.cut] : [])]);
+      if (r === CUT) return CUT;
+      if (r !== TIMED_OUT) {
+        if (again) stdioAsked.add(o.line);
+        return { server, client, init: r, command, args, ...(again ? { again } : {}) };
+      }
+      failure = { kind: "timeout", ms: o.limitMs };
+    } catch (e) {
+      await server.settled?.();
+      const code = (e as NodeJS.ErrnoException)?.code;
+      const exit = server.exited?.();
+      if (code === "ENOENT") failure = { kind: "not-found", why: firstLine(e) };
+      else if (exit) failure = { kind: "exited", exit };
+      else if (closed !== undefined)
+        failure = /still running/.test(closed)
+          ? { kind: "closed" }
+          : { kind: "exited", why: closed };
+      else if (e instanceof AcpRpcError) failure = { kind: "answered", why: firstLine(e) };
+      else failure = { kind: "spawn", why: firstLine(e) };
+    } finally {
+      clearTimeout(timer);
+    }
+    const stderr = server.stderr();
+    await server.close().catch(() => undefined);
+    if (failure.kind === "exited" && !again && !args.includes("--stdio") && asksForStdio(stderr)) {
+      again = "--stdio";
+      args = [...args, "--stdio"];
+      o.say?.(STDIO_NOTE);
+      continue;
+    }
+    throw new AcpStartError(
+      o.line,
+      startProblemOf({ line: o.line, command, args, stderr, failure }),
+      again,
+    );
+  }
+}
+
 /**
  * One session, start to end: the server started, `initialize`, a new session rooted at `cwd`,
  * runtime.yaml's model asked for, the prompt sent, every request answered by the rules above, and
  * the server ended when the agent stops (or Atticus cancels it: maxTurns, the timeout, Ctrl+C).
  */
 export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionResult> {
-  const { command, args } = commandLineOf(o.command);
+  const { command } = commandLineOf(o.command);
   const named: RunAssistant = { name: basename(command).replace(/\.(cmd|exe)$/i, "") };
   // beta.28: stopped before it began: no server is started, nothing is asked.
   if (o.signal?.aborted) {
@@ -602,15 +918,14 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       agentToolCalls: 0,
     };
   }
-  const server = (o.spawn ?? spawnAcpServer)({
-    command,
-    args,
-    cwd: o.cwd,
-    // beta.17: set on the server too, so an atticus command Copilot runs in its own shell (not
-    // through Atticus's terminal) knows it is inside a session and hands off instead of starting
-    // a Copilot session of its own (a session within a session, waiting on itself).
-    env: { ...process.env, ...(o.env ?? {}), ATTICUS_ACP_SESSION: "1", ATTICUS_ROOT: o.cwd },
-  });
+  // beta.17: set on the server too, so an atticus command Copilot runs in its own shell (not
+  // through Atticus's terminal) knows it is inside a session and hands off instead of starting
+  // a Copilot session of its own (a session within a session, waiting on itself).
+  const env = { ...process.env, ...(o.env ?? {}), ATTICUS_ACP_SESSION: "1", ATTICUS_ROOT: o.cwd };
+  // beta.28.5: read before anything is started, so a value that isn't one stops the run in words.
+  const startLimit = o.startTimeoutMs ?? startTimeoutOf(env);
+  /** The server now running: the second one, when the first asked for --stdio. */
+  let running: AcpServer | undefined;
   const transcript: string[] = [];
   const paths = new Paths(o.policy);
   const calls: ToolCallRecord[] = [];
@@ -678,7 +993,6 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
   };
   // beta.28: the server ended (on its own, unless Atticus closed it after the session).
   let gone: string | undefined;
-  server.transport.onClose((why) => (gone ??= why));
   const cancel = (why: string) => {
     if (cancelWhy) return;
     cancelWhy = why;
@@ -827,10 +1141,17 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       }
     },
   };
-  const client = new AcpClient(server.transport, handlers, (dir, m) =>
-    transcript.push(JSON.stringify({ dir, m })),
-  );
-  box.client = client;
+  const connect = (s: AcpServer) => {
+    running = s;
+    gone = undefined;
+    s.transport.onClose((why) => {
+      if (running === s) gone ??= why;
+    });
+    box.client = new AcpClient(s.transport, handlers, (dir, m) =>
+      transcript.push(JSON.stringify({ dir, m })),
+    );
+    return box.client;
+  };
 
   const onAbort = () => cancel(STOPPED_BY_PERSON);
   o.signal?.addEventListener("abort", onAbort, { once: true });
@@ -850,23 +1171,20 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     };
   };
   try {
-    let init;
-    try {
-      if ((await orCut(server.started)) === CUT) return cut(named);
-      const i = await orCut(
-        withTimeout(
-          client.initialize({ name: "atticus", version: o.clientVersion ?? "2" }),
-          60_000,
-          "The Copilot language server's initialize",
-        ),
-      );
-      if (i === CUT) return cut(named);
-      init = i;
-    } catch (e) {
-      throw new AcpSetupError(
-        `Atticus couldn't start the Copilot language server (${o.command}): ${firstLine(e)}${tail(server.stderr())}. Check copilotAcp.command in runtime.yaml, and that ${command} --help lists --acp.`,
-      );
-    }
+    // beta.28.5: one that ends or can't be run fails at once, in its own words (startAcp).
+    const up = await startAcp({
+      line: o.command,
+      cwd: o.cwd,
+      env,
+      spawn: o.spawn,
+      limitMs: startLimit,
+      connect,
+      info: { name: "atticus", version: o.clientVersion ?? "2" },
+      cut: cancelled,
+      say: (l) => o.onProgress?.(l),
+    });
+    if (up === CUT) return cut(named);
+    const { server, client, init } = up;
     const assistant: RunAssistant = {
       name: init.agentInfo?.name ?? basename(command).replace(/\.(cmd|exe)$/i, ""),
       ...(init.agentInfo?.version ? { version: init.agentInfo.version } : {}),
@@ -1028,7 +1346,7 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     o.signal?.removeEventListener("abort", onAbort);
     abort.abort();
     for (const t of terminals.values()) t.kill.abort();
-    await server.close().catch(() => undefined);
+    await running?.close().catch(() => undefined);
     if (o.transcript) {
       await mkdir(dirname(o.transcript), { recursive: true });
       await writeFile(
@@ -1041,8 +1359,9 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
 }
 
 const firstLine = (e: unknown) => String((e as Error)?.message ?? e).split("\n")[0]!;
+// beta.28.5: Node's warnings set aside, so a warning is never quoted as what went wrong.
 const tail = (stderr: string) => {
-  const l = stderr.trim().split(/\r?\n/).slice(-2).join(" ").trim();
+  const l = serverWords(stderr).lines.slice(-2).join(" ").trim();
   return l ? ` (it said: ${short(l, 300)})` : "";
 };
 
@@ -1122,11 +1441,17 @@ export interface CopilotAcpProbe {
   signedIn?: boolean;
   /** What the server said, when it isn't signed in or the handshake failed. */
   said?: string;
+  /** beta.28.5: the server didn't start: what happened and what to do, in a run's own words. */
+  start?: AcpStartProblem;
+  /** beta.28.5: something a person should know of a start that worked (it asked for --stdio). */
+  note?: string;
 }
 
 /**
  * `atticus doctor`'s look (ADR 0171): `<command> --version`, then the handshake alone
- * (initialize and a new session, no prompt, so nothing runs and no tokens are spent).
+ * (initialize and a new session, no prompt, so nothing runs and no tokens are spent). The server
+ * is started as a run starts it (startAcp: the same command, start limit and second start with
+ * --stdio), so what stops a run is what doctor says.
  */
 export async function copilotAcpProbe(o: {
   command: string;
@@ -1138,9 +1463,30 @@ export async function copilotAcpProbe(o: {
   const { command, args } = commandLineOf(o.command);
   const plain = args.filter((a) => a !== "--acp");
   const env = { ...process.env, ...(o.env ?? {}) };
-  const version = await new Promise<{ ok: boolean; text: string }>((res) => {
+  let limit: number;
+  try {
+    limit = o.timeoutMs ?? startTimeoutOf(env);
+  } catch (e) {
+    const said = firstLine(e);
+    return {
+      found: false,
+      said,
+      start: {
+        problem: said,
+        advice: `Set ${START_TIMEOUT_ENV} to a number of milliseconds, or unset it.`,
+      },
+    };
+  }
+  const failed = (failure: StartFailure, stderr: string) =>
+    startProblemOf({ line: o.command, command, args: [...plain, "--version"], stderr, failure });
+  const version = await new Promise<
+    | { ok: true; text: string }
+    | { ok: false; text: string; missing?: AcpStartProblem; slow?: AcpStartProblem }
+  >((res) => {
     const shell = needsShell(command);
     let out = "";
+    let err = "";
+    let timedOut = false;
     let child: ChildProcess;
     try {
       child = spawn(
@@ -1155,29 +1501,54 @@ export async function copilotAcpProbe(o: {
         },
       );
     } catch (e) {
-      res({ ok: false, text: (e as Error).message });
+      res({
+        ok: false,
+        text: (e as Error).message,
+        missing: failed({ kind: "spawn", why: firstLine(e) }, ""),
+      });
       return;
     }
-    const t = setTimeout(() => killTree(child), o.timeoutMs ?? 60_000);
+    const t = setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, limit);
     child.stdout?.on("data", (d: Buffer) => (out += d.toString("utf8")));
-    child.stderr?.on("data", (d: Buffer) => (out += d.toString("utf8")));
-    child.on("error", (e) => {
+    child.stderr?.on("data", (d: Buffer) => (err += d.toString("utf8")));
+    child.on("error", (e: NodeJS.ErrnoException) => {
       clearTimeout(t);
-      res({ ok: false, text: e.message });
+      res({
+        ok: false,
+        text: e.message,
+        ...(e.code === "ENOENT"
+          ? { missing: failed({ kind: "not-found", why: firstLine(e) }, "") }
+          : {}),
+      });
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       clearTimeout(t);
+      if (code === 0) return res({ ok: true, text: out.trim() });
+      if (timedOut)
+        return res({ ok: false, text: err, slow: failed({ kind: "timeout", ms: limit }, err) });
       // A shell says "not found" with exit 1 or 9009 rather than ENOENT.
-      res({ ok: code === 0, text: out.trim() });
+      const p = failed({ kind: "exited", exit: { code, signal } }, err);
+      res({
+        ok: false,
+        text: serverWords(`${out}\n${err}`).lines.join(" "),
+        ...(p.problem.includes("wasn't found on this machine") ? { missing: p } : {}),
+      });
     });
   });
-  if (!version.ok) return { found: false, said: oneLine(version.text, 200) };
-  const v = version.text
-    .split(/\r?\n/)
-    .find((l) => l.trim())
-    ?.trim();
-  const server = (o.spawn ?? spawnAcpServer)({ command, args, cwd: o.cwd, env });
-  const client = new AcpClient(server.transport, {
+  if (!version.ok && version.missing)
+    return { found: false, said: version.missing.problem, start: version.missing };
+  if (!version.ok && version.slow) return { found: true, start: version.slow };
+  // beta.28.5: a --version that failed some other way says little: the handshake says more.
+  const v = version.ok
+    ? version.text
+        .split(/\r?\n/)
+        .find((l) => l.trim())
+        ?.trim()
+    : undefined;
+  const handlers: AcpClientHandlers = {
     readTextFile: () =>
       Promise.reject(new AcpRpcError(ACP_ERRORS.invalidParams, "doctor reads nothing")),
     writeTextFile: () =>
@@ -1191,30 +1562,46 @@ export async function copilotAcpProbe(o: {
     terminalKill: async () => null,
     terminalRelease: async () => null,
     update: () => {},
-  });
+  };
   const base = { found: true, ...(v ? { version: v } : {}) };
+  let running: AcpServer | undefined;
+  let note: string | undefined;
   try {
-    await server.started;
-    await withTimeout(
-      client.initialize({ name: "atticus-doctor", version: "2" }),
-      o.timeoutMs ?? 60_000,
-      "initialize",
-    );
+    const up = await startAcp({
+      line: o.command,
+      cwd: o.cwd,
+      env,
+      spawn: o.spawn,
+      limitMs: limit,
+      connect: (s) => {
+        running = s;
+        return new AcpClient(s.transport, handlers);
+      },
+      info: { name: "atticus-doctor", version: "2" },
+      say: (l) => (note = l),
+    });
+    if (up === CUT) return base;
+    const { server, client } = up;
+    const noted = note ? { note } : {};
     try {
-      await withTimeout(client.newSession(o.cwd), o.timeoutMs ?? 60_000, "a new session");
-      return { ...base, signedIn: true };
+      await withTimeout(client.newSession(o.cwd), limit, "a new session");
+      return { ...base, ...noted, signedIn: true };
     } catch (e) {
       if (isAuthRequired(e)) {
         await new Promise((r) => setTimeout(r, 150));
         const lines = signInLines(server.stderr());
-        return { ...base, signedIn: false, said: [firstLine(e), ...lines].join(" ") };
+        return { ...base, ...noted, signedIn: false, said: [firstLine(e), ...lines].join(" ") };
       }
-      return { ...base, said: firstLine(e) };
+      return { ...base, ...noted, said: firstLine(e) };
     }
   } catch (e) {
+    if (e instanceof AcpStartError) {
+      const missing = e.start.problem.includes("wasn't found on this machine");
+      return { ...(missing ? { found: false } : base), said: e.start.problem, start: e.start };
+    }
     return { ...base, said: `the --acp handshake failed: ${firstLine(e)}` };
   } finally {
-    await server.close().catch(() => undefined);
+    await running?.close().catch(() => undefined);
   }
 }
 
