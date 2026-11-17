@@ -2,7 +2,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { CancelledError, withSignal } from "@maycombhq/core";
-import { init, reposDiscover, toPosix, type DiscoverResult } from "../src/index.js";
+import {
+  cantListMessage,
+  init,
+  reposDiscover,
+  toPosix,
+  type DiscoverResult,
+} from "../src/index.js";
 import { cleanup, fixture, tempDir } from "./helpers.js";
 
 afterAll(cleanup);
@@ -205,6 +211,39 @@ describe("repos discover over a folder most of whose clones the manifest lists a
         reason: "took too long to read (over 0.3 seconds); add it by its clone URL",
       },
     ]);
+  });
+});
+
+// The review (N5): a folder that can't be listed is refused in plain words that name it, never
+// a raw file-system error (the app showed "job failed").
+describe("repos discover of a folder that can't be listed", () => {
+  it("refuses a folder that isn't there, and a file, naming it and why", async () => {
+    const root = await metarepo();
+    const gone = join(await tempDir(), "no-such-folder");
+    await expect(reposDiscover(root, { dir: gone }, { dryRun: true })).rejects.toMatchObject({
+      name: "AdoptError",
+      code: "not-found",
+      message: `The folder ${gone} can't be listed (it isn't there): give a folder of clones that is on this machine.`,
+    });
+    const file = join(await tempDir(), "notes.txt");
+    await writeFile(file, "x", "utf8");
+    await expect(reposDiscover(root, { dir: file }, { dryRun: true })).rejects.toMatchObject({
+      name: "AdoptError",
+      code: "source",
+      message: `The folder ${file} can't be listed (it is a file, not a folder): give a folder of clones that is on this machine.`,
+    });
+  });
+
+  it("says no permission as that, with what to do", () => {
+    expect(cantListMessage("/work/clones", "EACCES")).toBe(
+      "The folder /work/clones can't be listed (this account isn't allowed to read it): give it read access, or copy the clones to a folder you can read.",
+    );
+    expect(cantListMessage("/work/clones", "EPERM")).toBe(
+      cantListMessage("/work/clones", "EACCES"),
+    );
+    expect(cantListMessage("/work/clones", "EIO")).toBe(
+      "The folder /work/clones can't be listed (the system said EIO): give a folder of clones that is on this machine.",
+    );
   });
 });
 

@@ -322,6 +322,20 @@ async function visibleRepo(
   };
 }
 
+/** Why the folder given to discover can't be listed, and what to do, by the system's code. */
+export function cantListMessage(dir: string, code: string): string {
+  const elsewhere = "give a folder of clones that is on this machine.";
+  if (code === "EACCES" || code === "EPERM")
+    return `The folder ${dir} can't be listed (this account isn't allowed to read it): give it read access, or copy the clones to a folder you can read.`;
+  const why =
+    code === "ENOENT"
+      ? "it isn't there"
+      : code === "ENOTDIR"
+        ? "it is a file, not a folder"
+        : `the system said ${code || "it can't be read"}`;
+  return `The folder ${dir} can't be listed (${why}): ${elsewhere}`;
+}
+
 /** What reading a folder of clones needs from the discovery it is part of. */
 interface LocalRead {
   /** The repo a folder is in a manifest already, told by its clone URL alone (nothing read). */
@@ -348,7 +362,13 @@ async function localCandidates(
   const skipped: DiscoverResult["skipped"] = [];
   const repos: LocalRepo[] = [];
   const builds: { name: string; detection: Detection }[] = [];
-  const listed = (await readdir(dir, { withFileTypes: true }))
+  // The review of ADR 0199 (N5): a folder that can't be listed is refused in words that name
+  // it, never a raw file-system error.
+  const top = await readdir(dir, { withFileTypes: true }).catch((e: unknown) => {
+    const code = (e as NodeJS.ErrnoException).code ?? "";
+    throw new AdoptError(code === "ENOENT" ? "not-found" : "source", cantListMessage(dir, code));
+  });
+  const listed = top
     .filter(
       (e) =>
         (e.isDirectory() || e.isSymbolicLink()) &&

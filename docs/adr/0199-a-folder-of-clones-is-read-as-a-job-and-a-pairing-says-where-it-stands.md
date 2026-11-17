@@ -89,6 +89,15 @@ Edit the map's "has no call left to pair with this box: each is paired by a pers
 - **The panel reads the calls again after its own Apply** (`onWorkChanged`), while a pairing waited.
 - **Edit the map's "no call left"** says only what is known: that calls go there already "with an arrow on the map" (not how they were joined), that the repo's facts aren't verified or read with the command, that its calls are of a kind that isn't paired, or, for a redirect, that its facts hold no call.
 
+### 7. After the review of the folder read (2026-11-16)
+
+- **`atticus repos discover --json` changed shape for a folder that mixes listed and new repos.** A repo a manifest lists already used to be in `repos`; it is now in `listed` (`path`, `id`, `url`) and not in `repos`, and `questions` holds none about it. A script that counted `repos` to learn how many clones a folder has must add `listed`. A folder of only new repos prints what it printed.
+- **One repo written two ways is one repo, and nothing else is** (`cloneUrlKey`, `packages/workspace/src/repo-ids.ts`): `\\` and `/`, a percent-encoded name, and a scheme's own default port. Another port and an encoded slash are not the same repo. What one Git host calls the same repo under two addresses (Azure DevOps' https `_git` form and its `ssh.dev.azure.com:v3/…` form, the older `visualstudio.com` host) is **not** told yet: that is a host's knowledge, which ADR 0035 keeps out of the core packages (`check-core-neutral` refuses it in `workspace`), and no Git host adapter has a place for it today. Until one does, a clone whose origin is the ssh form of a repo the manifest lists by its https form is read again and offered as new (with `-2` if its id is taken), never hidden.
+- **A folder that can't be listed** (not there, a file, no permission) is refused in words that name it and say what to do.
+- **The page** takes the last read's list away as a new read starts, stops its job when it goes, and gives each skipped folder a row.
+- **`job: true` and an older server.** The request schema is strict, so a server older than 3.16.0 answers 400 to `job`; the page and its server ship together.
+- **The matcher is compared with the one it replaced** on seeded globs, paths and `.gitignore` files in `packages/core/test/glob-differential.test.ts`, the old one kept as `packages/core/test/glob-old.ts`.
+
 ## Consequences
 
 - A second read of the same folder costs one `git config` a listed clone.

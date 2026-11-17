@@ -17,7 +17,7 @@ const sent: { path: string; body?: unknown }[] = [];
 let planReply: unknown;
 /** Set to hold a folder's read open (its job running) until the test ends it. */
 let held: { resolve: (v: unknown) => void; reject: (e: unknown) => void } | undefined | true;
-const followed: { onLine?: (l: string) => void; write?: boolean }[] = [];
+const followed: { onLine?: (l: string) => void; write?: boolean; signal?: AbortSignal }[] = [];
 const EDIT = {
   path: "org-pack/runtime.yaml",
   changes: [{ was: "adapters: {}" }, { now: "adapters:" }, { now: "  gitHost: manual" }],
@@ -41,7 +41,12 @@ vi.mock("../src/api/client.js", async () => {
     callAsJob: async (
       path: string,
       body: Record<string, unknown>,
-      o: { onJob?: (id: string) => void; onLine?: (l: string) => void; write?: boolean },
+      o: {
+        onJob?: (id: string) => void;
+        onLine?: (l: string) => void;
+        write?: boolean;
+        signal?: AbortSignal;
+      },
     ) => {
       sent.push({ path, body: { ...body, job: true } });
       followed.push(o);
@@ -378,6 +383,87 @@ describe("discovering a folder of clones", () => {
     expect(waitOf()).toBeUndefined();
     const note = els().find((x) => x.type === Note)!.props.note as { ok: boolean; text: string };
     expect(note).toMatchObject({ ok: true, text: COPY.app.jobWait.stopped });
+  });
+
+  // The review (S3): a read that was stopped must not leave the last read's list on the page as
+  // if it were this folder's.
+  it("takes the last read's list away when another read starts, and Stop leaves none", async () => {
+    held = undefined;
+    followed.length = 0;
+    const { m, els, submit } = folderForm();
+    planReply = {
+      platform: "forge",
+      platforms: ["forge"],
+      repos: [
+        { id: "forge-statements", url: "https://git.forge.example/forge/s.git", type: "node" },
+      ],
+      listed: [],
+      refused: [],
+      skipped: [],
+    };
+    submit();
+    await flush();
+    await flush();
+    m.render();
+    expect(els().some((x) => x.type === PlanTable)).toBe(true);
+    held = true;
+    submit();
+    await flush();
+    m.render();
+    expect(els().some((x) => x.type === PlanTable)).toBe(false);
+    const { JobStopped } = await import("../src/api/client.js");
+    (held as unknown as { reject: (e: unknown) => void }).reject(new JobStopped());
+    held = undefined;
+    await flush();
+    await flush();
+    m.render();
+    expect(els().some((x) => x.type === PlanTable)).toBe(false);
+  });
+
+  // The review (S4): the page that goes while a folder is read stops the job it started.
+  it("stops the read's job when the page goes", async () => {
+    sent.length = 0;
+    followed.length = 0;
+    held = true;
+    const { m, submit } = folderForm();
+    submit();
+    await flush();
+    expect(followed[0]!.signal?.aborted).toBe(false);
+    m.unmount();
+    await flush();
+    expect(followed[0]!.signal?.aborted).toBe(true);
+    expect(sent.at(-1)!.path).toBe("/api/jobs/job-7/cancel");
+    (held as unknown as { reject: (e: unknown) => void }).reject(
+      new DOMException("Aborted", "AbortError"),
+    );
+    held = undefined;
+    await flush();
+  });
+
+  // The review (N8): two folders skipped under one name each get a row.
+  it("gives every skipped folder a row of its own", () => {
+    const tree = PlanTable({
+      plan: {
+        platforms: ["forge"],
+        repos: [],
+        listed: [],
+        refused: [],
+        skipped: [
+          {
+            path: "forge-monolith",
+            reason: "took too long to read (over 60 seconds); add it by its clone URL",
+          },
+          { path: "forge-monolith", reason: "a link to nothing" },
+        ],
+      },
+      rows: [],
+      setRows: () => undefined,
+    });
+    const keys = all(tree)
+      .filter((x) => x.type === "li")
+      .map((x) => (x as unknown as { key: string }).key);
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
   });
 
   it("lists what the manifest has already and each folder skipped, with why", async () => {

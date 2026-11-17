@@ -280,6 +280,9 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
               },
             ).catch((e: unknown) => {
               // discover's words name its CLI flags; the app has a field for each.
+              // A folder that can't be listed (the review of ADR 0199, N5): its own words.
+              if (e instanceof AdoptError && (e.code === "not-found" || e.code === "source"))
+                throw new HttpError(422, "That folder can't be read", e.message);
               if (e instanceof AdoptError)
                 throw unprocessable(
                   e.message.replace(/ with --platform\b/g, " (choose the platform)"),

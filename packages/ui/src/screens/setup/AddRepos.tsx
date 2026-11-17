@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, callAsJob, JobStopped, stopJob } from "../../api/client.js";
 import { JobWait } from "../../app/job-wait.js";
@@ -127,8 +127,9 @@ export function PlanTable({
         <details className="muted" style={{ fontSize: 12 }}>
           <summary>{S.skipped(plan.skipped.length)}</summary>
           <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-            {plan.skipped.map((x) => (
-              <li key={x.path}>{S.skippedWhy(x.path, x.reason)}</li>
+            {plan.skipped.map((x, i) => (
+              // A folder can be skipped twice under one name (a link, and too slow): by place too.
+              <li key={`${i}:${x.path}`}>{S.skippedWhy(x.path, x.reason)}</li>
             ))}
           </ul>
         </details>
@@ -151,6 +152,17 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
   const read = useAction();
   // A folder's read is a job: its id (for Stop) and the last line it said.
   const [wait, setWait] = useState<{ job?: string; line?: string; stopping?: boolean }>();
+  // The review (S4): the read's following ends, and its job is stopped, when the page goes.
+  const reading = useRef<{ ctl: AbortController; job?: string } | undefined>(undefined);
+  useEffect(
+    () => () => {
+      const r = reading.current;
+      if (!r) return;
+      r.ctl.abort();
+      if (r.job) void stopJob(r.job).catch(() => undefined);
+    },
+    [],
+  );
   const given = mode === "paste" ? urls.trim() : dir.trim();
   const picked = reposToAdd(rows);
   const body = (preview: boolean) => ({
@@ -195,21 +207,38 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
                   // Read as a job: what it is on is said here and in the Console, and Stop ends
                   // it between folders. Nothing is written, so a Stop is only a stop.
                   setWait({});
+                  // The review (S3): the last read's list is another folder's (or another
+                  // moment's): gone as this read starts, so a Stop leaves none to mistake for it.
+                  setPlan(undefined);
+                  setRows([]);
+                  const mine = { ctl: new AbortController() } as {
+                    ctl: AbortController;
+                    job?: string;
+                  };
+                  reading.current = mine;
                   try {
                     p = await callAsJob<Plan>(
                       "/api/setup/repos/plan",
                       { dir: dir.trim(), ...(platform ? { platform } : {}) },
                       {
                         write: false,
-                        onJob: (job) => setWait((w) => ({ ...w, job })),
+                        signal: mine.ctl.signal,
+                        onJob: (job) => {
+                          mine.job = job;
+                          // Gone before the server named it: stopped now.
+                          if (mine.ctl.signal.aborted) void stopJob(job).catch(() => undefined);
+                          else setWait((w) => ({ ...w, job }));
+                        },
                         onLine: (line) => setWait((w) => ({ ...w, line })),
                       },
                     );
                   } catch (e) {
-                    if (e instanceof JobStopped) return undefined;
+                    // Stopped by the person, or the page went: no list, and nothing failed.
+                    if (e instanceof JobStopped || mine.ctl.signal.aborted) return undefined;
                     throw e;
                   } finally {
-                    setWait(undefined);
+                    if (reading.current === mine) reading.current = undefined;
+                    if (!mine.ctl.signal.aborted) setWait(undefined);
                   }
                 }
                 setPlan(p);

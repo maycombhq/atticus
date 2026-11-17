@@ -488,7 +488,10 @@ export function writtenOf(e: unknown): { repo: string; file: string }[] {
  * server answers at once with the job's id; this follows the job, so an editor panel, which
  * hears no live events, still learns when it ended, and the Console shows the work meanwhile.
  * Resolves with the answer the call gives without `job`; a refusal throws its problem as before.
- * A server that answers the call itself (an older one) is answered as it is.
+ * A server that answers the call itself is answered as it is: an older one whose request schema
+ * lets an unknown field by. Not every route's does: POST /api/setup/repos/plan's is strict, so a
+ * server older than API 3.16.0 refuses `job` with 400 (ADR 0199); the page and its server ship
+ * together, and a page that must reach an older one asks that route without `job`.
  */
 export async function callAsJob<T>(
   path: string,
