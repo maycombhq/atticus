@@ -22,7 +22,7 @@ When one side has nothing on record, the panel says so and gives the command: `a
 
 ## A repo's owner and system
 
-On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. **Apply to every repo's map** redraws it (`atticus verify --all --write`), then **Propose for review**.
+On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. **Apply to all N repos read** redraws it (`atticus verify --all --write`), then **Propose for review**. It applies every repo read so far, one after another, so on a large estate it takes a while: the Console shows which repo it is on and about how long is left.
 
 ## Add a box, and declare a link
 

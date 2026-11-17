@@ -5085,6 +5085,14 @@ export const COPY = {
   appStep: {
     inTerminal: "In a terminal",
     applyAll: "Apply to every repo's map",
+    /**
+     * Beta.28.4: every repo read so far, said as how many (the step after a declaration or an
+     * owner set runs them all, one after another), and what that means when they are many.
+     */
+    applyAllRead: (n: number) =>
+      n === 1 ? "Apply to the 1 repo read" : `Apply to all ${n} repos read`,
+    applyAllMany: (n: number) =>
+      `Each of the ${n} repos is applied in turn, so this can take a long time. The Console shows which repo it is on and about how long is left; Stop there ends the run after the repo being written.`,
     applyingAll: "Applying…",
     /** Beta.28.4: said after "applied some" or "stopped", when repos applied left facts out. */
     leftOutToo: (n: number, repos: number) =>

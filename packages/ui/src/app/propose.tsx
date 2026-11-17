@@ -12,6 +12,7 @@ import {
 import { confirmed } from "../api/confirm.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
+import { MANIFEST_REPOS_PATH } from "./repo-counts.js";
 import { focusIfLost } from "./ui.js";
 import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
@@ -598,6 +599,16 @@ export async function runApplyAll(
   }
 }
 
+/** Map › Trust's read, as far as the count of repos read needs it. */
+interface ReposRead {
+  repos?: readonly { facts?: { present?: boolean } }[];
+}
+/** How many repos have a facts file: the repos `atticus verify --all` runs. */
+export const reposRead = (t: ReposRead): number =>
+  Array.isArray(t.repos) ? t.repos.filter((r) => r?.facts?.present === true).length : 0;
+/** More repos than this, and the Apply for every repo read says what running them all means. */
+export const MANY_REPOS = 5;
+
 /** `atticus verify --all --write`, then Propose for review. */
 export function ApplyAll({
   noPropose,
@@ -629,6 +640,11 @@ export function ApplyAll({
   const [own, setOwn] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
   const held = run ?? own;
   const inPanel = useResultsInPanel();
+  // Beta.28.4 (the review): with no list it runs every repo read so far: how many that is, from
+  // Map › Trust's read (the status bar's), so the button says it before the click. Not known
+  // (loading, the read failed, none read): the words it always had.
+  const trust = useApi<ReposRead>(repos ? undefined : MANIFEST_REPOS_PATH);
+  const read = !repos && trust.state === "ready" ? reposRead(trust.data) : 0;
   const start =
     onRun ??
     (() =>
@@ -653,11 +669,18 @@ export function ApplyAll({
               ? COPY.appStep.applyingAll
               : repos
                 ? COPY.appStep.applyWaiting(repos.length)
-                : COPY.appStep.applyAll}
+                : read
+                  ? COPY.appStep.applyAllRead(read)
+                  : COPY.appStep.applyAll}
           </button>
         )}
         {(held.running || (inPanel && held.lines)) && <ShowInConsole id={held.jobId} />}
       </div>
+      {read > MANY_REPOS && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {COPY.appStep.applyAllMany(read)}
+        </p>
+      )}
       <Note note={held.note} />
       {held.lines && held.lines.length > 0 && stepLines(held.lines, inPanel)}
       {held.next && <SyncFirst repos={held.next.repos} />}

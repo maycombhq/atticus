@@ -14,15 +14,35 @@ vi.mock("react", async () => {
 });
 let applyFirst: string[] = [];
 let served: string[] = [];
+/** Map › Trust's read (the repos and whether each has facts), as the status bar reads it. */
+let trust: unknown = { state: "loading" };
+const asked: (string | undefined)[] = [];
+const readRepos = (read: number, unread = 0) => ({
+  state: "ready",
+  data: {
+    repos: [
+      ...Array.from({ length: read }, (_, i) => ({ repo: `forge-${i}`, facts: { present: true } })),
+      ...Array.from({ length: unread }, (_, i) => ({
+        repo: `new-${i}`,
+        facts: { present: false },
+      })),
+    ],
+  },
+});
 let onFiles: ((events: { type: string; path?: string }[]) => void) | undefined;
 vi.mock("../src/api/client.js", async () => ({
   ...(await vi.importActual<object>("../src/api/client.js")),
   useFileChanges: (on: typeof onFiles) => void (onFiles = on),
-  useApi: () => ({
-    state: "ready",
-    data: { scope: "work", files: [], branch: "b", title: "t", applyFirst },
-    reload: () => void (applyFirst = served),
-  }),
+  useApi: (path: string | undefined) => {
+    asked.push(path);
+    return path === "/api/trust"
+      ? trust
+      : {
+          state: "ready",
+          data: { scope: "work", files: [], branch: "b", title: "t", applyFirst },
+          reload: () => void (applyFirst = served),
+        };
+  },
 }));
 /** Each job started (its path and body), ended by the test when it says. */
 const started: { path: string; body: unknown }[] = [];
@@ -99,9 +119,43 @@ it("the Apply for the repos that wait says how many, and never every repo", () =
   expect(buttons(m.tree).map((b) => text(b))).toEqual(["Apply to the 3 repos waiting"]);
   expect(text(m.tree)).not.toMatch(/every repo/i);
   expect(T.applyWaiting(2)).toBe("Apply to the 2 repos waiting");
+  // A list given: the repos read are not asked for.
+  expect(asked).not.toContain("/api/trust");
   // With no list it is the step a page names as verify --all --write: every repo.
   const every = mount(ApplyAll as never, { noPropose: true } as never);
   expect(buttons(every.tree).map((b) => text(b))).toEqual(["Apply to every repo's map"]);
+});
+
+// Beta.28.4 (the review): after a declaration or an owner set, the step applies every repo read:
+// on an estate of 40 that is 40 repos in turn. The button says how many, and past a handful a
+// line says what that means, before the click.
+it("the Apply for every repo read says how many repos it runs, and warns when they are many", () => {
+  trust = readRepos(40, 2);
+  const many = mount(ApplyAll as never, { noPropose: true } as never);
+  expect(buttons(many.tree).map((b) => text(b))).toEqual(["Apply to all 40 repos read"]);
+  expect(text(many.tree)).toContain(
+    "Each of the 40 repos is applied in turn, so this can take a long time. The Console shows which repo it is on and about how long is left; Stop there ends the run after the repo being written.",
+  );
+  trust = readRepos(5);
+  const few = mount(ApplyAll as never, { noPropose: true } as never);
+  expect(buttons(few.tree).map((b) => text(b))).toEqual(["Apply to all 5 repos read"]);
+  expect(text(few.tree)).not.toMatch(/applied in turn/);
+  trust = readRepos(1);
+  const one = mount(ApplyAll as never, { noPropose: true } as never);
+  expect(buttons(one.tree).map((b) => text(b))).toEqual(["Apply to the 1 repo read"]);
+  // Not known (still loading, the read failed, or none read): the words it always had.
+  for (const unknown of [{ state: "loading" }, { state: "error", error: "x" }, readRepos(0, 3)]) {
+    trust = unknown;
+    const m = mount(ApplyAll as never, { noPropose: true } as never);
+    expect(buttons(m.tree).map((b) => text(b))).toEqual(["Apply to every repo's map"]);
+    expect(text(m.tree)).not.toMatch(/applied in turn/);
+  }
+  // While it runs the line stays (it is what the person is waiting through).
+  trust = readRepos(40);
+  const running = mount(ApplyAll as never, { noPropose: true, run: { running: true } } as never);
+  expect(buttons(running.tree).map((b) => text(b))).toEqual(["Applying…"]);
+  expect(text(running.tree)).toMatch(/applied in turn/);
+  trust = { state: "loading" };
 });
 
 it("sends exactly the repos waiting, and says it applied those", async () => {
