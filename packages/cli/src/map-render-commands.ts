@@ -109,7 +109,7 @@ import {
 } from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
 import { writeRepoSpecs } from "./contract-check-files.js";
-import { writeProgress } from "./write-progress.js";
+import { buildPassLine, buildStageLine, writeProgress } from "./write-progress.js";
 
 /**
  * The map (ADR 0124, A3b): a repo's verified facts written into the catalog everything
@@ -565,7 +565,11 @@ export async function projectFactsIntoCatalog(
     },
     {
       ...(given.step
-        ? { onPass: (n, of, what) => step(`Building the catalog: pass ${n} of ${of} (${what})`) }
+        ? {
+            onPass: (n, of, what) => step(buildPassLine(n, of, what)),
+            // Beta.28.4: each stage inside a pass too, so the last line names what is running.
+            onStage: (n, of, _what, stage) => step(buildStageLine(n, of, stage)),
+          }
         : {}),
       ...(given.tick ? { tick: given.tick } : {}),
     },

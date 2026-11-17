@@ -16,6 +16,10 @@ import { CancelledError, commitCurrent, currentSignal } from "@maycombhq/core";
  *
  * Work that ends within `quietMs` (2 s) says nothing at all, as before: a quick write stays a
  * few lines. Once it runs past that, the step it is on is said, and every step after it.
+ *
+ * Beta.28.4 (the owner's field report: a write took ten minutes and nothing said which step
+ * took them): work that ran half a minute or more names its three slowest steps as it ends,
+ * each with its time, finished or not, so the log of one run says where the time went.
  */
 
 export interface WriteProgress {
@@ -66,6 +70,28 @@ export function durationWords(ms: number): string {
 }
 
 const lowerFirst = (s: string) => (s ? s[0]!.toLowerCase() + s.slice(1) : s);
+
+/** Work shorter than this names no slowest steps (30 s). */
+const SLOWEST_FROM_MS = 30_000;
+/** How many of its slowest steps long work names. */
+const SLOWEST_STEPS = 3;
+
+/**
+ * The line that names the slowest steps: each step's time (a step said more than once counts
+ * once, with all its time), longest first, those of a second or more; none when there is none.
+ */
+export function slowestStepsLine(
+  steps: readonly { what: string; ms: number }[],
+): string | undefined {
+  const by = new Map<string, number>();
+  for (const s of steps) by.set(s.what, (by.get(s.what) ?? 0) + s.ms);
+  const slow = [...by]
+    .filter(([, ms]) => ms >= 1_000)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, SLOWEST_STEPS);
+  if (!slow.length) return undefined;
+  return `The slowest steps: ${slow.map(([what, ms]) => `${lowerFirst(what)} (${durationWords(ms)})`).join("; ")}.`;
+}
 const macrotask = () => new Promise<void>((r) => setImmediate(r));
 
 /** Tests' settings for every write's progress (the quiet time and the heartbeat). */
@@ -79,6 +105,11 @@ export function writeProgress(
   const yieldNow = o.yieldNow ?? macrotask;
   const began = Date.now();
   let current: { what: string; at: number } | undefined;
+  /** Each step that ended, with the time it took. */
+  const took: { what: string; ms: number }[] = [];
+  const close = (now: number) => {
+    if (current) took.push({ what: current.what, ms: now - current.at });
+  };
   let beat: ReturnType<typeof setInterval> | undefined;
   let committed = false;
   /** The job it runs in heard the commit: it says a late Stop itself (TOO_LATE). */
@@ -128,6 +159,7 @@ export function writeProgress(
       }
       stopBeat();
       const now = Date.now();
+      close(now);
       current = { what, at: now };
       if (!loud && now - began >= quiet) {
         if (quietTimer !== undefined) clearTimeout(quietTimer);
@@ -164,10 +196,26 @@ export function writeProgress(
       stopBeat();
       if (quietTimer !== undefined) clearTimeout(quietTimer);
       ended = true;
-      if (o.title && e.done) say(`${o.title} took ${durationWords(Date.now() - began)}.`);
+      const now = Date.now();
+      close(now);
+      current = undefined;
+      const slowest = now - began >= SLOWEST_FROM_MS ? slowestStepsLine(took) : undefined;
+      if (slowest) say(slowest);
+      if (o.title && e.done) say(`${o.title} took ${durationWords(now - began)}.`);
     },
   };
 }
+
+/** The step a build's pass is said as. */
+export const buildPassLine = (n: number, of: number, what: string) =>
+  `Building the catalog: pass ${n} of ${of} (${what})`;
+
+/**
+ * The step a stage inside a build's pass is said as (beta.28.4): the pass, then the stage, so
+ * the last line said names what is running.
+ */
+export const buildStageLine = (n: number, of: number, stage: string) =>
+  `Building the catalog: pass ${n} of ${of}, ${stage}`;
 
 /**
  * Beta.28.1 (field hunt G2): `atticus catalog build` (and the app's builds that run it: Catalog
@@ -184,6 +232,7 @@ export function catalogBuildProgress(io: {
   hooks: {
     onStep: (s: { step: "build" | "check" | "guard" | "write"; files?: number }) => Promise<void>;
     onPass: (n: number, of: number, what: string) => Promise<void>;
+    onStage: (n: number, of: number, what: string, stage: string) => Promise<void>;
   };
 } {
   const signal = currentSignal();
@@ -208,7 +257,8 @@ export function catalogBuildProgress(io: {
           progress.commit();
         }
       },
-      onPass: (n, of, what) => progress.step(`Building the catalog: pass ${n} of ${of} (${what})`),
+      onPass: (n, of, what) => progress.step(buildPassLine(n, of, what)),
+      onStage: (n, of, _what, stage) => progress.step(buildStageLine(n, of, stage)),
     },
   };
 }

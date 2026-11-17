@@ -7,9 +7,11 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { CancelledError, commitCurrent, filePoolHooks, withSignal } from "@maycombhq/core";
 import {
   BUILD_PASSES,
+  BUILD_STAGES,
   buildAndWrite,
   buildCacheHooks,
   buildCatalog,
+  buildTickHooks,
   loadBuildInputs,
 } from "../src/index.js";
 
@@ -125,6 +127,116 @@ describe("the build says its passes and steps (beta.28.1)", () => {
         ).rejects.toBe(stop);
         expect(passes).toEqual([1, 2]);
       } finally {
+        buildCacheHooks.off = false;
+      }
+    },
+    T,
+  );
+
+  it(
+    "names the stages inside its passes (onStage), awaiting each, and builds the same catalog",
+    async () => {
+      // Beta.28.4 (the owner's field report: pass 3 ran for minutes with no line): a pass of
+      // several stages says each as it starts, so the last line said names what is running.
+      const root = await forge();
+      buildCacheHooks.off = true;
+      try {
+        const heard: [number, number, string, string][] = [];
+        let waited = 0;
+        const passes: number[] = [];
+        const withHook = await buildCatalog(await loadBuildInputs(root), {
+          onPass: (n) => void passes.push(n),
+          onStage: async (n, of, what, stage) => {
+            // A stage is said inside the pass it is of, after that pass was.
+            expect(passes.at(-1)).toBe(n);
+            heard.push([n, of, what, stage]);
+            await new Promise((r) => setTimeout(r, 1));
+            waited++;
+          },
+        });
+        expect(waited).toBe(heard.length);
+        expect(
+          heard.every((h) => h[1] === BUILD_PASSES.length && h[2] === BUILD_PASSES[h[0] - 1]),
+        ).toBe(true);
+        const of = (n: number) => heard.filter((h) => h[0] === n).map((h) => h[3]);
+        // No federated catalog here, so pass 3 names no such stage.
+        expect(of(3)).toEqual([
+          "the merge",
+          "intake",
+          "each repo's records after the merge",
+          "the features",
+          "the glossary",
+        ]);
+        expect(of(4)).toEqual(["link evidence", "shared maps"]);
+        expect(of(8)).toEqual(["the record files", "build.json"]);
+        // Each is one of the stages the build lists for its pass.
+        for (const [n, , , stage] of heard) expect(BUILD_STAGES[n]).toContain(stage);
+        const without = await buildCatalog(await loadBuildInputs(root));
+        expect([...withHook.files]).toEqual([...without.files]);
+        expect(withHook.manifest).toEqual(without.manifest);
+      } finally {
+        buildCacheHooks.off = false;
+      }
+    },
+    T,
+  );
+
+  it(
+    "stops at a stage when onStage throws, and gives way (tick) at each stage of passes 3 to 6",
+    async () => {
+      const root = await forge();
+      buildCacheHooks.off = true;
+      try {
+        const stop = new Error("stopped");
+        const passes: number[] = [];
+        const stages: string[] = [];
+        await expect(
+          buildCatalog(await loadBuildInputs(root), {
+            onPass: (n) => void passes.push(n),
+            onStage: (_n, _of, _what, stage) => {
+              stages.push(stage);
+              if (stage === "the glossary") throw stop;
+            },
+          }),
+        ).rejects.toBe(stop);
+        // The glossary never ran, and pass 4 never started.
+        expect(passes).toEqual([1, 2, 3]);
+        expect(stages.at(-1)).toBe("the glossary");
+        // With no onStage, a Stop is still heard there: the build gives way at each stage, and
+        // inside the loops over the legacy records and the record files (here at every turn;
+        // a build does once a loop has run a tenth of a second).
+        const ticks = new Map<number, number>();
+        let at = 0;
+        buildTickHooks.everyMs = 0;
+        const withTicks = await buildCatalog(await loadBuildInputs(root), {
+          onPass: (n) => {
+            at = n;
+          },
+          tick: async () => {
+            ticks.set(at, (ticks.get(at) ?? 0) + 1);
+          },
+        });
+        expect(ticks.get(3)).toBeGreaterThanOrEqual(5);
+        expect(ticks.get(4)).toBeGreaterThanOrEqual(2);
+        // The legacy records (pass 5) give way as they are read.
+        expect(ticks.get(5)).toBeGreaterThan(0);
+        expect(ticks.get(8)).toBeGreaterThan(withTicks.files.size);
+        delete buildTickHooks.everyMs;
+        const without = await buildCatalog(await loadBuildInputs(root));
+        expect([...withTicks.files]).toEqual([...without.files]);
+        expect(withTicks.retired).toEqual(without.retired);
+        // A Stop heard among the legacy records ends the build there: pass 6 never starts.
+        buildTickHooks.everyMs = 0;
+        const later: number[] = [];
+        await expect(
+          buildCatalog(await loadBuildInputs(root), {
+            onPass: (n) => void later.push(n),
+            tick: () => (later.at(-1) === 5 ? Promise.reject(stop) : Promise.resolve()),
+          }),
+        ).rejects.toBe(stop);
+        expect(later).toEqual([1, 2, 3, 4, 5]);
+      } finally {
+        delete buildTickHooks.everyMs;
         buildCacheHooks.off = false;
       }
     },

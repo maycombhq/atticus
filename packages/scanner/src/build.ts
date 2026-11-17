@@ -887,6 +887,25 @@ export const BUILD_PASSES = [
 ] as const;
 
 /**
+ * Beta.28.4 (the owner's field report: a write sat in pass 3 for minutes with no line said): the
+ * stages inside the passes that have more than one, by pass (1-based), as `onStage` names them.
+ * A stage is one computation; the line said as it starts names what is running until the next.
+ * "federated catalogs" is said only by a build that has some.
+ */
+export const BUILD_STAGES: Readonly<Record<number, readonly string[]>> = {
+  3: [
+    "the merge",
+    "intake",
+    "each repo's records after the merge",
+    "the features",
+    "federated catalogs",
+    "the glossary",
+  ],
+  4: ["link evidence", "shared maps"],
+  8: ["the record files", "build.json"],
+};
+
+/**
  * Told as the build starts each pass (1-based, of BUILD_PASSES.length), and awaited: the caller
  * prints it, lets the line out and may stop the build there by throwing (nothing is written by
  * the build). It only listens: the build is the same with it or without it.
@@ -899,11 +918,40 @@ export interface BuildProgress {
    * build by throwing. It only listens: the build is the same with it or without it.
    */
   tick?: () => Promise<void>;
+  /**
+   * Beta.28.4: told as the build starts each stage of a pass that has several (BUILD_STAGES),
+   * after that pass's `onPass`, and awaited as `onPass` is: the caller prints it and may stop the
+   * build there by throwing (nothing is written by the build). The build gives way (`tick`) at
+   * each stage too. It only listens: the build is the same with it or without it.
+   */
+  onStage?: (pass: number, of: number, what: string, stage: string) => void | Promise<void>;
 }
+
+/** How long a loop of the build runs before it gives way again (`tick`). */
+const TICK_EVERY_MS = 100;
+/** Tests' setting of it (0: at every turn of a loop). */
+export const buildTickHooks: { everyMs?: number } = {};
 
 export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {}): Promise<Build> {
   const { op, root } = i;
-  const pass = async (n: number) => progress.onPass?.(n, BUILD_PASSES.length, BUILD_PASSES[n - 1]!);
+  let passNow = 0;
+  const pass = async (n: number) => {
+    passNow = n;
+    await progress.onPass?.(n, BUILD_PASSES.length, BUILD_PASSES[n - 1]!);
+  };
+  /** A stage of the pass the build is in starts: said, and the build gives way. */
+  const stage = async (what: string) => {
+    await progress.onStage?.(passNow, BUILD_PASSES.length, BUILD_PASSES[passNow - 1]!, what);
+    await progress.tick?.();
+  };
+  /** Inside a loop: gives way once it has run TICK_EVERY_MS since it last did. */
+  let gaveWay = performance.now();
+  const breathe = async () => {
+    const every = buildTickHooks.everyMs ?? TICK_EVERY_MS;
+    if (!progress.tick || performance.now() - gaveWay < every) return;
+    await progress.tick();
+    gaveWay = performance.now();
+  };
   const mark = phaseClock("build: ");
   // The build cache (point 9): a build of the same inputs is the last build, kept whole; else
   // the last build's record texts are kept for the records that didn't change. A build with
@@ -1032,9 +1080,11 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const read = new Set(factRepos.filter((x) => x.facts.length > 0).map((x) => x.repo));
   const mergeInput = (records: CatalogRecord[]) =>
     estateMergeInput(op, estateRepos(op), [...records].sort(byKindId), undefined, read);
+  await stage("the merge");
   let merged = mergeCatalog(mergeInput(code));
   mark("3 merge");
   let inputs: ScanInputsResult | undefined;
+  await stage("intake");
   if (i.inputsDir !== null) {
     inputs = await scanInputs({
       root,
@@ -1050,6 +1100,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
   }
   mark("3 intake");
+  await stage("each repo's records after the merge");
   let records = withoutHeardListeners(merged.records, projection);
   let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;
   if (projection) {
@@ -1078,6 +1129,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       .map((r) => `${r.kind}/${r.id}`),
   );
   const context = [...records, ...legacyAll.filter((r) => !derivedKeys.has(`${r.kind}/${r.id}`))];
+  await stage("the features");
   const found = await featuresForScan({
     records: context.filter((r) => r.kind !== "Capability"),
     decisions: i.curated.records,
@@ -1089,6 +1141,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   let federated: FederatedContribution[] | undefined;
   let fedRecords: CatalogRecord[] = [];
   if (i.federated.length) {
+    await stage("federated catalogs");
     const fed = await federate([...records, ...found.features], i.federated, problems, root);
     const placed = resolveFederatedLooseEnds({
       local: records,
@@ -1101,6 +1154,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       placed.resolved.get(c.id) ? { ...c, resolved: placed.resolved.get(c.id)! } : c,
     );
   }
+  await stage("the glossary");
   const glossary = await glossaryForScan({
     root,
     orgPack: op,
@@ -1122,6 +1176,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   await pass(4);
   let linkEvidence: LinkEvidenceResult | undefined;
   let shared: SharedJoinResult | undefined;
+  await stage("link evidence");
   if (projection) {
     linkEvidence = linkEvidenceOf({
       join: projection.whole,
@@ -1130,6 +1185,9 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       traffic: i.traffic,
     });
     records = applyLinkEvidence(records, linkEvidence.marks);
+  }
+  await stage("shared maps");
+  if (projection) {
     const systems = outsideProfileSystemsOf(op);
     shared = i.shared.maps.length
       ? joinSharedMaps({
@@ -1389,6 +1447,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // (The whole-catalog passes read the legacy records as context, so theirs come back through
   // them: one no current source derives is taken out.)
   for (const r of legacyRecords) {
+    await breathe();
     const key = `${r.kind}/${r.id}`;
     if (callerReadNow(r) !== undefined) {
       if (!derivedKeys.has(key)) byKey.delete(key);
@@ -1410,6 +1469,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       );
     const keep: CatalogRecord[] = [];
     for (const r of legacySlot.slot.records) {
+      await breathe();
       const key = `${r.kind}/${r.id}`;
       const derived = byKey.get(key);
       const gone =
@@ -1547,10 +1607,12 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   mark("per repo");
   // ---- the files and build.json
   await pass(8);
+  await stage("the record files");
   const files = new Map<string, string>();
   /** Each file's record, by the hash of its JSON: what the cache keeps its text by. */
   const textKeys = new Map<string, string>();
   for (const r of out) {
+    await breathe();
     const path = recordPath(r);
     files.set(
       path,
@@ -1558,6 +1620,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     );
   }
   // joins.json as this build leaves it (its retired joins out): what the next build reads.
+  await stage("build.json");
   const manifest = manifestOf(
     root,
     out,
@@ -3466,6 +3529,8 @@ export async function buildAndWrite(
       files?: number;
     }) => void | Promise<void>;
     onPass?: BuildProgress["onPass"];
+    /** Beta.28.4: the build's own too (BuildProgress): each stage inside a pass. */
+    onStage?: BuildProgress["onStage"];
     /**
      * The target's records as the caller read them under its lock (`readCatalogWithFiles`): the
      * guards use them, and the result's `catalog` is worked out from them, where every file
@@ -3492,7 +3557,10 @@ export async function buildAndWrite(
         ...i,
         slots: await withFactsWrites(root, slotsAfter(root, i.slots, o.slots ?? [])),
       })),
-      o.onPass ? { onPass: o.onPass } : {},
+      {
+        ...(o.onPass ? { onPass: o.onPass } : {}),
+        ...(o.onStage ? { onStage: o.onStage } : {}),
+      },
     ));
   // The target's record files and build.json, read once for the guards, the report and the
   // write, and the build.json this build writes, serialized once (ADR 0195 point 9).

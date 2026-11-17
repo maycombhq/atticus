@@ -55,6 +55,76 @@ describe("writeProgress", () => {
     ]);
   });
 
+  it("names the three slowest steps at the end of work that took half a minute or more", async () => {
+    // Beta.28.4 (the owner's field report: ten minutes, and no way to tell which step took them).
+    const lines: string[] = [];
+    const p = writeProgress((l) => lines.push(l), {
+      yieldNow: noYield,
+      quietMs: 0,
+      heartbeatMs: 0,
+      title: "The write",
+    });
+    await p.step("Loading the catalog");
+    vi.advanceTimersByTime(18_000);
+    await p.step(
+      "Building the catalog: pass 3 of 8 (the merge, intake, features and the glossary)",
+    );
+    vi.advanceTimersByTime(1_000);
+    await p.step("Building the catalog: pass 3 of 8, the glossary");
+    vi.advanceTimersByTime(583_000);
+    await p.step("Writing contracts");
+    vi.advanceTimersByTime(400);
+    await p.step("Rendering the map");
+    vi.advanceTimersByTime(4_000);
+    p.end({ done: true });
+    expect(lines.slice(-2)).toEqual([
+      "The slowest steps: building the catalog: pass 3 of 8, the glossary (9 min 43 s); loading the catalog (18 s); rendering the map (4 s).",
+      "The write took 10 min 6 s.",
+    ]);
+    // Work that didn't finish says them too (a Stop, a refusal): where the time went so far.
+    const stopped: string[] = [];
+    const q = writeProgress((l) => stopped.push(l), {
+      yieldNow: noYield,
+      quietMs: 0,
+      heartbeatMs: 0,
+      title: "The write",
+    });
+    await q.step("Loading the catalog");
+    vi.advanceTimersByTime(45_000);
+    await q.step("Checking the build's guards");
+    vi.advanceTimersByTime(2_000);
+    q.end();
+    expect(stopped.at(-1)).toBe(
+      "The slowest steps: loading the catalog (45 s); checking the build's guards (2 s).",
+    );
+    // A step said twice (a second build in one piece of work) counts once, with both times;
+    // steps under a second are left out, and quick work says no such line.
+    const twice: string[] = [];
+    const r = writeProgress((l) => twice.push(l), {
+      yieldNow: noYield,
+      quietMs: 0,
+      heartbeatMs: 0,
+      title: "The build",
+    });
+    await r.step("Reading the build's inputs");
+    vi.advanceTimersByTime(20_000);
+    await r.step("Checking the build's guards");
+    vi.advanceTimersByTime(300);
+    await r.step("Reading the build's inputs");
+    vi.advanceTimersByTime(15_000);
+    r.end({ done: true });
+    expect(twice.slice(-2)).toEqual([
+      "The slowest steps: reading the build's inputs (35 s).",
+      "The build took 35 s.",
+    ]);
+    const quick: string[] = [];
+    const k = writeProgress((l) => quick.push(l), { yieldNow: noYield, quietMs: 0, title: "It" });
+    await k.step("Loading the catalog");
+    vi.advanceTimersByTime(29_000);
+    k.end({ done: true });
+    expect(quick).toEqual(["Loading the catalog… (0 s in)", "It took 29 s."]);
+  });
+
   it("says a step still runs every heartbeat while it runs, and stops once the next starts", async () => {
     const lines: string[] = [];
     const p = writeProgress((l) => lines.push(l), {
