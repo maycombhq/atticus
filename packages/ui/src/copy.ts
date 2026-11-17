@@ -5943,6 +5943,22 @@ export const COPY = {
     noLoose: (where: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
     /**
+     * ADR 0200 (a field report on beta.28.4, "Write 0 pairs"): every call has an arrow and the
+     * other box has no API on record, so there is nothing to move a call to either.
+     */
+    noLooseNoApis: (where: string, to: string) =>
+      `Every call of this repo has an arrow already (${where}): nothing is loose, and ${to} has no API on record to move one to.`,
+    /** Loose calls, and no API of the other box to pair them with. */
+    looseNoApis: (n: number, from: string, to: string) =>
+      `${n === 1 ? `One call of ${from} has` : `${n} calls of ${from} have`} no arrow, and ${to} has no API on record to pair ${n === 1 ? "it" : "them"} with yet.`,
+    /** The other box is an outside system and nothing can be paired: the other direction. */
+    systemCallsRepo: (system: string, repo: string) =>
+      `If ${system} calls ${repo}, drag the line from ${system} to ${repo}, or pick ${system} and choose Declare a link…: that says who calls a gateway route, and needs no spec.`,
+    /** Why the write button is off while nothing is ticked: never a button that writes nothing. */
+    pickFirst: "Tick a call and pick its API to preview and write the pair.",
+    /** The write button's words while nothing is ticked (it is off): never "Write 0 pairs". */
+    confirmNone: "Write the pairs",
+    /**
      * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the
      * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's
      * corrections; the arrow is drawn by the repo's next Apply. Each standing is said as it is,
@@ -6130,7 +6146,10 @@ export const COPY = {
     confirm: (n: number, rule: boolean) =>
       n === 0 && rule
         ? "Answer for all its calls"
-        : `${n === 1 ? "Write the pair" : `Write ${n} pairs`}${rule ? " and answer for all" : ""}`,
+        : n === 0
+          ? // ADR 0200: never a count of none ("Write 0 pairs"); the button is off, with why.
+            "Write the pairs"
+          : `${n === 1 ? "Write the pair" : `Write ${n} pairs`}${rule ? " and answer for all" : ""}`,
     writing: "Writing…",
     written: (n: number, file: string) =>
       n === 0 ? "No pair written." : `${n === 1 ? "One pair" : `${n} pairs`} written to ${file}.`,

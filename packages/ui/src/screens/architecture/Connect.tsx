@@ -647,6 +647,9 @@ export function Pairing(p: {
       </p>
     );
   const d = p.cands.data;
+  // ADR 0200: a pair needs a call of A (loose, or one to move) and an API of B.
+  const canPair = d.apis.length > 0 && (loose.length > 0 || movable.length > 0);
+  const nothing = !pairs.length && !rule;
   return (
     <div className="stack">
       {d.noCalls && (
@@ -665,7 +668,22 @@ export function Pairing(p: {
       )}
       {!d.noCalls && !d.calls.length && <p className="ev-say">{C.noJoinable(d.from)}</p>}
       {!d.noCalls && !loose.length && movable.length > 0 && (
-        <p className="ev-say">{C.noLoose(linkedWords(movable))}</p>
+        // ADR 0200: with no API of the other box there is no "Move a call here" to point at.
+        <p className="ev-say">
+          {d.apis.length
+            ? C.noLoose(linkedWords(movable))
+            : C.noLooseNoApis(linkedWords(movable), d.toName)}
+        </p>
+      )}
+      {!d.noCalls && loose.length > 0 && !d.apis.length && (
+        <p className="ev-say">{C.looseNoApis(loose.length, d.from, d.toName)}</p>
+      )}
+      {!canPair && p.box.system && (
+        // ADR 0200 (a field report on beta.28.4): nothing can be paired with an outside system
+        // that has no spec. If it is the caller, the line goes the other way: said, with how.
+        <p className="ev-say" role="note">
+          {C.systemCallsRepo(d.toName, d.from)}
+        </p>
       )}
       {!d.noCalls && !loose.length && !movable.length && here.length > 0 && (
         <p className="ev-say">{C.allHere(d.toName)}</p>
@@ -781,14 +799,23 @@ export function Pairing(p: {
           {error}
         </p>
       )}
-      {(loose.length > 0 || movable.length > 0 || d.rule) && (
+      {/* ADR 0200: no write is offered where nothing could be written (no API to pair with, no
+          rule to answer); where something could, the buttons are off until a pair is ticked,
+          with why: never "Write 0 pairs". */}
+      {(canPair || d.rule) && nothing && (
+        <p id={`${callsId}-why`} className="hud">
+          {d.rule ? C.nothingPicked : C.pickFirst}
+        </p>
+      )}
+      {(canPair || d.rule) && (
         <div className="box-foot">
           <button
             type="button"
             className="btn"
             onClick={() => void send("preview")}
-            disabled={!!busy}
+            disabled={!!busy || nothing}
             aria-busy={busy === "preview"}
+            {...(nothing ? { "aria-describedby": `${callsId}-why` } : {})}
           >
             {busy === "preview" ? C.previewing : C.preview}
           </button>
@@ -796,8 +823,9 @@ export function Pairing(p: {
             type="button"
             className="btn primary"
             onClick={() => void send("write")}
-            disabled={!!busy || !preview || previewed !== asked}
+            disabled={!!busy || nothing || !preview || previewed !== asked}
             aria-busy={busy === "write"}
+            {...(nothing ? { "aria-describedby": `${callsId}-why` } : {})}
           >
             {busy === "write" ? C.writing : C.confirm(pairs.length, rule)}
           </button>
