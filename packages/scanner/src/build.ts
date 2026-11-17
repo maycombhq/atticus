@@ -960,7 +960,15 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const cacheKey = i.federated.length
     ? undefined
     : await buildKeyOf({
-        inputs: i as unknown as Record<string, unknown>,
+        // Beta.28.5: of the questions, the answered ones, which are all the passes read
+        // (`targetsFromAnswers` and `ruledTargets` take a target only from a question whose
+        // state is answered). Every targets and hosts question was in the key, so a write that
+        // raised, refreshed or retired an open one (each write does, after it builds) made the
+        // next build run every pass to write nothing: forty times over in a map's estate join.
+        inputs: {
+          ...i,
+          questions: i.questions.filter((q) => q.state === "answered"),
+        } as unknown as Record<string, unknown>,
         slots: slotsKeyOf(i.slots),
         proposalsDir: join(dirname(i.curatedDir), "proposals"),
         orgPackDir: i.orgPackDir,

@@ -109,6 +109,83 @@ const LEDGER_CALL = {
 };
 
 describe("every input a build reads is in its key (ADR 0195 point 9)", () => {
+  // Beta.28.5 (the owner's field report: after a map of one repo, the estate join applied forty
+  // repos and each ran every pass of the build, 45 to 80 s, to write nothing). A write raises,
+  // refreshes and retires open questions once it has built, and every targets and hosts question
+  // was in the key, open or not; the build reads the answered ones only (targetsFromAnswers).
+  it(
+    "an open question raised, refreshed or retired is the last build still; answered or reopened, it is not",
+    async () => {
+      const root = await forge();
+      await settle(root);
+      expect((await cached(root)).hit).toBe(1);
+      const q = (over: Record<string, unknown>) =>
+        writeQuestion(
+          root,
+          Question.parse({
+            schemaVersion: 5,
+            id: "q-aaaaaaaaaaa2",
+            askedBy: {
+              step: "facts-targets",
+              command: "atticus verify forge-ledger --write",
+              at: "2026-11-12T08:00:00Z",
+            },
+            repo: "forge-ledger",
+            question: "Where does forge-ledger's call on line 31 go?",
+            options: [
+              { label: "forge-portal-bff", means: "a path like it", changes: "joins it" },
+              { label: "None of these", means: "Nothing answers it", changes: "stays loose" },
+            ],
+            evidence: [`${LEDGER_CALL.file}:${LEDGER_CALL.line}`],
+            scope: { level: "repo", id: "forge-ledger" },
+            state: "open",
+            rerun: "atticus verify forge-ledger --write",
+            ...over,
+          }),
+        );
+      const answer = {
+        option: 2,
+        by: "pat",
+        at: "2026-11-12T08:10:00.000Z",
+        scope: { level: "repo", id: "forge-ledger" },
+      };
+      const steps: [string, Record<string, unknown>, number][] = [
+        ["raised", {}, 1],
+        [
+          "refreshed with today's options",
+          {
+            options: [
+              { label: "forge-rates", means: "its host", changes: "joins it" },
+              { label: "None of these", means: "Nothing answers it", changes: "stays loose" },
+            ],
+          },
+          1,
+        ],
+        [
+          "retired",
+          { state: "retired", retired: { why: "no longer asked", at: "2026-11-12T09:00:00Z" } },
+          1,
+        ],
+        ["answered", { state: "answered", answer }, 0],
+        ["reopened", {}, 0],
+      ];
+      for (const [what, over, hit] of steps) {
+        await q(over);
+        const now = await cached(root);
+        expect(now.hit, what).toBe(hit);
+        expect(now.b, what).toStrictEqual(await uncached(root));
+        const w = await buildAndWrite(root, { command: "atticus catalog build" });
+        if (w.guard.refused?.allowRemovals !== undefined)
+          await buildAndWrite(root, {
+            command: "atticus catalog build",
+            allowRemovals: w.guard.refused.allowRemovals,
+          });
+        expect((await cached(root)).hit, `${what}, again`).toBe(1);
+      }
+    },
+    T,
+  );
+
   it(
     "the org pack, an answer, a repo's corrections, an inputs/ file's bytes, the helpers switched off and the code's stamp each miss the last build; each build equals one without the cache",
     async () => {
