@@ -85,7 +85,8 @@ export async function scanBranch(
   // Review round 46: a scan an earlier version kept under the name's own case moves to the
   // lower-case folder first, so what it kept for other repos is kept as before.
   const at = await branchCatalogFolder(root, branch);
-  if (at.legacy) await renameRetrying(join(catalogDirOf(root), "branches", at.legacy), dir);
+  if (at.legacy)
+    await renameRetrying(join(catalogDirOf(root), "branches", at.legacy), dir, { quick: true });
   const ofRepos = new Set(ids);
   // ADR 0195 (CS2): the branch's catalog is built from the baseline's slots with the branch's
   // readers slots in place of its repos' (catalog/branches/<branch>/sources/readers/<repo>.json):

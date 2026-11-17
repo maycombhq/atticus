@@ -441,6 +441,27 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
     T,
   );
 
+  // The review of beta.28.5: a write whose temporary file couldn't be removed (it was held)
+  // leaves `<file>.<pid>.<hex>.tmp` beside the record; no reader takes it for a record.
+  it(
+    "a temporary file a write left beside a record is no record and no hand edit",
+    async () => {
+      const root = await forge();
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      const gen = join(root, "catalog/generated");
+      const [one] = readdirSync(join(gen, "endpoint")).sort();
+      const records = (await readCatalog(gen)).records.length;
+      await writeFile(join(gen, "endpoint", `${one}.4242.0a1b2c3d.tmp`), "kind: Endpoint\n");
+      const r = await buildAndWrite(root, { command: "atticus catalog build", check: true });
+      expect(r.guard.refused).toBeUndefined();
+      expect(r.upToDate).toBe(true);
+      const read = await readCatalog(gen, { fresh: true });
+      expect(read.records.length).toBe(records);
+      expect(read.problems).toEqual([]);
+    },
+    T,
+  );
+
   it(
     "a hand edit, an added file or a deleted one refuses the build; a discard with the count copies the edit into the undo copy first",
     async () => {

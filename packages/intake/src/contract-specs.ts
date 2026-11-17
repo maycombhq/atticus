@@ -410,9 +410,27 @@ const sameShape = (a: string, b: string) =>
  * without one, the checkout's folder is walked.
  */
 export interface SpecTree {
-  files(): Promise<{ path: string; size: number }[]>;
+  /**
+   * `id`: a name for the file's content that is another whenever a byte of it is (git's id of
+   * the blob), when the tree has one: `readRepoSpecs`'s `notSpec` keeps what a file isn't by it.
+   */
+  files(): Promise<{ path: string; size: number; id?: string }[]>;
   read(path: string): Promise<string | undefined>;
 }
+
+/**
+ * The files a read found to hold no spec, by path and content id (beta.28.5): a file listed
+ * here isn't read again. The caller keeps it between runs; whether a file holds a spec rests on
+ * its name and its bytes alone (`specFormatOf`, `readContractSpecs`), so the list holds for as
+ * long as the code that reads is the same.
+ */
+export interface NotSpec {
+  has(path: string, id: string): boolean;
+  add(path: string, id: string): void;
+}
+
+/** Tests hear each OpenAPI file parsed for its operations' paths. */
+export const repoSpecsHooks: { onVendorRead?: (path: string) => void } = {};
 
 const SPEC_FILE = /\.(proto|avsc|ya?ml|json)$/i;
 
@@ -479,32 +497,50 @@ export async function readRepoSpecs(
     onRefused?: (note: string) => void;
     /** The files of the facts' commit; left out, the folder as it is. */
     tree?: SpecTree;
+    /** The files known to hold no spec, not read again; added to as this read finds more. */
+    notSpec?: NotSpec;
   },
 ): Promise<SpecsFileT> {
   const tree = o.tree ?? folderTree(dir);
   const files = (await tree.files())
     .filter((f) => SPEC_FILE.test(f.path) && !skipped(f.path) && f.size > 0 && f.size <= MAX_BYTES)
-    .sort((a, b) => cmpPath(a.path, b.path))
-    .map((f) => f.path);
+    .sort((a, b) => cmpPath(a.path, b.path));
   const own = o.facts.filter(
     (f): f is Extract<Fact, { kind: "entry" }> => f.kind === "entry" && f.entryType === "rest",
   );
   const specs: ContractSpecT[] = [];
-  for (const p of files) {
+  for (const { path: p, id } of files) {
+    // Beta.28.5: read once and found to hold no spec, its content the same since: not read.
+    // (At a commit each read is a `git cat-file` of its own, and most .yaml and .json files of
+    // a repo are no spec: the owner's write spent 16 s here.)
+    if (id !== undefined && o.notSpec?.has(p, id)) continue;
     const text = await tree.read(p);
-    if (text === undefined || !specFormatOf(p, text)) continue;
-    const got = readContractSpecs(p, text);
-    if (!got.length) continue;
+    if (text === undefined) continue;
+    const got = specFormatOf(p, text) ? readContractSpecs(p, text) : [];
+    if (!got.length) {
+      if (id !== undefined) o.notSpec?.add(p, id);
+      continue;
+    }
     if (o.denyHashes?.size && denyListHits(text, o.denyHashes).length) {
       o.onRefused?.(`${p}: the deny-list names a word in it, so its specs are left out.`);
       continue;
     }
+    // The file's operations as the vendor match reads them, parsed once for the file (it was
+    // parsed again for every operation: a spec of 400 operations, 400 times).
+    let vendor: ReturnType<typeof readVendorSpec> | null = null;
+    const vendorOps = () => {
+      if (vendor === null) {
+        repoSpecsHooks.onVendorRead?.(p);
+        vendor = readVendorSpec(p, text, "spec");
+      }
+      return vendor?.operations;
+    };
     for (const s of got) {
       if (s.kind !== "operation") {
         specs.push(s);
         continue;
       }
-      const vendorPath = readVendorSpec(p, text, "spec")?.operations.find((x) => x.id === s.id);
+      const vendorPath = vendorOps()?.find((x) => x.id === s.id);
       const paths = [s.path ?? "", vendorPath?.path ?? ""].filter(Boolean);
       const entry = own
         .filter(

@@ -632,6 +632,9 @@ async function readContractsCompanion(root: string, repo: string) {
   }
 }
 
+/** Tests hear each apply as it starts, under the lock (map-loop-count.test.ts counts them). */
+export const writeFactsHooks: { onWrite?: (repo: string) => void } = {};
+
 export async function writeFactsIntoCatalog(
   root: string,
   repo: string,
@@ -678,6 +681,7 @@ export async function writeFactsIntoCatalog(
     ...(signal ? { signal } : {}),
   });
   try {
+    writeFactsHooks.onWrite?.(repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));

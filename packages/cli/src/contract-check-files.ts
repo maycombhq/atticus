@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -15,7 +15,10 @@ import {
   orgPackDirOf,
   questionsDirOf,
   SpecsFile,
+  ensureLocalIgnore,
+  removeHeld,
   writeFileAtomic,
+  writeFileIfDiffers,
   type ContractCheckResult,
   type ContractMismatch,
   type ContractSpecT,
@@ -37,6 +40,7 @@ import {
   componentRenames,
   estateFacts,
   estateJoinOf,
+  buildCodeStamp,
   estateJoinOfAsync,
   hostAliases,
   joinReposOf,
@@ -105,9 +109,10 @@ async function commitTree(
     .filter(Boolean)
     .flatMap((line) => {
       const tab = line.indexOf("\t");
-      const [mode, type, , size] = line.slice(0, tab).trim().split(/\s+/);
+      const [mode, type, id, size] = line.slice(0, tab).trim().split(/\s+/);
       if (tab < 0 || type !== "blob" || mode === "120000") return [];
-      return [{ path: line.slice(tab + 1), size: Number(size) || 0 }];
+      // Git's id of the blob: another for any other content (what `notSpec` keeps a file by).
+      return [{ path: line.slice(tab + 1), size: Number(size) || 0, ...(id ? { id } : {}) }];
     });
   return {
     files: async () => files,
@@ -149,6 +154,60 @@ async function specTreeOf(
   return { tree, ...(head ? { commit: head } : as) };
 }
 
+/**
+ * The files of a repo found to hold no spec, kept between runs (beta.28.5) in
+ * `.atticus/cache/not-spec-<repo>.json`: each by its path and git's id of its content, under
+ * the stamp of the code that reads (the build cache's: another build of Atticus, at the same
+ * version too, reads every file again; with no stamp nothing is kept). Derived, local to this
+ * machine, never committed; one that can't be read or written costs the reads, nothing else.
+ */
+const NOT_SPEC_FORMAT = 1;
+async function notSpecOf(root: string, repo: string) {
+  const file = join(resolve(root), ".atticus", "cache", `not-spec-${repo}.json`);
+  const stamp = buildCodeStamp();
+  const v = `${NOT_SPEC_FORMAT}:${stamp}`;
+  const keys = new Set<string>();
+  if (stamp !== undefined)
+    try {
+      const m = JSON.parse(await readFile(file, "utf8")) as { v?: unknown; keys?: unknown };
+      if (m.v === v && Array.isArray(m.keys))
+        for (const k of m.keys) if (typeof k === "string") keys.add(k);
+    } catch {
+      // none yet, or one that doesn't read
+    }
+  const loaded = new Set(keys);
+  const seen = new Set<string>();
+  const key = (path: string, id: string) => `${id} ${path}`;
+  return {
+    notSpec: {
+      has: (path: string, id: string) => {
+        const k = key(path, id);
+        if (!keys.has(k)) return false;
+        seen.add(k);
+        return true;
+      },
+      add: (path: string, id: string) => {
+        keys.add(key(path, id));
+        seen.add(key(path, id));
+      },
+    },
+    /** Kept: the files of this read only, so the list never grows past the repo's files. */
+    async keep() {
+      if (stamp === undefined) return;
+      if (seen.size === loaded.size && [...seen].every((k) => loaded.has(k))) return;
+      try {
+        await ensureLocalIgnore(resolve(root));
+        // A cache's write: only the quick tries when the file is held.
+        await writeFileAtomic(file, JSON.stringify({ v, keys: [...seen].sort() }), {
+          quick: true,
+        });
+      } catch {
+        // a read-only or full disk costs the next run its reads
+      }
+    },
+  };
+}
+
 /** Read a repo's specs at the facts' commit and keep them beside its facts; none, no companion. */
 export async function writeRepoSpecs(
   root: string,
@@ -166,6 +225,8 @@ export async function writeRepoSpecs(
     onRefused,
   );
   const deny = await denyHashesAt(root);
+  // Beta.28.5: at a commit, the files found to hold no spec before aren't read again.
+  const kept = tree ? await notSpecOf(root, repo) : undefined;
   const file = await readRepoSpecs(dir, {
     repo,
     ...(commit ? { commit } : {}),
@@ -173,10 +234,13 @@ export async function writeRepoSpecs(
     facts,
     ...(deny.size ? { denyHashes: deny } : {}),
     ...(onRefused ? { onRefused } : {}),
+    ...(kept ? { notSpec: kept.notSpec } : {}),
   });
+  await kept?.keep();
   const path = join(factsDirOf(root), `${repo}.specs.yaml`);
-  if (file.specs.length) await writeFileAtomic(path, stringify(file, { lineWidth: 0 }));
-  else await rm(path, { force: true });
+  // A companion that already holds these bytes is left alone, its time too.
+  if (file.specs.length) await writeFileIfDiffers(path, stringify(file, { lineWidth: 0 }));
+  else await removeHeld(path);
   return file;
 }
 

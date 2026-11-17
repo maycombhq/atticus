@@ -62,6 +62,7 @@ export * from "./glob.js";
 export * from "./repo-files.js";
 export * from "./record-cache.js";
 export * from "./file-pool.js";
+export * from "./hash-cache.js";
 export * from "./kept-files.js";
 export * from "./log.js";
 export * from "./run-log.js";

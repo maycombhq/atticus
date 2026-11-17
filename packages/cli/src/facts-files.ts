@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -20,7 +20,10 @@ import {
   type Fact,
   type FactCorrection,
   type Question,
+  removeHeld,
+  sweepStaleTmp,
   writeFileAtomic,
+  writeFileIfDiffers,
 } from "@maycombhq/core";
 import {
   factAsRead,
@@ -403,21 +406,6 @@ export async function writeVerifyFiles(
       return undefined;
     }
   };
-  // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
-  if (!o.keepFacts)
-    await writeFileAtomic(
-      join(dir, `${repo}.jsonl`),
-      serializeFacts([...report.accepted, ...otherCommit]) +
-        [...newerLines]
-          .map((l) => l.trim())
-          .filter((l) => {
-            const id = idOf(l);
-            return typeof id !== "string" || !written.has(id);
-          })
-          .sort()
-          .map((l) => `${l}\n`)
-          .join(""),
-    );
   const rejectedFile = join(dir, `${repo}.rejected.jsonl`);
   const lines = [
     ...report.rejected.map((r) =>
@@ -434,8 +422,37 @@ export async function writeVerifyFiles(
       JSON.stringify({ code: "bad-reviewed", message: r.message, reviewed: r.raw }),
     ),
   ];
-  if (lines.length) await writeFileAtomic(rejectedFile, lines.join("\n") + "\n");
-  else await rm(rejectedFile, { force: true });
+  // Round 46: each file whole, by rename, so the app or a reader never sees one empty or cut short.
+  // Beta.28.5 (the owner's field report: a run ended on a rejected file another program held,
+  // of a repo whose facts had not changed): a rejected file that already holds the lines to
+  // write is left alone, its time too. And it is written first: it holds what this run moves
+  // out of the facts file, so a write of it that fails leaves the facts file with every fact
+  // (it was written after the facts file, and a fact moved out was then in neither).
+  // The facts file and the report are written by every run, the same bytes or not: their times
+  // say a verify ran (answer-reopen.ts reads the facts file's against a gaps plan's, map-all.ts
+  // the report's against the reader's last write).
+  if (lines.length) await writeFileIfDiffers(rejectedFile, lines.join("\n") + "\n");
+  if (!o.keepFacts)
+    await writeFileAtomic(
+      join(dir, `${repo}.jsonl`),
+      serializeFacts([...report.accepted, ...otherCommit]) +
+        [...newerLines]
+          .map((l) => l.trim())
+          .filter((l) => {
+            const id = idOf(l);
+            return typeof id !== "string" || !written.has(id);
+          })
+          .sort()
+          .map((l) => `${l}\n`)
+          .join(""),
+    );
+  // Nothing rejected: the file of an earlier run goes, once the facts are written.
+  // A held one is waited for as a write is (the review of beta.28.5: a plain rm threw the
+  // system's EBUSY and ended a run over forty repos).
+  if (!lines.length) await removeHeld(rejectedFile);
+  // The temporary files an earlier run left for this repo (a write whose file was held, a
+  // process that was killed), once they are old.
+  await sweepStaleTmp(dir, `${repo}.`);
   const summary: VerifySummary = {
     repo,
     ...(commit ? { commit } : {}),

@@ -358,7 +358,8 @@ async function writeMemo(
   try {
     // The cache sits in .atticus/, which stays on this machine: make sure Git ignores it.
     await ensureLocalIgnore(at.root);
-    await writeFileAtomic(at.file, JSON.stringify(memo));
+    // A cache's write: only the quick tries when the file is held.
+    await writeFileAtomic(at.file, JSON.stringify(memo), { quick: true });
   } catch {
     // A read-only or full disk costs the next run its parses, nothing else.
   }
