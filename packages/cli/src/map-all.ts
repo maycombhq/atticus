@@ -19,6 +19,7 @@ import {
   type AiRuntime,
 } from "@maycombhq/ai";
 import {
+  CancelledError,
   ensureLocalIgnore,
   factsDirOf,
   factsRelOf,
@@ -55,7 +56,8 @@ import {
 import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
-import { factsRepos, verifyCommand } from "./verify-commands.js";
+import { factsRepos, timeLeftWords, verifyCommand } from "./verify-commands.js";
+import { durationWords } from "./write-progress.js";
 
 /**
  * `atticus map --all` (ADR 0161): one command that maps or re-maps the whole estate. It plans
@@ -1007,8 +1009,18 @@ export interface Rejection {
 /** The rejected file as it was at a session's start: its lines and when it was last written. */
 interface RejectedAt {
   key: string;
-  at: number | undefined;
+  /**
+   * When the rejected file and verify's report were last written. Beta.28.5: the report's time
+   * too, since verify leaves a rejected file alone when it rejects the same lines again.
+   */
+  at: string;
   lines: ReadonlySet<string>;
+}
+
+/** When a repo's rejected file and its verify report were last written. */
+async function rejectedTimes(root: string, repo: string): Promise<string> {
+  const dir = factsDirOf(root);
+  return `${await mtime(join(dir, `${repo}.rejected.jsonl`))}|${await mtime(join(dir, `${repo}.verify.yaml`))}`;
 }
 
 async function rejectedLinesOf(root: string, repo: string): Promise<string[]> {
@@ -1023,7 +1035,7 @@ async function rejectedAt(root: string, repo: string): Promise<RejectedAt> {
   const lines = await rejectedLinesOf(root, repo);
   return {
     key: lines.join("\n"),
-    at: await mtime(join(factsDirOf(root), `${repo}.rejected.jsonl`)),
+    at: await rejectedTimes(root, repo),
     lines: new Set(lines),
   };
 }
@@ -1057,11 +1069,12 @@ async function rejectionsOf(
 ): Promise<{ lines: string[]; items: Rejection[]; key: string }> {
   const all = await rejectedLinesOf(root, repo);
   if (since) {
-    const at = await mtime(join(factsDirOf(root), `${repo}.rejected.jsonl`));
+    const at = await rejectedTimes(root, repo);
     if (all.join("\n") === since.key && at === since.at) return { lines: [], items: [], key: "" };
   }
-  // verify rewrites the whole file each time it runs: changed since the session started means
-  // every line is this session's verify's (a fact written again and rejected again included).
+  // The file is all of the last verify's: a verify since the session started (the file written,
+  // or the same lines rejected again and the report written) means every line is this
+  // session's verify's (a fact written again and rejected again included).
   const lines = all;
   return { lines, items: lines.map(rejectionOf), key: lines.join("\n") };
 }
@@ -1418,8 +1431,28 @@ export async function mapAllCommand(
   const partState = (item: PlanItem, part: number) =>
     (repoState(item).parts[String(part)] ??= { retries: 0 });
 
+  /**
+   * Beta.28.5 (the owner's field report: one repo's map ran its apply again and again): the
+   * last verify this run made, with what the reader had written and the files' times as it
+   * ended. Under copilot-acp a part given again, and a part that follows one just verified,
+   * planned what is left by running `verify --write` once more, straight after the run's own,
+   * with no session between: the same facts applied twice in a row, each with its build, its
+   * check of the catalog on file, its specs and its map. That verify is the one just made, as
+   * long as the repo's facts, reviewed lines and report are the files it left. Only under
+   * copilot-acp, where no reader works between the two; a person's hand-off waits, and its
+   * verify is run when asked.
+   */
+  let lastVerified: { repo: string; v: VerifyJson; snap: Snap; written: string } | undefined;
+  const verifiedJustNow = async (item: PlanItem): Promise<VerifyJson | undefined> => {
+    const l = lastVerified;
+    if (mode !== "copilot-acp" || !l || l.repo !== item.repo) return undefined;
+    if (!sameSnap(await snapOf(root, item.repo), l.snap)) return undefined;
+    return (await writtenOf(root, item.repo)) === l.written ? l.v : undefined;
+  };
+
   /** What `atticus verify <repo> --write` runs, said in one paragraph. */
   const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
+    lastVerified = undefined;
     const c = capturedStep(io);
     try {
       // The review of beta.28.1 (S6): a read in progress is written only whole, so a retry of
@@ -1460,6 +1493,12 @@ export async function mapAllCommand(
     io.out(
       `${item.repo}: ${plural(v.accepted, "fact")} kept, ${v.rejected} rejected; coverage ${Math.round(v.coverage.ratio * 100)}% (${v.coverage.unknown.length} files no fact cites yet)${links ? `; links +${links.added.length} -${links.removed.length}` : ""}; ${plural(v.questions?.open ?? 0, "question")} open. ${v.rejected && !v.written ? `Nothing written to the catalog until the rejected facts are fixed (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : v.written ? (v.rejected ? `Written to the catalog with the rejected facts left out (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : "Written to the catalog.") : ""}`.trimEnd(),
     );
+    lastVerified = {
+      repo: item.repo,
+      v,
+      snap: await snapOf(root, item.repo),
+      written: await writtenOf(root, item.repo),
+    };
     return v;
   };
 
@@ -1531,6 +1570,9 @@ export async function mapAllCommand(
   }
 
   const interrupted = quit || stopped() || capHit;
+  // Beta.28.5: the join left a repo not applied (its error said), or was stopped part way.
+  let joinFailed = false;
+  let joinStopped = false;
   if (interrupted) {
     // Stopped waiting at the idle limit: said once already, with how to carry on.
     if (!idleStop) {
@@ -1547,24 +1589,66 @@ export async function mapAllCommand(
     io.out("Joining the estate: atticus verify --all --write.");
     const repos = await factsRepos(root);
     let passed = 0;
-    for (const repo of repos) {
+    // Beta.28.5 (the owner's field report: the join of forty repos ran two hours, said nothing
+    // of where it was, and ended whole on one file another program held).
+    const notApplied: string[] = [];
+    const toFix: string[] = [];
+    const began = clock.now();
+    let stoppedAt: number | undefined;
+    for (const [i, repo] of repos.entries()) {
+      // Ctrl+C (or the app's Stop): heard between two repos, the one before applied whole.
+      if (stopped()) {
+        stoppedAt = i;
+        break;
+      }
+      // Where the join is, as verify --all says it: the repo's place and, once one is done, the
+      // time left at the rate so far. A progress line, never standard output.
+      if (repos.length > 1) {
+        const spent = clock.now() - began;
+        (io.progress ?? io.err)(
+          `Repo ${i + 1} of ${repos.length}: ${repo}…${i ? ` (${i} done in ${durationWords(spent)}; ${timeLeftWords((spent / i) * (repos.length - i))} left at this rate)` : ""}`,
+        );
+      }
       const c = capturedStep(io);
-      const code = await verifyCommand(root, repo, { write: true, json: true }, c);
+      let code: number;
+      try {
+        code = await verifyCommand(root, repo, { write: true, json: true }, c);
+      } catch (e) {
+        // One repo that can't be applied (a file of it open in another program, say) never ends
+        // the join: said with its own command, and the other repos are applied.
+        if (e instanceof CancelledError) {
+          stoppedAt = i;
+          break;
+        }
+        notApplied.push(repo);
+        io.out(
+          `${repo}: not applied: ${firstLine(e)} Apply it once that is put right: atticus verify ${repo} --write`,
+        );
+        continue;
+      }
       const v = jsonOf<VerifyJson>(c.lines);
       if (code === 0) passed++;
+      else toFix.push(repo);
       if (v?.written?.links) {
         totals.added += v.written.links.added.length;
         totals.removed += v.written.links.removed.length;
       }
       if (v) totals.rejected.set(repo, v.rejected);
     }
-    io.out(
-      `Verified ${plural(repos.length, "repo")}: ${passed} passed${repos.length - passed ? `, ${repos.length - passed} with something to fix` : ""}.`,
-    );
+    if (stoppedAt !== undefined) {
+      joinStopped = true;
+      io.out(
+        `Stopped after ${stoppedAt} of ${repos.length} repos of the join. Not applied: ${[...notApplied, ...repos.slice(stoppedAt)].sort().join(", ")}. atticus verify --all --write joins the rest.`,
+      );
+    } else
+      io.out(
+        `Verified ${plural(repos.length, "repo")}: ${passed} passed${toFix.length ? `, ${toFix.length} with something to fix (${toFix.join(", ")})` : ""}${notApplied.length ? `, ${notApplied.length} not applied (${notApplied.join(", ")})` : ""}.`,
+      );
+    joinFailed = notApplied.length > 0;
   }
   await save();
-  await summary(interrupted);
-  return signIn || serverGone ? 1 : 0;
+  await summary(interrupted || joinStopped);
+  return signIn || serverGone || joinFailed || joinStopped ? 1 : 0;
 
   // ------------------------------------------------------------ one part, read by Copilot
 
@@ -1811,7 +1895,7 @@ export async function mapAllCommand(
    */
   async function restLine(item: PlanItem, part: PlanPart): Promise<string | "done" | undefined> {
     if (!existsSync(join(factsDirOf(root), `${item.repo}.jsonl`))) return undefined;
-    const v = await verifyStep(item);
+    const v = (await verifiedJustNow(item)) ?? (await verifyStep(item));
     if (!v) return undefined;
     const parted = item.total > 1;
     const c = capturedStep(io);
