@@ -31,6 +31,7 @@ On an estate of 40 repos read, with corrections waiting in a few, the owner clic
    - Stop asked during the last repo's write is too late, as before, and the run ends done.
    - A stopped run's job ends `cancelled`, never failed. Its result has `stopped: true`, the repos applied whole under `applied`, and the repos not applied (those never reached included) under `notApplied`. The scan's lock is free.
    - The mechanism is a release beside the commit point: work made of several writes says when one has ended (`releaseCurrent` in `packages/core/src/cancel.ts`, `release` on the job in `packages/server/src/jobs.ts`). Only the run over several repos calls it, and only between two repos. That run's job is started as one of several writes (`severalWrites` in the job's start options, with its words), which is what makes it answer a Stop during a write as above. Every other job is unchanged: past its commit point it is never stopped, and it says "Stop came after the write had started" each time, as before.
+   - Closing the app during such a run counts as a Stop. The process stays alive while a job's work runs, so before this the run went on through every repo with no app to show it. Now the repo being written finishes whole and the run ends there.
    - On the command line `atticus verify --all --write` has no Stop of its own. Ctrl+C ends the process, as it did.
 
 ## Why a list from the page, and not "the repos that wait" worked out by the server

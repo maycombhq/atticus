@@ -593,3 +593,40 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
     expect(jobs.linesOf(job.id)!.lines.filter((l) => l === TOO_LATE)).toHaveLength(2);
   });
 });
+
+/**
+ * Beta.28.4 (the review): the app closing while a run over several repos writes. The process
+ * lives on until its work ends, so without a stop the run went on through every repo with no app
+ * to show it. The write under way finishes whole, as ever; the run ends at its release.
+ */
+describe("JobManager closeAll during a job of several writes (beta.28.4)", () => {
+  it("ends the run when the write under way has ended, and writes nothing to its record after the close", async () => {
+    const recorded: string[] = [];
+    const jobs = new JobManager(() => undefined, undefined, {
+      record: () => ({ line: (l) => void recorded.push(l), end: () => undefined }),
+    });
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    const seen: boolean[] = [];
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        c.commit();
+        await held;
+        seen.push(c.signal.aborted);
+        c.release();
+        seen.push(c.signal.aborted);
+        return {};
+      },
+      { severalWrites: { heard: "Stop heard.", stopping: "Stopping after this repo…" } },
+    );
+    jobs.closeAll();
+    expect(recorded.at(-1)).toBe(CLOSED);
+    expect(jobs.get(job.id)).toMatchObject({ state: "running", stopping: true });
+    go();
+    expect((await jobs.settle(job.id)).state).toBe("cancelled");
+    // The write was whole; the run stopped at its end.
+    expect(seen).toEqual([false, true]);
+    expect(recorded.at(-1)).toBe(CLOSED);
+  });
+});

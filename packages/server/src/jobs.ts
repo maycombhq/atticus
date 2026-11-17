@@ -543,7 +543,14 @@ export class JobManager {
       this.recorders.delete(j.id);
       // Beta.28.1 (the re-review): past its commit point a Stop is too late and would only say
       // so after its record ended; the work finishes, or ends with the process.
+      // Beta.28.4: a job of several writes ends when the write under way has ended, should the
+      // process outlive the close (it does, while work runs): never the next repo with no app.
+      const sev = this.several.get(j.id);
       if (!this.committedIds.has(j.id)) this.cancel(j.id);
+      else if (sev && !j.stopping) {
+        this.lateStops.add(j.id);
+        this.stopAfterWrite(j, sev);
+      }
     }
   }
 
