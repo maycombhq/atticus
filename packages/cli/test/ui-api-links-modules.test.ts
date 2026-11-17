@@ -155,12 +155,53 @@ describe("a call paired with an API in a module of the other repo (ADR 0199, S1)
     const fact = facts.find(
       (f) => f.kind === "call" && f.cite.file === cited.path && f.cite.line === cited.line,
     )!;
-    expect([...d.boxes(fact.id)].sort()).toEqual(["forge-ledger", MODULE].sort());
+    // Each box by the name the catalog gives it and, where a Component record says whose it
+    // is, by its repo (S3: a component's id in the catalog need not be a name of the manifest).
+    expect([...d.boxes(fact.id)].sort()).toEqual(["forge-ledger", MODULE, SERVICE].sort());
     expect(d.exact({ interface: one.id })).toBe(true);
     // The pairing is still told as drawn: by its own Interface, and by its box among the line's.
     const v = Api.LinkCandidatesView.parse(
       (await call(`/api/links/candidates?from=${PROXY}&to=${SERVICE}`)).body,
     );
     expect(v.calls.filter((c) => c.fact in MEANT).map((c) => c.drawn)).toEqual([true, true]);
+  });
+
+  // The second review (S3): the catalog renames a component two repos would share
+  // (`<repo>-<component>`), a name no manifest has. The box an arrow goes to is told by the
+  // repo its Component record names.
+  it("tells the box of an arrow to a component the catalog renamed, by the component's repo", async () => {
+    const records = (await readCatalog(join(root, "catalog", "generated"), { fresh: true }))
+      .records;
+    const one = records.find(
+      (r): r is Iface => r.kind === "Interface" && r.from === "instruments-proxy",
+    )!;
+    const component = records.find((r) => r.kind === "Component" && r.id === MODULE)!;
+    const renamed = { ...component, id: `${SERVICE}-backend` };
+    expect(parseRecord(renamed).ok, JSON.stringify(parseRecord(renamed))).toBe(true);
+    const rec = one as unknown as { method?: string; normalizedPath: string };
+    const arrow = {
+      ...one,
+      id: interfaceId(one.from, renamed.id, rec.method, rec.normalizedPath),
+      to: renamed.id,
+    };
+    expect(parseRecord(arrow).ok, JSON.stringify(parseRecord(arrow))).toBe(true);
+    for (const [kind, r] of [
+      ["component", renamed],
+      ["interface", arrow],
+    ] as const) {
+      const dir = join(root, "catalog", "curated", kind);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `${r.id}.yaml`), serializeRecord(r as CatalogRecord));
+    }
+    forgetCatalogs();
+    const parsed = parseFacts(readFileSync(join(root, "facts", `${PROXY}.jsonl`), "utf8"));
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
+    const d = (await drawnOf(root, PROXY, parsed.facts))!;
+    const cited = one.evidence!.find((e) => e.repo === PROXY && e.side !== "callee")!;
+    const fact = parsed.facts.find(
+      (f) => f.kind === "call" && f.cite.file === cited.path && f.cite.line === cited.line,
+    )!;
+    expect(d.boxes(fact.id)).toContain(`${SERVICE}-backend`);
+    expect(d.boxes(fact.id)).toContain(SERVICE);
   });
 });
