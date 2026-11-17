@@ -840,23 +840,34 @@ describe("third review", () => {
   });
 
   it("S2: a request spec of thousands of required fields is checked in linear time", () => {
-    const spec: SpecFieldT[] = [];
-    for (let p = 0; p < 40; p++) {
-      spec.push(S("request", `part${p}`, "object", true));
-      for (let k = 0; k < 178; k++) spec.push(S("request", `part${p}.f${k}`, "string", true));
-    }
-    // The call sends half of it, each field recorded by its path.
-    const code: Field[] = [];
-    for (let p = 0; p < 20; p++) {
-      code.push(F(`part${p}`, "Req.java", { type: "object", id: `field.req.part${p}` }));
-      for (let k = 0; k < 178; k++)
-        code.push(F(`part${p}.f${k}`, "Req.java", { type: "String", id: `field.req.p${p}f${k}` }));
-    }
-    expect(spec).toHaveLength(7160);
-    const t = Date.now();
-    const r = check(code, spec);
-    expect(Date.now() - t).toBeLessThan(1500);
+    // A call that sends half of a spec of `parts` parts of 178 required fields each.
+    const run = (parts: number) => {
+      const spec: SpecFieldT[] = [];
+      for (let p = 0; p < parts; p++) {
+        spec.push(S("request", `part${p}`, "object", true));
+        for (let k = 0; k < 178; k++) spec.push(S("request", `part${p}.f${k}`, "string", true));
+      }
+      const code: Field[] = [];
+      for (let p = 0; p < parts / 2; p++) {
+        code.push(F(`part${p}`, "Req.java", { type: "object", id: `field.req.part${p}` }));
+        for (let k = 0; k < 178; k++)
+          code.push(
+            F(`part${p}.f${k}`, "Req.java", { type: "String", id: `field.req.p${p}f${k}` }),
+          );
+      }
+      const t = performance.now();
+      const r = check(code, spec);
+      return { ms: performance.now() - t, r, fields: spec.length };
+    };
+    run(4); // warm
+    const half = run(20);
+    const full = run(40);
+    expect(full.fields).toBe(7160);
+    // Twice the fields in about twice the time (a scan per required field took four times), on
+    // any machine: Linux CI took 1.8 s where a laptop took 0.3 s, so no bound in seconds alone.
+    expect(full.ms).toBeLessThan(Math.max(3.2 * half.ms, 500));
+    expect(full.ms).toBeLessThan(8000);
     // The 20 other parts and every field of theirs are not sent.
-    expect(r.counts).toMatchObject({ mismatches: 3580, unconfirmed: 0 });
+    expect(full.r.counts).toMatchObject({ mismatches: 3580, unconfirmed: 0 });
   });
 });

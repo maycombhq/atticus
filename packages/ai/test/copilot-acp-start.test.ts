@@ -266,24 +266,37 @@ describe("a Copilot language server that ends as it starts", () => {
     expect(n.message).toContain("command: copilot-language-server");
   });
 
-  it("says when it closed its output but is still running, and ends it", async () => {
-    const m = metarepo({ start: { mute: true }, sessions: [] });
-    const f = await failure(session(m, { startTimeoutMs: 20_000 }));
-    expect(f.ms).toBeLessThan(10_000);
-    expect(f.message).toContain("it closed its output before it answered");
-    // Review: it was left running. It is ended (stdin closed, then killed if it lingers).
-    expect(await alive(starts(m)[0]!.pid)).toBe(false);
-  }, 30_000);
+  // Windows CI, beta.28.5: the mock can't close its own output there and stay (closing fd 1 in
+  // Node leaves the pipe's handle open on Windows, so it went on answering). These two run where
+  // the mock can do it; the client's code is the same on both.
+  const closesOutput = process.platform === "win32" ? it.skip : it;
 
-  it("ends a server that closes its output mid-session, saying so", async () => {
-    const m = metarepo({ sessions: [{ steps: [{ tool: "Reading" }, { mute: true }] }] });
-    const f = await failure(session(m));
-    expect(f.e).toBeInstanceOf(AcpServerGoneError);
-    expect(f.message).toContain(
-      "The Copilot language server closed its output during the session and is still running",
-    );
-    expect(await alive(starts(m)[0]!.pid)).toBe(false);
-  }, 30_000);
+  closesOutput(
+    "says when it closed its output but is still running, and ends it",
+    async () => {
+      const m = metarepo({ start: { mute: true }, sessions: [] });
+      const f = await failure(session(m, { startTimeoutMs: 20_000 }));
+      expect(f.ms).toBeLessThan(10_000);
+      expect(f.message).toContain("it closed its output before it answered");
+      // Review: it was left running. It is ended (stdin closed, then killed if it lingers).
+      expect(await alive(starts(m)[0]!.pid)).toBe(false);
+    },
+    30_000,
+  );
+
+  closesOutput(
+    "ends a server that closes its output mid-session, saying so",
+    async () => {
+      const m = metarepo({ sessions: [{ steps: [{ tool: "Reading" }, { mute: true }] }] });
+      const f = await failure(session(m));
+      expect(f.e).toBeInstanceOf(AcpServerGoneError);
+      expect(f.message).toContain(
+        "The Copilot language server closed its output during the session and is still running",
+      );
+      expect(await alive(starts(m)[0]!.pid)).toBe(false);
+    },
+    30_000,
+  );
 
   it("blames the configured program only when it is the one not found", async () => {
     const m = metarepo({ sessions: [] });

@@ -325,6 +325,12 @@ async function waitOrStop(ms: number, signals: readonly AbortSignal[]): Promise<
   });
 }
 
+const isFolder = (path: string): Promise<boolean> =>
+  stat(path).then(
+    (st) => st.isDirectory(),
+    () => false,
+  );
+
 /**
  * Run `op` on `target`, trying again while the system says the file is held (EPERM, EBUSY,
  * EACCES). Up to about 5 s (20 ms doubling) wherever it runs: on Windows an editor indexing a
@@ -369,6 +375,9 @@ async function retryHeld(
         throw new FileHeldError(target, waited, e);
       }
       if (long && !said && waited >= HELD_SAID_MS) {
+        // A folder in the file's place is no held file: no program lets go of it, so saying it
+        // is open elsewhere would be false and the wait would only delay the system's error.
+        if (await isFolder(target)) throw e;
         said = true;
         sayHeld(
           `${target} is open in another program (an editor, an assistant's session or a virus scan): waiting for it, up to ${Math.round(Math.max(limit, waited) / 1000)} s. Close it there to go on.`,

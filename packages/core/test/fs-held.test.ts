@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -150,6 +150,23 @@ describe("a file another program holds (Windows)", () => {
     );
     expect((r as NodeJS.ErrnoException).code).toBe("EPERM");
     expect(waited).toBe(20 * (2 ** 8 - 1));
+  });
+
+  it("a folder where the file goes is no held file: the system's error a second in, no word of another program, no long wait", async () => {
+    // Windows CI, beta.28.5: a rename onto a folder that isn't empty gives EPERM for ever; the
+    // long wait took 45 s to say a folder was "open in another program".
+    const target = join(dir, "AGENTS.md");
+    await mkdir(join(target, "inside"), { recursive: true });
+    const from = join(dir, "x.tmp");
+    await writeFile(from, "x");
+    fsHooks.rename = async () => {
+      throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+    };
+    const e = await renameRetrying(from, target).catch((x: unknown) => x);
+    expect(e).not.toBeInstanceOf(FileHeldError);
+    expect((e as NodeJS.ErrnoException).code).toBe("EPERM");
+    expect(waited).toBeLessThan(2_000);
+    expect(said).toEqual([]);
   });
 
   it("after one file stayed held, later waits in the process are short: a cause that stays costs no 45 s a file", async () => {
