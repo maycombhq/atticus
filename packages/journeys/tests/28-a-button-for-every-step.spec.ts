@@ -185,7 +185,7 @@ test.describe("a correction on the canvas, applied from the app", () => {
     const apply = form.getByRole("button", { name: "Apply to forge-studio's map" });
     await expect(apply).toBeVisible({ timeout: 30_000 });
     // beta.23: the map itself says a correction waits to be applied, with its Apply.
-    const bar = page.getByRole("region", { name: "Apply to every repo's map" });
+    const bar = page.getByRole("region", { name: "Corrections waiting to be applied" });
     await expect(bar).toContainText("Your corrections aren't in the map yet: forge-studio.");
     await expect(bar.getByRole("button", { name: "Apply to forge-studio's map" })).toBeVisible();
     await accessible(page, "a link corrected on the canvas");
