@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -27,8 +27,13 @@ const [R1, R2, R3] = [bigRepoId(0), bigRepoId(1), bigRepoId(2)];
 /** The estate with the three repos' changes waiting, and what it is after 1, 2 and 3 applies. */
 let waiting: string;
 const after: Map<string, Buffer>[] = [];
+/** What it is with only the second repo applied (the first has no clone, so it fails). */
+let secondOnly: Map<string, Buffer>;
 const HEARD = "Stop heard: the run ends when this repo's write has finished.";
 const STOPPING_AFTER = "Stopping after this repo…";
+/** A copy's first repo left with no clone: its Apply fails at once, saying so. */
+const noCloneOfFirst = (root: string) =>
+  rename(join(root, "workspace", R1), join(root, "workspace", `${R1}-moved`));
 
 /** Every file a run leaves but this machine's state, the clones, and the questions (dated). */
 async function filesOf(dir: string): Promise<Map<string, Buffer>> {
@@ -72,6 +77,10 @@ beforeAll(async () => {
     expect(await verifyCommand(one, repo, { write: true }, quiet), repo).toBe(0);
     after.push(await filesOf(one));
   }
+  const second = await copy();
+  await noCloneOfFirst(second);
+  expect(await verifyCommand(second, R2, { write: true }, quiet)).toBe(0);
+  secondOnly = await filesOf(second);
 }, 600_000);
 afterAll(async () => {
   delete writeProgressHooks.quietMs;
@@ -224,6 +233,45 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     const next = await r.applyOne(R3);
     expect(next.state, next.result?.lines.join("\n")).toBe("done");
     expect(differences(await filesOf(r.root), after[2]!)).toEqual([]);
+  }, 600_000);
+
+  // The review: a Stop that lands in the step's yield just before the write's commit (the last
+  // point it could have been heard) is not lost, and cuts nothing short.
+  it("asked in the moment before the second repo's write starts: its write still finishes whole, then the run ends", async () => {
+    const r = await run(
+      "/api/facts/apply-all",
+      ALL,
+      (l, all) => onSecond(all) && l.startsWith("Writing the catalog ("),
+    );
+    expect(r.asked).toBe(true);
+    expect(r.printed.some((l) => l.startsWith("Repo 3 of 3"))).toBe(false);
+    expect(r.ended.state).toBe("cancelled");
+    // Stop was asked before the commit and not heard before it (no step came between): it is
+    // taken as a Stop during the write, said heard, and the write is whole.
+    expect(r.printed.filter((l) => l === HEARD)).toHaveLength(1);
+    expect(r.printed).not.toContain(TOO_LATE);
+    expect(r.ended.result).toMatchObject({ applied: [R1, R2], notApplied: [R3], stopped: true });
+    expect(differences(await filesOf(r.root), after[1]!)).toEqual([]);
+    expect((await r.applyOne(R3)).state).toBe("done");
+  }, 600_000);
+
+  // The review: a repo that failed earlier in the run stays "not applied" when the run is
+  // stopped, and the count of repos gone through stays true.
+  it("stopped after a repo that failed: the failed repo and the repos not reached are the ones not applied", async () => {
+    const r = await run(
+      "/api/facts/apply-all",
+      ALL,
+      (l, all) => onSecond(all) && l.startsWith("Writing contracts"),
+      noCloneOfFirst,
+    );
+    expect(r.asked).toBe(true);
+    expect(r.ended.state).toBe("cancelled");
+    expect(r.ended.result).toMatchObject({ applied: [R2], notApplied: [R1, R3], stopped: true });
+    expect(r.ended.result?.lines).toContain(
+      `Stopped after 2 of 3 repos. Not applied: ${R1}, ${R3}.`,
+    );
+    const left = differences(await filesOf(r.root), secondOnly);
+    expect(left.filter((p) => !p.startsWith("workspace/"))).toEqual([]);
   }, 600_000);
 
   it("asked while the last repo is being written: too late, and the run ends done with all applied", async () => {
