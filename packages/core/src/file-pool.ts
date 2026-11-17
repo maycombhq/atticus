@@ -112,7 +112,7 @@ parentPort.on("message", ({ id, dir, rels, hash, raw }) => {
       if (!hash) {
         let s;
         try { s = fs.statSync(at(dir, rels[k])); } catch { s = undefined; }
-        out[k] = s ? [s.size, Math.floor(s.mtimeMs), Math.floor(s.ctimeMs)] : null;
+        out[k] = s ? [s.size, Math.floor(s.mtimeMs), Math.floor(s.ctimeMs), s.ino] : null;
         continue;
       }
       const fd = fs.openSync(at(dir, rels[k]), "r");
@@ -123,7 +123,7 @@ parentPort.on("message", ({ id, dir, rels, hash, raw }) => {
         const h = createHash("sha256");
         if (raw || (!bytes.includes(13) && isUtf8(bytes))) h.update(bytes);
         else h.update(bytes.toString("utf8").replace(/\\r\\n?/g, "\\n"), "utf8");
-        out[k] = [s.size, Math.floor(s.mtimeMs), h.digest("hex"), Math.floor(s.ctimeMs)];
+        out[k] = [s.size, Math.floor(s.mtimeMs), h.digest("hex"), Math.floor(s.ctimeMs), s.ino];
       } finally {
         fs.closeSync(fd);
       }
@@ -135,8 +135,8 @@ parentPort.on("message", ({ id, dir, rels, hash, raw }) => {
 });
 `;
 
-/** A stat's row: size, time, change time. A hash's: size, time, hash, change time. */
-type Row = [number, number, number] | [number, number, string, number] | null;
+/** A stat's row: size, time, change time, inode. A hash's: size, time, hash, change time, inode. */
+type Row = [number, number, number, number] | [number, number, string, number, number] | null;
 
 /** What is read of each file: its size and time only, or its hash too (`raw`: of its bytes as they are). */
 interface Want {
@@ -290,7 +290,7 @@ async function inThread(dir: string, rels: readonly string[], want: Want): Promi
         const full = join(dir, ...rels[k]!.split("/"));
         if (!want.hash) {
           const s = await stat(full).catch(() => undefined);
-          rows[k] = s ? [s.size, Math.floor(s.mtimeMs), Math.floor(s.ctimeMs)] : null;
+          rows[k] = s ? [s.size, Math.floor(s.mtimeMs), Math.floor(s.ctimeMs), s.ino] : null;
           filePoolHooks.onRead?.(++read);
           continue;
         }
@@ -306,7 +306,7 @@ async function inThread(dir: string, rels: readonly string[], want: Want): Promi
           const sha = want.raw
             ? createHash("sha256").update(bytes).digest("hex")
             : textShaOf(bytes);
-          rows[k] = [s.size, Math.floor(s.mtimeMs), sha, Math.floor(s.ctimeMs)];
+          rows[k] = [s.size, Math.floor(s.mtimeMs), sha, Math.floor(s.ctimeMs), s.ino];
           filePoolHooks.onRead?.(++read);
         } catch (e) {
           // A file that can't be read fails the read: no reader starts another.
@@ -341,13 +341,13 @@ export async function hashFilesIn(
   dir: string,
   rels: readonly string[],
   o: { raw?: boolean; signal?: AbortSignal; ctime?: boolean } = {},
-): Promise<(FileHash & { ctimeMs?: number })[]> {
+): Promise<(FileHash & { ctimeMs?: number; ino?: number })[]> {
   const want: Want = { hash: true, raw: o.raw === true, ...(o.signal ? { signal: o.signal } : {}) };
   return (await rowsOf(dir, rels, want)).map((r) => ({
     sha: r![2] as string,
     size: r![0],
     mtimeMs: r![1],
-    ...(o.ctime ? { ctimeMs: r![3] as number } : {}),
+    ...(o.ctime ? { ctimeMs: r![3] as number, ino: r![4] as number } : {}),
   }));
 }
 
@@ -355,15 +355,22 @@ export async function hashFilesIn(
  * Every named file's size and time (ms, floored), in the order of `rels`; none for one not there.
  * With `signal`, a stop ends the read part way and fails the call with CancelledError. With
  * `ctime`, each file's change time too (`ctimeMs`: the last change of its bytes or its times,
- * which no program sets; hash-cache.ts keeps a hash by it).
+ * which no program sets) and its identity (`ino`: the inode, NTFS's file id; 0 where the
+ * platform reports none): hash-cache.ts keeps a hash by them.
  */
 export async function statFilesIn(
   dir: string,
   rels: readonly string[],
   o: { signal?: AbortSignal; ctime?: boolean } = {},
-): Promise<((FileStat & { ctimeMs?: number }) | undefined)[]> {
+): Promise<((FileStat & { ctimeMs?: number; ino?: number }) | undefined)[]> {
   const want: Want = { hash: false, ...(o.signal ? { signal: o.signal } : {}) };
   return (await rowsOf(dir, rels, want)).map((r) =>
-    r ? { size: r[0], mtimeMs: r[1], ...(o.ctime ? { ctimeMs: r[2] as number } : {}) } : undefined,
+    r
+      ? {
+          size: r[0],
+          mtimeMs: r[1],
+          ...(o.ctime ? { ctimeMs: r[2] as number, ino: r[3] as number } : {}),
+        }
+      : undefined,
   );
 }

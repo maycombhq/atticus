@@ -16,7 +16,8 @@ import { RACY_MS, recordCacheHooks } from "./record-cache.js";
  * `<cacheRoot>/.atticus/cache/`, by the file's path, size and modification time, under the rule
  * the kept parses go by (record-cache.ts, ADR 0119 with its addendum, Git's "racily clean"):
  *
- * - a file whose size, time or change time is another than the one its hash was kept by is read
+ * - a file whose size, time, change time or identity (its inode, NTFS's file id; not compared
+ *   where the platform reports none) is another than the one its hash was kept by is read
  *   and hashed. The change time (ctime) is the system's own record of the last change to the
  *   file's bytes or its times, and no program sets it: an edit that puts the file's time back
  *   (a copy that keeps times, a restore) still moves it, which size and time alone would miss;
@@ -40,12 +41,14 @@ import { RACY_MS, recordCacheHooks } from "./record-cache.js";
 export const hashCacheHooks: { onHashed?: (files: number) => void; off?: boolean } = {};
 
 /** The shape of what is kept; another version is hashed again from the files. */
-const VERSION = "1";
+const VERSION = "2";
 
 interface Kept {
   size: number;
   mtimeMs: number;
   ctimeMs: number;
+  /** The file's identity (inode, NTFS's file id); 0: the platform reports none. */
+  ino: number;
   /** The clock (ms) before the bytes hashed were read. */
   at: number;
   sha: string;
@@ -56,7 +59,7 @@ interface Memo {
   dir: string;
   entries: Record<
     string,
-    [size: number, mtimeMs: number, ctimeMs: number, at: number, sha: string]
+    [size: number, mtimeMs: number, ctimeMs: number, ino: number, at: number, sha: string]
   >;
 }
 
@@ -75,17 +78,18 @@ async function readMemo(file: string, dir: string): Promise<Map<string, Kept>> {
     if (!m || m.v !== VERSION || m.dir !== resolve(dir) || typeof m.entries !== "object")
       return out;
     for (const [rel, e] of Object.entries(m.entries)) {
-      if (!Array.isArray(e) || e.length !== 5) return new Map();
-      const [size, mtimeMs, ctimeMs, at, sha] = e;
+      if (!Array.isArray(e) || e.length !== 6) return new Map();
+      const [size, mtimeMs, ctimeMs, ino, at, sha] = e;
       if (
         typeof size !== "number" ||
         typeof mtimeMs !== "number" ||
         typeof ctimeMs !== "number" ||
+        typeof ino !== "number" ||
         typeof at !== "number" ||
         typeof sha !== "string"
       )
         return new Map();
-      out.set(rel, { size, mtimeMs, ctimeMs, at, sha });
+      out.set(rel, { size, mtimeMs, ctimeMs, ino, at, sha });
     }
     return out;
   } catch {
@@ -132,6 +136,9 @@ export async function hashFilesKept(o: {
       hit.size === s.size &&
       hit.mtimeMs === s.mtimeMs &&
       hit.ctimeMs === s.ctimeMs &&
+      // Another file at this path (one moved over it with its times kept); not compared where
+      // either side has no identity to tell.
+      (hit.ino === 0 || !s.ino || hit.ino === s.ino) &&
       Math.max(hit.mtimeMs, hit.ctimeMs) < hit.at - RACY_MS
     ) {
       fresh.set(rel, hit);
@@ -153,6 +160,7 @@ export async function hashFilesKept(o: {
         size: h.size,
         mtimeMs: h.mtimeMs,
         ctimeMs: h.ctimeMs!,
+        ino: h.ino ?? 0,
         at,
         sha: h.sha,
       });
@@ -165,13 +173,14 @@ export async function hashFilesKept(o: {
       v: VERSION,
       dir: resolve(o.dir),
       entries: Object.fromEntries(
-        [...fresh].map(([rel, e]) => [rel, [e.size, e.mtimeMs, e.ctimeMs, e.at, e.sha]]),
+        [...fresh].map(([rel, e]) => [rel, [e.size, e.mtimeMs, e.ctimeMs, e.ino, e.at, e.sha]]),
       ),
     };
     try {
       // The cache sits in .atticus/, which stays on this machine: make sure Git ignores it.
       await ensureLocalIgnore(memo.root);
-      await writeFileAtomic(memo.file, JSON.stringify(m));
+      // A cache's write: only the quick tries when the file is held.
+      await writeFileAtomic(memo.file, JSON.stringify(m), { quick: true });
     } catch {
       // A read-only or full disk costs the next run its hashes, nothing else.
     }

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -95,6 +95,9 @@ describe("hashes kept by size and time (hash-cache.ts)", () => {
 
   it("sees a same-size edit that put the file's time back, however long after (its change time)", async () => {
     const { root, dir, files } = await folder();
+    // A time of whole milliseconds, which a Date puts back exactly.
+    const whole = new Date(Date.now() - 60_000);
+    await utimes(join(dir, files[3]!), whole, whole);
     later(10 * RACY_MS);
     const first = await hashFilesKept({ dir, files, cacheRoot: root });
     const calls = counting();
@@ -163,5 +166,32 @@ describe("hashes kept by size and time (hash-cache.ts)", () => {
       await hashFilesIn(dir, files),
     );
     expect(calls).toEqual([5]);
+  });
+
+  // The review of beta.28.5: the file's identity (its inode, NTFS's file id) is in the key too,
+  // so a file replaced by another of the same size and times is read; a platform that reports
+  // none (0) is keyed without it.
+  it("hashes again a file whose identity is another than the one its hash was kept by", async () => {
+    const { root, dir, files } = await folder();
+    later(10 * RACY_MS);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    const cache = join(root, ".atticus", "cache");
+    const memo = join(cache, (await readdir(cache))[0]!);
+    const kept = JSON.parse(await readFile(memo, "utf8")) as {
+      entries: Record<string, (number | string)[]>;
+    };
+    const real = (await stat(join(dir, files[1]!))).ino;
+    expect(Object.values(kept.entries).every((e) => e.length === 6)).toBe(true);
+    expect(kept.entries[files[1]!]![3]).toBe(real);
+    // As if kept of another file that was at this path.
+    kept.entries[files[1]!]![3] = real + 1;
+    // As kept where the platform reports no identity.
+    kept.entries[files[2]!]![3] = 0;
+    await writeFile(memo, JSON.stringify(kept));
+    const calls = counting();
+    expect(await hashFilesKept({ dir, files, cacheRoot: root })).toEqual(
+      await hashFilesIn(dir, files),
+    );
+    expect(calls).toEqual([1]);
   });
 });
