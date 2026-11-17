@@ -173,6 +173,49 @@ type Node = { repo: string; component: string; fact: Fact };
 const atOf = (f: { file: string; line: number }) => `${f.file}:${f.line}`;
 const MAX_CHAIN = 8;
 
+/**
+ * Whether the route a person named (a declared call's `route`) is this gateway route: its handler
+ * (`proxy/flow`, any case), or `METHOD /path` as the gateway serves it (ANY for a route read with
+ * no method; a trailing slash is neither here nor there). The one rule, for the join and for the
+ * routes offered to declare (ADR 0200).
+ */
+export function declaredRouteMatches(
+  route: { handler?: string | undefined; method?: string | undefined; path: string },
+  said: string,
+): boolean {
+  const s = said.trim();
+  if (route.handler && s.toLowerCase() === route.handler.toLowerCase()) return true;
+  const m = /^([A-Za-z]+)\s+(\S+)$/.exec(s);
+  return (
+    !!m &&
+    m[1]!.toUpperCase() === (route.method ?? "ANY").toUpperCase() &&
+    m[2]!.replace(/\/+$/, "") === route.path.replace(/\/+$/, "")
+  );
+}
+
+/**
+ * The entry facts of the estate that are gateway routes (A-callers): every entry of a gateway
+ * repo, and any repo's entry cited under a proxy bundle folder. The one rule, for the join and
+ * for the routes offered to declare (ADR 0200).
+ */
+export function gatewayRouteFacts(
+  repos: readonly JoinRepo[],
+  bundleFolders?: readonly string[],
+): { repo: string; fact: FactOf<"entry"> }[] {
+  const bundle = bundleFolders ? gatewayBundleTest(bundleFolders) : APIGEE_BUNDLE;
+  return [...repos]
+    .sort((x, y) => cmp(x.repo, y.repo))
+    .flatMap((r) =>
+      [...r.facts]
+        .sort((x, y) => cmp(x.id, y.id))
+        .flatMap((f) =>
+          f.kind === "entry" && (r.gateway || bundle.test(f.cite.file))
+            ? [{ repo: r.repo, fact: f }]
+            : [],
+        ),
+    );
+}
+
 /** Who each gateway route of the estate lets in, and the chain from each declared caller. */
 export function joinCallers(input: JoinCallersInput): CallersResult {
   const repos = [...input.repos].sort((x, y) => cmp(x.repo, y.repo));
@@ -218,16 +261,8 @@ export function joinCallers(input: JoinCallersInput): CallersResult {
   // ---- what each route's own files name, and what people declared
   const named = (r: Node & { fact: Entry }): NamedCaller[] =>
     (r.fact.callers ?? []).map((c) => ({ as: c.as, name: c.value, at: atOf(c) }));
-  const routeMatches = (r: Node & { fact: Entry }, said: string) => {
-    const s = said.trim();
-    if (r.fact.handler && s.toLowerCase() === r.fact.handler.toLowerCase()) return true;
-    const m = /^([A-Za-z]+)\s+(\S+)$/.exec(s);
-    return (
-      !!m &&
-      m[1]!.toUpperCase() === (r.fact.method ?? "ANY").toUpperCase() &&
-      m[2]!.replace(/\/+$/, "") === r.fact.path.replace(/\/+$/, "")
-    );
-  };
+  const routeMatches = (r: Node & { fact: Entry }, said: string) =>
+    declaredRouteMatches(r.fact, said);
   const problems: DeclaredProblem[] = [];
   const declaredOn = new Map<string, DeclaredCaller[]>();
   for (const d of input.declared ?? []) {

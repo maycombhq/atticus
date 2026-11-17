@@ -19,7 +19,21 @@ import { migrateProfileText } from "./profile-migrate.js";
 
 export type Declared =
   | { kind: "topic"; system: string; topic: string; side: "publishes" | "listens" }
-  | { kind: "call"; system: string; route: string };
+  | { kind: "call"; system: string; route: string }
+  /** ADR 0200: several gateway routes in one write, one line each. */
+  | { kind: "call"; system: string; routes: readonly string[] };
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * What a declaration adds, each once, in a fixed order: the one topic or route, or (ADR 0200)
+ * the routes sorted, whatever order they were picked in.
+ */
+function valuesOf(d: Declared): string[] {
+  if (d.kind === "topic") return [d.topic.trim()];
+  if (!("routes" in d)) return [d.route.trim()];
+  return [...new Set(d.routes.map((r) => r.trim()))].sort(cmp);
+}
 
 export interface DeclaredOnFile {
   kind: "topic" | "call";
@@ -158,20 +172,32 @@ export async function declareLink(
     list = node.get(field);
   }
   if (!isSeq(list)) throw new DeclareError("invalid", `${rel}: ${d.system} has no ${field} list.`);
-  const value = d.kind === "topic" ? d.topic.trim() : d.route.trim();
-  const has = list.items.some((x) =>
-    d.kind === "topic"
-      ? isScalar(x) && String(x.value) === value
-      : isMap(x) && x.get("route") === value,
+  const values = valuesOf(d);
+  if (!values.length || values.some((v) => !v))
+    throw new DeclareError(
+      "invalid",
+      d.kind === "topic" ? "Say the topic first." : "Say the route first.",
+    );
+  const had = values.filter((value) =>
+    (list as { items: unknown[] }).items.some((x) =>
+      d.kind === "topic"
+        ? isScalar(x) && String(x.value) === value
+        : isMap(x) && x.get("route") === value,
+    ),
   );
-  if (has)
-    throw new DeclareError("exists", `${rel} already has ${value} under ${d.system}'s ${field}.`);
-  const item =
-    d.kind === "topic"
-      ? doc.createNode(value)
-      : doc.createNode(DeclaredCall.parse({ route: value }));
-  item.comment = declaredComment(o.by, o.at, d.kind === "topic" ? d.side : undefined);
-  list.add(item);
+  if (had.length)
+    throw new DeclareError(
+      "exists",
+      `${rel} already has ${had.join(", ")} under ${d.system}'s ${field}.`,
+    );
+  for (const value of values) {
+    const item =
+      d.kind === "topic"
+        ? doc.createNode(value)
+        : doc.createNode(DeclaredCall.parse({ route: value }));
+    item.comment = declaredComment(o.by, o.at, d.kind === "topic" ? d.side : undefined);
+    list.add(item);
+  }
   // A profile the library can't write back (several documents, a YAML error) is refused whole.
   if (doc.errors.length)
     throw new DeclareError(
