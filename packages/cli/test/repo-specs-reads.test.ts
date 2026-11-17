@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Fact } from "@maycombhq/core";
 import { repoSpecsHooks } from "@maycombhq/intake";
+import { buildCacheHooks } from "@maycombhq/scanner";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import { writeRepoSpecs } from "../src/contract-check-files.js";
 
@@ -21,6 +22,7 @@ import { writeRepoSpecs } from "../src/contract-check-files.js";
 const made: string[] = [];
 afterAll(async () => {
   delete repoSpecsHooks.onVendorRead;
+  delete buildCacheHooks.stamp;
   await Promise.all(made.map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -159,5 +161,25 @@ describe("a repo's specs, read at the facts' commit (beta.28.5)", () => {
     repoSpecsHooks.onVendorRead = () => parses++;
     await writeRepoSpecs(root, "forge-ledger", dir, [fact(head)], undefined, counting().git);
     expect(parses).toBe(1);
+  });
+
+  // The review of beta.28.5: what is kept is of the code that read (the build cache's stamp),
+  // not of the version's name: another build of Atticus reads every file again.
+  it("reads every file again under another build of Atticus, and keeps nothing where the code has no stamp", async () => {
+    const { root, dir, head } = await clone();
+    const reads = async () => {
+      const c = counting();
+      await writeRepoSpecs(root, "forge-ledger", dir, [fact(head)], undefined, c.git);
+      return c.reads.length;
+    };
+    buildCacheHooks.stamp = "one build";
+    expect(await reads()).toBe(CONFIGS + 2);
+    expect(await reads()).toBe(2);
+    buildCacheHooks.stamp = "another build, the same version";
+    expect(await reads()).toBe(CONFIGS + 2);
+    expect(await reads()).toBe(2);
+    buildCacheHooks.stamp = null;
+    expect(await reads()).toBe(CONFIGS + 2);
+    expect(await reads()).toBe(CONFIGS + 2);
   });
 });

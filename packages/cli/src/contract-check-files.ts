@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -16,6 +16,7 @@ import {
   questionsDirOf,
   SpecsFile,
   ensureLocalIgnore,
+  removeHeld,
   writeFileAtomic,
   writeFileIfDiffers,
   type ContractCheckResult,
@@ -39,6 +40,7 @@ import {
   componentRenames,
   estateFacts,
   estateJoinOf,
+  buildCodeStamp,
   estateJoinOfAsync,
   hostAliases,
   joinReposOf,
@@ -155,21 +157,24 @@ async function specTreeOf(
 /**
  * The files of a repo found to hold no spec, kept between runs (beta.28.5) in
  * `.atticus/cache/not-spec-<repo>.json`: each by its path and git's id of its content, under
- * this version of Atticus (another version reads every file again). Derived, local to this
+ * the stamp of the code that reads (the build cache's: another build of Atticus, at the same
+ * version too, reads every file again; with no stamp nothing is kept). Derived, local to this
  * machine, never committed; one that can't be read or written costs the reads, nothing else.
  */
 const NOT_SPEC_FORMAT = 1;
 async function notSpecOf(root: string, repo: string) {
   const file = join(resolve(root), ".atticus", "cache", `not-spec-${repo}.json`);
-  const v = `${NOT_SPEC_FORMAT}:${VERSION}`;
+  const stamp = buildCodeStamp();
+  const v = `${NOT_SPEC_FORMAT}:${stamp}`;
   const keys = new Set<string>();
-  try {
-    const m = JSON.parse(await readFile(file, "utf8")) as { v?: unknown; keys?: unknown };
-    if (m.v === v && Array.isArray(m.keys))
-      for (const k of m.keys) if (typeof k === "string") keys.add(k);
-  } catch {
-    // none yet, or one that doesn't read
-  }
+  if (stamp !== undefined)
+    try {
+      const m = JSON.parse(await readFile(file, "utf8")) as { v?: unknown; keys?: unknown };
+      if (m.v === v && Array.isArray(m.keys))
+        for (const k of m.keys) if (typeof k === "string") keys.add(k);
+    } catch {
+      // none yet, or one that doesn't read
+    }
   const loaded = new Set(keys);
   const seen = new Set<string>();
   const key = (path: string, id: string) => `${id} ${path}`;
@@ -188,10 +193,14 @@ async function notSpecOf(root: string, repo: string) {
     },
     /** Kept: the files of this read only, so the list never grows past the repo's files. */
     async keep() {
+      if (stamp === undefined) return;
       if (seen.size === loaded.size && [...seen].every((k) => loaded.has(k))) return;
       try {
         await ensureLocalIgnore(resolve(root));
-        await writeFileAtomic(file, JSON.stringify({ v, keys: [...seen].sort() }));
+        // A cache's write: only the quick tries when the file is held.
+        await writeFileAtomic(file, JSON.stringify({ v, keys: [...seen].sort() }), {
+          quick: true,
+        });
       } catch {
         // a read-only or full disk costs the next run its reads
       }
@@ -231,7 +240,7 @@ export async function writeRepoSpecs(
   const path = join(factsDirOf(root), `${repo}.specs.yaml`);
   // A companion that already holds these bytes is left alone, its time too.
   if (file.specs.length) await writeFileIfDiffers(path, stringify(file, { lineWidth: 0 }));
-  else await rm(path, { force: true });
+  else await removeHeld(path);
   return file;
 }
 

@@ -268,6 +268,15 @@ function codeStamp(): string | undefined {
   return stamp.stamp;
 }
 
+/**
+ * The stamp of the code that builds, for another cache of what this code reads (beta.28.5: the
+ * files of a repo found to hold no spec): undefined when there is none, and then nothing is
+ * kept. A test's `buildCacheHooks.stamp` stands for it, as for the build cache.
+ */
+export function buildCodeStamp(): string | undefined {
+  return codeStamp();
+}
+
 /** This code's stamp and where it came from (a check of the bundle reads it). */
 export function codeStampInfo(): CodeStamp {
   return codeStampOf({
