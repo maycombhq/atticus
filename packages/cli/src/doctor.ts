@@ -679,16 +679,24 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       id: "copilot-acp",
       label: "Copilot ACP (copilot-acp)",
       status: p.found && p.signedIn === true ? "ok" : "warn",
+      // beta.28.5: a server that didn't start is told as a run tells it (what it did, in its own
+      // words, and advice that fits), so the fix can be checked here without a session.
       detail: !p.found
-        ? `${command} can't be run here${p.said ? ` (${p.said})` : ""}`
-        : p.signedIn === false
-          ? `${name} answers in Agent Client Protocol mode but isn't signed in; it said: ${p.said ?? "nothing"}`
-          : p.signedIn === true
-            ? `${name} answers in Agent Client Protocol mode and is signed in. No session was run.`
-            : `${name} was found, but its Agent Client Protocol handshake didn't say whether it is signed in${p.said ? `: ${p.said}` : ""}`,
+        ? p.start
+          ? `${command} can't be run here: ${p.start.problem}`
+          : `${command} can't be run here${p.said ? ` (${p.said})` : ""}`
+        : p.start
+          ? `${name} was found but didn't start in Agent Client Protocol mode: ${p.start.problem}`
+          : p.signedIn === false
+            ? `${name} answers in Agent Client Protocol mode but isn't signed in; it said: ${p.said ?? "nothing"}`
+            : p.signedIn === true
+              ? `${name} answers in Agent Client Protocol mode and is signed in. No session was run.${p.note ? ` ${p.note}` : ""}`
+              : `${name} was found, but its Agent Client Protocol handshake didn't say whether it is signed in${p.said ? `: ${p.said}` : ""}`,
       fix: !p.found
-        ? "Set copilotAcp.command in runtime.yaml to the Copilot language server (npx --yes @github/copilot-language-server, or its full path), check that it lists --acp in its --help, or leave copilot-acp out of modes.allowed. docs/guide/copilot-unattended.md says how."
-        : "Sign in to GitHub Copilot yourself (your editor's Copilot sign-in, or the link and code the server printed); Atticus never handles your sign-in. Then run atticus doctor again.",
+        ? `${p.start?.advice ?? "Set copilotAcp.command in runtime.yaml to the Copilot language server (npx --yes @github/copilot-language-server, or its full path)."} Or leave copilot-acp out of modes.allowed. docs/guide/copilot-unattended.md says how.`
+        : p.start
+          ? `${p.start.advice} Then run atticus doctor again: it starts the server without a session.`
+          : "Sign in to GitHub Copilot yourself (your editor's Copilot sign-in, or the link and code the server printed); Atticus never handles your sign-in. Then run atticus doctor again.",
     });
   }
   // ---- The model for each kind of step (ADR 0121 addendum), and where each choice came from.

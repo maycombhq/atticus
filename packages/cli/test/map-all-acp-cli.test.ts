@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import type { AcpExec } from "@maycombhq/ai";
+import { forgetAcpStarts, type AcpExec } from "@maycombhq/ai";
 import {
   acpStepRunner,
   expandSlashLine,
@@ -331,6 +331,71 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     expect((await readMapAllState(root))?.repos["forge-ledger"]?.parts["1"]?.state).toBe(
       "incomplete",
     );
+  });
+
+  it("beta.28.5: a server that ends as it starts stops the run at once in its own words, never a Node warning, and nothing is written", async () => {
+    const { root } = ledgerEstate();
+    const m = scripted(root, {
+      start: {
+        warn: true,
+        stderr: ["error: required option '--node-ipc' not specified"],
+        exit: 1,
+      },
+      sessions: [],
+    });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const o = io();
+    const events: MapAllEvent[] = [];
+    const clone = gitIn(join(root, "workspace", "forge-ledger"));
+    const code = await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp" }, o.io, {
+      acp: runner,
+      onEvent: (e) => events.push(e),
+    });
+    // As before this fix, a run that stops on a server it couldn't start ends with code 0.
+    expect(code, o.text()).toBe(0);
+    expect(o.text()).toMatch(
+      /ERR Atticus couldn't start the Copilot language server \(.*\): it ended before it answered \(exit code 1\) and said: error: required option '--node-ipc' not specified\. It asks for the option --node-ipc\. Add it to copilotAcp\.command in runtime\.yaml \(command: .* --node-ipc\)\. The run stops here; atticus map --all --max-tokens 100000 carries on once it is put right\./,
+    );
+    expect(o.text()).not.toMatch(/ExperimentalWarning|trace-warnings|took over|--help/);
+    const end = events.find((e) => e.type === "session.end");
+    expect(end).toMatchObject({ ended: "failed" });
+    expect(JSON.stringify(events)).not.toMatch(/ExperimentalWarning|trace-warnings/);
+    // Once: the same for every part, so no second part and no second try.
+    expect(m.log().filter((e) => e.event === "start").length).toBe(1);
+    expect((await readMapAllState(root))?.repos["forge-ledger"]?.parts["1"]?.state).toBe(
+      "incomplete",
+    );
+    // The estate is as it was: no facts, and the clone untouched.
+    expect(existsSync(join(root, "facts", "forge-ledger.jsonl"))).toBe(false);
+    expect(clone("status", "--porcelain")).toBe("");
+  });
+
+  it("beta.28.5: a server that asks for --stdio is started again with it, said once for the whole run", async () => {
+    forgetAcpStarts();
+    const { root } = ledgerEstate();
+    const m = scripted(root, {
+      start: { warn: true, needs: "--stdio" },
+      sessions: [{ steps: [{ say: "Nothing." }] }, { steps: [{ say: "Nothing." }] }],
+    });
+    const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
+    const o = io();
+    try {
+      await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 2 }, o.io, {
+        acp: runner,
+      });
+    } finally {
+      forgetAcpStarts();
+    }
+    expect(
+      o.out.filter(
+        (l) =>
+          l ===
+          "The Copilot language server asked for --stdio; started again with it. Add --stdio to copilotAcp.command in runtime.yaml to skip this.",
+      ),
+    ).toHaveLength(1);
+    const starts = m.log().filter((e) => e.event === "start") as unknown as { argv: string[] }[];
+    expect(starts.map((s) => s.argv.includes("--stdio"))).toEqual([false, true, true]);
+    expect(o.text()).not.toMatch(/ExperimentalWarning|trace-warnings/);
   });
 
   it("Ctrl+C cancels the session under way and stops cleanly, to resume later", async () => {
