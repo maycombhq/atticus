@@ -39,7 +39,7 @@ and no tokens are spent.
 ### If it won't start
 
 A run that can't start the server stops before its first session, changes nothing, and says what
-the server did in the server's own words. Node's and npm's warnings (`(node:1234)
+the server did in the server's own words. Node's warnings (`(node:1234)
 ExperimentalWarning: …`) are set aside: they are never the reason. `atticus doctor`'s **Copilot
 ACP** line starts the server the same way and says the same, so you can check a fix without a run.
 
@@ -51,12 +51,28 @@ ACP** line starts the server the same way and says the same, so you can check a 
 | it ended before it answered … and printed nothing but warnings (or nothing)  | The server gave no reason. Run the command the message shows yourself to see what it does.                                                                                                                                                                                                                                                                                              |
 | it was still running after 60s, the limit for starting, and had not answered | The server was still starting, or waiting. Atticus can't tell which. Through npx it may be fetching or checking the package on every start (slow through a proxy); a first start can be slow too. Either install the server once (as above) and set `command: copilot-language-server`, or give it longer: set the environment variable `ATTICUS_COPILOT_START_TIMEOUT_MS` (see below). |
 | the program … wasn't found on this machine                                   | `command` names a program that isn't installed or isn't on the PATH. Give one that is, or its full path in double quotes.                                                                                                                                                                                                                                                               |
+| it closed its output before it answered, and is still running                | The server shut the channel Atticus hears it on and kept running, so no answer can come. Atticus ends it. Run the command the message shows yourself to see what it does. The same is said, and done, when it happens in the middle of a session.                                                                                                                                       |
+| it answered initialize with an error: …                                      | The server runs and speaks the protocol, but refused the first message; its own words follow. Usually a server too old or too new for this Atticus: update one of them, or name another server in `command`.                                                                                                                                                                            |
+
+The words quoted from the server are redacted as Atticus's log is (a proxy's `user:password@`,
+tokens, your home folder), since they are kept in the run's record. When the server printed
+nothing but warnings, npm's last warning is quoted as a warning ("its last warning was: npm warn
+…"): behind a proxy it is often the only line that names the cause. "The program … wasn't found" is
+said only when the program missing is `command`'s own; when npx ran and what it runs was missing,
+the message quotes that instead. On a Windows in another language than English, cmd.exe's own
+"not recognized" words aren't recognised: the message then says the server ended and quotes them.
+
+A server that is still running at the limit may be waiting because it wants `--stdio` and didn't
+say so; the message then adds "If this server needs --stdio, add it to copilotAcp.command".
 
 **The start limit.** The server has 60 seconds to start and answer. To change that on a machine,
 set the environment variable `ATTICUS_COPILOT_START_TIMEOUT_MS` to a number of milliseconds from
-1000 to 1800000 (`180000` is three minutes), then open a new terminal. It is this machine's
-setting, not runtime.yaml's: how long a start takes depends on the machine and its network. The
-run and `atticus doctor` both use it. A value that isn't such a number is refused, in words.
+1000 to 1800000 (`180000` is three minutes), then open a new terminal. A terminal inside an editor,
+and the app in VS Code or IntelliJ, take their environment from the editor: restart the editor (and
+the app's server) for them to see it. It is this machine's setting, not runtime.yaml's: how long a
+start takes depends on the machine and its network. The run and `atticus doctor` both use it. A
+value that isn't such a number is refused, in words. Opening the new session after the start is
+given the same limit, and never less than two minutes, by the run and by doctor alike.
 
 ## Using it
 
