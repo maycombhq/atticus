@@ -17,7 +17,7 @@ import {
   FACTS_SCHEMA_VERSION,
   factsDirOf,
   factsRelOf,
-  hashFilesIn,
+  hashFilesKept,
   stoppableSignal,
   joinSharedMaps,
   keptFilesMayHaveChanged,
@@ -2217,10 +2217,17 @@ function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: Di
 }
 
 /** `signal` (beta.28.3): a job's Stop ends the read of every file part way, with CancelledError. */
-async function hashFiles(dir: string, signal?: AbortSignal): Promise<DiskFiles> {
-  // The paths first, in the walk's order; then every file read whole and hashed, in a few worker
-  // threads for a big folder (beta.28.2, file-pool.ts: through the promise API 100,000 record
-  // files took 10 to 13 s), and put in the map in that order.
+async function hashFiles(
+  dir: string,
+  /** The metarepo, whose kept hashes are used; `keep: false`: read, never written (a preview). */
+  cache: { root: string; keep?: boolean },
+  signal?: AbortSignal,
+): Promise<DiskFiles> {
+  // The paths first, in the walk's order; then every file's hash, in a few worker threads for a
+  // big folder (beta.28.2, file-pool.ts: through the promise API 100,000 record files took 10
+  // to 13 s), and put in the map in that order. Beta.28.5: a file whose size and time are the
+  // ones its hash was kept by isn't opened (hash-cache.ts: the owner's estate spent 20 to 34 s
+  // of every build opening 12,832 unchanged files under antivirus); any other is read whole.
   const paths: string[] = [];
   async function walk(d: string, rel: string) {
     let entries;
@@ -2238,7 +2245,13 @@ async function hashFiles(dir: string, signal?: AbortSignal): Promise<DiskFiles> 
   const mark = phaseClock("hash: ");
   await walk(dir, "");
   mark("walk");
-  const hashed = await hashFilesIn(dir, paths, signal ? { signal } : {});
+  const hashed = await hashFilesKept({
+    dir,
+    files: paths,
+    cacheRoot: cache.root,
+    ...(cache.keep === false ? { keep: false } : {}),
+    ...(signal ? { signal } : {}),
+  });
   mark("read and sha256");
   const out: DiskFiles = new Map();
   paths.forEach((r, k) => out.set(r, hashed[k]!));
@@ -2469,7 +2482,9 @@ export async function guardBuild(
   const last = o.manifests
     ? buildManifestOfText(o.manifests.onDisk, o.manifests.mine, target.manifest)
     : await readBuildManifest(target.manifest);
-  const onDisk = o.onDisk ?? (await hashFiles(target.generated));
+  const onDisk =
+    o.onDisk ??
+    (await hashFiles(target.generated, { root, ...(o.keepNoReads ? { keep: false } : {}) }));
   mark("build.json read");
   /** The target's records now: the caller's read where it still holds, else read again. */
   let lastRecordsRead: Promise<readonly CatalogRecord[]> | undefined;
@@ -3130,7 +3145,7 @@ export async function writeBuiltCatalog(
   if (b.legacyJoins !== undefined && !slots.some((s) => s.path === legacyJoinsPath(root)))
     slots.push({ path: legacyJoinsPath(root), text: b.legacyJoins });
   // What changes: each record file, each slot, build.json.
-  const onDisk = o.onDisk ?? (await hashFiles(target.generated));
+  const onDisk = o.onDisk ?? (await hashFiles(target.generated, { root }));
   const touched: { path: string; text: string | null }[] = [];
   for (const [p, text] of b.files)
     if (onDisk.get(p)?.sha !== fileShaOf(b, p, text))
@@ -3578,7 +3593,12 @@ export async function buildAndWrite(
   // before the write on a large estate's first build of the day) ran to its end first. It takes
   // the job's signal now, for a caller that listens to the steps (and so already stops between
   // them), until the job says it is writing: nothing has been written here yet.
-  const onDisk = await hashFiles(target.generated, o.onStep ? stoppableSignal() : undefined);
+  const onDisk = await hashFiles(
+    target.generated,
+    // A check writes nothing it wasn't asked to: a preview's (keepNoReads) keeps no hash either.
+    { root, ...(o.keepNoReads ? { keep: false } : {}) },
+    o.onStep ? stoppableSignal() : undefined,
+  );
   mark("hash catalog on disk");
   const manifestOnDisk = await readText(target.manifest);
   const manifests = {
