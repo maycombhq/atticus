@@ -579,11 +579,18 @@ export async function runApplyAll(
                 notApplied.join(", "),
               )
             : message(e);
+    // The review: facts left out in the repos it did apply are said beside what it didn't.
+    const leftOut = leftOutOf(result);
+    const left = result?.leftOutRepos;
+    const said =
+      applied.length && leftOut && typeof left === "number" && left > 0
+        ? `${text} ${COPY.appStep.leftOutToo(leftOut, left)}`
+        : text;
     set({
       running: false,
       lines: [message(e)],
       ...(next ? { next } : {}),
-      note: { ok: false, text },
+      note: { ok: false, text: said },
     });
     return false;
   } finally {

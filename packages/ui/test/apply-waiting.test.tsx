@@ -327,3 +327,32 @@ it("while it is stopping, says the repo being written finishes first", async () 
   job.resolve({ code: 0, lines: [] });
   await ran;
 });
+
+// Beta.28.4 (the review): a run that applied some repos with facts left out while another
+// failed said nothing of the facts left out.
+it("applied some, with facts left out in a repo applied: says both", async () => {
+  let held: { note?: { ok: boolean; text: string } } = {};
+  const set = (s: unknown) => {
+    held =
+      typeof s === "function" ? (s as (w: typeof held) => typeof held)(held) : (s as typeof held);
+  };
+  const ran = runApplyAll(set as never, THREE);
+  await settle();
+  job.reject(
+    new JobFailed("No checkout of forge-teller.", ["No checkout of forge-teller."], undefined, 1, {
+      code: 1,
+      applied: ["forge-card-vault", "forge-ledger"],
+      notApplied: ["forge-teller"],
+      leftOut: 3,
+      leftOutRepos: 1,
+    }),
+  );
+  expect(await ran).toBe(false);
+  expect(held.note).toEqual({
+    ok: false,
+    text: "Applied 2 of 3 repos. Not applied: forge-teller. Why is listed below; each repo not applied keeps its own Apply button. 3 facts were left out in 1 repo that was applied; each is listed below with the file to fix it in.",
+  });
+  expect(T.leftOutToo(1, 2)).toBe(
+    "1 fact was left out in 2 repos that were applied; each is listed below with the file to fix it in.",
+  );
+});

@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rename, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import { startServer, STOPPING, TOO_LATE, type RunningServer } from "@maycombhq/
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import { writeProgressHooks } from "../src/write-progress.js";
-import { bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
 
 /**
  * Beta.28.4 (field report: an Apply over 40 repos ran five hours and could not be stopped): Stop
@@ -21,6 +21,7 @@ import { bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
  * stopped runs leave is compared, byte for byte, with the same repos applied one at a time by
  * `verify <repo> --write`. Invented names only (CLAUDE.md rule 3); no network (rule 5).
  */
+const VERIFY = join(__dirname, "..", "..", "verify", "test", "fixtures");
 const made: string[] = [];
 const servers: RunningServer[] = [];
 const [R1, R2, R3] = [bigRepoId(0), bigRepoId(1), bigRepoId(2)];
@@ -106,6 +107,8 @@ type Ended = {
     applied?: string[];
     notApplied?: string[];
     stopped?: boolean;
+    leftOut?: number;
+    leftOutRepos?: number;
   };
 };
 /** Start `path` on a fresh copy, ask Stop when `when` says so of a printed line, and follow it. */
@@ -291,6 +294,32 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
     expect(r.ended.result?.stopped).toBeUndefined();
     expect(differences(await filesOf(r.root), after[2]!)).toEqual([]);
+  }, 600_000);
+});
+
+describe("a run where one repo fails and another is applied with facts left out (beta.28.4)", () => {
+  // The review: the count of facts left out was dropped from the result when another repo of
+  // the run failed, so the page couldn't say it.
+  it("keeps how many facts were left out, in how many repos, beside the repos by name", async () => {
+    const bad = JSON.parse(
+      (await readFile(join(VERIFY, "redteam.facts.jsonl"), "utf8")).split("\n")[0]!,
+    ) as { id: string };
+    const r = await run("/api/facts/apply-all", { repos: [R1, R2] }, undefined, async (root) => {
+      await noCloneOfFirst(root);
+      const facts = join(root, "facts", `${R2}.jsonl`);
+      const two = [1, 2].map((n) =>
+        JSON.stringify({ ...bad, id: `${bad.id}-${n}`, commit: BIG_COMMIT }),
+      );
+      await writeFile(facts, (await readFile(facts, "utf8")) + two.join("\n") + "\n");
+    });
+    expect(r.ended.state, r.ended.result?.lines.join("\n")).toBe("failed");
+    expect(r.ended.result).toMatchObject({
+      applied: [R2],
+      notApplied: [R1],
+      leftOut: 2,
+      leftOutRepos: 1,
+    });
+    expect(r.ended.result?.stopped).toBeUndefined();
   }, 600_000);
 });
 

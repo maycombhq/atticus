@@ -5086,6 +5086,9 @@ export const COPY = {
     inTerminal: "In a terminal",
     applyAll: "Apply to every repo's map",
     applyingAll: "Applying…",
+    /** Beta.28.4: said after "applied some" or "stopped", when repos applied left facts out. */
+    leftOutToo: (n: number, repos: number) =>
+      `${n} ${n === 1 ? "fact was" : "facts were"} left out in ${repos} ${repos === 1 ? "repo that was" : "repos that were"} applied; each is listed below with the file to fix it in.`,
     /** Beta.28.4: Stop was asked of a run over several repos, and it is ending. */
     stoppingRun: (done: number, of: number) =>
       `Stopping: ${done} of ${of} repos done. A repo being written finishes its write first; the repos after it are not applied.`,

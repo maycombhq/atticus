@@ -164,11 +164,13 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
             ),
           );
           // Beta.28.4: which repos it applied and which it didn't, by name, for the page to say.
-          // Stopped (the job ends stopped, whatever its code): said in its result too.
+          // Stopped (the job ends stopped, whatever its code): said in its result too. The facts
+          // left out are counted whenever any were, another repo failing or not (the review).
+          const left = leftOut ? { leftOut, leftOutRepos } : {};
           const each = stopped
-            ? { applied, notApplied, stopped: true, ...(leftOut ? { leftOut, leftOutRepos } : {}) }
+            ? { applied, notApplied, stopped: true, ...left }
             : codes.length
-              ? { applied, notApplied }
+              ? { applied, notApplied, ...left }
               : {};
           const done =
             !stopped &&
