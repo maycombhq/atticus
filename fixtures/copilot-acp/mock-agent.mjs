@@ -38,6 +38,10 @@
 //   { "exit": <code> }           then the process ends with that code, answering nothing
 //   { "crlf": true }             stderr lines end \r\n, as on Windows
 //   { "mute": true }             stdout is closed and the process stays (it can never answer)
+//   { "refuses": "--stdio" }     with that word: "error: unknown option '--stdio'", exit code 1
+// The start's log line carries the process's pid, so a test can see that it was ended.
+// "sessionMs" in the script: how long the process waits before it answers `session/new`.
+// A step { "mute": true } closes stdout mid-turn; the process stays, answering nothing more.
 import { appendFileSync, closeSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -55,9 +59,17 @@ const script = JSON.parse(readFileSync(process.env.MOCK_ACP_SCRIPT, "utf8"));
 const LOG = process.env.MOCK_ACP_LOG;
 const log = (o) => LOG && appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
-log({ event: "start", argv: process.argv.slice(2) });
+log({ event: "start", argv: process.argv.slice(2), pid: process.pid });
+const mute = () => {
+  process.stdout.on("error", () => undefined);
+  closeSync(1);
+};
 if (script.start) {
   const st = script.start;
+  if (st.refuses && process.argv.includes(st.refuses)) {
+    await new Promise((r) => process.stderr.write(`error: unknown option '${st.refuses}'\n`, r));
+    process.exit(1);
+  }
   const nl = st.crlf ? "\r\n" : "\n";
   const lines = [];
   if (st.warn)
@@ -76,10 +88,7 @@ if (script.start) {
     process.exit(code);
   }
   if (text) process.stderr.write(text);
-  if (st.mute) {
-    process.stdout.on("error", () => undefined);
-    closeSync(1);
-  }
+  if (st.mute) mute();
 }
 const logged = () => {
   try {
@@ -172,6 +181,10 @@ async function play(steps) {
       });
       log({ event: "permission", kind: p.kind, title: p.title, outcome: r.result?.outcome });
     } else if (s.sleep !== undefined) await sleep(s.sleep);
+    else if (s.mute !== undefined) {
+      mute();
+      await sleep(600_000);
+    }
     else if (s.stop !== undefined) return s.stop;
     else if (s.kill !== undefined) {
       log({ event: "kill", signal: s.kill });
@@ -215,6 +228,7 @@ rl.on("line", async (line) => {
       },
     });
   } else if (method === "session/new") {
+    if (script.sessionMs) await sleep(script.sessionMs);
     if (script.signedOut) {
       process.stderr.write("To sign in, open https://github.com/login/device and enter WXYZ-0000\n");
       send({ id, error: { code: -32000, message: script.signedOut } });
