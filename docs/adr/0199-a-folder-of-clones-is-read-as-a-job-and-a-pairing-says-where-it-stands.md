@@ -1,9 +1,9 @@
-# 0198. A folder of clones is read as a job, and a pairing says where it stands
+# 0199. A folder of clones is read as a job, and a pairing says where it stands
 
 - Status: proposed (2026-11-16)
 - Date: 2026-11-16
 - Release: the next beta after 2.0.0-beta.28.3
-- Contracts: C4, the local API, additive only: version 3.15.0 to 3.16.0. No stored file changes, so there is no migration. C1, C2, C3, C5, C6 and the facts file are unchanged.
+- Contracts: C4, the local API, additive only, in version 3.16.0 (shared with the apply-from-the-app decision, numbered 0198 on its own branch and merged beside this one; these additions are part of the same 3.16.0). No stored file changes, so there is no migration. C1, C2, C3, C5, C6 and the facts file are unchanged.
 
 ## Context
 

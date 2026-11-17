@@ -1,7 +1,7 @@
 import type { Api } from "@maycombhq/core";
 
 /**
- * ADR 0198 (field report, beta.28.3: "it says it's already paired, but I don't see the line"):
+ * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the line"):
  * where the calls a person paired stand. With this box: on the map (`drawn`), or in the
  * corrections and not on the map yet; with another box (`pairedBy`, and the box it goes to).
  */

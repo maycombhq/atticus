@@ -14,7 +14,7 @@ import { EditPreview, type FileEdit } from "./EditPreview.js";
  * ticks what goes in, may say what each is, previews the manifest's lines, writes them, and
  * proposes them for review.
  *
- * Field report (beta.28.3, ADR 0198): a folder is read as a job. The page says the folder it is
+ * Field report (beta.28.3, ADR 0199): a folder is read as a job. The page says the folder it is
  * on and offers Stop; a repo a manifest lists already isn't read again, and a folder that took
  * too long is listed with why, among the folders skipped.
  */

@@ -984,7 +984,7 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     ).toBe("");
   });
 
-  // Field report (beta.28.3, ADR 0198): "has no call left to pair with this box: each is paired
+  // Field report (beta.28.3, ADR 0199): "has no call left to pair with this box: each is paired
   // by a person already" was said of calls nobody paired (they go there by the code's own
   // arrow) and of pairings the map doesn't draw yet. What is said is what each call is.
   it("says why no call is left to pair, by what each call is", () => {

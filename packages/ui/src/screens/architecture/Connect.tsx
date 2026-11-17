@@ -461,7 +461,7 @@ export function Pairing(p: {
           </span>
         </label>
         {c.status === "undrawn" && c.joins ? (
-          // ADR 0198: a person's pairing with that box, not applied yet, is said to be theirs.
+          // ADR 0199: a person's pairing with that box, not applied yet, is said to be theirs.
           <span className="box-why">
             {c.pairedBy ? C.pairedUndrawn(c.pairedBy, c.joins) : C.undrawnWhy(c.joins)}
           </span>

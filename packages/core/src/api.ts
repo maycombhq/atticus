@@ -651,7 +651,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   when catalog/sources/build.json is there but doesn't read (edited or merged by hand). Its
  *   `command` is the build again with `--discard-edits` of every record file, never the curate.
  *   Additive only.
- * 3.16.0 (after beta.28.3, ADR 0198, two field reports on a 40-repo estate): POST
+ * 3.16.0 (after beta.28.3, ADR 0199, two field reports on a 40-repo estate): POST
  *   /api/setup/repos/plan takes `job: true` for a folder of clones: 202 JobAccepted at once, the
  *   job says each folder as it comes to it ("Reading forge-ledger (4 of 40)…") and hears Stop
  *   between folders, and its result's `answer` is the ReposPlanView (or `problem`); the refusals
@@ -659,7 +659,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the answer. With or without `job`, a folder's repo a manifest lists already is told by its
  *   clone URL and not read (it is in `listed`, as before), and a folder that takes over a minute
  *   to read is in `skipped` with that reason. Additive only.
- *   Also in 3.16.0 (ADR 0198, "it says it's paired, but I don't see the line"): GET
+ *   Also in 3.16.0 (ADR 0199, "it says it's paired, but I don't see the line"): GET
  *   /api/links/candidates says of each `paired` call whether the map draws its arrow to this box
  *   (`drawn`), and of the view whether A's corrections are newer than A's last Apply
  *   (`applyPending`). Additive only.
@@ -5349,7 +5349,7 @@ export const CandidateCallView = z.object({
   why: z.string().optional(),
   paired: z.string().optional(),
   /**
-   * 3.16 (ADR 0198): for `paired`, whether the map draws its arrow to this box: true once the
+   * 3.16 (ADR 0199): for `paired`, whether the map draws its arrow to this box: true once the
    * catalog has it (the repo was applied since the pairing), false while it doesn't.
    */
   drawn: z.boolean().optional(),
@@ -5395,7 +5395,7 @@ export const LinkCandidatesView = z.object({
   /** An open target question of A that one /** answer to B would close, with the calls it covers. */
   rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
   /**
-   * 3.16 (ADR 0198): A's corrections file is newer than A's last Apply (as a proposal's
+   * 3.16 (ADR 0199): A's corrections file is newer than A's last Apply (as a proposal's
    * `applyFirst` tells it): what a person paired or corrected since isn't on the map yet.
    */
   applyPending: z.boolean().optional(),
@@ -5735,7 +5735,7 @@ export const ReposPlanRequest = z
     dir: z.string().min(1).max(4096).optional(),
     platform: RecordId.optional(),
     /**
-     * 3.16.0 (ADR 0198): read as a job. 202 JobAccepted at once; the job says each folder as it
+     * 3.16.0 (ADR 0199): read as a job. 202 JobAccepted at once; the job says each folder as it
      * comes to it, hears Stop between folders, and its result's `answer` is the ReposPlanView.
      */
     job: z.boolean().optional(),
@@ -8665,7 +8665,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "planRepos",
       summary:
-        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing. 3.16.0 (ADR 0198): a folder's repo a manifest lists already is told by its clone URL and not read (`listed`), a folder that takes over a minute to read is skipped saying so (`skipped`), and with `job: true` the read is a job: 202 JobAccepted at once, a line a folder, Stop heard between folders, the plan in the job's result `answer` (or `problem`)",
+        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing. 3.16.0 (ADR 0199): a folder's repo a manifest lists already is told by its clone URL and not read (`listed`), a folder that takes over a minute to read is skipped saying so (`skipped`), and with `job: true` the read is a job: 202 JobAccepted at once, a line a folder, Stop heard between folders, the plan in the job's result `answer` (or `problem`)",
       tag: "run",
       body: ReposPlanRequest,
       ok: { status: 200, schema: "ReposPlanView", description: "OK" },

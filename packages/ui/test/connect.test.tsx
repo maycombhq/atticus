@@ -324,7 +324,7 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
 // Field report (beta.28.3): "it says it's already paired, but I don't see the line". The panel
 // said every call was paired with the box by a person, and the map had no arrow: the pairings
 // were in the corrections file, and the repo hadn't been applied since. Each standing a paired
-// call can have is said as it is, with what resolves it (ADR 0198).
+// call can have is said as it is, with what resolves it (ADR 0199).
 describe("calls a person paired, by where each stands", () => {
   const box = { repo: "forge-ledger" };
   const paired = (n: number, o: Partial<Api.CandidateCallViewT> = {}): Api.CandidateCallViewT => ({

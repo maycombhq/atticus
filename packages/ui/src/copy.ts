@@ -20,7 +20,7 @@ const CANARY_WHAT: Record<string, string> = {
   config: "a config key",
 };
 
-/** ADR 0198: how a pairing is undone, and what the Apply offered under a pairing does. */
+/** ADR 0199: how a pairing is undone, and what the Apply offered under a pairing does. */
 const COPY_UNDO = (from: string) =>
   `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
 const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
@@ -5491,7 +5491,7 @@ export const COPY = {
       callApi: (call: string) => `The API ${call} goes to`,
       notPaired: "Not this call",
       /**
-       * ADR 0198: why no call is left to pair, by what each call is: going there already by the
+       * ADR 0199: why no call is left to pair, by what each call is: going there already by the
        * code's own arrow (nobody paired it), paired by a person and on the map, paired and not
        * on the map yet (the repo's next Apply draws it), or paired with an API the box lost.
        */
@@ -5826,7 +5826,7 @@ export const COPY = {
     noLoose: (where: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
     /**
-     * ADR 0198 (field report, beta.28.3: "it says it's already paired, but I don't see the
+     * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the
      * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's
      * corrections; the arrow is drawn by the repo's next Apply. Each standing is said as it is,
      * with what resolves it.

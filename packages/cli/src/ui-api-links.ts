@@ -385,7 +385,7 @@ async function candidatesIn(
     inBox,
   });
   if (drawn) return cands;
-  // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0198).
+  // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0199).
   return {
     ...cands,
     calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
@@ -393,7 +393,7 @@ async function candidatesIn(
 }
 
 /**
- * ADR 0198: whether a repo's corrections file is newer than the repo's last Apply, told as a
+ * ADR 0199: whether a repo's corrections file is newer than the repo's last Apply, told as a
  * proposal's `applyFirst` tells it (ui-api.ts): Apply rewrites the repo's spec header each time
  * it writes the map; a repo with no header yet goes by its verify.yaml. False with no
  * corrections file.

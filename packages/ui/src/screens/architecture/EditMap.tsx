@@ -433,7 +433,7 @@ const candidatesPath = (from: string, to: Api.LinkBoxT) =>
   }`;
 
 /**
- * ADR 0198: why an add has no call to pair, in words that are true of each call: one going to
+ * ADR 0199: why an add has no call to pair, in words that are true of each call: one going to
  * the box by the code's own arrow was never "paired by a person", and a person's pairing says
  * whether the map draws it yet.
  */
