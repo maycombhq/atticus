@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -20,6 +20,8 @@ import {
   type Fact,
   type FactCorrection,
   type Question,
+  removeHeld,
+  sweepStaleTmp,
   writeFileAtomic,
   writeFileIfDiffers,
 } from "@maycombhq/core";
@@ -440,7 +442,12 @@ export async function writeVerifyFiles(
           .join(""),
     );
   // Nothing rejected: the file of an earlier run goes, once the facts are written.
-  if (!lines.length) await rm(rejectedFile, { force: true, maxRetries: 5, retryDelay: 100 });
+  // A held one is waited for as a write is (the review of beta.28.5: a plain rm threw the
+  // system's EBUSY and ended a run over forty repos).
+  if (!lines.length) await removeHeld(rejectedFile);
+  // The temporary files an earlier run left for this repo (a write whose file was held, a
+  // process that was killed), once they are old.
+  await sweepStaleTmp(dir, `${repo}.`);
   const summary: VerifySummary = {
     repo,
     ...(commit ? { commit } : {}),

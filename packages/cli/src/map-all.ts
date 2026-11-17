@@ -21,6 +21,8 @@ import {
 import {
   CancelledError,
   ensureLocalIgnore,
+  isFileSystemError,
+  setHeldWaitSignal,
   factsDirOf,
   factsRelOf,
   headFromFiles,
@@ -1254,6 +1256,21 @@ export async function mapAllCommand(
   io: Output,
   deps: MapAllDeps = {},
 ): Promise<number> {
+  // Beta.28.5 (the review): Ctrl+C ends a wait for a file another program holds.
+  setHeldWaitSignal(deps.signal);
+  try {
+    return await mapAllRun(root, o, io, deps);
+  } finally {
+    setHeldWaitSignal(undefined);
+  }
+}
+
+async function mapAllRun(
+  root: string,
+  o: MapAllOptions,
+  io: Output,
+  deps: MapAllDeps,
+): Promise<number> {
   if (!isMetarepo(root)) {
     io.err(notMetarepo(root));
     return 2;
@@ -1635,6 +1652,8 @@ export async function mapAllCommand(
           stoppedAt = i;
           break;
         }
+        // The review: only an error of the file system's; a bug is thrown, as before.
+        if (!isFileSystemError(e)) throw e;
         notApplied.push(repo);
         io.out(
           `${repo}: not applied: ${firstLine(e)} Apply it once that is put right: atticus verify ${repo} --write`,

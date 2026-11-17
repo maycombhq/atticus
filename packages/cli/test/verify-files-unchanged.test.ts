@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FileHeldError, fsHooks } from "@maycombhq/core";
+import { FileHeldError, forgetHeld, fsHooks } from "@maycombhq/core";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -46,6 +46,7 @@ function old(path: string): number {
 
 afterEach(() => {
   for (const k of Object.keys(fsHooks)) delete (fsHooks as Record<string, unknown>)[k];
+  forgetHeld();
 });
 
 describe("verify leaves the rejected file alone when its lines are the ones to write", () => {
@@ -140,5 +141,98 @@ describe("a run over several repos goes on past a repo whose file is held (beta.
       `forge-ledger: not verified: ${at(root, "forge-ledger.verify.yaml")} is open in another program (an editor, an assistant's session or a virus scan) or can't be written, and it stayed so for 45 s. Nothing was lost: the file is as it was. Close it there, then run the command again. Run it once that is put right: atticus verify forge-ledger`,
     ]);
     expect(out.at(-1)).toBe("Verified 3 repos: 2 passed, 1 with something to fix (forge-ledger).");
+  });
+
+  // The review of beta.28.5: the old rejected file was removed with a plain rm, which threw
+  // the system's EBUSY when the file was held and ended the run as the rename had.
+  it("a rejected file that can't be removed is that repo's, said, and the others are verified", async () => {
+    const root = adoptedRepo(good);
+    writeFileSync(at(root, "forge-zeta.jsonl"), readFileSync(at(root, "forge-ledger.jsonl")));
+    // An earlier run's, which this run (nothing rejected) removes.
+    writeFileSync(at(root, "forge-ledger.rejected.jsonl"), "an older run's\n");
+    fsHooks.platform = "win32";
+    fsHooks.sleep = async () => undefined;
+    fsHooks.say = () => undefined;
+    fsHooks.remove = async (p) => {
+      if (p.endsWith("forge-ledger.rejected.jsonl"))
+        throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${p}'`), {
+          code: "EBUSY",
+          syscall: "unlink",
+        });
+    };
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await verifyAllCommand(
+      root,
+      { commit: "0123abc" },
+      { out: (l) => out.push(l), err: (l) => err.push(l), progress: () => undefined },
+    );
+    expect(code).toBe(1);
+    expect(err).toHaveLength(1);
+    expect(err[0]).toContain(
+      `forge-ledger: not verified: ${at(root, "forge-ledger.rejected.jsonl")} is open in another program`,
+    );
+    expect(err[0]).not.toMatch(/EBUSY|unlink/);
+    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 with something to fix (forge-ledger).");
+  });
+
+  it("an error that is no file system's (a bug) ends the run as before: it is not said as a repo not verified", async () => {
+    const root = adoptedRepo(good);
+    writeFileSync(at(root, "forge-zeta.jsonl"), readFileSync(at(root, "forge-ledger.jsonl")));
+    fsHooks.rename = async () => {
+      throw new TypeError("x is not a function");
+    };
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const err: string[] = [];
+    await expect(
+      verifyAllCommand(
+        root,
+        { commit: "0123abc" },
+        { out: () => undefined, err: (l) => err.push(l), progress: () => undefined },
+      ),
+    ).rejects.toThrow("x is not a function");
+    expect(err).toEqual([]);
+  });
+
+  it("a system's error of a file (no room on the disk) is that repo's too, with the system's words", async () => {
+    const root = adoptedRepo(good);
+    writeFileSync(at(root, "forge-zeta.jsonl"), readFileSync(at(root, "forge-ledger.jsonl")));
+    fsHooks.rename = async (from, to) => {
+      if (to.endsWith("forge-ledger.verify.yaml"))
+        throw Object.assign(new Error("ENOSPC: no space left on device, rename"), {
+          code: "ENOSPC",
+          syscall: "rename",
+        });
+      const { rename } = await import("node:fs/promises");
+      await rename(from, to);
+    };
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await verifyAllCommand(
+      root,
+      { commit: "0123abc" },
+      { out: (l) => out.push(l), err: (l) => err.push(l), progress: () => undefined },
+    );
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      "forge-ledger: not verified: ENOSPC: no space left on device, rename Run it once that is put right: atticus verify forge-ledger",
+    ]);
+    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 with something to fix (forge-ledger).");
+  });
+
+  it("verify sweeps the temporary files an earlier run left for the repo in the facts folder", async () => {
+    const root = adoptedRepo(good);
+    const left = at(root, "forge-ledger.rejected.jsonl.4242.0a1b2c3d.tmp");
+    const others = at(root, "forge-zeta.rejected.jsonl.4242.0a1b2c3d.tmp");
+    writeFileSync(left, "x");
+    writeFileSync(others, "x");
+    old(left);
+    old(others);
+    expect(await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, quiet)).toBe(0);
+    const names = readdirSync(join(root, ".atticus", "facts"));
+    expect(names).not.toContain("forge-ledger.rejected.jsonl.4242.0a1b2c3d.tmp");
+    expect(names).toContain("forge-zeta.rejected.jsonl.4242.0a1b2c3d.tmp");
   });
 });

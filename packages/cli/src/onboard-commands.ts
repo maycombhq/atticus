@@ -192,7 +192,7 @@ export async function onboardAccept(
     return 1;
   }
   await mkdir(join(orgPackDirOf(root), "dialects"), { recursive: true });
-  await renameRetrying(from, to);
+  await renameRetrying(from, to, { quick: true });
   const types = parsed.data.appliesTo.repoTypes;
   io.out(
     `Accepted: org-pack/dialects/${name}.yaml. ${
@@ -539,7 +539,7 @@ export async function onboardFrameworkAccept(
     return 1;
   }
   await mkdir(join(orgPackDirOf(root), "frameworks"), { recursive: true });
-  await renameRetrying(from, to);
+  await renameRetrying(from, to, { quick: true });
   io.out(
     `Accepted: org-pack/frameworks/${name}.yaml. Scans read every repo that imports ${model.packages.join(", ")} through it. Commit the org pack for review, as with any change to it.`,
   );

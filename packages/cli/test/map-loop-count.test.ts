@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import type { AcpSessionResult } from "@maycombhq/ai";
-import { fsHooks } from "@maycombhq/core";
+import { forgetHeld, fsHooks } from "@maycombhq/core";
 import { buildPhases } from "@maycombhq/scanner";
 import type { AcpStep, AcpStepRunner } from "../src/copilot-acp-steps.js";
 import { mapAllCommand, type MapAllPlan } from "../src/map-all.js";
@@ -47,6 +47,7 @@ afterEach(() => {
   delete writeFactsHooks.onWrite;
   buildPhases.on = undefined;
   for (const k of Object.keys(fsHooks)) delete (fsHooks as Record<string, unknown>)[k];
+  forgetHeld();
 });
 
 const write = (root: string, path: string, text: string) => {
@@ -375,5 +376,17 @@ describe("the estate join after a map (beta.28.5)", () => {
       "Stopped after 1 of 2 repos of the join. Not applied: forge-notify. atticus verify --all --write joins the rest.",
     );
     expect(r.text).not.toContain("Verified 2 repos");
+  }, 120_000);
+
+  // The review of beta.28.5: only a file system's error is a repo not applied; a bug is thrown.
+  it("an error that is no file system's ends the run, as before: it is never said as a repo not applied", async () => {
+    const { root, head } = estate({ notify: true });
+    const item = await planOf(root);
+    const s = wholeRead(root, head, item.parts);
+    let applies = 0;
+    writeFactsHooks.onWrite = () => {
+      if (++applies > s.seen.length) throw new TypeError("x is not a function");
+    };
+    await expect(run(root, s.runner)).rejects.toThrow("x is not a function");
   }, 120_000);
 });
