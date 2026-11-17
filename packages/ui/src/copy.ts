@@ -21,6 +21,12 @@ const CANARY_WHAT: Record<string, string> = {
 };
 
 /** ADR 0199: how a pairing is undone, and what the Apply offered under a pairing does. */
+/** What a declared link says the system does: the radio buttons' words, and where copy names one. */
+const DECLARE_KINDS = {
+  publishes: "Publishes to a topic or queue",
+  listens: "Listens on a topic or queue",
+  call: "Calls a gateway route",
+} as Record<string, string>;
 const COPY_UNDO = (from: string) =>
   `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
 const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
@@ -5723,11 +5729,7 @@ export const COPY = {
     intro:
       "Your word, written to the profile with your name and the date for review: drawn dashed, never passed off as read from code. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side.",
     kind: "What it does",
-    kinds: {
-      publishes: "Publishes to a topic or queue",
-      listens: "Listens on a topic or queue",
-      call: "Calls a gateway route",
-    } as Record<string, string>,
+    kinds: DECLARE_KINDS,
     topic: "Topic or queue, as the code names it",
     route: "Route, as METHOD /path (or the handler proxy/flow)",
     preview: "Preview",
@@ -5743,6 +5745,73 @@ export const COPY = {
       `No profile has ${system} as a System yet, so writing this adds it to ${file} first (a person's word, for review), then declares the link on it.`,
     created: (system: string, file: string) =>
       `Added ${system} as a System in ${file} first, then declared the link on it.`,
+    /**
+     * ADR 0200 (a field report on beta.28.4): a line drawn from an outside system to a repo
+     * opens this panel with the system as the caller, as it was drawn, and the repo's gateway
+     * routes listed to pick from.
+     */
+    ends: (system: string, to: string) => `From ${system} to ${to}`,
+    callIntro: (system: string) =>
+      `Pick the gateway and the routes ${system} calls: each route is one line in the profile. After Apply the arrow is drawn dashed from ${system} to what the route forwards to (the service behind the gateway), or to the gateway's own box where its forwarding isn't read.`,
+    gateway: "The gateway it calls",
+    gatewayNone: "Pick a gateway",
+    gatewayOption: (repo: string, n: number) =>
+      `${repo} (${n === 1 ? "one route" : `${n} routes`})`,
+    notGatewayOption: (repo: string) => `${repo} (no gateway route)`,
+    noGateways:
+      "No repo read so far has a gateway route, so there is none to pick from. Read the gateway's repo first (Add to the picture…), or type the route below if you know it.",
+    routesLoading: "Reading the routes…",
+    routesFailed: (why: string) => `The routes couldn't be read: ${why}`,
+    again: "Try again",
+    routesOf: (repo: string, n: number) =>
+      `Routes of ${repo} (${n === 1 ? "one" : n}): tick each one it calls`,
+    findRoute: "Find a route by method, path or handler",
+    noMatch: (q: string) => `No route of this gateway matches "${q}".`,
+    shown: (shown: number, all: number) => `${shown} of ${all} shown`,
+    pickShown: (n: number) => (n === 1 ? "Tick the one shown" : `Tick the ${n} shown`),
+    unpickAll: "Untick all",
+    handler: (h: string) => `handler ${h}`,
+    declaredAlready: "declared already",
+    declaredList: (system: string, n: number) =>
+      `Declared already (${n}), not offered again: undo one under Corrections and declarations on ${system}'s box.`,
+    allDeclared: (system: string, repo: string) =>
+      `${system} is declared to call every route of ${repo} already.`,
+    also: (repos: readonly string[]) =>
+      `the same words name a route of ${repos.join(", ")} too, so the declaration lands there as well`,
+    notGateway: (repo: string) =>
+      `Declaring who calls an entry of ${repo} isn't supported yet: only a gateway's routes can be declared.`,
+    notGatewayEntries: (repo: string, n: number) =>
+      n === 0
+        ? `${repo} has no entry on record.`
+        : `${repo} has ${n === 1 ? "one entry" : `${n} entries`} on record, ${n === 1 ? "and it is no" : "none of them a"} gateway route.`,
+    notGatewayDo: (system: string, repo: string, gateways: boolean) =>
+      `What works today: ${gateways ? `if ${system} reaches ${repo} through a gateway, pick that gateway above and the route it calls; ` : ""}if ${repo} calls ${system}, draw the line the other way, from ${repo} to ${system}, to pair ${repo}'s calls with ${system}'s spec; if ${system} sends ${repo} messages, choose "${DECLARE_KINDS.publishes}" above.`,
+    /**
+     * The review of ADR 0200: a repo whose type reads like a gateway's (Connect calls its
+     * entries routes) and that the join doesn't take for one. Why, and the step that works.
+     */
+    looksLikeGateway: (repo: string, type: string, manifest: string) =>
+      `${repo}'s type is ${type} in ${manifest}. Its entries count as gateway routes only when its type is gateway (or gateway-internal, gateway-external), or when they are read from a proxy bundle folder.`,
+    looksLikeGatewayDo: (repo: string, manifest: string, entries: number) =>
+      `If ${repo} is a gateway, set type: gateway for it in ${manifest}, then draw the line again: its ${entries === 1 ? "one entry is" : `${entries} entries are`} then listed as routes to tick. It is read by the gateway type's reading rules from then on.`,
+    /** A system only the code names: no profile has it, so nothing can be declared of it yet. */
+    noProfile: (label: string, id: string) =>
+      `${label} is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id ${id}, then draw the line again.`,
+    /** Several routes of one gateway that the same words name: one row, one declaration. */
+    sameWords: (n: number) =>
+      `${n} routes of this gateway are served on these words: one declaration is for all of them`,
+    notRead: {
+      "not-read": (repo: string) =>
+        `${repo} has nothing on record yet, so its routes can't be listed. Read it first:`,
+      unverified: (repo: string) =>
+        `${repo}'s facts are read but not all verified, so its routes aren't listed yet. Verify them first:`,
+    } as Record<string, (repo: string) => string>,
+    typed: "A route that isn't listed? Type it",
+    picked: (n: number) =>
+      n === 0 ? "No route ticked yet." : n === 1 ? "One route ticked." : `${n} routes ticked.`,
+    confirmN: (n: number) => (n <= 1 ? "Write it" : `Write ${n} declarations`),
+    pickFirst: "Tick a route, or type one, to preview and write it.",
+    emptyRoutes: "Tick a route, or type one, first.",
   },
   corrections: {
     title: "Corrections and declarations",
@@ -5844,7 +5913,14 @@ export const COPY = {
     /** The two ends of the line, as a screen reader says them (the panel draws from → to). */
     ends: (from: string, to: string) => `From ${from} to ${to}`,
     dropNeedsRepo:
-      "A line connects a repo's calls to another box: start or end it on a repo, a component in one, or a system that holds one repo. A system with several repos: open it (double-click) and draw from the repo. Two outside systems can't be connected here: declare the link on the system's box instead.",
+      "A line is drawn from the caller to what it calls, between repos, components and systems: start it on a repo, a component in one, a system that holds one repo, or an outside system, and end it on another. Nothing was connected.",
+    /** ADR 0200: each line that connects nothing says why, by the boxes' names, and what to do. */
+    dropSeveral: (system: string) =>
+      `${system} holds several repos, so the line can't say which one is meant. Open ${system} (double-click it) and draw the line to or from the repo inside.`,
+    dropNoRepo: (system: string) =>
+      `${system} is a system of the estate with no repo on the map yet, so there is no call or API of it to connect. Add its repo with Add to the picture…, then draw the line to or from the repo.`,
+    dropTwoOutside: (a: string, b: string) =>
+      `Neither ${a} nor ${b} has code in the estate, so there is no call to pair and no gateway route to declare between them. To say what ${a} does that the code can't show, pick ${a} and choose Declare a link….`,
     dropSameRepo:
       "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
     intro:
@@ -5882,6 +5958,20 @@ export const COPY = {
      */
     noLoose: (where: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
+    /**
+     * ADR 0200 (a field report on beta.28.4, "Write 0 pairs"): every call has an arrow and the
+     * other box has no API on record, so there is nothing to move a call to either.
+     */
+    noLooseNoApis: (where: string, to: string) =>
+      `Every call of this repo has an arrow already (${where}): nothing is loose, and ${to} has no API on record to move one to.`,
+    /** Loose calls, and no API of the other box to pair them with. */
+    looseNoApis: (n: number, from: string, to: string) =>
+      `${n === 1 ? `One call of ${from} has` : `${n} calls of ${from} have`} no arrow, and ${to} has no API on record to pair ${n === 1 ? "it" : "them"} with yet.`,
+    /** The other box is an outside system and nothing can be paired: the other direction. */
+    systemCallsRepo: (system: string, repo: string) =>
+      `If ${system} calls ${repo}, drag the line from ${system} to ${repo}, or pick ${system} and choose Declare a link…: that says who calls a gateway route, and needs no spec.`,
+    /** Why the write button is off while nothing is ticked: never a button that writes nothing. */
+    pickFirst: "Tick a call and pick its API to preview and write the pair.",
     /**
      * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the
      * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's
@@ -6070,7 +6160,10 @@ export const COPY = {
     confirm: (n: number, rule: boolean) =>
       n === 0 && rule
         ? "Answer for all its calls"
-        : `${n === 1 ? "Write the pair" : `Write ${n} pairs`}${rule ? " and answer for all" : ""}`,
+        : n === 0
+          ? // ADR 0200: never a count of none ("Write 0 pairs"); the button is off, with why.
+            "Write the pairs"
+          : `${n === 1 ? "Write the pair" : `Write ${n} pairs`}${rule ? " and answer for all" : ""}`,
     writing: "Writing…",
     written: (n: number, file: string) =>
       n === 0 ? "No pair written." : `${n === 1 ? "One pair" : `${n} pairs`} written to ${file}.`,

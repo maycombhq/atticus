@@ -4,6 +4,8 @@ import {
   addProfileSystem,
   Api,
   cmpText,
+  declarableGateways,
+  declarableRoutes,
   declaredOf,
   declareLink,
   DeclareError,
@@ -11,14 +13,17 @@ import {
   factsDirOf,
   factsRelOf,
   FileChangedError,
+  joinConventions,
   loadOrgPack,
   orgPackDirOf,
+  orgPackRelOf,
   parseCorrections,
   undeclareLink,
+  type Declared,
   type FactCorrection,
   type OrgPack,
 } from "@maycombhq/core";
-import { estateFacts, estateRepos, targetPicker } from "@maycombhq/scanner";
+import { estateFacts, estateRepos, joinReposOf, targetPicker } from "@maycombhq/scanner";
 import {
   badRequest,
   conflict,
@@ -29,6 +34,7 @@ import {
 } from "@maycombhq/server";
 import { safeMessage } from "./file-lock.js";
 import { readRepos } from "./target-answer.js";
+import { looksLikeGatewayType } from "./ui-api-links.js";
 
 /**
  * G3 (ADR 0174): add a box, declare a link the code can't show, and every box's corrections with
@@ -217,6 +223,9 @@ export function uiDeclaredRoutes(
           "Say the system and the topic with its side (publishes or listens), or the route it calls.",
           { errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })) },
         );
+      // ADR 0200: one route (`route`) or several (`routes`), never neither and never both.
+      if (b.data.kind === "call" && (b.data.route === undefined) === (b.data.routes === undefined))
+        throw badRequest("Say the route it calls (route), or the routes (routes): one of the two.");
       const op = await loadOrgPack(orgPackDirOf(ctx.root));
       // G4: a repo's id names the system its box is drawn as.
       b.data.system = boxSystemOf(op, b.data.system);
@@ -227,7 +236,13 @@ export function uiDeclaredRoutes(
           `${b.data.system}'s repos are in the manifest: their code says what it publishes and listens on. Read them (atticus map) rather than declaring it.`,
         );
       try {
-        const { preview, ...d } = b.data;
+        const { preview, ...asked } = b.data;
+        const d: Declared =
+          asked.kind === "topic"
+            ? asked
+            : asked.routes
+              ? { kind: "call", system: asked.system, routes: asked.routes }
+              : { kind: "call", system: asked.system, route: asked.route! };
         const create = systemToCreate(op, d.system);
         const res = await declareLink(ctx.root, d, {
           by: ctx.user,
@@ -236,7 +251,16 @@ export function uiDeclaredRoutes(
           ...(create ? { create } : {}),
         });
         if (res.written) ctx.events.publish({ type: "file.changed", path: res.rel });
-        const what = d.kind === "topic" ? `${d.side} ${d.topic}` : `calls ${d.route}`;
+        const many =
+          d.kind === "call" && "routes" in d ? new Set(d.routes.map((x) => x.trim())) : undefined;
+        const what =
+          d.kind === "topic"
+            ? `${d.side} ${d.topic}`
+            : many
+              ? many.size === 1
+                ? `calls ${[...many][0]}`
+                : `calls ${many.size} gateway routes`
+              : `calls ${"route" in d ? d.route : ""}`;
         return {
           status: 200,
           body: {
@@ -250,6 +274,70 @@ export function uiDeclaredRoutes(
       } catch (e) {
         return fail(e);
       }
+    })
+    .add("GET", "/api/declared-links/routes", async ({ query }) => {
+      // ADR 0200: what a system can be declared to call, listed to pick from. A declared call
+      // lands only on a gateway route, so the routes come from the join's own rule for one (a
+      // gateway repo's entries, any repo's under a proxy bundle folder), never a looser guess.
+      const asked = query.get("system");
+      const repo = query.get("repo");
+      if (!asked) throw badRequest("Say system=<id>, and repo=<repo> for its routes.");
+      const op = await loadOrgPack(orgPackDirOf(ctx.root));
+      const system = boxSystemOf(op, asked);
+      const known = repo === null ? undefined : estateRepos(op).find((r) => r.id === repo);
+      if (repo !== null && !known) throw notFound(`No repo of the manifest is ${repo}.`);
+      // A system only the code names is in no profile, and no repo's box either: its
+      // declaration would be refused, so the panel is told before anything is ticked.
+      const inProfile =
+        op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === system)) ||
+        !!systemToCreate(op, system);
+      const estate = await estateFacts(ctx.root, op, "");
+      const input = {
+        repos: joinReposOf(op, estate.repos),
+        bundleFolders: joinConventions(op).bundleFolders,
+      };
+      const declared = (await declaredOf(ctx.root, system)).list
+        .filter((x) => x.kind === "call")
+        .map((x) => x.value);
+      const t = repo ? declarableRoutes({ ...input, repo, declared }) : undefined;
+      return {
+        status: 200,
+        body: {
+          system,
+          inProfile,
+          gateways: declarableGateways(input),
+          ...(repo && t
+            ? {
+                target: {
+                  repo,
+                  gateway: t.gateway,
+                  routes: t.routes,
+                  entries: t.entries,
+                  ...(known?.type ? { type: known.type } : {}),
+                  ...(known
+                    ? {
+                        manifest: `${orgPackRelOf(ctx.root)}/profiles/${known.platform}/repos.manifest.yaml`,
+                      }
+                    : {}),
+                  // Connect would call its entries routes; the join doesn't. Said, with the fix.
+                  ...(!t.gateway && looksLikeGatewayType(known?.type)
+                    ? { looksLikeGateway: true }
+                    : {}),
+                  ...(estate.repos.some((r) => r.repo === repo)
+                    ? {}
+                    : {
+                        notRead: estate.unverified.includes(repo)
+                          ? { why: "unverified" as const, command: `atticus verify ${repo}` }
+                          : {
+                              why: "not-read" as const,
+                              command: `atticus map --all --repos ${repo}`,
+                            },
+                      }),
+                },
+              }
+            : {}),
+        } satisfies Api.DeclarableRoutesViewT,
+      };
     })
     .add("POST", "/api/declared-links/undo", async ({ body }) => {
       const b = Api.UndeclareLinkRequest.safeParse(body ?? {});

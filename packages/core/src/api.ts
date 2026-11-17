@@ -678,8 +678,21 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   and on other boxes' rows `pairedWith`), an AI pairing a person's answer outranks says that
  *   (`onward: outranked`), and the view says when no catalog is built yet (`noCatalog`).
  *   Additive only.
+ * 3.17.0 (ADR 0200, a field report on beta.28.4: a line drawn from another team's system to a
+ *   gateway proxy was turned round): GET /api/declared-links/routes lists what a system can be
+ *   declared to call: the repos that have gateway routes (`gateways`) and, with `repo`, that
+ *   repo's routes to pick from (`target`: each with its method, path, handler, the line it was
+ *   read from, the words that declare it, whether the system declared it already, and any other
+ *   repo the same words land on), or that it has none (`gateway: false`, with its entries
+ *   counted, its manifest `type`, and `looksLikeGateway` when that type reads like a gateway's
+ *   but isn't one the join takes): a declared call lands only on a gateway route. `inProfile`
+ *   is false for a system only the code names, whose declaration would be refused. POST /api/declared-links, for
+ *   `kind: call`, takes `routes` (1 to 200) in place of `route`: each is one line of the
+ *   profile, written once, in a fixed order (sorted) whatever order they come in, in one write;
+ *   409 and nothing written when the profile has one already; 400 with neither or both. A
+ *   request with `route` answers as before. Additive only.
  */
-export const API_VERSION = "3.16.0";
+export const API_VERSION = "3.17.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -6017,10 +6030,71 @@ export const DeclareLinkRequest = z.discriminatedUnion("kind", [
     kind: z.literal("call"),
     system: z.string().min(1),
     /** `METHOD /path` as the gateway serves it, or the route's handler `proxy/flow`. */
-    route: z.string().min(1).max(300),
+    route: z.string().min(1).max(300).optional(),
+    /**
+     * 3.17 (ADR 0200): several routes in place of `route`, as GET /api/declared-links/routes
+     * says them (`say`): one line each, written once, sorted, in one write.
+     */
+    routes: z.array(z.string().min(1).max(300)).min(1).max(200).optional(),
     preview: z.boolean().optional(),
   }),
 ]);
+/** 3.17 (ADR 0200): a gateway route a system can be declared to call. */
+export const DeclarableRouteView = z.object({
+  /** The route's entry fact. */
+  id: z.string(),
+  method: z.string().optional(),
+  path: z.string(),
+  /** The handler or proxy flow that serves it, where the facts name one. */
+  handler: z.string().optional(),
+  /** path:line of the line it was read from. */
+  at: z.string(),
+  /** The words that declare it: what to send as a `routes` item. */
+  say: z.string(),
+  /** The system declared it already. */
+  declared: z.boolean().optional(),
+  /** The other repos whose route the same words name: the declaration lands there too. */
+  also: z.array(z.string()).optional(),
+});
+/**
+ * 3.17 (ADR 0200): what a system can be declared to call. `gateways`: the repos that have
+ * gateway routes. `target`: the repo asked about, its routes by path then method, or
+ * `gateway: false` for a repo with none (a declared call lands only on a gateway route).
+ */
+export const DeclarableRoutesView = z.object({
+  /** The system the box is (a repo's id is the system its box is drawn as). */
+  system: z.string(),
+  /**
+   * A profile has the system, or the write adds it first (a repo's own box, 3.14 `created`).
+   * False for a system only the code names: a declaration from it is refused (404) until a
+   * system of that id is added to a profile (POST /api/boxes).
+   */
+  inProfile: z.boolean(),
+  gateways: z.array(z.object({ repo: z.string(), routes: z.number().int().min(0) })),
+  target: z
+    .object({
+      repo: z.string(),
+      gateway: z.boolean(),
+      routes: z.array(DeclarableRouteView),
+      /** How many entries the repo has on record, routes or not. */
+      entries: z.number().int().min(0),
+      /** The repo's type as its manifest says it, and the manifest's file. */
+      type: z.string().optional(),
+      manifest: z.string().optional(),
+      /**
+       * `gateway` is false, and the repo's type reads like a gateway's (as GET
+       * /api/links/candidates tells a route): the join takes only the type `gateway` (or
+       * `gateway-…`) or a proxy bundle folder, so setting the type to `gateway` in `manifest`
+       * makes its entries routes.
+       */
+      looksLikeGateway: z.boolean().optional(),
+      /** Nothing of the repo is on record: why, and the step that reads it. */
+      notRead: z
+        .object({ why: z.enum(["not-read", "unverified"]), command: z.string() })
+        .optional(),
+    })
+    .optional(),
+});
 export const FileChangeResult = z.object({
   written: z.boolean(),
   files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
@@ -6189,6 +6263,8 @@ export const RuleFromPairingResult = z.object({
 export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
+export type DeclarableRouteViewT = z.infer<typeof DeclarableRouteView>;
+export type DeclarableRoutesViewT = z.infer<typeof DeclarableRoutesView>;
 export type SketchStrokeRequestT = z.infer<typeof SketchStrokeRequest>;
 export type SketchResultT = z.infer<typeof SketchResult>;
 export type AddableViewT = z.infer<typeof AddableView>;
@@ -8917,6 +8993,20 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409, 422],
     },
   },
+  "/api/declared-links/routes": {
+    get: {
+      id: "getDeclarableRoutes",
+      summary:
+        "3.17.0 (ADR 0200): what a system can be declared to call: the repos that have gateway routes and, with `repo`, that repo's routes to pick from, or that it has none (a declared call lands only on a gateway route)",
+      tag: "workspace",
+      params: [
+        q("system", str, "A system of the profiles, or the repo whose box it is drawn as"),
+        q("repo", str, "A repo of the manifest: its routes are listed"),
+      ],
+      ok: { status: 200, schema: "DeclarableRoutesView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/declared-links/undo": {
     post: {
       id: "undeclareLink",
@@ -10057,6 +10147,7 @@ export function openApiDocument(): Record<string, unknown> {
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,
+    DeclarableRoutesView,
     SketchStrokeRequest,
     SketchResult,
     AddableView,

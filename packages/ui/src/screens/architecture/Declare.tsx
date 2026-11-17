@@ -1,7 +1,9 @@
 import { useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
-import { ReadRepo, WrittenNext } from "../../app/app-step.js";
+import { appStep, ReadRepo, WrittenNext } from "../../app/app-step.js";
+import { Command } from "../work/RunNext.js";
+import { CopyButton } from "../run/shared.js";
 import { COPY } from "../../copy.js";
 import { usePopupFocus } from "./popup.js";
 import { AiChip } from "../../app/decisions.js";
@@ -57,28 +59,109 @@ export function RemovedNote(p: { removed?: Api.FileChangeResultT["removed"] }) {
   );
 }
 
-/** A request built from the form, or none when it lacks the topic or the route. */
+/**
+ * A request built from the form, or none when it lacks the topic or the route. ADR 0200: for a
+ * call, the routes ticked (and one typed, if any), sorted, each once; a typed route alone is
+ * sent as before.
+ */
 export function declareBody(
   system: string,
   kind: "publishes" | "listens" | "call",
   value: string,
+  picked: ReadonlySet<string> = new Set(),
 ): Api.DeclareLinkRequestT | undefined {
   const v = value.trim();
-  if (!v) return undefined;
-  return kind === "call"
-    ? { kind: "call", system, route: v }
-    : { kind: "topic", system, topic: v, side: kind };
+  if (kind !== "call") return v ? { kind: "topic", system, topic: v, side: kind } : undefined;
+  if (!picked.size) return v ? { kind: "call", system, route: v } : undefined;
+  const routes = [...new Set([...picked, ...(v ? [v] : [])])].sort((x, y) =>
+    x < y ? -1 : x > y ? 1 : 0,
+  );
+  return { kind: "call", system, routes };
+}
+
+/** ADR 0200: where the gateways are read from, and a repo's routes once one is picked. */
+export const routesPath = (system: string, repo: string | undefined): string =>
+  `/api/declared-links/routes?system=${encodeURIComponent(system)}${
+    repo ? `&repo=${encodeURIComponent(repo)}` : ""
+  }`;
+
+type RouteView = NonNullable<Api.DeclarableRoutesViewT["target"]>["routes"][number];
+
+/** A row of the list: the routes of the repo that one declaration names, together. */
+export interface RouteRow {
+  say: string;
+  method?: string;
+  path: string;
+  declared: boolean;
+  /** Each route the words name: its entry, its handler and the line it was read from. */
+  served: { id: string; handler?: string; at: string }[];
+  /** The other repos the words land on (never this one). */
+  also: string[];
+}
+
+/**
+ * The review of ADR 0200: the routes as rows, one per declaration. Two routes of one repo that
+ * the same words name (no handler tells them apart) are one row with both, so a tick is one
+ * line of the profile and the count is true.
+ */
+export function routeRows(routes: readonly RouteView[], repo: string): RouteRow[] {
+  const rows = new Map<string, RouteRow>();
+  for (const r of routes) {
+    const row = rows.get(r.say) ?? {
+      say: r.say,
+      ...(r.method ? { method: r.method } : {}),
+      path: r.path,
+      declared: false,
+      served: [],
+      also: [],
+    };
+    row.declared ||= r.declared === true;
+    row.served.push({ id: r.id, ...(r.handler ? { handler: r.handler } : {}), at: r.at });
+    row.also = [...new Set([...row.also, ...(r.also ?? [])])].filter((x) => x !== repo).sort();
+    rows.set(r.say, row);
+  }
+  return [...rows.values()];
+}
+
+/** A search box is offered past this many routes. */
+const SEARCH_FROM = 8;
+
+type RoutesRead = Loaded<Api.DeclarableRoutesViewT> & { reload?: () => void };
+
+/** A step that reads or verifies a repo: its button first, the command folded (ADR 0188). */
+function Step({ text }: { text: string }) {
+  if (appStep(text)) return <Command text={text} label={D.copy} scope="corrections" />;
+  return (
+    <div className="row" style={{ gap: 6 }}>
+      <code className="mono">{text}</code>
+      <CopyButton text={text} label={`${D.copy}: ${text}`} />
+    </div>
+  );
 }
 
 export function DeclarePanel(p: {
   system: string;
   label: string;
+  /**
+   * ADR 0200: the repo a line drawn from this system ended on. The panel opens with "Calls a
+   * gateway route" chosen and that repo's routes listed: the system is the caller, as drawn.
+   */
+  target?: string;
   onClose(): void;
   post?: (body: Api.DeclareLinkRequestT) => Promise<Api.FileChangeResultT>;
+  /** Tests pass their own read of the routes; the app asks the local API. */
+  routesOf?: (path: string | undefined) => RoutesRead;
 }) {
   const id = useId();
-  const [kind, setKind] = useState<"publishes" | "listens" | "call">("publishes");
+  const [kind, setKind] = useState<"publishes" | "listens" | "call">(
+    p.target ? "call" : "publishes",
+  );
   const [value, setValue] = useState("");
+  // ADR 0200: the gateway picked, the routes ticked (by the words that declare each) and the
+  // words the list is narrowed by.
+  const [repo, setRepo] = useState(p.target ?? "");
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [find, setFind] = useState("");
   const [busy, setBusy] = useState<"preview" | "write" | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [preview, setPreview] = useState<Api.FileChangeResultT | undefined>();
@@ -87,13 +170,43 @@ export function DeclarePanel(p: {
     p.post ??
     ((body: Api.DeclareLinkRequestT) =>
       api<Api.FileChangeResultT>("/api/declared-links", { method: "POST", body }));
+  // Read only once "Calls a gateway route" is the kind. The gateways stay listed while another
+  // one's routes are read (`view`: the same answer, asked again).
+  const path = kind === "call" ? routesPath(p.system, repo || undefined) : undefined;
+  const live = useApi<Api.DeclarableRoutesViewT>(p.routesOf ? undefined : path, {
+    view: `declarable:${p.system}`,
+  });
+  const read: RoutesRead = p.routesOf ? p.routesOf(path) : live;
+  const data = read.state === "ready" ? read.data : undefined;
+  // The answer for the repo picked, never another repo's shown as this one's.
+  const target = data?.target && data.target.repo === repo ? data.target : undefined;
+  const reading =
+    kind === "call" && (read.state === "loading" || (!!repo && read.state === "ready" && !target));
+  // A system only the code names: its declaration would be refused, so none is offered.
+  const noProfile = kind === "call" && data?.inProfile === false;
+  const rows = target?.gateway && !noProfile ? routeRows(target.routes, repo) : [];
+  const open = rows.filter((r) => !r.declared);
+  const done = rows.filter((r) => r.declared);
+  // The typed form stays open once the person opened it.
+  const [typedOpen, setTypedOpen] = useState(false);
+  const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (r: (typeof open)[number]) => {
+    const text =
+      `${r.method ?? ""} ${r.path} ${r.served.map((x) => x.handler ?? "").join(" ")}`.toLowerCase();
+    return words.every((w) => text.includes(w));
+  };
+  // What is ticked stays in sight, whatever the search says.
+  const shown = open.filter((r) => !words.length || picked.has(r.say) || matches(r));
+  const noMatch = words.length > 0 && !open.some(matches);
   // What the form says now: Write it writes only what was previewed, nothing changed since.
-  const asked = JSON.stringify(declareBody(p.system, kind, value) ?? null);
+  const body = declareBody(p.system, kind, value, picked);
+  const count = body?.kind === "call" && body.routes ? body.routes.length : 1;
+  const asked = JSON.stringify(body ?? null);
   const [previewed, setPreviewed] = useState<string | undefined>();
   const send = async (mode: "preview" | "write") => {
-    const b = declareBody(p.system, kind, value);
+    const b = body;
     if (!b) {
-      setError(D.empty);
+      setError(kind === "call" ? D.emptyRoutes : D.empty);
       return;
     }
     setBusy(mode);
@@ -107,6 +220,12 @@ export function DeclarePanel(p: {
       } else {
         setWritten(r);
         setPreview(undefined);
+        if (b.kind === "call") {
+          // Declared now: nothing stays ticked, and the list is read again to say so.
+          setPicked(new Set());
+          setValue("");
+          read.reload?.();
+        }
       }
     } catch (e) {
       setError(errorOf(e));
@@ -114,7 +233,18 @@ export function DeclarePanel(p: {
       setBusy(undefined);
     }
   };
+  const tick = (say: string, on: boolean) => {
+    setPicked((old) => {
+      const n = new Set(old);
+      if (on) n.add(say);
+      else n.delete(say);
+      return n;
+    });
+    setPreview(undefined);
+  };
   const head = usePopupFocus<HTMLHeadingElement>();
+  const gateways = data?.gateways ?? [];
+  const nothing = kind === "call" && !body && !noProfile;
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
       <div className="box-pop-head">
@@ -125,6 +255,19 @@ export function DeclarePanel(p: {
           {D.close}
         </button>
       </div>
+      {/* ADR 0200: the two ends of the line, as drawn: the system it started on is the caller. */}
+      {kind === "call" && repo && (
+        <p className="box-ends">
+          <span className="sr">{D.ends(p.label, repo)}</span>
+          <span aria-hidden="true" className="chip mono">
+            {p.label}
+          </span>
+          <span aria-hidden="true">→</span>
+          <span aria-hidden="true" className="chip mono">
+            {repo}
+          </span>
+        </p>
+      )}
       <p className="ev-say">{D.intro}</p>
       <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend className="hud">{D.kind}</legend>
@@ -136,6 +279,7 @@ export function DeclarePanel(p: {
               checked={kind === k}
               onChange={() => {
                 setKind(k);
+                setValue("");
                 setPreview(undefined);
               }}
             />
@@ -143,29 +287,265 @@ export function DeclarePanel(p: {
           </label>
         ))}
       </fieldset>
-      <label htmlFor={`${id}-v`} className="hud">
-        {kind === "call" ? D.route : D.topic}
-      </label>
-      <input
-        id={`${id}-v`}
-        className="field"
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          setPreview(undefined);
-        }}
-      />
+      {kind !== "call" && (
+        <>
+          <label htmlFor={`${id}-v`} className="hud">
+            {D.topic}
+          </label>
+          <input
+            id={`${id}-v`}
+            className="field"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setPreview(undefined);
+            }}
+          />
+        </>
+      )}
+      {kind === "call" && <p className="ev-say">{D.callIntro(p.label)}</p>}
+      {kind === "call" && read.state === "error" && (
+        <div className="stack">
+          <p role="alert" className="state error">
+            {D.routesFailed(read.error)}
+          </p>
+          {read.reload && (
+            <div className="box-btns">
+              <button type="button" className="btn" onClick={read.reload}>
+                {D.again}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {kind === "call" && data && (gateways.length > 0 || !!repo) && (
+        <>
+          <label htmlFor={`${id}-g`} className="hud">
+            {D.gateway}
+          </label>
+          <select
+            id={`${id}-g`}
+            className="field"
+            value={repo}
+            onChange={(e) => {
+              // Another gateway: what was ticked and typed for the first isn't carried over.
+              setRepo(e.target.value);
+              setPicked(new Set());
+              setFind("");
+              setPreview(undefined);
+            }}
+          >
+            <option value="">{D.gatewayNone}</option>
+            {gateways.map((g) => (
+              <option key={g.repo} value={g.repo}>
+                {D.gatewayOption(g.repo, g.routes)}
+              </option>
+            ))}
+            {/* The repo the line ended on, when it has no gateway route: named, never dropped. */}
+            {repo && !gateways.some((g) => g.repo === repo) && (
+              <option value={repo}>{D.notGatewayOption(repo)}</option>
+            )}
+          </select>
+        </>
+      )}
+      {kind === "call" && data && !gateways.length && !repo && (
+        <p className="ev-say">{D.noGateways}</p>
+      )}
+      {reading && (
+        <p role="status" aria-busy="true" className="ev-say">
+          {D.routesLoading}
+        </p>
+      )}
+      {kind === "call" && target?.notRead && (
+        <div className="stack">
+          <p className="ev-say">{D.notRead[target.notRead.why]!(repo)}</p>
+          <Step text={target.notRead.command} />
+        </div>
+      )}
+      {noProfile && (
+        <p className="ev-say" role="note">
+          {D.noProfile(p.label, data.system)}
+        </p>
+      )}
+      {kind === "call" &&
+        target &&
+        !target.gateway &&
+        !target.notRead &&
+        target.looksLikeGateway && (
+          // The review of ADR 0200: Connect calls this repo's entries routes; the join doesn't.
+          <div className="stack" role="note">
+            <p className="ev-say">
+              {D.looksLikeGateway(
+                repo,
+                target.type ?? "",
+                target.manifest ?? "repos.manifest.yaml",
+              )}
+            </p>
+            <p className="ev-say">
+              {D.looksLikeGatewayDo(repo, target.manifest ?? "repos.manifest.yaml", target.entries)}
+            </p>
+          </div>
+        )}
+      {kind === "call" &&
+        target &&
+        !target.gateway &&
+        !target.notRead &&
+        !target.looksLikeGateway && (
+          // The truth about what a declaration can name: a gateway's route, and nothing else yet.
+          <div className="stack" role="note">
+            <p className="ev-say">{D.notGateway(repo)}</p>
+            <p className="ev-say">{D.notGatewayEntries(repo, target.entries)}</p>
+            <p className="ev-say">{D.notGatewayDo(p.label, repo, gateways.length > 0)}</p>
+          </div>
+        )}
+      {kind === "call" && target?.gateway && open.length > 0 && (
+        <>
+          {open.length > SEARCH_FROM && (
+            <>
+              <label htmlFor={`${id}-f`} className="sr">
+                {D.findRoute}
+              </label>
+              <input
+                id={`${id}-f`}
+                className="field"
+                type="search"
+                placeholder={D.findRoute}
+                value={find}
+                onChange={(e) => setFind(e.target.value)}
+              />
+            </>
+          )}
+          <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <legend className="hud">{D.routesOf(repo, open.length)}</legend>
+            {words.length > 0 && (
+              <p className="hud box-sub">{D.shown(shown.length, open.length)}</p>
+            )}
+            {noMatch && (
+              <p className="ev-say" role="status">
+                {D.noMatch(find.trim())}
+              </p>
+            )}
+            <ul className="box-calls">
+              {shown.map((r) => (
+                <li key={r.say} className="box-call">
+                  <label
+                    className="box-call-head"
+                    title={`${r.method ?? ""} ${r.path}\n${r.served.map((x) => x.at).join("\n")}`.trim()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked.has(r.say)}
+                      onChange={(e) => tick(r.say, e.target.checked)}
+                    />
+                    <span className="box-call-what">
+                      <span className="box-path">
+                        {r.method && <span className="box-method">{r.method}</span>}
+                        <code className="mono">{r.path}</code>
+                      </span>
+                      {r.served.map((x) => (
+                        <span key={x.id} className="box-at mono">
+                          {x.handler ? `${D.handler(x.handler)} · ${x.at}` : x.at}
+                        </span>
+                      ))}
+                    </span>
+                  </label>
+                  {r.served.length > 1 && (
+                    <span className="box-why">{D.sameWords(r.served.length)}</span>
+                  )}
+                  {r.also.length > 0 && <span className="box-why">{D.also(r.also)}</span>}
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+          <div className="box-btns">
+            {shown.some((r) => !picked.has(r.say)) && (words.length > 0 || open.length > 1) && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setPicked((old) => new Set([...old, ...shown.map((r) => r.say)]));
+                  setPreview(undefined);
+                }}
+              >
+                {D.pickShown(shown.length)}
+              </button>
+            )}
+            {picked.size > 0 && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setPicked(new Set());
+                  setPreview(undefined);
+                }}
+              >
+                {D.unpickAll}
+              </button>
+            )}
+          </div>
+          <p className="hud" role="status">
+            {D.picked(picked.size)}
+          </p>
+        </>
+      )}
+      {kind === "call" && target?.gateway && !noProfile && !open.length && (
+        <p className="ev-say">{D.allDeclared(p.label, repo)}</p>
+      )}
+      {kind === "call" && done.length > 0 && (
+        <details className="stack">
+          <summary className="hud">{D.declaredList(p.label, done.length)}</summary>
+          <ul className="box-calls">
+            {done.map((r) => (
+              <li key={r.say} className="box-call">
+                <span className="box-path">
+                  {r.method && <span className="box-method">{r.method}</span>}
+                  <code className="mono">{r.path}</code>
+                </span>
+                <span className="chip dim">{D.declaredAlready}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {kind === "call" && (
+        // A route not read yet, or one the person knows by heart: typed, as before.
+        <details
+          className="stack"
+          open={typedOpen || !target?.gateway || value !== ""}
+          onToggle={(e) => setTypedOpen(e.currentTarget.open)}
+        >
+          <summary className="hud">{D.typed}</summary>
+          <label htmlFor={`${id}-v`} className="hud">
+            {D.route}
+          </label>
+          <input
+            id={`${id}-v`}
+            className="field"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setPreview(undefined);
+            }}
+          />
+        </details>
+      )}
       {error && (
         <p role="alert" className="state error">
           {error}
+        </p>
+      )}
+      {nothing && (
+        <p id={`${id}-why`} className="hud">
+          {D.pickFirst}
         </p>
       )}
       <div className="row" style={{ gap: 8 }}>
         <button
           type="button"
           className="btn"
-          disabled={!!busy}
+          disabled={!!busy || nothing || noProfile}
           aria-busy={busy === "preview"}
+          {...(nothing ? { "aria-describedby": `${id}-why` } : {})}
           onClick={() => void send("preview")}
         >
           {busy === "preview" ? D.previewing : D.preview}
@@ -173,10 +553,11 @@ export function DeclarePanel(p: {
         <button
           type="button"
           className="btn primary"
-          disabled={!!busy || !preview || previewed !== asked}
+          disabled={!!busy || noProfile || !preview || previewed !== asked}
+          {...(nothing ? { "aria-describedby": `${id}-why` } : {})}
           onClick={() => void send("write")}
         >
-          {busy === "write" ? D.writing : D.confirm}
+          {busy === "write" ? D.writing : D.confirmN(count)}
         </button>
       </div>
       {preview && previewed === asked && (
