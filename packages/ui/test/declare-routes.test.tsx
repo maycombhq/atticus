@@ -2,7 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { declareBody, DeclarePanel, routesPath } from "../src/screens/architecture/Declare.js";
+import {
+  declareBody,
+  DeclarePanel,
+  routeRows,
+  routesPath,
+} from "../src/screens/architecture/Declare.js";
 
 /**
  * ADR 0200 (a field report on 2.0.0-beta.28.4): a line drawn from an outside system to a repo
@@ -37,6 +42,7 @@ const many: Route[] = [
 ];
 const view = (target?: View["target"], gateways = [{ repo: "forge-edge", routes: 12 }]): View => ({
   system: "harbor-audit",
+  inProfile: true,
   gateways,
   ...(target ? { target } : {}),
 });
@@ -240,5 +246,110 @@ describe("Declare a link… on the outside system's own box", () => {
     expect(out).toMatch(/<label for="[^"]+" class="hud">Topic or queue/);
     expect(out).not.toContain(D.routesLoading);
     expect(out).not.toContain(D.ends("Harbor Audit", ""));
+  });
+});
+
+describe("a repo typed like a gateway that the join doesn't take for one (review of ADR 0200)", () => {
+  const kong: View["target"] = {
+    repo: "forge-edge-kong",
+    gateway: false,
+    routes: [],
+    entries: 3,
+    type: "api-gateway",
+    looksLikeGateway: true,
+    manifest: "org-pack/profiles/forge/repos.manifest.yaml",
+  };
+  it("says why its entries aren't routes and the step that makes them routes, not that it isn't supported", () => {
+    const out = panel({ state: "ready", data: view(kong) }, "forge-edge-kong");
+    expect(out).toContain(
+      "forge-edge-kong's type is api-gateway in org-pack/profiles/forge/repos.manifest.yaml. Its entries count as gateway routes only when its type is gateway (or gateway-internal, gateway-external), or when they are read from a proxy bundle folder.",
+    );
+    expect(out).toContain(
+      "If forge-edge-kong is a gateway, set type: gateway for it in org-pack/profiles/forge/repos.manifest.yaml, then draw the line again: its 3 entries are then listed as routes to tick. It is read by the gateway type's reading rules from then on.",
+    );
+    expect(out).not.toContain(D.notGateway("forge-edge-kong"));
+    expect(out).not.toContain('type="checkbox"');
+  });
+
+  it("keeps the plain words for an ordinary service", () => {
+    const out = panel(
+      {
+        state: "ready",
+        data: view({
+          ...kong,
+          repo: "forge-ledger",
+          type: "spring-boot",
+          looksLikeGateway: undefined,
+        }),
+      },
+      "forge-ledger",
+    );
+    expect(out).toContain(D.notGateway("forge-ledger"));
+    expect(out).not.toContain("set type: gateway");
+  });
+});
+
+describe("a system only the code names, in no profile (review of ADR 0200)", () => {
+  it("says so up front, with what adds it, and holds Preview and Write back", () => {
+    const out = un(
+      renderToStaticMarkup(
+        <DeclarePanel
+          system="model-provider"
+          label="model-provider"
+          target="forge-edge"
+          onClose={() => undefined}
+          routesOf={() => ({
+            state: "ready",
+            data: { ...view(edge()), system: "model-provider", inProfile: false },
+          })}
+        />,
+      ),
+    );
+    expect(out).toContain(
+      "model-provider is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id model-provider, then draw the line again.",
+    );
+    expect(out).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*>${D.preview}</button>`));
+    expect(out).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*>${D.confirm}</button>`));
+    // Nothing is offered to tick for a write that would be refused.
+    expect(out).not.toContain('type="checkbox"');
+    expect(out).not.toContain(D.pickFirst);
+    expect(out).not.toContain(D.allDeclared("model-provider", "forge-edge"));
+  });
+});
+
+describe("two routes of one repo the same words name (review of ADR 0200)", () => {
+  const twins = [
+    route(1, {
+      id: "entry.a",
+      handler: "edge/A",
+      at: "apiproxy/proxies/a.xml:4",
+      say: "GET /edge/x",
+      path: "/edge/x",
+      also: ["forge-edge"],
+    }),
+    route(2, {
+      id: "entry.b",
+      handler: "edge/B",
+      at: "apiproxy/proxies/b.xml:9",
+      say: "GET /edge/x",
+      path: "/edge/x",
+      also: ["forge-edge", "forge-edge-partner"],
+    }),
+    route(3),
+  ];
+  it("are one row with both handlers and lines, so the count is true", () => {
+    expect(routeRows(twins, "forge-edge").map((r) => [r.say, r.served.length, r.also])).toEqual([
+      ["GET /edge/x", 2, ["forge-edge-partner"]],
+      ["GET /edge/audit/v1/r3", 1, []],
+    ]);
+    const out = panel({ state: "ready", data: view(edge(twins)) });
+    expect(out).toContain(D.routesOf("forge-edge", 2));
+    expect(out.match(/<input type="checkbox"/g)).toHaveLength(2);
+    expect(out).toContain(`${D.handler("edge/A")} · apiproxy/proxies/a.xml:4`);
+    expect(out).toContain(`${D.handler("edge/B")} · apiproxy/proxies/b.xml:9`);
+    expect(out).toContain(D.sameWords(2));
+    // Its own repo isn't named as somewhere else the words land.
+    expect(out).toContain(D.also(["forge-edge-partner"]));
+    expect(out).not.toContain(D.also(["forge-edge"]));
   });
 });

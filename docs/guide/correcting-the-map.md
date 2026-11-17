@@ -34,7 +34,7 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 
 For **Calls a gateway route**, pick the gateway (the repos that have gateway routes), then tick the routes the system calls: each is listed with its method, path, handler and the line it was read from, and there is a search when a gateway has many. Several routes are previewed together and written in one go, one line each. A route declared already is marked and not offered again. A route not read yet can still be typed (`METHOD /path`, or the handler `proxy/flow`). After Apply the arrow is drawn dashed from the system to what the route forwards to (the service behind the gateway), or to the gateway's own box where its forwarding isn't read.
 
-Only a gateway's routes can be declared. For an ordinary service the panel says so ("Declaring who calls an entry of <repo> isn't supported yet"), with what works instead: the gateway in front of it, the line the other way for the repo's own calls, or a topic.
+Only a gateway's routes can be declared. For an ordinary service the panel says so ("Declaring who calls an entry of <repo> isn't supported yet"), with what works instead: the gateway in front of it, the line the other way for the repo's own calls, or a topic. A repo whose type only reads like a gateway's (`api-gateway`, say) is told apart: the panel names the manifest to set `type: gateway` in, after which its entries are listed as routes. A system that is on the map only because code names it is added to a profile first (**Add to the picture…**, with the same id).
 
 ## Corrections, and Undo
 

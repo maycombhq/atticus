@@ -85,6 +85,44 @@ export const routesPath = (system: string, repo: string | undefined): string =>
     repo ? `&repo=${encodeURIComponent(repo)}` : ""
   }`;
 
+type RouteView = NonNullable<Api.DeclarableRoutesViewT["target"]>["routes"][number];
+
+/** A row of the list: the routes of the repo that one declaration names, together. */
+export interface RouteRow {
+  say: string;
+  method?: string;
+  path: string;
+  declared: boolean;
+  /** Each route the words name: its entry, its handler and the line it was read from. */
+  served: { id: string; handler?: string; at: string }[];
+  /** The other repos the words land on (never this one). */
+  also: string[];
+}
+
+/**
+ * The review of ADR 0200: the routes as rows, one per declaration. Two routes of one repo that
+ * the same words name (no handler tells them apart) are one row with both, so a tick is one
+ * line of the profile and the count is true.
+ */
+export function routeRows(routes: readonly RouteView[], repo: string): RouteRow[] {
+  const rows = new Map<string, RouteRow>();
+  for (const r of routes) {
+    const row = rows.get(r.say) ?? {
+      say: r.say,
+      ...(r.method ? { method: r.method } : {}),
+      path: r.path,
+      declared: false,
+      served: [],
+      also: [],
+    };
+    row.declared ||= r.declared === true;
+    row.served.push({ id: r.id, ...(r.handler ? { handler: r.handler } : {}), at: r.at });
+    row.also = [...new Set([...row.also, ...(r.also ?? [])])].filter((x) => x !== repo).sort();
+    rows.set(r.say, row);
+  }
+  return [...rows.values()];
+}
+
 /** A search box is offered past this many routes. */
 const SEARCH_FROM = 8;
 
@@ -144,11 +182,17 @@ export function DeclarePanel(p: {
   const target = data?.target && data.target.repo === repo ? data.target : undefined;
   const reading =
     kind === "call" && (read.state === "loading" || (!!repo && read.state === "ready" && !target));
-  const open = target?.gateway ? target.routes.filter((r) => !r.declared) : [];
-  const done = target?.gateway ? target.routes.filter((r) => r.declared) : [];
+  // A system only the code names: its declaration would be refused, so none is offered.
+  const noProfile = kind === "call" && data?.inProfile === false;
+  const rows = target?.gateway && !noProfile ? routeRows(target.routes, repo) : [];
+  const open = rows.filter((r) => !r.declared);
+  const done = rows.filter((r) => r.declared);
+  // The typed form stays open once the person opened it.
+  const [typedOpen, setTypedOpen] = useState(false);
   const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (r: (typeof open)[number]) => {
-    const text = `${r.method ?? ""} ${r.path} ${r.handler ?? ""}`.toLowerCase();
+    const text =
+      `${r.method ?? ""} ${r.path} ${r.served.map((x) => x.handler ?? "").join(" ")}`.toLowerCase();
     return words.every((w) => text.includes(w));
   };
   // What is ticked stays in sight, whatever the search says.
@@ -200,7 +244,7 @@ export function DeclarePanel(p: {
   };
   const head = usePopupFocus<HTMLHeadingElement>();
   const gateways = data?.gateways ?? [];
-  const nothing = kind === "call" && !body;
+  const nothing = kind === "call" && !body && !noProfile;
   return (
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
       <div className="box-pop-head">
@@ -318,14 +362,42 @@ export function DeclarePanel(p: {
           <Step text={target.notRead.command} />
         </div>
       )}
-      {kind === "call" && target && !target.gateway && !target.notRead && (
-        // The truth about what a declaration can name: a gateway's route, and nothing else yet.
-        <div className="stack" role="note">
-          <p className="ev-say">{D.notGateway(repo)}</p>
-          <p className="ev-say">{D.notGatewayEntries(repo, target.entries)}</p>
-          <p className="ev-say">{D.notGatewayDo(p.label, repo, gateways.length > 0)}</p>
-        </div>
+      {noProfile && (
+        <p className="ev-say" role="note">
+          {D.noProfile(p.label, data.system)}
+        </p>
       )}
+      {kind === "call" &&
+        target &&
+        !target.gateway &&
+        !target.notRead &&
+        target.looksLikeGateway && (
+          // The review of ADR 0200: Connect calls this repo's entries routes; the join doesn't.
+          <div className="stack" role="note">
+            <p className="ev-say">
+              {D.looksLikeGateway(
+                repo,
+                target.type ?? "",
+                target.manifest ?? "repos.manifest.yaml",
+              )}
+            </p>
+            <p className="ev-say">
+              {D.looksLikeGatewayDo(repo, target.manifest ?? "repos.manifest.yaml", target.entries)}
+            </p>
+          </div>
+        )}
+      {kind === "call" &&
+        target &&
+        !target.gateway &&
+        !target.notRead &&
+        !target.looksLikeGateway && (
+          // The truth about what a declaration can name: a gateway's route, and nothing else yet.
+          <div className="stack" role="note">
+            <p className="ev-say">{D.notGateway(repo)}</p>
+            <p className="ev-say">{D.notGatewayEntries(repo, target.entries)}</p>
+            <p className="ev-say">{D.notGatewayDo(p.label, repo, gateways.length > 0)}</p>
+          </div>
+        )}
       {kind === "call" && target?.gateway && open.length > 0 && (
         <>
           {open.length > SEARCH_FROM && (
@@ -355,10 +427,10 @@ export function DeclarePanel(p: {
             )}
             <ul className="box-calls">
               {shown.map((r) => (
-                <li key={r.id} className="box-call">
+                <li key={r.say} className="box-call">
                   <label
                     className="box-call-head"
-                    title={`${r.method ?? ""} ${r.path}\n${r.at}`.trim()}
+                    title={`${r.method ?? ""} ${r.path}\n${r.served.map((x) => x.at).join("\n")}`.trim()}
                   >
                     <input
                       type="checkbox"
@@ -370,12 +442,17 @@ export function DeclarePanel(p: {
                         {r.method && <span className="box-method">{r.method}</span>}
                         <code className="mono">{r.path}</code>
                       </span>
-                      <span className="box-at mono">
-                        {r.handler ? `${D.handler(r.handler)} · ${r.at}` : r.at}
-                      </span>
+                      {r.served.map((x) => (
+                        <span key={x.id} className="box-at mono">
+                          {x.handler ? `${D.handler(x.handler)} · ${x.at}` : x.at}
+                        </span>
+                      ))}
                     </span>
                   </label>
-                  {r.also?.length ? <span className="box-why">{D.also(r.also)}</span> : null}
+                  {r.served.length > 1 && (
+                    <span className="box-why">{D.sameWords(r.served.length)}</span>
+                  )}
+                  {r.also.length > 0 && <span className="box-why">{D.also(r.also)}</span>}
                 </li>
               ))}
             </ul>
@@ -411,7 +488,7 @@ export function DeclarePanel(p: {
           </p>
         </>
       )}
-      {kind === "call" && target?.gateway && !open.length && (
+      {kind === "call" && target?.gateway && !noProfile && !open.length && (
         <p className="ev-say">{D.allDeclared(p.label, repo)}</p>
       )}
       {kind === "call" && done.length > 0 && (
@@ -419,7 +496,7 @@ export function DeclarePanel(p: {
           <summary className="hud">{D.declaredList(p.label, done.length)}</summary>
           <ul className="box-calls">
             {done.map((r) => (
-              <li key={r.id} className="box-call">
+              <li key={r.say} className="box-call">
                 <span className="box-path">
                   {r.method && <span className="box-method">{r.method}</span>}
                   <code className="mono">{r.path}</code>
@@ -432,7 +509,11 @@ export function DeclarePanel(p: {
       )}
       {kind === "call" && (
         // A route not read yet, or one the person knows by heart: typed, as before.
-        <details className="stack" open={!target?.gateway || value !== ""}>
+        <details
+          className="stack"
+          open={typedOpen || !target?.gateway || value !== ""}
+          onToggle={(e) => setTypedOpen(e.currentTarget.open)}
+        >
           <summary className="hud">{D.typed}</summary>
           <label htmlFor={`${id}-v`} className="hud">
             {D.route}
@@ -462,7 +543,7 @@ export function DeclarePanel(p: {
         <button
           type="button"
           className="btn"
-          disabled={!!busy || nothing}
+          disabled={!!busy || nothing || noProfile}
           aria-busy={busy === "preview"}
           {...(nothing ? { "aria-describedby": `${id}-why` } : {})}
           onClick={() => void send("preview")}
@@ -472,7 +553,7 @@ export function DeclarePanel(p: {
         <button
           type="button"
           className="btn primary"
-          disabled={!!busy || !preview || previewed !== asked}
+          disabled={!!busy || noProfile || !preview || previewed !== asked}
           {...(nothing ? { "aria-describedby": `${id}-why` } : {})}
           onClick={() => void send("write")}
         >

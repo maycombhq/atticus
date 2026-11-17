@@ -21,6 +21,12 @@ const CANARY_WHAT: Record<string, string> = {
 };
 
 /** ADR 0199: how a pairing is undone, and what the Apply offered under a pairing does. */
+/** What a declared link says the system does: the radio buttons' words, and where copy names one. */
+const DECLARE_KINDS = {
+  publishes: "Publishes to a topic or queue",
+  listens: "Listens on a topic or queue",
+  call: "Calls a gateway route",
+} as Record<string, string>;
 const COPY_UNDO = (from: string) =>
   `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
 const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
@@ -5723,11 +5729,7 @@ export const COPY = {
     intro:
       "Your word, written to the profile with your name and the date for review: drawn dashed, never passed off as read from code. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side.",
     kind: "What it does",
-    kinds: {
-      publishes: "Publishes to a topic or queue",
-      listens: "Listens on a topic or queue",
-      call: "Calls a gateway route",
-    } as Record<string, string>,
+    kinds: DECLARE_KINDS,
     topic: "Topic or queue, as the code names it",
     route: "Route, as METHOD /path (or the handler proxy/flow)",
     preview: "Preview",
@@ -5783,7 +5785,21 @@ export const COPY = {
         ? `${repo} has no entry on record.`
         : `${repo} has ${n === 1 ? "one entry" : `${n} entries`} on record, ${n === 1 ? "and it is no" : "none of them a"} gateway route.`,
     notGatewayDo: (system: string, repo: string, gateways: boolean) =>
-      `What works today: ${gateways ? `if ${system} reaches ${repo} through a gateway, pick that gateway above and the route it calls; ` : ""}if ${repo} calls ${system}, draw the line the other way, from ${repo} to ${system}, to pair ${repo}'s calls with ${system}'s spec; if ${system} sends ${repo} messages, choose "Publishes to a topic or queue" above.`,
+      `What works today: ${gateways ? `if ${system} reaches ${repo} through a gateway, pick that gateway above and the route it calls; ` : ""}if ${repo} calls ${system}, draw the line the other way, from ${repo} to ${system}, to pair ${repo}'s calls with ${system}'s spec; if ${system} sends ${repo} messages, choose "${DECLARE_KINDS.publishes}" above.`,
+    /**
+     * The review of ADR 0200: a repo whose type reads like a gateway's (Connect calls its
+     * entries routes) and that the join doesn't take for one. Why, and the step that works.
+     */
+    looksLikeGateway: (repo: string, type: string, manifest: string) =>
+      `${repo}'s type is ${type} in ${manifest}. Its entries count as gateway routes only when its type is gateway (or gateway-internal, gateway-external), or when they are read from a proxy bundle folder.`,
+    looksLikeGatewayDo: (repo: string, manifest: string, entries: number) =>
+      `If ${repo} is a gateway, set type: gateway for it in ${manifest}, then draw the line again: its ${entries === 1 ? "one entry is" : `${entries} entries are`} then listed as routes to tick. It is read by the gateway type's reading rules from then on.`,
+    /** A system only the code names: no profile has it, so nothing can be declared of it yet. */
+    noProfile: (label: string, id: string) =>
+      `${label} is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id ${id}, then draw the line again.`,
+    /** Several routes of one gateway that the same words name: one row, one declaration. */
+    sameWords: (n: number) =>
+      `${n} routes of this gateway are served on these words: one declaration is for all of them`,
     notRead: {
       "not-read": (repo: string) =>
         `${repo} has nothing on record yet, so its routes can't be listed. Read it first:`,

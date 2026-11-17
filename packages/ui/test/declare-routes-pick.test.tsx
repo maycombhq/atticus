@@ -49,6 +49,7 @@ const open = (
   let reloads = 0;
   const data = (repo: string | undefined): View => ({
     system: "harbor-audit",
+    inProfile: true,
     gateways,
     ...(repo === "forge-edge"
       ? { target: { repo, gateway: true, routes, entries: 10 } }
@@ -189,6 +190,23 @@ describe("picking the routes a system calls", () => {
     expect(p.els().find((e) => e.type === "select")).toBeUndefined();
     expect(text(p.m.tree)).toContain(D.route);
     expect(text(p.m.tree)).toContain(D.pickFirst);
+  });
+
+  it("keeps the typed form open once the person opened it, whatever is ticked after", () => {
+    const p = open();
+    const details = () =>
+      p.els().find((e) => e.type === "details" && text(e.props.children).includes(D.typed))!;
+    // Folded while the gateway's routes are listed.
+    expect(details().props.open).toBe(false);
+    (details().props.onToggle as (e: unknown) => void)({ currentTarget: { open: true } });
+    p.m.render();
+    expect(details().props.open).toBe(true);
+    p.change(p.boxes()[0]!, { checked: true });
+    expect(details().props.open).toBe(true);
+    // And folded again when the person folds it with nothing typed.
+    (details().props.onToggle as (e: unknown) => void)({ currentTarget: { open: false } });
+    p.m.render();
+    expect(details().props.open).toBe(false);
   });
 
   it("still takes a route typed by hand, alone as before", async () => {
