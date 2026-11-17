@@ -575,6 +575,7 @@ describe("atticus doctor", () => {
     expect(none.fix).not.toContain("--help");
     // beta.28.5: a server that didn't start: what a run would say, and its advice as the fix.
     const start = {
+      kind: "exited" as const,
       problem:
         "it ended before it answered (exit code 1) and said: error: required option '--stdio' not specified",
       advice:
@@ -597,6 +598,7 @@ describe("atticus doctor", () => {
       `${start.advice} Then run atticus doctor again: it starts the server without a session.`,
     );
     const missing = {
+      kind: "not-found" as const,
       problem:
         "the program copilot-language-server wasn't found on this machine (spawn copilot-language-server ENOENT)",
       advice:
