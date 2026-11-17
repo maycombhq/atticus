@@ -253,7 +253,7 @@ describe("a step the app runs says why, and what to press next", () => {
   type Ended = {
     state: string;
     errors: string[];
-    progress: { message: string };
+    progress: { done?: number; total?: number; message: string };
     result?: { code: number; lines: string[]; next?: unknown };
   };
   it("a sync that failed says why, with its code, and never Synced", async () => {
@@ -272,6 +272,81 @@ describe("a step the app runs says why, and what to press next", () => {
     const join = (await job("/api/estate/join")) as unknown as Ended;
     expect(join.result?.lines.join(" ")).toMatch(/There are no repo specs/);
     expect(join.result?.lines.join(" ")).not.toContain("atticus spec draft");
+  });
+
+  // Beta.28.4 (field report): the map's bar applies the repos whose corrections wait, never
+  // every repo read so far. The list is the app's; the server checks it against the facts on file.
+  it("Apply to the repos waiting applies only the repos listed, in id order, and refuses a repo with no facts", async () => {
+    const { factsDirOf } = await import("@maycombhq/core");
+    await mkdir(factsDirOf(root), { recursive: true });
+    const estate = ["forge-customers", "forge-ledger", "forge-web"];
+    for (const repo of estate)
+      await cp(
+        join(HERE, `../../../fixtures/estate-facts/facts/${repo}.jsonl`),
+        join(factsDirOf(root), `${repo}.jsonl`),
+      );
+    type Listed = Ended & { result?: { applied?: string[]; notApplied?: string[] } };
+    try {
+      // None has a clone here, so each ends at once saying so: enough to tell which ran, and when.
+      const counted: [number, number, string][] = [];
+      const off = srv.jobs.subscribe((c) => {
+        if (c.type === "state" && c.job.kind === "local" && c.job.state === "running")
+          counted.push([c.job.progress.done, c.job.progress.total, c.job.progress.message]);
+      });
+      const started = await call("/api/facts/apply-all", "POST", {
+        repos: ["forge-web", "forge-customers"],
+      });
+      expect(started.status).toBe(202);
+      expect(srv.jobs.get(String(started.body.jobId))?.title).toBe("Applying to 2 repos");
+      const j = (await srv.jobs.settle(String(started.body.jobId))) as unknown as Listed & {
+        id: string;
+      };
+      off();
+      const said = j.result?.lines.join("\n") ?? "";
+      expect(said).toContain("No checkout of forge-customers");
+      expect(said).toContain("No checkout of forge-web");
+      expect(said.indexOf("forge-customers")).toBeLessThan(said.indexOf("forge-web"));
+      expect(said).not.toContain("forge-ledger");
+      expect(said).toMatch(/Verified 2 repos: 0 passed/);
+      expect(j.result?.applied).toEqual([]);
+      expect(j.result?.notApplied).toEqual(["forge-customers", "forge-web"]);
+      // Each repo's start is in the Console with its place, never in the result's lines, and
+      // the job's own progress counts the repos (the strip under the top bar shows "2 of 2").
+      const printed = srv.jobs.linesOf(j.id)?.lines ?? [];
+      expect(printed).toContain("Repo 1 of 2: forge-customers…");
+      expect(printed.find((l) => l.startsWith("Repo 2 of 2: forge-web… (1 done in "))).toMatch(
+        / left at this rate\)$/,
+      );
+      expect(said).not.toMatch(/Repo \d of \d/);
+      // The count is of repos finished (never the one under way), with the repo it is on in words.
+      expect(counted).toContainEqual([0, 2, "0 of 2 repos done, applying forge-customers"]);
+      expect(counted).toContainEqual([1, 2, "1 of 2 repos done, applying forge-web"]);
+      expect(counted).toContainEqual([2, 2, "2 of 2 repos done"]);
+      // Both failed: the job's last word keeps the count of repos, never "1 of 1".
+      expect(j.progress).toEqual({ done: 2, total: 2, message: "Failed" });
+
+      // A repo with no facts on file, a name that isn't one, an empty list: 400, and no job.
+      const before = srv.jobs.list().length;
+      const unknown = await call("/api/facts/apply-all", "POST", {
+        repos: ["forge-web", "forge-nope"],
+      });
+      expect(unknown.status).toBe(400);
+      expect(String(unknown.body.detail)).toBe(
+        "No facts on file for forge-nope: nothing was started. Read the list of repos waiting again.",
+      );
+      for (const repos of [[], ["../x"], "forge-web", [7]])
+        expect((await call("/api/facts/apply-all", "POST", { repos })).status, String(repos)).toBe(
+          400,
+        );
+      expect(srv.jobs.list().length).toBe(before);
+
+      // No list: every repo read so far, as `atticus verify --all --write`.
+      const all = (await job("/api/facts/apply-all")) as unknown as Listed;
+      expect(all.result?.lines.join("\n")).toMatch(/Verified 3 repos: 0 passed/);
+      expect(all.result?.notApplied).toEqual(estate);
+    } finally {
+      for (const repo of estate) await rm(join(factsDirOf(root), `${repo}.jsonl`), { force: true });
+    }
   });
 
   it("Apply with no base clone offers Sync the repos for it", async () => {

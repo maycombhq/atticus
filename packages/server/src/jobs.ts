@@ -3,6 +3,7 @@ import {
   printToCurrent,
   withCommit,
   withPrinter,
+  withRelease,
   withSignal,
   type PrintOptions,
 } from "@maycombhq/core";
@@ -57,6 +58,13 @@ export interface JobControl {
    * said the same way.
    */
   commit(): void;
+  /**
+   * Beta.28.4: the write `commit()` started has ended whole, and the work may go on to another
+   * (an Apply over several repos, between two repos). Stop is heard again; one asked during that
+   * write is acted on now: the signal aborts and `cancelled` is true, so the work stops before
+   * its next write and the job ends stopped. Work that never calls it is as before.
+   */
+  release(): void;
   readonly cancelled: boolean;
   /**
    * Beta.27 review: the job's signal, aborted on Stop. Work that starts a process (git, a
@@ -126,6 +134,15 @@ export interface JobStartOptions {
   log?: JobLogTitle;
   /** What the job belongs to (ADR 0187): `copilotRunId`, `handoffRun`. */
   meta?: Record<string, string>;
+  /**
+   * Beta.28.4: the work is several writes one after another, each released when it has ended
+   * (`release`): an Apply over several repos. A Stop asked during one of them is not too late for
+   * the run: it is said heard, once (`heard`), and the job says it is stopping (`stopping`, its
+   * progress message and its `stopping` state) until that write has ended, where it stops. The
+   * words are the caller's, which knows what a write is of (a repo). Without this a job is as
+   * before: past its commit a Stop is said too late, each time it is asked.
+   */
+  severalWrites?: { heard: string; stopping: string };
 }
 
 export type JobChange =
@@ -149,6 +166,13 @@ export class JobManager {
   private ends = new Map<string, () => void>();
   /** Jobs past their commit point (beta.28.1): a Stop now is too late. */
   private committedIds = new Set<string>();
+  /** Beta.28.4: jobs asked to stop during a write: acted on if the work releases that write. */
+  private lateStops = new Set<string>();
+  /** Beta.28.4: the jobs of several writes, with their words for a Stop during a write. */
+  private several = new Map<string, { heard: string; stopping: string }>();
+  /** Beta.28.4: what a job stopping after its write says meanwhile, and what it last would have. */
+  private stoppingSay = new Map<string, string>();
+  private lastGiven = new Map<string, string>();
   /** The message a job said before a Stop not yet heard (the hunt of beta.28.1, S3). */
   private beforeStop = new Map<string, string>();
   private recorders = new Map<string, JobRecorder>();
@@ -292,6 +316,7 @@ export class JobManager {
     this.jobs.set(id, job);
     this.printed.set(id, { from: 0, lines: [] });
     if (o.meta) this.metas.set(id, { ...o.meta });
+    if (o.severalWrites) this.several.set(id, { ...o.severalWrites });
     try {
       // Without a `log`, the ids it belongs to (its meta: a run's id) are what it names.
       const r = this.o.record?.(
@@ -317,6 +342,19 @@ export class JobManager {
       this.committedIds.add(id);
       // A Stop asked before the work heard it: too late now, said as such.
       if (cancelled.delete(id)) {
+        // Beta.28.4: kept, for work that says when this write has ended (`release`).
+        this.lateStops.add(id);
+        // A job of several writes: not too late for the run, which ends after this write. It
+        // stays stopping, in its own words.
+        const sev = this.several.get(id);
+        if (sev) {
+          this.stoppingSay.set(id, sev.stopping);
+          job.progress = { ...job.progress, message: sev.stopping };
+          this.publish({ type: "job.progress", jobId: id, ...job.progress });
+          line(sev.heard);
+          this.tell({ type: "state", job });
+          return;
+        }
         delete job.stopping;
         // The hunt of beta.28.1 (S3): the Stop is taken back, so is its "Stopping…".
         const was = this.beforeStop.get(id);
@@ -329,16 +367,24 @@ export class JobManager {
         this.tell({ type: "state", job });
       }
     };
+    const release = () => {
+      if (!this.committedIds.delete(id)) return;
+      // A Stop asked during the write that just ended: acted on now, between two writes.
+      if (this.lateStops.delete(id)) this.stopNow(job);
+    };
     const control: JobControl = {
       progress: (done, total, given) => {
         // Stopping, it says so until it ends, whatever step it reaches meanwhile.
-        const message = job.stopping ? STOPPING : given;
+        // Beta.28.4: stopping after a write under way, in the job's own words for that.
+        const message = job.stopping ? (this.stoppingSay.get(id) ?? STOPPING) : given;
+        if (job.stopping && this.stoppingSay.has(id)) this.lastGiven.set(id, given);
         job.progress = { done, total, message };
         this.publish({ type: "job.progress", jobId: id, done, total, message });
         this.tell({ type: "state", job });
       },
       line,
       commit,
+      release,
       get cancelled() {
         return cancelled.has(id);
       },
@@ -348,7 +394,9 @@ export class JobManager {
     void (async () => {
       try {
         const out = await withPrinter(line, () =>
-          withSignal(abort.signal, () => withCommit(commit, () => work(control))),
+          withSignal(abort.signal, () =>
+            withCommit(commit, () => withRelease(release, () => work(control))),
+          ),
         );
         if (out?.result) job.result = out.result;
         if (out?.errors?.length) job.errors.push(...out.errors);
@@ -360,8 +408,17 @@ export class JobManager {
           job.state = "failed";
         }
       }
+      // Beta.28.4: asked to stop during its last write (none followed, so nothing was left to
+      // stop): it ended as it ended, and says that, not that it is stopping.
+      const lastSaid = this.lastGiven.get(id);
+      if (job.state !== "cancelled" && job.stopping && this.stoppingSay.has(id))
+        job.progress = { ...job.progress, message: lastSaid ?? this.beforeStop.get(id) ?? "" };
       this.aborts.delete(id);
       this.committedIds.delete(id);
+      this.lateStops.delete(id);
+      this.several.delete(id);
+      this.stoppingSay.delete(id);
+      this.lastGiven.delete(id);
       this.beforeStop.delete(id);
       // Printed nothing as it ran: what it ended with is its lines.
       const p = this.printed.get(id);
@@ -432,18 +489,43 @@ export class JobManager {
     if (j.stopping) return true;
     // Beta.28.1: past the work's commit point, Stop is too late: said, and the work goes on.
     if (this.committedIds.has(id)) {
-      this.print(j, TOO_LATE);
+      // Beta.28.4: kept, for work that says when this write has ended (`release`).
+      this.lateStops.add(id);
+      const sev = this.several.get(id);
+      if (sev) this.stopAfterWrite(j, sev);
+      else this.print(j, TOO_LATE);
       return true;
     }
-    this.cancelledIds.add(id);
     this.beforeStop.set(id, j.progress.message);
+    this.stopNow(j);
+    return true;
+  }
+
+  /** Stop heard: the job says it is stopping, and its signal aborts. */
+  private stopNow(j: Job): void {
+    this.cancelledIds.add(j.id);
+    this.stoppingSay.delete(j.id);
     j.stopping = true;
     j.progress = { ...j.progress, message: STOPPING };
     this.print(j, STOPPING);
-    this.publish({ type: "job.progress", jobId: id, ...j.progress });
+    this.publish({ type: "job.progress", jobId: j.id, ...j.progress });
     this.tell({ type: "state", job: j });
-    this.aborts.get(id)?.abort();
-    return true;
+    this.aborts.get(j.id)?.abort();
+  }
+
+  /**
+   * Beta.28.4: a Stop asked during a write of a job of several: said heard, once (the job is
+   * stopping from here, so a second ask is the same stop), and acted on when the write is
+   * released. Nothing is aborted: the write under way finishes whole.
+   */
+  private stopAfterWrite(j: Job, sev: { heard: string; stopping: string }): void {
+    this.beforeStop.set(j.id, j.progress.message);
+    this.stoppingSay.set(j.id, sev.stopping);
+    j.stopping = true;
+    j.progress = { ...j.progress, message: sev.stopping };
+    this.print(j, sev.heard);
+    this.publish({ type: "job.progress", jobId: j.id, ...j.progress });
+    this.tell({ type: "state", job: j });
   }
 
   /**
@@ -461,7 +543,14 @@ export class JobManager {
       this.recorders.delete(j.id);
       // Beta.28.1 (the re-review): past its commit point a Stop is too late and would only say
       // so after its record ended; the work finishes, or ends with the process.
+      // Beta.28.4: a job of several writes ends when the write under way has ended, should the
+      // process outlive the close (it does, while work runs): never the next repo with no app.
+      const sev = this.several.get(j.id);
       if (!this.committedIds.has(j.id)) this.cancel(j.id);
+      else if (sev && !j.stopping) {
+        this.lateStops.add(j.id);
+        this.stopAfterWrite(j, sev);
+      }
     }
   }
 

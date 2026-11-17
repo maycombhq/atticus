@@ -45,6 +45,31 @@ export function commitCurrent(): boolean {
   return !!c;
 }
 
+/**
+ * Beta.28.4: work made of several writes one after another (an Apply over several repos) says
+ * when one of them has ended, whole: `releaseCurrent()`. Stop is heard again from there, and a
+ * Stop asked during that write is acted on now (the job's signal aborts), so the work stops
+ * before its next write. Work that never says so is as before: past its commit, never stopped.
+ */
+const releases = new AsyncLocalStorage<() => void>();
+
+/** Run `fn` with `release` as what `releaseCurrent()` inside it calls. */
+export function withRelease<T>(release: () => void, fn: () => Promise<T>): Promise<T> {
+  return releases.run(release, fn);
+}
+
+/**
+ * Say the write this job started (`commitCurrent`) has ended and nothing is being written: only
+ * between two whole writes, never inside one. True when a job heard it; false outside one.
+ */
+export function releaseCurrent(): boolean {
+  const signal = store.getStore();
+  if (signal) committed.delete(signal);
+  const r = releases.getStore();
+  r?.();
+  return !!r;
+}
+
 /** The signal of the job this code runs in, if it runs in one. */
 export function currentSignal(): AbortSignal | undefined {
   return store.getStore();

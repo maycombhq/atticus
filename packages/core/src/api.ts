@@ -651,8 +651,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   when catalog/sources/build.json is there but doesn't read (edited or merged by hand). Its
  *   `command` is the build again with `--discard-edits` of every record file, never the curate.
  *   Additive only.
+ * 3.16.0 (beta.28.4, ADR 0198): POST /api/facts/apply-all takes an optional body, `{ repos? }`
+ *   (FactsApplyAllRequest): only those repos are applied (the map's bar sends the repos whose
+ *   corrections wait, GET /api/propose's `applyFirst`), in id order whatever order they come in;
+ *   400, and no job, when a repo listed has no facts on file. Without `repos` it applies every
+ *   repo read so far, as before. Its job's result (FactsApplyResult) gains `applied` and
+ *   `notApplied`, the repos by name. While it runs over several repos its job's `progress` counts
+ *   them (`done` of `total`: the repos finished). Stop is heard between its repos: a repo's
+ *   write under way finishes whole, then the job ends `cancelled` with `stopped: true` in its
+ *   result and the repos never reached under `notApplied`. Additive only.
  */
-export const API_VERSION = "3.15.0";
+export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2277,6 +2286,19 @@ export const FactsApplyResult = z.object({
   leftOut: z.number().int().positive().optional(),
   /** Apply to every repo's (POST /api/facts/apply-all): how many repos left facts out. */
   leftOutRepos: z.number().int().positive().optional(),
+  /**
+   * 3.16.0 (ADR 0198), POST /api/facts/apply-all's: the repos it applied (those that wrote with
+   * facts left out too) and the repos it didn't (rejected facts, a refused build, no clone), each
+   * list in id order. Neither when no repo was reached.
+   */
+  applied: z.array(z.string()).optional(),
+  notApplied: z.array(z.string()).optional(),
+  /**
+   * 3.16.0 (ADR 0198), POST /api/facts/apply-all's: Stop ended the run between two repos (its
+   * job's state is `cancelled`). `applied` are applied whole; `notApplied` includes the repos it
+   * never reached.
+   */
+  stopped: z.literal(true).optional(),
   next: z.unknown().optional(),
 });
 export type FactsApplyResultT = z.infer<typeof FactsApplyResult>;
@@ -3940,6 +3962,20 @@ export const FactsApplyRequest = z.strictObject({
   plan: z
     .string()
     .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+
+/**
+ * 3.16.0 (ADR 0198): POST /api/facts/apply-all's body. `repos`: apply only these repos (the
+ * repos whose corrections wait, as GET /api/propose's `applyFirst` lists them), in id order
+ * whatever order they come in; 400, and no job, when one has no facts on file. Left out: every
+ * repo read so far, as `atticus verify --all --write`.
+ */
+export const FactsApplyAllRequest = z.strictObject({
+  repos: z
+    .array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}$/i))
+    .min(1)
+    .max(10_000)
     .optional(),
 });
 
@@ -8523,15 +8559,16 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "applyAllFacts",
       summary:
-        "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas",
+        "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas; 3.16.0 (ADR 0198): with `repos`, only those repos (the ones whose corrections wait), in id order; 400 when one has no facts on file",
       tag: "workspace",
+      body: FactsApplyAllRequest,
       ok: {
         status: 202,
         schema: "JobAccepted",
         description:
-          "Started: its job's result is FactsApplyResult: the code and the lines verify printed, and (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0)",
+          "Started: its job's result is FactsApplyResult: the code and the lines verify printed, (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0), and (3.16.0) applied and notApplied, the repos by name",
       },
-      errors: [409],
+      errors: [400, 409],
     },
   },
   "/api/estate/join": {

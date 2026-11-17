@@ -22,7 +22,7 @@ When one side has nothing on record, the panel says so and gives the command: `a
 
 ## A repo's owner and system
 
-On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. **Apply to every repo's map** redraws it (`atticus verify --all --write`), then **Propose for review**.
+On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. **Apply to all N repos read** redraws it (`atticus verify --all --write`), then **Propose for review**. It applies every repo read so far, one after another, so on a large estate it takes a while: the Console shows which repo it is on and about how long is left.
 
 ## Add a box, and declare a link
 
@@ -32,7 +32,7 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 
 ## Corrections, and Undo
 
-Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with **Apply** (it redraws the map) and **Propose for review**; the `atticus verify` and `git` commands are under **In a terminal** (ADR 0188).
+Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with **Apply** (it redraws the map) and **Propose for review**; the `atticus verify` and `git` commands are under **In a terminal** (ADR 0188). Above the map, a bar lists the repos whose corrections aren't applied yet. Each has its own **Apply to <repo>'s map**. When several wait, **Apply to the N repos waiting** applies those repos one after another, in name order, and no other repo. Only one Apply runs at a time, so the other buttons wait. **Stop** in the Console ends a run over several repos after the repo being written: that repo's write finishes whole, and the repos not reached keep their own buttons.
 
 ## A link a gateway proxy's routing made
 

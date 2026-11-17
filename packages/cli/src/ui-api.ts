@@ -687,7 +687,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
       );
   };
-  const asJob = (what: string, work: () => Promise<Ran>) => {
+  const asJob = (
+    what: string,
+    work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
+    o: { severalWrites?: { heard: string; stopping: string } } = {},
+  ) => {
     // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
     // while Apply writes facts or Propose commits them. The refusal names the one that runs.
     const busy = ctx.jobs.runningOf("local");
@@ -700,13 +704,21 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       "local",
       async (c) => {
         c.progress(0, 1, what);
-        const res = await work();
+        // Beta.28.4: work of several counted parts says which it is on (its progress line).
+        // Its last word keeps that count (a run over 7 repos that stopped after 3 ends as 3 of
+        // 7, not 1 of 1); work that counts nothing ends as one step of one, as before.
+        let counted: { done: number; total: number } | undefined;
+        const res = await work((done, total, message) => {
+          counted = { done, total };
+          c.progress(done, total, message);
+        });
         // The hunt of beta.28.1: how it ended, in words: a refused build says so with the
         // guard's reason (never "Stopped", which is a person's Stop), a failure says failed.
         const refusal = (res.extra?.refused as { message?: unknown } | undefined)?.message;
+        const at = counted as { done: number; total: number } | undefined;
         c.progress(
-          1,
-          1,
+          at ? (res.code === 0 ? at.total : at.done) : 1,
+          at ? at.total : 1,
           res.code === 0
             ? "Done"
             : typeof refusal === "string"
@@ -726,7 +738,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           errors: res.code === 0 ? [] : res.err.length ? appLines(res.err) : lines,
         };
       },
-      { title: what },
+      { title: what, ...(o.severalWrites ? { severalWrites: o.severalWrites } : {}) },
     );
     localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };

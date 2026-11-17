@@ -2,12 +2,15 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
+  CancelledError,
   catalogDirOf,
+  currentSignal,
   factsDirOf,
   factsRelOf,
   listQuestions,
   loadOrgPack,
   orgPackDirOf,
+  releaseCurrent,
   stackHelpersOff,
 } from "@maycombhq/core";
 import {
@@ -41,6 +44,7 @@ import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 import { noCheckoutLine } from "./sync-next.js";
+import { durationWords } from "./write-progress.js";
 import {
   APPLIED_WITH_LEFT_OUT,
   leftOutLines,
@@ -232,9 +236,32 @@ export async function factsRepos(root: string): Promise<string[]> {
 }
 
 /**
+ * Beta.28.4: the time a run has left, for a person to plan by: never to the second. Under an
+ * hour to the minute, past it to five minutes.
+ */
+export function timeLeftWords(ms: number): string {
+  if (ms < 45_000) return "under a minute";
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `about ${min} min`;
+  const five = Math.round(min / 5) * 5;
+  const h = Math.floor(five / 60);
+  return five % 60 ? `about ${h} h ${five % 60} min` : `about ${h} h`;
+}
+
+/**
  * atticus verify --all [--write]: every repo read so far, one after another, as `atticus verify
  * <repo>` would, then a line saying how many passed. No model is called. Exits 1 when any repo
  * has rejected facts, so a script can tell.
+ *
+ * Beta.28.4: over two repos or more, each repo's start is said with its place ("Repo 3 of 7:
+ * forge-ledger…") and, once one has finished, how long the repos done took and about how long
+ * the rest take at that rate. Progress lines: a terminal's standard error, the app job's
+ * Console; never standard output, which a script reads.
+ *
+ * Stop (the app's job, beta.28.4): a repo's write is never cut short. Asked during one, the run
+ * ends once that write has ended whole, before the next repo; asked while a repo is still read
+ * or built, it ends there with nothing of that repo in the catalog. Either way it says how many
+ * repos it went through and which are not applied, and exits 1.
  */
 export async function verifyAllCommand(
   root: string,
@@ -244,28 +271,94 @@ export async function verifyAllCommand(
      * left out (exit 3), how many (the hunt of beta.28.1, S2: the app's Apply to every repo).
      */
     onRepo?: (repo: string, code: number, leftOut: number) => void;
+    /**
+     * Beta.28.4: only these repos, in id order whatever order they come in (the app's Apply to
+     * the repos whose corrections wait). Each has facts on file, or nothing is verified. No flag
+     * passes it: `atticus verify --all` stays every repo read so far.
+     */
+    only?: readonly string[];
+    /**
+     * Beta.28.4: told as each repo starts, after its "Repo N of M" line: how many repos are
+     * done (finished, whatever their outcome) and how many there are.
+     */
+    onStart?: (repo: string, done: number, of: number) => void;
+    /**
+     * Beta.28.4: Stop was asked (the app's job) and the run ended before these repos, in id
+     * order: the one it was on when its write hadn't started, and those after it.
+     */
+    onStopped?: (notReached: readonly string[]) => void;
+    /** The run's clock, in milliseconds (tests pass one); the time by default. */
+    clock?: () => number;
   },
   io: Output,
 ): Promise<number> {
-  const repos = await factsRepos(root);
-  if (!repos.length) {
+  const read = await factsRepos(root);
+  if (!read.length) {
     io.err(
       `No repo has facts yet (${factsRelOf(root)}/<repo>.jsonl). Read one first: /atticus-map <repo> in your assistant.`,
     );
     return 2;
   }
-  const failed: string[] = [];
-  const { onRepo, ...each } = o;
-  for (const repo of repos) {
-    let leftOut = 0;
-    const code = await verifyCommand(
-      root,
-      repo,
-      { ...each, onLeftOut: (l) => (leftOut = l.length) },
-      io,
+  const { onRepo, only, onStart, onStopped, clock = Date.now, ...each } = o;
+  const unread = (only ?? []).filter((r) => !read.includes(r));
+  if (unread.length) {
+    io.err(
+      `No facts on file for ${unread.join(", ")} (${factsRelOf(root)}/<repo>.jsonl): nothing was verified.`,
     );
+    return 2;
+  }
+  const repos = only ? read.filter((r) => only.includes(r)) : read;
+  const failed: string[] = [];
+  const began = clock();
+  let spent = 0;
+  // The job this runs in, if any: its Stop is heard between repos, and inside a repo until
+  // that repo's write starts (writeProgress).
+  const signal = currentSignal();
+  let stoppedAt: number | undefined;
+  for (const [i, repo] of repos.entries()) {
+    if (signal?.aborted) {
+      stoppedAt = i;
+      break;
+    }
+    // The estimate is the repos done so far, nothing else: said as "at this rate", since a big
+    // repo after small ones takes longer than it says.
+    if (repos.length > 1)
+      (io.progress ?? io.err)(
+        `Repo ${i + 1} of ${repos.length}: ${repo}…${i ? ` (${i} done in ${durationWords(spent)}; ${timeLeftWords((spent / i) * (repos.length - i))} left at this rate)` : ""}`,
+      );
+    onStart?.(repo, i, repos.length);
+    let leftOut = 0;
+    let code: number;
+    try {
+      code = await verifyCommand(
+        root,
+        repo,
+        { ...each, onLeftOut: (l) => (leftOut = l.length) },
+        io,
+      );
+    } catch (e) {
+      // Stop asked while this repo was read or built: its write never started (the write's own
+      // steps stop there and free the lock). Any other error is the command's, as before.
+      if (!(e instanceof CancelledError) || !signal?.aborted) throw e;
+      stoppedAt = i;
+      break;
+    }
+    spent = clock() - began;
     onRepo?.(repo, code, leftOut);
     if (code !== 0) failed.push(repo);
+    // This repo's write has ended whole, and another repo follows: Stop is heard again here, and
+    // a Stop asked during that write is acted on now (the loop's next turn sees it). Never after
+    // the last repo: there a Stop came too late, and the run is done.
+    if (i < repos.length - 1) releaseCurrent();
+  }
+  if (stoppedAt !== undefined) {
+    const notReached = repos.slice(stoppedAt);
+    onStopped?.(notReached);
+    const not = [...failed, ...notReached].sort();
+    io.out(
+      `Stopped after ${stoppedAt} of ${repos.length} repos. ${each.write ? "Not applied" : "Not verified"}: ${not.join(", ")}.`,
+    );
+    return 1;
   }
   const passed = repos.length - failed.length;
   io.out(

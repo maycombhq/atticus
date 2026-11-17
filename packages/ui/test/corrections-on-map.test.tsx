@@ -56,12 +56,19 @@ it("says nothing when every correction is applied", () => {
   expect(m.tree).toBeNull();
 });
 
-it("a line drawn between two repos: names both and offers one Apply for them all", () => {
+// Beta.28.4: the one Apply is for those two repos (it sends them), and each has its own beside it.
+it("a line drawn between two repos: names both, one Apply for the two, and each repo's own", () => {
   applyFirst = ["forge-card-vault", "forge-ledger"];
   const m = mount(CorrectionsToApply as never, {} as never);
   expect(text(m.tree)).toContain(P.onMap("forge-card-vault, forge-ledger"));
-  expect(all(m.tree).find((e) => e.type === ApplyAll)?.props.noPropose).toBe(true);
-  expect(all(m.tree).some((e) => e.type === ApplyAndPropose)).toBe(false);
+  const one = all(m.tree).find((e) => e.type === ApplyAll);
+  expect(one?.props.noPropose).toBe(true);
+  expect(one?.props.repos).toEqual(["forge-card-vault", "forge-ledger"]);
+  expect(
+    all(m.tree)
+      .filter((e) => e.type === ApplyAndPropose)
+      .map((e) => e.props.repo),
+  ).toEqual(["forge-card-vault", "forge-ledger"]);
 });
 
 it("one repo corrected: its own Apply", () => {
@@ -137,7 +144,9 @@ it("keeps Apply to every repo's map through a reload while it runs, and its erro
   m.render();
   expect(text(m.tree)).toContain(P.onMap("forge-teller"));
   expect(apply()?.props.run).toMatchObject({ running: true });
-  expect(all(m.tree).some((e) => e.type === ApplyAndPropose)).toBe(false);
+  // Beta.28.4: the repo left keeps its own Apply, held while the run goes.
+  const own = () => all(m.tree).filter((e) => e.type === ApplyAndPropose);
+  expect(own().map((e) => [e.props.repo, e.props.disabled])).toEqual([["forge-teller", true]]);
   // It ends: forge-teller has no clone here.
   job.reject(new Error("forge-teller has no clone here: Sync the repos first."));
   await settle();
@@ -147,7 +156,8 @@ it("keeps Apply to every repo's map through a reload while it runs, and its erro
     lines: ["forge-teller has no clone here: Sync the repos first."],
     note: { ok: false },
   });
-  expect(all(m.tree).some((e) => e.type === ApplyAndPropose)).toBe(false);
+  // Its errors stay, and the repo's own Apply can run now.
+  expect(own().map((e) => [e.props.repo, e.props.disabled])).toEqual([["forge-teller", false]]);
   // Read again after the job: still kept, until dismissed.
   onFiles!([{ type: "file.changed", path: "facts/forge-teller.corrections.jsonl" }]);
   m.render();
