@@ -167,6 +167,10 @@ describe("connect two boxes (ADR 0174, G1)", () => {
       status: "paired",
       paired: "entry.post.partners-northwind-charges-chargeid-capture",
     });
+    // ADR 0199, the second review: no catalog is built here at all. The pairing isn't drawn,
+    // and the view says why, so the panel never says "applied since" of a repo only verified.
+    expect(after.calls.find((c) => c.fact === "call.post.capture-charge")!.drawn).toBe(false);
+    expect(after.noCatalog).toBe(true);
 
     // G4 (ADR 0176): the pairing as a draft rule for every repo of forge-billing's type.
     const fr = await call("POST", "/api/reading-rules/from-pairing", {

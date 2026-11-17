@@ -673,7 +673,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   (`drawn`), and of the view whether A's corrections are newer than A's last Apply
  *   (`applyPending`). A `paired` call also carries who paired it (`pairedBy`), any call with a
  *   pairing whether it is the AI's (`pairedAi`), and a pairing whose two ends are in one
- *   component that component (`inside`: no arrow is drawn for it). Additive only.
+ *   component that component (`inside`: no arrow is drawn for it). A pairing with a gateway's
+ *   route the join carries on to the service behind it says so (`joins`, `onward: forwarded`,
+ *   and on other boxes' rows `pairedWith`), an AI pairing a person's answer outranks says that
+ *   (`onward: outranked`), and the view says when no catalog is built yet (`noCatalog`).
+ *   Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
@@ -5401,6 +5405,19 @@ export const CandidateCallView = z.object({
    * person. `pairedBy` is given for a `paired` call too.
    */
   pairedAi: z.boolean().optional(),
+  /**
+   * 3.16 (ADR 0199): the box the pairing `pairedBy` made names, when the call goes on from it
+   * to `joins` (a gateway's route that forwards it).
+   */
+  pairedWith: z.string().optional(),
+  /**
+   * 3.16 (ADR 0199): why a call with a pairing goes to another box (`joins`) than the
+   * pairing's, as the estate's join says: `forwarded`, the pairing is with a gateway's route
+   * whose forwarding call reaches `joins` (one link, drawn from the caller to `joins`; for a
+   * `paired` call `drawn` is of that arrow); `outranked`, the pairing is the AI's and a person's
+   * answer names `joins` instead, so the pairing is not in effect.
+   */
+  onward: z.enum(["forwarded", "outranked"]).optional(),
   /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
   joins: z.string().optional(),
   /** 3.14: for `here`, the API of this box the call goes to now. */
@@ -5447,6 +5464,8 @@ export const LinkCandidatesView = z.object({
    * `applyFirst` tells it): what a person paired or corrected since isn't on the map yet.
    */
   applyPending: z.boolean().optional(),
+  /** 3.16 (ADR 0199): no catalog has been built yet, so the map draws nothing at all. */
+  noCatalog: z.boolean().optional(),
 });
 /** ADR 0178 part 2: Copilot matches A's loose calls with B's APIs; a person ticks the proposals. */
 export const MatchLinksRequest = z.object({ from: z.string().min(1), to: LinkBox });

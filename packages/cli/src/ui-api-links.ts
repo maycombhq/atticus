@@ -250,7 +250,16 @@ async function context(
   const facts = estate.repos.find((r) => r.repo === from)?.facts ?? [];
   await s.step(`Reading ${boxWords(to)}'s APIs`);
   const b = await boxApis(root, op, estate, to);
-  return { op, estate, join: join0, facts, b, pairs: estate.pairs[from] ?? {} };
+  return {
+    op,
+    estate,
+    join: join0,
+    facts,
+    b,
+    pairs: estate.pairs[from] ?? {},
+    targets: estate.targets[from] ?? {},
+    aiTargets: estate.aiTargets[from] ?? {},
+  };
 }
 
 async function openRuleQuestion(root: string, from: string) {
@@ -329,7 +338,15 @@ export async function drawnOf(
   const lines = new Map<string, string[]>();
   // The re-review: a curated Interface stands over a generated one of the same id.
   const byId = new Map<string, CatalogRecord>();
-  for (const r of [...gen, ...cur]) if (r.kind === "Interface") byId.set(r.id, r);
+  // The second review of ADR 0199 (S3): each component's repo, as the catalog says. A
+  // component's id there need not be a name of the manifest (one two repos share is renamed
+  // `<repo>-<component>`), so an arrow's box is told by its component's repo too.
+  const repoOf = new Map<string, string>();
+  for (const r of [...gen, ...cur]) {
+    if (r.kind === "Interface") byId.set(r.id, r);
+    const repo = (r as { repo?: unknown }).repo;
+    if (r.kind === "Component" && typeof repo === "string") repoOf.set(r.id, repo);
+  }
   for (const r of byId.values()) {
     if (r.kind !== "Interface" || suppressed.has(r.id)) continue;
     if (((r as { status?: string }).status ?? "current") !== "current") continue;
@@ -338,9 +355,11 @@ export async function drawnOf(
       if (e.repo === from && e.side !== "callee" && e.path && e.line !== undefined) {
         const k = `${e.path}:${e.line}`;
         const to = (r as { to: string }).to;
-        const had = lines.get(k);
-        if (!had) lines.set(k, [to]);
-        else if (!had.includes(to)) had.push(to);
+        const had = lines.get(k) ?? [];
+        if (!lines.has(k)) lines.set(k, had);
+        // The box by the catalog's name first (what `to` says), then by its component's repo.
+        for (const box of [to, repoOf.get(to)])
+          if (box !== undefined && !had.includes(box)) had.push(box);
       }
   }
   const at = new Map(
@@ -402,6 +421,10 @@ async function candidatesIn(
     pairs: c.pairs,
     to,
     settings: settingsOf(c.facts),
+    // The second review (M1): the answers' targets, so an AI pairing a person's answer
+    // outranks is told by the join's own rule.
+    targets: c.targets,
+    aiTargets: c.aiTargets,
     ...(drawn
       ? {
           drawn: drawn.join,
@@ -413,11 +436,12 @@ async function candidatesIn(
       : {}),
     inBox,
   });
-  if (drawn) return cands;
+  if (drawn) return { ...cands, noCatalog: false };
   // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0199).
   return {
     ...cands,
     calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
+    noCatalog: true,
   };
 }
 
@@ -469,6 +493,7 @@ export async function candidatesOf(
     ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
     ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
     ...((await correctionsAheadOf(root, from)) ? { applyPending: true } : {}),
+    ...(cands.noCatalog ? { noCatalog: true } : {}),
   };
   return { view, facts: c.facts };
 }

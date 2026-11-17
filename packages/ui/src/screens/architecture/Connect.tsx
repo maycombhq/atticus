@@ -13,7 +13,7 @@ import {
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
 import { ApplyAndPropose, onWorkChanged } from "../../app/propose.js";
-import { pairedStanding, pairedWho } from "./paired-standing.js";
+import { onwardGroups, pairedStanding, pairedWho } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { appStep, WrittenNext } from "../../app/app-step.js";
@@ -199,6 +199,9 @@ export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
   const ahead = v.applyPending === true;
   if (!s.here.length && !s.elsewhere.length) return null;
   const insideOf = [...new Set(s.inside.map((c) => c.inside!))].sort().join(", ");
+  const onward = onwardGroups(s.onward);
+  // The Apply is offered once, where something it draws isn't on the map yet.
+  const applies = s.waiting.length > 0 || onward.some((g) => !g.drawn);
   return (
     <div className="stack">
       {s.drawn.length > 0 && s.waiting.length === 0 && (
@@ -207,22 +210,52 @@ export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
         </p>
       )}
       {s.waiting.length > 0 && (
-        <>
-          <p role="status" className="ev-say">
-            {s.drawn.length > 0
-              ? C.pairedMix(
-                  pairedWho([...s.drawn, ...s.waiting]),
-                  s.drawn.length,
-                  s.waiting.length,
+        <p role="status" className="ev-say">
+          {s.drawn.length > 0
+            ? C.pairedMix(
+                pairedWho([...s.drawn, ...s.waiting]),
+                s.drawn.length,
+                s.waiting.length,
+                v.from,
+                v.toName,
+                ahead,
+              )
+            : C.pairedWaiting(
+                pairedWho(s.waiting),
+                s.waiting.length,
+                v.from,
+                v.toName,
+                ahead,
+                v.noCatalog === true,
+              )}
+        </p>
+      )}
+      {onward.map((g) => (
+        // The second review (M1): the pairing stands, and the call's one arrow goes on to
+        // another box. Said with where, why (as the join says) and whether it is drawn.
+        <p role="status" className="ev-say" key={`${g.why}:${g.where}:${String(g.drawn)}`}>
+          {g.why === "forwarded"
+            ? C.pairedForwarded(
+                pairedWho(g.calls),
+                g.calls.length,
+                v.from,
+                v.toName,
+                g.where,
+                g.drawn,
+              )
+            : g.why === "outranked"
+              ? C.pairedOutranked(g.calls.length, v.from, v.toName, g.where, g.drawn)
+              : C.pairedTiedElsewhere(
+                  pairedWho(g.calls),
+                  g.calls.length,
                   v.from,
                   v.toName,
-                  ahead,
-                )
-              : C.pairedWaiting(pairedWho(s.waiting), s.waiting.length, v.from, v.toName, ahead)}
-          </p>
-          <ApplyAndPropose scope="corrections" repo={v.from} />
-        </>
-      )}
+                  g.where,
+                  g.drawn,
+                )}
+        </p>
+      ))}
+      {applies && <ApplyAndPropose scope="corrections" repo={v.from} />}
       {s.gone.length > 0 && (
         <p role="status" className="ev-say">
           {C.pairedGone(pairedWho(s.gone), s.gone.length, v.from, v.toName)}
@@ -238,7 +271,8 @@ export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
           {C.pairedElsewhere(
             pairedWho(s.elsewhere),
             s.elsewhere.length,
-            linkedWords(s.elsewhere),
+            // The box each pairing names (a gateway's, when it forwards the call on).
+            linkedWords(s.elsewhere.map((c) => ({ joins: c.pairedWith ?? c.joins }))),
             v.from,
           )}
         </p>
@@ -272,15 +306,40 @@ export function Pairing(p: {
   // The review (S2): the Apply offered under a waiting pairing is this panel's own. Once work
   // changed (that Apply ended) the calls are read again, so "not on the map yet" doesn't stay
   // beside an arrow the map now draws. Only while a pairing waits: a person's picks are kept.
-  const waits = !!v && pairedStanding(v).waiting.length > 0;
+  const waits =
+    !!v && (pairedStanding(v).waiting.length > 0 || pairedStanding(v).onward.some((c) => !c.drawn));
   const reload = useRef(p.cands.reload);
   reload.current = p.cands.reload;
   useEffect(() => (waits ? onWorkChanged(() => reload.current?.()) : undefined), [waits]);
+  // The second review (S2): a read of the same two boxes again (after the panel's own Apply)
+  // keeps what the person picked and ticked for calls that are still listed; only a call that
+  // wasn't listed before starts with its suggestion. Another pair of boxes starts afresh.
+  const listed = useRef<{ boxes: string; calls: Set<string> }>({ boxes: "", calls: new Set() });
   useEffect(() => {
     if (!v) return;
     const i = initialPicks(v);
-    setPicked(i.picked);
-    setTicked(i.ticked);
+    const boxes = `${v.from}>${v.to.repo ?? ""}>${v.to.system ?? ""}`;
+    const before = listed.current.boxes === boxes ? listed.current.calls : new Set<string>();
+    const now = new Set(
+      v.calls.filter((c) => c.status !== "paired" && c.status !== "here").map((c) => c.fact),
+    );
+    listed.current = { boxes, calls: now };
+    if (!before.size) {
+      setPicked(i.picked);
+      setTicked(i.ticked);
+      return;
+    }
+    setPicked((old) => {
+      const out: Record<string, string> = {};
+      for (const id of now) {
+        const pick = before.has(id) ? old[id] : i.picked[id];
+        if (pick !== undefined) out[id] = pick;
+      }
+      return out;
+    });
+    setTicked(
+      (old) => new Set([...now].filter((id) => (before.has(id) ? old.has(id) : i.ticked.has(id)))),
+    );
   }, [v]);
   const loose = useMemo(
     () =>
@@ -489,14 +548,26 @@ export function Pairing(p: {
           // ADR 0199: a person's pairing with that box, not applied yet, is said to be theirs.
           <span className="box-why">
             {c.pairedBy
-              ? C.pairedUndrawn(c.pairedBy, c.joins, !!c.pairedAi)
+              ? C.pairedUndrawn(
+                  c.pairedBy,
+                  c.pairedWith ?? c.joins,
+                  !!c.pairedAi,
+                  c.pairedWith ? c.joins : undefined,
+                )
               : C.undrawnWhy(c.joins)}
           </span>
         ) : c.status === "outside" && c.joins && c.joins !== p.box.system ? (
           <span className="box-why">{C.outsideWhy(c.joins)}</span>
         ) : c.status === "joined" && c.joins ? (
           <span className="box-why">
-            {c.pairedBy ? C.pairedWith(c.pairedBy, c.joins, !!c.pairedAi) : C.joinsNow(c.joins)}
+            {c.pairedBy
+              ? C.pairedWith(
+                  c.pairedBy,
+                  c.pairedWith ?? c.joins,
+                  !!c.pairedAi,
+                  c.pairedWith ? c.joins : undefined,
+                )
+              : C.joinsNow(c.joins)}
           </span>
         ) : (
           c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>
@@ -546,7 +617,13 @@ export function Pairing(p: {
         {/* N3: a person's word is replaced only knowingly. */}
         {c.pairedBy && c.joins && picked[c.fact] && ticked.has(c.fact) && (
           <span className="box-why" role="note">
-            {C.replacesPairing(c.pairedBy, c.joins, d.toName, !!c.pairedAi)}
+            {C.replacesPairing(
+              c.pairedBy,
+              c.pairedWith ?? c.joins,
+              d.toName,
+              !!c.pairedAi,
+              c.joins,
+            )}
           </span>
         )}
       </li>

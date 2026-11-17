@@ -1038,6 +1038,23 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     ).toBe(
       "forge-billing has no call left to pair with this box: 1 goes to it already, with an arrow on the map and 2 are paired with it and not on the map yet (Apply forge-billing from Corrections to apply, at the top of the map, to draw them). Paired by AI (not confirmed by a person). To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
     );
+    // The second review (M1): a pairing with this box (a gateway) that goes on to another.
+    expect(
+      nothingLeftWords(
+        of([
+          {
+            paired: "e-entries",
+            drawn: true,
+            pairedBy: "pat",
+            joins: "forge-ledger-core",
+            onward: "forwarded",
+          },
+        ]),
+        "forge-billing",
+      ),
+    ).toBe(
+      "forge-billing has no call left to pair with this box: 1 is paired with it and goes on from it to another box, where its arrow is drawn. Paired by pat. To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
     // The review (N14): each case says only what is known.
     // Calls on record, none of a kind that is paired.
     expect(nothingLeftWords(of([]), "forge-billing")).toBe(
