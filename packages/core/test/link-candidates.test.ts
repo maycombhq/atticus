@@ -407,18 +407,40 @@ describe("the candidates of two boxes", () => {
     });
     expect(of(exact, "c-request-refund").drawn).toBe(true);
     expect(of(exact, "c-cancel-payment").drawn).toBe(false);
-    // Not the join's own Interface: any of the boxes the line is drawn to being this one will do
-    // (a module's component, drawn inside the repo's box).
+    // The second review (S1): a call the join places is drawn only by the join's own
+    // Interface. An Interface citing its line, even one to this box, may be another call's.
     const boxes = linkCandidates({
       ...base,
       drawn: () => true,
       drawnExact: () => false,
-      drawnBoxes: (call) =>
-        call === "c-request-refund" ? ["forge-ledger", "gw-routes"] : ["forge-ledger"],
+      drawnBoxes: () => ["forge-ledger", "gw-routes"],
       inBox: (name) => name === "gw-routes",
     });
-    expect(of(boxes, "c-request-refund").drawn).toBe(true);
+    expect(of(boxes, "c-request-refund").drawn).toBe(false);
     expect(of(boxes, "c-cancel-payment").drawn).toBe(false);
+    // A paired call the join doesn't place (its API is gone from the box) goes by its line:
+    // drawn where an Interface citing it goes to this box (a module's component is in it).
+    const gone = {
+      "c-status": { repo: "forge-gw", entry: "e-gone", method: "GET", path: "/v1/gone", by: "pat" },
+    };
+    const unplaced = (drawnBoxes: () => string[]) =>
+      of(
+        linkCandidates({
+          ...base,
+          pairs: gone,
+          join: joinFacts({ repos, pairs: { "forge-refunds": gone }, explain: true }),
+          drawn: () => true,
+          drawnExact: () => false,
+          drawnBoxes,
+          inBox: (name) => name === "gw-routes",
+        }),
+        "c-status",
+      );
+    expect(unplaced(() => ["forge-ledger", "gw-routes"])).toMatchObject({
+      status: "paired",
+      drawn: true,
+    });
+    expect(unplaced(() => ["forge-ledger"])).toMatchObject({ status: "paired", drawn: false });
   });
 
   it("says of a pairing whose two ends are in one component that no arrow is drawn for it", () => {

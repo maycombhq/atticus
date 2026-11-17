@@ -251,6 +251,8 @@ export interface PairRow {
   pairedBy?: string;
   /** ADR 0199: that pairing is the AI's, not confirmed by a person. */
   pairedAi?: boolean;
+  /** ADR 0199 (M1): the box that pairing names, a gateway that forwards the call to `joins`. */
+  pairedWith?: string;
 }
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
@@ -287,6 +289,7 @@ export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       joins: x.joins ?? "",
       ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
       ...(x.pairedAi ? { pairedAi: true } : {}),
+      ...(x.pairedWith ? { pairedWith: x.pairedWith } : {}),
     }));
 }
 
@@ -407,7 +410,12 @@ export function PairRowsView(p: {
               <span className="hud">
                 {" · "}
                 {r.pairedBy
-                  ? E.add.pairedWith(r.pairedBy, r.joins, !!r.pairedAi)
+                  ? E.add.pairedWith(
+                      r.pairedBy,
+                      r.pairedWith ?? r.joins,
+                      !!r.pairedAi,
+                      r.pairedWith ? r.joins : undefined,
+                    )
                   : E.add.joinsNow(r.joins)}
               </span>
             )}
@@ -466,6 +474,7 @@ export function nothingLeftWords(
       waiting: s.waiting.length,
       gone: s.gone.length,
       inside: s.inside.length,
+      onward: s.onward.length,
     },
     pairedWho(s.here),
   );

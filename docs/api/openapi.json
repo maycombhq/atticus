@@ -40634,6 +40634,16 @@
                 "pairedAi": {
                   "type": "boolean"
                 },
+                "pairedWith": {
+                  "type": "string"
+                },
+                "onward": {
+                  "type": "string",
+                  "enum": [
+                    "forwarded",
+                    "outranked"
+                  ]
+                },
                 "joins": {
                   "type": "string"
                 },
@@ -40817,6 +40827,9 @@
             "additionalProperties": false
           },
           "applyPending": {
+            "type": "boolean"
+          },
+          "noCatalog": {
             "type": "boolean"
           }
         },

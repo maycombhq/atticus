@@ -249,7 +249,16 @@ async function context(
   const facts = estate.repos.find((r) => r.repo === from)?.facts ?? [];
   await s.step(`Reading ${boxWords(to)}'s APIs`);
   const b = await boxApis(root, op, estate, to);
-  return { op, estate, join: join0, facts, b, pairs: estate.pairs[from] ?? {} };
+  return {
+    op,
+    estate,
+    join: join0,
+    facts,
+    b,
+    pairs: estate.pairs[from] ?? {},
+    targets: estate.targets[from] ?? {},
+    aiTargets: estate.aiTargets[from] ?? {},
+  };
 }
 
 async function openRuleQuestion(root: string, from: string) {
@@ -411,6 +420,10 @@ async function candidatesIn(
     pairs: c.pairs,
     to,
     settings: settingsOf(c.facts),
+    // The second review (M1): the answers' targets, so an AI pairing a person's answer
+    // outranks is told by the join's own rule.
+    targets: c.targets,
+    aiTargets: c.aiTargets,
     ...(drawn
       ? {
           drawn: drawn.join,
@@ -422,11 +435,12 @@ async function candidatesIn(
       : {}),
     inBox,
   });
-  if (drawn) return cands;
+  if (drawn) return { ...cands, noCatalog: false };
   // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0199).
   return {
     ...cands,
     calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
+    noCatalog: true,
   };
 }
 
@@ -478,6 +492,7 @@ export async function candidatesOf(
     ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
     ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
     ...((await correctionsAheadOf(root, from)) ? { applyPending: true } : {}),
+    ...(cands.noCatalog ? { noCatalog: true } : {}),
   };
   return { view, facts: c.facts };
 }

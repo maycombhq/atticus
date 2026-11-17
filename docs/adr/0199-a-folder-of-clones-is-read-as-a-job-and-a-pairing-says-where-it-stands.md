@@ -98,6 +98,33 @@ Edit the map's "has no call left to pair with this box: each is paired by a pers
 - **`job: true` and an older server.** The request schema is strict, so a server older than 3.16.0 answers 400 to `job`; the page and its server ship together.
 - **The matcher is compared with the one it replaced** on seeded globs, paths and `.gitignore` files in `packages/core/test/glob-differential.test.ts`, the old one kept as `packages/core/test/glob-old.ts`.
 
+### 8. After the second review (2026-11-17): a pairing with a gateway
+
+**What was wrong, and very likely the reported case.** The estate's join walks gateways: a call paired with a gateway's route, whose forwarding call reaches a service, is one link from the caller to the service (`FactJoin.gateway` holds the hops). The catalog has one Interface, caller → service; the map draws that arrow and never one to the gateway's box. The panel for the gateway's box compared the join's end (the service) with the box (the gateway), found no arrow "to this box", and said the pairing waited, then, once applied, that "the Apply may have been stopped or refused", and offered Apply again for ever. Reproduced with a real catalog on three invented repos (`packages/cli/test/ui-api-links-gateway.test.ts`).
+
+**What is said now**, from what the join itself says, never a guess:
+
+- `CandidateCallView.joins` on a `paired` call: the box the call goes on to. `onward: "forwarded"` when a hop of the join is a route of this box; `onward: "outranked"` when the pairing is the AI's and a person's answer names the target (the join's own rule: a person's word stands over the AI's), read from the answers' targets. `drawn` is then of the arrow the call has, to `joins`.
+- The panel: "pat paired 2 calls of A with G. G forwards them to S, so the arrow on the map is from A to S, not to G (pick that arrow: Why linked says it goes through a gateway)", with **no** Apply; when that arrow isn't in the catalog yet, that it will go from A to S and the Apply that draws it; for an outranked AI pairing, that it is not in effect and where the call goes; and when the join ties the call elsewhere and gives no reason, only that.
+- The map's own words were checked in the code, not in a browser: the picked arrow's Why linked says "It goes through a gateway on the way." It does not name the gateway there, so the panel doesn't claim it does.
+- On other boxes' panels a row names the box the pairing was made with (`pairedWith`) and that it forwards the call, not the box the call reaches; a pairing that is not in effect (outranked, or of another box than the join's) is not named at all.
+- An AI pairing a person's answer outranks, where the answer names this very box or joins nothing, is not listed as paired: the call is what the join says it is.
+
+**An arrow is a pairing's own or it isn't (S1).** For a call the join places, `drawn` is true only when the catalog has the join's own Interface (its id). An Interface citing the same line may be another call's (two calls on one line, one applied, one paired today). The line is used only for a paired call the join doesn't place, and only when no other call of the repo is cited on it.
+
+**Picks survive the panel's own reload (S2).** A read of the same two boxes again keeps what the person picked and ticked for calls still listed; only a call not listed before starts with its suggestion.
+
+**A box is told by its component's repo too (S3).** The catalog's Component records say which repo each component is; an arrow to a component the catalog renamed (`<repo>-<component>`) is an arrow to that repo's box.
+
+**No catalog yet.** `LinkCandidatesView.noCatalog`: the repo was verified and nothing was ever applied. The panel says the catalog hasn't been built and offers Apply; never "applied since".
+
+**Is there a state in which the panel's words could still be untrue?** Known ones, each narrow:
+
+- `applyPending` is a comparison of file times. A corrections file touched without a change (a checkout, a copy) reads as "written since the last Apply". The sentence that uses it is only said of a pairing the catalog doesn't draw, and the action offered (Apply) is right either way.
+- A paired call the join doesn't place (its API is gone from the box) whose line an old Interface still cites to this box is said to be on the map. That is true of the map as it is, until the next Apply takes the old arrow away; the panel doesn't say the arrow is about to go.
+- The catalog read is the one on disk. An Apply running in another window while the panel is open isn't seen until the panel reads again (it does after its own Apply).
+- The gateway sentence says "G forwards them to S" from the join in memory (facts and corrections as they are now), and "on the map" from the catalog. If the facts changed since the last Apply so that the join now ends somewhere else, `drawn` is false (the new Interface isn't in the catalog) and Apply is offered, which is right; the old arrow still on the map isn't mentioned.
+
 ## Consequences
 
 - A second read of the same folder costs one `git config` a listed clone.

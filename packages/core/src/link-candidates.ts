@@ -77,6 +77,19 @@ export interface CandidateCall {
    */
   pairedAi?: boolean;
   /**
+   * ADR 0199, the second review (M1): the box the pairing `pairedBy` made names, when it is
+   * not the box the call goes to (`joins`): a gateway's, whose route forwards the call on.
+   */
+  pairedWith?: string;
+  /**
+   * ADR 0199 (M1): why a call with a pairing goes to another box than the pairing's. The
+   * estate's join says, never a guess: `forwarded`, the pairing is with a gateway's route and
+   * the route's forwarding call reaches `joins` (one link, drawn from the caller to `joins`);
+   * `outranked`, the pairing is the AI's and a person's answer names `joins` instead (the join's
+   * own rule: a person's word stands over the AI's), so the pairing is not in effect.
+   */
+  onward?: "forwarded" | "outranked";
+  /**
    * Beta.28.1: the box the join ties it to now (a repo, or an outside target), for a call that
    * is joined, undrawn or outside: where it goes, or would go, before it is moved.
    */
@@ -291,13 +304,28 @@ export function linkCandidates(o: {
    * calls on one line each have one). Default: `drawnTo`'s one box.
    */
   drawnBoxes?: (call: string) => readonly string[];
+  /**
+   * ADR 0199 (M1): the targets a call's answered question names, by call fact id, and of them
+   * those the AI answered: with them an AI pairing a person's answer outranks is told by the
+   * join's own rule. Left out, no pairing is said to be outranked.
+   */
+  targets?: Readonly<Record<string, string>>;
+  aiTargets?: Readonly<Record<string, unknown>>;
 }): LinkCandidates {
   const isDrawn = (j: FactsJoinResult["joins"][number]) =>
     j.entry.component !== j.call.component && (o.drawn ? o.drawn(j) : true);
   // Each of A's joined calls: the box it goes to, and whether any of its arrows is drawn.
   const joined = new Map<
     string,
-    { to: string; drawn: boolean; entry: string; exact: boolean; inside?: string }
+    {
+      to: string;
+      drawn: boolean;
+      entry: string;
+      exact: boolean;
+      inside?: string;
+      /** The repos of the gateway routes the call goes through to reach `to`. */
+      hops: readonly string[];
+    }
   >();
   for (const j of o.join.joins) {
     if (j.call.repo !== o.from) continue;
@@ -311,6 +339,7 @@ export function linkCandidates(o: {
         entry: j.entry.fact,
         exact: !own && !!o.drawnExact?.(j),
         ...(own ? { inside: own } : {}),
+        hops: (j.gateway ?? []).map((h) => h.entry.repo),
       });
     }
   }
@@ -344,10 +373,30 @@ export function linkCandidates(o: {
     if (o.to.repo ? p.repo === o.to.repo : p.system === o.to.system) return p;
     return undefined;
   };
+  // S1: how many of A's call facts are cited on each line (two on one line each have an arrow).
+  const citedAt = new Map<string, number>();
+  for (const f of o.facts)
+    if (f.kind === "call") {
+      const at = `${f.cite.file}:${f.cite.line}`;
+      citedAt.set(at, (citedAt.get(at) ?? 0) + 1);
+    }
+  /**
+   * M1: an AI pairing a person's answer outranks (the join's own rule, facts-join.ts: a
+   * person's answer stands over an AI pairing): the pairing is on file and not in effect.
+   */
+  const outranked = (id: string) => {
+    const p = o.pairs?.[id];
+    return !!p?.ai && !p.none && o.targets?.[id] !== undefined && !o.aiTargets?.[id];
+  };
   const calls: CandidateCall[] = [];
   for (const f of o.facts) {
     if (f.kind !== "call" || !JOINABLE.has(f.callType)) continue;
-    const p = pairedHere(f.id);
+    const t = joined.get(f.id);
+    // An outranked pairing with this box is still said (the call goes elsewhere, by the
+    // person's answer) only where the join placed the call in another box; where the answer
+    // names this very box, or joins nothing, the call is what the join says it is.
+    const stays = !outranked(f.id) || (!!t && !t.inside && !isHere(t.to));
+    const p = stays ? pairedHere(f.id) : undefined;
     const base = {
       fact: f.id,
       callType: f.callType,
@@ -363,22 +412,39 @@ export function linkCandidates(o: {
             normalizePath(x.path) === normalizePath(p.path) &&
             (!p.method || !x.method || x.method.toUpperCase() === p.method.toUpperCase()),
         );
-      // Whether the map draws it (ADR 0199). Both ends in one component: never. Else the
-      // join's own Interface is in the catalog and goes here; else an Interface citing the
-      // call's line goes to this box (a module's component is in the repo's box; another call
-      // on the same line may go elsewhere, and an old arrow to another box is not this one).
+      // ADR 0199. `tied`: the join of this call. Both ends in one component: no arrow, ever.
+      // The join may carry the call on to another box than the pairing's (M1): a gateway's
+      // route forwards it (the join walked the gateway: one link, caller to service), or a
+      // person's answer outranks an AI pairing. `joins` is then that box, and `drawn` is of
+      // the arrow the call has, to it.
       const tied = joined.get(f.id);
+      const onwardTo = tied && !tied.inside && !isHere(tied.to) ? tied.to : undefined;
+      const onward =
+        onwardTo === undefined
+          ? undefined
+          : outranked(f.id)
+            ? ("outranked" as const)
+            : tied!.hops.some(isHere)
+              ? ("forwarded" as const)
+              : undefined;
       const known =
         o.drawn !== undefined ||
         o.drawnTo !== undefined ||
         o.drawnExact !== undefined ||
         o.drawnBoxes !== undefined;
+      // Whether the map draws its arrow. With a join (S1): the catalog has the join's own
+      // Interface, nothing less (another call cited on the same line has an arrow of its own).
+      // With none: an Interface citing the call's line goes to this box, where no other call
+      // of the repo is cited on that line.
+      const lineHere = () => (citedAt.get(base.at) ?? 0) < 2 && boxesOf(f.id).some(isHere);
       const drawn = !known
         ? undefined
         : tied?.inside
           ? false
           : o.drawnExact
-            ? (!!tied && tied.exact && isHere(tied.to)) || boxesOf(f.id).some(isHere)
+            ? tied
+              ? tied.exact
+              : lineHere()
             : boxesOf(f.id).length
               ? boxesOf(f.id).some(isHere)
               : !!tied && tied.drawn && isHere(tied.to);
@@ -388,6 +454,8 @@ export function linkCandidates(o: {
         ...(api ? { paired: api.id } : {}),
         ...(drawn !== undefined ? { drawn } : {}),
         ...(tied?.inside ? { inside: tied.inside } : {}),
+        ...(onwardTo !== undefined ? { joins: onwardTo } : {}),
+        ...(onward ? { onward } : {}),
         pairedBy: p.by,
         ...(p.ai ? { pairedAi: true } : {}),
       });
@@ -416,8 +484,17 @@ export function linkCandidates(o: {
           : status.get(f.id);
     const nowHere = s?.status === "here" && j ? j.entry : undefined;
     // N3: a person's pairing with the box it goes to now (never this one: that is `paired`).
+    // M1: only a pairing that is in effect is named: the box it names is the one the call
+    // goes to, or a gateway whose route forwards it there; never an AI pairing a person's
+    // answer outranks. `pairedWith` is the pairing's own box when the call goes on from it.
     const by = o.pairs?.[f.id];
-    const pairedBy = by && !by.none && (j || out !== undefined) ? by.by : undefined;
+    const byBox = by && !by.none ? (by.repo ?? by.system) : undefined;
+    const forwards = !!by?.repo && !!j && j.to !== by.repo && j.hops.includes(by.repo);
+    const inEffect =
+      byBox !== undefined &&
+      !outranked(f.id) &&
+      (out !== undefined ? by!.system === out : !!j && (j.to === by!.repo || forwards));
+    const pairedBy = inEffect ? by!.by : undefined;
     const now = j?.to ?? (outDrawn ? (drawnBox ?? out) : out) ?? elsewhere;
     const movable = s?.status === "joined" || s?.status === "here";
     const scored = o.apis
@@ -452,6 +529,7 @@ export function linkCandidates(o: {
       ...(nowHere ? { now: nowHere } : {}),
       ...(pairedBy ? { pairedBy } : {}),
       ...(pairedBy && by?.ai ? { pairedAi: true } : {}),
+      ...(pairedBy && forwards ? { pairedWith: byBox!, onward: "forwarded" as const } : {}),
       ...(best ? { suggestion: top[0]! } : {}),
       ...(top.length ? { suggestions: top } : {}),
       ...(confident ? { confident: true } : {}),

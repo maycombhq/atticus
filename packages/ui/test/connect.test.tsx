@@ -486,6 +486,99 @@ describe("calls that are paired, by where each stands", () => {
     expect(C.replacesPairing("copilot", "forge-cards", L, true)).not.toContain("their word");
   });
 
+  // The second review (M1): a call paired with a gateway's route. The join carries it on to
+  // the service behind the gateway: its one arrow is caller → service, never caller → gateway.
+  describe("paired with a gateway that forwards the call on", () => {
+    const G = "forge-gw";
+    const gwView = (calls: Api.CandidateCallViewT[], o: Partial<Api.LinkCandidatesViewT> = {}) =>
+      view(calls, { to: { repo: G }, toName: G, ...o });
+    const fwd = (n: number, o: Partial<Api.CandidateCallViewT> = {}) =>
+      paired(n, { joins: "forge-ledger", onward: "forwarded", ...o });
+
+    it("on the map: says the gateway forwards them and which arrow to look at, with no Apply", () => {
+      const out = show(gwView([fwd(1), fwd(2)]));
+      expect(out).toContain(C.pairedForwarded("pat", 2, B, G, "forge-ledger", true));
+      expect(C.pairedForwarded("pat", 2, B, G, "forge-ledger", true)).toBe(
+        "pat paired 2 calls of forge-billing with forge-gw. forge-gw forwards them to forge-ledger, so the arrow on the map is from forge-billing to forge-ledger, not to forge-gw (pick that arrow: Why linked says it goes through a gateway). To change that, undo the pairing: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+      );
+      expect(out).not.toContain(COPY.propose.apply(B));
+      // Never the words of a pairing that waits, or of an Apply that may have been stopped.
+      expect(out).not.toContain("may have been stopped");
+      expect(out).not.toContain("doesn't draw");
+      expect(out).not.toContain(C.pairedOnMap("pat", 2, B, G));
+    });
+
+    it("not on the map yet: says where the arrow will go, and offers the Apply that draws it", () => {
+      const out = show(gwView([fwd(1, { drawn: false })], { applyPending: true }));
+      expect(out).toContain(C.pairedForwarded("pat", 1, B, G, "forge-ledger", false));
+      expect(C.pairedForwarded("pat", 1, B, G, "forge-ledger", false)).toBe(
+        "pat paired 1 call of forge-billing with forge-gw. forge-gw forwards it to forge-ledger, so its arrow will be from forge-billing to forge-ledger, not to forge-gw, and the map doesn't draw it yet. Apply to forge-billing's map, below, draws it.",
+      );
+      expect(out).toContain(COPY.propose.apply(B));
+    });
+
+    it("an AI pairing a person's answer outranks: not in effect, and where the call goes instead", () => {
+      const out = show(
+        gwView([
+          paired(1, {
+            pairedBy: "copilot",
+            pairedAi: true,
+            joins: "forge-ledger",
+            onward: "outranked",
+          }),
+        ]),
+      );
+      expect(out).toContain(C.pairedOutranked(1, B, G, "forge-ledger", true));
+      expect(C.pairedOutranked(1, B, G, "forge-ledger", true)).toBe(
+        "AI paired 1 call of forge-billing with forge-gw, but a person's answer names forge-ledger for it, and a person's word stands over the AI's: the pairing is not in effect. Its arrow is from forge-billing to forge-ledger, on the map. To clear the AI's pairing, undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+      );
+      expect(out).not.toContain(COPY.propose.apply(B));
+      expect(C.pairedOutranked(1, B, G, "forge-ledger", false)).toContain(
+        "Apply to forge-billing's map, below, draws it.",
+      );
+    });
+
+    it("the read ties it to another box and doesn't say why: only that is said", () => {
+      const out = show(gwView([paired(1, { joins: "forge-ledger" })]));
+      expect(out).toContain(C.pairedTiedElsewhere("pat", 1, B, G, "forge-ledger", true));
+      expect(C.pairedTiedElsewhere("pat", 1, B, G, "forge-ledger", true)).toBe(
+        "pat paired 1 call of forge-billing with forge-gw, but the estate's read ties it to forge-ledger, and its facts don't say why here. Its arrow is from forge-billing to forge-ledger, on the map. To change that, undo the pairing: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+      );
+    });
+
+    it("on another box's panel the row names the box it was paired with, and that it forwards", () => {
+      const out = show(
+        view([
+          other(1, {
+            status: "joined",
+            joins: "forge-ledger",
+            pairedBy: "pat",
+            pairedWith: G,
+            onward: "forwarded",
+          }),
+        ]),
+      );
+      expect(out).toContain(C.pairedWith("pat", G, false, "forge-ledger"));
+      expect(C.pairedWith("pat", G, false, "forge-ledger")).toBe(
+        "paired by a person (pat) with forge-gw, which forwards it to forge-ledger",
+      );
+      expect(out).not.toContain(C.pairedWith("pat", "forge-ledger"));
+      // The summary names the box of the pairing, not the box the call reaches.
+      expect(out).toContain(C.pairedElsewhere("pat", 1, "forge-gw (1)", B));
+    });
+  });
+
+  // The second review: no catalog built yet (the repo was only verified): never "applied since".
+  it("says the catalog hasn't been built yet, and offers the Apply that builds it", () => {
+    const out = show(view([paired(1, { drawn: false })], { noCatalog: true }));
+    expect(out).toContain(C.pairedWaiting("pat", 1, B, L, false, true));
+    expect(C.pairedWaiting("pat", 1, B, L, false, true)).toBe(
+      "pat paired 1 call of forge-billing with forge-ledger, but no catalog has been built yet, so the map draws nothing. Apply to forge-billing's map, below, builds it and draws the arrow.",
+    );
+    expect(out).not.toContain("applied since");
+    expect(out).toContain(COPY.propose.apply(B));
+  });
+
   // The review (S7): a call paired with a repo drawn inside the box being viewed goes here.
   it("never lists a call that goes to this very box as paired with another box", () => {
     const out = show(

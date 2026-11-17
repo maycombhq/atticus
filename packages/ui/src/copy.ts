@@ -24,6 +24,8 @@ const CANARY_WHAT: Record<string, string> = {
 const COPY_UNDO = (from: string) =>
   `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
 const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
+const APPLY_BUILDS = (from: string) =>
+  `Apply to ${from}'s map, below, builds it and draws the arrow.`;
 const APPLY_AGAIN = (from: string) =>
   `that Apply may have been stopped or refused before it wrote the map, or the link was deleted on the map. Apply to ${from}'s map, below, runs it again and says what it leaves out.`;
 
@@ -5498,7 +5500,15 @@ export const COPY = {
        */
       noCallsLeft: (
         from: string,
-        n: { here: number; drawn: number; waiting: number; gone: number; inside: number },
+        n: {
+          here: number;
+          drawn: number;
+          waiting: number;
+          gone: number;
+          inside: number;
+          /** Paired with it and carried on to another box (a gateway forwards it): M1. */
+          onward?: number;
+        },
         who: string,
       ) => {
         const are = (k: number) => (k === 1 ? "1 is" : `${k} are`);
@@ -5515,13 +5525,18 @@ export const COPY = {
               ]
             : []),
           ...(n.gone ? [`${are(n.gone)} paired with an API it no longer has on record`] : []),
+          ...(n.onward
+            ? [
+                `${are(n.onward)} paired with it and ${n.onward === 1 ? "goes" : "go"} on from it to another box, where ${n.onward === 1 ? "its arrow is" : "their arrows are"} drawn`,
+              ]
+            : []),
           ...(n.inside
             ? [
                 `${are(n.inside)} paired with an API in ${n.inside === 1 ? "its" : "their"} own component, which draws no arrow`,
               ]
             : []),
         ];
-        const paired = n.drawn + n.waiting + n.gone + n.inside > 0;
+        const paired = n.drawn + n.waiting + n.gone + n.inside + (n.onward ?? 0) > 0;
         return `${from} has no call left to pair with this box: ${listWords(parts)}.${paired ? ` Paired by ${who}. To pair one again, first undo it: ${COPY_UNDO(from)}.` : ""}`;
       },
       /** A redirect: the repo's facts hold no call at all. Only that is known. */
@@ -5535,10 +5550,12 @@ export const COPY = {
       moveCaption: (from: string, to: string) =>
         `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
       joinsNow: (box: string) => `goes to ${box} now`,
-      pairedWith: (by: string, box: string, ai = false) =>
-        ai
-          ? `paired by AI (${by}) with ${box}, not confirmed by a person: pairing it here replaces that pairing`
-          : `paired by a person (${by}) with ${box}: pairing it here replaces their word`,
+      pairedWith: (by: string, box: string, ai = false, forwardsTo?: string) => {
+        const with_ = forwardsTo ? `${box}, which forwards it to ${forwardsTo}` : box;
+        return ai
+          ? `paired by AI (${by}) with ${with_}, not confirmed by a person: pairing it here replaces that pairing`
+          : `paired by a person (${by}) with ${with_}: pairing it here replaces their word`;
+      },
       noApis: (to: string) =>
         `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
       pickOne: "Pick the API for at least one call.",
@@ -5859,11 +5876,21 @@ export const COPY = {
      * newer than the repo's last Apply (it only waits); else an Apply ran since and the map
      * still has none, and why can't be told from here.
      */
-    pairedWaiting: (who: string, n: number, from: string, to: string, ahead: boolean) =>
+    pairedWaiting: (
+      who: string,
+      n: number,
+      from: string,
+      to: string,
+      ahead: boolean,
+      /** No catalog is built at all yet (the repo was verified, never applied). */
+      noCatalog = false,
+    ) =>
       `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, ${
-        ahead
-          ? `but the map doesn't draw ${n === 1 ? "it" : "them"} yet: the pairing${n === 1 ? " is" : "s are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, "the arrow")}`
-          : `but the map draws no arrow for ${n === 1 ? "it" : "them"}, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
+        noCatalog
+          ? `but no catalog has been built yet, so the map draws nothing. ${APPLY_BUILDS(from)}`
+          : ahead
+            ? `but the map doesn't draw ${n === 1 ? "it" : "them"} yet: the pairing${n === 1 ? " is" : "s are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, "the arrow")}`
+            : `but the map draws no arrow for ${n === 1 ? "it" : "them"}, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
       }`,
     /** Some drawn, some not. */
     pairedMix: (
@@ -5879,6 +5906,48 @@ export const COPY = {
           ? `: ${waiting === 1 ? "it is" : "they are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, waiting === 1 ? "it" : "them")}`
           : `, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
       }`,
+    /**
+     * The second review (M1): paired with this box, a gateway whose route forwards the call on
+     * (the estate's join walked the gateway). The one arrow is from the caller to `where`, the
+     * service behind it. `drawn`: the catalog has that arrow; else the Apply offered draws it.
+     */
+    pairedForwarded: (
+      who: string,
+      n: number,
+      from: string,
+      to: string,
+      where: string,
+      drawn: boolean,
+    ) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}. ${to} forwards ${n === 1 ? "it" : "them"} to ${where}, ${
+        drawn
+          ? `so the arrow on the map is from ${from} to ${where}, not to ${to} (pick that arrow: Why linked says it goes through a gateway). To change that, undo the pairing: ${COPY_UNDO(from)}.`
+          : `so ${n === 1 ? "its" : "their"} arrow will be from ${from} to ${where}, not to ${to}, and the map doesn't draw it yet. ${APPLY_DRAWS(from, "it")}`
+      }`,
+    /**
+     * M1: an AI pairing with this box that a person's answer outranks: not in effect. The call
+     * goes where the answer says.
+     */
+    pairedOutranked: (n: number, from: string, to: string, where: string, drawn: boolean) =>
+      `AI paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, but a person's answer names ${where} for ${n === 1 ? "it" : "them"}, and a person's word stands over the AI's: the pairing is not in effect. ${n === 1 ? "Its arrow is" : "Their arrows are"} from ${from} to ${where}, ${
+        drawn
+          ? `on the map. To clear the AI's pairing, undo it: ${COPY_UNDO(from)}.`
+          : `not on the map yet. ${APPLY_DRAWS(from, "it")}`
+      }`,
+    /** M1: paired with this box, tied to another by the read, and the join gives no reason. */
+    pairedTiedElsewhere: (
+      who: string,
+      n: number,
+      from: string,
+      to: string,
+      where: string,
+      drawn: boolean,
+    ) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, but the estate's read ties ${n === 1 ? "it" : "them"} to ${where}, and its facts don't say why here. ${n === 1 ? "Its arrow is" : "Their arrows are"} from ${from} to ${where}, ${
+        drawn
+          ? `on the map. To change that, undo the pairing: ${COPY_UNDO(from)}.`
+          : `not on the map yet. ${APPLY_DRAWS(from, "it")}`
+      }`,
     /** Paired with this box, to an API the box no longer has on record: no Apply draws it. */
     pairedGone: (who: string, n: number, from: string, to: string) =>
       `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with an API ${to} no longer has on record, so no arrow can be drawn for ${n === 1 ? "it" : "them"}. Undo the pairing (${COPY_UNDO(from)}), then pair the call again here.`,
@@ -5889,10 +5958,12 @@ export const COPY = {
     pairedElsewhere: (who: string, n: number, where: string, from: string) =>
       `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with another box: ${where}. ${n === 1 ? "It is" : "Each is"} listed below with who paired it; pairing ${n === 1 ? "it" : "one"} here replaces that pairing. To free ${n === 1 ? "it" : "one"} without pairing it here, undo it: ${COPY_UNDO(from)}.`,
     /** A row: a pairing with another box that the map doesn't draw yet. */
-    pairedUndrawn: (by: string, box: string, ai = false) =>
-      ai
-        ? `paired by AI (${by}) with ${box}, not confirmed by a person, and not on the map yet (the repo's next Apply draws it): pairing it here replaces that pairing`
-        : `paired by a person (${by}) with ${box}, and not on the map yet (the repo's next Apply draws it): pairing it here replaces their word`,
+    pairedUndrawn: (by: string, box: string, ai = false, forwardsTo?: string) => {
+      const with_ = forwardsTo ? `${box}, which forwards it to ${forwardsTo}` : box;
+      return ai
+        ? `paired by AI (${by}) with ${with_}, not confirmed by a person, and not on the map yet (the repo's next Apply draws it): pairing it here replaces that pairing`
+        : `paired by a person (${by}) with ${with_}, and not on the map yet (the repo's next Apply draws it): pairing it here replaces their word`;
+    },
     /** One box the calls go to now, and how many: `forge-ledger (3)`. */
     linkedTo: (box: string, n: number) => `${box} (${n})`,
     /** The calls that have an arrow elsewhere, to move to this box. */
@@ -5906,14 +5977,18 @@ export const COPY = {
     joinsNow: (box: string) => `goes to ${box} now`,
     undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,
     /** The review of beta.28.1 (N3): a call a person paired with the box it goes to now. */
-    pairedWith: (by: string, box: string, ai = false) =>
+    /** `forwardsTo`: the pairing's box is a gateway that forwards the call there (M1). */
+    pairedWith: (by: string, box: string, ai = false, forwardsTo?: string) => {
+      const with_ = forwardsTo ? `${box}, which forwards it to ${forwardsTo}` : box;
+      return ai
+        ? `paired by AI (${by}) with ${with_}, not confirmed by a person`
+        : `paired by a person (${by}) with ${with_}`;
+    },
+    /** `arrowTo`: where its arrow goes now, when that isn't the pairing's box (a gateway's). */
+    replacesPairing: (by: string, box: string, to: string, ai = false, arrowTo = box) =>
       ai
-        ? `paired by AI (${by}) with ${box}, not confirmed by a person`
-        : `paired by a person (${by}) with ${box}`,
-    replacesPairing: (by: string, box: string, to: string, ai = false) =>
-      ai
-        ? `AI (${by}) paired this call with ${box}, not confirmed by a person: pairing it with ${to} replaces that pairing (the newest line wins), and its arrow to ${box} goes.`
-        : `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${box} goes.`,
+        ? `AI (${by}) paired this call with ${box}, not confirmed by a person: pairing it with ${to} replaces that pairing (the newest line wins), and its arrow to ${arrowTo} goes.`
+        : `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${arrowTo} goes.`,
     /** S2: calls with an arrow to this very box, never paired again. */
     hereTitle: (to: string, n: number) => `Going to ${to} already (${n})`,
     hereWhy: (api: string) => `goes here already, to ${api}: nothing to pair`,
