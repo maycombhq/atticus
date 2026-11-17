@@ -5,7 +5,12 @@ import {
   type EvidenceT,
   type RecordOf,
 } from "@maycombhq/core";
-import { namingHint, type KnowledgePage, type NamingHint } from "@maycombhq/knowledge";
+import {
+  namingHint,
+  namingHinter,
+  type KnowledgePage,
+  type NamingHint,
+} from "@maycombhq/knowledge";
 import { codeNames, codeTermsOf, fieldNamesOf, type CodeTerm } from "./code.js";
 import type { DefinitionProposal } from "./proposals.js";
 import { wikiDefinitions, type WikiDefinition } from "./wiki.js";
@@ -141,6 +146,13 @@ export function usesCited<U extends { record: string; evidence: EvidenceT; all?:
   return out;
 }
 
+/**
+ * For the tests that compare a build with the one before beta.28.4: `everyTerm` asks for each
+ * naming hint as before, reading every term for each name (`namingHint`), in place of the terms
+ * read once (`namingHinter`). The glossary is the same either way; only the time differs.
+ */
+export const glossaryBuildHooks: { everyTerm?: boolean } = {};
+
 const ALIASES = (d: Decision) => (Array.isArray(d.value) ? d.value : [d.value]).map(String);
 
 export function buildGlossary(input: GlossaryInput): GlossaryBuild {
@@ -200,13 +212,20 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
     term: defs.get(id)?.[0]?.term ?? id.slice("term.".length).replace(/-/g, " "),
     aliases: aliasesOf.get(id) ?? [],
   }));
+  // beta.28.4: the terms are read once for every name (namingHinter). A hint was asked of every
+  // other term for each compound name, the square of the estate's vocabulary: minutes of a
+  // build at ten thousand field names, with no line said.
+  const every = glossaryBuildHooks.everyTerm === true;
+  let hintAmongKnown: ReturnType<typeof namingHinter> | undefined;
   for (const [id, c] of [...code]) {
     if (defs.has(id) || defined.has(id) || !c.key.includes(" ")) continue;
-    const h = namingHint(
-      id,
-      c.key,
-      known.filter((k) => k.id !== id),
-    );
+    const h = every
+      ? namingHint(
+          id,
+          c.key,
+          known.filter((k) => k.id !== id),
+        )
+      : (hintAmongKnown ??= namingHinter(known))(id, c.key, id);
     if (h?.kind === "abbreviation") code.delete(id);
   }
   const ids = new Set([...defs.keys(), ...code.keys(), ...defined.keys()]);
@@ -362,9 +381,10 @@ export function buildGlossary(input: GlossaryInput): GlossaryBuild {
   if (input.hints !== false) {
     const covered = new Set([...terms.flatMap((t) => t.fields), ...links.map((l) => l.column)]);
     const termNames = entries.map((e) => ({ id: e.id, term: e.term, aliases: e.aliases }));
+    const hint = every ? undefined : namingHinter(termNames);
     for (const f of fieldNamesOf(names)) {
       if (covered.has(f.record)) continue;
-      const h = namingHint(f.record, f.name, termNames);
+      const h = hint ? hint(f.record, f.name) : namingHint(f.record, f.name, termNames);
       if (h) hints.push(h);
     }
   }

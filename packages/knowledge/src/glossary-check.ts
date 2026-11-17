@@ -140,6 +140,91 @@ export function namingHint(
   return undefined;
 }
 
+/**
+ * `namingHint` for many names against one list of terms (beta.28.4): the terms are read once, and
+ * each name is answered from what was kept, so a glossary of thousands of terms no longer reads
+ * every term for every name (a build asked once per compound term: the square of the estate's
+ * vocabulary, minutes at ten thousand terms). The answer is `namingHint`'s for the same list;
+ * `except` leaves one term out, as if the list were given without it.
+ *
+ * What is kept: each term's words; the terms by their words joined (a name that is a term's own);
+ * the aliases by theirs, in the list's order; and, for the shortenings, the terms by how many
+ * words they have and each word's first letter. A word shortens another only when they start
+ * alike, or the list of abbreviations says so (its full word's first letter is looked up too),
+ * so only the terms a name could shorten are compared with it, in the list's order.
+ */
+export function namingHinter(
+  terms: readonly TermName[],
+): (record: string, name: string, except?: string) => NamingHint | undefined {
+  const wordsOf = terms.map((t) => nameWords(t.term));
+  /** The terms whose words, joined, are the key: their places in the list. */
+  const named = new Map<string, number[]>();
+  /** Each alias by its key, in the order `namingHint` meets them: by term, then by alias. */
+  const aliased = new Map<string, { at: number; alias: string }[]>();
+  /** The terms by their shape (how many words, each word's first letter), in the list's order. */
+  const shaped = new Map<string, number[]>();
+  const put = <T>(m: Map<string, T[]>, k: string, v: T) => {
+    const l = m.get(k);
+    if (l) l.push(v);
+    else m.set(k, [v]);
+  };
+  terms.forEach((t, at) => {
+    const tw = wordsOf[at]!;
+    put(named, tw.join(" "), at);
+    for (const alias of t.aliases ?? []) put(aliased, nameWords(alias).join(" "), { at, alias });
+    put(shaped, `${tw.length}|${tw.map((x) => x[0]).join("")}`, at);
+  });
+  return (record, name, except) => {
+    const w = nameWords(name);
+    if (!w.length) return undefined;
+    const key = w.join(" ");
+    const left = (at: number) => except !== undefined && terms[at]!.id === except;
+    if ((named.get(key) ?? []).some((at) => !left(at))) return undefined;
+    const a = (aliased.get(key) ?? []).find((x) => !left(x.at));
+    if (a) {
+      const t = terms[a.at]!;
+      return {
+        record,
+        name,
+        term: t.id,
+        termName: t.term,
+        kind: "alias",
+        message: `${name} uses "${a.alias}", another name for ${t.term} (${t.id}); name it ${snake(t.term)} or keep it linked.`,
+      };
+    }
+    // The shapes of the terms the name could shorten: at each word, its own first letter or
+    // that of the word the abbreviations list says it stands for.
+    let shapes = [""];
+    for (const x of w) {
+      const full = NAME_ABBREVIATIONS[x];
+      const firsts =
+        typeof full === "string" && full && full[0] !== x[0] ? [x[0]!, full[0]!] : [x[0]!];
+      shapes = shapes.flatMap((s) => firsts.map((f) => s + f));
+    }
+    let first = -1;
+    for (const shape of new Set(shapes))
+      for (const at of shaped.get(`${w.length}|${shape}`) ?? []) {
+        if (first !== -1 && at >= first) break;
+        if (left(at)) continue;
+        const tw = wordsOf[at]!;
+        if (!w.every((x, i) => x === tw[i] || abbreviates(x, tw[i]!))) continue;
+        if (!w.some((x, i) => x !== tw[i])) continue;
+        first = at;
+        break;
+      }
+    if (first === -1) return undefined;
+    const t = terms[first]!;
+    return {
+      record,
+      name,
+      term: t.id,
+      termName: t.term,
+      kind: "abbreviation",
+      message: `${name} looks like ${t.term} (${t.id}); name it ${snake(t.term)} or link it to that term.`,
+    };
+  };
+}
+
 interface NewField {
   id: string;
   name: string;
