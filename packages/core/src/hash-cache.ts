@@ -33,8 +33,11 @@ import { RACY_MS, recordCacheHooks } from "./record-cache.js";
  * preview) reads what is kept and writes nothing.
  */
 
-/** Tests hear how many files each call opened and hashed. */
-export const hashCacheHooks: { onHashed?: (files: number) => void } = {};
+/**
+ * Tests hear how many files each call opened and hashed; with `off`, every file is read and
+ * hashed and nothing is kept, as before there were kept hashes (an equivalence test's other side).
+ */
+export const hashCacheHooks: { onHashed?: (files: number) => void; off?: boolean } = {};
 
 /** The shape of what is kept; another version is hashed again from the files. */
 const VERSION = "1";
@@ -109,7 +112,7 @@ export async function hashFilesKept(o: {
   signal?: AbortSignal;
 }): Promise<FileHash[]> {
   const stop = o.signal ? { signal: o.signal } : {};
-  if (!o.cacheRoot) {
+  if (!o.cacheRoot || hashCacheHooks.off) {
     const all = await hashFilesIn(o.dir, o.files, stop);
     hashCacheHooks.onHashed?.(o.files.length);
     return all.map((h) => ({ sha: h.sha, size: h.size, mtimeMs: h.mtimeMs }));
