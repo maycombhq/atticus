@@ -5972,8 +5972,6 @@ export const COPY = {
       `If ${system} calls ${repo}, drag the line from ${system} to ${repo}, or pick ${system} and choose Declare a link…: that says who calls a gateway route, and needs no spec.`,
     /** Why the write button is off while nothing is ticked: never a button that writes nothing. */
     pickFirst: "Tick a call and pick its API to preview and write the pair.",
-    /** The write button's words while nothing is ticked (it is off): never "Write 0 pairs". */
-    confirmNone: "Write the pairs",
     /**
      * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the
      * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's

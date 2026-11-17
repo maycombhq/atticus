@@ -105,16 +105,26 @@ describe("Connect with something to pair", () => {
     expect(out).not.toContain("Write 0 pairs");
     expect(out).toContain(C.pickFirst);
     expect(out).toMatch(
-      new RegExp(`<button[^>]*class="btn primary"[^>]*disabled=""[^>]*>${C.confirmNone}</button>`),
+      new RegExp(`<button[^>]*class="btn primary"[^>]*disabled=""[^>]*>Write the pairs</button>`),
     );
     // With an API to pair with, the other direction isn't pushed at the person.
     expect(out).not.toContain(C.systemCallsRepo("Harbor Audit", "forge-edge"));
   });
 
   it("never words a count of none as pairs to write", () => {
-    expect(C.confirm(0, false)).toBe(C.confirmNone);
+    expect(C.confirm(0, false)).toBe("Write the pairs");
+    // One wording, in one place: no second copy of it to drift.
+    expect("confirmNone" in C).toBe(false);
     expect(C.confirm(1, false)).toBe("Write the pair");
     expect(C.confirm(3, true)).toBe("Write 3 pairs and answer for all");
     expect(C.confirm(0, true)).toBe("Answer for all its calls");
+  });
+});
+
+describe("what works instead of declaring a service's entry", () => {
+  it("names the topic choice by the words on its radio button", () => {
+    expect(COPY.declare.notGatewayDo("Harbor Audit", "forge-ledger", true)).toContain(
+      `choose "${COPY.declare.kinds.publishes}" above`,
+    );
   });
 });
