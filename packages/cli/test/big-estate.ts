@@ -140,10 +140,20 @@ const SYLLABLES = [
 ];
 const inventedWord = (n: number) =>
   SYLLABLES[n % 16]! + SYLLABLES[Math.floor(n / 16) % 16]! + SYLLABLES[Math.floor(n / 256) % 16]!;
-/** The v-th field name of two invented words, in camel case. */
-const fieldNameOf = (v: number) => {
-  const second = inventedWord(300 + Math.floor(v / 211));
-  return `${inventedWord(v % 211)}${second[0]!.toUpperCase()}${second.slice(1)}`;
+/** Every how many field names one is a shortening of the name before it. */
+const SHORTENED_EVERY = 50;
+/** Whether the v-th field name shortens the one before it (`barento…` for `barentok…`). */
+export const bigFieldShortens = (v: number) => v % SHORTENED_EVERY === 7;
+/**
+ * The v-th field name of two invented words, in camel case. One in fifty is the name before it
+ * with its first word cut short by a letter, as payloads write `holderNm` beside `holderName`:
+ * the glossary takes it for a shortening of that term, not a term of its own.
+ */
+export const bigFieldName = (v: number): string => {
+  const of = bigFieldShortens(v) ? v - 1 : v;
+  const first = inventedWord(of % 211);
+  const second = inventedWord(300 + Math.floor(of / 211));
+  return `${bigFieldShortens(v) ? first.slice(0, -1) : first}${second[0]!.toUpperCase()}${second.slice(1)}`;
 };
 /** The v-th access profile of the shared access file. */
 export const bigTermValue = (v: number) => `FORGE_PROFILE_${String(v).padStart(3, "0")}`;
@@ -197,7 +207,7 @@ export function bigRepoFacts(
     ).entries())
       for (const [n, given] of names.entries()) {
         const name = o.fieldNames
-          ? fieldNameOf((r * o.entries * 4 + k * 4 + s * 2 + n) % o.fieldNames)
+          ? bigFieldName((r * o.entries * 4 + k * 4 + s * 2 + n) % o.fieldNames)
           : given;
         const fc = cited(files, file, `        private String ${name}; // ${side}`);
         push({

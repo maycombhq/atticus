@@ -12,8 +12,8 @@ import {
 } from "@maycombhq/scanner";
 import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
-import { bigRepoId, writeBigRepo } from "./big-estate.js";
-import { makeFieldEstate, type FieldEstate } from "./field-estate.js";
+import { bigFieldShortens, bigRepoId, writeBigRepo } from "./big-estate.js";
+import { makeFieldEstate, termOfField, type FieldEstate } from "./field-estate.js";
 
 /**
  * beta.28.4, the owner's field report of beta.28.3: `verify <repo> --write` of one repo, and the
@@ -125,6 +125,8 @@ describe("one repo changed on an estate shaped as the owner's (beta.28.4)", () =
     expect(value?.written.written).toBeGreaterThan(0);
     expect(value?.written.unchanged).toBeGreaterThan(8_000);
     expect(s).toBeLessThan(WRITE_CPU_S);
+    // The stage was timed at all (the phase is found by its name).
+    expect(glossary).toBeGreaterThan(0);
     expect(glossary).toBeLessThan(GLOSSARY_S);
   }, 600_000);
 
@@ -144,6 +146,8 @@ describe("one repo changed on an estate shaped as the owner's (beta.28.4)", () =
  * naming hints as they were (every term read for each, `glossaryBuildHooks.everyTerm`) and as
  * they are: the same record files and the same build.json.
  */
+const FIELD_NAMES = 1200;
+
 describe("the build of that shape is the one before the fix, byte for byte (beta.28.4)", () => {
   it("builds the same files with the naming hints read the old way and the new", async () => {
     const small = await mkdtemp(join(tmpdir(), "atticus-field-eq-"));
@@ -153,7 +157,7 @@ describe("the build of that shape is the one before the fix, byte for byte (beta
         gateways: 4,
         entries: 40,
         calls: 30,
-        fieldNames: 1200,
+        fieldNames: FIELD_NAMES,
         legacy: 2,
         questions: 30,
         links: 12,
@@ -173,6 +177,21 @@ describe("the build of that shape is the one before the fix, byte for byte (beta
       const was = await build(true);
       const now = await build(false);
       expect(was.records.filter((r) => r.kind === "GlossaryTerm").length).toBeGreaterThan(1_000);
+      // The hints did something in the build as it was: every field name that shortens the one
+      // before it is no term (its hint, an abbreviation), while the name it shortens is one; and
+      // the name a person's alias gives to another term is no term either.
+      const terms = new Set(was.records.filter((r) => r.kind === "GlossaryTerm").map((r) => r.id));
+      const shortened = Array.from({ length: FIELD_NAMES }, (_, v) => v).filter(bigFieldShortens);
+      expect(shortened.length).toBeGreaterThan(20);
+      for (const v of shortened) {
+        expect(terms.has(termOfField(v - 1)), `the name ${v} shortens`).toBe(true);
+        expect(terms.has(termOfField(v)), `the shortened name ${v}`).toBe(false);
+      }
+      expect(terms.has(termOfField(0))).toBe(true);
+      expect(terms.has(termOfField(1))).toBe(false);
+      // With no hint asked at all, each shortened name would be a term: the hints are what the
+      // two builds must agree on.
+      expect(terms.has(termOfField(2))).toBe(true);
       expect(was.sources.filter((s) => s.source === "legacy").length).toBe(2);
       expect([...now.files.keys()]).toEqual([...was.files.keys()]);
       for (const [path, text] of was.files) expect(now.files.get(path), path).toBe(text);

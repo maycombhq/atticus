@@ -88,6 +88,81 @@ describe("namingHinter answers as namingHint does (beta.28.4)", () => {
     expect(hints).toBeLessThan(2000 * 15);
   });
 
+  it("over 3,000 wider lists: ids that repeat, a term that is its own alias, every way a name is written", () => {
+    // The review of beta.28.4: upper case and camel case, digits, letters outside ASCII, every
+    // separator, the names of Object's own members as words, two terms with one id, a term whose
+    // alias is its own name, and `except` as any id, one no term has, and "".
+    const WORDS = [
+      ...FULL,
+      ...SHORT,
+      "constructor",
+      "toString",
+      "__proto__",
+      "hasOwnProperty",
+      "valueOf",
+      "ACCT",
+      "AccountNo",
+      "acct2",
+      "2nd",
+      "3",
+      "konto",
+      "kontó",
+      "größe",
+      "名前",
+      "of",
+      "the",
+      "ids",
+    ];
+    const SEPS = ["_", " ", "-", ".", "/", "__", " - ", ":", ""];
+    let hints = 0;
+    let odd = 0;
+    for (let seed = 1; seed <= 3000; seed++) {
+      const rnd = prng(seed * 7919);
+      const pick = <T>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)]!;
+      const name = () => {
+        const sep = pick(SEPS);
+        const ws = Array.from({ length: 1 + Math.floor(rnd() * 3) }, () => pick(WORDS));
+        const joined =
+          sep === ""
+            ? ws.map((w, k) => (k ? w[0]!.toUpperCase() + w.slice(1) : w)).join("")
+            : ws.join(sep);
+        return rnd() < 0.15 ? joined.toUpperCase() : joined;
+      };
+      const terms: TermName[] = Array.from({ length: Math.floor(rnd() * 12) }, (_, k) => {
+        const term = name();
+        return {
+          // Some ids twice.
+          id: `term.t-${rnd() < 0.25 ? Math.floor(rnd() * 3) : k}`,
+          term,
+          ...(rnd() < 0.4
+            ? {
+                aliases: [
+                  ...(rnd() < 0.3 ? [term] : []),
+                  ...Array.from({ length: Math.floor(rnd() * 3) }, name),
+                ],
+              }
+            : {}),
+        };
+      });
+      const hint = namingHinter(terms);
+      const names = [...Array.from({ length: 10 }, name), ...terms.map((t) => t.term), "", "_"];
+      const excepts = [undefined, "", "term.none", ...terms.map((t) => t.id)];
+      for (const [k, n] of names.entries())
+        for (const except of excepts) {
+          const was = namingHint(
+            `r-${k}`,
+            n,
+            except === undefined ? terms : terms.filter((t) => t.id !== except),
+          );
+          expect(hint(`r-${k}`, n, except), `seed ${seed}, ${n}, except ${except}`).toEqual(was);
+          if (was) hints++;
+          if (was && /constructor|tostring|proto|[à-ÿ名]|\d/i.test(n)) odd++;
+        }
+    }
+    expect(hints).toBeGreaterThan(3000);
+    expect(odd).toBeGreaterThan(100);
+  }, 120_000);
+
   it("finds a listed abbreviation whose first letter is not its word's", () => {
     // None of today's list is one; the search by first letters must not rest on that.
     const table = NAME_ABBREVIATIONS as Record<string, string>;

@@ -18,7 +18,8 @@ import {
   serializeLegacyJoins,
   serializeReadersSlot,
 } from "@maycombhq/scanner";
-import { BIG_COMMIT, bigRepoFacts, bigRepoId, makeBigEstate } from "./big-estate.js";
+import { compoundOf, termId } from "@maycombhq/glossary";
+import { BIG_COMMIT, bigFieldName, bigRepoFacts, bigRepoId, makeBigEstate } from "./big-estate.js";
 
 /**
  * An estate in the shape of the owner's field report of beta.28.3 (one repo's Apply took over
@@ -38,6 +39,9 @@ import { BIG_COMMIT, bigRepoFacts, bigRepoId, makeBigEstate } from "./big-estate
  * - `questions` open questions (240), `links` calls a person paired by hand (corrections files
  *   with `link` lines, 48), and `suppressed` arrows a person took off the map (curated
  *   decisions, 30).
+ * - What the naming hints act on: one field name in fifty shortens the name before it
+ *   (big-estate.ts's `bigFieldShortens`), which the glossary leaves out as a term, and a person's
+ *   alias decision gives the second field name to the first's term.
  *
  * At the defaults the build makes about 14,000 records. Deterministic for a seed.
  */
@@ -66,6 +70,9 @@ export interface FieldEstate {
   links: number;
   suppressed: string[];
 }
+
+/** The glossary term the v-th field name is (big-estate.ts's `fieldNames`), by its id. */
+export const termOfField = (v: number) => termId(compoundOf(bigFieldName(v))!);
 
 const reposOf = (r: CatalogRecord) => new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])));
 
@@ -242,5 +249,25 @@ export async function makeFieldEstate(
         "",
       ].join("\n"),
     );
+  // ---- another name a person gave a term: the second field name is the first's term too
+  const alias = { term: termOfField(0), name: compoundOf(bigFieldName(1))! };
+  await writeFile(
+    join(curated, "dec-alias-field-1.yaml"),
+    [
+      "schemaVersion: 2",
+      "kind: CuratedDecision",
+      "id: dec-alias-field-1",
+      "status: current",
+      "confidence: asserted",
+      "evidence: []",
+      `target: ${alias.term}`,
+      "action: alias",
+      `value: [${JSON.stringify(alias.name)}]`,
+      "reason: the same thing under two names",
+      "by: pat",
+      "at: 2026-11-12T00:00:00Z",
+      "",
+    ].join("\n"),
+  );
   return { root, options, repos: read, legacy, links, suppressed };
 }
