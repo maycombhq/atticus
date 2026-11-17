@@ -40628,6 +40628,12 @@
                 "drawn": {
                   "type": "boolean"
                 },
+                "inside": {
+                  "type": "string"
+                },
+                "pairedAi": {
+                  "type": "boolean"
+                },
                 "joins": {
                   "type": "string"
                 },

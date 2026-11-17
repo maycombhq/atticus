@@ -79,6 +79,16 @@ A row of a call paired with another box that the map doesn't draw yet says whose
 
 Edit the map's "has no call left to pair with this box: each is paired by a person already" had the same fault and a second one: it was also said of calls nobody paired (they go to the box by the code's own arrow) and of a repo with no call at all. It now says how many go there already by an arrow read from the code, how many a person paired that are on the map, and how many wait for the repo's Apply.
 
+### 6. After the review of the pairing panel (2026-11-16)
+
+- **A module's component is in its repo's box.** A call paired with an API in a module of the other repo has its arrow drawn to the module's component; the box list knew only the repo's id and its own component, so such a pairing read as "not on the map" for ever (reproduced with a real catalog, `packages/cli/test/ui-api-links-modules.test.ts`). The box's names now include its modules' components.
+- **An arrow is told by the join's own Interface first.** The catalog having the Interface id the join gives this call and this entry is the exact answer. Failing that, any of the boxes an Interface citing the call's line goes to: two calls cited on one line each have an arrow, and all their boxes are kept, not the first.
+- **Who paired is said, and the AI is never "a person".** A `paired` call carries `pairedBy`; any call with a pairing carries `pairedAi` when the pairing is the AI's (ADR 0181). The sentences name the people, and say "AI (not confirmed by a person)".
+- **Both ends in one component.** Such a pairing draws no arrow between boxes, ever (`inside`). The panel says so and offers no Apply for it.
+- **A call that goes to this very box** (a repo drawn inside the system box being viewed) is not "paired with another box".
+- **The panel reads the calls again after its own Apply** (`onWorkChanged`), while a pairing waited.
+- **Edit the map's "no call left"** says only what is known: that calls go there already "with an arrow on the map" (not how they were joined), that the repo's facts aren't verified or read with the command, that its calls are of a kind that isn't paired, or, for a redirect, that its facts hold no call.
+
 ## Consequences
 
 - A second read of the same folder costs one `git config` a listed clone.

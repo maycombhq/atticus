@@ -9,7 +9,7 @@ import { RefusalLink } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
 import { MapIcon } from "./MapBar.js";
-import { pairedStanding } from "./paired-standing.js";
+import { pairedStanding, pairedWho } from "./paired-standing.js";
 import {
   addKeys,
   countsWords,
@@ -249,6 +249,8 @@ export interface PairRow {
   joins?: string;
   /** 3.14: who paired it with that box: pairing it here replaces their word, said. */
   pairedBy?: string;
+  /** ADR 0199: that pairing is the AI's, not confirmed by a person. */
+  pairedAi?: boolean;
 }
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
@@ -284,6 +286,7 @@ export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       // Always set: it marks the row as one to move ("" when the box isn't known).
       joins: x.joins ?? "",
       ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
+      ...(x.pairedAi ? { pairedAi: true } : {}),
     }));
 }
 
@@ -403,7 +406,9 @@ export function PairRowsView(p: {
             {r.joins && (
               <span className="hud">
                 {" · "}
-                {r.pairedBy ? E.add.pairedWith(r.pairedBy, r.joins) : E.add.joinsNow(r.joins)}
+                {r.pairedBy
+                  ? E.add.pairedWith(r.pairedBy, r.joins, !!r.pairedAi)
+                  : E.add.joinsNow(r.joins)}
               </span>
             )}
           </label>
@@ -437,11 +442,33 @@ const candidatesPath = (from: string, to: Api.LinkBoxT) =>
  * the box by the code's own arrow was never "paired by a person", and a person's pairing says
  * whether the map draws it yet.
  */
-export function nothingLeftWords(v: Api.LinkCandidatesViewT, fromLabel: string): string {
+export function nothingLeftWords(
+  v: Api.LinkCandidatesViewT,
+  fromLabel: string,
+  /** A redirect lists every call in the repo's facts: none there is all that is known. */
+  redirect = false,
+): string {
+  if (redirect) return E.add.noCallsRead(fromLabel);
+  // The repo's calls aren't on record, or not all verified: the read's own words for each.
+  if (v.noCalls)
+    return v.noCalls.why === "unverified"
+      ? `${COPY.connect.unverifiedCalls(fromLabel)} ${v.noCalls.command}`
+      : `${COPY.connect.noCalls(fromLabel)} ${v.noCalls.command}`;
   const s = pairedStanding(v);
   const here = v.calls.filter((c) => c.status === "here").length;
-  if (!here && !s.drawn && !s.waiting && !s.gone) return E.add.noCallsOnRecord(fromLabel);
-  return E.add.noCallsLeft(fromLabel, { here, drawn: s.drawn, waiting: s.waiting, gone: s.gone });
+  // Calls on record, and none of a kind that is paired.
+  if (!here && !s.here.length) return COPY.connect.noJoinable(fromLabel);
+  return E.add.noCallsLeft(
+    fromLabel,
+    {
+      here,
+      drawn: s.drawn.length,
+      waiting: s.waiting.length,
+      gone: s.gone.length,
+      inside: s.inside.length,
+    },
+    pairedWho(s.here),
+  );
 }
 
 /** A repo's pairing with the box picked: its calls and the box's APIs read, then the rows. */
@@ -512,9 +539,7 @@ function PairFields(p: {
   if (!p.rows.length)
     return (
       <p className="ev-say" role="status" style={{ margin: 0 }}>
-        {p.redirect
-          ? E.add.noCallsOnRecord(p.fromLabel)
-          : nothingLeftWords(cands.data, p.fromLabel)}
+        {nothingLeftWords(cands.data, p.fromLabel, !!p.redirect)}
       </p>
     );
   return (

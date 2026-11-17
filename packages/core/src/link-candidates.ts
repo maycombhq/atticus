@@ -67,6 +67,16 @@ export interface CandidateCall {
    */
   drawn?: boolean;
   /**
+   * For paired (ADR 0199, the review): the component both ends of the pairing are in. No arrow
+   * is drawn between boxes for it, whatever is applied.
+   */
+  inside?: string;
+  /**
+   * ADR 0199, the review: the pairing is the AI's (ADR 0181), not confirmed by a person;
+   * `pairedBy` is then the run's own name. Never said of a person's pairing.
+   */
+  pairedAi?: boolean;
+  /**
    * Beta.28.1: the box the join ties it to now (a repo, or an outside target), for a call that
    * is joined, undrawn or outside: where it goes, or would go, before it is moved.
    */
@@ -76,6 +86,7 @@ export interface CandidateCall {
   /**
    * The review of beta.28.1 (N3): who paired it with the box it goes to now (another box): a
    * pairing here replaces that person's word, which the panel says before it is written.
+   * ADR 0199: also who paired a `paired` call with this box.
    */
   pairedBy?: string;
   suggestion?: { api: string; score: number; why: SuggestWhy };
@@ -270,18 +281,45 @@ export function linkCandidates(o: {
    * canvas is what the person sees, so a drawn call is never listed as loose.
    */
   drawnTo?: (call: string) => string | undefined;
+  /**
+   * ADR 0199, the review (S5): whether the catalog has the join's own Interface (by its id), not
+   * only one citing the call's line: the arrow of exactly this call to exactly this entry.
+   */
+  drawnExact?: (j: FactsJoinResult["joins"][number]) => boolean;
+  /**
+   * ADR 0199, the review (S5): every box the catalog draws an arrow to from the call's line (two
+   * calls on one line each have one). Default: `drawnTo`'s one box.
+   */
+  drawnBoxes?: (call: string) => readonly string[];
 }): LinkCandidates {
   const isDrawn = (j: FactsJoinResult["joins"][number]) =>
     j.entry.component !== j.call.component && (o.drawn ? o.drawn(j) : true);
   // Each of A's joined calls: the box it goes to, and whether any of its arrows is drawn.
-  const joined = new Map<string, { to: string; drawn: boolean; entry: string }>();
+  const joined = new Map<
+    string,
+    { to: string; drawn: boolean; entry: string; exact: boolean; inside?: string }
+  >();
   for (const j of o.join.joins) {
     if (j.call.repo !== o.from) continue;
     const was = joined.get(j.call.fact);
     const d = isDrawn(j);
-    if (!was || (d && !was.drawn))
-      joined.set(j.call.fact, { to: j.entry.repo, drawn: d, entry: j.entry.fact });
+    if (!was || (d && !was.drawn)) {
+      const own = j.entry.component === j.call.component ? j.call.component : undefined;
+      joined.set(j.call.fact, {
+        to: j.entry.repo,
+        drawn: d,
+        entry: j.entry.fact,
+        exact: !own && !!o.drawnExact?.(j),
+        ...(own ? { inside: own } : {}),
+      });
+    }
   }
+  /** Every box the catalog draws the call's line to. */
+  const boxesOf = (call: string): readonly string[] => {
+    if (o.drawnBoxes) return o.drawnBoxes(call);
+    const one = o.drawnTo?.(call);
+    return one === undefined ? [] : [one];
+  };
   // This very box: the repo connected to, or a repo drawn in the system connected to.
   const isHere = (name: string) => name === (o.to.repo ?? o.to.system) || !!o.inBox?.(name);
   const status = new Map<string, { status: LooseStatus; why?: string }>();
@@ -325,22 +363,33 @@ export function linkCandidates(o: {
             normalizePath(x.path) === normalizePath(p.path) &&
             (!p.method || !x.method || x.method.toUpperCase() === p.method.toUpperCase()),
         );
-      // Whether the map draws it: the catalog's Interface citing the call's line goes to this
-      // box (an old arrow to another box is not this pairing's), else the join's own Interface
-      // is in the catalog and goes here.
+      // Whether the map draws it (ADR 0199). Both ends in one component: never. Else the
+      // join's own Interface is in the catalog and goes here; else an Interface citing the
+      // call's line goes to this box (a module's component is in the repo's box; another call
+      // on the same line may go elsewhere, and an old arrow to another box is not this one).
       const tied = joined.get(f.id);
-      const box = o.drawnTo?.(f.id);
-      const drawn =
-        o.drawn === undefined && o.drawnTo === undefined
-          ? undefined
-          : box !== undefined
-            ? isHere(box)
-            : !!tied && tied.drawn && isHere(tied.to);
+      const known =
+        o.drawn !== undefined ||
+        o.drawnTo !== undefined ||
+        o.drawnExact !== undefined ||
+        o.drawnBoxes !== undefined;
+      const drawn = !known
+        ? undefined
+        : tied?.inside
+          ? false
+          : o.drawnExact
+            ? (!!tied && tied.exact && isHere(tied.to)) || boxesOf(f.id).some(isHere)
+            : boxesOf(f.id).length
+              ? boxesOf(f.id).some(isHere)
+              : !!tied && tied.drawn && isHere(tied.to);
       calls.push({
         ...base,
         status: "paired",
         ...(api ? { paired: api.id } : {}),
         ...(drawn !== undefined ? { drawn } : {}),
+        ...(tied?.inside ? { inside: tied.inside } : {}),
+        pairedBy: p.by,
+        ...(p.ai ? { pairedAi: true } : {}),
       });
       continue;
     }
@@ -352,7 +401,9 @@ export function linkCandidates(o: {
     const outDrawn = out !== undefined && !!o.drawnOutside?.(out, f.id);
     // The box the canvas draws its arrow to, by name: for a call placed outside, the target's
     // box (an outside system its host names); for one the join doesn't place, any.
-    const drawnBox = !j ? o.drawnTo?.(f.id) : undefined;
+    // S5: among several boxes its line is drawn to, this one when it is one of them.
+    const lineBoxes = !j ? boxesOf(f.id) : [];
+    const drawnBox = lineBoxes.find(isHere) ?? lineBoxes[0];
     const elsewhere = out === undefined ? drawnBox : undefined;
     const s: { status: LooseStatus; why?: string } | undefined = j
       ? j.drawn
@@ -400,6 +451,7 @@ export function linkCandidates(o: {
       ...(now !== undefined ? { joins: now } : {}),
       ...(nowHere ? { now: nowHere } : {}),
       ...(pairedBy ? { pairedBy } : {}),
+      ...(pairedBy && by?.ai ? { pairedAi: true } : {}),
       ...(best ? { suggestion: top[0]! } : {}),
       ...(top.length ? { suggestions: top } : {}),
       ...(confident ? { confident: true } : {}),

@@ -12,8 +12,8 @@ import {
   type Loaded,
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
-import { ApplyAndPropose } from "../../app/propose.js";
-import { pairedStanding } from "./paired-standing.js";
+import { ApplyAndPropose, onWorkChanged } from "../../app/propose.js";
+import { pairedStanding, pairedWho } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { appStep, WrittenNext } from "../../app/app-step.js";
@@ -197,32 +197,50 @@ export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
   const v = p.view;
   const s = pairedStanding(v);
   const ahead = v.applyPending === true;
-  if (!s.drawn && !s.waiting && !s.gone && !s.elsewhere.length) return null;
+  if (!s.here.length && !s.elsewhere.length) return null;
+  const insideOf = [...new Set(s.inside.map((c) => c.inside!))].sort().join(", ");
   return (
     <div className="stack">
-      {s.drawn > 0 && s.waiting === 0 && (
+      {s.drawn.length > 0 && s.waiting.length === 0 && (
         <p role="status" className="ev-say">
-          {C.pairedOnMap(s.drawn, v.from, v.toName)}
+          {C.pairedOnMap(pairedWho(s.drawn), s.drawn.length, v.from, v.toName)}
         </p>
       )}
-      {s.waiting > 0 && (
+      {s.waiting.length > 0 && (
         <>
           <p role="status" className="ev-say">
-            {s.drawn > 0
-              ? C.pairedMix(s.drawn, s.waiting, v.from, v.toName, ahead)
-              : C.pairedWaiting(s.waiting, v.from, v.toName, ahead)}
+            {s.drawn.length > 0
+              ? C.pairedMix(
+                  pairedWho([...s.drawn, ...s.waiting]),
+                  s.drawn.length,
+                  s.waiting.length,
+                  v.from,
+                  v.toName,
+                  ahead,
+                )
+              : C.pairedWaiting(pairedWho(s.waiting), s.waiting.length, v.from, v.toName, ahead)}
           </p>
           <ApplyAndPropose scope="corrections" repo={v.from} />
         </>
       )}
-      {s.gone > 0 && (
+      {s.gone.length > 0 && (
         <p role="status" className="ev-say">
-          {C.pairedGone(s.gone, v.from, v.toName)}
+          {C.pairedGone(pairedWho(s.gone), s.gone.length, v.from, v.toName)}
+        </p>
+      )}
+      {s.inside.length > 0 && (
+        <p role="status" className="ev-say">
+          {C.pairedInside(pairedWho(s.inside), s.inside.length, v.from, insideOf)}
         </p>
       )}
       {s.elsewhere.length > 0 && (
         <p role="status" className="ev-say">
-          {C.pairedElsewhere(s.elsewhere.length, linkedWords(s.elsewhere), v.from)}
+          {C.pairedElsewhere(
+            pairedWho(s.elsewhere),
+            s.elsewhere.length,
+            linkedWords(s.elsewhere),
+            v.from,
+          )}
         </p>
       )}
     </div>
@@ -251,6 +269,13 @@ export function Pairing(p: {
   const [preview, setPreview] = useState<Api.ConnectLinksResultT | undefined>();
   const [written, setWritten] = useState<Api.ConnectLinksResultT | undefined>();
   const [undone, setUndone] = useState<Api.ConnectLinksResultT | undefined>();
+  // The review (S2): the Apply offered under a waiting pairing is this panel's own. Once work
+  // changed (that Apply ended) the calls are read again, so "not on the map yet" doesn't stay
+  // beside an arrow the map now draws. Only while a pairing waits: a person's picks are kept.
+  const waits = !!v && pairedStanding(v).waiting.length > 0;
+  const reload = useRef(p.cands.reload);
+  reload.current = p.cands.reload;
+  useEffect(() => (waits ? onWorkChanged(() => reload.current?.()) : undefined), [waits]);
   useEffect(() => {
     if (!v) return;
     const i = initialPicks(v);
@@ -463,13 +488,15 @@ export function Pairing(p: {
         {c.status === "undrawn" && c.joins ? (
           // ADR 0199: a person's pairing with that box, not applied yet, is said to be theirs.
           <span className="box-why">
-            {c.pairedBy ? C.pairedUndrawn(c.pairedBy, c.joins) : C.undrawnWhy(c.joins)}
+            {c.pairedBy
+              ? C.pairedUndrawn(c.pairedBy, c.joins, !!c.pairedAi)
+              : C.undrawnWhy(c.joins)}
           </span>
         ) : c.status === "outside" && c.joins && c.joins !== p.box.system ? (
           <span className="box-why">{C.outsideWhy(c.joins)}</span>
         ) : c.status === "joined" && c.joins ? (
           <span className="box-why">
-            {c.pairedBy ? C.pairedWith(c.pairedBy, c.joins) : C.joinsNow(c.joins)}
+            {c.pairedBy ? C.pairedWith(c.pairedBy, c.joins, !!c.pairedAi) : C.joinsNow(c.joins)}
           </span>
         ) : (
           c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>
@@ -519,7 +546,7 @@ export function Pairing(p: {
         {/* N3: a person's word is replaced only knowingly. */}
         {c.pairedBy && c.joins && picked[c.fact] && ticked.has(c.fact) && (
           <span className="box-why" role="note">
-            {C.replacesPairing(c.pairedBy, c.joins, d.toName)}
+            {C.replacesPairing(c.pairedBy, c.joins, d.toName, !!c.pairedAi)}
           </span>
         )}
       </li>

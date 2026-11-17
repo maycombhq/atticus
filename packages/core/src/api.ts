@@ -662,7 +662,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   Also in 3.16.0 (ADR 0199, "it says it's paired, but I don't see the line"): GET
  *   /api/links/candidates says of each `paired` call whether the map draws its arrow to this box
  *   (`drawn`), and of the view whether A's corrections are newer than A's last Apply
- *   (`applyPending`). Additive only.
+ *   (`applyPending`). A `paired` call also carries who paired it (`pairedBy`), any call with a
+ *   pairing whether it is the AI's (`pairedAi`), and a pairing whose two ends are in one
+ *   component that component (`inside`: no arrow is drawn for it). Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
@@ -5353,6 +5355,16 @@ export const CandidateCallView = z.object({
    * catalog has it (the repo was applied since the pairing), false while it doesn't.
    */
   drawn: z.boolean().optional(),
+  /**
+   * 3.16 (ADR 0199): for `paired`, the component both ends of the pairing are in: no arrow is
+   * drawn between boxes for it, whatever is applied.
+   */
+  inside: z.string().optional(),
+  /**
+   * 3.16 (ADR 0199): the pairing `pairedBy` names is the AI's (ADR 0181), not confirmed by a
+   * person. `pairedBy` is given for a `paired` call too.
+   */
+  pairedAi: z.boolean().optional(),
   /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
   joins: z.string().optional(),
   /** 3.14: for `here`, the API of this box the call goes to now. */
