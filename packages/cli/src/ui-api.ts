@@ -687,7 +687,10 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
       );
   };
-  const asJob = (what: string, work: () => Promise<Ran>) => {
+  const asJob = (
+    what: string,
+    work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
+  ) => {
     // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
     // while Apply writes facts or Propose commits them. The refusal names the one that runs.
     const busy = ctx.jobs.runningOf("local");
@@ -700,7 +703,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       "local",
       async (c) => {
         c.progress(0, 1, what);
-        const res = await work();
+        // Beta.28.4: work of several counted parts says which it is on (its progress line).
+        const res = await work((done, total, message) => c.progress(done, total, message));
         // The hunt of beta.28.1: how it ended, in words: a refused build says so with the
         // guard's reason (never "Stopped", which is a person's Stop), a failure says failed.
         const refusal = (res.extra?.refused as { message?: unknown } | undefined)?.message;

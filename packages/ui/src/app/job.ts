@@ -49,6 +49,8 @@ export async function followJob(
   wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
   /** App-only audit: hears the job's id at once, so the page can link its Console entry. */
   onJob?: (jobId: string) => void,
+  /** Beta.28.4: hears how far the job is on each look while it runs (the repo an Apply is on). */
+  onProgress?: (p: { done: number; total: number; message: string }) => void,
 ): Promise<{ code: number; lines: string[]; result?: Record<string, unknown> }> {
   const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
   onJob?.(jobId);
@@ -56,6 +58,7 @@ export async function followJob(
     const j = await api<{
       state: string;
       errors: string[];
+      progress?: { done: number; total: number; message: string };
       result?: { code?: number; lines?: string[]; next?: unknown; [k: string]: unknown };
     }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
     if (j.state !== "running" && j.state !== "queued") {
@@ -76,6 +79,7 @@ export async function followJob(
       // Beta.27 review, final round: the rest of the result (the upgrade's `upgraded`).
       return { code, lines, ...(j.result ? { result: j.result } : {}) };
     }
+    if (j.progress) onProgress?.(j.progress);
     await wait(700);
   }
 }

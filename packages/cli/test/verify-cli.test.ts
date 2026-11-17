@@ -71,6 +71,67 @@ describe("atticus verify --all", () => {
     expect([...o.out, ...o.err].join("\n")).not.toContain("forge-atlas");
   });
 
+  // Beta.28.4 (field report: a run over 40 repos said nothing of how far it was): each repo's
+  // start is said with its place, and once one has finished, the time left at the rate so far.
+  it("says Repo N of M as each repo starts, and the time left once one has finished", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const facts = join(root, ".atticus", "facts");
+    for (const other of ["forge-atlas", "forge-zeta"])
+      writeFileSync(join(facts, `${other}.jsonl`), readFileSync(join(facts, "forge-ledger.jsonl")));
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    // The clock is read once at the start and once as each repo ends: 10 min, then 30 min more.
+    const times = [0, 10 * 60_000, 40 * 60_000, 41 * 60_000];
+    const progress: string[] = [];
+    const starts: [string, number, number][] = [];
+    const o = io();
+    await verifyAllCommand(
+      root,
+      {
+        commit: "0123abc",
+        clock: () => times.shift()!,
+        onStart: (repo, n, of) => starts.push([repo, n, of]),
+      },
+      { ...o.io, progress: (l) => progress.push(l) },
+    );
+    expect(progress).toEqual([
+      "Repo 1 of 3: forge-atlas…",
+      "Repo 2 of 3: forge-ledger… (1 done in 10 min; about 20 min left at this rate)",
+      "Repo 3 of 3: forge-zeta… (2 done in 40 min; about 20 min left at this rate)",
+    ]);
+    expect(starts).toEqual([
+      ["forge-atlas", 1, 3],
+      ["forge-ledger", 2, 3],
+      ["forge-zeta", 3, 3],
+    ]);
+    // Never on standard output (a script reads that), and the last line is the count as before.
+    expect(o.out.join("\n")).not.toMatch(/Repo \d of/);
+    expect(o.out.at(-1)).toMatch(/^Verified 3 repos: /);
+  });
+
+  it("with no progress channel the Repo N of M lines are error-stream lines, and one repo says none", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const facts = join(root, ".atticus", "facts");
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const one = io();
+    await verifyAllCommand(root, { commit: "0123abc" }, one.io);
+    expect([...one.out, ...one.err].join("\n")).not.toMatch(/Repo 1 of 1/);
+    writeFileSync(join(facts, "forge-zeta.jsonl"), readFileSync(join(facts, "forge-ledger.jsonl")));
+    const two = io();
+    await verifyAllCommand(root, { commit: "0123abc", clock: () => 0 }, two.io);
+    expect(two.err.filter((l) => l.startsWith("Repo "))).toEqual([
+      "Repo 1 of 2: forge-ledger…",
+      "Repo 2 of 2: forge-zeta… (1 done in 0 s; under a minute left at this rate)",
+    ]);
+  });
+
+  it("says the time left in words a person can plan by", async () => {
+    const { timeLeftWords } = await import("../src/verify-commands.js");
+    expect(timeLeftWords(20_000)).toBe("under a minute");
+    expect(timeLeftWords(40 * 60_000 + 20_000)).toBe("about 40 min");
+    expect(timeLeftWords(89 * 60_000)).toBe("about 1 h 30 min");
+    expect(timeLeftWords(4 * 3_600_000 + 2 * 60_000)).toBe("about 4 h");
+  });
+
   it("refuses a list naming a repo with no facts, and verifies nothing", async () => {
     const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
     const { verifyAllCommand } = await import("../src/verify-commands.js");

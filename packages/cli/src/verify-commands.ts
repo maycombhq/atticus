@@ -41,6 +41,7 @@ import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 import { noCheckoutLine } from "./sync-next.js";
+import { durationWords } from "./write-progress.js";
 import {
   APPLIED_WITH_LEFT_OUT,
   leftOutLines,
@@ -232,9 +233,27 @@ export async function factsRepos(root: string): Promise<string[]> {
 }
 
 /**
+ * Beta.28.4: the time a run has left, for a person to plan by: never to the second. Under an
+ * hour to the minute, past it to five minutes.
+ */
+export function timeLeftWords(ms: number): string {
+  if (ms < 45_000) return "under a minute";
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `about ${min} min`;
+  const five = Math.round(min / 5) * 5;
+  const h = Math.floor(five / 60);
+  return five % 60 ? `about ${h} h ${five % 60} min` : `about ${h} h`;
+}
+
+/**
  * atticus verify --all [--write]: every repo read so far, one after another, as `atticus verify
  * <repo>` would, then a line saying how many passed. No model is called. Exits 1 when any repo
  * has rejected facts, so a script can tell.
+ *
+ * Beta.28.4: over two repos or more, each repo's start is said with its place ("Repo 3 of 7:
+ * forge-ledger…") and, once one has finished, how long the repos done took and about how long
+ * the rest take at that rate. Progress lines: a terminal's standard error, the app job's
+ * Console; never standard output, which a script reads.
  */
 export async function verifyAllCommand(
   root: string,
@@ -250,6 +269,10 @@ export async function verifyAllCommand(
      * passes it: `atticus verify --all` stays every repo read so far.
      */
     only?: readonly string[];
+    /** Beta.28.4: told as each repo starts: its place (from 1) and how many there are. */
+    onStart?: (repo: string, n: number, of: number) => void;
+    /** The run's clock, in milliseconds (tests pass one); the time by default. */
+    clock?: () => number;
   },
   io: Output,
 ): Promise<number> {
@@ -260,7 +283,7 @@ export async function verifyAllCommand(
     );
     return 2;
   }
-  const { onRepo, only, ...each } = o;
+  const { onRepo, only, onStart, clock = Date.now, ...each } = o;
   const unread = (only ?? []).filter((r) => !read.includes(r));
   if (unread.length) {
     io.err(
@@ -270,7 +293,16 @@ export async function verifyAllCommand(
   }
   const repos = only ? read.filter((r) => only.includes(r)) : read;
   const failed: string[] = [];
-  for (const repo of repos) {
+  const began = clock();
+  let spent = 0;
+  for (const [i, repo] of repos.entries()) {
+    onStart?.(repo, i + 1, repos.length);
+    // The estimate is the repos done so far, nothing else: said as "at this rate", since a big
+    // repo after small ones takes longer than it says.
+    if (repos.length > 1)
+      (io.progress ?? io.err)(
+        `Repo ${i + 1} of ${repos.length}: ${repo}…${i ? ` (${i} done in ${durationWords(spent)}; ${timeLeftWords((spent / i) * (repos.length - i))} left at this rate)` : ""}`,
+      );
     let leftOut = 0;
     const code = await verifyCommand(
       root,
@@ -278,6 +310,7 @@ export async function verifyAllCommand(
       { ...each, onLeftOut: (l) => (leftOut = l.length) },
       io,
     );
+    spent = clock() - began;
     onRepo?.(repo, code, leftOut);
     if (code !== 0) failed.push(repo);
   }

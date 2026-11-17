@@ -30,10 +30,14 @@ interface Ran {
   extra?: Record<string, unknown>;
 }
 
-/** Starts a local job (ui-api.ts's, one at a time with Apply, Propose and Bring in). */
+/**
+ * Starts a local job (ui-api.ts's, one at a time with Apply, Propose and Bring in). Beta.28.4:
+ * work made of several counted parts (the repos of an Apply) says which it is on with `count`,
+ * and the job's progress carries it (the strip under the top bar shows "3 of 7").
+ */
 export type LocalJob = (
   what: string,
-  work: () => Promise<Ran>,
+  work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
 ) => { status: number; body: { jobId: string } };
 
 /** A command's own code in this process, its lines kept and sent to the Console. */
@@ -96,7 +100,7 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
         : only.length === 1
           ? `Applying to ${only[0]}`
           : `Applying to ${only.length} repos`;
-      return asJob(what, async () => {
+      return asJob(what, async (count) => {
         // The hunt of beta.28.1 (S2): each repo's own outcome, told by verify: a repo that wrote
         // with rejected facts left out (exit 3) is applied, as one repo's Apply is.
         const codes: number[] = [];
@@ -112,6 +116,10 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
               verbose: false,
               json: false,
               ...(only ? { only } : {}),
+              // Beta.28.4: the job's own progress counts the repos, when there are several.
+              onStart: (repo, n, of) => {
+                if (of > 1) count(n, of, `Repo ${n} of ${of}: ${repo}…`);
+              },
               onRepo: (repo, code, out) => {
                 codes.push(code);
                 (code === 0 || code === APPLIED_WITH_LEFT_OUT ? applied : notApplied).push(repo);

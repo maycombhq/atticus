@@ -5086,6 +5086,9 @@ export const COPY = {
     inTerminal: "In a terminal",
     applyAll: "Apply to every repo's map",
     applyingAll: "Applying…",
+    /** Beta.28.4: which repo a run over several is on; the Console has the rest. */
+    applyingRepo: (n: number, of: number) =>
+      `Applying repo ${n} of ${of}. The Console shows each step and about how long is left.`,
     /** Beta.28.4: the repos whose corrections wait, and only those (never every repo read). */
     applyWaiting: (n: number) => `Apply to the ${n} repos waiting`,
     appliedWaiting: (n: number) =>

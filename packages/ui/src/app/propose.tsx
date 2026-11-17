@@ -519,6 +519,22 @@ export async function runApplyAll(
       repos ? { repos: [...repos] } : {},
       undefined,
       (jobId) => set((was) => ({ ...was, jobId })),
+      // Beta.28.4: which repo it is on, from the job's own count, while it runs.
+      (p) => {
+        if (p.total > 1 && p.done > 0)
+          set((was) =>
+            was.running
+              ? {
+                  ...was,
+                  note: {
+                    ok: true,
+                    working: true,
+                    text: COPY.appStep.applyingRepo(p.done, p.total),
+                  },
+                }
+              : was,
+          );
+      },
     );
     // The hunt of beta.28.1 (S2): repos that wrote with rejected facts left out are applied.
     const leftOut = leftOutOf(r.result);

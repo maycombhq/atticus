@@ -30,11 +30,20 @@ let job: {
   resolve: (r: { code: number; lines: string[]; result?: Record<string, unknown> }) => void;
   reject: (e: Error) => void;
 };
+/** What the page hears of the running job's progress (the repo it is on). */
+let progress: ((p: { done: number; total: number; message: string }) => void) | undefined;
 vi.mock("../src/app/job.js", async () => ({
   ...(await vi.importActual<object>("../src/app/job.js")),
-  followJob: (path: string, body: unknown) =>
+  followJob: (
+    path: string,
+    body: unknown,
+    _wait: unknown,
+    _onJob: unknown,
+    onProgress?: typeof progress,
+  ) =>
     new Promise((resolve, reject) => {
       started.push({ path, body });
+      progress = onProgress;
       job = { resolve, reject };
     }),
 }));
@@ -229,4 +238,31 @@ it("another step is running (409): it says it didn't start, in the server's word
   job.reject(new ApiError({ status: 409, title: "Conflict", detail: why } as never));
   expect(await ran).toBe(false);
   expect(held.note).toEqual({ ok: false, text: P.notStarted(why) });
+});
+
+// Beta.28.4: the run said nothing of how far it was. The page says which repo it is on, from the
+// job's own count; the Console has each step and the time left.
+it("while it runs, says which repo of how many it is on", async () => {
+  let held: { running?: boolean; note?: { ok: boolean; text: string; working?: boolean } } = {};
+  const set = (s: unknown) => {
+    held =
+      typeof s === "function" ? (s as (w: typeof held) => typeof held)(held) : (s as typeof held);
+  };
+  const ran = runApplyAll(set as never, THREE);
+  await settle();
+  expect(held.note?.text).toBe(COPY.app.working);
+  progress!({ done: 0, total: 1, message: "Applying to 3 repos" });
+  expect(held.note?.text).toBe(COPY.app.working);
+  progress!({ done: 2, total: 3, message: "Loading the catalog… (4 s in)" });
+  expect(held).toMatchObject({
+    running: true,
+    note: {
+      ok: true,
+      working: true,
+      text: "Applying repo 2 of 3. The Console shows each step and about how long is left.",
+    },
+  });
+  job.resolve({ code: 0, lines: [] });
+  await ran;
+  expect(held.note?.text).toBe(T.appliedWaiting(3));
 });
