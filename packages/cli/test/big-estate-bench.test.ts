@@ -185,5 +185,8 @@ async function makeOptions() {
     gateways: Math.min(G, N),
     routes: 40,
     clusters: 1,
+    fieldNames: 0,
+    termRepos: 0,
+    termValues: 90,
   };
 }
