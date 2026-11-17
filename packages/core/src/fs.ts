@@ -5,6 +5,7 @@ import {
   link,
   mkdir,
   open,
+  readdir,
   readFile,
   rename,
   rm,
@@ -13,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { CancelledError, stoppableSignal } from "./cancel.js";
 import { keptFilesMayHaveChanged } from "./kept-files.js";
 
 /**
@@ -36,14 +38,20 @@ export async function writeFileAtomic(
      * (record-cache.ts, `RACY_MS`).
      */
     stat?: (s: { size: number; mtimeMs: number; sha: string; writtenAt: number }) => void;
+    /**
+     * Only the quick tries when the file is held (`HeldOptions`): a cache's write, which may
+     * fail at no cost, never waits the long wait.
+     */
+    quick?: boolean;
   } = {},
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  const held: HeldOptions = o.quick ? { quick: true } : {};
   try {
     if (!o.stat) {
       await writeFile(tmp, data, typeof data === "string" ? "utf8" : undefined);
-      await renameRetrying(tmp, path);
+      await renameRetrying(tmp, path, held);
       return;
     }
     // Before the file is there to be edited by anyone else: any later edit has a later time.
@@ -62,7 +70,7 @@ export async function writeFileAtomic(
     } finally {
       await fh.close();
     }
-    await renameRetrying(tmp, path);
+    await renameRetrying(tmp, path, held);
     const now = await stat(path).catch(() => undefined);
     if (now && now.size === mine.size && Math.floor(now.mtimeMs) === mine.mtimeMs) o.stat(mine);
   } catch (e) {
@@ -154,21 +162,30 @@ const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
  * open in an editor or read by an assistant's session at that moment.
  */
 export const HELD_WAIT_MS = 45_000;
+/**
+ * The wait once a file has stayed held in this process: a cause that doesn't go away (a
+ * read-only folder, a program that keeps the folder open) costs the long wait once, not once a
+ * file or once a repo of a run over forty.
+ */
+export const HELD_AGAIN_MS = 5_000;
 /** From here on the wait is said, once. */
 const HELD_SAID_MS = 1_000;
 /** How often a held file is tried again once the quick tries are spent. */
 const HELD_EVERY_MS = 500;
 
 /**
- * Tests' Windows: a rename that fails, a wait that takes no time, the platform, where the line
- * that says a write is waiting goes (standard error by default), and the temporary file's
- * removal.
+ * Tests' Windows: a rename and a removal that fail, a wait that takes no time, the platform,
+ * where the line that says a write is waiting goes (standard error by default), and the
+ * temporary file's removal.
  */
 export const fsHooks: {
   rename?: (from: string, to: string) => Promise<void>;
+  /** `removeHeld`'s removal. */
+  remove?: (path: string) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
   platform?: NodeJS.Platform;
   say?: (line: string) => void;
+  /** The removal of a failed write's temporary file. */
   rm?: (path: string) => Promise<void>;
 } = {};
 
@@ -191,6 +208,53 @@ export class FileHeldError extends Error {
   }
 }
 
+/**
+ * Whether an error is the file system's (a file held, no room, no permission, too many open
+ * files: Node's system errors, which name the call that failed) rather than a bug. A run over
+ * several repos says such a repo is not applied and goes on; any other error is thrown on.
+ */
+export function isFileSystemError(e: unknown): boolean {
+  if (e instanceof FileHeldError) return true;
+  if (!(e instanceof Error)) return false;
+  const x = e as NodeJS.ErrnoException;
+  return (
+    typeof x.code === "string" &&
+    /^E[A-Z0-9]+$/.test(x.code) &&
+    !x.code.startsWith("ERR_") &&
+    typeof x.syscall === "string"
+  );
+}
+
+/** A file stayed held in this process already: the next waits are `HELD_AGAIN_MS`. */
+let heldBefore = false;
+/** Tests: forget that a file stayed held. */
+export function forgetHeld(): void {
+  heldBefore = false;
+}
+
+/** A terminal's Ctrl+C for the waits of this process (a job's Stop is heard through its own). */
+let waitSignal: AbortSignal | undefined;
+/**
+ * The signal that ends a wait for a held file besides the job's own (`currentSignal`): a
+ * command run in a terminal sets its Ctrl+C here, and clears it when it ends.
+ */
+export function setHeldWaitSignal(signal: AbortSignal | undefined): void {
+  waitSignal = signal;
+}
+
+/** How a held file is waited for. */
+export interface HeldOptions {
+  /**
+   * Only the quick tries (about 5 s), then the system's error, as before beta.28.5: a cache's
+   * write, which may fail at no cost, and a folder's rename.
+   */
+  quick?: boolean;
+  /** Ends the wait too (CancelledError), besides the job's Stop and the terminal's Ctrl+C. */
+  signal?: AbortSignal;
+  /** The quick tries (9: about 5 s). */
+  tries?: number;
+}
+
 /** The temporary file of a write that failed, removed; a removal that fails hides no error. */
 async function removeTmp(tmp: string): Promise<void> {
   try {
@@ -198,8 +262,39 @@ async function removeTmp(tmp: string): Promise<void> {
       tmp,
     );
   } catch {
-    // Held too (a scanner reading what was just written): left for the next clean-up.
+    // Held too (a scanner reading what was just written): it stays, under a name no reader of
+    // records, facts or specs takes for a file of theirs (it ends .tmp); `sweepStaleTmp`
+    // removes the facts folder's on a later verify.
   }
+}
+
+/** The name `writeFileAtomic` gives a temporary file: `<file>.<pid>.<8 hex>.tmp`. */
+const TMP_NAME = /\.\d+\.[0-9a-f]{8}\.tmp$/;
+/** A temporary file younger than this may be a write in progress (another process's). */
+const TMP_STALE_MS = 3_600_000;
+
+/**
+ * Remove the temporary files an earlier run left in `dir` for the files whose names start with
+ * `prefix` (a write whose temporary file could not be removed, or a process that was killed):
+ * those older than an hour, so a write in progress in another process is never touched. Says
+ * which it removed; a folder that can't be listed or a file that can't be removed is no error.
+ */
+export async function sweepStaleTmp(dir: string, prefix: string): Promise<string[]> {
+  const removed: string[] = [];
+  const names = await readdir(dir).catch(() => [] as string[]);
+  for (const n of names.sort()) {
+    if (!n.startsWith(prefix) || !TMP_NAME.test(n)) continue;
+    const full = join(dir, n);
+    const s = await stat(full).catch(() => undefined);
+    if (!s?.isFile() || Date.now() - s.mtimeMs < TMP_STALE_MS) continue;
+    try {
+      await rm(full, { force: true });
+      removed.push(n);
+    } catch {
+      // still held: the next sweep's
+    }
+  }
+  return removed;
 }
 
 function sayHeld(line: string): void {
@@ -211,40 +306,105 @@ function sayHeld(line: string): void {
   }
 }
 
-// Up to about 5 s (20 ms doubling) wherever it runs: on Windows an editor indexing a folder it
-// has just opened, or a virus scanner, can hold a file longer than half a second (seen running
-// atticus upgrade with VS Code opening the metarepo). It only waits when the file is held.
-// Beta.28.5, on Windows: past the first second the wait is said once, naming the file; after the
-// quick tries the file is tried twice a second until `HELD_WAIT_MS` in all, and then the error
-// is FileHeldError, in plain words, not the system's EPERM of a temporary name.
-export async function renameRetrying(from: string, to: string, tries = 9): Promise<void> {
-  const move = fsHooks.rename ?? rename;
-  const sleep = fsHooks.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+/** A wait of `ms` that a stop ends at once (true: stopped). */
+async function waitOrStop(ms: number, signals: readonly AbortSignal[]): Promise<boolean> {
+  if (signals.some((s) => s.aborted)) return true;
+  if (fsHooks.sleep) {
+    await fsHooks.sleep(ms);
+    return signals.some((s) => s.aborted);
+  }
+  return new Promise<boolean>((resolve) => {
+    const done = (stopped: boolean) => {
+      clearTimeout(timer);
+      for (const s of signals) s.removeEventListener("abort", onStop);
+      resolve(stopped);
+    };
+    const onStop = () => done(true);
+    const timer = setTimeout(() => done(false), ms);
+    for (const s of signals) s.addEventListener("abort", onStop, { once: true });
+  });
+}
+
+/**
+ * Run `op` on `target`, trying again while the system says the file is held (EPERM, EBUSY,
+ * EACCES). Up to about 5 s (20 ms doubling) wherever it runs: on Windows an editor indexing a
+ * folder it has just opened, or a virus scanner, can hold a file longer than half a second (seen
+ * running atticus upgrade with VS Code opening the metarepo). It only waits when the file is
+ * held. Beta.28.5, on Windows: past the first second the wait is said once, naming the file;
+ * after the quick tries the file is tried twice a second until `HELD_WAIT_MS` in all
+ * (`HELD_AGAIN_MS` once a file has stayed held in this process), and then the error is
+ * FileHeldError, in plain words, not the system's EPERM of a temporary name. A Stop (the job's,
+ * or the terminal's Ctrl+C) ends the wait with CancelledError: what it leaves is what the wait
+ * running out leaves, the file as it was.
+ */
+async function retryHeld(
+  op: () => Promise<void>,
+  target: string,
+  o: HeldOptions = {},
+): Promise<void> {
+  const tries = o.tries ?? 9;
   const windows = (fsHooks.platform ?? process.platform) === "win32";
+  const long = windows && !o.quick;
+  const limit = heldBefore ? HELD_AGAIN_MS : HELD_WAIT_MS;
+  // What ends the wait: the job's Stop while its work may still be stopped (not once it says it
+  // is writing: that write finishes), a signal given, the terminal's Ctrl+C. Each only once the
+  // wait is a second in: a file held for a moment is still written, whatever was asked before
+  // (a job's own last writes after a Stop among them).
+  const stops = [stoppableSignal(), o.signal, waitSignal].filter(
+    (s): s is AbortSignal => s !== undefined,
+  );
   let waited = 0;
   let said = false;
   for (let i = 0; ; i++) {
     try {
-      await move(from, to);
+      await op();
       return;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code ?? "";
       if (!BUSY.has(code)) throw e;
       const quick = i < tries - 1;
-      if (!quick && (!windows || waited >= HELD_WAIT_MS)) {
-        if (windows) throw new FileHeldError(to, waited, e);
-        throw e;
+      if (!quick && (!long || waited >= limit)) {
+        if (!long) throw e;
+        heldBefore = true;
+        throw new FileHeldError(target, waited, e);
       }
-      if (windows && !said && waited >= HELD_SAID_MS) {
+      if (long && !said && waited >= HELD_SAID_MS) {
         said = true;
         sayHeld(
-          `${to} is open in another program (an editor, an assistant's session or a virus scan): waiting for it, up to ${HELD_WAIT_MS / 1000} s. Close it there to go on.`,
+          `${target} is open in another program (an editor, an assistant's session or a virus scan): waiting for it, up to ${Math.round(Math.max(limit, waited) / 1000)} s. Close it there to go on.`,
         );
       }
-      const ms = quick ? 20 * 2 ** i : Math.min(HELD_EVERY_MS, HELD_WAIT_MS - waited);
-      await sleep(ms);
+      const ms = quick ? 20 * 2 ** i : Math.min(HELD_EVERY_MS, limit - waited);
+      if (await waitOrStop(ms, waited >= HELD_SAID_MS ? stops : [])) throw new CancelledError();
       waited += ms;
     }
+  }
+}
+
+/**
+ * Rename, waiting for a held target as `retryHeld` says. The third argument is the options, or
+ * the number of quick tries (as before beta.28.5).
+ */
+export async function renameRetrying(
+  from: string,
+  to: string,
+  o: HeldOptions | number = {},
+): Promise<void> {
+  const move = fsHooks.rename ?? rename;
+  await retryHeld(() => move(from, to), to, typeof o === "number" ? { tries: o } : o);
+}
+
+/**
+ * Remove a file, waiting for one another program holds as a write waits (beta.28.5, the
+ * review: a plain `rm` of a held file threw the system's EPERM and ended a run over forty
+ * repos, as the rename had). A file that isn't there is no error.
+ */
+export async function removeHeld(path: string, o: HeldOptions = {}): Promise<void> {
+  const remove = fsHooks.remove ?? ((p: string) => rm(p, { force: true }));
+  try {
+    await retryHeld(() => remove(path), path, o);
+  } finally {
+    keptFilesMayHaveChanged(path);
   }
 }
 
