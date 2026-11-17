@@ -28,6 +28,7 @@ import {
   PairRowsView,
   EditMapToggle,
   EditMapView,
+  nothingLeftWords,
   reReadAsk,
   StageLinkView,
   type ApplyState,
@@ -981,8 +982,87 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
         <MoveCallsView fromLabel="a" toName="b" rows={[]} apis={[]} open={false} onPick={noop} />,
       ),
     ).toBe("");
-    // Said only when no call is left at all: each is paired by a person.
-    expect(E.add.noCalls("forge_instruments_1-0")).toContain("paired by a person");
+  });
+
+  // Field report (beta.28.3, ADR 0199): "has no call left to pair with this box: each is paired
+  // by a person already" was said of calls nobody paired (they go there by the code's own
+  // arrow) and of pairings the map doesn't draw yet. What is said is what each call is.
+  it("says why no call is left to pair, by what each call is", () => {
+    const of = (
+      calls: Partial<Api.CandidateCallViewT>[],
+      o: Partial<Api.LinkCandidatesViewT> = {},
+    ): Api.LinkCandidatesViewT => ({
+      from: "forge-billing",
+      to: { repo: "forge-ledger" },
+      toName: "forge-ledger",
+      calls: calls.map((c, i) => ({
+        fact: `call.${i}`,
+        callType: "rest",
+        path: `/entries/${i}`,
+        at: `src/LedgerClient.java:${i + 1}`,
+        status: "paired",
+        ...c,
+      })),
+      apis: [{ id: "e-entries", kind: "entry", path: "/entries/{id}" }],
+      ...o,
+    });
+    // Nobody paired these: they go there already. How each was joined isn't claimed.
+    const here = nothingLeftWords(of([{ status: "here" }, { status: "here" }]), "forge-billing");
+    expect(here).toBe(
+      "forge-billing has no call left to pair with this box: 2 go to it already, with an arrow on the map.",
+    );
+    expect(here).not.toContain("paired");
+    expect(here).not.toContain("read from the code");
+    // Pairings on the map, with whose they are.
+    expect(
+      nothingLeftWords(
+        of([{ paired: "e-entries", drawn: true, pairedBy: "pat" }]),
+        "forge-billing",
+      ),
+    ).toBe(
+      "forge-billing has no call left to pair with this box: 1 is paired with it and on the map. Paired by pat. To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // Pairings the map doesn't draw yet: said, with the Apply that draws them; the AI's as the AI's.
+    expect(
+      nothingLeftWords(
+        of(
+          [
+            { paired: "e-entries", drawn: false, pairedBy: "copilot", pairedAi: true },
+            { paired: "e-entries", drawn: false, pairedBy: "copilot", pairedAi: true },
+            { status: "here" },
+          ],
+          { applyPending: true },
+        ),
+        "forge-billing",
+      ),
+    ).toBe(
+      "forge-billing has no call left to pair with this box: 1 goes to it already, with an arrow on the map and 2 are paired with it and not on the map yet (Apply forge-billing from Corrections to apply, at the top of the map, to draw them). Paired by AI (not confirmed by a person). To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+    );
+    // The review (N14): each case says only what is known.
+    // Calls on record, none of a kind that is paired.
+    expect(nothingLeftWords(of([]), "forge-billing")).toBe(
+      COPY.connect.noJoinable("forge-billing"),
+    );
+    // Facts read and not all verified: that, and the command, never "no call on record".
+    expect(
+      nothingLeftWords(
+        of([], { noCalls: { why: "unverified", command: "atticus verify forge-billing" } }),
+        "forge-billing",
+      ),
+    ).toBe(`${COPY.connect.unverifiedCalls("forge-billing")} atticus verify forge-billing`);
+    // Not read yet.
+    expect(
+      nothingLeftWords(
+        of([], { noCalls: { command: "atticus map --all --gaps --repos forge-billing" } }),
+        "forge-billing",
+      ),
+    ).toContain(COPY.connect.noCalls("forge-billing"));
+    // A redirect: only that the repo's facts hold no call, of any kind.
+    const redirect = nothingLeftWords(of([{ status: "here" }]), "forge-billing", true);
+    expect(redirect).toBe(
+      "No call of forge-billing is on record in its facts, so there is nothing to pair with this box.",
+    );
+    expect(redirect).not.toContain("REST");
   });
 
   it("names every call's API field, and a box with no repo can't be redirected by pairing", () => {

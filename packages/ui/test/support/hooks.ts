@@ -27,8 +27,13 @@ export const shim = {
     const k = i++;
     const s = slots[k];
     if (!s || !same(s.deps, deps)) {
-      slots[k] = { v: undefined, deps };
-      effects.push(() => void fn());
+      const slot: Slot = { v: undefined, deps };
+      slots[k] = slot;
+      // The effect's cleanup is kept, for `unmount` (a page that goes stops what it started).
+      effects.push(() => {
+        const undo = fn();
+        if (typeof undo === "function") slot.v = { cleanup: undo };
+      });
     }
   },
   useMemo<T>(fn: () => T, deps: unknown[]) {
@@ -60,6 +65,7 @@ export function mount<P>(
   o: { attach?: (tree: unknown) => void } = {},
 ) {
   slots = [];
+  const mine = slots;
   let tree: unknown;
   const render = () => {
     for (let n = 0; n < 20; n++) {
@@ -78,6 +84,13 @@ export function mount<P>(
       return tree;
     },
     render,
+    /** The component goes: every effect's cleanup runs, as React runs them. */
+    unmount() {
+      for (const x of mine) {
+        const c = (x?.v as { cleanup?: unknown } | undefined)?.cleanup;
+        if (typeof c === "function") (c as () => void)();
+      }
+    },
   };
 }
 

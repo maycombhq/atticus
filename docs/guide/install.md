@@ -73,6 +73,8 @@ atticus doctor                                           # each line [ok], [warn
 
 Atticus reads each repo from its own base clone under `workspace/`, on the branch the manifest names (`repos discover` records the branch each of your clones is on), never from the clones you work in. When your clones are already on this machine, `atticus workspace sync --from <folder with your clones>` copies each one instead of cloning it again: nothing comes over the network, Git hard-links the files on the same drive, and your clones are only read. It takes each branch as your clone last fetched it (`origin/<branch>`), so your unpushed commits and edits stay yours, and points the copy's `origin` at the server, so later syncs fetch from there as usual.
 
+Give `repos discover` the folder that holds all your clones as often as you like: a repo the manifest lists already is told by its clone URL and isn't read again (it prints `Already listed: <folder> (<id>)`), each folder is said as it is read, and a folder that takes over a minute is skipped with why. With `--json`, those repos are in `listed`, not in `repos`.
+
 ### Say what each repo is
 
 A repo id often says nothing — three repos differ by a suffix, one is named after a programme that was renamed. So each entry in the manifest can carry one line saying what the repo is, in your own words:

@@ -39,6 +39,7 @@ import type { Output } from "./commands.js";
 import { isMetarepo } from "./metarepo-guard.js";
 import { recordConfirmedAddress, whereKeyGoes, type ModelSetting } from "./model-address.js";
 import { candidateOf, pastedUrls, planRepos, type Candidate } from "./setup-repos.js";
+import { linksJob, type LinkSteps } from "./ui-api-links.js";
 
 /**
  * ADR 0190: settings and setup in the app, "Edit, then Propose". Each route writes one file of
@@ -56,6 +57,14 @@ export interface SetupDeps {
    */
   openFolder?: (dir: string) => Promise<{ url: string }>;
 }
+
+/** A read asked without a job: nothing is said. */
+const SILENT_STEPS: LinkSteps = {
+  step: () => Promise.resolve(),
+  say: () => undefined,
+  tick: () => Promise.resolve(),
+  commit: () => undefined,
+};
 
 const unprocessable = (detail: string) => new HttpError(422, "That can't be written", detail);
 
@@ -225,10 +234,8 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
         const b = parseBody(Api.ReposPlanRequest, body);
         const listed = await loadRepos(root).catch(() => []);
         const platforms = (await manifestFiles(root)).map((f) => f.platform);
-        let candidates: Candidate[] = [];
-        let skipped: { path: string; reason: string }[] = [];
-        if (b.dir) {
-          const dir = resolve(b.dir.trim());
+        const dir = b.dir ? resolve(b.dir.trim()) : undefined;
+        if (dir) {
           if (
             !(await stat(dir).then(
               (s) => s.isDirectory(),
@@ -248,68 +255,99 @@ export function uiSetupRoutes(r: Router, ctx: ServerContext, deps: SetupDeps = {
             };
             return { status: 200, body: ask };
           }
-          const { reposDiscover, AdoptError } = await import("@maycombhq/adopt");
-          const found = await reposDiscover(
-            root,
-            { dir },
-            { dryRun: true, ...(b.platform ? { platform: b.platform } : {}) },
-          ).catch((e: unknown) => {
-            // discover's words name its CLI flags; the app has a field for each.
-            if (e instanceof AdoptError)
-              throw unprocessable(
-                e.message.replace(/ with --platform\b/g, " (choose the platform)"),
-              );
-            throw e;
-          });
-          skipped = found.skipped;
-          candidates = found.repos.map((f) => ({
-            given: f.dir ?? f.entry.url,
-            url: f.entry.url,
-            // Two clones of one name in the folder are -2 already (discover's own ids).
-            id: f.entry.id,
-            type: f.entry.type,
-            defaultBranch: f.entry.defaultBranch,
-            detected: { signals: f.detection.signals, confidence: f.detection.confidence },
-          }));
-        } else {
-          const { cloneAt, typeOf } = await import("./repo-commands.js");
-          for (const given of pastedUrls(b.urls ?? "").slice(0, 500)) {
-            const c = candidateOf(given);
-            // A clone on this machine: its origin and branch, and its type from its own files.
-            const clone = await cloneAt(c.url);
-            if (clone?.origin) {
-              const t = await typeOf(c.url, undefined);
-              candidates.push({
-                given,
-                url: candidateOf(clone.origin).url,
-                id: c.id,
-                ...(clone.branch ? { defaultBranch: clone.branch } : {}),
-                ...(t
-                  ? { type: t.type, detected: { signals: t.signals, confidence: t.confidence } }
-                  : {}),
-              });
-            } else candidates.push(c);
-          }
-          if (!candidates.length)
-            throw badRequest(
-              "Paste one clone URL a line (or several), or give a folder of clones.",
-            );
         }
-        const plan = planRepos(
-          candidates,
-          listed.map((x) => ({ id: x.id, url: x.url })),
-        );
-        const body2: Api.ReposPlanViewT = {
-          platforms,
-          ...(b.platform
-            ? { platform: b.platform }
-            : platforms.length === 1
-              ? { platform: platforms[0]! }
-              : {}),
-          ...plan,
-          skipped,
+        /** The plan; a folder's read says each folder through `steps` (the job's lines). */
+        const plan = async (steps: LinkSteps): Promise<Api.ReposPlanViewT> => {
+          let candidates: Candidate[] = [];
+          let skipped: { path: string; reason: string }[] = [];
+          if (dir) {
+            const { reposDiscover, AdoptError } = await import("@maycombhq/adopt");
+            const { folderLine } = await import("./setup-commands.js");
+            const found = await reposDiscover(
+              root,
+              { dir },
+              {
+                dryRun: true,
+                ...(b.platform ? { platform: b.platform } : {}),
+                // The field report of beta.28.3: a repo any manifest lists is told by its clone
+                // URL before it is read, and each folder is said as it is come to (a job's
+                // lines; Stop is heard there, and between folders in discover itself).
+                known: listed.flatMap((x) => (x.url ? [{ id: x.id, url: x.url }] : [])),
+                onFolder: async (f) => {
+                  if (f.listed) steps.say(folderLine(f));
+                  else await steps.step(folderLine(f).replace(/…$/, ""));
+                },
+              },
+            ).catch((e: unknown) => {
+              // discover's words name its CLI flags; the app has a field for each.
+              // A folder that can't be listed (the review of ADR 0199, N5): its own words.
+              if (e instanceof AdoptError && (e.code === "not-found" || e.code === "source"))
+                throw new HttpError(422, "That folder can't be read", e.message);
+              if (e instanceof AdoptError)
+                throw unprocessable(
+                  e.message.replace(/ with --platform\b/g, " (choose the platform)"),
+                );
+              throw e;
+            });
+            skipped = found.skipped;
+            candidates = [
+              ...found.repos.map((f) => ({
+                given: f.dir ?? f.entry.url,
+                url: f.entry.url,
+                // Two clones of one name in the folder are -2 already (discover's own ids).
+                id: f.entry.id,
+                type: f.entry.type,
+                defaultBranch: f.entry.defaultBranch,
+                detected: { signals: f.detection.signals, confidence: f.detection.confidence },
+              })),
+              // What a manifest lists already: the plan's `listed`, as before, though unread.
+              ...found.listed.map((l) => ({ given: join(dir, l.path), url: l.url, id: l.id })),
+            ];
+          } else {
+            const { cloneAt, typeOf } = await import("./repo-commands.js");
+            for (const given of pastedUrls(b.urls ?? "").slice(0, 500)) {
+              const c = candidateOf(given);
+              // A clone on this machine: its origin and branch, and its type from its own files.
+              const clone = await cloneAt(c.url);
+              if (clone?.origin) {
+                const t = await typeOf(c.url, undefined);
+                candidates.push({
+                  given,
+                  url: candidateOf(clone.origin).url,
+                  id: c.id,
+                  ...(clone.branch ? { defaultBranch: clone.branch } : {}),
+                  ...(t
+                    ? { type: t.type, detected: { signals: t.signals, confidence: t.confidence } }
+                    : {}),
+                });
+              } else candidates.push(c);
+            }
+            if (!candidates.length)
+              throw badRequest(
+                "Paste one clone URL a line (or several), or give a folder of clones.",
+              );
+          }
+          return {
+            platforms,
+            ...(b.platform
+              ? { platform: b.platform }
+              : platforms.length === 1
+                ? { platform: platforms[0]! }
+                : {}),
+            ...planRepos(
+              candidates,
+              listed.map((x) => ({ id: x.id, url: x.url })),
+            ),
+            skipped,
+          };
         };
-        return { status: 200, body: body2 };
+        // 3.16.0 (ADR 0199): a folder's read as a job, so the Console shows where it is and Stop
+        // ends it. Pasted URLs are answered as they are (nothing of theirs is slow).
+        if (dir && b.job)
+          return linksJob(ctx, `Reading the folder of clones: ${basename(dir)}`, "The read", (s) =>
+            plan(s),
+          );
+        return { status: 200, body: await plan(SILENT_STEPS) };
       })
       .add("POST", "/api/setup/repos", async ({ body }) => {
         needMetarepo();

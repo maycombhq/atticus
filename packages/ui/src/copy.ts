@@ -20,6 +20,13 @@ const CANARY_WHAT: Record<string, string> = {
   config: "a config key",
 };
 
+/** ADR 0199: how a pairing is undone, and what the Apply offered under a pairing does. */
+const COPY_UNDO = (from: string) =>
+  `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
+const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
+const APPLY_AGAIN = (from: string) =>
+  `that Apply may have been stopped or refused before it wrote the map, or the link was deleted on the map. Apply to ${from}'s map, below, runs it again and says what it leaves out.`;
+
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
@@ -5515,8 +5522,43 @@ export const COPY = {
       calls: (from: string) => `${from}'s calls, each with the API it goes to`,
       callApi: (call: string) => `The API ${call} goes to`,
       notPaired: "Not this call",
-      noCalls: (from: string) =>
-        `${from} has no call left to pair with this box: each is paired by a person already. Undo one from its line in the corrections to pair it again.`,
+      /**
+       * ADR 0199: why no call is left to pair, by what each call is: going there already with
+       * an arrow on the map (whoever or whatever joined it), paired and on the map, paired and
+       * not on the map yet (the repo's next Apply draws it), paired with an API the box lost, or
+       * paired inside one component (no arrow). `who` names who paired (`connect.pairedWho`).
+       */
+      noCallsLeft: (
+        from: string,
+        n: { here: number; drawn: number; waiting: number; gone: number; inside: number },
+        who: string,
+      ) => {
+        const are = (k: number) => (k === 1 ? "1 is" : `${k} are`);
+        const parts = [
+          ...(n.here
+            ? [
+                `${n.here === 1 ? "1 goes" : `${n.here} go`} to it already, with an arrow on the map`,
+              ]
+            : []),
+          ...(n.drawn ? [`${are(n.drawn)} paired with it and on the map`] : []),
+          ...(n.waiting
+            ? [
+                `${are(n.waiting)} paired with it and not on the map yet (Apply ${from} from Corrections to apply, at the top of the map, to draw ${n.waiting === 1 ? "it" : "them"})`,
+              ]
+            : []),
+          ...(n.gone ? [`${are(n.gone)} paired with an API it no longer has on record`] : []),
+          ...(n.inside
+            ? [
+                `${are(n.inside)} paired with an API in ${n.inside === 1 ? "its" : "their"} own component, which draws no arrow`,
+              ]
+            : []),
+        ];
+        const paired = n.drawn + n.waiting + n.gone + n.inside > 0;
+        return `${from} has no call left to pair with this box: ${listWords(parts)}.${paired ? ` Paired by ${who}. To pair one again, first undo it: ${COPY_UNDO(from)}.` : ""}`;
+      },
+      /** A redirect: the repo's facts hold no call at all. Only that is known. */
+      noCallsRead: (from: string) =>
+        `No call of ${from} is on record in its facts, so there is nothing to pair with this box.`,
       /** Beta.28.1 (field report 4): the calls with an arrow already, to move to this box. */
       moveTitle: (n: number) =>
         n === 1
@@ -5525,8 +5567,10 @@ export const COPY = {
       moveCaption: (from: string, to: string) =>
         `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
       joinsNow: (box: string) => `goes to ${box} now`,
-      pairedWith: (by: string, box: string) =>
-        `paired by a person (${by}) with ${box}: pairing it here replaces their word`,
+      pairedWith: (by: string, box: string, ai = false) =>
+        ai
+          ? `paired by AI (${by}) with ${box}, not confirmed by a person: pairing it here replaces that pairing`
+          : `paired by a person (${by}) with ${box}: pairing it here replaces their word`,
       noApis: (to: string) =>
         `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
       pickOne: "Pick the API for at least one call.",
@@ -5821,8 +5865,66 @@ export const COPY = {
      */
     noLoose: (where: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
-    allPaired: (to: string) =>
-      `Every call of this repo is paired with ${to} by a person already: undo one from its line in the corrections to pair it again.`,
+    /**
+     * ADR 0199 (field report, beta.28.3: "it says it's already paired, but I don't see the
+     * line"): the calls a person paired, by where each stands. A pairing is a line in the repo's
+     * corrections; the arrow is drawn by the repo's next Apply. Each standing is said as it is,
+     * with what resolves it.
+     */
+    /** How a pairing is undone: the box's own list of corrections. */
+    undoHow: (from: string) => COPY_UNDO(from),
+    /**
+     * Who paired the calls a sentence is about (the review, S6): the people by name, and the AI
+     * said to be the AI (ADR 0181), never "a person".
+     */
+    pairedWho: (people: readonly string[], ai: boolean) =>
+      people.length
+        ? `${listWords(people)}${ai ? " and AI (not confirmed by a person)" : ""}`
+        : ai
+          ? "AI (not confirmed by a person)"
+          : "Someone",
+    /** Paired with this box, and the catalog has the arrow. */
+    pairedOnMap: (who: string, n: number, from: string, to: string) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, and the map draws ${n === 1 ? "it" : "them"}: the arrow from ${from} to ${to} on the Estate map (pick the arrow to see its calls). To pair one again, first undo it: ${COPY_UNDO(from)}.`,
+    /**
+     * Paired with this box, and the catalog has no arrow for it. `ahead`: the corrections are
+     * newer than the repo's last Apply (it only waits); else an Apply ran since and the map
+     * still has none, and why can't be told from here.
+     */
+    pairedWaiting: (who: string, n: number, from: string, to: string, ahead: boolean) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, ${
+        ahead
+          ? `but the map doesn't draw ${n === 1 ? "it" : "them"} yet: the pairing${n === 1 ? " is" : "s are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, "the arrow")}`
+          : `but the map draws no arrow for ${n === 1 ? "it" : "them"}, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
+      }`,
+    /** Some drawn, some not. */
+    pairedMix: (
+      who: string,
+      drawn: number,
+      waiting: number,
+      from: string,
+      to: string,
+      ahead: boolean,
+    ) =>
+      `${who} paired ${drawn + waiting} calls of ${from} with ${to}: the map draws ${drawn} (the arrow from ${from} to ${to} on the Estate map), and ${waiting} ${waiting === 1 ? "isn't" : "aren't"} drawn yet${
+        ahead
+          ? `: ${waiting === 1 ? "it is" : "they are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, waiting === 1 ? "it" : "them")}`
+          : `, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
+      }`,
+    /** Paired with this box, to an API the box no longer has on record: no Apply draws it. */
+    pairedGone: (who: string, n: number, from: string, to: string) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with an API ${to} no longer has on record, so no arrow can be drawn for ${n === 1 ? "it" : "them"}. Undo the pairing (${COPY_UNDO(from)}), then pair the call again here.`,
+    /** The review (N10): both ends of the pairing are in one component: no arrow, ever. */
+    pairedInside: (who: string, n: number, from: string, component: string) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with an API in ${n === 1 ? "its" : "their"} own component: both ends are inside ${component}, so no arrow is drawn between boxes. No Apply changes that.`,
+    /** Paired with another box (or boxes): `where` names each with how many. */
+    pairedElsewhere: (who: string, n: number, where: string, from: string) =>
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with another box: ${where}. ${n === 1 ? "It is" : "Each is"} listed below with who paired it; pairing ${n === 1 ? "it" : "one"} here replaces that pairing. To free ${n === 1 ? "it" : "one"} without pairing it here, undo it: ${COPY_UNDO(from)}.`,
+    /** A row: a pairing with another box that the map doesn't draw yet. */
+    pairedUndrawn: (by: string, box: string, ai = false) =>
+      ai
+        ? `paired by AI (${by}) with ${box}, not confirmed by a person, and not on the map yet (the repo's next Apply draws it): pairing it here replaces that pairing`
+        : `paired by a person (${by}) with ${box}, and not on the map yet (the repo's next Apply draws it): pairing it here replaces their word`,
     /** One box the calls go to now, and how many: `forge-ledger (3)`. */
     linkedTo: (box: string, n: number) => `${box} (${n})`,
     /** The calls that have an arrow elsewhere, to move to this box. */
@@ -5836,9 +5938,14 @@ export const COPY = {
     joinsNow: (box: string) => `goes to ${box} now`,
     undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,
     /** The review of beta.28.1 (N3): a call a person paired with the box it goes to now. */
-    pairedWith: (by: string, box: string) => `paired by a person (${by}) with ${box}`,
-    replacesPairing: (by: string, box: string, to: string) =>
-      `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${box} goes.`,
+    pairedWith: (by: string, box: string, ai = false) =>
+      ai
+        ? `paired by AI (${by}) with ${box}, not confirmed by a person`
+        : `paired by a person (${by}) with ${box}`,
+    replacesPairing: (by: string, box: string, to: string, ai = false) =>
+      ai
+        ? `AI (${by}) paired this call with ${box}, not confirmed by a person: pairing it with ${to} replaces that pairing (the newest line wins), and its arrow to ${box} goes.`
+        : `${by} paired this call with ${box}: pairing it with ${to} replaces their word (the newest line wins), and its arrow to ${box} goes.`,
     /** S2: calls with an arrow to this very box, never paired again. */
     hereTitle: (to: string, n: number) => `Going to ${to} already (${n})`,
     hereWhy: (api: string) => `goes here already, to ${api}: nothing to pair`,
@@ -7262,9 +7369,11 @@ export const COPY = {
       "As your Git host shows them, such as https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-ledger. Credentials and a browser link's ?path= are taken out.",
     dir: "Folder of clones",
     dirHint:
-      "Its full path. Every repo in it is read from its files, as atticus repos discover does.",
+      "Its full path. Each repo in it that the manifest doesn't list yet is read from its files, as atticus repos discover does; one the manifest lists already is told by its clone URL and not read again.",
     read: "Read the list",
     reading: "Reading…",
+    // A folder is read as a job: the page says the folder it is on, and offers Stop.
+    readingFolder: "Reading the folder of clones…",
     platformLabel: "Platform",
     platformNone: "Choose one",
     choosePlatform: (n: number) =>
@@ -7282,7 +7391,9 @@ export const COPY = {
       `${from} is taken (${why}), so this one is the id shown.`,
     listed: (url: string, id: string) => `${url} is listed already, as ${id}: left out.`,
     refused: (given: string, why: string) => `${given}: ${why}.`,
-    skipped: (n: number) => `${n} folder${n === 1 ? "" : "s"} looked at aren't repos.`,
+    skipped: (n: number) =>
+      `${n} folder${n === 1 ? " wasn't" : "s weren't"} read as ${n === 1 ? "a repo" : "repos"}: see why.`,
+    skippedWhy: (path: string, reason: string) => `${path}: ${reason}.`,
     nothingNew: "Nothing new to add: the manifest lists all of them already.",
     noneTicked: "Tick at least one repo to add.",
     // A repo's type.

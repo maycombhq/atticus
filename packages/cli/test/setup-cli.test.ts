@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,6 +133,41 @@ describe("atticus repos discover", () => {
       `Next: atticus workspace sync --from "${join(FIXTURES, "plain-multi")}" copies each repo from these clones, with no network.`,
     );
     expect(t.out.at(-1)).toBe("20 questions need a person: proposals/repos/shop/QUESTIONS.md.");
+  });
+
+  // Field report (beta.28.3): the folder of every clone, given to add a few, took hours and said
+  // nothing. A repo the manifest lists is told by its clone URL and not read; each folder is
+  // said as it is come to (progress: a terminal's standard error).
+  it("says each folder as it reads it, and lists a repo the manifest has without reading it", async () => {
+    const root = await temp("forge-meta");
+    await initCommand(root, { name: "forge", platform: "forge" }, io().io);
+    const src = join(FIXTURES, "plain-multi");
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      `schemaVersion: 3\nplatform: forge\nrepos:\n  - id: ledger\n    url: ${join(src, "ledger-go").replace(/\\/g, "/")}\n    type: go\n    owner: team-ledger\n`,
+    );
+    const t = io();
+    const progress: string[] = [];
+    expect(
+      await reposDiscoverCommand(
+        root,
+        { from: src, dryRun: true },
+        { ...t.io, progress: (l) => progress.push(l) },
+      ),
+    ).toBe(0);
+    expect(progress).toHaveLength(11);
+    expect(progress[0]).toBe("Reading batch-mainframe (1 of 11)…");
+    expect(progress[5]).toBe("ledger-go (6 of 11): listed already as ledger, not read.");
+    expect(t.out).toContain("  Already listed: ledger-go (ledger)");
+    expect(t.out.some((l) => l.startsWith("  ledger-go:"))).toBe(false);
+    expect(t.out).toContain("Found 9 repos; nothing written (dry run).");
+    // As data too, and no progress line among it.
+    const j = io();
+    expect(await reposDiscoverCommand(root, { from: src, dryRun: true, json: true }, j.io)).toBe(0);
+    expect(JSON.parse(j.out.join("\n")).listed).toEqual([
+      { path: "ledger-go", id: "ledger", url: join(src, "ledger-go").replace(/\\/g, "/") },
+    ]);
+    expect(j.err).toEqual([]);
   });
 
   it("lists an organisation through a Git host listing, and refuses one without", async () => {

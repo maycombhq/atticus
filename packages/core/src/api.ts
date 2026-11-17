@@ -660,6 +660,20 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   them (`done` of `total`: the repos finished). Stop is heard between its repos: a repo's
  *   write under way finishes whole, then the job ends `cancelled` with `stopped: true` in its
  *   result and the repos never reached under `notApplied`. Additive only.
+ *   Also in 3.16.0 (beta.28.4, ADR 0199, two field reports on a 40-repo estate): POST
+ *   /api/setup/repos/plan takes `job: true` for a folder of clones: 202 JobAccepted at once, the
+ *   job says each folder as it comes to it ("Reading forge-ledger (4 of 40)…") and hears Stop
+ *   between folders, and its result's `answer` is the ReposPlanView (or `problem`); the refusals
+ *   the request knows at once (no such folder, several platforms and none chosen) still come as
+ *   the answer. With or without `job`, a folder's repo a manifest lists already is told by its
+ *   clone URL and not read (it is in `listed`, as before), and a folder that takes over a minute
+ *   to read is in `skipped` with that reason. Additive only.
+ *   Also in 3.16.0 (ADR 0199, "it says it's paired, but I don't see the line"): GET
+ *   /api/links/candidates says of each `paired` call whether the map draws its arrow to this box
+ *   (`drawn`), and of the view whether A's corrections are newer than A's last Apply
+ *   (`applyPending`). A `paired` call also carries who paired it (`pairedBy`), any call with a
+ *   pairing whether it is the AI's (`pairedAi`), and a pairing whose two ends are in one
+ *   component that component (`inside`: no arrow is drawn for it). Additive only.
  */
 export const API_VERSION = "3.16.0";
 export const DEFAULT_PORT = 4321;
@@ -5372,6 +5386,21 @@ export const CandidateCallView = z.object({
   ]),
   why: z.string().optional(),
   paired: z.string().optional(),
+  /**
+   * 3.16 (ADR 0199): for `paired`, whether the map draws its arrow to this box: true once the
+   * catalog has it (the repo was applied since the pairing), false while it doesn't.
+   */
+  drawn: z.boolean().optional(),
+  /**
+   * 3.16 (ADR 0199): for `paired`, the component both ends of the pairing are in: no arrow is
+   * drawn between boxes for it, whatever is applied.
+   */
+  inside: z.string().optional(),
+  /**
+   * 3.16 (ADR 0199): the pairing `pairedBy` names is the AI's (ADR 0181), not confirmed by a
+   * person. `pairedBy` is given for a `paired` call too.
+   */
+  pairedAi: z.boolean().optional(),
   /** 3.14: the box the call goes to now (a repo, or an outside target), before it is moved. */
   joins: z.string().optional(),
   /** 3.14: for `here`, the API of this box the call goes to now. */
@@ -5413,6 +5442,11 @@ export const LinkCandidatesView = z.object({
     .optional(),
   /** An open target question of A that one /** answer to B would close, with the calls it covers. */
   rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
+  /**
+   * 3.16 (ADR 0199): A's corrections file is newer than A's last Apply (as a proposal's
+   * `applyFirst` tells it): what a person paired or corrected since isn't on the map yet.
+   */
+  applyPending: z.boolean().optional(),
 });
 /** ADR 0178 part 2: Copilot matches A's loose calls with B's APIs; a person ticks the proposals. */
 export const MatchLinksRequest = z.object({ from: z.string().min(1), to: LinkBox });
@@ -5748,6 +5782,11 @@ export const ReposPlanRequest = z
     urls: z.string().max(200_000).optional(),
     dir: z.string().min(1).max(4096).optional(),
     platform: RecordId.optional(),
+    /**
+     * 3.16.0 (ADR 0199): read as a job. 202 JobAccepted at once; the job says each folder as it
+     * comes to it, hears Stop between folders, and its result's `answer` is the ReposPlanView.
+     */
+    job: z.boolean().optional(),
   })
   .refine((b) => !!b.urls?.trim() !== !!b.dir, "send urls or dir, one of them");
 export const PlannedRepoView = z.object({
@@ -8675,10 +8714,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "planRepos",
       summary:
-        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing",
+        "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing. 3.16.0 (ADR 0199): a folder's repo a manifest lists already is told by its clone URL and not read (`listed`), a folder that takes over a minute to read is skipped saying so (`skipped`), and with `job: true` the read is a job: 202 JobAccepted at once, a line a folder, Stop heard between folders, the plan in the job's result `answer` (or `problem`)",
       tag: "run",
       body: ReposPlanRequest,
       ok: { status: 200, schema: "ReposPlanView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job: true`)" },
       errors: [400, 404, 409, 422],
     },
   },

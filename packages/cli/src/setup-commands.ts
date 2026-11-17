@@ -238,6 +238,21 @@ export async function unadoptCommand(path: string, io: Output): Promise<number> 
   }
 }
 
+/**
+ * What repos discover says of a folder as it comes to it (the terminal's progress, the app's
+ * Console): "Reading forge-ledger (4 of 40)…", or that a manifest lists it and it isn't read.
+ */
+export function folderLine(f: {
+  folder: string;
+  index: number;
+  total: number;
+  listed?: string;
+}): string {
+  return f.listed
+    ? `${f.folder} (${f.index} of ${f.total}): listed already as ${f.listed}, not read.`
+    : `Reading ${f.folder} (${f.index} of ${f.total})…`;
+}
+
 /** atticus repos discover <folder> | --org <org>: propose repos.manifest.yaml entries. */
 export async function reposDiscoverCommand(
   root: string,
@@ -265,7 +280,13 @@ export async function reposDiscoverCommand(
     const r = await reposDiscover(
       root,
       o.org ? { host: o.host!, org: o.org } : { dir: resolve(o.from!) },
-      { ...(o.platform ? { platform: o.platform } : {}), ...(o.dryRun ? { dryRun: true } : {}) },
+      {
+        ...(o.platform ? { platform: o.platform } : {}),
+        ...(o.dryRun ? { dryRun: true } : {}),
+        // The field report of beta.28.3: a folder of many clones says where it is, a folder a
+        // line (progress: standard error, never among --json's data).
+        ...(o.json ? {} : { onFolder: (f) => (io.progress ?? io.err)(folderLine(f)) }),
+      },
     );
     if (o.json) {
       io.out(
@@ -274,6 +295,7 @@ export async function reposDiscoverCommand(
             platform: r.platform,
             repos: r.repos.map((x) => ({ ...x.entry, signals: x.detection.signals })),
             skipped: r.skipped,
+            listed: r.listed,
             renamed: r.renamed,
             questions: r.questions,
             wrote: r.wrote,
@@ -289,6 +311,8 @@ export async function reposDiscoverCommand(
       io.out(
         `  ${x.entry.id}: ${x.entry.type}${x.detection.signals[0] ? ` (${x.detection.signals[0]})` : ""}`,
       );
+    // A repo the manifest lists already (the same clone URL): told, never read again.
+    for (const l of r.listed) io.out(`  Already listed: ${l.path} (${l.id})`);
     for (const s of r.skipped) io.out(`  Skipped ${s.path}: ${s.reason}`);
     // Round 50: a repo given another id because the manifest has its id for another repo.
     for (const n of r.renamed) io.out(`  ${n.from} is added as ${n.to}: ${n.why}.`);

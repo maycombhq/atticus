@@ -1,4 +1,4 @@
-import { access, mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
@@ -17,6 +17,8 @@ import {
   loadOrgPack,
   orgPackDirOf,
   QuestionError,
+  SPEC_HEADER_FILE,
+  specDirOf,
   TARGETS_STEP_ID,
   withSharedFileLock,
   writeFileAtomic,
@@ -289,6 +291,10 @@ export async function drawnOf(
       outside: (target: string, call: string) => boolean;
       /** The box a call's arrow goes to, for one the join doesn't place. */
       to: (call: string) => string | undefined;
+      /** ADR 0199 (S5): the catalog has the join's own Interface, by its id. */
+      exact: (j: { interface: string }) => boolean;
+      /** ADR 0199 (S5): every box an arrow from the call's line goes to, in id order. */
+      boxes: (call: string) => readonly string[];
     }
   | undefined
 > {
@@ -319,7 +325,8 @@ export async function drawnOf(
       suppressed.add(d.target);
   }
   const ids = new Set<string>();
-  const lines = new Map<string, string>();
+  // ADR 0199 (S5): two calls cited on one line each have an arrow: every box, first by id.
+  const lines = new Map<string, string[]>();
   // The re-review: a curated Interface stands over a generated one of the same id.
   const byId = new Map<string, CatalogRecord>();
   for (const r of [...gen, ...cur]) if (r.kind === "Interface") byId.set(r.id, r);
@@ -330,8 +337,10 @@ export async function drawnOf(
     for (const e of r.evidence ?? [])
       if (e.repo === from && e.side !== "callee" && e.path && e.line !== undefined) {
         const k = `${e.path}:${e.line}`;
-        // The first by id, so the box said is the same on every read.
-        if (!lines.has(k)) lines.set(k, (r as { to: string }).to);
+        const to = (r as { to: string }).to;
+        const had = lines.get(k);
+        if (!had) lines.set(k, [to]);
+        else if (!had.includes(to)) had.push(to);
       }
   }
   const at = new Map(
@@ -343,9 +352,15 @@ export async function drawnOf(
       const a = at.get(call);
       return !!a && lines.has(a);
     },
+    // The first by id, so the box said is the same on every read.
     to: (call) => {
       const a = at.get(call);
-      return a ? lines.get(a) : undefined;
+      return a ? lines.get(a)?.[0] : undefined;
+    },
+    exact: (j) => ids.has(j.interface),
+    boxes: (call) => {
+      const a = at.get(call);
+      return (a ? lines.get(a) : undefined) ?? [];
     },
   };
 }
@@ -358,7 +373,14 @@ function inBoxOf(op: Awaited<ReturnType<typeof loadOrgPack>>, to: Api.LinkBoxT) 
   const repos = estateRepos(op).filter((r) =>
     to.repo ? r.id === to.repo : (r.system ?? r.id) === to.system,
   );
-  const names = new Set(repos.flatMap((r) => [r.id, ...(r.component ? [r.component] : [])]));
+  // ADR 0199 (S1): a module's component is drawn inside its repo's box.
+  const names = new Set(
+    repos.flatMap((r) => [
+      r.id,
+      ...(r.component ? [r.component] : []),
+      ...(r.modules ?? []).map((m) => m.component),
+    ]),
+  );
   return (name: string) => names.has(name);
 }
 
@@ -371,7 +393,7 @@ async function candidatesIn(
 ) {
   const drawn = await drawnOf(root, from, c.facts, s);
   const inBox = inBoxOf(c.op, to);
-  return linkCandidates({
+  const cands = linkCandidates({
     from,
     facts: c.facts,
     // Asked with the join (context's default).
@@ -380,9 +402,43 @@ async function candidatesIn(
     pairs: c.pairs,
     to,
     settings: settingsOf(c.facts),
-    ...(drawn ? { drawn: drawn.join, drawnOutside: drawn.outside, drawnTo: drawn.to } : {}),
+    ...(drawn
+      ? {
+          drawn: drawn.join,
+          drawnOutside: drawn.outside,
+          drawnTo: drawn.to,
+          drawnExact: drawn.exact,
+          drawnBoxes: drawn.boxes,
+        }
+      : {}),
     inBox,
   });
+  if (drawn) return cands;
+  // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0199).
+  return {
+    ...cands,
+    calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
+  };
+}
+
+/**
+ * ADR 0199: whether a repo's corrections file is newer than the repo's last Apply, told as a
+ * proposal's `applyFirst` tells it (ui-api.ts): Apply rewrites the repo's spec header each time
+ * it writes the map; a repo with no header yet goes by its verify.yaml. False with no
+ * corrections file.
+ */
+export async function correctionsAheadOf(root: string, repo: string): Promise<boolean> {
+  const mtime = (p: string) =>
+    stat(p).then(
+      (x) => x.mtimeMs,
+      () => undefined,
+    );
+  const saved = await mtime(join(factsDirOf(root), `${repo}.corrections.jsonl`));
+  if (saved === undefined) return false;
+  const applied =
+    (await mtime(join(specDirOf(root, repo), SPEC_HEADER_FILE))) ??
+    (await mtime(join(factsDirOf(root), `${repo}.verify.yaml`)));
+  return applied === undefined || saved > applied;
 }
 
 /** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
@@ -412,6 +468,7 @@ export async function candidatesOf(
         : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
     ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
     ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
+    ...((await correctionsAheadOf(root, from)) ? { applyPending: true } : {}),
   };
   return { view, facts: c.facts };
 }

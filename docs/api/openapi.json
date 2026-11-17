@@ -12463,7 +12463,7 @@
     "/api/setup/repos/plan": {
       "post": {
         "operationId": "planRepos",
-        "summary": "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing",
+        "summary": "The repos pasted clone URLs (one a line, up to 500) or a folder of clones (repos discover's own code, a dry run) would add: each normalised URL and the id repo add gives it, a clone URL a manifest lists already left out, a taken id given -2, and a folder's type from its files. A folder with several platforms and none given reads nothing and answers the platforms to choose from (`platforms`, no `platform`). Writes nothing. 3.16.0 (ADR 0199): a folder's repo a manifest lists already is told by its clone URL and not read (`listed`), a folder that takes over a minute to read is skipped saying so (`skipped`), and with `job: true` the read is a job: 202 JobAccepted at once, a line a folder, Stop heard between folders, the plan in the job's result `answer` (or `problem`)",
         "tags": [
           "run"
         ],
@@ -12488,6 +12488,9 @@
                     "minLength": 1,
                     "maxLength": 120,
                     "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "job": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -12502,6 +12505,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReposPlanView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job: true`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
@@ -40644,6 +40657,15 @@
                 "paired": {
                   "type": "string"
                 },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "inside": {
+                  "type": "string"
+                },
+                "pairedAi": {
+                  "type": "boolean"
+                },
                 "joins": {
                   "type": "string"
                 },
@@ -40825,6 +40847,9 @@
               "calls"
             ],
             "additionalProperties": false
+          },
+          "applyPending": {
+            "type": "boolean"
           }
         },
         "required": [

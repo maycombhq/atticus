@@ -204,6 +204,55 @@ describe("set up from the app (ADR 0190)", () => {
     );
   });
 
+  // Field report (beta.28.3): the folder of all ~40 clones, given to add three, took hours and
+  // said nothing. Asked as a job (`job: true`, API 3.16.0) the read answers at once with the
+  // job's id, says each folder as it comes to it, and a listed repo isn't read at all.
+  it("reads a folder of clones as a job: a line a folder, listed ones told and not read, the same plan", async () => {
+    const clones = await mkdtemp(join(tmpdir(), "atticus-clones-"));
+    const clone = async (name: string, url: string) => {
+      await mkdir(join(clones, name, ".git"), { recursive: true });
+      await writeFile(join(clones, name, ".git", "HEAD"), "ref: refs/heads/main\n");
+      await writeFile(join(clones, name, ".git", "config"), `[remote "origin"]\n\turl = ${url}\n`);
+      await writeFile(join(clones, name, "package.json"), '{ "name": "x" }\n');
+    };
+    await clone(
+      "forge-ledger",
+      "https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-ledger",
+    );
+    await clone("forge-notes", "https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-notes");
+    await mkdir(join(clones, "scratch"));
+    const plain = Api.ReposPlanView.parse(
+      (await call("POST", "/api/setup/repos/plan", { dir: clones })).body,
+    );
+    const r = await call("POST", "/api/setup/repos/plan", { dir: clones, job: true });
+    expect(r.status, JSON.stringify(r.body)).toBe(202);
+    const id = Api.JobAccepted.parse(r.body).jobId;
+    const j = await srv.jobs.settle(id);
+    expect(j.state).toBe("done");
+    expect(j.title).toMatch(/^Reading the folder of clones: atticus-clones-/);
+    const plan = Api.ReposPlanView.parse((j.result as { answer: unknown }).answer);
+    expect(plan).toEqual(plain);
+    expect(plan.repos.map((x) => x.id)).toEqual(["forge-notes"]);
+    expect(plan.listed).toEqual([
+      {
+        url: "https://dev.azure.com/forgeorg/Forge%20Payments/_git/forge-ledger",
+        id: "forge-ledger",
+      },
+    ]);
+    expect(plan.skipped).toEqual([
+      { path: "scratch", reason: "no build file, code or platform files" },
+    ]);
+    const lines = srv.jobs.linesOf(id)?.lines ?? [];
+    expect(lines).toContain("forge-ledger (1 of 3): listed already as forge-ledger, not read.");
+    expect(lines.some((l) => l.startsWith("Reading forge-notes (2 of 3)"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Reading scratch (3 of 3)"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Reading forge-ledger"))).toBe(false);
+    // A refusal the request knows at once is still the answer, never a job.
+    expect(
+      (await call("POST", "/api/setup/repos/plan", { dir: join(clones, "no"), job: true })).status,
+    ).toBe(404);
+  });
+
   it("detects a cloned repo's type from its files and sets it in the manifest", async () => {
     expect((await call("POST", "/api/repos/forge-cards/type/detect")).status).toBe(409);
     const clone = join(root, "workspace", "forge-cards");

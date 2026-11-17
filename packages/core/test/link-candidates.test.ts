@@ -304,6 +304,157 @@ describe("the candidates of two boxes", () => {
     });
   });
 
+  // Field report (beta.28.3): "it says it's already paired, but I don't see the line". A
+  // pairing is a line in the corrections file; the arrow is the catalog's, drawn by Apply. A
+  // paired call says whether the map draws it (`drawn`), once the catalog was read.
+  it("says of a call a person paired with this box whether the map draws its arrow yet", () => {
+    const pairs = {
+      "c-request-refund": {
+        repo: "forge-gw",
+        entry: "e-refunds-request",
+        method: "POST",
+        path: "/v2/refunds/request",
+        by: "pat",
+      },
+      "c-cancel-payment": {
+        repo: "forge-gw",
+        entry: "e-payments-cancel",
+        method: "POST",
+        path: "/v2/payments/cancel",
+        by: "pat",
+      },
+    };
+    const join = joinFacts({ repos, pairs: { "forge-refunds": pairs }, explain: true });
+    const base = {
+      from: "forge-refunds",
+      facts: refunds.facts,
+      join,
+      apis,
+      pairs,
+      to: { repo: "forge-gw" },
+    };
+    const of = (c: ReturnType<typeof linkCandidates>, id: string) =>
+      c.calls.find((x) => x.fact === id)!;
+    // The catalog not read: nothing is said either way.
+    expect("drawn" in of(linkCandidates(base), "c-request-refund")).toBe(false);
+    // The catalog has the arrow of one (its Interface cites the call's line, to this box), and
+    // nothing of the other: applied, and waiting for Apply.
+    const one = linkCandidates({
+      ...base,
+      drawn: (j) => j.call.fact === "c-request-refund",
+      drawnTo: (call) => (call === "c-request-refund" ? "forge-gw" : undefined),
+    });
+    expect(of(one, "c-request-refund")).toMatchObject({ status: "paired", drawn: true });
+    expect(of(one, "c-cancel-payment")).toMatchObject({ status: "paired", drawn: false });
+    // The catalog still draws the call's old arrow to another box: the pairing isn't drawn.
+    const old = linkCandidates({
+      ...base,
+      drawn: () => true,
+      drawnTo: (call) => (call === "c-request-refund" ? "forge-ledger" : undefined),
+    });
+    expect(of(old, "c-request-refund")).toMatchObject({ status: "paired", drawn: false });
+    expect(of(old, "c-cancel-payment")).toMatchObject({ status: "paired", drawn: true });
+  });
+
+  // ADR 0199, the review. S1: the arrow to a module's component is an arrow to the repo's box.
+  // S5: two calls cited on one line each have an arrow, to different boxes. S6: a pairing says
+  // who made it, and whether it is the AI's. N10: both ends in one component draw no arrow.
+  it("tells a pairing's arrow by the join's own Interface, then by every box its line is drawn to", () => {
+    const pairs = {
+      "c-request-refund": {
+        repo: "forge-gw",
+        entry: "e-refunds-request",
+        method: "POST",
+        path: "/v2/refunds/request",
+        by: "pat",
+      },
+      "c-cancel-payment": {
+        repo: "forge-gw",
+        entry: "e-payments-cancel",
+        method: "POST",
+        path: "/v2/payments/cancel",
+        by: "copilot",
+        ai: { runtime: "copilot", run: "run-1" },
+      },
+    };
+    const join = joinFacts({ repos, pairs: { "forge-refunds": pairs }, explain: true });
+    const base = {
+      from: "forge-refunds",
+      facts: refunds.facts,
+      join,
+      apis,
+      pairs,
+      to: { repo: "forge-gw" },
+    };
+    const of = (c: ReturnType<typeof linkCandidates>, id: string) =>
+      c.calls.find((x) => x.fact === id)!;
+    // Who paired it, and that one is the AI's.
+    const who = linkCandidates(base);
+    expect(of(who, "c-request-refund")).toMatchObject({ status: "paired", pairedBy: "pat" });
+    expect(of(who, "c-request-refund").pairedAi).toBeUndefined();
+    expect(of(who, "c-cancel-payment")).toMatchObject({
+      status: "paired",
+      pairedBy: "copilot",
+      pairedAi: true,
+    });
+    // The join's own Interface is in the catalog: drawn, though the line's arrow is said to go
+    // to a component the box list doesn't name and another call on the line goes elsewhere.
+    const exact = linkCandidates({
+      ...base,
+      drawn: () => true,
+      drawnExact: (j) => j.call.fact === "c-request-refund",
+      drawnBoxes: () => ["forge-ledger"],
+    });
+    expect(of(exact, "c-request-refund").drawn).toBe(true);
+    expect(of(exact, "c-cancel-payment").drawn).toBe(false);
+    // Not the join's own Interface: any of the boxes the line is drawn to being this one will do
+    // (a module's component, drawn inside the repo's box).
+    const boxes = linkCandidates({
+      ...base,
+      drawn: () => true,
+      drawnExact: () => false,
+      drawnBoxes: (call) =>
+        call === "c-request-refund" ? ["forge-ledger", "gw-routes"] : ["forge-ledger"],
+      inBox: (name) => name === "gw-routes",
+    });
+    expect(of(boxes, "c-request-refund").drawn).toBe(true);
+    expect(of(boxes, "c-cancel-payment").drawn).toBe(false);
+  });
+
+  it("says of a pairing whose two ends are in one component that no arrow is drawn for it", () => {
+    // forge-refunds' own facts say the gateway's component is theirs too: one box, both ends.
+    const same = repos.map((r) => ({
+      ...r,
+      facts: r.facts.map((f) => ({ ...f, component: "forge-payments" })),
+    }));
+    const pairs = {
+      "c-request-refund": {
+        repo: "forge-gw",
+        entry: "e-refunds-request",
+        method: "POST",
+        path: "/v2/refunds/request",
+        by: "pat",
+      },
+    };
+    const join = joinFacts({ repos: same, pairs: { "forge-refunds": pairs }, explain: true });
+    const c = linkCandidates({
+      from: "forge-refunds",
+      facts: same.find((r) => r.repo === "forge-refunds")!.facts,
+      join,
+      apis,
+      pairs,
+      to: { repo: "forge-gw" },
+      drawn: () => true,
+      drawnExact: () => true,
+      drawnBoxes: () => [],
+    });
+    expect(c.calls.find((x) => x.fact === "c-request-refund")).toMatchObject({
+      status: "paired",
+      drawn: false,
+      inside: "forge-payments",
+    });
+  });
+
   it("reads a repo's pairings from its corrections, newest first, met by id or by what is cited", () => {
     const link = (at: string, path: string, fact = "c-request-refund"): FactCorrection => ({
       schemaVersion: 1,
