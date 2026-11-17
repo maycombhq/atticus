@@ -572,6 +572,68 @@ describe("atticus doctor", () => {
     expect(none.status).toBe("warn");
     expect(none.detail).toBe("copilot-language-server can't be run here (not found)");
     expect(none.fix).toMatch(/copilotAcp.command/);
+    expect(none.fix).not.toContain("--help");
+    // beta.28.5: a server that didn't start: what a run would say, and its advice as the fix.
+    const start = {
+      kind: "exited" as const,
+      problem:
+        "it ended before it answered (exit code 1) and said: error: required option '--stdio' not specified",
+      advice:
+        "It asks for the option --stdio. Add it to copilotAcp.command in runtime.yaml (command: copilot-language-server --stdio).",
+    };
+    const ended = byId(
+      await doctorChecks(
+        acp,
+        healthy({
+          copilotAcp: async () => ({ found: true, version: "1.390.0", said: start.problem, start }),
+        }),
+      ),
+      "copilot-acp",
+    );
+    expect(ended.status).toBe("warn");
+    expect(ended.detail).toBe(
+      `copilot-language-server 1.390.0 was found but didn't start in Agent Client Protocol mode: ${start.problem}`,
+    );
+    expect(ended.fix).toBe(
+      `${start.advice} Then run atticus doctor again: it starts the server without a session.`,
+    );
+    const missing = {
+      kind: "not-found" as const,
+      problem:
+        "the program copilot-language-server wasn't found on this machine (spawn copilot-language-server ENOENT)",
+      advice:
+        "Set copilotAcp.command in runtime.yaml to a program that is installed here, or to its full path (in double quotes when it has spaces).",
+    };
+    const gone = byId(
+      await doctorChecks(
+        acp,
+        healthy({
+          copilotAcp: async () => ({ found: false, said: missing.problem, start: missing }),
+        }),
+      ),
+      "copilot-acp",
+    );
+    expect(gone.detail).toBe(`copilot-language-server can't be run here: ${missing.problem}`);
+    expect(gone.fix).toContain(missing.advice);
+    expect(gone.fix).toContain("Or leave copilot-acp out of modes.allowed");
+    const stdio = byId(
+      await doctorChecks(
+        acp,
+        healthy({
+          copilotAcp: async () => ({
+            found: true,
+            version: "1.390.0",
+            signedIn: true,
+            note: "The Copilot language server asked for --stdio; started again with it. Add --stdio to copilotAcp.command in runtime.yaml to skip this.",
+          }),
+        }),
+      ),
+      "copilot-acp",
+    );
+    expect(stdio.status).toBe("ok");
+    expect(stdio.detail).toBe(
+      "copilot-language-server 1.390.0 answers in Agent Client Protocol mode and is signed in. No session was run. The Copilot language server asked for --stdio; started again with it. Add --stdio to copilotAcp.command in runtime.yaml to skip this.",
+    );
   });
 
   it("puts the machine first on the setup checklist", async () => {
