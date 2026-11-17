@@ -66,7 +66,7 @@ export async function writeFileAtomic(
     const now = await stat(path).catch(() => undefined);
     if (now && now.size === mine.size && Math.floor(now.mtimeMs) === mine.mtimeMs) o.stat(mine);
   } catch (e) {
-    await rm(tmp, { force: true });
+    await removeTmp(tmp);
     throw e;
   } finally {
     // beta.23: the files kept read (kept-files.ts) are checked again after any write.
@@ -87,7 +87,7 @@ export async function copyFileAtomic(from: string, path: string): Promise<void> 
     await copyFile(from, tmp, fsConstants.COPYFILE_FICLONE);
     await renameRetrying(tmp, path);
   } catch (e) {
-    await rm(tmp, { force: true });
+    await removeTmp(tmp);
     throw e;
   } finally {
     keptFilesMayHaveChanged(path);
@@ -135,18 +135,102 @@ export function writeFileIfUnchanged(
 
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
 
-// Up to about 5 s in all (20 ms doubling): on Windows an editor indexing a folder it has just
-// opened, or a virus scanner, can hold a file longer than half a second (seen running atticus
-// upgrade with VS Code opening the metarepo). It only waits when the file is held.
+/**
+ * How long a write waits on Windows for a file another program holds (beta.28.5): the owner's
+ * run over forty repos ended on a raw EPERM after the 5 s there were, a file of the facts folder
+ * open in an editor or read by an assistant's session at that moment.
+ */
+export const HELD_WAIT_MS = 45_000;
+/** From here on the wait is said, once. */
+const HELD_SAID_MS = 1_000;
+/** How often a held file is tried again once the quick tries are spent. */
+const HELD_EVERY_MS = 500;
+
+/**
+ * Tests' Windows: a rename that fails, a wait that takes no time, the platform, where the line
+ * that says a write is waiting goes (standard error by default), and the temporary file's
+ * removal.
+ */
+export const fsHooks: {
+  rename?: (from: string, to: string) => Promise<void>;
+  sleep?: (ms: number) => Promise<void>;
+  platform?: NodeJS.Platform;
+  say?: (line: string) => void;
+  rm?: (path: string) => Promise<void>;
+} = {};
+
+/**
+ * A file stayed held by another program (Windows: open in an editor, read by an assistant's
+ * session, scanned) for the whole wait: nothing was written, the file is as it was, and the
+ * temporary file is removed. A run over several repos reports the repo and goes on.
+ */
+export class FileHeldError extends Error {
+  readonly code = "ATTICUS_FILE_HELD";
+  constructor(
+    readonly path: string,
+    readonly waitedMs: number,
+    override readonly cause?: unknown,
+  ) {
+    super(
+      `${path} is open in another program (an editor, an assistant's session or a virus scan) or can't be written, and it stayed so for ${Math.round(waitedMs / 1000)} s. Nothing was lost: the file is as it was. Close it there, then run the command again.`,
+    );
+    this.name = "FileHeldError";
+  }
+}
+
+/** The temporary file of a write that failed, removed; a removal that fails hides no error. */
+async function removeTmp(tmp: string): Promise<void> {
+  try {
+    await (fsHooks.rm ?? ((p: string) => rm(p, { force: true, maxRetries: 3, retryDelay: 50 })))(
+      tmp,
+    );
+  } catch {
+    // Held too (a scanner reading what was just written): left for the next clean-up.
+  }
+}
+
+function sayHeld(line: string): void {
+  try {
+    if (fsHooks.say) fsHooks.say(line);
+    else process.stderr.write(`${line}\n`);
+  } catch {
+    // saying it never fails the write
+  }
+}
+
+// Up to about 5 s (20 ms doubling) wherever it runs: on Windows an editor indexing a folder it
+// has just opened, or a virus scanner, can hold a file longer than half a second (seen running
+// atticus upgrade with VS Code opening the metarepo). It only waits when the file is held.
+// Beta.28.5, on Windows: past the first second the wait is said once, naming the file; after the
+// quick tries the file is tried twice a second until `HELD_WAIT_MS` in all, and then the error
+// is FileHeldError, in plain words, not the system's EPERM of a temporary name.
 export async function renameRetrying(from: string, to: string, tries = 9): Promise<void> {
+  const move = fsHooks.rename ?? rename;
+  const sleep = fsHooks.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const windows = (fsHooks.platform ?? process.platform) === "win32";
+  let waited = 0;
+  let said = false;
   for (let i = 0; ; i++) {
     try {
-      await rename(from, to);
+      await move(from, to);
       return;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code ?? "";
-      if (!BUSY.has(code) || i >= tries - 1) throw e;
-      await new Promise((r) => setTimeout(r, 20 * 2 ** i));
+      if (!BUSY.has(code)) throw e;
+      const quick = i < tries - 1;
+      if (!quick && (!windows || waited >= HELD_WAIT_MS)) {
+        if (windows) throw new FileHeldError(to, waited, e);
+        throw e;
+      }
+      if (windows && !said && waited >= HELD_SAID_MS) {
+        said = true;
+        sayHeld(
+          `${to} is open in another program (an editor, an assistant's session or a virus scan): waiting for it, up to ${HELD_WAIT_MS / 1000} s. Close it there to go on.`,
+        );
+      }
+      const ms = quick ? 20 * 2 ** i : Math.min(HELD_EVERY_MS, HELD_WAIT_MS - waited);
+      await sleep(ms);
+      waited += ms;
     }
   }
 }
