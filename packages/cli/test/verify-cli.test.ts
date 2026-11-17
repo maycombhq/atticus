@@ -46,6 +46,48 @@ describe("atticus verify --all", () => {
     expect(o.out.at(-1)).toBe("Verified 1 repo: 1 passed.");
     expect(o.err).toEqual([]);
   });
+
+  // Beta.28.4 (field report: Apply from the map's bar ran all 40 repos for corrections in a few):
+  // the app passes the repos to apply; the command line never does, so --all stays every repo.
+  it("given a list of repos, verifies only those, in id order whatever order they were given in", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const facts = join(root, ".atticus", "facts");
+    for (const other of ["forge-atlas", "forge-zeta"])
+      writeFileSync(join(facts, `${other}.jsonl`), readFileSync(join(facts, "forge-ledger.jsonl")));
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const ran: string[] = [];
+    const o = io();
+    await verifyAllCommand(
+      root,
+      {
+        commit: "0123abc",
+        only: ["forge-zeta", "forge-ledger"],
+        onRepo: (repo) => ran.push(repo),
+      },
+      o.io,
+    );
+    expect(ran).toEqual(["forge-ledger", "forge-zeta"]);
+    expect(o.out.at(-1)).toMatch(/^Verified 2 repos: /);
+    expect([...o.out, ...o.err].join("\n")).not.toContain("forge-atlas");
+  });
+
+  it("refuses a list naming a repo with no facts, and verifies nothing", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const { verifyAllCommand } = await import("../src/verify-commands.js");
+    const ran: string[] = [];
+    const o = io();
+    const code = await verifyAllCommand(
+      root,
+      { commit: "0123abc", only: ["forge-ledger", "forge-nope"], onRepo: (r) => ran.push(r) },
+      o.io,
+    );
+    expect(code).toBe(2);
+    expect(ran).toEqual([]);
+    expect(o.out).toEqual([]);
+    expect(o.err).toEqual([
+      "No facts on file for forge-nope (.atticus/facts/<repo>.jsonl): nothing was verified.",
+    ]);
+  });
 });
 
 describe("atticus verify <repo> (ADR 0124)", () => {

@@ -155,6 +155,14 @@ export function ApplyAndPropose(p: {
   repo?: string | undefined;
   /** Apply only (Home's pending list offers one Propose for everything). */
   noPropose?: boolean;
+  /**
+   * Beta.28.4: held while another Apply of the same list runs (the map's bar: one local step at
+   * a time; the server's 409 is still the rule, and said, for a step started elsewhere).
+   */
+  disabled?: boolean;
+  /** Beta.28.4: told as its Apply starts and as it ends, whatever page still shows it. */
+  onStart?: () => void;
+  onEnd?: () => void;
 }) {
   const apply = useAction();
   const [applied, setApplied] = useState<string[]>();
@@ -177,6 +185,7 @@ export function ApplyAndPropose(p: {
     plan?: string;
   }): Promise<number> => {
     setNext(undefined);
+    p.onStart?.();
     try {
       const r = await followJob(
         `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
@@ -220,6 +229,7 @@ export function ApplyAndPropose(p: {
     } finally {
       // What waits to be applied or proposed (Home's list, the map's bar) is read
       // again once the Apply has ended, not only when it started.
+      p.onEnd?.();
       workChanged();
     }
   };
@@ -231,7 +241,7 @@ export function ApplyAndPropose(p: {
             <button
               type="button"
               className="btn primary"
-              disabled={apply.busy}
+              disabled={apply.busy || p.disabled === true}
               onClick={() => void apply.run(() => applyWith({}), appliedNote(p.repo!))}
             >
               {apply.busy ? P.applying : P.apply(p.repo)}
@@ -486,40 +496,69 @@ export interface ApplyAllRun {
 }
 export const APPLY_ALL_IDLE: ApplyAllRun = { running: false };
 
+/** The repos a job's result names under `key` (API 3.16.0), or none. */
+const reposOf = (result: Record<string, unknown> | undefined, key: string): string[] => {
+  const x = result?.[key];
+  return Array.isArray(x) ? x.filter((r): r is string => typeof r === "string") : [];
+};
+
 /**
- * `atticus verify --all --write` as a job, each step said to `set`: true when it applied every
- * repo. Pages that show what waits are told it ended (`workChanged`), whatever it did.
+ * The Apply for several repos as a job, each step said to `set`: true when it applied every repo
+ * it was asked to. With `repos` (beta.28.4, the repos whose corrections wait) it applies those
+ * and no other; without, every repo read so far (`atticus verify --all --write`). Pages that show
+ * what waits are told it ended (`workChanged`), whatever it did.
  */
 export async function runApplyAll(
   set: (s: ApplyAllRun | ((was: ApplyAllRun) => ApplyAllRun)) => void,
+  repos?: readonly string[],
 ): Promise<boolean> {
   set({ running: true, note: { ok: true, text: COPY.app.working, working: true } });
   try {
-    const r = await followJob("/api/facts/apply-all", {}, undefined, (jobId) =>
-      set((was) => ({ ...was, jobId })),
+    const r = await followJob(
+      "/api/facts/apply-all",
+      repos ? { repos: [...repos] } : {},
+      undefined,
+      (jobId) => set((was) => ({ ...was, jobId })),
     );
     // The hunt of beta.28.1 (S2): repos that wrote with rejected facts left out are applied.
     const leftOut = leftOutOf(r.result);
-    const repos = r.result?.leftOutRepos;
+    const left = r.result?.leftOutRepos;
     set({
       running: false,
       lines: r.lines,
       note: {
         ok: true,
         text:
-          leftOut && typeof repos === "number" && repos > 0
-            ? COPY.appStep.appliedAllLeftOut(leftOut, repos)
-            : COPY.appStep.appliedAll,
+          leftOut && typeof left === "number" && left > 0
+            ? COPY.appStep.appliedAllLeftOut(leftOut, left)
+            : repos
+              ? COPY.appStep.appliedWaiting(repos.length)
+              : COPY.appStep.appliedAll,
       },
     });
     return true;
   } catch (e) {
     const next = nextAfter(e);
+    // Beta.28.4: applied some and not others: how many, and which it didn't, by name.
+    const result = e instanceof JobFailed ? e.result : undefined;
+    const applied = reposOf(result, "applied");
+    const notApplied = reposOf(result, "notApplied");
+    const text =
+      // Round 41: a refusal to start (409: another local step runs) is the server's own words.
+      e instanceof ApiError && e.problem.status === 409
+        ? P.notStarted(e.problem.detail ?? e.problem.title)
+        : applied.length && notApplied.length
+          ? COPY.appStep.appliedSome(
+              applied.length,
+              applied.length + notApplied.length,
+              notApplied.join(", "),
+            )
+          : message(e);
     set({
       running: false,
       lines: [message(e)],
       ...(next ? { next } : {}),
-      note: { ok: false, text: message(e) },
+      note: { ok: false, text },
     });
     return false;
   } finally {
@@ -534,7 +573,16 @@ export function ApplyAll({
   onFailed,
   run,
   onRun,
+  repos,
+  disabled,
 }: {
+  /**
+   * Beta.28.4: the repos to apply (those whose corrections wait): the button says how many, and
+   * only they are sent. Left out, it is every repo read so far, and says so.
+   */
+  repos?: readonly string[];
+  /** Beta.28.4: held while one repo's own Apply runs beside it. */
+  disabled?: boolean;
   noPropose?: boolean;
   onDone?: () => void;
   /** Review of beta.24: it applied only some, or none: its errors are on show. */
@@ -552,16 +600,30 @@ export function ApplyAll({
   const start =
     onRun ??
     (() =>
-      void runApplyAll(setOwn).then((ok) => {
+      void runApplyAll(setOwn, repos).then((ok) => {
         if (ok) onDone?.();
         else onFailed?.();
       }));
+  // One repo left of a list (the others applied, this one didn't): its own Apply is the way on,
+  // so no button here; what the run said stays.
+  const offered = held.running || !repos || repos.length > 1;
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="row" style={{ gap: 6, alignItems: "center" }}>
-        <button type="button" className="btn primary" disabled={held.running} onClick={start}>
-          {held.running ? COPY.appStep.applyingAll : COPY.appStep.applyAll}
-        </button>
+        {offered && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={held.running || disabled === true}
+            onClick={start}
+          >
+            {held.running
+              ? COPY.appStep.applyingAll
+              : repos
+                ? COPY.appStep.applyWaiting(repos.length)
+                : COPY.appStep.applyAll}
+          </button>
+        )}
         {(held.running || (inPanel && held.lines)) && <ShowInConsole id={held.jobId} />}
       </div>
       <Note note={held.note} />
@@ -591,7 +653,8 @@ export const OWN_WRITE_ECHO_MS = 2000;
 
 /**
  * The map's own bar: the repos whose corrections are newer than their last Apply (the server's
- * applyFirst), with one Apply for them all (each repo's own when only one), read again after
+ * applyFirst), each with its own Apply and, when several wait, one Apply for those repos (beta.28.4:
+ * never every repo read so far; one runs at a time), read again after
  * every write the app makes, so a line drawn or removed on the map shows here at once. Review of
  * beta.24: and on the server's file events, so a correction the CLI or an assistant writes shows
  * too. Round 3: only for the files it is about, once a burst, and (round 4) the events heard just
@@ -631,6 +694,8 @@ export function CorrectionsToApply() {
   });
   const [run, setRun] = useState<ApplyAllRun>(APPLY_ALL_IDLE);
   const [applied, setApplied] = useState(false);
+  // Beta.28.4: the repo whose own Apply runs from this bar; the other buttons wait for it.
+  const [busy, setBusy] = useState<string | undefined>();
   // WCAG 2.4.3: Dismiss goes with the errors; the keyboard goes to the bar's Apply (or the bar),
   // and, round 4, when the bar went with them (no repo left to apply), to the page's main region,
   // never left on the page's body.
@@ -639,7 +704,7 @@ export function CorrectionsToApply() {
   useEffect(() => {
     if (!dismissed) return;
     const at = bar.current?.isConnected
-      ? (bar.current.querySelector<HTMLElement>("button") ?? bar.current)
+      ? (bar.current.querySelector<HTMLElement>("button:not([disabled])") ?? bar.current)
       : typeof document === "undefined"
         ? null
         : document.getElementById("main");
@@ -651,7 +716,8 @@ export function CorrectionsToApply() {
   const all = repos.length > 1 || run.running || failed;
   const start = () => {
     setApplied(false);
-    void runApplyAll(setRun).then((ok) => {
+    // Exactly the repos listed here now: never every repo read so far.
+    void runApplyAll(setRun, repos).then((ok) => {
       if (!ok) return;
       setRun(APPLY_ALL_IDLE);
       setApplied(true);
@@ -663,14 +729,16 @@ export function CorrectionsToApply() {
       tabIndex={-1}
       className="panel stack box-bar"
       style={{ gap: 6, gridColumn: "1 / -1" }}
-      aria-label={COPY.appStep.applyAll}
+      aria-label={P.onMapLabel}
     >
       {repos.length > 0 && (
         <p className="work-say" style={{ margin: 0 }}>
           {P.onMap(repos.join(", "))}
         </p>
       )}
-      {all && <ApplyAll noPropose run={run} onRun={start} />}
+      {all && (
+        <ApplyAll noPropose repos={repos} run={run} onRun={start} disabled={busy !== undefined} />
+      )}
       {failed && (
         <div>
           <button
@@ -685,8 +753,32 @@ export function CorrectionsToApply() {
           </button>
         </div>
       )}
-      {!all && repos.length === 1 && (
-        <ApplyAndPropose scope="corrections" repo={repos[0]} noPropose />
+      {repos.length > 1 && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {P.oneAtATime}
+        </p>
+      )}
+      {/* Each waiting repo's own Apply, one list whatever their number, so a repo's result stays
+          with its button while the list around it changes. */}
+      {repos.length > 0 && (
+        <ul
+          className="stack"
+          style={{ gap: 6, margin: 0, padding: 0, listStyle: "none" }}
+          aria-label={P.onMapEach}
+        >
+          {repos.map((r) => (
+            <li key={r}>
+              <ApplyAndPropose
+                scope="corrections"
+                repo={r}
+                noPropose
+                disabled={run.running || (busy !== undefined && busy !== r)}
+                onStart={() => setBusy(r)}
+                onEnd={() => setBusy((was) => (was === r ? undefined : was))}
+              />
+            </li>
+          ))}
+        </ul>
       )}
       {applied && !repos.length && !failed && (
         <p role="status" className="work-say" style={{ margin: 0 }}>
@@ -759,8 +851,9 @@ export function PendingProposals(
           <p className="work-say" style={{ margin: 0 }}>
             {P.applyFirst}
           </p>
-          {/* Several repos corrected (lines drawn on the map join two): one Apply for them all. */}
-          {repos.length > 1 && <ApplyAll noPropose />}
+          {/* Several repos corrected (lines drawn on the map join two): one Apply for them all,
+              and (beta.28.4) for no other repo. */}
+          {repos.length > 1 && <ApplyAll noPropose repos={repos} />}
           {repos.slice(0, p.max ?? repos.length).map((r) => (
             <ApplyAndPropose key={r} scope="corrections" repo={r} noPropose />
           ))}

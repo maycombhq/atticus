@@ -244,18 +244,32 @@ export async function verifyAllCommand(
      * left out (exit 3), how many (the hunt of beta.28.1, S2: the app's Apply to every repo).
      */
     onRepo?: (repo: string, code: number, leftOut: number) => void;
+    /**
+     * Beta.28.4: only these repos, in id order whatever order they come in (the app's Apply to
+     * the repos whose corrections wait). Each has facts on file, or nothing is verified. No flag
+     * passes it: `atticus verify --all` stays every repo read so far.
+     */
+    only?: readonly string[];
   },
   io: Output,
 ): Promise<number> {
-  const repos = await factsRepos(root);
-  if (!repos.length) {
+  const read = await factsRepos(root);
+  if (!read.length) {
     io.err(
       `No repo has facts yet (${factsRelOf(root)}/<repo>.jsonl). Read one first: /atticus-map <repo> in your assistant.`,
     );
     return 2;
   }
+  const { onRepo, only, ...each } = o;
+  const unread = (only ?? []).filter((r) => !read.includes(r));
+  if (unread.length) {
+    io.err(
+      `No facts on file for ${unread.join(", ")} (${factsRelOf(root)}/<repo>.jsonl): nothing was verified.`,
+    );
+    return 2;
+  }
+  const repos = only ? read.filter((r) => only.includes(r)) : read;
   const failed: string[] = [];
-  const { onRepo, ...each } = o;
   for (const repo of repos) {
     let leftOut = 0;
     const code = await verifyCommand(

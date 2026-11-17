@@ -5053,7 +5053,12 @@ export const COPY = {
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
     onMap: (repos: string) =>
       `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
-    /** Review of beta.24: put away what Apply to every repo's map said went wrong. */
+    /** Beta.28.4: the bar's name, and its list of each waiting repo's own Apply. */
+    onMapLabel: "Corrections waiting to be applied",
+    onMapEach: "Apply one repo at a time",
+    oneAtATime:
+      "Or apply one repo at a time. Atticus runs one Apply at once, so the other buttons wait while one runs.",
+    /** Review of beta.24: put away what the Apply for several repos said went wrong. */
     dismissErrors: "Dismiss these errors",
     onMapApplied: "Applied. The map is drawn again; propose it for review from Home.",
     // Beta.27 review: a file edited by hand, outside the app, is listed too: "changed", never
@@ -5081,6 +5086,13 @@ export const COPY = {
     inTerminal: "In a terminal",
     applyAll: "Apply to every repo's map",
     applyingAll: "Applying…",
+    /** Beta.28.4: the repos whose corrections wait, and only those (never every repo read). */
+    applyWaiting: (n: number) => `Apply to the ${n} repos waiting`,
+    appliedWaiting: (n: number) =>
+      `Applied to the ${n} ${n === 1 ? "repo" : "repos"} that had corrections waiting: their facts are checked again and the map is drawn again.`,
+    /** Beta.28.4: it applied some of the repos and not others, by name. */
+    appliedSome: (applied: number, of: number, notApplied: string) =>
+      `Applied ${applied} of ${of} repos. Not applied: ${notApplied}. Why is listed below; each repo not applied keeps its own Apply button.`,
     appliedAll: "Applied: every repo's facts are checked again and the map is drawn again.",
     /** The hunt of beta.28.1 (S2): it wrote every repo, leaving rejected facts out of some. */
     appliedAllLeftOut: (n: number, repos: number) =>

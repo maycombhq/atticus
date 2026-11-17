@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.15.0",
+    "version": "3.16.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -11853,17 +11853,49 @@
     "/api/facts/apply-all": {
       "post": {
         "operationId": "applyAllFacts",
-        "summary": "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas",
+        "summary": "3.5.0 (ADR 0188): run atticus verify --all --write as a local job, as Apply after a declaration or an owner set on the canvas; 3.16.0 (ADR 0198): with `repos`, only those repos (the ones whose corrections wait), in id order; 400 when one has no facts on file",
         "tags": [
           "workspace"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repos": {
+                    "minItems": 1,
+                    "maxItems": 10000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
-            "description": "Started: its job's result is FactsApplyResult: the code and the lines verify printed, and (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0)",
+            "description": "Started: its job's result is FactsApplyResult: the code and the lines verify printed, (3.14.0) leftOut and leftOutRepos when repos wrote with rejected facts left out (applied, code 0), and (3.16.0) applied and notApplied, the repos by name",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -49148,6 +49180,18 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notApplied": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "next": {}
         },
