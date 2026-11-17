@@ -705,13 +705,20 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       async (c) => {
         c.progress(0, 1, what);
         // Beta.28.4: work of several counted parts says which it is on (its progress line).
-        const res = await work((done, total, message) => c.progress(done, total, message));
+        // Its last word keeps that count (a run over 7 repos that stopped after 3 ends as 3 of
+        // 7, not 1 of 1); work that counts nothing ends as one step of one, as before.
+        let counted: { done: number; total: number } | undefined;
+        const res = await work((done, total, message) => {
+          counted = { done, total };
+          c.progress(done, total, message);
+        });
         // The hunt of beta.28.1: how it ended, in words: a refused build says so with the
         // guard's reason (never "Stopped", which is a person's Stop), a failure says failed.
         const refusal = (res.extra?.refused as { message?: unknown } | undefined)?.message;
+        const at = counted as { done: number; total: number } | undefined;
         c.progress(
-          1,
-          1,
+          at ? (res.code === 0 ? at.total : at.done) : 1,
+          at ? at.total : 1,
           res.code === 0
             ? "Done"
             : typeof refusal === "string"

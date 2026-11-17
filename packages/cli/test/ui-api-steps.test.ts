@@ -253,7 +253,7 @@ describe("a step the app runs says why, and what to press next", () => {
   type Ended = {
     state: string;
     errors: string[];
-    progress: { message: string };
+    progress: { done?: number; total?: number; message: string };
     result?: { code: number; lines: string[]; next?: unknown };
   };
   it("a sync that failed says why, with its code, and never Synced", async () => {
@@ -322,6 +322,8 @@ describe("a step the app runs says why, and what to press next", () => {
       expect(counted).toContainEqual([0, 2, "0 of 2 repos done, applying forge-customers"]);
       expect(counted).toContainEqual([1, 2, "1 of 2 repos done, applying forge-web"]);
       expect(counted).toContainEqual([2, 2, "2 of 2 repos done"]);
+      // Both failed: the job's last word keeps the count of repos, never "1 of 1".
+      expect(j.progress).toEqual({ done: 2, total: 2, message: "Failed" });
 
       // A repo with no facts on file, a name that isn't one, an empty list: 400, and no job.
       const before = srv.jobs.list().length;

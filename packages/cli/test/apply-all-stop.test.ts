@@ -99,7 +99,7 @@ async function copy(): Promise<string> {
 
 type Ended = {
   state: string;
-  progress: { message: string };
+  progress: { done: number; total: number; message: string };
   result?: {
     code: number;
     lines: string[];
@@ -174,6 +174,8 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
     expect(r.ended.result?.stopped).toBeUndefined();
     expect(differences(await filesOf(r.root), after[2]!)).toEqual([]);
+    // The review: how it ended keeps the run's own count (it once ended as "1 of 1").
+    expect(r.ended.progress).toEqual({ done: 3, total: 3, message: "Done" });
   }, 600_000);
 
   it("asked as the second repo starts: the first is applied, the second and third are not, and the catalog is the first repo's", async () => {
@@ -181,7 +183,7 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     expect(r.asked).toBe(true);
     // Stopped, never failed, with what it did and didn't do by name.
     expect(r.ended.state).toBe("cancelled");
-    expect(r.ended.progress.message).toBe("Stopped.");
+    expect(r.ended.progress).toEqual({ done: 1, total: 3, message: "Stopped." });
     expect(r.ended.result).toMatchObject({ applied: [R1], notApplied: [R2, R3], stopped: true });
     expect(r.ended.result?.lines).toContain(
       `Stopped after 1 of 3 repos. Not applied: ${R2}, ${R3}.`,
@@ -228,6 +230,7 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     expect(r.ended.state).toBe("cancelled");
     expect(r.ended.result).toMatchObject({ applied: [R1, R2], notApplied: [R3], stopped: true });
     expect(r.ended.result?.lines).toContain(`Stopped after 2 of 3 repos. Not applied: ${R3}.`);
+    expect(r.ended.progress).toEqual({ done: 2, total: 3, message: "Stopped." });
     // The second repo's write is whole: the catalog, specs, report and map two applies leave.
     expect(differences(await filesOf(r.root), after[1]!)).toEqual([]);
     const next = await r.applyOne(R3);
@@ -299,6 +302,7 @@ describe("one repo's own Apply is as it was (beta.28.1's commit point)", () => {
     expect(r.printed).not.toContain(STOPPING);
     expect(r.ended.state).toBe("done");
     expect(r.ended.result?.code).toBe(0);
+    expect(r.ended.progress).toEqual({ done: 1, total: 1, message: "Done" });
     expect(differences(await filesOf(r.root), after[0]!)).toEqual([]);
   }, 600_000);
 
