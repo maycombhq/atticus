@@ -218,6 +218,11 @@ export function screenOf(hash: string): ScreenDef {
   return SCREENS.find((s) => s.id === id) ?? SCREENS[0]!;
 }
 
+/** One value of an address's query (`#/trust?repo=forge-ledger`), or undefined. */
+export function hashParam(hash: string, name: string): string | undefined {
+  return new URLSearchParams(hash.split("?")[1] ?? "").get(name) ?? undefined;
+}
+
 /**
  * The change a page is about, from its address (`?change=` or `#/changes/<id>`), so moving between
  * a change's tabs keeps the change.
@@ -233,8 +238,7 @@ export function changeOf(hash: string): string | undefined {
       return m[1];
     }
   }
-  const q = path.split("?")[1];
-  return q ? (new URLSearchParams(q).get("change") ?? undefined) : undefined;
+  return hashParam(path, "change");
 }
 
 /** A tab's address: a change's pages keep the change they are about. */

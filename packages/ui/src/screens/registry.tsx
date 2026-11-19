@@ -95,7 +95,7 @@ const BARE: Record<string, Screen> = {
   decisions: Decisions,
   // ADR 0195 (CS3): the readers' cross-check, and the catalog's builds (confirm, undo, prune).
   crosscheck: CrossCheck,
-  "catalog-builds": () => <CatalogBuilds />,
+  "catalog-builds": ({ hash }) => <CatalogBuilds hash={hash} />,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).

@@ -84,6 +84,9 @@ export function CopyButton({
   primary?: boolean;
 }) {
   const [done, setDone] = useState<"copied" | "failed" | undefined>();
+  // Its "Copied" goes after two seconds; the timer goes with the button.
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <button
       type="button"
@@ -96,7 +99,8 @@ export function CopyButton({
             () => setDone("copied"),
             () => setDone("failed"),
           );
-        setTimeout(() => setDone(undefined), 2000);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setDone(undefined), 2000);
       }}
     >
       {done === "copied" ? TX.copied : done === "failed" ? TX.selectAndCopy : (say ?? TX.copy)}

@@ -121,6 +121,11 @@ export const COPY = {
       done: (time: string) => `Done in ${time}.`,
       ended: (time: string) => `It ended after ${time} without finishing.`,
       stopped: (time: string) => `Stopped after ${time}.`,
+      /** Stop was asked after the write had started: the server carries on, and so says the page. */
+      tooLate:
+        "Stop came too late: the write had started, and it finishes whole so nothing is left half-written.",
+      /** Why a step ended, when a person's Stop ended it (never the job's raw state word). */
+      youStopped: "Stop was asked, and it ended before it finished.",
     },
     ccReading: "Reading your metarepo…",
     ccCantRead: "Couldn't read what needs attention: each panel below says why.",

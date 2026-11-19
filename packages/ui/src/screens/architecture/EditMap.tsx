@@ -849,6 +849,9 @@ export async function applyStaged(
         state: "problems",
         problems: e.problem.problems.map((x) => ({ edit: x.edit, message: x.message })),
       };
+    // A person's Stop is heard only before the first change is written: back to the list, and
+    // the job's own line says it stopped (not a failure, and never its raw state).
+    if (e instanceof JobFailed && e.stopped) return { state: "idle" };
     const result = e instanceof JobFailed ? e.result : undefined;
     const edits = (result?.edits as Api.MapEditsResultT["edits"] | undefined) ?? [];
     if (edits.length && edits.every((x) => x.state === "saved") && result?.built === false) {

@@ -3,7 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
-import { InstallCopy } from "../screens/setup/CatalogBuild.js";
+import { InstallCopy } from "./ways-on.js";
 import { followJob, Propose, workChanged } from "./propose.js";
 
 /**

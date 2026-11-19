@@ -50,7 +50,7 @@ vi.mock("../src/api/client.js", async () => ({
 const { COPY } = await import("../src/copy.js");
 const { ApiError } = await import("../src/api/client.js");
 const { followJob, JobFailed } = await import("../src/app/job.js");
-const { JobProgress, useJobRun } = await import("../src/app/job-progress.js");
+const { JobProgress, stillAt, useJobRun } = await import("../src/app/job-progress.js");
 const { ApplyAndPropose, Propose } = await import("../src/app/propose.js");
 const { EditMapView } = await import("../src/screens/architecture/EditMap.js");
 const { RefusalView } = await import("../src/screens/setup/CatalogBuild.js");
@@ -120,7 +120,10 @@ describe("a job's progress in the panel", () => {
     expect(out).toContain('aria-busy="true"');
     // The step is the server's own line, heard as it changes.
     expect(out).toContain('aria-live="polite"');
-    expect(out).toContain(esc(W.now("Checking the build's guards… (9 s in)")));
+    // The time is said once: the server's "(9 s in)" is when the step began, so the line shows
+    // the step and the page's own clock says the time.
+    expect(out).toContain(esc(W.now("Checking the build's guards…")));
+    expect(out).not.toContain("9 s in");
     expect(out).toContain(esc(J.soFar(J.time(12_000))));
     // Not long enough yet to say it is still running.
     expect(out).not.toContain(esc(J.still(J.time(0)).slice(0, 13)));
@@ -128,7 +131,7 @@ describe("a job's progress in the panel", () => {
     expect(out).toContain(`>${esc(W.stop)}<`);
   });
 
-  it("says it is still running once it has run a while, in steps of half a minute", () => {
+  it("says it is still running at 30 s, 1 min, 2 min, then every 5 min: not for ever", () => {
     const at = (ms: number) =>
       html(
         <JobProgress
@@ -137,13 +140,37 @@ describe("a job's progress in the panel", () => {
           now={ms}
         />,
       );
+    expect(stillAt(29_000)).toBe(0);
+    expect(stillAt(31_000)).toBe(30_000);
+    expect(stillAt(59_000)).toBe(30_000);
+    expect(stillAt(61_000)).toBe(60_000);
+    expect(stillAt(119_000)).toBe(60_000);
+    expect(stillAt(121_000)).toBe(120_000);
+    expect(stillAt(299_000)).toBe(120_000);
+    expect(stillAt(301_000)).toBe(300_000);
+    expect(stillAt(14 * 60_000)).toBe(600_000);
     expect(at(29_000)).not.toContain(esc(J.still(J.time(0))));
-    expect(at(31_000)).toContain(esc(J.still(J.time(30_000))));
-    // The line a screen reader hears changes every half minute, not every second.
-    expect(at(59_000)).toContain(esc(J.still(J.time(30_000))));
-    expect(at(95_000)).toContain(esc(J.still(J.time(90_000))));
+    expect(at(95_000)).toContain(esc(J.still(J.time(60_000))));
     // The time so far is on the screen each second, outside the live line.
     expect(at(95_000)).toContain(esc(J.soFar(J.time(95_000))));
+  });
+
+  it("a Stop that came too late says so, and Stop goes: the write finishes whole", () => {
+    const out = html(
+      <JobProgress
+        what={what}
+        run={{ state: "running", startedAt: 0, jobId: "j", tooLate: true, step: "Writing…" }}
+        now={5_000}
+        onStop={() => undefined}
+      />,
+    );
+    expect(out).toContain(esc(J.tooLate));
+    expect(J.tooLate).toMatch(/too late/);
+    expect(J.tooLate).toMatch(/finishes whole/);
+    expect(out).not.toContain(`>${esc(W.stop)}<`);
+    expect(out).not.toContain(`>${esc(W.stopping)}<`);
+    // The keyboard has somewhere to go once the button is gone.
+    expect(out).toMatch(new RegExp(`tabindex="-1"[^>]*>${esc(J.tooLate)}<`));
   });
 
   it("offers no Stop for a job that doesn't hear one, and says Stopping once asked", () => {
@@ -176,6 +203,8 @@ describe("a job's progress in the panel", () => {
     const ok = ended("done");
     expect(ok).toContain(esc(J.done(J.time(42_000))));
     expect(ok).toContain('role="status"');
+    // The Stop it replaced is gone: the line takes the keyboard when nothing else has it.
+    expect(ok).toContain('tabindex="-1"');
     expect(ok).not.toContain('aria-busy="true"');
     expect(ok).not.toContain(`>${esc(W.stop)}<`);
     expect(ended("failed")).toContain(esc(J.ended(J.time(42_000))));
@@ -196,23 +225,35 @@ describe("following a job from a panel", () => {
     expect((f as InstanceType<typeof JobFailed>).stopped).toBe(false);
   });
 
-  it("holds the step, the start and the end, and Stop asks the server", async () => {
+  /** A probe of the hook over polls a test lets through one at a time. */
+  const probe = (polls: Poll[]) => {
     starts.set("/api/x", "job-1");
-    jobs.set("job-1", [
+    jobs.set("job-1", polls);
+    const waits: (() => void)[] = [];
+    const wait = () => new Promise<void>((r) => void waits.push(r));
+    const clock = { t: 1_000 };
+    const Probe = () => useJobRun({ clock: () => clock.t, wait });
+    const m = mount(Probe as never, {} as never);
+    const hook = () => m.tree as ReturnType<typeof useJobRun>;
+    const next = async () => {
+      waits.shift()?.();
+      await tick();
+      m.render();
+    };
+    return { m, hook, next, clock };
+  };
+
+  it("holds the step, the start and the end, and Stop asks the server", async () => {
+    const { m, hook, next, clock } = probe([
       running("Applying to forge-ledger"),
       running("Reading the build's inputs… (3 s in)"),
       running("Stopping…", { stopping: true }),
-      done(),
+      { state: "cancelled", errors: [] },
     ]);
-    let t = 1_000;
-    const waits: (() => void)[] = [];
-    const wait = () => new Promise<void>((r) => void waits.push(r));
-    const Probe = () => useJobRun({ clock: () => t, wait });
-    const m = mount(Probe as never, {} as never);
-    const hook = () => m.tree as ReturnType<typeof useJobRun>;
     expect(hook().run).toBeUndefined();
-    const ended = hook().follow("/api/x", {});
-    const release = () => waits.shift()?.();
+    const ended = hook()
+      .follow("/api/x", {})
+      .catch((e: unknown) => e);
     await tick();
     m.render();
     expect(hook().run).toEqual({
@@ -221,23 +262,71 @@ describe("following a job from a panel", () => {
       jobId: "job-1",
       step: "Applying to forge-ledger",
     });
-    release();
-    await tick();
-    m.render();
+    await next();
     expect(hook().run?.step).toBe("Reading the build's inputs… (3 s in)");
     // Stop: asked of the server, and said at once.
     hook().stop!();
+    await tick();
     m.render();
     expect(hook().run?.stopping).toBe(true);
     expect(calls).toContainEqual({ path: "/api/jobs/job-1/cancel", method: "POST" });
-    release();
-    await tick();
-    t = 9_000;
-    release();
+    // The job says it is stopping: so it is, until it ends.
+    await next();
+    expect(hook().run).toMatchObject({ stopping: true, step: "Stopping…" });
+    expect(hook().run?.tooLate).toBeUndefined();
+    clock.t = 9_000;
+    await next();
     await ended;
     m.render();
-    expect(hook().run).toMatchObject({ state: "done", startedAt: 1_000, endedAt: 9_000 });
+    expect(hook().run).toMatchObject({ state: "stopped", startedAt: 1_000, endedAt: 9_000 });
+    expect(hook().run?.stopping).toBeUndefined();
     expect(hook().stop).toBeUndefined();
+  });
+
+  it("a Stop the job didn't take (its write had started) is said too late, never Stopping… to the end", async () => {
+    // Past its commit point the server answers the Stop and carries on: the job never says
+    // `stopping`. Two looks after the Stop was heard, the page says it came too late.
+    const writing = running("Writing the catalog (1,204 record files)… (41 s in)");
+    const { m, hook, next } = probe([writing, writing, writing, writing, done()]);
+    const ended = hook().follow("/api/x", {});
+    await tick();
+    m.render();
+    hook().stop!();
+    await tick();
+    m.render();
+    expect(hook().run?.stopping).toBe(true);
+    // The look that may have been on its way when Stop was asked decides nothing.
+    await next();
+    expect(hook().run?.stopping).toBe(true);
+    await next();
+    expect(hook().run?.stopping).toBeUndefined();
+    expect(hook().run?.tooLate).toBe(true);
+    // No Stop is offered again: it would only be too late again.
+    expect(hook().stop).toBeUndefined();
+    await next();
+    await next();
+    await ended;
+    m.render();
+    expect(hook().run).toMatchObject({ state: "done" });
+    expect(hook().run?.tooLate).toBeUndefined();
+  });
+
+  it("a second step asked while one runs doesn't take the first one's progress or Stop", async () => {
+    const { m, hook, next } = probe([running("Reading the build's inputs… (3 s in)"), done()]);
+    const first = hook().follow("/api/x", {});
+    await tick();
+    m.render();
+    starts.set("/api/y", () => {
+      throw new ApiError({ type: "about:blank", title: "Conflict", status: 409, detail: "Busy." });
+    });
+    await hook()
+      .follow("/api/y", {})
+      .catch(() => undefined);
+    m.render();
+    expect(hook().run).toMatchObject({ state: "running", jobId: "job-1" });
+    expect(typeof hook().stop).toBe("function");
+    await next();
+    await first;
   });
 
   it("a job the server never started leaves no line behind", async () => {
@@ -259,7 +348,7 @@ describe("one repo's Apply", () => {
   const progressOf = (tree: unknown) => all(tree).find((e) => e.type === JobProgress)!;
   it("shows its step and Stop while it runs, and a Done line that stays", async () => {
     starts.set("/api/facts/forge-ledger/apply", "job-1");
-    jobs.set("job-1", [running("Writing the catalog (1,204 record files)… (41 s in)")]);
+    jobs.set("job-1", [running("Checking the build's guards… (41 s in)")]);
     const m = mount(
       ApplyAndPropose as never,
       { scope: "answers", repo: "forge-ledger", noPropose: true } as never,
@@ -275,7 +364,7 @@ describe("one repo's Apply", () => {
     expect(p.run).toMatchObject({
       state: "running",
       jobId: "job-1",
-      step: "Writing the catalog (1,204 record files)… (41 s in)",
+      step: "Checking the build's guards… (41 s in)",
     });
     // Apply hears Stop until the catalog's write starts.
     expect(typeof p.onStop).toBe("function");
@@ -307,9 +396,8 @@ describe("one repo's Apply", () => {
     const note = all(m.tree).find(
       (e) => (e.props.note as { text?: string } | undefined)?.text !== undefined,
     )!;
-    expect((note.props.note as { ok: boolean; text: string }).text).toBe(
-      P.applyStopped("forge-ledger"),
-    );
+    // What the person asked for is a status, not an alert.
+    expect(note.props.note).toEqual({ ok: true, text: P.applyStopped("forge-ledger") });
     expect((progressOf(m.tree).props as Parameters<typeof JobProgress>[0]).run?.state).toBe(
       "stopped",
     );
@@ -379,7 +467,7 @@ describe("the other waits that follow a job", () => {
       />,
     );
     expect(out).toContain(esc(COPY.editMap.working));
-    expect(out).toContain(esc(W.now("Building the catalog: pass 2 of 5 (the joins)… (18 s in)")));
+    expect(out).toContain(esc(W.now("Building the catalog: pass 2 of 5 (the joins)…")));
     expect(out).toContain(`aria-label="${esc(W.stopLabel(COPY.editMap.working))}"`);
   });
 

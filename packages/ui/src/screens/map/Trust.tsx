@@ -1,3 +1,4 @@
+import { hashParam } from "../../app/screens.js";
 import { useState, type ReactNode } from "react";
 import { RunWithCopilot } from "../../app/copilot-runs.js";
 import { appStep, ReadRepo } from "../../app/app-step.js";
@@ -866,7 +867,7 @@ export function TrustPage({
  * link to its rejected facts), as the words the repos filter starts with.
  */
 export function trustFilterOf(hash: string): string {
-  return new URLSearchParams(hash.split("?")[1] ?? "").get("repo") ?? "";
+  return hashParam(hash, "repo") ?? "";
 }
 
 export function Trust() {

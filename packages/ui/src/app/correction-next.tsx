@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { ApplyAndPropose, CATALOG_BUILDS_HREF, trustHref } from "./propose.js";
-import { InstallCopy, SupportBundle } from "../screens/setup/CatalogBuild.js";
+import { InstallCopy, refusalWay, SupportBundle } from "./ways-on.js";
 import type { Api } from "@maycombhq/core";
 import { useJobRead, type JobWaitParts, type Loaded } from "../api/client.js";
 import { JobStoppedNote, JobWait } from "./job-wait.js";
@@ -132,9 +132,9 @@ function PreviewBody({ v }: { v: Preview }) {
                 {N.confirmRefused(p.confirm.refused)}
               </p>
               {/* Beta.30: its one way on, the first of these it has. */}
-              {p.confirm.refused.includes("newer-atticus") ? (
+              {refusalWay(p.confirm.refused) === "newer" ? (
                 <InstallCopy />
-              ) : p.confirm.refused.includes("unexplained-removals") ? (
+              ) : refusalWay(p.confirm.refused) === "again" ? (
                 <>
                   <div>
                     <a className="btn primary" href={CATALOG_BUILDS_HREF}>

@@ -5,10 +5,10 @@ import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
-import { ErrorWaysOn } from "../../app/ways-on.js";
-import { Panel, View } from "../../app/ui.js";
+import { hashParam } from "../../app/screens.js";
+import { ErrorWaysOn, InstallCopy, refusalWay, SupportBundle } from "../../app/ways-on.js";
+import { Panel, panelId, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
-import { CopyButton } from "../run/shared.js";
 import { Command } from "../work/RunNext.js";
 import "../map/crosscheck.css";
 
@@ -33,8 +33,13 @@ type Removal = Api.BuildRemovalT;
 const short = (c?: string) => (c && /^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : (c ?? ""));
 const when = (iso: string) => iso.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC");
 
+/** A person's Stop ended the job: no failure to say (its progress line says it stopped). */
+const stoppedByPerson = (e: unknown): boolean => e instanceof JobFailed && e.stopped;
+
 /** Why a job or a call stopped, in its own words. */
 export function whyStopped(e: unknown): string {
+  // A person's Stop: said in words, never as the job's state ("cancelled").
+  if (e instanceof JobFailed && e.stopped) return COPY.app.jobRun.youStopped;
   if (e instanceof JobFailed) return e.lines.join(" ") || e.message;
   if (e instanceof ApiError) return e.problem.detail ?? e.message;
   return e instanceof Error ? e.message : String(e);
@@ -250,56 +255,39 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
 
 const W = COPY.waysOn;
 
-/** Beta.30: Copy the install command, the one way on from a catalog a newer Atticus built. */
-export function InstallCopy() {
-  return (
-    <div className="work-cmd">
-      <code className="mono">{W.installCommand}</code>
-      <CopyButton
-        primary
-        text={W.installCommand}
-        say={W.copyInstall}
-        label={W.copyInstallLabel(W.installCommand)}
-      />
-    </div>
-  );
-}
-
-/**
- * Beta.30: a support bundle is saved from a terminal today (`atticus support bundle`; no route
- * of the local API runs it), so the app offers its command to copy.
- */
-export function SupportBundle() {
-  return (
-    <div className="stack" style={{ gap: 4 }}>
-      <p className="work-say" style={{ margin: 0 }}>
-        {W.supportWhy}
-      </p>
-      <div className="work-cmd">
-        <code className="mono">{W.supportCommand}</code>
-        <CopyButton
-          text={W.supportCommand}
-          say={W.copySupport}
-          label={W.copySupportLabel(W.supportCommand)}
-        />
-      </div>
-    </div>
-  );
-}
-
 /** The panels of Catalog builds a link elsewhere opens the page at (`?at=`), by their headings. */
-const panelId = (title: string) => `p-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 export const UPGRADE_PANEL = panelId(B.upgradeTitle);
 export const UNDO_PANEL = panelId(B.undoTitle);
 /** Catalog builds' address with the panel to show: `#/catalog-builds?at=undo`. */
 export const panelAsked = (hash: string): string | undefined => {
-  const at = new URLSearchParams(hash.split("?")[1] ?? "").get("at");
+  const at = hashParam(hash, "at");
   return at === "undo" ? UNDO_PANEL : at === "upgrade" ? UPGRADE_PANEL : undefined;
 };
-/** Bring a panel of this page into view. */
-function showOnPage(id: string): void {
-  if (typeof document === "undefined") return;
-  document.getElementById(id)?.scrollIntoView({ block: "start" });
+/**
+ * Bring a panel of this page into view and give its heading the keyboard (WCAG 2.4.3: what
+ * follows the link is where Tab goes on from); false when the panel isn't on the page.
+ */
+function showOnPage(id: string): boolean {
+  const head = typeof document === "undefined" ? null : document.getElementById(id);
+  if (!head) return false;
+  head.setAttribute("tabindex", "-1");
+  (head.closest("section") ?? head).scrollIntoView({ block: "start" });
+  head.focus({ preventScroll: true });
+  return true;
+}
+/**
+ * The panel the page's address names is shown once the page has loaded (`ready`: before that
+ * the panels above it are still growing, and would push it away again), and again whenever the
+ * address comes to name one: on arrival and on a link followed on the page, in either layout
+ * (both hand the page its address). Reading the page's data again never moves the person.
+ */
+export function useShowPanel(hash: string, ready: boolean): void {
+  const shown = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const at = panelAsked(hash);
+    if (!at) shown.current = undefined;
+    else if (ready && shown.current !== hash && showOnPage(at)) shown.current = hash;
+  }, [hash, ready]);
 }
 
 /**
@@ -372,19 +360,7 @@ export function RefusalView(p: {
   // Beta.30: one primary button, the first of these the refusal has; any other is plain.
   const has = (x: Refusal["reasons"][number]) => r.reasons.includes(x);
   const unread = has("empty") || has("nothing-read");
-  const first = has("newer-atticus")
-    ? "newer"
-    : has("not-upgraded")
-      ? "upgrade"
-      : has("unexplained-removals")
-        ? "again"
-        : has("hand-edits")
-          ? "edits"
-          : has("large-removals")
-            ? "removals"
-            : unread
-              ? "read"
-              : undefined;
+  const first = refusalWay(r.reasons);
   const btn = (way: typeof first) => (way === first ? "btn primary" : "btn");
   const [again, setAgain] = useState(false);
   return (
@@ -505,7 +481,8 @@ export function RefusalView(p: {
                   setError(undefined);
                   job
                     .watch((on) => p.onCurate!(edits.length, on))
-                    .catch((e: unknown) => setError(B.failed(whyStopped(e))))
+                    // A person's Stop is said by the job's own line, not as a failure.
+                    .catch((e: unknown) => stoppedByPerson(e) || setError(B.failed(whyStopped(e))))
                     .finally(() => setCurating(false));
                 }}
               >
@@ -1095,6 +1072,15 @@ export function CatalogBuildsPage(p: {
   const [error, setError] = useState<string | undefined>();
   // Beta.30: Build now's job, step by step, and how it ended.
   const job = useJobRun();
+  // Build now and, after a failure, Build again: one build, which holds the button while it runs.
+  const buildNow = (plan: string) => {
+    setBuilding(true);
+    setError(undefined);
+    job
+      .watch((on) => p.run("/api/build", { plan }, on))
+      .catch((e: unknown) => stoppedByPerson(e) || setError(B.failed(whyStopped(e))))
+      .finally(() => setBuilding(false));
+  };
   return (
     <div className="bento cb">
       <Panel title={B.title} span="1 / -1">
@@ -1144,14 +1130,7 @@ export function CatalogBuildsPage(p: {
                       className="btn primary"
                       disabled={building}
                       aria-busy={building}
-                      onClick={() => {
-                        setBuilding(true);
-                        setError(undefined);
-                        job
-                          .watch((on) => p.run("/api/build", { plan: v.pending.plan }, on))
-                          .catch((e: unknown) => setError(B.failed(whyStopped(e))))
-                          .finally(() => setBuilding(false));
-                      }}
+                      onClick={() => buildNow(v.pending.plan)}
                     >
                       {building ? B.building : B.build}
                     </button>
@@ -1166,15 +1145,7 @@ export function CatalogBuildsPage(p: {
                     {error}
                   </p>
                   {/* Beta.30: Build again (as Build now ran it), Undo below, the bundle. */}
-                  <ErrorWaysOn
-                    short
-                    onAgain={() => {
-                      setError(undefined);
-                      job
-                        .watch((on) => p.run("/api/build", { plan: v.pending.plan }, on))
-                        .catch((e: unknown) => setError(B.failed(whyStopped(e))));
-                    }}
-                  />
+                  <ErrorWaysOn short onAgain={() => buildNow(v.pending.plan)} />
                 </>
               )}
               {v.orphaned.map((o) => (
@@ -1271,7 +1242,7 @@ export function CatalogBuildsPage(p: {
 }
 
 /** Set up › Catalog builds. */
-export function CatalogBuilds() {
+export function CatalogBuilds({ hash }: { hash: string }) {
   const build = useApi<Api.CatalogBuildViewT>("/api/build");
   const undo = useApi<Api.CatalogUndoViewT>("/api/build/undo");
   const prune = useApi<Api.CatalogPruneViewT>("/api/build/prune");
@@ -1279,10 +1250,8 @@ export function CatalogBuilds() {
   const upgrade = useApi<Api.CatalogUpgradeViewT>(waits ? "/api/build/upgrade" : undefined);
   useReloadOnFiles(build, undo, prune, upgrade);
   // Beta.30: a link from a refusal or an error names the panel it is about (`?at=undo`).
-  useEffect(() => {
-    const at = typeof location === "undefined" ? undefined : panelAsked(location.hash);
-    if (at) showOnPage(at);
-  }, [waits]);
+  const loaded = (v: { state: string }) => v.state !== "loading";
+  useShowPanel(hash, loaded(build) && loaded(undo) && (!waits || loaded(upgrade)));
   const [job, setJob] = useState<string | undefined>();
   const [note, setNote] = useState<string | undefined>();
   const reload = () => {

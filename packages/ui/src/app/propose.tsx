@@ -19,8 +19,8 @@ import { ShowInConsole } from "./activity.js";
 import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
 import { JobProgress, useJobRun, type JobHears } from "./job-progress.js";
 import { SyncFirst } from "./sync-first.js";
-import { ErrorWaysOn } from "./ways-on.js";
-import { curateListedEdits, InstallCopy, RefusalView } from "../screens/setup/CatalogBuild.js";
+import { ErrorWaysOn, InstallCopy } from "./ways-on.js";
+import { curateListedEdits, RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
 
@@ -174,8 +174,12 @@ function leftOutOf(result: Record<string, unknown> | undefined): number {
 }
 
 /** What Apply says once it wrote: how many facts it left out, when it left any. */
-const appliedNote = (repo: string) => (leftOut: number) =>
-  leftOut ? P.appliedLeftOut(repo, leftOut) : P.applied(repo);
+const appliedNote = (repo: string) => (leftOut: number | "stopped") =>
+  leftOut === "stopped"
+    ? P.applyStopped(repo)
+    : leftOut
+      ? P.appliedLeftOut(repo, leftOut)
+      : P.applied(repo);
 
 /**
  * ADR 0183: the steps after an answer, a correction or an audit, run from the app. Apply runs
@@ -219,7 +223,7 @@ export function ApplyAndPropose(p: {
     discardEdits?: number;
     /** The review of beta.27: the plan of the list the refusal showed, sent with its count. */
     plan?: string;
-  }): Promise<number> => {
+  }): Promise<number | "stopped"> => {
     setNext(undefined);
     setLeftOut(0);
     p.onStart?.();
@@ -253,7 +257,8 @@ export function ApplyAndPropose(p: {
         setRefused(undefined);
         setApplied(undefined);
         if (p.scope === "corrections") flash({ text: P.applyStopped(p.repo!) });
-        throw new Error(P.applyStopped(p.repo!), { cause: e });
+        // What the person asked for: said as a status, not as an alert.
+        return "stopped";
       }
       const waits = buildRefusalOf(e);
       setRefused(waits ?? otherRefusalOf(e));
