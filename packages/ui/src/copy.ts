@@ -4745,6 +4745,18 @@ export const COPY = {
     badMinPrecision: "The precision is a whole number of percent from 0 to 100, such as 95.",
   },
   /** Ninth UX walk: Home offers the upgrade the metarepo waits on, run here on the person's click. */
+  /**
+   * ADR 0202 point 8: where the metarepo stands, at Home's top. The line itself is the
+   * server's (GET /api/status, as `atticus status` prints it); these are the words around it.
+   */
+  standing: {
+    label: "Where this metarepo stands",
+    loading: "Checking where this metarepo stands…",
+    failed: "Couldn't read where this metarepo stands. In a terminal: atticus status",
+    upgrade: "Upgrade the metarepo",
+    copy: "Copy the command",
+    copyLabel: (command: string) => `Copy the command: ${command}`,
+  },
   upgrade: {
     title: "Upgrade this metarepo",
     intro: (n: number) =>
