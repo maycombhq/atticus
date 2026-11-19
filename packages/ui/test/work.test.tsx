@@ -15,6 +15,8 @@ import {
   pickChange,
   stageOf,
   stageStep,
+  changeStep,
+  quickBeforeBuild,
   type ChangeRow,
   type OnboardingData,
   type TaskRow,
@@ -165,6 +167,56 @@ describe("what to run next (plan 4.5)", () => {
     expect(stageStep("feature", small).command).toBe("atticus change small fix-label");
     const built = stageStep("tasks", { ...change("fix-label", "build"), fastPath: true }, tasks);
     expect(built.command).toBe("atticus task run fix-label 1.2");
+  });
+
+  it("gives a quick change its files, then its hand-off, and never a stage (ADR 0201)", () => {
+    const quick = { ...change("shipped-orders-event", "plan"), quickPath: true };
+    const s = changeStep(quick);
+    expect(s.command).toBe("atticus change status shipped-orders-event");
+    expect(s.slash).toEqual({
+      command: "/define-change shipped-orders-event",
+      where: "the metarepo",
+    });
+    expect(s.why).toBe(COPY.work.why.quickDefine);
+    expect(s.after?.map((a) => a.command)).toEqual([
+      "atticus change handoff shipped-orders-event --approve",
+    ]);
+    // Every planning page shows it; none offers a stage, the fast path's step or the stories.
+    for (const page of ["feature", "architecture", "stories"] as const) {
+      const shown = stageStep(page, quick);
+      expect(shown.command).toBe("atticus change status shipped-orders-event");
+      expect(shown.slash?.command).toBe("/define-change shipped-orders-event");
+    }
+    // Quick wins over a small size of its type: it has no stories for the one step to write.
+    expect(changeStep({ ...quick, fastPath: true }).slash?.command).toBe(
+      "/define-change shipped-orders-event",
+    );
+    // With its cockpit, the change's own next step: its missing files by name, then its hand-off.
+    const cockpit = {
+      id: "shipped-orders-event",
+      state: "plan",
+      nextStep: "",
+      reasons: [],
+      risk: { level: "low", score: 1 },
+      stages: [{ stage: "stories", state: "not-started", drafts: 0, rounds: 0, openQuestions: 0 }],
+      openQuestions: 0,
+      repos: [],
+      next: {
+        step: "handoff",
+        command: "atticus change handoff shipped-orders-event --approve",
+        why: "Its proposal, spec deltas, design and tasks are written.",
+        person: true,
+      },
+    } as unknown as Parameters<typeof stageStep>[3];
+    const ready = stageStep("stories", quick, [], cockpit);
+    expect(ready.command).toBe("atticus change handoff shipped-orders-event --approve");
+    expect(ready.kind).toBe("handoff");
+    // Built, it is a change like any other: its tasks.
+    const built = stageStep("tasks", { ...quick, state: "build" }, tasks);
+    expect(built.command).toBe("atticus task run shipped-orders-event 1.2");
+    expect(quickBeforeBuild(quick)).toBe(true);
+    expect(quickBeforeBuild({ ...quick, state: "build" })).toBe(false);
+    expect(quickBeforeBuild(change("add-limit", "plan"))).toBe(false);
   });
 
   it("points a stage page at the page a change is really at", () => {

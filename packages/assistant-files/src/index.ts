@@ -10,6 +10,7 @@ export * from "./smoke.js";
 export * from "./generate.js";
 export * from "./plugin.js";
 export * from "./copilot-agents.js";
+export * from "./mcp-server.js";
 export * from "./map.js";
 export * from "./tier.js";
 export * from "./probe.js";

@@ -103,6 +103,29 @@ export interface ChangeList {
   problems: { file: string; message: string }[];
 }
 
+/**
+ * ADR 0201: the plain OpenSpec change folders Atticus doesn't track yet, in id order: a folder
+ * under the changes folder (not `archive`, a valid id) with no change.yaml that has
+ * `.openspec.yaml` or `proposal.md`. `atticus change new --id <id>` adopts one.
+ */
+export async function unadoptedChanges(root: string): Promise<string[]> {
+  const dir = changesDirOf(root);
+  const names = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const has = (id: string, file: string) =>
+    readFile(join(dir, id, file)).then(
+      () => true,
+      () => false,
+    );
+  const out: string[] = [];
+  for (const d of names) {
+    if (!d.isDirectory() || d.name === "archive" || !RecordId.safeParse(d.name).success) continue;
+    if (await has(d.name, CHANGE_FILE)) continue;
+    if ((await has(d.name, ".openspec.yaml")) || (await has(d.name, "proposal.md")))
+      out.push(d.name);
+  }
+  return out.sort();
+}
+
 export function changeStore(root: string): ChangeStore {
   async function tryRead(id: string): Promise<ChangeLifecycle | undefined> {
     // Not an id (a stray folder, a mistyped argument): no change, as for a folder with no change.yaml.

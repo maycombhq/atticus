@@ -8,6 +8,7 @@ import { trustChip } from "../map/Trust.js";
 import { isMapQuestion, type QuestionListView } from "../Questions.js";
 import {
   changeStep,
+  quickBeforeBuild,
   dashboardStep,
   inFlight,
   onboardingProgress,
@@ -107,6 +108,10 @@ export function InFlight({ changes }: { changes: ChangeRow[] }) {
         {
           label: W.stageCol,
           cell: (c) => {
+            // ADR 0201: a quick change before build is at no stage: its At a glance says what
+            // it needs (its files, then its hand-off).
+            if (quickBeforeBuild(c))
+              return <a href={`#/cockpit?change=${encodeURIComponent(c.id)}`}>{W.quickPath}</a>;
             const stage = stageOf(c.state);
             const s = STAGE_SCREEN[stage];
             return s ? (

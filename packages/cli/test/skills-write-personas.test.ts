@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { starterPersonaFiles } from "@maycombhq/assistant-files";
+import { ATTICUS_MCP_LAUNCHER, starterPersonaFiles } from "@maycombhq/assistant-files";
 import { MCP_TOOLS } from "../src/mcp.js";
 import { outputsOf, skillsWriteCommand, sourcesOf, splitFm } from "../src/skills-commands.js";
 
@@ -186,7 +186,8 @@ describe("atticus skills write: a persona's tools and hand-offs (ADR 0201)", () 
 });
 
 describe("atticus skills write: the metarepo's .vscode/mcp.json and .mcp.json (ADR 0201)", () => {
-  const SERVER = { type: "stdio", command: "atticus", args: ["mcp"] };
+  // Through node and a launcher, so one committed file starts it on Windows too (atticus.cmd).
+  const SERVER = { type: "stdio", command: "node", args: ["-e", ATTICUS_MCP_LAUNCHER] };
 
   it("writes Claude Code's project .mcp.json too, so the server is named atticus with or without the plugin", async () => {
     const root = metarepo();

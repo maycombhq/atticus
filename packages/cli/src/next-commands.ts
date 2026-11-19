@@ -11,6 +11,7 @@ import {
   factsFileOf,
   factsRelOf,
   fastPathOf,
+  quickPathOf,
   listQuestions,
   orderQuestions,
   questionWeights,
@@ -25,6 +26,7 @@ import {
 import { fileStepStore } from "@maycombhq/adapters";
 import { stepClassOfNextStep } from "@maycombhq/ai";
 import {
+  artifactFiles,
   assess,
   changeStore,
   isManualPrUrl as isManualPr,
@@ -34,6 +36,8 @@ import {
   releasePrReasons,
   stageCompletion,
   stageWorkDone,
+  REQUIREMENTS_FILE,
+  type Artifact,
   type ChangeContext,
 } from "@maycombhq/changes";
 import type { ChangeLifecycle } from "@maycombhq/core";
@@ -201,6 +205,13 @@ export interface NextState {
     fast?: boolean;
     /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
     fastDone?: boolean;
+    /**
+     * ADR 0201: it takes the quick path (`quickPathOf` its type) and isn't built yet: no stage is
+     * offered. `missing` is which of the files its type's artifacts name aren't written (a type
+     * that lists no design is never asked for design.md); `requirements` says its folder has the
+     * requirements file it was made from.
+     */
+    quick?: { missing: string[]; requirements?: boolean };
     /**
      * The stages of its stage path that are done, in order (ADR 0124 addendum B-change): the
      * stages can run ahead of the gates, so the state alone doesn't say what is next.
@@ -539,9 +550,17 @@ export async function readNextState(root: string): Promise<NextState> {
           : { draft: false, brief: false };
       const blocking =
         stageOf(c.state) === "tasks" ? await blockingOf(changeContext, c).catch(() => 0) : 0;
+      // ADR 0201: a quick change before build: its type's files, then its hand-off; never a stage.
+      const type = types.find((t) => t.id === c.type);
+      const quick =
+        draftingAt(own) >= 0 && type && quickPathOf(type)
+          ? await quickState(join(changesDirOf(root), c.id), type.artifacts)
+          : undefined;
       // Round 49: a drafting stage done with no hand-off raised: what its gate's hand-off checks.
       const gate =
-        draftingAt(own) >= 0 && !live && (stagesDone.includes(own) || c.state === "returned")
+        draftingAt(own) >= 0 &&
+        !live &&
+        (quick ? quick.missing.length === 0 : stagesDone.includes(own) || c.state === "returned")
           ? await gateFindingsOf(changeContext, c).catch(() => [])
           : [];
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
@@ -585,6 +604,7 @@ export async function readNextState(root: string): Promise<NextState> {
             }
           : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
+        ...(quick ? { quick } : {}),
         ...((await isFast(root, c, types))
           ? {
               fast: true,
@@ -690,6 +710,28 @@ async function stageQuestions(root: string, change: string, open: Set<string>): 
   return out;
 }
 
+const and = (xs: string[]) =>
+  xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+/** How a quick change's files are named to a person; an artifact not here is `<artifact>.md`. */
+const QUICK_FILE: Record<string, string> = { specs: "a spec delta under specs/" };
+
+/**
+ * ADR 0201: which of the files a quick change's type lists aren't written yet, in the type's
+ * order, and whether its requirements file is there. data.md is due only for a data change (the
+ * gate says so), so it is never asked for here.
+ */
+async function quickState(
+  dir: string,
+  artifacts: readonly Artifact[],
+): Promise<NonNullable<NextState["changes"][number]["quick"]>> {
+  const missing: string[] = [];
+  for (const a of artifacts)
+    if (a !== "data" && (await artifactFiles(dir, a)).length === 0)
+      missing.push(QUICK_FILE[a] ?? `${a}.md`);
+  return { missing, ...(existsSync(join(dir, REQUIREMENTS_FILE)) ? { requirements: true } : {}) };
+}
+
 /** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
 async function isFast(
   root: string,
@@ -757,7 +799,7 @@ function gateBlockedStep(
   if (!first) return undefined;
   const id = c.id;
   const more = c.gate!.length - 1;
-  const head = `${id}'s ${stage} stage is done, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
+  const head = `${c.quick ? `${id}'s files are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
   const tail = more ? `; ${more} more after it.` : ".";
   const asked = /\(owner question (q-[0-9a-f]+)[,)]/.exec(first.message)?.[1];
   if (asked)
@@ -1063,7 +1105,9 @@ function questionStep(c: NextState["changes"][number]): NextStep[] {
   const stage = stageOf(c.state);
   const again =
     draftingAt(stage) >= 0
-      ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
+      ? c.quick
+        ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>); its files go on after.`
+        : `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
       : `Its stage goes on once ${ids.length === 1 ? "it is" : "they are"} answered.`;
   return [
     {
@@ -1092,6 +1136,34 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
   // Seventh UX walk: the stage the change's state puts it at, never a later one.
   const stage = stageOf(c.state);
+  // ADR 0201: a quick change before build: its files, what blocks its gate, then its one
+  // hand-off. Never a brief, a stage, the fast path's step or a draft.
+  if (c.quick && (stage === "feature" || stage === "architecture" || stage === "stories")) {
+    const missing = c.quick.missing;
+    if (missing.length)
+      return [
+        {
+          step: "quick-define",
+          command: `atticus change status ${id}`,
+          slash: `/define-change ${id}`,
+          where: METAREPO,
+          why: `${id} is on the quick path, and ${and(missing)} ${missing.length === 1 ? "isn't" : "aren't"} written yet: hand ${c.quick.requirements ? "the cleared requirements" : "it"} to the spec writer: /define-change ${id}. It writes ${missing.length === 1 ? "that file" : "those files"}, grounded in the map; no stage runs. Then a person raises its one hand-off (ADR 0201).`,
+          change: id,
+        },
+      ];
+    const blocked = gateBlockedStep(c, stage, c.state);
+    if (blocked) return [blocked];
+    return [
+      {
+        step: "handoff",
+        command: `atticus change handoff ${id} --approve`,
+        where: METAREPO,
+        why: `${id}'s files are written and nothing blocks its ${c.state} gate: a person raises its ${c.state} hand-off PR, and merging it approves the gate and moves it on (ADR 0201).`,
+        change: id,
+        person: true,
+      },
+    ];
+  }
   // Sixth UX walk: a brief that holds only the template is written before any stage reads it.
   if (c.brief && stage === "feature" && !c.stagesDone?.includes("feature"))
     return [
@@ -1609,7 +1681,13 @@ export function nextSteps(s: NextState): NextStep[] {
 
 export async function nextCommand(
   root: string,
-  o: { json?: boolean; all?: boolean; queue?: boolean },
+  o: {
+    json?: boolean;
+    all?: boolean;
+    queue?: boolean;
+    /** `atticus next <change-id>`: that one change's steps, as `next` would list them for it. */
+    change?: string;
+  },
   io: Output,
 ): Promise<number> {
   // Outside a metarepo, there is no next step to read: say how to make or open one (ADR 0119).
@@ -1619,7 +1697,12 @@ export async function nextCommand(
   }
   const state = await readNextState(root);
   if (o.queue) return queueOut(state, o, io);
-  const steps = nextSteps(state);
+  const one = o.change ? state.changes.find((c) => c.id === o.change) : undefined;
+  if (o.change && !one) {
+    io.err(`No change ${o.change} here: atticus change list lists them.`);
+    return 1;
+  }
+  const steps = one ? changeSteps(one) : nextSteps(state);
   const runtime = await loadOrgPack(orgPackDirOf(root))
     .then((op) => op.runtime)
     .catch(() => undefined);
@@ -1672,6 +1755,10 @@ export async function nextCommand(
     x.slash
       ? `In ${typeIn}${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
       : undefined;
+  if (one && !steps.length) {
+    io.out(`Nothing is next for ${one.id}: it is ${one.state}.`);
+    return 0;
+  }
   if (!o.all) {
     const n = steps[0]!;
     io.out(`Next: ${n.command}`);
@@ -1679,7 +1766,9 @@ export async function nextCommand(
     if (sl) io.out(sl);
     io.out(`Why: ${n.why}`);
     if (steps.length > 1)
-      io.out(`${plural(steps.length - 1, "more step")} after this one: atticus next --all`);
+      io.out(
+        `${plural(steps.length - 1, "more step")} after this one: atticus next${one ? ` ${one.id}` : ""} --all`,
+      );
     return 0;
   }
   steps.forEach((x, i) => {
