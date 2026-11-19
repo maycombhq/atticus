@@ -139,9 +139,16 @@ describe("journey 1: a gateway proxy to a service that is no gateway", () => {
       confidence: "asserted",
       evidence: [{ source: "manual", by: "pat" }],
     });
-    // The map draws it as declared, by its person.
-    const graph = await call("/api/graph/node/estate?lens=architecture");
-    expect(JSON.stringify(graph.body)).toContain('"declaredBy":"pat"');
+    // The map draws it as declared, by its person, between its own two boxes (a focus on the
+    // proxy). Between two systems the code links already it is neither counted nor listed (B.1).
+    const focus = await call(`/api/graph/focus/component:${String(d[0]!.from)}?lens=architecture`);
+    expect(JSON.stringify(focus.body)).toContain('"declaredBy":"pat"');
+    const graph = (await call("/api/graph/node/estate?lens=architecture")).body as {
+      edges: Api.HierEdgeT[];
+    };
+    for (const e of graph.edges)
+      if (e.joins?.some((j) => j.declaredBy === "pat"))
+        expect(e.joins.every((j) => j.declaredBy === "pat")).toBe(true);
     // The proxy's calls are still listed, the declared arrow beside them (B.1, the review).
     const after = await connect(`repo:${gw}`, `repo:${svc}`);
     expect(["calls", "declared"]).toContain(after.mechanism);
