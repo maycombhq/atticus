@@ -13,6 +13,15 @@ import { pathToFileURL } from "node:url";
 
 const at = (p) => pathToFileURL(join(import.meta.dirname, "..", "..", p)).href;
 const { buildPhases } = await import(at("scanner/dist/index.js"));
+const core = await import(at("core/dist/index.js"));
+const { writeFactsHooks } = await import(at("cli/dist/map-render-commands.js"));
+// ADR 0205: ATTICUS_STEPS_OFF=1, the way before its steps (the whole comparison, every facts
+// file parsed); `--verify` writes the caches after the result, timed apart (`settled`).
+const off = !!process.env.ATTICUS_STEPS_OFF;
+if (off) {
+  writeFactsHooks.fullDiff = true;
+  core.factsParseHooks.off = true;
+}
 const args = process.argv.slice(2);
 const verify = args.includes("--verify");
 const [root, repo] = args.filter((a) => a !== "--verify");
@@ -32,7 +41,12 @@ let written;
 if (verify) {
   const { verifyCommand } = await import(at("cli/dist/verify-commands.js"));
   written = {
-    code: await verifyCommand(root, repo, { write: true, verbose: false, json: false }, quiet),
+    code: await verifyCommand(
+      root,
+      repo,
+      { write: true, verbose: false, json: false, cachesAfterResult: !off },
+      quiet,
+    ),
   };
 } else {
   const { writeFactsIntoCatalog } = await import(at("cli/dist/map-render-commands.js"));
@@ -49,10 +63,13 @@ if (verify) {
   );
   written = w?.written;
 }
+const done = (performance.now() - t) / 1000;
+await core.settleAfterResult();
 clearInterval(sample);
 const u = process.cpuUsage(c);
 const out = {
-  wall: (performance.now() - t) / 1000,
+  wall: done,
+  settled: (performance.now() - t) / 1000,
   cpu: (u.user + u.system) / 1e6,
   rss: rss / 1e9,
   heap: heap / 1e9,

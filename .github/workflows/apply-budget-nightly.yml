@@ -1,0 +1,47 @@
+name: Apply budget (nightly)
+
+# ADR 0205 (the owner's answer of 2026-11-19): one repo's Apply in 15 seconds on the field-shaped
+# estate at 60 repos, as a CI budget. A wall-clock budget needs a machine of its own, so it runs
+# here, every night and on demand, on a dedicated runner, and never in `pnpm check` or the shared
+# CI jobs (packages/cli/test/apply-budget.test.ts skips unless ATTICUS_BENCH is set). The run
+# prints each Apply's time, its CPU time and the load; the big estate's times, a stress test, go
+# in the release notes from the bench (packages/cli/test/big-estate-bench.test.ts). No secret is
+# used, and nothing reaches the network but the install (CLAUDE.md rule 5).
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: "The estate's repos in all"
+        type: string
+        default: "60"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-budget-nightly
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  budget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter=@maycombhq/cli...
+      - name: One repo's Apply on the field-shaped estate, median of three, under 15 s
+        run: pnpm --filter @maycombhq/cli test:apply-budget
+        env:
+          ATTICUS_BENCH: "1"
+          ATTICUS_BUDGET_REPOS: ${{ inputs.repos || '60' }}

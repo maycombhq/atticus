@@ -15,8 +15,16 @@ import {
   serializeBuildManifest,
   serializeBuildManifestV1,
 } from "@maycombhq/scanner";
-import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
-import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
+import {
+  factsParseHooks,
+  loadOrgPack,
+  orgPackDirOf,
+  settleAfterResult,
+  startAppMemory,
+  stopAppMemory,
+} from "@maycombhq/core";
+import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
+import { verifyCommand } from "../src/verify-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
@@ -48,6 +56,14 @@ const RUNS = Math.max(1, Number(process.env.ATTICUS_BENCH_RUNS ?? 2));
 const fieldGateways = Math.round((N * 3) / 8);
 /** ATTICUS_BENCH_READS=0: the writes only, none of the reads after them. */
 const READS = process.env.ATTICUS_BENCH_READS !== "0";
+/**
+ * ADR 0205: ATTICUS_BENCH_APP=1 runs each write as the app's Apply does (verify --write in this
+ * process, the caches after its result, the app's memory on); ATTICUS_BENCH_STEPS_OFF=1 runs it
+ * the way before the ADR's steps (the whole comparison, every facts file parsed, the caches
+ * before the result, no memory kept): the before and after of one build of the code.
+ */
+const APP = !!process.env.ATTICUS_BENCH_APP;
+const STEPS_OFF = !!process.env.ATTICUS_BENCH_STEPS_OFF;
 const say = (l: string) => console.log(`bench ${l}`);
 const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(0, 200)}`) };
 
@@ -133,6 +149,11 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     const r = 1;
     const repo = bigRepoId(r);
     const first = Number(process.env.ATTICUS_BENCH_EDIT ?? Date.now() % 90) + 1;
+    // ADR 0205: the way before its steps, or the app's memory on as the server has it.
+    if (STEPS_OFF) {
+      writeFactsHooks.fullDiff = true;
+      factsParseHooks.off = true;
+    } else if (APP) startAppMemory();
     // Two changes of one repo, each `verify <repo> --write`'s catalog write: the first after
     // the code changed (an upgrade: the build cache's texts are another version's), the second
     // as every write after it.
@@ -144,6 +165,21 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       : []) {
       const facts = await writeBigRepo(root, r, options, edit, true, false);
       say(`edit ${edit} of ${repo}: ${facts.length} facts`);
+      if (APP) {
+        // The app's Apply: verify --write in this process, to its result ("done"), the caches
+        // written after it (ADR 0205 step 2), timed apart.
+        const code = await timed(`the app's Apply of ${repo} (${label})`, () =>
+          verifyCommand(
+            root,
+            repo,
+            { write: true, verbose: false, json: false, cachesAfterResult: !STEPS_OFF },
+            quiet,
+          ),
+        );
+        await timed(`  its caches after the result (${label})`, () => settleAfterResult());
+        say(`  exit: ${code}`);
+        continue;
+      }
       const w = await timed(`verify ${repo} --write, the catalog (${label})`, () =>
         writeFactsIntoCatalog(
           root,
@@ -155,6 +191,7 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       );
       say(`  written: ${JSON.stringify(w?.written)}`);
     }
+    if (APP && !STEPS_OFF) stopAppMemory();
     // ATTICUS_BENCH_CLI=<the CLI's dist/bin.js>: one repo's whole Apply as the command runs it
     // (`atticus verify <repo> --write`: its own process, verify's check of every fact, then the
     // write), RUNS times, each after another change of the repo.
