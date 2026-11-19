@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { COPY } from "../copy.js";
+import { ErrorWaysOn } from "./ways-on.js";
 
 const T = COPY.boundary;
 
@@ -21,6 +22,7 @@ export class ScreenBoundary extends Component<
             <p className="muted" style={{ margin: "8px 0 0" }}>
               {T.somethingOnThisScreen(this.state.error)}
             </p>
+            <ErrorWaysOn />
           </section>
         </div>
       );
@@ -55,6 +57,8 @@ export class AppBoundary extends Component<{ children: ReactNode }, { error?: st
                 {T.goHome}
               </a>
             </p>
+            {/* A link followed lets go of the error, as Go to Home does. */}
+            <ErrorWaysOn onGo={() => this.setState({ error: undefined })} />
           </section>
         </main>
       );

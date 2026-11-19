@@ -1,3 +1,4 @@
+import { hashParam } from "../../app/screens.js";
 import { useState, type ReactNode } from "react";
 import { RunWithCopilot } from "../../app/copilot-runs.js";
 import { appStep, ReadRepo } from "../../app/app-step.js";
@@ -861,6 +862,14 @@ export function TrustPage({
   );
 }
 
+/**
+ * Beta.30: the repo a link asks Map › Trust to show (`#/trust?repo=forge-ledger`: a refusal's
+ * link to its rejected facts), as the words the repos filter starts with.
+ */
+export function trustFilterOf(hash: string): string {
+  return hashParam(hash, "repo") ?? "";
+}
+
 export function Trust() {
   const view = useApi<Api.TrustViewT>("/api/trust");
   useReloadOnFiles(view);
@@ -875,6 +884,7 @@ export function Trust() {
         of={view}
         fresh={fresh}
         canary={canary}
+        filter={typeof location === "undefined" ? "" : trustFilterOf(location.hash)}
         decide={{ ...(ds?.view ?? { state: "loading" }), ...(ds ? { reload: ds.reload } : {}) }}
       />
     </EvidenceProvider>

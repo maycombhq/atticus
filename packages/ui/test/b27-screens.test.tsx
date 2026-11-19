@@ -615,7 +615,10 @@ describe("17: the upgrade panel", () => {
     );
     expect(newerCatalog).toContain('role="alert"');
     expect(newerCatalog).toContain(esc(COPY.upgrade.newerCatalog));
-    expect(newerCatalog).not.toContain("<button");
+    // Beta.30: its one button copies the install command; none runs the upgrade.
+    expect(newerCatalog.match(/<button[^>]*>[^<]*</g)).toEqual([
+      expect.stringContaining(`>${COPY.waysOn.copyInstall}<`),
+    ]);
     expect(COPY.upgrade.newerCatalog).toContain("npm i -g @maycombhq/atticus@beta");
   });
 

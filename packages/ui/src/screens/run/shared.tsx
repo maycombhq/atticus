@@ -70,12 +70,27 @@ export function Note({ note }: { note?: Outcome }) {
 }
 
 /** Copy text to the clipboard and say so, or say to select it when the browser refuses. */
-export function CopyButton({ text, label }: { text: string; label: string }) {
+export function CopyButton({
+  text,
+  label,
+  say,
+  primary,
+}: {
+  text: string;
+  label: string;
+  /** Beta.30: the button's own words (Copy the install command); `label` starts with them. */
+  say?: string;
+  /** The one way on from a refusal. */
+  primary?: boolean;
+}) {
   const [done, setDone] = useState<"copied" | "failed" | undefined>();
+  // Its "Copied" goes after two seconds; the timer goes with the button.
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <button
       type="button"
-      className="btn run-copy"
+      className={primary ? "btn primary run-copy" : "btn run-copy"}
       aria-label={label}
       onClick={() => {
         if (!navigator.clipboard) setDone("failed");
@@ -84,10 +99,11 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
             () => setDone("copied"),
             () => setDone("failed"),
           );
-        setTimeout(() => setDone(undefined), 2000);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setDone(undefined), 2000);
       }}
     >
-      {done === "copied" ? TX.copied : done === "failed" ? TX.selectAndCopy : TX.copy}
+      {done === "copied" ? TX.copied : done === "failed" ? TX.selectAndCopy : (say ?? TX.copy)}
     </button>
   );
 }

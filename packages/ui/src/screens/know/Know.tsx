@@ -1564,9 +1564,9 @@ export function Scans() {
                       scanConfirmBody(lastBody, buildRefused, { allowRemovals: n }),
                     ).then(() => undefined)
                   }
-                  onCurate={async (n) => {
+                  onCurate={async (n, on) => {
                     // The hand edits as the build lists them now, confirmed by their plan.
-                    await curateListedEdits(buildRefused, n);
+                    await curateListedEdits(buildRefused, n, undefined, on);
                     setCuratedAfter(job.id);
                   }}
                   onDiscard={(n) =>
@@ -1591,6 +1591,12 @@ export function Scans() {
                   <span className="muted" style={{ fontSize: 12 }}>
                     {refusedScan.todo}
                   </span>
+                  {/* Beta.30: the refusal's one way on. */}
+                  <div>
+                    <a className="btn primary" href="#/trust">
+                      {COPY.waysOn.readOnTrust}
+                    </a>
+                  </div>
                 </div>
               )}
               {/* ADR 0187: what it printed, in the Console. */}

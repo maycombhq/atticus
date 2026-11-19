@@ -2,6 +2,7 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isOffline, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { PanelBar } from "./loading-bar.js";
+import { ErrorWaysOn } from "./ways-on.js";
 
 const TX = COPY.common;
 
@@ -98,6 +99,9 @@ export function focusIfLost(
   return true;
 }
 
+/** A panel's heading's id, from its title (a link to the panel finds it by this). */
+export const panelId = (title: string) => `p-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
 export function Panel(p: {
   title?: string;
   meta?: ReactNode;
@@ -109,9 +113,7 @@ export function Panel(p: {
   /** A class of the screen's own (cw-, hm-), beside panel and its kind. */
   className?: string;
 }) {
-  const id =
-    p.labelledBy ??
-    (p.title ? `p-${p.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : undefined);
+  const id = p.labelledBy ?? (p.title ? panelId(p.title) : undefined);
   return (
     <section
       className={`panel ${p.kind ?? ""}${p.className ? ` ${p.className}` : ""}`}
@@ -179,6 +181,8 @@ export function LoadError({ error, retry }: { error: string; retry?: (() => void
           {COPY.app.tryAgain}
         </button>
       )}
+      {/* Beta.30: what exists today, in a panel's short form. */}
+      <ErrorWaysOn short />
     </div>
   );
 }

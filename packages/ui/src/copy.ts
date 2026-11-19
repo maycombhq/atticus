@@ -118,6 +118,28 @@ export const COPY = {
       stopped: "Stopped before it finished: nothing was changed.",
       again: "Start it again",
     },
+    /**
+     * Beta.30 (slice 2): a step the app runs as a job, in the panel that started it: the time so
+     * far, that it is still running, and a line that stays once it ended.
+     */
+    jobRun: {
+      /** A time in words: 12 s, 1 min 35 s. */
+      time: (ms: number): string => {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        const m = Math.floor(s / 60);
+        return m === 0 ? `${s} s` : s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
+      },
+      soFar: (time: string) => `${time} so far`,
+      still: (time: string) => `Still running after ${time}.`,
+      done: (time: string) => `Done in ${time}.`,
+      ended: (time: string) => `It ended after ${time} without finishing.`,
+      stopped: (time: string) => `Stopped after ${time}.`,
+      /** Stop was asked after the write had started: the server carries on, and so says the page. */
+      tooLate:
+        "Stop came too late: the write had started, and it finishes whole so nothing is left half-written.",
+      /** Why a step ended, when a person's Stop ended it (never the job's raw state word). */
+      youStopped: "Stop was asked, and it ended before it finished.",
+    },
     ccReading: "Reading your metarepo…",
     ccCantRead: "Couldn't read what needs attention: each panel below says why.",
     notLoaded: "not loaded",
@@ -1105,6 +1127,32 @@ export const COPY = {
     promotedRejectedHint:
       "It is kept in the rejected file with why: check the line, or dismiss the item.",
   },
+  /**
+   * Beta.30 (slice 2): the one way on a refusal or an error offers, each to something that is
+   * there today: a page, a build, or a command to copy.
+   */
+  waysOn: {
+    installCommand: "npm i -g @maycombhq/atticus@beta",
+    copyInstall: "Copy the install command",
+    copyInstallLabel: (cmd: string) => `Copy the install command: ${cmd}`,
+    supportCommand: "atticus support bundle",
+    supportWhy:
+      "To report it, save a support bundle from a terminal (versions, checks, counts and the redacted log in a zip on this machine; nothing is sent) and read it before you send it:",
+    copySupport: "Copy the command",
+    copySupportLabel: (cmd: string) => `Copy the command for a support bundle: ${cmd}`,
+    buildAgain: "Build again",
+    buildAgainOn: "Build again on Set up › Catalog builds",
+    seeOnBuilds: "See them on Set up › Catalog builds",
+    undoLast: "Undo the last build",
+    undoWhy: "If this started after a build, the last build can be taken back:",
+    upgradeBelow: "Go to the upgrade below",
+    upgradeOnBuilds: "Upgrade on Set up › Catalog builds",
+    readOnTrust: "Read the repos on Map › Trust",
+    readAgainOnTrust: (repo: string) => `Read ${repo} again on Map › Trust`,
+    rejectedOnTrust: (n: number) =>
+      `See the ${n} rejected ${n === 1 ? "fact" : "facts"} on Map › Trust`,
+    label: "Ways on from here",
+  },
   catalogBuild: {
     title: "Catalog builds",
     intro:
@@ -1156,6 +1204,7 @@ export const COPY = {
         `This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (${NEWER_ATTICUS_COMMAND}), don't run atticus upgrade.`,
     } as Record<string, (n: number) => string>,
     inTerminal: "In a terminal",
+    inTerminalSay: "Or in a terminal:",
     reviewRemovals: (n: number) => `Review the ${n} removals`,
     removalsTitle: (n: number) => `Confirm ${n} ${n === 1 ? "removal" : "removals"}`,
     removalsIntro:
@@ -1172,7 +1221,15 @@ export const COPY = {
     cancel: "Cancel",
     editsTitle: "Hand edits",
     editsIntro:
-      "These files were changed by hand since the last build. A build never overwrites them: make each a curated decision, which every later build keeps, or discard them (a copy is kept for undo).",
+      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits makes each a curated decision, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
+    /** Beta.30: what happened and the way on, for the refusals no confirm goes on from. */
+    way: {
+      unexplained:
+        "Nothing was changed. Build again: if it lists them again, it is a bug to report with this list.",
+      read: "Nothing was changed. The build needs records from the repos' code: read the repos, then build again.",
+      upgrade: "Nothing was changed. The upgrade lists every file it writes before it writes one.",
+      newer: "Nothing was changed. Install the newer Atticus, then come back here.",
+    },
     editsCaption: "Files changed by hand",
     // ADR 0197 review (beta.28.2): build.json doesn't read, so every record file stands as a hand
     // edit; building again is the only way on (`unreadableManifest`).
@@ -1182,11 +1239,12 @@ export const COPY = {
       "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Making them curated isn't the way here.",
     buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
-    curate: (n: number) => `Make ${n === 1 ? "it" : `these ${n}`} curated`,
-    curating: "Making them curated…",
+    curate: (n: number) => (n === 1 ? "Keep my edit" : `Keep my ${n} edits`),
+    curating: "Keeping your edits as curated decisions…",
     curateHint:
       "Writes a curated decision for each into catalog/curated/, to propose for review, then builds.",
-    discard: (n: number) => `Discard ${n === 1 ? "it" : `these ${n}`}…`,
+    // The count is in the dialog it opens, which lists each file and is confirmed with it.
+    discard: (_n: number) => "Use Atticus's version…",
     discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
     discardIntro:
       "The build replaces these files with what the slots build. Their bytes are kept in the undo copy first.",
@@ -5037,6 +5095,11 @@ export const COPY = {
   propose: {
     apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
     applying: "Applying…",
+    /** Beta.30: what the panel says over the job's step while one repo's Apply runs. */
+    applyingTo: (repo: string) => `Applying to ${repo}'s map…`,
+    /** Beta.30: Stop ended the Apply before its write (after it, Stop is too late). */
+    applyStopped: (repo: string) =>
+      `Stopped before the catalog was written: nothing was applied to ${repo}'s map. Apply again when you are ready.`,
     applied: (repo: string) => `Applied: ${repo}'s facts are checked again and in the catalog.`,
     /** Beta.28.1: Apply wrote the kept facts and left the rejected ones out (listed below it). */
     appliedLeftOut: (repo: string, n: number) =>
@@ -5056,6 +5119,8 @@ export const COPY = {
     >,
     yes: (n: number) => `Push ${n} file${n === 1 ? "" : "s"} and open the PR`,
     proposing: "Proposing…",
+    /** Beta.30: said over the time so far while the push and the pull request run. */
+    proposingSay: "Pushing the branch and opening the pull request…",
     proposed: "Proposed for review.",
     cancel: "Not now",
     appliedFlash: (repo: string) =>

@@ -32,6 +32,8 @@ export class JobFailed extends Error {
     readonly code?: number,
     /** The rest of its result (Apply's refused build, ADR 0195 point 4: what a person confirms). */
     readonly result?: Record<string, unknown>,
+    /** Beta.30: a person's Stop ended it (the job's state is `cancelled`), not a failure. */
+    readonly stopped: boolean = false,
   ) {
     super(message);
   }
@@ -77,6 +79,7 @@ export async function followJob(
           nextStepOf(j.result),
           j.result?.code,
           j.result,
+          j.state === "cancelled",
         );
       // Beta.27 review, final round: the rest of the result (the upgrade's `upgraded`).
       return { code, lines, ...(j.result ? { result: j.result } : {}) };

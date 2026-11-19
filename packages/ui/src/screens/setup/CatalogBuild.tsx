@@ -4,7 +4,20 @@ import { api, ApiError, useApi, useReloadOnFiles, type Loaded } from "../../api/
 import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
-import { Panel, View } from "../../app/ui.js";
+import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
+import {
+  ErrorWaysOn,
+  InstallCopy,
+  panelAsked,
+  refusalWay,
+  showIfHere,
+  showOnPage,
+  SupportBundle,
+  UPGRADE_HREF,
+} from "../../app/ways-on.js";
+
+export { panelAsked };
+import { Panel, panelId, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command } from "../work/RunNext.js";
 import "../map/crosscheck.css";
@@ -30,8 +43,13 @@ type Removal = Api.BuildRemovalT;
 const short = (c?: string) => (c && /^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : (c ?? ""));
 const when = (iso: string) => iso.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC");
 
+/** A person's Stop ended the job: no failure to say (its progress line says it stopped). */
+const stoppedByPerson = (e: unknown): boolean => e instanceof JobFailed && e.stopped;
+
 /** Why a job or a call stopped, in its own words. */
 export function whyStopped(e: unknown): string {
+  // A person's Stop: said in words, never as the job's state ("cancelled").
+  if (e instanceof JobFailed && e.stopped) return COPY.app.jobRun.youStopped;
   if (e instanceof JobFailed) return e.lines.join(" ") || e.message;
   if (e instanceof ApiError) return e.problem.detail ?? e.message;
   return e instanceof Error ? e.message : String(e);
@@ -245,6 +263,26 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
   );
 }
 
+const W = COPY.waysOn;
+
+/** The panels of Catalog builds a link elsewhere opens the page at (`?at=`), by their headings. */
+export const UPGRADE_PANEL = panelId(B.upgradeTitle);
+export const UNDO_PANEL = panelId(B.undoTitle);
+/**
+ * The panel the page's address names is shown once the page has loaded (`ready`: before that
+ * the panels above it are still growing, and would push it away again), and again whenever the
+ * address comes to name one: on arrival and on a link followed on the page, in either layout
+ * (both hand the page its address). Reading the page's data again never moves the person.
+ */
+export function useShowPanel(hash: string, ready: boolean): void {
+  const shown = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const at = panelAsked(hash);
+    if (!at) shown.current = undefined;
+    else if (ready && shown.current !== hash && showOnPage(at)) shown.current = hash;
+  }, [hash, ready]);
+}
+
 /**
  * Make it curated (point 4, the supported way) from a refusal shown elsewhere (a scan's, an
  * Apply's): the hand edits as GET /api/build lists them now, confirmed by its plan, made curated
@@ -256,12 +294,20 @@ export async function curateListedEdits(
   n: number,
   /** What to say when the edits changed (a scan's: scan again; an Apply's: Apply again). */
   changed: string = B.editsChanged,
+  /** Beta.30: hears the job's id and each step, for the panel that started it. */
+  on?: JobHears,
 ): Promise<void> {
   const now = await api<Api.CatalogBuildViewT>("/api/build");
   const listed = (r: Refusal | undefined) =>
     (r?.edits ?? []).map((e) => `${e.how} ${e.path}`).join("\n");
   if (listed(now.pending.refused) !== listed(refused)) throw new Error(changed);
-  await followJob("/api/build/edits/curate", { count: n, plan: now.pending.plan });
+  await followJob(
+    "/api/build/edits/curate",
+    { count: n, plan: now.pending.plan },
+    undefined,
+    on?.onJob,
+    on?.onProgress,
+  );
 }
 
 /**
@@ -272,17 +318,25 @@ export async function curateListedEdits(
 export function RefusalView(p: {
   refused: Refusal;
   onAllowRemovals: (n: number) => Promise<void>;
-  onCurate?: (n: number) => Promise<void>;
+  /** `on` (beta.30): tell it the job's id and steps, and the wait shows them here. */
+  onCurate?: (n: number, on?: JobHears) => Promise<void>;
   onDiscard?: (n: number) => Promise<void>;
   /** The words of a step's button that confirms the removals (a scan's: Scan again…). */
   confirmLabel?: (n: number) => string;
   /** On Catalog builds, where the upgrade's own step is below; elsewhere, a link to it. */
   upgradeHere?: boolean;
+  /**
+   * Beta.30: the step that refused, run again as it was (the build, the Apply), for a refusal
+   * nothing confirms. Without it, the way on is the page that builds.
+   */
+  onAgain?: () => Promise<void>;
 }) {
   const r = p.refused;
   const [dialog, setDialog] = useState<"removals" | "discard" | undefined>();
   const [curating, setCurating] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Beta.30: the curate's job (the decisions written, then the build), step by step.
+  const job = useJobRun();
   const removals = r.removals ?? [];
   const edits = r.edits ?? [];
   const nEdits = r.discardEdits ?? edits.length;
@@ -296,6 +350,12 @@ export function RefusalView(p: {
         : 0;
   // Beta.28.3: a newer Atticus's catalog under its own heading (nothing there to confirm).
   const title = B.refusalTitle(r.reasons);
+  // Beta.30: one primary button, the first of these the refusal has; any other is plain.
+  const has = (x: Refusal["reasons"][number]) => r.reasons.includes(x);
+  const unread = has("empty") || has("nothing-read");
+  const first = refusalWay(r.reasons);
+  const btn = (way: typeof first) => (way === first ? "btn primary" : "btn");
+  const [again, setAgain] = useState(false);
   return (
     <div className="stack" style={{ gap: 10 }} role="group" aria-label={title}>
       <p className="state" role="note" style={{ margin: 0 }}>
@@ -311,9 +371,60 @@ export function RefusalView(p: {
         ))}
       </ul>
       {r.unexplained && r.unexplained.length > 0 && <RemovalsTable removals={r.unexplained} />}
+      {has("newer-atticus") && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.newer}
+          </p>
+          <InstallCopy />
+        </div>
+      )}
+      {has("unexplained-removals") && (
+        <div className="stack" style={{ gap: 6 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.unexplained}
+          </p>
+          <div>
+            {p.onAgain ? (
+              <button
+                type="button"
+                className={btn("again")}
+                disabled={again}
+                aria-busy={again}
+                onClick={() => {
+                  setAgain(true);
+                  setError(undefined);
+                  p.onAgain!()
+                    .catch((e: unknown) => setError(B.failed(whyStopped(e))))
+                    .finally(() => setAgain(false));
+                }}
+              >
+                {again ? B.building : W.buildAgain}
+              </button>
+            ) : (
+              <a className={btn("again")} href="#/catalog-builds">
+                {W.buildAgainOn}
+              </a>
+            )}
+          </div>
+          <SupportBundle />
+        </div>
+      )}
+      {unread && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.read}
+          </p>
+          <div>
+            <a className={btn("read")} href="#/trust">
+              {W.readOnTrust}
+            </a>
+          </div>
+        </div>
+      )}
       {r.reasons.includes("large-removals") && (
         <div>
-          <button type="button" className="btn primary" onClick={() => setDialog("removals")}>
+          <button type="button" className={btn("removals")} onClick={() => setDialog("removals")}>
             {B.reviewRemovals(r.allowRemovals ?? removals.length)}
           </button>
         </div>
@@ -328,7 +439,7 @@ export function RefusalView(p: {
           </p>
           {p.onDiscard && (
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn primary" onClick={() => setDialog("discard")}>
+              <button type="button" className={btn("edits")} onClick={() => setDialog("discard")}>
                 {B.buildAgain(nEdits)}
               </button>
             </div>
@@ -354,15 +465,17 @@ export function RefusalView(p: {
             {p.onCurate && (
               <button
                 type="button"
-                className="btn primary"
+                className={btn("edits")}
                 disabled={curating}
                 aria-busy={curating}
                 aria-describedby="cb-curate-hint"
                 onClick={() => {
                   setCurating(true);
                   setError(undefined);
-                  p.onCurate!(edits.length)
-                    .catch((e: unknown) => setError(B.failed(whyStopped(e))))
+                  job
+                    .watch((on) => p.onCurate!(edits.length, on))
+                    // A person's Stop is said by the job's own line, not as a failure.
+                    .catch((e: unknown) => stoppedByPerson(e) || setError(B.failed(whyStopped(e))))
                     .finally(() => setCurating(false));
                 }}
               >
@@ -378,18 +491,33 @@ export function RefusalView(p: {
           <p id="cb-curate-hint" className="work-say" style={{ margin: 0 }}>
             {B.curateHint}
           </p>
+          <JobProgress what={B.curating} run={job.run} onStop={job.stop} />
         </section>
       )}
       {r.reasons.includes("not-upgraded") && (
         <div className="stack" style={{ gap: 4 }}>
-          <p className="work-say" style={{ margin: 0 }}>
+          {!p.upgradeHere && (
+            <p className="work-say" style={{ margin: 0 }}>
+              {B.way.upgrade}
+            </p>
+          )}
+          <div>
             {p.upgradeHere ? (
-              B.upgradeTodo
+              <button
+                type="button"
+                className={btn("upgrade")}
+                onClick={() => showOnPage(UPGRADE_PANEL)}
+              >
+                {W.upgradeBelow}
+              </button>
             ) : (
-              <>
-                {B.upgradeElsewhere} <a href="#/catalog-builds">{B.upgradeOn}</a>
-              </>
+              <a className={btn("upgrade")} href={UPGRADE_HREF} onClick={showIfHere(UPGRADE_HREF)}>
+                {W.upgradeOnBuilds}
+              </a>
             )}
+          </div>
+          <p className="work-say" style={{ margin: 0 }}>
+            {p.upgradeHere ? B.upgradeTodo : B.inTerminalSay}
           </p>
           <Command text="atticus upgrade --yes" label={COPY.runNext.copy} noRun />
         </div>
@@ -399,10 +527,13 @@ export function RefusalView(p: {
           {error}
         </p>
       )}
-      <details className="work-terminal">
-        <summary>{B.inTerminal}</summary>
-        <Command text={r.command} label={COPY.runNext.copy} noRun />
-      </details>
+      {/* A newer Atticus's catalog: its command is the install above, shown once. */}
+      {!has("newer-atticus") && (
+        <details className="work-terminal">
+          <summary>{B.inTerminal}</summary>
+          <Command text={r.command} label={COPY.runNext.copy} noRun />
+        </details>
+      )}
       {dialog === "removals" && (
         <ConfirmDialog
           title={B.removalsTitle(r.allowRemovals ?? removals.length)}
@@ -925,13 +1056,24 @@ export function CatalogBuildsPage(p: {
   undo: Loaded<Api.CatalogUndoViewT> & { reload?: () => void };
   prune: Loaded<Api.CatalogPruneViewT> & { reload?: () => void };
   /** Runs a step's route as a local job, to its end. */
-  run: (path: string, body: Record<string, unknown>) => Promise<void>;
+  run: (path: string, body: Record<string, unknown>, on?: JobHears) => Promise<void>;
   plan: (n: number) => Promise<Api.CatalogUndoViewT>;
   job?: string | undefined;
   note?: string | undefined;
 }) {
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Beta.30: Build now's job, step by step, and how it ended.
+  const job = useJobRun();
+  // Build now and, after a failure, Build again: one build, which holds the button while it runs.
+  const buildNow = (plan: string) => {
+    setBuilding(true);
+    setError(undefined);
+    job
+      .watch((on) => p.run("/api/build", { plan }, on))
+      .catch((e: unknown) => stoppedByPerson(e) || setError(B.failed(whyStopped(e))))
+      .finally(() => setBuilding(false));
+  };
   return (
     <div className="bento cb">
       <Panel title={B.title} span="1 / -1">
@@ -957,10 +1099,11 @@ export function CatalogBuildsPage(p: {
                   onAllowRemovals={(n) =>
                     p.run("/api/build", { allowRemovals: n, plan: v.pending.plan })
                   }
-                  onCurate={(n) =>
-                    p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan })
+                  onCurate={(n, on) =>
+                    p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan }, on)
                   }
                   onDiscard={(n) => p.run("/api/build", { discardEdits: n, plan: v.pending.plan })}
+                  onAgain={() => p.run("/api/build", { plan: v.pending.plan })}
                 />
               ) : v.pending.upToDate ? (
                 <p className="state" style={{ margin: 0 }}>
@@ -980,23 +1123,23 @@ export function CatalogBuildsPage(p: {
                       className="btn primary"
                       disabled={building}
                       aria-busy={building}
-                      onClick={() => {
-                        setBuilding(true);
-                        setError(undefined);
-                        p.run("/api/build", { plan: v.pending.plan })
-                          .catch((e: unknown) => setError(B.failed(whyStopped(e))))
-                          .finally(() => setBuilding(false));
-                      }}
+                      onClick={() => buildNow(v.pending.plan)}
                     >
                       {building ? B.building : B.build}
                     </button>
                   </div>
                 </div>
               )}
+              {/* Build now's step, time and Stop (heard until the write), then how it ended. */}
+              <JobProgress what={B.building} run={job.run} onStop={job.stop} />
               {error && (
-                <p className="state error" role="alert" style={{ margin: 0 }}>
-                  {error}
-                </p>
+                <>
+                  <p className="state error" role="alert" style={{ margin: 0 }}>
+                    {error}
+                  </p>
+                  {/* Beta.30: Build again (as Build now ran it), Undo below, the bundle. */}
+                  <ErrorWaysOn short onAgain={() => buildNow(v.pending.plan)} />
+                </>
               )}
               {v.orphaned.map((o) => (
                 <p key={o.repo} className="work-say" style={{ margin: 0 }}>
@@ -1092,13 +1235,16 @@ export function CatalogBuildsPage(p: {
 }
 
 /** Set up › Catalog builds. */
-export function CatalogBuilds() {
+export function CatalogBuilds({ hash }: { hash: string }) {
   const build = useApi<Api.CatalogBuildViewT>("/api/build");
   const undo = useApi<Api.CatalogUndoViewT>("/api/build/undo");
   const prune = useApi<Api.CatalogPruneViewT>("/api/build/prune");
   const waits = build.state === "ready" && build.data.upgrade === true;
   const upgrade = useApi<Api.CatalogUpgradeViewT>(waits ? "/api/build/upgrade" : undefined);
   useReloadOnFiles(build, undo, prune, upgrade);
+  // Beta.30: a link from a refusal or an error names the panel it is about (`?at=undo`).
+  const loaded = (v: { state: string }) => v.state !== "loading";
+  useShowPanel(hash, loaded(build) && loaded(undo) && (!waits || loaded(upgrade)));
   const [job, setJob] = useState<string | undefined>();
   const [note, setNote] = useState<string | undefined>();
   const reload = () => {
@@ -1107,10 +1253,19 @@ export function CatalogBuilds() {
     prune.reload();
     if (waits) upgrade.reload();
   };
-  const run = async (path: string, body: Record<string, unknown>) => {
+  const run = async (path: string, body: Record<string, unknown>, on?: JobHears) => {
     setNote(undefined);
     try {
-      await followJob(path, body, undefined, setJob);
+      await followJob(
+        path,
+        body,
+        undefined,
+        (id) => {
+          setJob(id);
+          on?.onJob(id);
+        },
+        on?.onProgress,
+      );
       setNote(B.done);
     } finally {
       reload();

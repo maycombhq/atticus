@@ -9,6 +9,7 @@ import {
   accessible,
   atticus,
   catalogFiles,
+  classicLayout,
   expect,
   open,
   startApp,
@@ -244,6 +245,55 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   await shot(page, "catalog-builds-1440-dark");
 });
 
+// Beta.30 (slice 2, its review): "Undo the last build" on an error is a link to this page's Undo.
+// It scrolls there and gives it the keyboard: on arrival, once the page has loaded (the panels
+// above it grow as they load), and when the address changes on the page itself.
+async function opensAtUndo(page: Page): Promise<void> {
+  // One panel of the page fails to load, so it offers the link ("Undo the last build").
+  await page.route("**/api/build/prune", (r) =>
+    r.fulfill({
+      status: 500,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ type: "about:blank", title: "Stand-in failure", status: 500 }),
+    }),
+  );
+  const undo = page.getByRole("heading", { name: "Undo", exact: true });
+  await page.evaluate(`location.hash = '#/catalog-builds?at=undo'`);
+  await expect(undo).toBeInViewport();
+  await expect(undo).toBeFocused();
+  // Already on the page, away from Undo: the link goes there again.
+  await page.evaluate(`location.hash = '#/catalog-builds'`);
+  const away = async () => {
+    await page.locator("#p-catalog-builds").scrollIntoViewIfNeeded();
+    await page.getByRole("link", { name: "Readers found / facts say" }).first().focus();
+    await expect(undo).not.toBeFocused();
+  };
+  await away();
+  const link = page.getByRole("link", { name: "Undo the last build" }).first();
+  await link.click();
+  await expect(undo).toBeInViewport();
+  await expect(undo).toBeFocused();
+  // The second click: the address says ?at=undo already, and the link still goes there.
+  await away();
+  await expect(page).toHaveURL(/#\/catalog-builds\?at=undo$/);
+  await link.click();
+  await expect(undo).toBeInViewport();
+  await expect(undo).toBeFocused();
+}
+
+test("a link to Undo opens Catalog builds at its Undo (the IDE layout)", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, a(), "trust");
+  await opensAtUndo(page);
+});
+
+test("a link to Undo opens Catalog builds at its Undo (the classic layout)", async ({ page }) => {
+  await classicLayout(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, a(), "trust");
+  await opensAtUndo(page);
+});
+
 test("a hand edit is never overwritten: it is made curated", async ({ page }) => {
   const files = Object.keys(catalogFiles(a().root)).filter((f) => f.startsWith("table/"));
   const path = join(a().root, "catalog/generated", files[0]!);
@@ -251,7 +301,7 @@ test("a hand edit is never overwritten: it is made curated", async ({ page }) =>
   await open(page, a(), "catalog-builds");
   await expect(page.getByText(`changed: catalog/generated/${files[0]}`)).toBeVisible();
   await accessible(page, "a hand edit listed");
-  await page.getByRole("button", { name: "Make it curated" }).click();
+  await page.getByRole("button", { name: "Keep my edit" }).click();
   await expect(page.getByText("Done. What it printed is in the Console.")).toBeVisible({
     timeout: 60_000,
   });
