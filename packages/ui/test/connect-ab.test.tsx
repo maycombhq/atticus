@@ -185,6 +185,30 @@ describe("Find it in the code in the panel (ADR 0204 A.5, A.7)", () => {
   });
   const at = (find: Api.FindEntryViewT, more: Partial<Api.ConnectViewT> = {}) =>
     plain(html(base({ mechanism: "declared", declared: d, find, ...more })));
+  it("lists the calls beside a declared arrow, never in their place (the review, B.1)", () => {
+    const candidates: Api.LinkCandidatesViewT = {
+      from: "forge-edge-proxy",
+      to: LEDGER.box,
+      toName: "forge-ledger-svc",
+      calls: [
+        {
+          fact: "call.f-1",
+          callType: "rest",
+          path: "/holds/{id}",
+          at: "a.java:3",
+          status: "joined",
+          joins: "forge-billing",
+        },
+      ],
+      apis: [{ id: "e-1", kind: "entry", path: "/holds/{id}" }],
+    };
+    const h = plain(html(base({ mechanism: "calls", declared: d, candidates })));
+    expect(h).toContain(
+      W.declaredPanel("Ada Example", "2026-11-18", "forge-edge-proxy", "forge-ledger-svc", d.why),
+    );
+    expect(h).toContain("/holds/{id}");
+    expect(h).not.toContain(W.noneOfThese);
+  });
   it("offers the find on a declared arrow, and says each outcome with its way on", () => {
     expect(plain(html(base({ mechanism: "declared", declared: d })))).toContain(W.find);
     const found = at(

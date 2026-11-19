@@ -200,6 +200,11 @@ describe("a declared arrow (ADR 0204 1.4 to 1.7, 2.2, 2.4)", () => {
     });
     expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
     expect(await declared()).toHaveLength(1);
+    // The review (B.1): the declared arrow never hides A's calls that could be B's.
+    const listed = await connect(`repo:${A}`, `repo:${B}`);
+    expect(listed.mechanism).toBe("calls");
+    expect(listed.declared?.why).toBe("Orders posts holds to the ledger.");
+    expect(listed.candidates?.calls.some((c) => c.joins === C)).toBe(true);
     // A person pairs one of A's calls with B: a real call A → B, so the declared one goes.
     const pair = await job("/api/map/edits", {
       edits: [{ kind: "add", pair: { from: A, to: { repo: B }, pairs: [CALLS.mine] } }],

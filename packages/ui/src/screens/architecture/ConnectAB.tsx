@@ -189,6 +189,8 @@ function Mechanism(p: {
       {v.needs.map((n) => (
         <Need key={`${n.need}:${n.end}`} n={n} v={v} pick={p.pick} reload={p.reload} io={p.io} />
       ))}
+      {/* The review: a declared arrow is said beside the calls, never in their place (B.1). */}
+      {v.declared && <Declared v={v} d={v.declared} io={p.io} reload={p.reload} />}
       {v.mechanism === "calls" && v.candidates && (
         <>
           <Pairing
@@ -196,7 +198,7 @@ function Mechanism(p: {
             box={v.to}
             cands={{ state: "ready", data: v.candidates, reload: p.reload }}
           />
-          {!declaring && (
+          {!declaring && !v.declared && (
             <button type="button" className="btn" onClick={() => setDeclaring(true)}>
               {W.noneOfThese}
             </button>
@@ -207,9 +209,6 @@ function Mechanism(p: {
         <button type="button" className="btn" onClick={p.onShown}>
           {W.show}
         </button>
-      )}
-      {v.mechanism === "declared" && v.declared && (
-        <Declared v={v} d={v.declared} io={p.io} reload={p.reload} />
       )}
       {(v.mechanism === "declare" ||
         declaring ||
@@ -426,7 +425,8 @@ function FindOutcome(p: { v: Api.ConnectViewT; e: Api.FindEntryViewT; by: string
           .map((c) => (c.suggestion ? { ...c, confident: true } : c)),
       }
     : undefined;
-  const pair = calls && calls.calls.length > 0 && (
+  // With the calls listed below (mechanism `calls`), they are paired there, not twice.
+  const pair = v.mechanism !== "calls" && calls && calls.calls.length > 0 && (
     <Pairing from={calls.from} box={v.to} cands={{ state: "ready", data: calls }} />
   );
   if (e.outcome === "found")

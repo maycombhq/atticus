@@ -201,7 +201,9 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     const v = Api.ConnectView.parse(
       (await g.call(`/api/connect?from=repo:${A}&to=repo:${B}`)).body,
     );
-    expect(v.mechanism).toBe("declared");
+    // The review (B.1): A's calls are listed, the declared arrow and its find beside them.
+    expect(v.mechanism).toBe("calls");
+    expect(v.declared?.why).toBe("Orders settles each day's holds into the ledger.");
     expect(v.find?.outcome).toBe("found-loose");
     expect(v.candidates?.calls.some((c) => c.fact === RELAY.id)).toBe(true);
   }, 300_000);

@@ -62,33 +62,29 @@ export async function connectView(
   const base = { from, to, fromName: a.name, toName: b.name, existing: 0 };
   const needs = [a.need, b.need].filter((x): x is Api.ConnectNeedT => !!x);
   const declared = arrowOf(root, op, from, to);
-  if (declared) {
+  /** A declared arrow's own words: who, when, why; the code now showing it; the last find. */
+  const declaredPart = async () => {
     const shown = (await lastBuildOf(root))?.declaredSuperseded?.find(
       (x) =>
         x.from === `${from.repo ? "repo" : "system"}:${boxWords(from)}` &&
         x.to === `${to.repo ? "repo" : "system"}:${boxWords(to)}`,
     );
-    // A.6: the last find of this arrow, and (A.5) the calls it found to connect or move.
+    // A.6: the last find of this arrow.
     const { readFindReport, findAgainOf, findFilesOf } = await import("./connect-find.js");
     const find = from.repo
       ? (
           await readFindReport(join(root, ...findFilesOf(root, from.repo, to).report.split("/")))
         ).find((e) => e.to.repo === to.repo && e.to.system === to.system)
       : undefined;
-    const pairable = find?.outcome === "found-loose" || find?.outcome === "elsewhere";
     return {
-      ...base,
-      mechanism: "declared",
-      needs,
-      declared,
+      declared: declared!,
       ...(shown ? { superseded: { calls: shown.calls }, existing: shown.calls } : {}),
       ...(find ? { find } : {}),
       ...(find?.outcome === "not-found"
         ? { findAgain: await findAgainOf(root, from.repo!, find) }
         : {}),
-      ...(pairable ? { candidates: (await candidatesOf(root, from.repo!, to, s)).view } : {}),
     };
-  }
+  };
   if (needs.some((n) => n.need !== "read" && n.need !== "verify"))
     return { ...base, mechanism: "needs", needs };
   // An outside system calling a gateway: its routes can be declared too (ADR 0200's list).
@@ -119,13 +115,24 @@ export async function connectView(
             ? `atticus verify ${x.repo}`
             : `atticus map --all --repos ${x.repo}`,
       });
+  const d = declared ? await declaredPart() : undefined;
   if (!from.repo || state(from.repo) || (to.system && !knownOutside(op, to.system)))
-    return { ...base, mechanism: "declare", needs, ...routes };
+    return d
+      ? { ...base, mechanism: "declared", needs, ...d, ...routes }
+      : { ...base, mechanism: "declare", needs, ...routes };
   const { view } = await candidatesOf(root, from.repo, to, s);
-  // B.1: any call of A's not inside A that doesn't go to B already could be B's.
+  // B.1: any call of A's not inside A that doesn't go to B already could be B's. A declared
+  // arrow never hides them (the review): `calls` wins, the declared arrow said beside it.
   const here = view.calls.filter((c) => c.status === "here" || c.status === "paired");
   const could = view.calls.filter((c) => c.status !== "here" && c.status !== "paired" && !c.inside);
-  const mechanism = could.length ? "calls" : here.length ? "connected" : "declare";
+  const mechanism =
+    could.length && !d?.superseded
+      ? "calls"
+      : d
+        ? "declared"
+        : here.length
+          ? "connected"
+          : "declare";
   return {
     ...base,
     existing: here.length,
@@ -133,6 +140,7 @@ export async function connectView(
     needs,
     candidates: view,
     ...routes,
+    ...(d ?? {}),
   };
 }
 
