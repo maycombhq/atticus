@@ -1,10 +1,47 @@
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
+import { hashParam } from "./screens.js";
+import { panelId } from "./ui.js";
 
 const W = COPY.waysOn;
 
 /** Set up › Catalog builds, opened at its Undo (the files it puts back are listed first). */
 export const UNDO_HREF = "#/catalog-builds?at=undo";
+/** The same page at its upgrade to source slots. */
+export const UPGRADE_HREF = "#/catalog-builds?at=upgrade";
+
+/** The panel of Catalog builds an address names (`?at=undo`, `?at=upgrade`), by its heading. */
+export const panelAsked = (hash: string): string | undefined => {
+  const at = hashParam(hash, "at");
+  return at === "undo"
+    ? panelId(COPY.catalogBuild.undoTitle)
+    : at === "upgrade"
+      ? panelId(COPY.catalogBuild.upgradeTitle)
+      : undefined;
+};
+
+/**
+ * Bring a panel of this page into view and give its heading the keyboard (WCAG 2.4.3: what
+ * follows the link is where Tab goes on from); false when the panel isn't on the page.
+ */
+export function showOnPage(id: string): boolean {
+  const head = typeof document === "undefined" ? null : document.getElementById(id);
+  if (!head) return false;
+  head.setAttribute("tabindex", "-1");
+  (head.closest("section") ?? head).scrollIntoView({ block: "start" });
+  head.focus({ preventScroll: true });
+  return true;
+}
+
+/**
+ * A panel link's click. When the address names that panel already (a second click: Undo, back
+ * up the page, Undo again) nothing changes and the page hears nothing, so the link shows the
+ * panel itself. From any other address the page shows it as it arrives (useShowPanel).
+ */
+export const showIfHere = (href: string) => (): void => {
+  const at = typeof location !== "undefined" && location.hash === href && panelAsked(href);
+  if (at) showOnPage(at);
+};
 
 /**
  * Beta.30: a refusal's one primary way on, the first of these its reasons have, wherever it is
@@ -102,7 +139,14 @@ export function ErrorWaysOn(p: {
             {W.buildAgainOn}
           </a>
         )}
-        <a className="btn" href={UNDO_HREF} onClick={p.onGo}>
+        <a
+          className="btn"
+          href={UNDO_HREF}
+          onClick={() => {
+            showIfHere(UNDO_HREF)();
+            p.onGo?.();
+          }}
+        >
           {W.undoLast}
         </a>
       </div>

@@ -17,7 +17,8 @@ const { COPY } = await import("../src/copy.js");
 const { JobFailed } = await import("../src/app/job.js");
 const { hashParam } = await import("../src/app/screens.js");
 const { View } = await import("../src/app/ui.js");
-const { ErrorWaysOn, refusalWay } = await import("../src/app/ways-on.js");
+const { ErrorWaysOn, refusalWay, showIfHere, UNDO_HREF, UPGRADE_HREF } =
+  await import("../src/app/ways-on.js");
 const { JobProgress } = await import("../src/app/job-progress.js");
 const { CopyButton } = await import("../src/screens/run/shared.js");
 const { applyStaged } = await import("../src/screens/architecture/EditMap.js");
@@ -116,6 +117,45 @@ describe("the address names a panel of Catalog builds", () => {
     props.ready = true;
     m.render();
     expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UPGRADE_PANEL}`]);
+  });
+});
+
+describe("a link to a panel, clicked when the address names that panel already", () => {
+  // The address doesn't change, so the page hears nothing: the link itself shows the panel.
+  it("the second click on Undo the last build scrolls there and gives it the keyboard again", () => {
+    const did = page([UNDO_PANEL]);
+    vi.stubGlobal("location", { hash: UNDO_HREF });
+    const m = mount(ErrorWaysOn as never, { short: true } as never);
+    const link = all(m.tree).find((e) => e.type === "a" && e.props.href === UNDO_HREF)!;
+    (link.props.onClick as () => void)();
+    expect(did).toEqual([
+      `tabindex=-1 ${UNDO_PANEL}`,
+      `scroll ${UNDO_PANEL}`,
+      `focus ${UNDO_PANEL} (no scroll)`,
+    ]);
+  });
+
+  it("from another address the click only follows the link (the page shows the panel as it arrives)", () => {
+    const did = page([UNDO_PANEL]);
+    vi.stubGlobal("location", { hash: "#/catalog-builds" });
+    let went = 0;
+    const m = mount(ErrorWaysOn as never, { onGo: () => void went++ } as never);
+    const link = all(m.tree).find((e) => e.type === "a" && e.props.href === UNDO_HREF)!;
+    (link.props.onClick as () => void)();
+    expect(did).toEqual([]);
+    // The app's boundary still lets go of its error.
+    expect(went).toBe(1);
+  });
+
+  it("the upgrade's link does the same", () => {
+    const did = page([UPGRADE_PANEL]);
+    vi.stubGlobal("location", { hash: UPGRADE_HREF });
+    showIfHere(UPGRADE_HREF)();
+    expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UPGRADE_PANEL}`]);
+    expect(UPGRADE_HREF).toBe("#/catalog-builds?at=upgrade");
+    vi.stubGlobal("location", { hash: UNDO_HREF });
+    showIfHere(UPGRADE_HREF)();
+    expect(did.filter((x) => x.startsWith("scroll"))).toHaveLength(1);
   });
 });
 

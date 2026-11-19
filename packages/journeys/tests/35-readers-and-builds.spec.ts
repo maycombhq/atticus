@@ -249,15 +249,34 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
 // It scrolls there and gives it the keyboard: on arrival, once the page has loaded (the panels
 // above it grow as they load), and when the address changes on the page itself.
 async function opensAtUndo(page: Page): Promise<void> {
+  // One panel of the page fails to load, so it offers the link ("Undo the last build").
+  await page.route("**/api/build/prune", (r) =>
+    r.fulfill({
+      status: 500,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ type: "about:blank", title: "Stand-in failure", status: 500 }),
+    }),
+  );
   const undo = page.getByRole("heading", { name: "Undo", exact: true });
   await page.evaluate(`location.hash = '#/catalog-builds?at=undo'`);
   await expect(undo).toBeInViewport();
   await expect(undo).toBeFocused();
   // Already on the page, away from Undo: the link goes there again.
   await page.evaluate(`location.hash = '#/catalog-builds'`);
-  await page.locator("#p-catalog-builds").scrollIntoViewIfNeeded();
-  await page.getByRole("link", { name: "Readers found / facts say" }).first().focus();
-  await page.evaluate(`location.hash = '#/catalog-builds?at=undo'`);
+  const away = async () => {
+    await page.locator("#p-catalog-builds").scrollIntoViewIfNeeded();
+    await page.getByRole("link", { name: "Readers found / facts say" }).first().focus();
+    await expect(undo).not.toBeFocused();
+  };
+  await away();
+  const link = page.getByRole("link", { name: "Undo the last build" }).first();
+  await link.click();
+  await expect(undo).toBeInViewport();
+  await expect(undo).toBeFocused();
+  // The second click: the address says ?at=undo already, and the link still goes there.
+  await away();
+  await expect(page).toHaveURL(/#\/catalog-builds\?at=undo$/);
+  await link.click();
   await expect(undo).toBeInViewport();
   await expect(undo).toBeFocused();
 }

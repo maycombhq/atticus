@@ -5,8 +5,18 @@ import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
-import { hashParam } from "../../app/screens.js";
-import { ErrorWaysOn, InstallCopy, refusalWay, SupportBundle } from "../../app/ways-on.js";
+import {
+  ErrorWaysOn,
+  InstallCopy,
+  panelAsked,
+  refusalWay,
+  showIfHere,
+  showOnPage,
+  SupportBundle,
+  UPGRADE_HREF,
+} from "../../app/ways-on.js";
+
+export { panelAsked };
 import { Panel, panelId, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command } from "../work/RunNext.js";
@@ -258,23 +268,6 @@ const W = COPY.waysOn;
 /** The panels of Catalog builds a link elsewhere opens the page at (`?at=`), by their headings. */
 export const UPGRADE_PANEL = panelId(B.upgradeTitle);
 export const UNDO_PANEL = panelId(B.undoTitle);
-/** Catalog builds' address with the panel to show: `#/catalog-builds?at=undo`. */
-export const panelAsked = (hash: string): string | undefined => {
-  const at = hashParam(hash, "at");
-  return at === "undo" ? UNDO_PANEL : at === "upgrade" ? UPGRADE_PANEL : undefined;
-};
-/**
- * Bring a panel of this page into view and give its heading the keyboard (WCAG 2.4.3: what
- * follows the link is where Tab goes on from); false when the panel isn't on the page.
- */
-function showOnPage(id: string): boolean {
-  const head = typeof document === "undefined" ? null : document.getElementById(id);
-  if (!head) return false;
-  head.setAttribute("tabindex", "-1");
-  (head.closest("section") ?? head).scrollIntoView({ block: "start" });
-  head.focus({ preventScroll: true });
-  return true;
-}
 /**
  * The panel the page's address names is shown once the page has loaded (`ready`: before that
  * the panels above it are still growing, and would push it away again), and again whenever the
@@ -518,7 +511,7 @@ export function RefusalView(p: {
                 {W.upgradeBelow}
               </button>
             ) : (
-              <a className={btn("upgrade")} href={`#/catalog-builds?at=upgrade`}>
+              <a className={btn("upgrade")} href={UPGRADE_HREF} onClick={showIfHere(UPGRADE_HREF)}>
                 {W.upgradeOnBuilds}
               </a>
             )}

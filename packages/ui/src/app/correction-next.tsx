@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { ApplyAndPropose, CATALOG_BUILDS_HREF, trustHref } from "./propose.js";
-import { InstallCopy, refusalWay, SupportBundle } from "./ways-on.js";
+import { InstallCopy, refusalWay, showIfHere, SupportBundle, UPGRADE_HREF } from "./ways-on.js";
 import type { Api } from "@maycombhq/core";
 import { useJobRead, type JobWaitParts, type Loaded } from "../api/client.js";
 import { JobStoppedNote, JobWait } from "./job-wait.js";
@@ -158,7 +158,7 @@ function PreviewBody({ v }: { v: Preview }) {
                 {N.confirmUpgrade}
               </p>
               <div>
-                <a className="btn primary" href={`${CATALOG_BUILDS_HREF}?at=upgrade`}>
+                <a className="btn primary" href={UPGRADE_HREF} onClick={showIfHere(UPGRADE_HREF)}>
                   {WY.upgradeOnBuilds}
                 </a>
               </div>
