@@ -41,6 +41,7 @@ import { answerAsJob } from "./ui-api-activity.js";
 import { estateJoinOnFile, stampOf } from "./contract-check-files.js";
 import { appendLines, safeMessage } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
+import { decidedOf, overridesCodeWords } from "./link-how.js";
 import { writeProgress } from "./write-progress.js";
 
 /**
@@ -444,11 +445,26 @@ async function candidatesIn(
       : {}),
     inBox,
   });
-  if (drawn) return { ...cands, noCatalog: false };
+  // Beta.30: how each call that goes somewhere was decided, with what the files say (when,
+  // which question, a pairing's reason), and the box its cited line names when that is another.
+  const decided = await decidedOf(root, from, c.op, c.facts);
+  const calls = cands.calls.map((x) => {
+    const how = decided.how(x);
+    const names = decided.codeNames(x.fact);
+    const { how: _how, ...rest } = x;
+    return {
+      ...rest,
+      ...(how ? { how } : {}),
+      ...(names && !inBox(names.box) && names.box !== (to.repo ?? to.system)
+        ? { codeNames: names }
+        : {}),
+    };
+  });
+  if (drawn) return { ...cands, calls, noCatalog: false };
   // No catalog built yet: the map draws nothing, so no pairing is drawn (ADR 0199).
   return {
     ...cands,
-    calls: cands.calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
+    calls: calls.map((x) => (x.status === "paired" ? { ...x, drawn: false } : x)),
     noCatalog: true,
   };
 }
@@ -548,11 +564,20 @@ export async function alreadyPairedOf(
  */
 export async function pairingsOf(
   root: string,
-  req: { from: string; to: Api.LinkBoxT; pairs: readonly { call: string; api: string }[] },
+  req: {
+    from: string;
+    to: Api.LinkBoxT;
+    pairs: readonly { call: string; api: string; reason?: string | undefined }[];
+  },
   o: {
     by: string;
     at: string;
     steps?: LinkSteps;
+    /**
+     * Beta.30: refuse (409) a pair of a call whose cited line names another box unless it says
+     * why (Connect to…): a person overrides what the code says knowingly, with a reason.
+     */
+    needReason?: boolean;
     /**
      * A pair the call has already (an arrow to that very API, or a person's pairing with it):
      * `refuse` (Connect to…, 409) or `skip` (Edit the map: a staged change a terminal's write
@@ -595,6 +620,10 @@ export async function pairingsOf(
     o.already ??
     (pairs.length ? await alreadyIn(root, from, to, c, o.steps) : new Map<string, string>());
   const skipped: { call: string; api: string; said: string }[] = [];
+  const decided = o.needReason ? await decidedOf(root, from, c.op, c.facts) : undefined;
+  const inBox = inBoxOf(c.op, to);
+  // The pairs that go over what the call's line names and say no reason: all refused together.
+  const lacking: Api.PairNeedsReasonT[] = [];
   for (const p of pairs) {
     if (already.get(p.call) === p.api) {
       const said = `${p.call} goes to ${p.api} of ${c.b.name} already: nothing to write for it.`;
@@ -611,6 +640,9 @@ export async function pairingsOf(
         : notFound(`${from} has no call ${p.call} on record.`);
     const api = apis.get(p.api);
     if (!api) throw notFound(`${c.b.name} has no API ${p.api} on record.`);
+    const names = p.reason ? undefined : decided?.codeNames(f.id);
+    if (names && !inBox(names.box) && names.box !== (to.repo ?? to.system))
+      lacking.push({ call: f.id, at: `${f.cite.file}:${f.cite.line}`, ...names });
     corrections.push(
       FactCorrection.parse({
         schemaVersion: 1,
@@ -623,11 +655,19 @@ export async function pairingsOf(
           ...(api.method ? { method: api.method } : {}),
           path: api.path,
         },
+        ...(p.reason ? { reason: p.reason } : {}),
         by: o.by,
         at: o.at,
       }),
     );
   }
+  if (lacking.length)
+    throw new HttpError(
+      409,
+      "Conflict",
+      lacking.map((x) => overridesCodeWords({ id: x.call, at: x.at }, x, c.b.name)).join(" "),
+      { needsReason: lacking },
+    );
   return {
     corrections,
     rel: `${factsRelOf(root)}/${from}.corrections.jsonl`,
@@ -693,7 +733,7 @@ export function uiLinkRoutes(
           const { corrections } = await pairingsOf(
             ctx.root,
             { from, to, pairs },
-            { by: ctx.user, at, steps: s },
+            { by: ctx.user, at, steps: s, needReason: true },
           );
           let ruleOut: Api.ConnectLinksResultT["rule"];
           const q = rule ? await openRuleQuestion(ctx.root, from) : undefined;

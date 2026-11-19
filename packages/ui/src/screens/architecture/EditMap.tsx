@@ -12,6 +12,7 @@ import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
 import { MapIcon } from "./MapBar.js";
 import { pairedStanding, pairedWho } from "./paired-standing.js";
+import { howWords } from "./Connect.js";
 import {
   addKeys,
   countsWords,
@@ -255,7 +256,16 @@ export interface PairRow {
   pairedAi?: boolean;
   /** ADR 0199 (M1): the box that pairing names, a gateway that forwards the call to `joins`. */
   pairedWith?: string;
+  /** Beta.30: how the box it goes to today was decided, in words (`howWords`). */
+  how?: string;
+  /** Beta.30 (the review): the box the call's line names; pairing it elsewhere takes a reason. */
+  codeNames?: { box: string; text: string };
+  reason?: string;
 }
+
+/** A row picked for a box other than the one its line names, with no reason yet. */
+export const lacksReason = (rows: readonly PairRow[]): boolean =>
+  rows.some((r) => r.api && r.codeNames && (r.reason ?? "").trim().length < 3);
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
 
@@ -272,6 +282,7 @@ export function pairRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       label: `${x.method ? `${x.method} ` : ""}${x.path}`,
       at: x.at,
       api: x.confident && x.suggestion ? x.suggestion.api : "",
+      ...(x.codeNames ? { codeNames: x.codeNames } : {}),
     }));
 }
 
@@ -292,6 +303,8 @@ export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
       ...(x.pairedAi ? { pairedAi: true } : {}),
       ...(x.pairedWith ? { pairedWith: x.pairedWith } : {}),
+      ...(howWords(x) ? { how: howWords(x)! } : {}),
+      ...(x.codeNames ? { codeNames: x.codeNames } : {}),
     }));
 }
 
@@ -303,6 +316,7 @@ export function MoveCallsView(p: {
   apis: readonly Api.LinkCandidatesViewT["apis"][number][];
   open: boolean;
   onPick(call: string, api: string): void;
+  onReason?(call: string, reason: string): void;
 }) {
   if (!p.rows.length) return null;
   return (
@@ -313,6 +327,8 @@ export function MoveCallsView(p: {
         rows={p.rows}
         apis={p.apis}
         onPick={p.onPick}
+        toName={p.toName}
+        {...(p.onReason ? { onReason: p.onReason } : {})}
       />
     </details>
   );
@@ -383,13 +399,31 @@ export function drawsAnother(
   return rows.filter((r) => r.api && !loose.has(r.call) && !own.has(r.at));
 }
 
+/** A redirect's rows with the box each call's line names, as the read of the two boxes says it. */
+export function withCodeNames<T extends { rows: PairRow[] }>(
+  made: T,
+  c: Api.LinkCandidatesViewT,
+): T {
+  const names = new Map(c.calls.flatMap((x) => (x.codeNames ? [[x.fact, x.codeNames]] : [])));
+  return {
+    ...made,
+    rows: made.rows.map((r) => (names.has(r.call) ? { ...r, codeNames: names.get(r.call)! } : r)),
+  };
+}
+
 /** The pairing the rows say, or none when no call has an API picked. */
 export function pairOf(
   from: string,
   to: Api.LinkBoxT,
   rows: readonly PairRow[],
 ): Api.MapEditPairT | undefined {
-  const pairs = rows.filter((r) => r.api).map((r) => ({ call: r.call, api: r.api }));
+  const pairs = rows
+    .filter((r) => r.api)
+    .map((r) => ({
+      call: r.call,
+      api: r.api,
+      ...((r.reason ?? "").trim() ? { reason: r.reason!.trim() } : {}),
+    }));
   return pairs.length ? { from, to: { ...to }, pairs } : undefined;
 }
 
@@ -399,6 +433,9 @@ export function PairRowsView(p: {
   rows: readonly PairRow[];
   apis: readonly Api.LinkCandidatesViewT["apis"][number][];
   onPick(call: string, api: string): void;
+  /** Beta.30 (the review): the box connected to, and where a row's reason is kept. */
+  toName?: string;
+  onReason?(call: string, reason: string): void;
 }) {
   const id = useId();
   return (
@@ -411,14 +448,17 @@ export function PairRowsView(p: {
             {r.joins && (
               <span className="hud">
                 {" · "}
-                {r.pairedBy
-                  ? E.add.pairedWith(
-                      r.pairedBy,
-                      r.pairedWith ?? r.joins,
-                      !!r.pairedAi,
-                      r.pairedWith ? r.joins : undefined,
-                    )
-                  : E.add.joinsNow(r.joins)}
+                {r.how && !r.pairedBy
+                  ? // Beta.30: where it goes today and how that was decided, as Connect says it.
+                    COPY.connect.goesToday(r.joins, r.how)
+                  : r.pairedBy
+                    ? E.add.pairedWith(
+                        r.pairedBy,
+                        r.pairedWith ?? r.joins,
+                        !!r.pairedAi,
+                        r.pairedWith ? r.joins : undefined,
+                      )
+                    : E.add.joinsNow(r.joins)}
               </span>
             )}
           </label>
@@ -436,6 +476,24 @@ export function PairRowsView(p: {
               </option>
             ))}
           </select>
+          {r.api && r.codeNames && p.onReason && (
+            // As Connect to…: the line names another box, so the person says why (rule 6).
+            <>
+              <span className="hud" role="note">
+                {COPY.connect.overridesCode(r.codeNames.text, r.codeNames.box, p.toName ?? "it")}
+              </span>
+              <input
+                type="text"
+                className="field"
+                aria-label={COPY.connect.reasonLabel(r.label)}
+                placeholder={COPY.connect.reasonHint}
+                maxLength={500}
+                required
+                value={r.reason ?? ""}
+                onChange={(e) => p.onReason!(r.call, e.target.value)}
+              />
+            </>
+          )}
         </div>
       ))}
     </fieldset>
@@ -500,7 +558,7 @@ function PairFields(p: {
   const ready = cands.state === "ready" && (!p.redirect || facts.state === "ready");
   const made = ready
     ? p.redirect && facts.state === "ready" && cands.state === "ready"
-      ? pairRowsForRedirect(facts.data, p.redirect, cands.data.apis)
+      ? withCodeNames(pairRowsForRedirect(facts.data, p.redirect, cands.data.apis), cands.data)
       : cands.state === "ready"
         ? {
             rows: [...pairRowsForAdd(cands.data), ...movableRowsForAdd(cands.data)],
@@ -581,6 +639,11 @@ function PairFields(p: {
             p.rows.map((r) => (r.call === call ? { ...r, api } : r)),
             cands.data.apis.length,
           );
+        const reason = (call: string, why: string) =>
+          p.onPairs(
+            p.rows.map((r) => (r.call === call ? { ...r, reason: why } : r)),
+            cands.data.apis.length,
+          );
         // An add lists its loose calls, then the ones with an arrow to move here (field report 4).
         const move = p.redirect ? [] : p.rows.filter((r) => r.joins !== undefined);
         const loose = p.redirect ? p.rows : p.rows.filter((r) => r.joins === undefined);
@@ -592,6 +655,8 @@ function PairFields(p: {
                 rows={loose}
                 apis={cands.data.apis}
                 onPick={pick}
+                toName={cands.data.toName}
+                onReason={reason}
               />
             )}
             <MoveCallsView
@@ -601,6 +666,7 @@ function PairFields(p: {
               apis={cands.data.apis}
               open={!loose.length}
               onPick={pick}
+              onReason={reason}
             />
           </>
         );
@@ -647,6 +713,7 @@ export function AddLinkForm(p: {
       if (!target?.link) return setError(E.add.toPickNone);
       const pair = pairOf(src.repo, target.link, rows);
       if (!pair) return setError(E.add.pickOne);
+      if (lacksReason(rows)) return setError(COPY.connect.moveNeedsReason);
       link = { by: "pair", pair, from: src.label, to: target.label };
     } else {
       const add = addOf(src.system!, kind, value);

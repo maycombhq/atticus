@@ -464,7 +464,8 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         const { problems, callers, waitsOn } = await checkMapEdits(root, b.edits);
         if (problems.length)
           throw new HttpError(
-            422,
+            // Beta.30: a pair that only lacks its reason is Connect to…'s 409.
+            problems.some((p) => p.needsReason?.length) ? 409 : 422,
             "Some changes can't be made",
             `${problems.length} of the ${b.edits.length} changes can't be made: ${problems.map((p) => `change ${p.edit + 1}: ${p.message}`).join(" ")} Nothing was written.`,
             { problems },
