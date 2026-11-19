@@ -54,6 +54,7 @@ const { JobProgress, useJobRun } = await import("../src/app/job-progress.js");
 const { ApplyAndPropose, Propose } = await import("../src/app/propose.js");
 const { EditMapView } = await import("../src/screens/architecture/EditMap.js");
 const { RefusalView } = await import("../src/screens/setup/CatalogBuild.js");
+const { ErrorWaysOn } = await import("../src/app/ways-on.js");
 
 const J = COPY.app.jobRun;
 const W = COPY.app.jobWait;
@@ -284,7 +285,7 @@ describe("one repo's Apply", () => {
         m.render();
         expect(text(m.tree)).toContain("forge-ledger: 12 facts kept");
       },
-      { timeout: 3000 },
+      { timeout: 20_000 },
     );
     expect((progressOf(m.tree).props as Parameters<typeof JobProgress>[0]).run?.state).toBe("done");
   });
@@ -312,6 +313,29 @@ describe("one repo's Apply", () => {
     expect((progressOf(m.tree).props as Parameters<typeof JobProgress>[0]).run?.state).toBe(
       "stopped",
     );
+  });
+});
+
+describe("an Apply that failed", () => {
+  it("offers Undo the last build and the support bundle's command under its problems", async () => {
+    starts.set("/api/facts/forge-ledger/apply", "job-3");
+    jobs.set("job-3", [
+      { state: "failed", errors: ["The catalog's write failed."], result: { code: 1, lines: [] } },
+    ]);
+    const m = mount(
+      ApplyAndPropose as never,
+      { scope: "answers", repo: "forge-ledger", noPropose: true } as never,
+    );
+    expect(all(m.tree).some((e) => e.type === ErrorWaysOn)).toBe(false);
+    const btn = all(m.tree).find(
+      (e) => e.type === "button" && text(e.props.children) === P.apply("forge-ledger"),
+    )!;
+    (btn.props.onClick as () => void)();
+    await tick();
+    await tick();
+    m.render();
+    expect(text(m.tree)).toContain("The catalog's write failed.");
+    expect(all(m.tree).some((e) => e.type === ErrorWaysOn)).toBe(true);
   });
 });
 

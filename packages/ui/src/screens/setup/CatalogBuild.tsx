@@ -5,6 +5,7 @@ import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
+import { ErrorWaysOn } from "../../app/ways-on.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
@@ -1160,9 +1161,21 @@ export function CatalogBuildsPage(p: {
               {/* Build now's step, time and Stop (heard until the write), then how it ended. */}
               <JobProgress what={B.building} run={job.run} onStop={job.stop} />
               {error && (
-                <p className="state error" role="alert" style={{ margin: 0 }}>
-                  {error}
-                </p>
+                <>
+                  <p className="state error" role="alert" style={{ margin: 0 }}>
+                    {error}
+                  </p>
+                  {/* Beta.30: Build again (as Build now ran it), Undo below, the bundle. */}
+                  <ErrorWaysOn
+                    short
+                    onAgain={() => {
+                      setError(undefined);
+                      job
+                        .watch((on) => p.run("/api/build", { plan: v.pending.plan }, on))
+                        .catch((e: unknown) => setError(B.failed(whyStopped(e))));
+                    }}
+                  />
+                </>
               )}
               {v.orphaned.map((o) => (
                 <p key={o.repo} className="work-say" style={{ margin: 0 }}>

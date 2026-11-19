@@ -19,6 +19,7 @@ import { ShowInConsole } from "./activity.js";
 import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
 import { JobProgress, useJobRun, type JobHears } from "./job-progress.js";
 import { SyncFirst } from "./sync-first.js";
+import { ErrorWaysOn } from "./ways-on.js";
 import { curateListedEdits, InstallCopy, RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
@@ -294,6 +295,9 @@ export function ApplyAndPropose(p: {
           <Note note={apply.note} />
           {applied && applied.length > 0 && stepLines(applied, inPanel)}
           <LeftOutWay repo={p.repo} n={leftOut} />
+          {/* Beta.30: an Apply that failed (no refusal, no Sync to do first): the button above
+              applies again; Undo and the support bundle's command are here. */}
+          {job.run?.state === "failed" && !refused && !next && !apply.busy && <ErrorWaysOn short />}
           {next && <SyncFirst repos={next.repos} />}
           {refused &&
             applyRefused({

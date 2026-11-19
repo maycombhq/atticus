@@ -6,7 +6,8 @@ import { ShowInConsole } from "../../app/activity.js";
 import { RunWithCopilot, useCopilotRuns, type StartAsk } from "../../app/copilot-runs.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobProgress, useJobRun, type JobRun } from "../../app/job-progress.js";
-import { RefusalLink } from "../../app/propose.js";
+import { CATALOG_BUILDS_HREF, RefusalLink } from "../../app/propose.js";
+import { ErrorWaysOn } from "../../app/ways-on.js";
 import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
 import { MapIcon } from "./MapBar.js";
@@ -1070,9 +1071,12 @@ export function EditMapView(p: {
             </p>
           )}
           {a.state === "failed" && (
-            <p className="state error" role="alert" style={{ margin: 0 }}>
-              {a.outcomes ? E.failedLine : E.failed(a.text)}
-            </p>
+            <>
+              <p className="state error" role="alert" style={{ margin: 0 }}>
+                {a.outcomes ? E.failedLine : E.failed(a.text)}
+              </p>
+              <ErrorWaysOn short againHref={CATALOG_BUILDS_HREF} />
+            </>
           )}
           {!busy && a.state !== "confirm" && p.add}
         </>
