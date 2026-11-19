@@ -31,6 +31,7 @@ import {
   storiesStage,
   suggestedOperationOrder,
   withOperationStories,
+  redactWords,
   type Estate,
 } from "../src/index.js";
 
@@ -791,6 +792,75 @@ describe("the review's other refusals", () => {
       ]);
   });
 
+  it("an undo that only says it doesn't apply is refused for a cut-over", async () => {
+    const e = await estate(await estateRoot());
+    for (const undo of [
+      "Not applicable here.",
+      "Not applicable to this cut-over.",
+      "None needed for this one.",
+      "Nothing to undo here.",
+      "No undo is needed.",
+      "It doesn't apply to a cut-over.",
+      "This does not apply here.",
+    ])
+      expect(rules(OPERATIONS.replace(/ {4}undo: .*\n/, `    undo: "${undo}"\n`), e), undo).toEqual(
+        [
+          "operation.no-undo: Operation switch is a cut-over and gives no undo: say under undo how it is taken back, in one or two sentences.",
+        ],
+      );
+    // A real one passes, even when it says what doesn't need undoing.
+    expect(
+      rules(
+        OPERATIONS.replace(
+          / {4}undo: .*\n/,
+          "    undo: Point the route back; the settings need no undo, they are read only by the new deployment.\n",
+        ),
+        e,
+      ),
+    ).toEqual([]);
+  });
+
+  it("an explicit deploy order may not put an operation before the flow migration or code it needs", () => {
+    const o = ops();
+    const flows: { repo: string; migration?: string; operation?: string }[] = [
+      { repo: "forge-orders", migration: "V4__add_fraud_verdict.sql" },
+      { repo: "forge-orders" },
+    ];
+    const good = [...flows, ...suggestedOperationOrder(o.operations, o.waves)];
+    expect(operationDeployIssues(o.operations, o.waves, good, flows)).toEqual([]);
+    // The cut-over in forge-orders before forge-orders' migration and code.
+    const cut = good.findIndex((x) => x.operation === "switch" && x.repo === "forge-orders");
+    const early = [good[cut]!, ...good.filter((_, i) => i !== cut)];
+    expect(
+      operationDeployIssues(o.operations, o.waves, early, flows).map(
+        (i) => `${i.rule}: ${i.message}`,
+      ),
+    ).toEqual([
+      "delta.deploy-order: The deploy order puts operation switch in forge-orders (step 1) before deploy-new (step 4), which it comes after: deploy-new goes first.",
+      "delta.deploy-order: The deploy order puts operation switch in forge-orders (step 1) before migration V4__add_fraud_verdict.sql in forge-orders (step 2), which it needs: a cut-over moves traffic once its repo's migrations and code are in. Put it after.",
+      "delta.deploy-order: The deploy order puts operation switch in forge-orders (step 1) before forge-orders's code (step 3), which it needs: a cut-over moves traffic once its repo's migrations and code are in. Put it after.",
+    ]);
+    // An operation that names the migration comes after it, in any repo.
+    const named = OperationsFile.parse({
+      schemaVersion: 1,
+      change: CHANGE,
+      operations: [
+        {
+          id: "backfill",
+          kind: "config",
+          repos: ["forge-infra"],
+          what: "Turn the backfill job on once V4__add_fraud_verdict.sql has run.",
+        },
+      ],
+    });
+    const order = [{ repo: "forge-infra", operation: "backfill" }, ...flows];
+    expect(
+      operationDeployIssues(named.operations, undefined, order, flows).map((i) => i.message),
+    ).toEqual([
+      "The deploy order puts operation backfill in forge-infra (step 1) before migration V4__add_fraud_verdict.sql in forge-orders (step 2), which it needs: its words name that migration. Put it after.",
+    ]);
+  });
+
   it("an archived repo is refused, though the catalog still has its records", async () => {
     const root = await estateRoot();
     await mkdir(join(root, "org-pack/profiles/forge-old"), { recursive: true });
@@ -856,6 +926,48 @@ describe("the review's other refusals", () => {
     );
   });
 
+  it("redacts by the facts' rules: a password in prose, a credential with no scheme, only the value, and never a record id", async () => {
+    // Built from parts, so no credential-shaped literal sits in the repository.
+    const pass = ["hunter2", "s3cret"].join("-");
+    const dbPass = ["Tr0ub4dor", "x9"].join("-");
+    const key = ["pay", "api", "key"].join("-");
+    const token = ["sk", "live", "q8Rt2Lm9Wx4Zp7Kc3Vn6Bh1J"].join("_");
+    const cases: [string, string][] = [
+      [`Set the password ${pass} in the vault.`, "Set the password <redacted> in the vault."],
+      [`Set the password to ${pass}.`, "Set the password to <redacted>."],
+      [
+        `Point it at svc:${dbPass}@db.forge.example:5432.`,
+        "Point it at svc:<redacted>@db.forge.example:5432.",
+      ],
+      [
+        `Point it at postgres://svc:${dbPass}@db.forge.example/orders.`,
+        "Point it at postgres://svc:<redacted>@db.forge.example/orders.",
+      ],
+      [`Give it ${key}: ${token} from the vault.`, `Give it ${key}: <redacted> from the vault.`],
+      [`Set ${key}=${token}.`, `Set ${key}=<redacted>.`],
+      // What names a secret stays, with nothing after it to hide.
+      [`Move ${key} to the new vault.`, `Move ${key} to the new vault.`],
+      [
+        `forge-orders.setting.${key}: Setting ${key} (config)`,
+        `forge-orders.setting.${key}: Setting ${key} (config)`,
+      ],
+      [
+        "Set the password policy from the vault: ${VAULT_PASS}.",
+        "Set the password policy from the vault: ${VAULT_PASS}.",
+      ],
+    ];
+    for (const [input, out] of cases) expect(redactWords(input), input).toBe(out);
+    // What runs today: the Setting's record id and key stay, so the model can cite them.
+    const e = await estate(await estateRoot());
+    const setting = e.records.find(
+      (r) => r.id === "forge-orders.setting.stock-timeout",
+    ) as unknown as { id: string; key: string };
+    setting.key = key;
+    expect(runsTodaySource(e, ["forge-orders"])[0]!.text).toContain(
+      `forge-orders.setting.stock-timeout: Setting ${key} (timeout)`,
+    );
+  });
+
   it("a change with no operation gets stories.md and tasks.md exactly as the flows' stories wrote them", () => {
     const written = {
       index: "# Stories\n\n| Story | Title |\n",
@@ -882,5 +994,26 @@ describe("the review's other refusals", () => {
       deltas: [],
       problems: [],
     });
+  });
+
+  it("an operations-only design that names a table's column is done at architecture, never asked for data.md", async () => {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, { runtime: assistant([FEATURE]), now: NOW });
+    const drafts: string[] = [];
+    const r = await architectureStage(root, CHANGE, {
+      runtime: assistant(
+        [
+          ARCHITECTURE.replace(
+            "what: Carry the stock timeout over to the new platform's settings.",
+            "what: Carry the stock timeout over; orders.status is read as before.",
+          ),
+        ],
+        drafts,
+      ),
+      now: NOW,
+    });
+    expect(r.findings.filter((f) => f.blocking).map((f) => f.rule)).toEqual([]);
+    expect(r.state).toBe("done");
+    expect(drafts).toHaveLength(1);
   });
 });

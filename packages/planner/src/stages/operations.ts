@@ -28,8 +28,14 @@ type Rec = Estate["records"][number] & Record<string, unknown>;
 type Cite = { repo?: string; path?: string; line?: number };
 const TODAY_KINDS = ["Component", "Deployment", "Setting", "GatewayRoute", "Endpoint"];
 /** An undo that says how: not empty, a dash, "n/a", "none" or "tbd", and more than a word. */
+/**
+ * An undo that says how: not empty, a dash, "n/a", "none" or "tbd", more than a word, and not a
+ * sentence that only says no undo applies ("Not applicable here.", "Nothing to undo.").
+ */
+const NO_UNDO =
+  /^(?:(?:it|this|that)\s+)?(?:n\/?a|none(?:\s+needed)?|tbd|todo|-+|not\s+applicable|(?:does\s*n[o']t|does\s+not|doesn't)\s+apply|nothing\s+to\s+undo|no\s+undo(?:\s+is)?(?:\s+needed)?)\b(?:\s+(?:here|to\s+.+|for\s+.+|needed|is\s+needed))?$/i;
 const realUndo = (undo: string | undefined) =>
-  !!undo && bare(undo).length >= 10 && !/^(n\/?a|none|tbd|todo|-+)$/i.test(bare(undo));
+  !!undo && bare(undo).length >= 10 && !NO_UNDO.test(bare(undo));
 const andList = (xs: string[]) =>
   xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
@@ -379,6 +385,8 @@ export function operationDeployIssues(
   ops: readonly Operation[],
   waves: readonly Wave[] | undefined,
   deploy: readonly DeployStep[] | undefined,
+  /** The target flows' own steps (each repo's code, each migration), as suggestedDeploy gives them. */
+  flowSteps: readonly DeployStep[] = [],
 ): StageIssue[] {
   if (!ops.length || !deploy?.length) return [];
   const out: StageIssue[] = [];
@@ -429,6 +437,27 @@ export function operationDeployIssues(
           `The deploy order puts operation ${o.id} in ${repo} (step ${at}), of wave ${w}, before the last step of wave ${w - 1} (step ${lastOfWave(w - 1)}): a wave starts once the wave before it is done.`,
           repo,
         );
+    }
+  // ADR 0203 review: an operation after the flow steps it needs. A cut-over moves traffic once its
+  // repo's migrations and code are in; an operation that names a migration comes after it.
+  const flowAt = (f: DeployStep) =>
+    deploy.findIndex((s) => !s.operation && s.repo === f.repo && s.migration === f.migration) + 1;
+  for (const o of ops)
+    for (const repo of o.repos) {
+      const at = pos(o.id, repo);
+      if (!at) continue;
+      for (const f of flowSteps) {
+        const byCut = o.kind === "cut-over" && f.repo === repo;
+        const byName = !!f.migration && o.what.includes(f.migration);
+        const there = flowAt(f);
+        if (!(byCut || byName) || !there || there < at) continue;
+        issue(
+          "deploy-order",
+          `deploy:${f.migration ?? f.repo}>${o.id}:${repo}`,
+          `The deploy order puts operation ${o.id} in ${repo} (step ${at}) before ${f.migration ? `migration ${f.migration} in ${f.repo}` : `${f.repo}'s code`} (step ${there}), which it needs: ${byName ? "its words name that migration" : "a cut-over moves traffic once its repo's migrations and code are in"}. Put it after.`,
+          repo,
+        );
+      }
     }
   return out;
 }
