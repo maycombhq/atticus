@@ -1,6 +1,6 @@
 # 0203. The stages take work that is no runtime step, a person may accept a stage's finding, and a persona's naysayer is a lens
 
-- Status: proposed (for the owner's approval; nothing here is built)
+- Status: accepted (2026-11-18, by the owner, with the recommended answers: whoever accepts a finding may still approve the hand-off, as waivers today, each acceptance listed in the PR; a persona lens never holds a gate in beta.30; rollback is a required undo on every cut-over)
 - Date: 2026-11-18
 - Release: 2.0.0-beta.30, slices 3, 4 and 6 of [the plan](../plan/v30.md)
 - Amends: ADR 0087 (the stage loop's end rule; the stage files), ADR 0201 (point 8: the two rules that end a stage on its first draft)
