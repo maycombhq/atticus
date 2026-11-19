@@ -65,7 +65,7 @@ const SESSION_START = [
   "const next = read?.next;",
   "if (read === undefined) {",
   "  console.log(",
-  '    "This is an Atticus metarepo, but the atticus command line didn\'t answer. Install it (npm install -g @maycombhq/atticus, or the offline bundle) to take its steps; the /atticus-* commands need it.",',
+  '    "This is an Atticus metarepo, but the atticus command line didn\'t answer. Install it (npm install -g @maycombhq/atticus@__ATTICUS_VERSION__, or the offline bundle) to take its steps; the /atticus-* commands need it.",',
   "  );",
   "  process.exit(0);",
   "}",
@@ -300,7 +300,11 @@ export function claudeCodePluginFiles(version: string): PluginFile[] {
         },
       }),
     },
-    { path: "hooks/session-start.mjs", content: SESSION_START },
+    // Beta.30: the install line names this plugin's own version, which is the command line's.
+    {
+      path: "hooks/session-start.mjs",
+      content: SESSION_START.replaceAll("__ATTICUS_VERSION__", version),
+    },
     { path: "hooks/history.mjs", content: HISTORY_HOOK },
     { path: "bin/atticus-mcp.mjs", content: MCP_LAUNCHER },
     { path: "README.md", content: readme(commands.map((c) => c.name)) },

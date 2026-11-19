@@ -55,6 +55,18 @@ describe("the Claude Code plugin (ADR 0104)", () => {
     });
   });
 
+  it("says how to install the command line at the plugin's own version, when it doesn't answer (beta.30)", () => {
+    const hook = byPath.get("hooks/session-start.mjs")!;
+    expect(hook).toContain(
+      `Install it (npm install -g @maycombhq/atticus@${VERSION}, or the offline bundle)`,
+    );
+    expect(
+      claudeCodePluginFiles("2.0.0-beta.31").find((f) => f.path === "hooks/session-start.mjs")!
+        .content,
+    ).toContain("npm install -g @maycombhq/atticus@2.0.0-beta.31,");
+    expect(hook).not.toMatch(/@maycombhq\/atticus(,| |@latest|@beta\b(?!\.))/);
+  });
+
   it("is committed as the generator makes it, and listed in the repository's marketplace", () => {
     const stale = files.filter((f) => {
       const p = join(REPO, "plugins/atticus", f.path);
