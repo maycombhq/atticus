@@ -348,6 +348,34 @@ export function diffCatalogs(before: CatalogRecord[], after: CatalogRecord[]): C
   return diff;
 }
 
+/**
+ * ADR 0205 step 1: `diffCatalogs` of the records whose file a write added, changed or removed
+ * (`changed`, paths under catalog/generated, as `buildAndWrite` gives them), not of every record.
+ * A file whose text the write left as it was holds the record the read had: the same bytes, the
+ * same parse. The equivalence tests compute both and require them equal.
+ */
+export function diffCatalogFiles(
+  before: {
+    records: readonly CatalogRecord[];
+    files: ReadonlyMap<string, { record?: CatalogRecord }>;
+  },
+  after: readonly CatalogRecord[],
+  changed: readonly string[],
+): CatalogDiff {
+  const key = (r: Pick<CatalogRecord, "kind" | "id">) => `${r.kind}|${r.id}`;
+  const paths = new Set(changed);
+  const keys = new Set<string>();
+  for (const p of paths) {
+    const r = before.files.get(p)?.record;
+    if (r) keys.add(key(r));
+  }
+  for (const r of after) if (paths.has(recordPath(r))) keys.add(key(r));
+  return diffCatalogs(
+    before.records.filter((r) => keys.has(key(r))),
+    after.filter((r) => keys.has(key(r))),
+  );
+}
+
 export function diffIsEmpty(d: CatalogDiff): boolean {
   return d.added.length + d.removed.length + d.changed.length + d.evidenceOnly.length === 0;
 }

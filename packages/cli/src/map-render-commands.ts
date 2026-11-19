@@ -58,6 +58,7 @@ import {
   phaseClock,
   buildCatalog,
   buildLines,
+  diffCatalogFiles,
   diffCatalogs,
   factsSnapshotWrites,
   forgetKeptReads,
@@ -593,7 +594,9 @@ export async function projectFactsIntoCatalog(
     ...(mine?.answerMisses.length ? { answerMisses: mine.answerMisses } : {}),
   };
   const targets = mine?.targets ?? {};
-  const diff = diffCatalogs([...existing], result.records);
+  // ADR 0205 step 1: the whole comparison only when it is read (a preview's, or a write whose
+  // catalog read no longer matched the files); a write compares the files it changed.
+  let whole: CatalogDiff | undefined;
   const links = linkChanges(repo, result.join, existing, result.records);
   return {
     op,
@@ -604,7 +607,9 @@ export async function projectFactsIntoCatalog(
     ruled,
     estate,
     result,
-    diff,
+    get diff(): CatalogDiff {
+      return (whole ??= diffCatalogs([...existing], result.records));
+    },
     links,
     build,
     snap,
@@ -634,7 +639,13 @@ async function readContractsCompanion(root: string, repo: string) {
 }
 
 /** Tests hear each apply as it starts, under the lock (map-loop-count.test.ts counts them). */
-export const writeFactsHooks: { onWrite?: (repo: string) => void } = {};
+export const writeFactsHooks: {
+  onWrite?: (repo: string) => void;
+  /** ADR 0205 step 1, the way before it: the comparison over the whole catalog. */
+  fullDiff?: boolean;
+  /** The equivalence tests: each write's comparison of its changed files and of the whole catalog. */
+  onDiffs?: (changed: CatalogDiff, whole: CatalogDiff) => void;
+} = {};
 
 export async function writeFactsIntoCatalog(
   root: string,
@@ -728,20 +739,7 @@ export async function writeFactsIntoCatalog(
     await progress.step("Reading the repo's contract files");
     const contracts = await repoContractsOf(root, repo, o.dir, facts, (n) => io.err(n));
     const snapshotCommit = o.commit ?? snapshotCommitOf(facts);
-    const {
-      answered,
-      everyTarget,
-      targets,
-      ruled,
-      estate,
-      result,
-      diff,
-      links,
-      evidenceProblems,
-      sharedMaps,
-      build,
-      snap,
-    } = await projectFactsIntoCatalog(root, repo, facts, {
+    const projected = await projectFactsIntoCatalog(root, repo, facts, {
       op,
       existing: existing.records,
       contracts,
@@ -750,6 +748,19 @@ export async function writeFactsIntoCatalog(
       step: (what, brief) => progress.step(what, brief),
       tick: () => progress.tick(),
     });
+    const {
+      answered,
+      everyTarget,
+      targets,
+      ruled,
+      estate,
+      result,
+      links,
+      evidenceProblems,
+      sharedMaps,
+      build,
+      snap,
+    } = projected;
     mark("projection");
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
@@ -798,6 +809,13 @@ export async function writeFactsIntoCatalog(
     await progress.step("Writing specs");
     await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const w = built.write!;
+    // ADR 0205 step 1: what the write changed, compared record by record where the catalog read
+    // still matched the files; the whole catalog otherwise, or with the hook (the way before).
+    const fast = !writeFactsHooks.fullDiff && built.changedFiles !== undefined;
+    const diff = fast
+      ? diffCatalogFiles(existing, result.records, built.changedFiles!)
+      : projected.diff;
+    if (fast) writeFactsHooks.onDiffs?.(diff, projected.diff);
     const snapshot = {
       path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
       status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))

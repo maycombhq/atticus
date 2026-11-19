@@ -3630,6 +3630,12 @@ export interface BuildAndWrite {
    * that read still matched the files (beta.28.1: so the caller doesn't read 97,000 files again).
    */
   catalog?: CatalogRecord[];
+  /**
+   * ADR 0205 step 1: after a write, with `read`, the record files (paths under catalog/generated)
+   * whose text the write added, changed or removed, sorted; undefined where that read no longer
+   * matched the files (a caller then compares the whole catalog).
+   */
+  changedFiles?: string[];
   /** With `check`: whether catalog/generated is what the slots build. */
   upToDate?: boolean;
   /**
@@ -3847,6 +3853,17 @@ export async function buildAndWrite(
   });
   const after = catalogAfterWrite(build, target, onDisk, o.read);
   const catalog = after?.records;
+  // ADR 0205 step 1: what the write changed, by the hashes the guards read, where the caller's
+  // read is still the files the build was checked against.
+  const changedFiles =
+    o.read && sameFilesAs(o.read, target.generated, onDisk)
+      ? [
+          ...[...build.files].flatMap(([p, t]) =>
+            onDisk.get(p)?.sha === fileShaOf(build, p, t) ? [] : [p],
+          ),
+          ...[...onDisk.keys()].filter((p) => !build.files.has(p)),
+        ].sort(cmpText)
+      : undefined;
   mark("catalog after the write");
   // beta.28.2: the parses of the texts written kept for the next read, which parsed them again.
   if (after && o.read)
@@ -3857,7 +3874,13 @@ export async function buildAndWrite(
       writtenStats,
     ).catch(() => undefined);
   mark("parses kept");
-  return { build, guard, write, ...(catalog ? { catalog } : {}) };
+  return {
+    build,
+    guard,
+    write,
+    ...(catalog ? { catalog } : {}),
+    ...(changedFiles ? { changedFiles } : {}),
+  };
 }
 
 /**
