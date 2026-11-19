@@ -15,7 +15,8 @@ describe("Set up › Scans (app-only audit)", () => {
     expect(T.scanCrossCheck).toMatch(/^A cross-check, not how the map is made/);
     // Beta.27 (ADR 0195): what it does now, exactly.
     expect(T.scanCrossCheck).toMatch(
-      /keeps each repo read in full as its readers slot, keeps every other repo's last good read and says why, then builds the catalog/,
+      // v30 slice 8: no slot word in everyday text.
+      /keeps each repo read in full, keeps every other repo's last good read and says why, then builds the catalog/,
     );
   });
 

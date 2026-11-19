@@ -404,10 +404,11 @@ describe("Home and Trust: the pause", () => {
 });
 
 describe("Map › Decided by AI", () => {
-  it("is a tab of Map, found by its name", () => {
+  it("is a page of Map, found by its name, opened from a repo's box (v30 slice 8: not a tab)", () => {
     expect(screenOf("decisions").section).toBe("Map");
     expect(screenOf("decisions").label).toBe(COPY.nav.screens.decisions);
-    expect(tabsOf("Map").map((t) => t.id)).toContain("decisions");
+    expect(tabsOf("Map").map((t) => t.id)).not.toContain("decisions");
+    expect(tabsOf("Map", true).map((t) => t.id)).toContain("decisions");
   });
 
   it("filters by repo and kind", () => {

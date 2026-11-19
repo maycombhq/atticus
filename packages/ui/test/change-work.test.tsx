@@ -60,7 +60,10 @@ describe("the change and work screens' scope", () => {
     const change = SCREENS.filter((s) => s.section === "Change").map((s) => s.id);
     for (const id of change.filter((x) => x !== "architecture" && x !== "change-diagram"))
       expect(CW_SCREENS.has(id), id).toBe(true);
-    for (const id of ["runs", "history", "flows"]) expect(CW_SCREENS.has(id), id).toBe(true);
+    expect(CW_SCREENS.has("flows")).toBe(true);
+    // v30 slice 8: Model runs and History are Activity's tabs, each wrapped there (ACTIVITY).
+    expect(SCREEN_COMPONENTS.activity).toBeDefined();
+    expect(CW_SCREENS.has("activity")).toBe(false);
     // The map's canvas keeps its own look; Home, Questions, Knowledge and Set up aren't these.
     for (const id of ["architecture", "change-diagram", "home", "canvas", "questions", "repos"])
       expect(CW_SCREENS.has(id), id).toBe(false);
