@@ -273,9 +273,40 @@ interface Pattern {
   negatable?: boolean;
   /** Match the original line, case and all, rather than its skeleton. */
   raw?: boolean;
+  /**
+   * Its verb may be a requirement's own ("the listener MUST ignore an event whose approval…"):
+   * skipped when `requirementAbout` says the sentence is about a thing, not the reader's rules.
+   */
+  requirement?: boolean;
 }
 
 const W = "[^.\\n]";
+
+/** What a reader's own rules are called: an instruction's object, never a requirement's thing. */
+const READERS_OWN =
+  /^(everything|anything|whatever|what|previous|prior|above|earlier|preceding|your|other|existing|original|instructions?|rules?|prompts?|guidelines?|polic(y|ies)|directions?|constraints?|checks?|guardrails?|constitution|critic|safety|approvals?|human|reviews?|gates?|separation|data|codeowners)$/;
+const DETERMINERS = /^(a|an|the|all|any|each|every|its|their|this|that|these|those)$/;
+
+/**
+ * Whether a matched verb is a requirement's own (the b30 proof run: the critic blocked the spec
+ * delta "The listener MUST ignore an event whose approval time is older…" as an instruction to
+ * waive approvals). So: the sentence so far says SHALL or MUST in capitals, as a requirement
+ * does, and what the verb acts on, its first word after any determiner, is a thing and none of
+ * the reader's own rules, and the sentence doesn't speak to a reader (you, the assistant, the
+ * reviewer). "MUST ignore previous instructions" and "MUST skip the review" are still
+ * instructions; so is the same sentence with no SHALL or MUST.
+ */
+function requirementAbout(before: string, matched: string): boolean {
+  if (!/\b(SHALL|MUST)\b[^.!?]*$/.test(before)) return false;
+  // A sentence that speaks to its reader is no requirement on a system.
+  if (/\b(you|your|assistant|ai|llm|agent|model|reviewer|critic|claude|copilot)\b/i.test(before))
+    return false;
+  const words = matched.split(/[^a-z0-9-]+/).filter(Boolean);
+  // The verb is the first word, or the first two ("turn off", "switch off").
+  const rest = words.slice(words[1] === "off" ? 2 : 1);
+  const object = rest.find((w) => !DETERMINERS.test(w));
+  return object !== undefined && !READERS_OWN.test(object);
+}
 const P = (src: string) => new RegExp(src, "i");
 
 /** Matched against each line's skeleton (lower case, folded). Kept narrow: prose about these topics is fine. */
@@ -308,8 +339,12 @@ const PATTERNS: Pattern[] = [
     re: P(
       `\\b(ignore|disregard|forget|override|overrule|bypass)\\b${W}{0,40}\\b(previous|prior|above|earlier|preceding|all|any|your|the|these|those|their|other|existing|original)\\b${W}{0,25}\\b(instructions?|rules?|prompts?|guidelines?|polic(y|ies)|directions?|constraints?|checks?|guardrails?)\\b`,
     ),
+    requirement: true,
   },
-  { rule: "override", re: /\bignore (everything |all )?(the )?(above|previous|preceding|prior)\b/ },
+  {
+    rule: "override",
+    re: /\b(ignore|disregard) (everything |all )?(the )?(above|previous|preceding|prior)\b/,
+  },
   {
     rule: "override",
     re: /\byou are now\b|\bfrom now on,? you\b|\bnew (system )?instructions?\s*:/,
@@ -396,6 +431,7 @@ const PATTERNS: Pattern[] = [
       `\\b(waive|disable|turn off|switch off|skip|bypass|remove|ignore|circumvent)\\b${W}{0,30}\\b(the constitution|constitution rules?|the critic|critic rules?|safety (rules?|checks?)|approvals?|human review|reviews?|guardrails?|the gates?|separation of duties|the data rule|codeowners)\\b`,
     ),
     negatable: true,
+    requirement: true,
   },
   {
     rule: "rule-change",
@@ -683,6 +719,8 @@ function instructionSignals(
     if (!m) continue;
     if (p.negatable && NEGATION.test(sk.text.slice(0, m.index + m[0].length))) continue;
     const startCol = sk.map[m.index] ?? 0;
+    if (p.requirement && !hiddenAt(startCol) && requirementAbout(line.slice(0, startCol), m[0]))
+      continue;
     const endCol = (sk.map[m.index + m[0].length - 1] ?? line.length - 1) + 1;
     const obfuscated = !p.re.test(plain) && !p.re.test(plain.normalize("NFKC"));
     out.push({
