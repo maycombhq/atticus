@@ -219,7 +219,7 @@ async function run(
   const out: string[] = [];
   const err: string[] = [];
   // ADR 0187: inside a job, each line also goes to its Console entry as it is printed.
-  const code = await f({
+  const io: Output = {
     out: (l) => {
       out.push(l);
       if (!o.jsonOut) printToCurrent(l);
@@ -230,7 +230,10 @@ async function run(
     },
     // Beta.28.1: progress goes to the Console as it runs, never into the job's result.
     progress: (l) => printToCurrent(l, { now: true }),
-  });
+  };
+  // ADR 0202 point 8: a refusal ends with where the metarepo stands, as in a terminal.
+  const { refusalScope } = await import("./standing.js");
+  const code = await refusalScope(io, () => f(io));
   return { code, out, err };
 }
 
@@ -945,6 +948,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // it changes; the changes are files to propose for review like any other.
       // beta.23: every migration's dry run reads every record and question; Home asks this on
       // each load, so the answer is kept until a change is heard (watched-memo.ts).
+      // ADR 0202 point 8: where the metarepo stands, as `atticus status --json` says it.
+      .add("GET", "/api/status", async () => {
+        const { standing } = await import("./standing.js");
+        return { status: 200, body: await standing(root) };
+      })
       .add("GET", "/api/upgrade", async () => {
         const r = await keptAnswer(root, "upgrade", async () => {
           const { newerAtticusOf, newerCatalogOf, upgradeCheck } = await import("./upgrade.js");
