@@ -50,6 +50,47 @@ describe("atticus ask", () => {
     expect(r.out).toContain("Query: impact ledger-api");
   });
 
+  it("names a topic's consumers as impact does (ADR 0201: the trial's question got none)", async () => {
+    const r = await run(["ask", "who consumes the topic transfers.completed?"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(
+      "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+    );
+    expect(r.out).toContain("Query: impact topic.transfers-completed");
+    const components = (t: string) =>
+      (JSON.parse(t) as { affected: { kind: string; id: string }[] }).affected
+        .filter((a) => a.kind === "Component")
+        .map((a) => a.id)
+        .sort();
+    const asked = await run(["ask", "who consumes the topic transfers.completed?", "--json"]);
+    const walked = await run(["impact", "topic.transfers-completed", "--json"]);
+    expect(components(asked.out)).toEqual(components(walked.out));
+    expect(components(asked.out)).toContain("reports-job");
+  });
+
+  it("keeps how it read the question in --json, as readAs and query", async () => {
+    const r = await run(["ask", "who calls ledger-api?", "--json"]);
+    expect(r.code).toBe(0);
+    const j = JSON.parse(r.out) as { readAs: string; query: string; total: number };
+    expect(j.readAs).toBe("Read as: the interfaces whose callee is ledger-api.");
+    expect(j.query).toBe("kind:interface to:ledger-api");
+    expect(j.total).toBeGreaterThan(0);
+  });
+
+  it("says a name the map lacks is not in the map, and never lists every interface", async () => {
+    const r = await run(["ask", "who calls forge-portal?"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("forge-portal is not in the map: planned or not read.");
+    expect(r.out).toContain("0 records");
+    expect(r.out).not.toMatch(/portal-bff|ledger-api/);
+    const j = JSON.parse((await run(["ask", "who calls forge-portal?", "--json"])).out) as {
+      readAs: string;
+      total: number;
+    };
+    expect(j.total).toBe(0);
+    expect(j.readAs).toMatch(/forge-portal is not in the map: planned or not read\.$/);
+  });
+
   it("needs a question", async () => {
     expect((await run(["ask"])).code).toBe(2);
   });

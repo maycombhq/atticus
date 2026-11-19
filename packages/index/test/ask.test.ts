@@ -79,6 +79,66 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     expect(look('a"b')).toBeUndefined();
   });
 
+  it("reads who consumes a topic as the impact walk: an event Interface's `to` is the subscriber (ADR 0201)", () => {
+    const withTopic = (w: string) =>
+      w === "topic.transfers-completed" ? { id: w, kind: "Endpoint" } : lookup(w);
+    for (const q of [
+      "who consumes topic.transfers-completed?",
+      "Who subscribes to topic.transfers-completed",
+      "which services receive topic.transfers-completed?",
+      "who listens to topic.transfers-completed",
+      "who is listening to the topic topic.transfers-completed?",
+    ])
+      expect(translate(q, withTopic), q).toEqual({
+        action: "impact",
+        id: "topic.transfers-completed",
+        query: "impact topic.transfers-completed",
+        explanation:
+          "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+      });
+    // A component's consumers are still its callers.
+    expect(translate("who consumes ledger-api", withTopic).query).toBe(
+      "kind:interface to:ledger-api",
+    );
+  });
+
+  it("finds a topic by its name as well as its id", () => {
+    const look = askLookup({
+      find: () => [],
+      query: (q: string) =>
+        q === "kind:endpoint pathOrTopic:transfers.completed"
+          ? { rows: [{ id: "topic.transfers-completed", kind: "Endpoint" }] }
+          : { rows: [] },
+    });
+    expect(look("transfers.completed")).toEqual({
+      id: "topic.transfers-completed",
+      kind: "Endpoint",
+    });
+    expect(look("transfers.started")).toBeUndefined();
+  });
+
+  it("never lists every interface for who calls a name the map lacks (ADR 0201)", () => {
+    for (const [q, name] of [
+      ["who calls forge-portal?", "forge-portal"],
+      ["Who uses the forge-portal service", "forge-portal"],
+      ["who consumes the topic forge.orders.shipped?", "forge.orders.shipped"],
+      ["which services call quillfeather", "quillfeather"],
+    ] as const) {
+      const t = translate(q, lookup);
+      expect(t, q).toMatchObject({ action: "query", query: `kind:interface to:${name}` });
+      expect(t.explanation).toBe(
+        `Read as: the interfaces whose callee is ${name}. ${name} is not in the map: planned or not read.`,
+      );
+    }
+    // "calls" as a noun is still the kind of record.
+    expect(translate("what calls are inferred?", lookup).query).toBe(
+      "kind:interface confidence:inferred",
+    );
+    expect(translate("which calls go through the gateway", lookup).query).toBe(
+      "kind:interface via:gateway",
+    );
+  });
+
   it("says what it couldn't place when a question names nothing in the catalog", () => {
     const t = translate("what breaks if the moon changes", lookup);
     expect(t.action).toBe("query");

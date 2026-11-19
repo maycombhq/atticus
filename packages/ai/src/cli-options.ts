@@ -61,6 +61,8 @@ export const OPTIONS = {
   run: { type: "string" },
   round: { type: "string" },
   hops: { type: "string" },
+  // atticus change conflicts --touching <id> (ADR 0201).
+  touching: { type: "string" },
   line: { type: "string" },
   around: { type: "string" },
   depth: { type: "string" },

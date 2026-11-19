@@ -18,6 +18,14 @@ export type Lookup = (word: string) => { id: string; kind: string } | undefined;
  */
 export const OUTSIDE = "Outside";
 
+/**
+ * What every command and tool says of an id the map lacks (ADR 0201): the change plans it, or
+ * nobody read it yet. An answer, not a failure: a persona is told so and goes on.
+ */
+export function notInMap(id: string): string {
+  return `${id} is not in the map: planned or not read.`;
+}
+
 /** What `askLookup` needs of the index. */
 export interface AskIndex {
   find(id: string): { id: string; kind: string }[];
@@ -30,7 +38,8 @@ const PLAIN = /^[a-z0-9][a-z0-9._-]*$/;
 /**
  * Look a question's word up in the catalog, the way `atticus ask` and the app's Ask both do: a
  * record by its id; else an outside system the interfaces call (or are called from) by that name;
- * else a table by its name (a real metarepo, 2026-10-25: "what calls the LLM?" listed every
+ * else a topic or path by its name (`transfers.completed` is the Endpoint
+ * `topic.transfers-completed`); else a table by its name (a real metarepo, 2026-10-25: "what calls the LLM?" listed every
  * interface, because nothing named `llm` was a record).
  */
 export function askLookup(ix: AskIndex): Lookup {
@@ -48,12 +57,13 @@ export function askLookup(ix: AskIndex): Lookup {
     };
     if (has(`kind:interface to:${w}`) || has(`kind:interface from:${w}`))
       return { id: w, kind: OUTSIDE };
-    try {
-      const t = ix.query(`kind:table name:${w}`, { limit: 1 }).rows[0];
-      if (t) return { id: t.id, kind: t.kind };
-    } catch {
-      // not a value the query language takes
-    }
+    for (const q of [`kind:endpoint pathOrTopic:${w}`, `kind:table name:${w}`])
+      try {
+        const t = ix.query(q, { limit: 1 }).rows[0];
+        if (t) return { id: t.id, kind: t.kind };
+      } catch {
+        // not a value the query language takes
+      }
     return undefined;
   };
 }
@@ -82,6 +92,35 @@ const STOP = new Set(
     " ",
   ),
 );
+
+/** Who is at the other end of a record: the verbs of "who calls X". */
+const USES = "calls?|uses?|consumes?|reads?|writes?";
+/** The same for a topic, whose other end is whoever receives it. */
+const RECEIVES = "consumes?|subscribes?|subscribed|receives?|listens?|listening";
+/** After "calls", these make it a noun ("what calls are inferred"), not a verb with a name after. */
+const NOT_A_NAME = new Set(
+  "are is were have has go goes going through via from without with in at inferred unconfirmed".split(
+    " ",
+  ),
+);
+/** Words that say what kind of thing the name is, never the name. */
+const NOUNS = new Set(
+  "topic queue event service component system endpoint api repo table".split(" "),
+);
+
+/**
+ * The name a "who calls X" question asks about when no record is X: the one word left after the
+ * verb. Undefined when the words after the verb aren't one plain name.
+ */
+function askedAbout(words: string[]): string | undefined {
+  const verb = new RegExp(`^(${USES}|${RECEIVES})$`);
+  const at = words.findIndex((w) => verb.test(w));
+  if (at < 1 || !/^(who|what|which)$/.test(words[0]!)) return undefined;
+  const after = words.slice(at + 1);
+  if (!after.length || NOT_A_NAME.has(after[0]!)) return undefined;
+  const rest = after.filter((w) => !STOP.has(w) && !NOUNS.has(w));
+  return rest.length === 1 && PLAIN.test(rest[0]!) && !KIND_WORDS[rest[0]!] ? rest[0] : undefined;
+}
 
 /** The first word of the question that names a catalog record, longest first. */
 function named(words: string[], lookup: Lookup) {
@@ -125,7 +164,24 @@ export function translate(question: string, lookup: Lookup): Asked {
       query: `kind:interface from:${rec.id}`,
       explanation: `Read as: the interfaces ${rec.id} calls.`,
     };
-  if (rec && has(/\b(who|what|which)\b.*\b(calls?|uses?|consumes?|reads?|writes?)\b/)) {
+  // A topic's consumers aren't an Interface's `to` by its name: an event Interface names the topic
+  // under `endpoint`, and its `to` is the subscriber. The impact walk follows that (ADR 0201).
+  if (rec?.kind === "Endpoint" && has(new RegExp(`\\b(who|what|which)\\b.*\\b(${RECEIVES})\\b`)))
+    return {
+      action: "impact",
+      id: rec.id,
+      query: `impact ${rec.id}`,
+      explanation: `Read as: who receives ${rec.id}, from what a change to it reaches.`,
+    };
+  // A name the map lacks is said, never answered with every interface (the kind word "calls").
+  const unknown = rec ? undefined : askedAbout(words);
+  if (unknown)
+    return {
+      action: "query",
+      query: `kind:interface to:${unknown}`,
+      explanation: `Read as: the interfaces whose callee is ${unknown}. ${notInMap(unknown)}`,
+    };
+  if (rec && has(new RegExp(`\\b(who|what|which)\\b.*\\b(${USES})\\b`))) {
     if (rec.kind === "Table" || rec.kind === "Column")
       return {
         action: "query",

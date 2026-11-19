@@ -337,7 +337,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "change conflicts",
-    usage: "atticus change conflicts [--json]",
+    usage: "atticus change conflicts [--touching <id>] [--json]",
     what: "Open changes that touch the same systems, records or repos.",
     who: ["team-lead", "architect"],
     changes: "nothing",

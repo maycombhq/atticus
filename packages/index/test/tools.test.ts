@@ -60,7 +60,10 @@ describe("the context tools", () => {
     expect(flow).toMatch(/^Flow forge-orders.place-order/);
     expect(flow).toMatch(/walk shows them/);
     await expect(call(ix, root, "show", { id: "quillfeather-risk" })).rejects.toThrow(
-      /nothing called quillfeather-risk/,
+      "quillfeather-risk is not in the map: planned or not read.",
+    );
+    await expect(call(ix, root, "walk", { id: "quillfeather-risk" })).rejects.toThrow(
+      "quillfeather-risk is not in the map: planned or not read.",
     );
     ix.close();
   });

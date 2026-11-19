@@ -77,7 +77,10 @@ describe("atticus context (ADR 0107 addendum)", { timeout: 120_000 }, () => {
     expect(code.out).toMatch(/OrderController.java:4:\n\s*3 {2}.*\n>\s*4 {2}/);
     const none = await run(root, "context", "show", "quillfeather-risk");
     expect(none.code).toBe(2);
-    expect(none.err).toMatch(/nothing called quillfeather-risk/);
+    expect(none.err).toBe("quillfeather-risk is not in the map: planned or not read.");
+    const walkNone = await run(root, "context", "walk", "quillfeather-risk");
+    expect(walkNone.code).toBe(2);
+    expect(walkNone.err).toBe("quillfeather-risk is not in the map: planned or not read.");
   });
 
   it("lists the tools with their schemas and caps", async () => {

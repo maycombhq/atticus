@@ -114,7 +114,7 @@ describe("atticus impact", () => {
     const root = await forgeRoot();
     const c = capture();
     expect(await main(["impact", "nope", "--root", root], c.io)).toBe(1);
-    expect(c.err.join("\n")).toMatch(/No record with id "nope"/);
+    expect(c.err).toEqual(["nope is not in the map: planned or not read."]);
     expect(await main(["impact", "--root", root], capture().io)).toBe(2);
   });
 });

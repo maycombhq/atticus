@@ -15,6 +15,7 @@ import {
   type IgnoreRule,
   type ToolDefinition,
 } from "@maycombhq/core";
+import { notInMap } from "./ask.js";
 import type { CatalogIndex } from "./catalog-index.js";
 import { globMatcher } from "./glob.js";
 import { fuse, type GraphNodeRow } from "./select.js";
@@ -386,10 +387,7 @@ function similarTool(ix: CatalogIndex, input: Record<string, unknown>): string {
 
 function nodesOf(ix: CatalogIndex, id: string): GraphNodeRow[] {
   const nodes = ix.nodes(id);
-  if (!nodes.length)
-    throw new ContextToolError(
-      `There is nothing called ${id} in the index. Search for it by words with search.`,
-    );
+  if (!nodes.length) throw new ContextToolError(notInMap(id));
   return nodes;
 }
 
