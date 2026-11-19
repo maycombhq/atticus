@@ -182,9 +182,11 @@ export function deployIssues(
   }
   const out: StageIssue[] = [];
   // ADR 0189: a repo the change's own diagram plans (a new component, before it has a repo)
-  // may be deployed; the deploy order marks it planned.
+  // may be deployed; the deploy order marks it planned. ADR 0201: so may every repo a manifest
+  // lists, read or not.
   const known = new Set<string>([
     ...plannedRepos(deltas, e),
+    ...e.manifestRepos,
     ...codes.map((u) => u.repo),
     ...e.flows.map((f) => f.repo),
     ...(e.records as Rec[])

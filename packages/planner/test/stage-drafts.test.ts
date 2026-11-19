@@ -393,7 +393,8 @@ describe("a stage with no corrections", () => {
   // The feature stage's prompt for this fixture, as it was before ADR 0181 (recorded replays
   // are keyed by the prompt's hash, so it must not move by a byte).
   // ADR 0191: re-pinned when the format asked what each question asks (its asks line, one rule).
-  const BEFORE = "5814ca67b56b439e185ab1a99c0fa468ed5757fa56e2f7e747540a13b45c88a5";
+  // ADR 0201: re-pinned when the format gained its one line for newRepo (a repo the change plans).
+  const BEFORE = "f5b865cacda239e6e8ef5e3d090af69e11388ee42d0fad252503ff8df7b8c039";
 
   it("sends exactly the prompt it sent before, with or without an empty corrections file", async () => {
     const first: string[] = [];

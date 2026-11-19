@@ -190,6 +190,8 @@ function printStage(
   // The gate's open gap, in the words change status uses (ADR 0087 addendum).
   if (owner) io.out(owner);
   for (const l of wroteLines(r)) io.out(l);
+  // ADR 0201: a repo the change plans passes with a note, said here with the command that adds it.
+  for (const f of r.findings.filter((x) => x.rule === "feature.planned-repo")) io.out(f.message);
   for (const l of extra) io.out(l);
   io.out(`Open the stage's pull request for a person to approve: ${r.pr}`);
   return 0;

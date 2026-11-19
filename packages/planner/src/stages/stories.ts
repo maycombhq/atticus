@@ -140,7 +140,7 @@ import {
   withoutResume,
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
-import { plannedRepos } from "./planned.js";
+import { plannedRepos, unreadConsumer } from "./planned.js";
 import {
   keepStoryNumbers,
   lastPart,
@@ -2121,6 +2121,8 @@ export function checkSections(
     ...stories.map((s) => s.repo),
     // ADR 0189: the repos of the components the change plans, before they exist.
     ...(e ? plannedRepos(deltas, e) : []),
+    // ADR 0201: a repo a manifest lists, read or not, is known where a planned one is.
+    ...(e?.manifestRepos ?? []),
     ...(e?.flows.map((f) => f.repo) ?? []),
     ...((e?.records ?? []) as (CatalogRecord & Record<string, unknown>)[]).flatMap((r) =>
       r.kind === "Component" && typeof r.repo === "string" ? [r.repo] : [],
@@ -2199,14 +2201,19 @@ export function checkSections(
             s.repo,
           );
         if (e)
-          for (const c of i.consumers.filter((c) => !e.ids.has(c)))
+          for (const c of i.consumers.filter((c) => !e.ids.has(c))) {
+            // ADR 0201: a manifest repo nobody read, or a component this change plans, is a note.
+            const unread = unreadConsumer(c, deltas, e);
             push(
               "stories.unknown-consumer",
               `${s.id}:${i.entry}:${c}`,
-              `Story ${s.id}: ${i.entry}'s consumer ${c} isn't a component or system in the catalog. Name consumers by their catalog ids, or leave them out and say who calls it in why.`,
-              true,
+              unread
+                ? `Story ${s.id}: ${i.entry}'s consumer ${c} ${unread}`
+                : `Story ${s.id}: ${i.entry}'s consumer ${c} isn't a component or system in the catalog. Name consumers by their catalog ids, or leave them out and say who calls it in why.`,
+              !unread,
               s.repo,
             );
+          }
         const inbound = served(s, i.entry);
         for (const f of i.fields) {
           const target = `${s.id}:${i.entry}:${f.name}`;

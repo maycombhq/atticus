@@ -6,6 +6,7 @@ import {
   type SchemaFieldOf,
 } from "./estate.js";
 import type { StageIssue } from "./loop.js";
+import { unreadConsumer } from "./planned.js";
 import type { DeltaStep, FlowDelta } from "./schema.js";
 
 /**
@@ -347,7 +348,17 @@ export function consumerIssues(deltas: FlowDelta[], e: Estate): StageIssue[] {
     for (const l of listedAt(d)) {
       const c = breaking.find((b) => b.target === l.target);
       for (const id of l.ids) {
-        if (!e.byId.has(id))
+        // ADR 0201: a manifest repo nobody read, or a component this change plans, is a note.
+        const unread = e.byId.has(id) ? undefined : unreadConsumer(id, deltas, e);
+        if (unread)
+          out.push({
+            rule: "delta.unknown-consumer",
+            target: `${l.target}:${id}`,
+            message: `${l.who} lists consumer ${id}, which ${unread}`,
+            blocking: false,
+            repo: d.repo,
+          });
+        else if (!e.byId.has(id))
           out.push({
             rule: "delta.unknown-consumer",
             target: `${l.target}:${id}`,

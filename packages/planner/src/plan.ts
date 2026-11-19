@@ -5,6 +5,7 @@ import type { RunSummary } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
 import { loadPlanContext, type PlanContext } from "./context.js";
 import { PlannerError } from "./errors.js";
+import { quickPathHint } from "./quick-path.js";
 import { fallbackProse, writeProse, type StoryProse } from "./prose.js";
 import { renderIndex, renderStory, renderTasks } from "./render.js";
 import { buildSkeleton, type PlanSkeleton, type TaskPlan } from "./skeleton.js";
@@ -102,7 +103,7 @@ export async function planStories(
   if (skeleton.stories.length === 0)
     throw new PlannerError(
       "refused",
-      `${changeId} has nothing to plan: no spec requirement, no new or changed interface and no data change.`,
+      `${changeId} has nothing to plan: no spec requirement, no new or changed interface and no data change. ${quickPathHint()}`,
     );
   const rels = ["stories.md", "tasks.md", ...skeleton.stories.map((s) => `stories/${s.id}.md`)];
   await guard(ctx, rels, o.force);

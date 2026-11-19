@@ -1,4 +1,5 @@
 export * from "./errors.js";
+export * from "./quick-path.js";
 export * from "./words.js";
 export * from "./context.js";
 export * from "./skeleton.js";

@@ -1,6 +1,14 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
 import type { SourceInput } from "@maycombhq/ai";
-import { readRepoSpec, specsDirOf, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
+import {
+  orgPackDirOf,
+  readRepoSpec,
+  specsDirOf,
+  type CatalogRecord,
+  type FlowRecord,
+} from "@maycombhq/core";
 
 /**
  * The estate as the stages read it (ADR 0087): every repo's spec of flows (ADR 0079) and the
@@ -28,6 +36,50 @@ export interface Estate {
   endpoints: Set<string>;
   /** Files in specs/ that didn't read. */
   problems: string[];
+  /**
+   * ADR 0201: the repo ids of every manifest (org-pack/profiles/<platform>/repos.manifest.yaml).
+   * A repo a manifest lists is the estate's, read or not (amending ADR 0189 point 9).
+   */
+  manifestRepos: Set<string>;
+}
+
+/**
+ * ADR 0201: the estate's repos, which are the repos with a flow or a record and the manifests'.
+ * A read repo with nothing found in it, and a repo nobody read, are the estate too.
+ */
+export function estateRepos(e: Pick<Estate, "flows" | "records" | "manifestRepos">): Set<string> {
+  return new Set([
+    ...e.flows.map((f) => f.repo),
+    ...e.records
+      .map((r) => (r as { repo?: unknown }).repo)
+      .filter((x): x is string => typeof x === "string"),
+    ...e.manifestRepos,
+  ]);
+}
+
+/** The repo ids every manifest lists; a manifest that doesn't read lists none here. */
+async function manifestRepoIds(root: string): Promise<string[]> {
+  const profiles = join(orgPackDirOf(root), "profiles");
+  const out: string[] = [];
+  for (const d of (await readdir(profiles, { withFileTypes: true }).catch(() => []))
+    .filter((x) => x.isDirectory())
+    .map((x) => x.name)
+    .sort()) {
+    const text = await readFile(join(profiles, d, "repos.manifest.yaml"), "utf8").catch(
+      () => undefined,
+    );
+    if (text === undefined) continue;
+    try {
+      const repos = (parse(text) as { repos?: unknown } | null)?.repos;
+      for (const r of Array.isArray(repos) ? repos : []) {
+        const id = (r as { id?: unknown } | null)?.id;
+        if (typeof id === "string" && id) out.push(id);
+      }
+    } catch {
+      // The org pack's own checks say what is wrong with it.
+    }
+  }
+  return out;
 }
 
 /** Read every repo's spec under specs/ and index it with the catalog. */
@@ -43,13 +95,14 @@ export async function loadEstate(root: string, records: CatalogRecord[]): Promis
     for (const f of s.flows) flows.push({ repo, flow: f });
     for (const p of s.problems) problems.push(`${p.file}: ${p.message}`);
   }
-  return estateOf(records, flows, problems);
+  return estateOf(records, flows, problems, await manifestRepoIds(root));
 }
 
 export function estateOf(
   records: CatalogRecord[],
   flows: SpecFlow[],
   problems: string[] = [],
+  manifestRepos: readonly string[] = [],
 ): Estate {
   const byId = new Map((records as Rec[]).map((r) => [r.id, r]));
   const flowById = new Map(flows.map((f) => [f.flow.id, f]));
@@ -65,6 +118,7 @@ export function estateOf(
     flowById,
     endpoints,
     problems,
+    manifestRepos: new Set(manifestRepos),
   };
 }
 

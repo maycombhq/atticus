@@ -2,6 +2,20 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.30 (unreleased)
+
+### Added
+
+- **Waves in `tasks.md`.** A task line may end `(after <task id>)`, or several ids split by commas, as the last bracket on the line. `atticus task run-ready` holds the task, across repos, until each task it names is ticked, and runs it after them. A task that names an id `tasks.md` doesn't have, and tasks that name each other, are never ready, and `run-ready` says which and why. `[P]` and the order within a repo are as before (ADR 0201).
+- **A repo the change plans passes the feature stage.** A new flow whose answer marks its repo `newRepo: true` is placed with a note (`feature.planned-repo`) that names `atticus repo add <its clone URL> --id <repo>`; `atticus change feature` prints it. The feature prompt gained one line for it (ADR 0201).
+
+### Changed
+
+- **Every repo a manifest lists is the estate on the staged path, read or not.** A new flow may be put in it, the deploy order may deploy it (the trial got "deploys forge-infra, which isn't a repo the estate has" for a manifest repo), a target flow may call it, and a story may depend on it. A consumer that is a manifest repo nobody read, or a component the change plans, is a note at `delta.unknown-consumer` and `stories.unknown-consumer` that says its use can't be checked and names `atticus map <repo>`; any other unknown consumer is refused as before. The critic's footprint counts a `## <repo>` of `tasks.md` that a manifest lists (ADR 0201, amending ADR 0189 point 9).
+- **A new file's folder in an empty repo is a note.** `delta.new-folder` no longer blocks when the repo's checkout has no folder at its root other than hidden ones; a place that isn't a path still does (ADR 0201).
+- **The staged path says where to go, once.** A feature draft that touches nothing (`feature.nothing-placed`) and a fast-path draft that changes no step (`small.no-target-flow`) stop the stage on the first draft, with the finding and one hint that names the quick path and `atticus change new --from <requirements.md>`; no second draft is asked for and no question is raised. `atticus plan stories` on a change with nothing to plan is refused with the same hint (ADR 0201, amending ADR 0087's end rule).
+- **A task under a repo no manifest lists says what to do.** The refusal now names `atticus repo add <its clone URL> --id <repo>` for a new repo, or fixing the heading in `tasks.md` for a slip (ADR 0201).
+
 ## 2.0.0-beta.28.5 (2026-11-17)
 
 beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
