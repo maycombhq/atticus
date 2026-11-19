@@ -338,7 +338,7 @@ export const MIGRATIONS: Migration[] = [
     // design, stories, specs, tasks), so `openspec status` and `validate` agree with Atticus.
     id: "org-flow-v2",
     summary:
-      "OpenSpec's org-flow schema at version 2: the artifacts Atticus 2 writes, in its stage order (ADR 0006 addendum)",
+      "OpenSpec's org-flow schema at version 3: the artifacts Atticus 2 writes, in its stage order (ADR 0006 addendum), the design's Operations and a task's (after …) (ADR 0203)",
     async pending(root) {
       const os = openspecRootOf(root);
       if (!os) return [];

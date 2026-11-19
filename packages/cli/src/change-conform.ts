@@ -1,4 +1,6 @@
 import type { Api } from "@maycombhq/core";
+import { changeFolder } from "@maycombhq/changes";
+import { readOperations } from "@maycombhq/planner";
 import { conformanceOf, conformChange, ConformError } from "@maycombhq/taskrun";
 import type { Output } from "./commands.js";
 
@@ -42,6 +44,18 @@ function print(results: Api.ConformRepoResultT[], io: Output): void {
   }
 }
 
+/**
+ * ADR 0203 (review): operations are not checked against the code in this release, and that is
+ * said: alone for a change whose work is operations only, beside the flows' result otherwise.
+ */
+const NOT_CHECKED = "Atticus doesn't check operations against the code in this release.";
+async function operationsOf(root: string, change: string): Promise<number> {
+  return (await readOperations(changeFolder(root, change))).file?.operations.length ?? 0;
+}
+const alsoOperations = (n: number) =>
+  `${n} operation${n === 1 ? " is" : "s are"} not checked: ${NOT_CHECKED}`;
+const onlyOperations = (n: number) => `This change's work is operations (${n}): ${NOT_CHECKED}`;
+
 export async function changeConformCommand(
   root: string,
   change: string,
@@ -70,13 +84,17 @@ export async function changeConformCommand(
       return 0;
     }
     for (const p of v.problems) io.err(p);
+    const ops = await operationsOf(root, change);
     if (!v.results.length)
       io.out(
         v.flows
           ? `${change} hasn't been checked against its target flows yet: atticus change conform ${change}.`
-          : `${change} has no target flows yet, so there is nothing to check the code against.`,
+          : ops
+            ? onlyOperations(ops)
+            : `${change} has no target flows yet, so there is nothing to check the code against.`,
       );
     print(v.results, io);
+    if (ops && v.flows) io.out(alsoOperations(ops));
     return 0;
   }
   try {
@@ -93,6 +111,11 @@ export async function changeConformCommand(
       return run.results.length && !bad ? 0 : 1;
     }
     for (const p of run.problems) io.err(p);
+    const ops = o.json ? 0 : await operationsOf(root, change);
+    if (!run.flows && ops) {
+      io.out(onlyOperations(ops));
+      return 0;
+    }
     if (!run.flows) {
       io.err(
         `${change} has no target flows yet, so there is nothing to check the code against: the architecture stage writes them (atticus change architecture ${change}).`,
@@ -106,6 +129,7 @@ export async function changeConformCommand(
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`
         : "The code has everything its target flows add, and nothing they don't name.",
     );
+    if (ops) io.out(alsoOperations(ops));
     return bad && !o.findingsAnswer ? 1 : 0;
   } catch (e) {
     if (e instanceof ConformError) {

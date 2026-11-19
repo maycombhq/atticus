@@ -41,6 +41,7 @@ import {
   OUTSIDE_PARTY,
   STAGED_EVENT,
   STAGED_MIGRATION,
+  STAGED_MIXED,
   STAGED_NO_STEP,
   STAGED_NOTHING,
   STAGED_PRODUCT,
@@ -1036,6 +1037,63 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       const v = await metarepoOpenSpec(m.root)!.validate({ item: g.id, strict: true });
       expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
       expect(v.items[0]!.valid).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "a change of flows and operations: one deploy order, the operations' tasks beside the flow's, and the capabilities named",
+    async () => {
+      const x = STAGED_MIXED;
+      await change(x, "feature");
+      await staged(x);
+      // design.md: the flow's code and the operations in one deploy order.
+      const design = await fileOf(x.id, "design.md");
+      expect(design).toContain(
+        [
+          "## Deploy order",
+          "",
+          `1. ${NEW_PUBLISHER}.`,
+          `2. Operation topic-setting, in ${NEW_PUBLISHER}.`,
+          `3. Operation topic-retention, in ${EMPTY_REPO}.`,
+        ].join("\n"),
+      );
+      // tasks.md: the operation's task after the flow's in its repo, and a heading of its own.
+      expect(await afterOf(x.id)).toEqual([
+        ["1.1", NEW_PUBLISHER, []],
+        ["o1.1", NEW_PUBLISHER, []],
+        ["o2.1", EMPTY_REPO, ["o1.1"]],
+      ]);
+      let r = await ready(m.root, x.id);
+      expect(r.plan.ready).toEqual(["1.1"]);
+      expect(r.of("o2.1")).toMatchObject({ ready: false, waitsFor: ["o1.1"] });
+      await tick(m.root, x.id, "1.1");
+      r = await ready(m.root, x.id);
+      expect(r.plan.ready).toEqual(["o1.1"]);
+      await tick(m.root, x.id, "o1.1");
+      r = await ready(m.root, x.id);
+      expect(r.plan.ready).toEqual(["o2.1"]);
+      // proposal.md names the operations' capabilities beside the flow's.
+      const proposal = await fileOf(x.id, "proposal.md");
+      expect(proposal).toContain(`- \`${NEW_PUBLISHER}-operations\`: operations: `);
+      expect(proposal).toContain(`- \`${EMPTY_REPO}-operations\`: operations: `);
+      expect(proposal).toContain(
+        `- Operation (config) in ${EMPTY_REPO}: Set the topic's retention.`,
+      );
+      const v = await metarepoOpenSpec(m.root)!.validate({ item: x.id, strict: true });
+      expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
+      // The estimate sizes the flow's step and says the operation tasks it leaves out.
+      const e = await run(["change", "estimate", x.id, "--root", m.root]);
+      expect(e.err.join("\n")).toContain(
+        "2 operation tasks are not in this estimate (2 operations): estimates.yaml has no class for operations yet.",
+      );
+      // Conformance reads the flow, and says the operations are not checked.
+      const c = await run(["change", "conform", x.id, "--latest", "--root", m.root]);
+      expect(c.code).toBe(0);
+      expect(c.err.join("\n")).not.toContain("Unrecognized key");
+      expect(c.out.at(-1)).toBe(
+        "2 operations are not checked: Atticus doesn't check operations against the code in this release.",
+      );
     },
     T,
   );

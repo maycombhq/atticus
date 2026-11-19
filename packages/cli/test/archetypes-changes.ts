@@ -726,6 +726,52 @@ ${MOVED.map((r) => given(r, "a prod deployment on anvil is in its deploy files")
 ${MOVED.map((r) => given(r, "its traffic is answered from Anvil, and pointing it back was tried")).join("")}`,
 };
 
+/**
+ * A change of flows and operations (ADR 0203 review): the new event's publish step, the topic's
+ * name as a setting of the publisher, and the topic's retention in the deploy repo.
+ */
+export const STAGED_MIXED = {
+  id: "publish-settled-refunds-mixed",
+  title: "Publish settled refunds, with the topic's settings",
+  brief: `# Publish settled refunds, with the topic's settings\n\nRefunds settle in ${NEW_PUBLISHER} and nothing says so. Publish each settled refund to the topic ${TOPIC}; the publisher takes the topic's name from its settings, and the topic's retention is set in ${EMPTY_REPO}.\n`,
+  feature: `${STAGED_EVENT.feature}operations:
+  - kind: config
+    repos: [${NEW_PUBLISHER}]
+    what: Give the publisher the topic's name as a setting.
+    why: The topic's name differs by environment.
+  - kind: config
+    repos: [${EMPTY_REPO}]
+    what: Set the topic's retention.
+    why: Settled refunds are kept for a week.
+`,
+  architecture: `${STAGED_EVENT.architecture}operations:
+  - id: topic-setting
+    kind: config
+    repos: [${NEW_PUBLISHER}]
+    what: Give the publisher the topic's name as a setting.
+    sets: { key: refunds.topic }
+  - id: topic-retention
+    kind: config
+    repos: [${EMPTY_REPO}]
+    what: Set the topic's retention to seven days.
+    after: [topic-setting]
+`,
+  stories: `${STAGED_EVENT.stories}operations:
+  - id: topic-setting
+    title: Name the topic in the publisher's settings
+    asA: ledger operator
+    iWant: the topic's name read from the publisher's settings
+    soThat: each environment publishes to its own topic
+    tasks:
+${given(NEW_PUBLISHER, "refunds.topic is a key of its settings")}  - id: topic-retention
+    title: Keep settled refunds for a week
+    asA: ledger operator
+    iWant: the topic's retention set
+    soThat: a listener that was down can catch up
+    tasks:
+${given(EMPTY_REPO, "the topic's retention is seven days in its deploy files")}`,
+};
+
 /** A change with neither a flow nor an operation: the feature stage's assistant places nothing. */
 export const STAGED_NOTHING = {
   id: "tidy-the-wiki-staged",
