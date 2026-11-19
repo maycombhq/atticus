@@ -13,6 +13,8 @@ export function JobWait(p: {
   line?: string | undefined;
   onStop?: (() => void) | undefined;
   stopping?: boolean | undefined;
+  /** ADR 0202 point 2: the Stop ends the run once the repo being written has finished. */
+  afterRepo?: boolean | undefined;
 }) {
   return (
     <div className="stack" style={{ gap: 4 }}>
@@ -31,9 +33,9 @@ export function JobWait(p: {
             onClick={p.onStop}
             disabled={!!p.stopping}
             aria-busy={!!p.stopping}
-            aria-label={W.stopLabel(p.what)}
+            aria-label={p.afterRepo ? W.stopAfterRepoLabel(p.what) : W.stopLabel(p.what)}
           >
-            {p.stopping ? W.stopping : W.stop}
+            {p.stopping ? W.stopping : p.afterRepo ? W.stopAfterRepo : W.stop}
           </button>
         </div>
       )}

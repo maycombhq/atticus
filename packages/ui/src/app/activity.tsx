@@ -13,6 +13,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
+import { stopOffered } from "./job.js";
 import {
   CopilotRunTabs,
   matching,
@@ -97,12 +98,29 @@ export function stateWords(
  * terminal; beta.27 re-review: a job another `atticus ui` runs (another window: the run log lists
  * it here, with no Stop), that it is stopped there. Undefined otherwise.
  */
-export function stopHint(e: Pick<Entry, "state" | "kind" | "where" | "stop">): string | undefined {
+export function stopHint(
+  e: Pick<Entry, "state" | "kind" | "where" | "stop"> &
+    Partial<Pick<Entry, "stoppable" | "stopping">>,
+): string | undefined {
+  // ADR 0202 point 2: the job says a Stop can no longer take effect: its write has started.
+  if (e.state === "running" && e.stop && e.stoppable === false && !e.stopping) return T.tooLate;
   if (e.state !== "running" || e.stop) return undefined;
   if (e.kind === "command") return T.stopTerminal;
   if (e.where === "app" && e.kind !== "copilot") return T.otherWindow;
   return undefined;
 }
+
+/**
+ * ADR 0202 point 2: whether Stop is offered for an entry: it has a route that stops it, and its
+ * job doesn't say a Stop can no longer take effect (an older server says nothing: Stop while it
+ * runs). An entry that is stopping keeps its button, disabled, saying so.
+ */
+export const canStop = (e: Pick<Entry, "stop" | "stoppable" | "stopping">): boolean =>
+  !!e.stop && (stopOffered(e, true) || e.stopping === true);
+
+/** Stop's words: "Stop after this repo" while a job of several is inside a write. */
+export const stopWords = (e: Pick<Entry, "stopLands">): string =>
+  e.stopLands === "after-write" ? T.stopAfterRepo : T.stop;
 
 /** Whether Stop was asked of an entry: this page asked just now, or the server says so. */
 export const isStopping = (a: Pick<ActivityCtx, "stopping">, e: Entry): boolean =>
@@ -547,14 +565,14 @@ export function ActivityStrip() {
             <button type="button" className="btn" onClick={() => a.show(first.id)}>
               {T.strip.show}
             </button>
-            {first.stop ? (
+            {canStop(first) ? (
               <button
                 type="button"
                 className="btn danger"
                 onClick={() => void a.stop(first)}
                 disabled={isStopping(a, first)}
               >
-                {isStopping(a, first) ? T.stopping : T.stop}
+                {isStopping(a, first) ? T.stopping : stopWords(first)}
               </button>
             ) : stopHint(first) ? (
               <span className="work-say">{stopHint(first)}</span>
@@ -752,14 +770,14 @@ export function ActivityEntryView(p: { a: ActivityCtx; entry: Entry; searchId?: 
           {T.at(timeOf(shown.startedAt))}
         </span>
         <span style={{ flex: 1 }} />
-        {shown.state === "running" && shown.stop && shown.kind !== "copilot" && (
+        {shown.state === "running" && canStop(shown) && shown.kind !== "copilot" && (
           <button
             type="button"
             className="btn danger"
             onClick={() => void a.stop(shown)}
             disabled={isStopping(a, shown)}
           >
-            {isStopping(a, shown) ? T.stopping : T.stop}
+            {isStopping(a, shown) ? T.stopping : stopWords(shown)}
           </button>
         )}
         {stopHint(shown) && <span className="work-say">{stopHint(shown)}</span>}

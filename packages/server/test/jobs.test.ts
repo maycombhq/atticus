@@ -7,13 +7,20 @@ import {
 } from "@maycombhq/core";
 import { describe, expect, it } from "vitest";
 import { CLOSED, JobManager, STOPPED, STOPPING, TOO_LATE } from "../src/jobs.js";
+/** A manager whose jobs hear Stop unless they say otherwise: these tests are of Stop itself. */
+class Hearing extends JobManager {
+  override start(...a: Parameters<JobManager["start"]>): ReturnType<JobManager["start"]> {
+    return super.start(a[0], a[1], { hearsStop: true, ...a[2] });
+  }
+}
+
 import { EventHub } from "../src/server.js";
 
 /** Cancel stops the work, through the job's signal (ADR 0119). */
 describe("JobManager cancel", () => {
   it("aborts the signal the work runs in, and the job ends cancelled, not failed", async () => {
     const events: { type: string }[] = [];
-    const jobs = new JobManager((e) => events.push(e));
+    const jobs = new Hearing((e) => events.push(e));
     let wrote = false;
     const job = jobs.start("scan", async () => {
       for (let i = 0; i < 100; i++) {
@@ -32,7 +39,7 @@ describe("JobManager cancel", () => {
   });
 
   it("gives work the signal of its own job only", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const seen: (AbortSignal | undefined)[] = [];
     const a = jobs.start("scan", async () => {
       seen.push(currentSignal());
@@ -49,7 +56,7 @@ describe("JobManager cancel", () => {
   });
 
   it("says false for a job that already finished", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const job = jobs.start("index", async () => undefined);
     await jobs.settle(job.id);
     expect(jobs.cancel(job.id)).toBe(false);
@@ -59,7 +66,7 @@ describe("JobManager cancel", () => {
 /** Round 41: a second job of a kind never hides the first, still running, from runningOf. */
 describe("JobManager runningOf", () => {
   it("names a job still running after a later job of its kind ends", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     let release!: () => void;
     const a = jobs.start("step", () => new Promise<void>((r) => (release = r)));
     const b = jobs.start("step", async () => undefined);
@@ -71,7 +78,7 @@ describe("JobManager runningOf", () => {
   });
 
   it("names the later job while it runs, once the first of its kind has ended", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     let release!: () => void;
     const a = jobs.start("local", async () => undefined);
     const b = jobs.start("local", () => new Promise<void>((r) => (release = r)));
@@ -92,7 +99,7 @@ describe("JobManager runningOf", () => {
 describe("JobManager stop, as the Console shows it", () => {
   it("hands work its job's signal, and says it is stopping until it ends", async () => {
     const events: ({ type: string } & Record<string, unknown>)[] = [];
-    const jobs = new JobManager((e) => events.push(e));
+    const jobs = new Hearing((e) => events.push(e));
     let signal: AbortSignal | undefined;
     let release!: () => void;
     const ended = new Promise<void>((r) => (release = r));
@@ -131,7 +138,7 @@ describe("JobManager stop, as the Console shows it", () => {
 describe("JobManager keeping each job in the run log", () => {
   it("records each job's start, lines and end", async () => {
     const said: string[] = [];
-    const jobs = new JobManager(() => undefined, undefined, {
+    const jobs = new Hearing(() => undefined, undefined, {
       record: (job) => {
         said.push(`start ${job.id} ${job.kind} ${job.title ?? ""}`);
         return {
@@ -163,7 +170,7 @@ describe("JobManager keeping each job in the run log", () => {
   });
 
   it("a recorder that fails never fails the job", async () => {
-    const jobs = new JobManager(() => undefined, undefined, {
+    const jobs = new Hearing(() => undefined, undefined, {
       record: () => {
         throw new Error("disk full");
       },
@@ -188,7 +195,7 @@ describe("EventHub listeners (ADR 0119)", () => {
 /** Beta.28.1: the commit point (the review and the re-review). */
 describe("JobManager commit", () => {
   it("a Stop past the commit is too late: said, the work goes on, and the job ends done", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     let go!: () => void;
     const held = new Promise<void>((r) => (go = r));
     let aborted = false;
@@ -207,7 +214,7 @@ describe("JobManager commit", () => {
   });
 
   it("a Stop before the commit that the work didn't hear is said too late at the commit", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     let go!: () => void;
     const held = new Promise<void>((r) => (go = r));
     const job = jobs.start("work", async (c) => {
@@ -223,7 +230,7 @@ describe("JobManager commit", () => {
 
   it("a Stop taken back at the commit restores the message, and says so to listeners (S3)", async () => {
     const events: { type: string; message?: string }[] = [];
-    const jobs = new JobManager((e) => events.push(e as { type: string; message?: string }));
+    const jobs = new Hearing((e) => events.push(e as { type: string; message?: string }));
     const states: { stopping?: boolean; message: string }[] = [];
     jobs.subscribe((c) => {
       if (c.type === "state")
@@ -257,7 +264,7 @@ describe("JobManager commit", () => {
   });
 
   it("a stopped job ends saying Stopped, not Stopping…; a done one is done of all its steps", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const stopped = jobs.start("work", async (c) => {
       c.progress(0, 2, "Reading the estate's facts");
       for (let i = 0; i < 100; i++) {
@@ -279,7 +286,7 @@ describe("JobManager commit", () => {
   });
 
   it("a progress line is the job's progress message; a plain line isn't", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     let go!: () => void;
     const held = new Promise<void>((r) => (go = r));
     const job = jobs.start("work", async (c) => {
@@ -297,7 +304,7 @@ describe("JobManager commit", () => {
 
   it("closing the app past a job's commit says no Stop after its record ended", async () => {
     const recorded: string[] = [];
-    const jobs = new JobManager(() => undefined, undefined, {
+    const jobs = new Hearing(() => undefined, undefined, {
       record: () => ({ line: (l) => void recorded.push(l), end: () => undefined }),
     });
     let go!: () => void;
@@ -328,7 +335,7 @@ describe("JobManager release (beta.28.4)", () => {
   };
 
   it("a Stop during a write is acted on when that write ends: the signal aborts then, and the job ends stopped", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const write = gate();
     const seen: boolean[] = [];
     const job = jobs.start("local", async (c) => {
@@ -354,7 +361,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("a job that never releases is never stopped past its commit, however often Stop is asked", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const write = gate();
     let aborted = true;
     const job = jobs.start("local", async (c) => {
@@ -372,7 +379,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("with no Stop asked, a release changes nothing, and a Stop after it is heard at once", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const between = gate();
     const job = jobs.start("local", async (c) => {
       c.commit();
@@ -391,7 +398,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("a Stop taken back at the commit (asked just before it) is acted on at the release too", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const read = gate();
     const job = jobs.start("local", async (c) => {
       await read.held;
@@ -406,7 +413,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("each write is whole: after a release, the next commit makes Stop too late again until its release", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const second = gate();
     const seen: boolean[] = [];
     const job = jobs.start("local", async (c) => {
@@ -427,7 +434,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("a release with no commit before it does nothing", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const job = jobs.start("local", async (c) => {
       c.release();
       return {};
@@ -436,7 +443,7 @@ describe("JobManager release (beta.28.4)", () => {
   });
 
   it("code inside the job says both through core: the read's stoppable signal comes back after a release", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const seen: boolean[] = [];
     const job = jobs.start("local", async () => {
       seen.push(stoppableSignal() !== undefined);
@@ -472,7 +479,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
 
   it("says so once however often Stop is pressed, stays stopping, and stops at the release", async () => {
     const published: { type: string; message?: string }[] = [];
-    const jobs = new JobManager((e) => void published.push(e as never));
+    const jobs = new Hearing((e) => void published.push(e as never));
     const write = gate();
     const job = jobs.start(
       "local",
@@ -511,7 +518,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
   });
 
   it("a Stop asked just before a write's commit is said the same way, and acted on at the release", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const read = gate();
     const job = jobs.start(
       "local",
@@ -536,7 +543,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
   });
 
   it("during its last write (no release follows) it ends done, saying how it ended, never stopping", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const write = gate();
     const job = jobs.start(
       "local",
@@ -557,7 +564,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
   });
 
   it("before any write it stops at once, as every job does", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const read = gate();
     const job = jobs.start(
       "local",
@@ -576,7 +583,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
   });
 
   it("a job of one write is word for word as before: too late, each time, and never stopping", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const write = gate();
     const job = jobs.start("local", async (c) => {
       c.progress(0, 1, "Applying to forge-ledger");
@@ -602,7 +609,7 @@ describe("JobManager: a job of several writes says a Stop during a write was hea
 describe("JobManager closeAll during a job of several writes (beta.28.4)", () => {
   it("ends the run when the write under way has ended, and writes nothing to its record after the close", async () => {
     const recorded: string[] = [];
-    const jobs = new JobManager(() => undefined, undefined, {
+    const jobs = new Hearing(() => undefined, undefined, {
       record: () => ({ line: (l) => void recorded.push(l), end: () => undefined }),
     });
     let go!: () => void;
@@ -628,5 +635,222 @@ describe("JobManager closeAll during a job of several writes (beta.28.4)", () =>
     // The write was whole; the run stopped at its end.
     expect(seen).toEqual([false, true]);
     expect(recorded.at(-1)).toBe(CLOSED);
+  });
+});
+
+/**
+ * ADR 0202 point 2: a job says whether a Stop can still take effect (`stoppable`), and where it
+ * would land (`stopLands`): now, or after the write a job of several is inside.
+ */
+describe("JobManager: stoppable and stopLands (ADR 0202)", () => {
+  const gate = () => {
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    return { held, go };
+  };
+
+  it("before its write a Stop lands now; after the commit it is not stoppable; nor once done", async () => {
+    const jobs = new Hearing(() => undefined);
+    const a = gate();
+    const b = gate();
+    const job = jobs.start("local", async (c) => {
+      await a.held;
+      c.commit();
+      await b.held;
+      return {};
+    });
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    a.go();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    expect(jobs.get(job.id)!.stopLands).toBeUndefined();
+    b.go();
+    const end = await jobs.settle(job.id);
+    expect(end.state).toBe("done");
+    expect(end.stoppable).toBe(false);
+    expect(end.stopLands).toBeUndefined();
+  });
+
+  it("a job of several: now between writes, after-write inside one, and not while it stops", async () => {
+    const jobs = new Hearing(() => undefined);
+    const steps = [gate(), gate(), gate()];
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        await steps[0]!.held;
+        c.commit();
+        await steps[1]!.held;
+        c.release();
+        await steps[2]!.held;
+        c.commit();
+        await new Promise((r) => setTimeout(r, 30));
+        c.release();
+        throwIfCancelled();
+        return {};
+      },
+      { severalWrites: { heard: "Stop heard.", stopping: "Stopping after this repo…" } },
+    );
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    steps[0]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "after-write" });
+    steps[1]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    steps[2]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "after-write" });
+    jobs.cancel(job.id);
+    // Stopping: a second Stop would change nothing.
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    expect(jobs.get(job.id)!.stopLands).toBeUndefined();
+    const end = await jobs.settle(job.id);
+    expect(end.state).toBe("cancelled");
+    expect(end.stoppable).toBe(false);
+  });
+
+  it("a Stop heard before the write: stopping, so not stoppable, and those who listen are told", async () => {
+    const jobs = new Hearing(() => undefined);
+    const seen: (boolean | undefined)[] = [];
+    jobs.subscribe((c) => {
+      if (c.type === "state") seen.push(c.job.stoppable);
+    });
+    const a = gate();
+    const job = jobs.start("local", async () => {
+      await a.held;
+      throwIfCancelled();
+    });
+    jobs.cancel(job.id);
+    expect(jobs.get(job.id)).toMatchObject({ stopping: true, stoppable: false });
+    a.go();
+    await jobs.settle(job.id);
+    expect(seen[0]).toBe(true);
+    expect(seen.at(-1)).toBe(false);
+  });
+
+  it("the commit itself is told to those who listen (the panel hides Stop then)", async () => {
+    const jobs = new Hearing(() => undefined);
+    const seen: (boolean | undefined)[] = [];
+    const a = gate();
+    const job = jobs.start("local", async (c) => {
+      c.commit();
+      await a.held;
+    });
+    jobs.subscribe((c) => {
+      if (c.type === "state") seen.push(c.job.stoppable);
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    a.go();
+    await jobs.settle(job.id);
+  });
+});
+
+/** ADR 0202 point 5: a job says what it is for, and is found again by it. */
+describe("JobManager: jobs found by what they are for (ADR 0202)", () => {
+  it("carries `for`, and lists the running match first, then the finished ones, newest first", async () => {
+    const jobs = new Hearing(() => undefined);
+    const first = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    await jobs.settle(first.id);
+    const second = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    await jobs.settle(second.id);
+    let go!: () => void;
+    const running = jobs.start("local", () => new Promise<void>((r) => (go = r)), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    const other = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-payments" },
+    });
+    const build = jobs.start("local", async () => ({}), { for: { action: "build" } });
+    const plain = jobs.start("scan", async () => ({}));
+    await Promise.all([other, build, plain].map((j) => jobs.settle(j.id)));
+    expect(running.for).toEqual({ action: "apply", repo: "forge-ledger" });
+    expect(plain.for).toBeUndefined();
+    expect(jobs.find({ action: "apply", repo: "forge-ledger" }).map((j) => j.id)).toEqual([
+      running.id,
+      second.id,
+      first.id,
+    ]);
+    expect(jobs.find({ action: "apply" }).map((j) => j.id)).toEqual([
+      running.id,
+      other.id,
+      second.id,
+      first.id,
+    ]);
+    expect(jobs.find({ action: "build" }).map((j) => j.id)).toEqual([build.id]);
+    expect(jobs.find({ action: "undo" })).toEqual([]);
+    expect(jobs.find({ repo: "forge-payments" }).map((j) => j.id)).toEqual([other.id]);
+    // With nothing asked: every job kept.
+    expect(jobs.find({})).toHaveLength(6);
+    expect(jobs.find({})[0]!.id).toBe(running.id);
+    go();
+    await jobs.settle(running.id);
+  });
+});
+
+/**
+ * The review of ADR 0202: a job is stoppable only when its work hears Stop, and says so as it
+ * starts (`hearsStop`). One that doesn't is never stoppable, takes no Stop, and never ends
+ * "Stopped." (it wrote everything it was going to).
+ */
+describe("JobManager: a job that doesn't hear Stop (ADR 0202, the review)", () => {
+  it("is not stoppable, refuses a Stop, and ends done with what it did", async () => {
+    const jobs = new JobManager(() => undefined);
+    let go!: () => void;
+    let aborted: boolean | undefined;
+    const job = jobs.start("local", async (c) => {
+      await new Promise<void>((r) => (go = r));
+      aborted = c.signal.aborted;
+      return { result: { wrote: true } };
+    });
+    expect(job.stoppable).toBe(false);
+    expect(job.stopLands).toBeUndefined();
+    expect(jobs.hearsStop(job.id)).toBe(false);
+    expect(jobs.cancel(job.id)).toBe(false);
+    expect(jobs.get(job.id)!.stopping).toBeUndefined();
+    go();
+    const end = await jobs.settle(job.id);
+    expect(end.state).toBe("done");
+    expect(end.progress.message).not.toBe(STOPPED);
+    expect(aborted).toBe(false);
+    expect(jobs.linesOf(job.id)!.lines).not.toContain(STOPPED);
+    expect(jobs.linesOf(job.id)!.lines).not.toContain(STOPPING);
+  });
+
+  it("is left to finish when the app closes, and its record still says the app closed", async () => {
+    const recorded: string[] = [];
+    const jobs = new JobManager(() => undefined, undefined, {
+      record: () => ({ line: (l) => void recorded.push(l), end: () => undefined }),
+    });
+    let go!: () => void;
+    const job = jobs.start("local", () => new Promise<void>((r) => (go = r)));
+    jobs.closeAll();
+    expect(recorded.at(-1)).toBe(CLOSED);
+    expect(jobs.get(job.id)).toMatchObject({ state: "running", stoppable: false });
+    go();
+    expect((await jobs.settle(job.id)).state).toBe("done");
+  });
+
+  it("one that hears Stop says so, and is as before", async () => {
+    const jobs = new JobManager(() => undefined);
+    const job = jobs.start(
+      "local",
+      async () => {
+        for (;;) {
+          throwIfCancelled();
+          await new Promise((r) => setTimeout(r, 5));
+        }
+      },
+      { hearsStop: true },
+    );
+    expect(job).toMatchObject({ stoppable: true, stopLands: "now" });
+    expect(jobs.hearsStop(job.id)).toBe(true);
+    expect(jobs.cancel(job.id)).toBe(true);
+    expect((await jobs.settle(job.id)).state).toBe("cancelled");
   });
 });

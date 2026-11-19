@@ -201,7 +201,7 @@ describe("rejected facts and facts of another commit", () => {
     const out = html(<LeftOutWay repo="forge-ledger" n={3} />);
     expect(primaries(out)).toBe(1);
     expect(out).toContain(
-      `<a class="btn primary" href="#/trust?repo=forge-ledger">${esc(WY.rejectedOnTrust(3))}<`,
+      `<a class="btn primary" href="#/trust?repo=forge-ledger&amp;rejected=1">${esc(WY.rejectedOnTrust(3))}<`,
     );
     expect(html(<LeftOutWay repo="forge-ledger" n={0} />)).toBe("");
   });
@@ -231,7 +231,7 @@ describe("rejected facts and facts of another commit", () => {
     const out = panel({ blocked: { rejected: 2 } });
     expect(out).toContain(esc(COPY.correctionNext.blocked(2)));
     expect(out).toContain(
-      `<a class="btn primary" href="#/trust?repo=forge-payments">${esc(WY.rejectedOnTrust(2))}<`,
+      `<a class="btn primary" href="#/trust?repo=forge-payments&amp;rejected=1">${esc(WY.rejectedOnTrust(2))}<`,
     );
   });
 

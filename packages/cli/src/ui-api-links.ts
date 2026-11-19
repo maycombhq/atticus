@@ -34,6 +34,7 @@ import {
   conflict,
   HttpError,
   notFound,
+  type JobControl,
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
@@ -92,7 +93,9 @@ export function linksJob(
   end: string,
   work: (s: LinkSteps) => Promise<Record<string, unknown>>,
 ) {
-  return answerAsJob(ctx, title, async (c) => {
+  // Its steps take the job's signal: Stop is heard between them (`hears`).
+  const hears = { hearsStop: true };
+  const work_ = async (c?: JobControl) => {
     const signal = currentSignal();
     const p = writeProgress(
       (l) => {
@@ -117,7 +120,8 @@ export function linksJob(
     } finally {
       p.end();
     }
-  });
+  };
+  return answerAsJob(ctx, title, work_, hears);
 }
 
 /** `job=1` on a GET (`job: true` in a body): answered as a job. */

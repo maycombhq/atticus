@@ -105,6 +105,10 @@ export interface Task {
   };
   /** API 2.83.0 (ninth UX walk): the not-done tasks it waits for; `sameRepo`, its own repo's. */
   waits?: { tasks: string[]; sameRepo: string[] };
+  /** API 3.19.0 (ADR 0202 point 6): why it isn't ready, whatever holds it (the ready plan's). */
+  why?: string;
+  /** API 3.19.0: the ready plan's note about it (a title read as "(after …)" words). */
+  note?: string;
   /** API 3.3.0 (app-only audit): its branch's commits the change branch here hasn't. */
   unmerged?: { commits: number; branch: string };
   /** API 3.3.0: a person let its work go, and why. */

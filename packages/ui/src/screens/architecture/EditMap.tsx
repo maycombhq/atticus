@@ -4,8 +4,8 @@ import { ApiError, useApi, useJobRead } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { RunWithCopilot, useCopilotRuns, type StartAsk } from "../../app/copilot-runs.js";
-import { followJob, JobFailed } from "../../app/job.js";
-import { JobProgress, useJobRun, type JobRun } from "../../app/job-progress.js";
+import { followJob, JobFailed, undoAfter, type UndoWay } from "../../app/job.js";
+import { JobFound, JobProgress, useJobRun, type JobRun } from "../../app/job-progress.js";
 import { CATALOG_BUILDS_HREF, RefusalLink } from "../../app/propose.js";
 import { ErrorWaysOn } from "../../app/ways-on.js";
 import { COPY } from "../../copy.js";
@@ -889,6 +889,9 @@ export type ApplyState =
       state: "failed";
       text: string;
       outcomes?: { edit: number; state: string; message?: string }[];
+      /** ADR 0202 point 3: the build an Undo would take back, as the failed job said it. */
+      undo?: UndoWay;
+      undoKnown?: boolean;
     }
   /** Saved, but the build waits for a person (a large removal, a hand edit): its listing. */
   | { state: "saved"; n: number; refused?: Api.BuildRefusalViewT }
@@ -925,9 +928,12 @@ export async function applyStaged(
       const refused = result.refused as Api.BuildRefusalViewT | undefined;
       return { state: "saved", n: list.length, ...(refused ? { refused } : {}) };
     }
+    const undo = undoAfter(e);
     return {
       state: "failed",
       text: whyNot(e),
+      ...(undo.undo ? { undo: undo.undo } : {}),
+      ...(undo.known ? { undoKnown: true } : {}),
       ...(edits.length
         ? {
             outcomes: edits.map((x) => ({
@@ -998,6 +1004,8 @@ export function EditMapView(p: {
   onStop?: (() => void) | undefined;
   /** Add a link (or the redirect's form), under the list. */
   add?: ReactNode;
+  /** ADR 0202 point 5: an Apply my changes started before the page was loaded, found again. */
+  found?: ReactNode;
 }) {
   const id = useId();
   const a = p.apply;
@@ -1145,9 +1153,15 @@ export function EditMapView(p: {
               <p className="state error" role="alert" style={{ margin: 0 }}>
                 {a.outcomes ? E.failedLine : E.failed(a.text)}
               </p>
-              <ErrorWaysOn short againHref={CATALOG_BUILDS_HREF} />
+              <ErrorWaysOn
+                short
+                againHref={CATALOG_BUILDS_HREF}
+                undo={a.undo}
+                undoKnown={a.undoKnown}
+              />
             </>
           )}
+          {!busy && a.state !== "confirm" && p.found}
           {!busy && a.state !== "confirm" && p.add}
         </>
       )}
@@ -1182,6 +1196,7 @@ export function EditMap(p: {
       job={job}
       run={held.run}
       onStop={held.stop}
+      found={<JobFound action="map-edits" what={E.working} skip={!!held.run} />}
       {...(p.add ? { add: p.add } : {})}
       onRemove={(k) => {
         p.onRemove(k);

@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { ApplyAndPropose, CATALOG_BUILDS_HREF, trustHref } from "./propose.js";
+import { ApplyAndPropose, CATALOG_BUILDS_HREF, rejectedHref, trustHref } from "./propose.js";
 import { InstallCopy, refusalWay, showIfHere, SupportBundle, UPGRADE_HREF } from "./ways-on.js";
 import type { Api } from "@maycombhq/core";
 import { useJobRead, type JobWaitParts, type Loaded } from "../api/client.js";
@@ -75,7 +75,7 @@ function PreviewBody({ v }: { v: Preview }) {
             {N.blocked(p.blocked.rejected)}
           </p>
           <div>
-            <a className="btn primary" href={trustHref(v.repo)}>
+            <a className="btn primary" href={rejectedHref(v.repo)}>
               {WY.rejectedOnTrust(p.blocked.rejected)}
             </a>
           </div>

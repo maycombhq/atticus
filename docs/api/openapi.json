@@ -4805,9 +4805,32 @@
     "/api/trust": {
       "get": {
         "operationId": "getTrust",
-        "summary": "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124)",
+        "summary": "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124). 3.19.0 (ADR 0202 point 4): with repo, only that repo's row (404 for an id that is no repo); with repo and rejected=1, its lists hold only the rejected lines, every one (the other lists are empty); rejected=1 without repo is 400",
         "tags": [
           "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "3.19.0: only this repo's row",
+            "required": false
+          },
+          {
+            "name": "rejected",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "3.19.0: with repo, only its rejected facts",
+            "required": false
+          }
         ],
         "responses": {
           "200": {
@@ -4816,6 +4839,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrustView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/support/bundle": {
+      "post": {
+        "operationId": "saveSupportBundle",
+        "summary": "3.19.0 (ADR 0202 point 1): save a support bundle, as atticus support bundle does: the same files in the same zip under .atticus/logs/, given back for the person to save. Not a job, no network call, and no parameter names a destination: nothing is sent anywhere, and a person reads every file before it leaves",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved on this machine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportBundleView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -7659,6 +7743,79 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "operationId": "listJobs",
+        "summary": "3.19.0 (ADR 0202 point 5): the jobs a page action started, so its panel finds a running one again after a reload: the running ones that match, then the finished ones this server still keeps (100 in all, lost when atticus ui stops), newest first. With no parameter, every job kept",
+        "tags": [
+          "scans"
+        ],
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "apply",
+                "apply-all",
+                "build",
+                "undo",
+                "upgrade",
+                "propose",
+                "bring-in",
+                "sync",
+                "scan",
+                "map-edits"
+              ]
+            },
+            "description": "The page action that started it",
+            "required": false
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The repo it is for",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -28681,6 +28838,9 @@
               ],
               "additionalProperties": false
             }
+          },
+          "undo": {
+            "$ref": "#/components/schemas/UndoWay"
           }
         },
         "required": [
@@ -29984,6 +30144,43 @@
           },
           "stopping": {
             "type": "boolean"
+          },
+          "stoppable": {
+            "type": "boolean"
+          },
+          "stopLands": {
+            "type": "string",
+            "enum": [
+              "now",
+              "after-write"
+            ]
+          },
+          "for": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "apply",
+                  "apply-all",
+                  "build",
+                  "undo",
+                  "upgrade",
+                  "propose",
+                  "bring-in",
+                  "sync",
+                  "scan",
+                  "map-edits"
+                ]
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -30005,6 +30202,90 @@
         },
         "required": [
           "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "JobList": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            }
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "additionalProperties": false
+      },
+      "SupportBundleView": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "zip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "name",
+          "bytes",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "UndoWay": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "files": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "plan": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "command": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "ofThis": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "n",
+          "files",
+          "plan",
+          "command",
+          "at",
+          "ofThis"
         ],
         "additionalProperties": false
       },
@@ -32428,6 +32709,12 @@
           },
           "repoBuilds": {
             "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
@@ -40108,6 +40395,16 @@
                   "stopping": {
                     "type": "boolean"
                   },
+                  "stoppable": {
+                    "type": "boolean"
+                  },
+                  "stopLands": {
+                    "type": "string",
+                    "enum": [
+                      "now",
+                      "after-write"
+                    ]
+                  },
                   "outcome": {
                     "type": "string",
                     "enum": [
@@ -40616,6 +40913,16 @@
                 },
                 "stopping": {
                   "type": "boolean"
+                },
+                "stoppable": {
+                  "type": "boolean"
+                },
+                "stopLands": {
+                  "type": "string",
+                  "enum": [
+                    "now",
+                    "after-write"
+                  ]
                 },
                 "outcome": {
                   "type": "string",

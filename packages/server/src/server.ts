@@ -12,7 +12,13 @@ import {
 } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
-import { JobManager, type JobKind, type JobLogTitle, type JobRecorder } from "./jobs.js";
+import {
+  JOB_ACTIONS,
+  JobManager,
+  type JobKind,
+  type JobLogTitle,
+  type JobRecorder,
+} from "./jobs.js";
 
 /** Every kind of job, so RunningServer.quiet asks after each (a new kind must be added here). */
 const JOB_KINDS: Record<JobKind, true> = {
@@ -333,6 +339,23 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         );
       return { status: 201, body: confirmations.issue(b.data.write, b.data.target) };
     })
+    // ADR 0202 point 5: the jobs a page's action started, so its panel finds a running one again
+    // after a reload: the running ones first, then the finished ones still kept, newest first.
+    .add("GET", "/api/jobs", ({ query }) => {
+      const action = query.get("action") ?? undefined;
+      const repo = query.get("repo") ?? undefined;
+      if (action !== undefined && !(JOB_ACTIONS as readonly string[]).includes(action))
+        throw badRequest(`action is one of ${JOB_ACTIONS.join(", ")}.`);
+      return {
+        status: 200,
+        body: {
+          jobs: jobs.find({
+            ...(action !== undefined ? { action } : {}),
+            ...(repo !== undefined ? { repo } : {}),
+          }),
+        },
+      };
+    })
     .add("GET", "/api/jobs/{jobId}", ({ params }) => {
       const j = jobs.get(params.jobId!);
       if (!j) throw notFound(`There is no job ${params.jobId}.`);
@@ -341,6 +364,11 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     .add("POST", "/api/jobs/{jobId}/cancel", ({ params }) => {
       const j = jobs.get(params.jobId!);
       if (!j) throw notFound(`There is no job ${params.jobId}.`);
+      // The review of ADR 0202: work that doesn't hear Stop is never said to be stopping.
+      if (j.state === "running" && !jobs.hearsStop(j.id))
+        throw conflict(
+          `${j.title ?? `Job ${j.id}`} can't be stopped: it runs to its end, so what it writes stays whole.`,
+        );
       if (!jobs.cancel(j.id)) throw conflict(`Job ${j.id} already finished (${j.state}).`);
       return { status: 200, body: j };
     });

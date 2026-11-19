@@ -16,10 +16,10 @@ import { MANIFEST_REPOS_PATH } from "./repo-counts.js";
 import { focusIfLost } from "./ui.js";
 import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
-import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
-import { JobProgress, useJobRun, type JobHears } from "./job-progress.js";
+import { followJob, JobFailed, nextAfter, undoAfter, type NextStep } from "./job.js";
+import { JobFound, JobProgress, useJobRun, type JobHears } from "./job-progress.js";
 import { SyncFirst } from "./sync-first.js";
-import { ErrorWaysOn, InstallCopy } from "./ways-on.js";
+import { CATALOG_BUILDS_HREF, ErrorWaysOn, InstallCopy } from "./ways-on.js";
 import { curateListedEdits, RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
@@ -61,8 +61,8 @@ export function stepLines(lines: readonly string[], folded: boolean) {
   );
 }
 
-/** Where a refused build is reviewed and confirmed, full width. */
-export const CATALOG_BUILDS_HREF = "#/catalog-builds";
+/** Where a refused build is reviewed and confirmed, full width (ways-on.tsx has it). */
+export { CATALOG_BUILDS_HREF };
 
 /**
  * Edit the map's refused build in a narrow panel: one line, and the page that lists and confirms
@@ -118,13 +118,15 @@ export function otherRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
 
 /** Map › Trust with one repo's section shown (its rejected facts, Read it again). */
 export const trustHref = (repo: string) => `#/trust?repo=${encodeURIComponent(repo)}`;
+/** ADR 0202 point 4: Map › Trust opened at one repo's rejected facts, every one. */
+export const rejectedHref = (repo: string) => `${trustHref(repo)}&rejected=1`;
 
 /** Beta.30: an Apply that left rejected facts out links straight to them. */
 export function LeftOutWay({ repo, n }: { repo: string; n: number }) {
   if (!n) return null;
   return (
     <div>
-      <a className="btn primary" href={trustHref(repo)}>
+      <a className="btn primary" href={rejectedHref(repo)}>
         {COPY.waysOn.rejectedOnTrust(n)}
       </a>
     </div>
@@ -213,6 +215,8 @@ export function ApplyAndPropose(p: {
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
   // Beta.30: how many rejected facts the last Apply left out, for the link to them.
   const [leftOut, setLeftOut] = useState(0);
+  // ADR 0202 point 3: the build an Undo would take back, as the failed Apply said it.
+  const [undo, setUndo] = useState<ReturnType<typeof undoAfter>>({ known: false });
   const inPanel = useResultsInPanel();
   /**
    * Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed.
@@ -226,6 +230,7 @@ export function ApplyAndPropose(p: {
   }): Promise<number | "stopped"> => {
     setNext(undefined);
     setLeftOut(0);
+    setUndo({ known: false });
     p.onStart?.();
     try {
       const r = await job.follow(`/api/facts/${encodeURIComponent(p.repo!)}/apply`, counts, {
@@ -264,6 +269,7 @@ export function ApplyAndPropose(p: {
       setRefused(waits ?? otherRefusalOf(e));
       setApplied([(e as Error).message]);
       setNext(nextAfter(e));
+      setUndo(undoAfter(e));
       // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
       if (p.scope === "corrections")
         flash({
@@ -297,12 +303,22 @@ export function ApplyAndPropose(p: {
           </div>
           {/* Apply hears Stop until the catalog's write starts; after that it says it is too late. */}
           <JobProgress what={P.applyingTo(p.repo)} run={job.run} onStop={job.stop} />
+          {/* ADR 0202 point 5: an Apply of this repo started before the page was loaded. */}
+          <JobFound
+            action="apply"
+            repo={p.repo}
+            what={P.applyingTo(p.repo)}
+            skip={!!job.run}
+            onEnd={workChanged}
+          />
           <Note note={apply.note} />
           {applied && applied.length > 0 && stepLines(applied, inPanel)}
           <LeftOutWay repo={p.repo} n={leftOut} />
           {/* Beta.30: an Apply that failed (no refusal, no Sync to do first): the button above
               applies again; Undo and the support bundle's command are here. */}
-          {job.run?.state === "failed" && !refused && !next && !apply.busy && <ErrorWaysOn short />}
+          {job.run?.state === "failed" && !refused && !next && !apply.busy && (
+            <ErrorWaysOn short undo={undo.undo} undoKnown={undo.known} onUndone={workChanged} />
+          )}
           {next && <SyncFirst repos={next.repos} />}
           {refused &&
             applyRefused({
@@ -364,8 +380,10 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
   const [done, setDone] = useState<string[]>();
   const look = useAction();
   const send = useAction();
-  // Beta.30: the push's time so far in the panel. No Stop: a push under way isn't stopped.
-  const job = useJobRun();
+  // Beta.30: the push's time so far in the panel. ADR 0202 point 2: its step, and Stop until
+  // just before the push (the job says when a Stop can no longer take effect). A server that
+  // doesn't say (older than 3.19.0) would push all the same: no Stop is offered against it.
+  const job = useJobRun({ stopOnlyWhenSaid: true });
   const id = useId();
   // Eighth UX walk: Push and open the PR goes once it is done; its lines take the keyboard.
   const pushed = useRef<HTMLDivElement>(null);
@@ -443,17 +461,28 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
               className="btn primary"
               disabled={send.busy || files.length === 0}
               onClick={() =>
-                void send.run(async () => {
-                  // ADR 0186: this Yes is the person's confirmation to push and open the PR.
-                  const r = await job.follow("/api/propose", {
-                    scope,
-                    files: files.map((f) => f.path),
-                    branch: plan.branch,
-                    ...(await confirmed("propose", scope)),
-                  });
-                  setDone(r.lines);
-                  onDone?.();
-                }, P.proposed)
+                void send.run(
+                  async () => {
+                    // ADR 0186: this Yes is the person's confirmation to push and open the PR.
+                    try {
+                      const r = await job.follow("/api/propose", {
+                        scope,
+                        files: files.map((f) => f.path),
+                        branch: plan.branch,
+                        ...(await confirmed("propose", scope)),
+                      });
+                      setDone(r.lines);
+                      onDone?.();
+                      return undefined;
+                    } catch (e) {
+                      // A person's Stop before the push: what the job says it left, as a status.
+                      // The list stays, so the same Yes proposes again from the same branch.
+                      if (e instanceof JobFailed && e.stopped) return e.message;
+                      throw e;
+                    }
+                  },
+                  (stopped) => stopped ?? P.proposed,
+                )
               }
             >
               {send.busy ? P.proposing : P.yes(files.length)}
@@ -462,7 +491,7 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
               {P.cancel}
             </button>
           </div>
-          <JobProgress what={P.proposingSay} run={job.run} />
+          <JobProgress what={P.proposingSay} run={job.run} onStop={job.stop} />
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {P.whoMerges}
           </p>
@@ -486,6 +515,9 @@ export function BringIn() {
   const up = useAction();
   // App-only audit: the job runs for a while (a fetch); its Console entry shows it as it goes.
   const [jobId, setJobId] = useState<string | undefined>();
+  // ADR 0202 point 2: its step, and Stop until the working tree is about to be changed; none
+  // against a server that doesn't say it is stoppable (it would bring in all the same).
+  const job = useJobRun({ stopOnlyWhenSaid: true });
   const offer = act.note && !act.note.ok ? upstreamOffered(act.note.text) : undefined;
   return (
     <div className="stack" style={{ gap: 4 }}>
@@ -496,8 +528,16 @@ export function BringIn() {
           disabled={act.busy}
           onClick={() =>
             void act.run(
-              () => followJob("/api/propose/bring-in", {}, undefined, setJobId),
-              (r) => r.lines.join(" "),
+              () =>
+                job.follow("/api/propose/bring-in", {}, { onJob: setJobId }).then(
+                  (r) => r.lines.join(" "),
+                  (e: unknown) => {
+                    // A person's Stop before anything was brought in: said as a status.
+                    if (e instanceof JobFailed && e.stopped) return e.message;
+                    throw e;
+                  },
+                ),
+              (said) => said,
             )
           }
         >
@@ -507,11 +547,22 @@ export function BringIn() {
           {P.bringInWhy}
         </span>
       </div>
-      {act.busy && (
-        <span role="status" className="row" style={{ gap: 6, alignItems: "center", fontSize: 12 }}>
-          {P.bringingInSay} <ShowInConsole id={jobId} />
-        </span>
-      )}
+      {act.busy &&
+        (job.run?.state === "running" ? (
+          <>
+            {/* ADR 0202 point 2: its step, the time so far, and Stop while it can take effect. */}
+            <JobProgress what={P.bringingInSay} run={job.run} onStop={job.stop} />
+            <ShowInConsole id={jobId} />
+          </>
+        ) : (
+          <span
+            role="status"
+            className="row"
+            style={{ gap: 6, alignItems: "center", fontSize: 12 }}
+          >
+            {P.bringingInSay} <ShowInConsole id={jobId} />
+          </span>
+        ))}
       <Note note={act.note} />
       {offer && (
         <div className="stack" style={{ gap: 4 }}>

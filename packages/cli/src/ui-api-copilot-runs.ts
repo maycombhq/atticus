@@ -373,7 +373,7 @@ export function uiCopilotRunRoutes(
             ctx.events.publish({ type: "file.changed", path: "facts" });
             return { result: { code, runId } };
           },
-          { meta: { copilotRunId: runId } },
+          { meta: { copilotRunId: runId }, hearsStop: true },
         );
         me.view.jobId = job.id;
         state();

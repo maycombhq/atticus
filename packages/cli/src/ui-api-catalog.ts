@@ -111,6 +111,23 @@ export function coalesced<T>(work: () => Promise<T>): () => Promise<T> {
   };
 }
 
+/**
+ * ADR 0202 point 3: a build route's 409 (a confirm of a list that is no longer the one shown)
+ * carries `undo` when a build can be taken back. Nothing was written, so it is an earlier
+ * build's (`ofThis: false`). Any other error passes as it is.
+ */
+export async function conflictWithUndo<T>(root: string, check: () => Promise<T>): Promise<T> {
+  try {
+    return await check();
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status !== 409) throw e;
+    const { undoWayOf } = await import("./build-report.js");
+    const undo = await undoWayOf(root).catch(() => undefined);
+    if (!undo) throw e;
+    throw new HttpError(409, e.title, e.detail, { ...e.extra, undo });
+  }
+}
+
 /** The routes; `asJob` is ui-api.ts's local job (one at a time with Apply, Propose and Bring in). */
 export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
   const root = ctx.root;
@@ -251,13 +268,14 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         const counted = b.allowRemovals !== undefined || b.discardEdits !== undefined;
         if (counted && b.plan === undefined)
           throw badRequest("plan is GET /api/build's pending.plan for the list being confirmed.");
-        if (b.plan !== undefined) {
-          const { catalogBuildView } = await import("./build-report.js");
-          if ((await catalogBuildView(root)).pending.plan !== b.plan)
-            throw conflict(
-              "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
-            );
-        }
+        if (b.plan !== undefined)
+          await conflictWithUndo(root, async () => {
+            const { catalogBuildView } = await import("./build-report.js");
+            if ((await catalogBuildView(root)).pending.plan !== b.plan)
+              throw conflict(
+                "What the build would remove or discard isn't what the page listed any more. Nothing written: look at the list again.",
+              );
+          });
         const { catalogBuild } = await import("./catalog-build-commands.js");
         const flags = [
           ...(b.allowRemovals !== undefined ? [`--allow-removals ${b.allowRemovals}`] : []),
@@ -265,18 +283,21 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         ];
         // The plan is checked again under the command's lock (as upgrade --yes checks its own):
         // a writer between this check and the job writes nothing the page didn't list.
-        return asJob(["atticus catalog build", ...flags].join(" "), () =>
-          captured((io) =>
-            catalogBuild(
-              root,
-              {
-                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
-                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
-                ...(b.plan !== undefined ? { plan: b.plan } : {}),
-              },
-              io,
+        return asJob(
+          ["atticus catalog build", ...flags].join(" "),
+          () =>
+            captured((io) =>
+              catalogBuild(
+                root,
+                {
+                  ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                  ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+                  ...(b.plan !== undefined ? { plan: b.plan } : {}),
+                },
+                io,
+              ),
             ),
-          ),
+          { for: { action: "build" }, hearsStop: true },
         );
       })
       .add("POST", "/api/build/edits/curate", async ({ body }) => {
@@ -294,11 +315,18 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         const { catalogBuild, catalogEdits } = await import("./catalog-build-commands.js");
         // Keep the edits: each made a curated decision, then the build with them (which writes
         // what the edited files hold, so nothing is overwritten), in one job.
-        return asJob("Make the hand edits curated, then build", () =>
-          captured(async (io) => {
-            const code = await catalogEdits(root, { curate: true, by: ctx.user, plan: b.plan }, io);
-            return code === 0 ? catalogBuild(root, {}, io) : code;
-          }),
+        return asJob(
+          "Make the hand edits curated, then build",
+          () =>
+            captured(async (io) => {
+              const code = await catalogEdits(
+                root,
+                { curate: true, by: ctx.user, plan: b.plan },
+                io,
+              );
+              return code === 0 ? catalogBuild(root, {}, io) : code;
+            }),
+          { for: { action: "build" }, hearsStop: true },
         );
       })
       .add("GET", "/api/build/undo", async ({ query }) => {
@@ -324,8 +352,10 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
             "The builds to take back or their files aren't the ones the page listed any more. Nothing was undone: look at the list again.",
           );
         const { catalogUndo } = await import("./catalog-build-commands.js");
-        return asJob(`atticus catalog undo ${b.n} --yes`, () =>
-          captured((io) => catalogUndo(root, { n: b.n, yes: true, plan: b.plan }, io)),
+        return asJob(
+          `atticus catalog undo ${b.n} --yes`,
+          () => captured((io) => catalogUndo(root, { n: b.n, yes: true, plan: b.plan }, io)),
+          { for: { action: "undo" } },
         );
       })
       .add("GET", "/api/build/prune", async () => {
@@ -395,6 +425,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
                 io,
               ),
             ),
+          { for: { action: "upgrade" } },
         );
       })
       // Beta.28 (C4 3.13.0, the owner's decision of 2026-11-12): Delete this link on the canvas,
@@ -472,34 +503,39 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
           );
         const { applyMapEdits } = await import("./catalog-build-commands.js");
         const n = b.edits.length;
-        return asJob(`Apply ${n} change${n === 1 ? "" : "s"} to the map`, async () => {
-          const { lastBuildOf } = await import("./build-report.js");
-          const before = JSON.stringify((await lastBuildOf(root)) ?? null);
-          let ran: Awaited<ReturnType<typeof applyMapEdits>> | undefined;
-          const res = await captured(async (io) => {
-            ran = await applyMapEdits(root, { edits: b.edits, by: ctx.user }, io);
-            return ran.code;
-          });
-          // Saved but the build refused (a large removal, a hand edit): its listing, which
-          // Set up › Scans › Catalog builds confirms in full width. Only this job's report.
-          let refused: unknown;
-          if (ran && !ran.built && ran.edits.every((x) => x.state === "saved")) {
+        const mapEdits = { for: { action: "map-edits" as const }, hearsStop: true };
+        return asJob(
+          `Apply ${n} change${n === 1 ? "" : "s"} to the map`,
+          async () => {
             const { lastBuildOf } = await import("./build-report.js");
-            const last = await lastBuildOf(root);
-            if (last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before)
-              refused = last.refused;
-          }
-          return {
-            ...res,
-            extra: {
-              edits: ran?.edits ?? [],
-              built: ran?.built ?? false,
-              callers,
-              waitsOn,
-              ...(refused ? { refused } : {}),
-            },
-          };
-        });
+            const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+            let ran: Awaited<ReturnType<typeof applyMapEdits>> | undefined;
+            const res = await captured(async (io) => {
+              ran = await applyMapEdits(root, { edits: b.edits, by: ctx.user }, io);
+              return ran.code;
+            });
+            // Saved but the build refused (a large removal, a hand edit): its listing, which
+            // Set up › Scans › Catalog builds confirms in full width. Only this job's report.
+            let refused: unknown;
+            if (ran && !ran.built && ran.edits.every((x) => x.state === "saved")) {
+              const { lastBuildOf } = await import("./build-report.js");
+              const last = await lastBuildOf(root);
+              if (last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before)
+                refused = last.refused;
+            }
+            return {
+              ...res,
+              extra: {
+                edits: ran?.edits ?? [],
+                built: ran?.built ?? false,
+                callers,
+                waitsOn,
+                ...(refused ? { refused } : {}),
+              },
+            };
+          },
+          mapEdits,
+        );
       })
   );
 }

@@ -1045,6 +1045,17 @@ export function taskWaitsWords(t: Pick<Task, "done" | "waits">): string | undefi
   );
 }
 
+/**
+ * ADR 0202 point 6: why a task isn't ready when it waits for no task (it names an id tasks.md
+ * doesn't have, itself or a ring; its id is used twice; its run is past ready): "Not ready:
+ * <why>.", in the ready plan's own sentence. Undefined when done, when `waits` says it, or when
+ * the server says no why (an older one, or a ready task).
+ */
+export function taskNotReadyWords(t: Pick<Task, "done" | "waits" | "why">): string | undefined {
+  if (t.done || t.waits?.tasks.length || !t.why) return undefined;
+  return T.notReady(t.why.replace(/[.\s]+$/, ""));
+}
+
 /** Review round 46: the tasks whose state differs between two reads of the board (or left it). */
 export function tasksThatChanged(before: readonly Task[], after: readonly Task[]): Set<string> {
   const now = new Map(after.map((t) => [t.id, JSON.stringify(t)]));
@@ -1199,6 +1210,16 @@ function TasksByRepo({
                           {taskWaitsWords(x) && (
                             <span className="muted" style={{ fontSize: 12 }}>
                               {taskWaitsWords(x)}
+                            </span>
+                          )}
+                          {taskNotReadyWords(x) && (
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              {taskNotReadyWords(x)}
+                            </span>
+                          )}
+                          {!x.done && x.note && (
+                            <span role="note" className="muted" style={{ fontSize: 12 }}>
+                              {x.note}
                             </span>
                           )}
                           <TaskTick change={change} task={x} onDone={tasks.reload} />

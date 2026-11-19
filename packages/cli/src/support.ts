@@ -139,6 +139,28 @@ export async function bundleFiles(root: string, deps: DoctorDeps = {}): Promise<
   return files.map((f) => ({ name: f.name, text: scrub(f.text, root) }));
 }
 
+/**
+ * The bundle written: the steps `atticus support bundle` runs, shared with the app's Save a
+ * support bundle (ADR 0202 point 1). Under `.atticus/logs/` unless `out` names a file (the
+ * command line's `--out`; the app's route never does). Nothing is sent anywhere.
+ */
+export async function writeSupportBundle(
+  root: string,
+  o: { out?: string; now?: Date } = {},
+  deps: DoctorDeps = {},
+): Promise<{ file: string; files: BundleFile[]; data: Buffer }> {
+  const now = o.now ?? new Date();
+  const files = await bundleFiles(root, deps);
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
+  const file = resolve(o.out ?? join(root, ".atticus", "logs", `atticus-support-${stamp}.zip`));
+  const data = zip(
+    files.map((f) => ({ name: f.name, data: f.text })),
+    now,
+  );
+  await writeFileAtomic(file, data);
+  return { file, files, data };
+}
+
 /** atticus support bundle [--out file.zip] [--json] */
 export async function supportBundleCommand(
   root: string,
@@ -146,17 +168,7 @@ export async function supportBundleCommand(
   io: Output,
   deps: DoctorDeps = {},
 ): Promise<number> {
-  const now = o.now ?? new Date();
-  const files = await bundleFiles(root, deps);
-  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
-  const out = resolve(o.out ?? join(root, ".atticus", "logs", `atticus-support-${stamp}.zip`));
-  await writeFileAtomic(
-    out,
-    zip(
-      files.map((f) => ({ name: f.name, data: f.text })),
-      now,
-    ),
-  );
+  const { file: out, files } = await writeSupportBundle(root, o, deps);
   if (o.json) io.out(JSON.stringify({ file: out, files: files.map((f) => f.name) }, null, 2));
   else {
     io.out(`Wrote ${out} (${files.length} files, nothing sent anywhere):`);

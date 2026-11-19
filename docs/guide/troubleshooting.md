@@ -132,6 +132,8 @@ A command run outside the app keeps what it prints in `.atticus/logs/runs/<run>.
 
 ## Asking for help
 
+In the app, every error has **Save a support bundle**: it saves the file below and says where it is. From a terminal:
+
 ```bash
 atticus support bundle
 ```

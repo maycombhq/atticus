@@ -709,6 +709,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `problems`, each naming its pairs in `needsReason`). GET /api/boxes/corrections says of a
  *   pairing that goes over what its line names the box and the reason (`over`). The preview of
  *   a pairing that moves a call no longer says the Apply would refuse. Additive only.
+ *   Also in 3.19.0 (ADR 0202 points 1 to 6, the app can do what the command line can when something goes
+ *   wrong): POST /api/support/bundle saves a support bundle on this machine and gives it back
+ *   (`SupportBundleView`; nothing is sent anywhere). A job says whether a Stop can still take
+ *   effect (`stoppable`, `stopLands`, on `Job` and on the Console's `ActivityEntry`), and what
+ *   page action started it (`for`); GET /api/jobs lists the jobs kept, by `action` and `repo`.
+ *   A local job that ends failed or refused, and a build route's 409, carry `undo` when a build
+ *   can be taken back (`UndoWay`). GET /api/trust takes `repo` and `rejected`. A task says why
+ *   it isn't ready (`why`) and the plan's note about it (`note`). Additive only.
  *   Also in 3.19.0 (ADR 0202 point 8, the command line's half): GET /api/status says where the metarepo
  *   stands as `atticus status --json` does (`StandingView`): this Atticus, the metarepo's stamp,
  *   whether this Atticus reads its catalog, what the extension needs when it said so, the one
@@ -729,6 +737,22 @@ export const DEFAULT_PORT = 4321;
  */
 export const NextStep = z.object({ step: z.literal("sync"), repos: z.array(z.string()) });
 export type NextStepT = z.infer<typeof NextStep>;
+
+/**
+ * 3.19.0 (ADR 0202 point 3): the build an error's Undo would take back, with what its confirm
+ * sends to POST /api/build/undo (`n`, `files`, `plan`: GET /api/build/undo?n=1's) and that undo
+ * copy's `command` and `at`. `ofThis`: the undo copy was taken by the job that failed (else it is
+ * an earlier build's: after a refusal nothing was written).
+ */
+export const UndoWay = z.object({
+  n: z.number().int().min(1),
+  files: z.number().int().min(0),
+  plan: z.string().regex(/^[0-9a-f]{64}$/),
+  command: z.string(),
+  at: z.string(),
+  ofThis: z.boolean(),
+});
+export type UndoWayT = z.infer<typeof UndoWay>;
 
 export const Problem = z.object({
   type: z.string(),
@@ -758,6 +782,8 @@ export const Problem = z.object({
   problems: z
     .array(z.object({ edit: z.number().int().nonnegative(), message: z.string() }))
     .optional(),
+  /** 3.19.0 (ADR 0202 point 3): on a build route's 409, the build that can be taken back. */
+  undo: UndoWay.optional(),
 });
 
 const Kind = z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]);
@@ -1115,6 +1141,26 @@ export const Coverage = z.object({
 });
 
 export const JobState = z.enum(["queued", "running", "done", "failed", "cancelled"]);
+/**
+ * 3.19.0 (ADR 0202 point 5): the page action a job was started by, so its panel finds it again
+ * after a reload. `map-edits` is Edit the map's Apply my changes.
+ */
+export const JOB_ACTIONS = [
+  "apply",
+  "apply-all",
+  "build",
+  "undo",
+  "upgrade",
+  "propose",
+  "bring-in",
+  "sync",
+  "scan",
+  "map-edits",
+] as const;
+export const JobFor = z.object({ action: z.enum(JOB_ACTIONS), repo: z.string().optional() });
+export type JobForT = z.infer<typeof JobFor>;
+/** 3.19.0 (ADR 0202 point 2): where a Stop asked now would land. */
+export const StopLands = z.enum(["now", "after-write"]);
 export const Job = z.object({
   id: z.string(),
   kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step", "local", "work"]),
@@ -1125,12 +1171,45 @@ export const Job = z.object({
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   errors: z.array(z.string()),
-  /** Kind-specific outcome, e.g. scan diff counts. */
+  /**
+   * Kind-specific outcome, e.g. scan diff counts. 3.19.0 (ADR 0202 point 3): a local job that
+   * ended failed or refused carries `undo` (an `UndoWay`) when a build can be taken back.
+   */
   result: z.record(z.string(), z.unknown()).optional(),
   /** 3.12.0: Stop was asked and the job is ending (it stops at its next safe point). */
   stopping: z.boolean().optional(),
+  /**
+   * 3.19.0 (ADR 0202 point 2): true while the job runs, is not stopping, and a Stop would end
+   * it: before its write, or during a write of a job of several. False otherwise. A server from
+   * 3.19.0 always sends it; an older one never does (Stop is then offered while it runs).
+   */
+  stoppable: z.boolean().optional(),
+  /** 3.19.0: only when `stoppable`: now, or when the write a job of several is inside has ended. */
+  stopLands: StopLands.optional(),
+  /** 3.19.0 (ADR 0202 point 5): the page action that started it. */
+  for: JobFor.optional(),
 });
+export type JobT = z.infer<typeof Job>;
 export const JobAccepted = z.object({ jobId: z.string() });
+/**
+ * 3.19.0: GET /api/jobs: the running jobs that match first, then the finished ones this server
+ * still keeps (100 in all, lost when `atticus ui` stops), each newest first.
+ */
+export const JobList = z.object({ jobs: z.array(Job) });
+export type JobListT = z.infer<typeof JobList>;
+/**
+ * 3.19.0 (ADR 0202 point 1): POST /api/support/bundle's answer. `file` is the zip's path from the
+ * metarepo's root, `files` the names in it, `zip` its bytes in base64 (left out above 8 MB).
+ * Nothing is sent anywhere: a person reads every file before it leaves.
+ */
+export const SupportBundleView = z.object({
+  file: z.string(),
+  name: z.string(),
+  bytes: z.number().int().min(0),
+  files: z.array(z.string()),
+  zip: z.string().optional(),
+});
+export type SupportBundleViewT = z.infer<typeof SupportBundleView>;
 
 export const ArtifactStatus = z.object({
   artifact: ChangeArtifact,
@@ -1290,6 +1369,13 @@ export const Task = z.object({
   decision: z.object({ by: z.string(), at: z.string(), reason: z.string() }).optional(),
   /** 3.3.0: whether the task's repo has a build command now (repos.manifest.yaml). */
   repoBuilds: z.boolean().optional(),
+  /**
+   * 3.19.0 (ADR 0202 point 6): the ready plan's sentence for a task that is not done and not
+   * ready, whatever holds it ("it names task t9 in (after …), which tasks.md doesn't have").
+   */
+  why: z.string().optional(),
+  /** 3.19.0: the ready plan's note about the task (a title read as "(after …)" words). */
+  note: z.string().optional(),
 });
 export type TaskT = z.infer<typeof Task>;
 
@@ -6624,6 +6710,9 @@ export const ActivityEntry = z.object({
   stop: z.string().optional(),
   /** 3.12.0: Stop was asked and it is ending. */
   stopping: z.boolean().optional(),
+  /** 3.19.0 (ADR 0202 point 2): a job's `stoppable` and `stopLands`, on its entry. */
+  stoppable: z.boolean().optional(),
+  stopLands: StopLands.optional(),
   /**
    * 3.12.0 (beta.27 review): how a `done` entry ended when it isn't plain done: `refused`, it
    * refused and wrote nothing (a scan's safety stop), neither done work nor a failure.
@@ -7809,9 +7898,28 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getTrust",
       summary:
-        "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124)",
+        "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124). 3.19.0 (ADR 0202 point 4): with repo, only that repo's row (404 for an id that is no repo); with repo and rejected=1, its lists hold only the rejected lines, every one (the other lists are empty); rejected=1 without repo is 400",
       tag: "workspace",
+      params: [
+        q("repo", str, "3.19.0: only this repo's row"),
+        q(
+          "rejected",
+          { type: "string", enum: ["1"] },
+          "3.19.0: with repo, only its rejected facts",
+        ),
+      ],
       ok: { status: 200, schema: "TrustView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/support/bundle": {
+    post: {
+      id: "saveSupportBundle",
+      summary:
+        "3.19.0 (ADR 0202 point 1): save a support bundle, as atticus support bundle does: the same files in the same zip under .atticus/logs/, given back for the person to save. Not a job, no network call, and no parameter names a destination: nothing is sent anywhere, and a person reads every file before it leaves",
+      tag: "system",
+      ok: { status: 200, schema: "SupportBundleView", description: "Saved on this machine" },
+      errors: [400],
     },
   },
   "/api/trust/answer-boxes/ignore": {
@@ -8216,6 +8324,20 @@ const OPS: Record<string, Record<string, Op>> = {
       body: ReconcileRequest,
       ok: { status: 202, schema: "JobAccepted", description: "Job started" },
       errors: [404, 409],
+    },
+  },
+  "/api/jobs": {
+    get: {
+      id: "listJobs",
+      summary:
+        "3.19.0 (ADR 0202 point 5): the jobs a page action started, so its panel finds a running one again after a reload: the running ones that match, then the finished ones this server still keeps (100 in all, lost when atticus ui stops), newest first. With no parameter, every job kept",
+      tag: "scans",
+      params: [
+        q("action", { type: "string", enum: [...JOB_ACTIONS] }, "The page action that started it"),
+        q("repo", str, "The repo it is for"),
+      ],
+      ok: { status: 200, schema: "JobList", description: "OK" },
+      errors: [400],
     },
   },
   "/api/jobs/{jobId}": {
@@ -10203,6 +10325,9 @@ export function openApiDocument(): Record<string, unknown> {
     Coverage,
     Job,
     JobAccepted,
+    JobList,
+    SupportBundleView,
+    UndoWay,
     ReadyTasks,
     RunReadyAccepted,
     RunReadyResult,

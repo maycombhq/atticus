@@ -1,4 +1,5 @@
 import {
+  Api,
   maskSecretShapes,
   printToCurrent,
   withCommit,
@@ -30,6 +31,13 @@ export type JobKind =
   "scan" | "sync" | "reconcile" | "index" | "intake" | "step" | "local" | "work";
 export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
+/**
+ * ADR 0202 point 5: the page's action a job was started by, so the panel that started it finds
+ * it again after a reload. `map-edits` is Edit the map's Apply my changes.
+ */
+export const JOB_ACTIONS = Api.JOB_ACTIONS;
+export type JobFor = Api.JobForT;
+
 export interface Job {
   id: string;
   kind: JobKind;
@@ -43,6 +51,15 @@ export interface Job {
   result?: Record<string, unknown>;
   /** Beta.27 review: Stop was asked and it is ending (until it ends). */
   stopping?: boolean;
+  /**
+   * ADR 0202 point 2: whether a Stop asked now would end it: it runs, isn't stopping, and is
+   * before its write, or is a job of several inside or between its writes. Always there.
+   */
+  stoppable: boolean;
+  /** Only when `stoppable`: now, or when the write a job of several is inside has ended. */
+  stopLands?: "now" | "after-write";
+  /** ADR 0202 point 5: the page's action that started it. */
+  for?: JobFor;
 }
 
 export interface JobControl {
@@ -143,6 +160,15 @@ export interface JobStartOptions {
    * before: past its commit a Stop is said too late, each time it is asked.
    */
   severalWrites?: { heard: string; stopping: string };
+  /** ADR 0202 point 5: the page's action it is started by (`GET /api/jobs?action=&repo=`). */
+  for?: JobFor;
+  /**
+   * The review of ADR 0202: the work hears Stop: it reads the job's signal or `cancelled` where
+   * it can stop cleanly. Only such a job is ever `stoppable`, takes a Stop, or ends "Stopped.".
+   * Left out, the job runs to its end whatever is asked: nothing claims it stopped when it wrote
+   * everything.
+   */
+  hearsStop?: boolean;
 }
 
 export type JobChange =
@@ -170,6 +196,13 @@ export class JobManager {
   private lateStops = new Set<string>();
   /** Beta.28.4: the jobs of several writes, with their words for a Stop during a write. */
   private several = new Map<string, { heard: string; stopping: string }>();
+  /** The jobs whose work hears Stop (`hearsStop`), while they run. */
+  private hears = new Set<string>();
+
+  /** Whether a running job's work hears Stop: only then is a Stop taken. */
+  hearsStop(id: string): boolean {
+    return this.hears.has(id);
+  }
   /** Beta.28.4: what a job stopping after its write says meanwhile, and what it last would have. */
   private stoppingSay = new Map<string, string>();
   private lastGiven = new Map<string, string>();
@@ -209,6 +242,35 @@ export class JobManager {
   /** Every job kept, newest first (ADR 0187). */
   list(): Job[] {
     return [...this.jobs.values()].reverse();
+  }
+
+  /**
+   * ADR 0202 point 5: the jobs kept that an action started (and, with `repo`, for that repo):
+   * the running ones first, then the finished, each newest first. With neither, every job kept.
+   */
+  find(q: { action?: string; repo?: string }): Job[] {
+    const of = this.list().filter(
+      (j) =>
+        (q.action === undefined || j.for?.action === q.action) &&
+        (q.repo === undefined || j.for?.repo === q.repo),
+    );
+    const runs = (j: Job) => j.state === "running" || j.state === "queued";
+    return [...of.filter(runs), ...of.filter((j) => !runs(j))];
+  }
+
+  /**
+   * ADR 0202 point 2: whether a Stop would still end the job, and where it would land. Worked
+   * out again wherever a commit, a release, a Stop or its end changes it.
+   */
+  private stopStands(job: Job): void {
+    const inWrite = this.committedIds.has(job.id);
+    job.stoppable =
+      this.hears.has(job.id) &&
+      job.state === "running" &&
+      !job.stopping &&
+      (!inWrite || this.several.has(job.id));
+    if (job.stoppable) job.stopLands = inWrite ? "after-write" : "now";
+    else delete job.stopLands;
   }
 
   /** What a job belongs to, as it was started. */
@@ -312,7 +374,11 @@ export class JobManager {
       ...(o.title ? { title: o.title } : {}),
       startedAt: this.now().toISOString(),
       errors: [],
+      stoppable: !!o.hearsStop,
+      ...(o.hearsStop ? { stopLands: "now" as const } : {}),
+      ...(o.for ? { for: { ...o.for } } : {}),
     };
+    if (o.hearsStop) this.hears.add(id);
     this.jobs.set(id, job);
     this.printed.set(id, { from: 0, lines: [] });
     if (o.meta) this.metas.set(id, { ...o.meta });
@@ -340,6 +406,7 @@ export class JobManager {
     const commit = () => {
       if (this.committedIds.has(id)) return;
       this.committedIds.add(id);
+      this.stopStands(job);
       // A Stop asked before the work heard it: too late now, said as such.
       if (cancelled.delete(id)) {
         // Beta.28.4: kept, for work that says when this write has ended (`release`).
@@ -356,6 +423,7 @@ export class JobManager {
           return;
         }
         delete job.stopping;
+        this.stopStands(job);
         // The hunt of beta.28.1 (S3): the Stop is taken back, so is its "Stopping…".
         const was = this.beforeStop.get(id);
         this.beforeStop.delete(id);
@@ -364,13 +432,16 @@ export class JobManager {
           this.publish({ type: "job.progress", jobId: id, ...job.progress });
         }
         line(TOO_LATE);
-        this.tell({ type: "state", job });
       }
+      // ADR 0202: heard by whoever listens, so a panel hides Stop as the write starts.
+      this.tell({ type: "state", job });
     };
     const release = () => {
       if (!this.committedIds.delete(id)) return;
+      this.stopStands(job);
       // A Stop asked during the write that just ended: acted on now, between two writes.
       if (this.lateStops.delete(id)) this.stopNow(job);
+      else this.tell({ type: "state", job });
     };
     const control: JobControl = {
       progress: (done, total, given) => {
@@ -414,6 +485,7 @@ export class JobManager {
       if (job.state !== "cancelled" && job.stopping && this.stoppingSay.has(id))
         job.progress = { ...job.progress, message: lastSaid ?? this.beforeStop.get(id) ?? "" };
       this.aborts.delete(id);
+      this.hears.delete(id);
       this.committedIds.delete(id);
       this.lateStops.delete(id);
       this.several.delete(id);
@@ -437,6 +509,7 @@ export class JobManager {
       else if (job.state === "done" && job.progress.done < job.progress.total)
         job.progress = { ...job.progress, done: job.progress.total };
       delete job.stopping;
+      this.stopStands(job);
       job.finishedAt = this.now().toISOString();
       ofKind.delete(id);
       if (!ofKind.size && this.running.get(kind) === ofKind) this.running.delete(kind);
@@ -486,6 +559,8 @@ export class JobManager {
   cancel(id: string): boolean {
     const j = this.jobs.get(id);
     if (!j || j.state !== "running") return false;
+    // Work that doesn't hear Stop takes none: it runs to its end, and never says it stopped.
+    if (!this.hears.has(id)) return false;
     if (j.stopping) return true;
     // Beta.28.1: past the work's commit point, Stop is too late: said, and the work goes on.
     if (this.committedIds.has(id)) {
@@ -506,6 +581,7 @@ export class JobManager {
     this.cancelledIds.add(j.id);
     this.stoppingSay.delete(j.id);
     j.stopping = true;
+    this.stopStands(j);
     j.progress = { ...j.progress, message: STOPPING };
     this.print(j, STOPPING);
     this.publish({ type: "job.progress", jobId: j.id, ...j.progress });
@@ -522,6 +598,7 @@ export class JobManager {
     this.beforeStop.set(j.id, j.progress.message);
     this.stoppingSay.set(j.id, sev.stopping);
     j.stopping = true;
+    this.stopStands(j);
     j.progress = { ...j.progress, message: sev.stopping };
     this.print(j, sev.heard);
     this.publish({ type: "job.progress", jobId: j.id, ...j.progress });
