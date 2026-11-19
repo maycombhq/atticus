@@ -1076,7 +1076,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ],
           });
         });
-        return { status: 200, body: { ...plan, applyFirst: await applyFirstOf(root, plan.files) } };
+        const { profilesRaised } = await import("./propose-profiles.js");
+        const raises = await profilesRaised(root, plan.files);
+        return {
+          status: 200,
+          body: {
+            ...plan,
+            applyFirst: await applyFirstOf(root, plan.files),
+            ...(raises.length ? { raisesProfile: raises } : {}),
+          },
+        };
       })
       .add("POST", "/api/propose", async ({ body }) => {
         const b = parseBody(Api.ProposeRequest, body);

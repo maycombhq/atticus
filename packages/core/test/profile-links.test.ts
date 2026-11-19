@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { Profile as Beta285Profile } from "./frozen/profile-beta28-5.js";
 import {
   declareArrow,
   declaredArrows,
@@ -79,10 +79,15 @@ describe("Profile links (ADR 0204, version 3)", () => {
     }
   });
 
-  it("is refused by an older Atticus by its version number (beta.28.5's schemaVersion rule)", () => {
-    // What beta.28.5 reads a profile's version with: 1 or 2.
-    const older = z.object({ schemaVersion: z.union([z.literal(1), z.literal(2)]) });
-    expect(older.safeParse(v(3, [link()])).success).toBe(false);
+  it("is refused by an older Atticus by its version number (beta.28.5's own schema, frozen)", () => {
+    const older = Beta285Profile.safeParse(v(3, [link()]));
+    expect(older.success).toBe(false);
+    expect(older.error!.issues.map((i) => i.path.join("."))).toContain("schemaVersion");
+    // A version-1 or 2 profile that names no arrow reads there as it does here.
+    expect(Beta285Profile.safeParse(v(2, [])).success).toBe(false);
+    expect(
+      Beta285Profile.safeParse({ schemaVersion: 2, platform: "forge", name: "Forge" }).success,
+    ).toBe(true);
   });
 
   it("moves a version-1 or 2 file to 3, changing only the number; 2 for topics as before", () => {
@@ -179,10 +184,8 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     expect(left).not.toContain("forge-cards }");
     expect(left).toContain("from: { repo: forge-portal }");
     await retireArrow(root, other, { platform: "forge" });
-    // The last one takes `links:` with it; the version stays 3.
-    expect(await readFile(file, "utf8")).toBe(
-      `# a note by hand\n${before.replace("schemaVersion: 1", "schemaVersion: 3")}`,
-    );
+    // The last one takes `links:` with it, and the version back to the lowest it needs.
+    expect(await readFile(file, "utf8")).toBe(`# a note by hand\n${before}`);
     await expect(retireArrow(root, asked, { platform: "forge" })).rejects.toBeInstanceOf(
       DeclareError,
     );

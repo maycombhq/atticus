@@ -4446,6 +4446,13 @@ export const ProposePlanView = z.object({
    * (seventh UX walk): and the repos whose answered map questions are newer than their last Apply.
    */
   applyFirst: z.array(z.string()).optional(),
+  /**
+   * 3.19.0 (ADR 0204, Migration): the profiles the proposal raises to a version an older Atticus
+   * refuses (each from its committed version to its own): the team upgrades before it merges.
+   */
+  raisesProfile: z
+    .array(z.object({ file: z.string(), from: z.number().int(), to: z.number().int() }))
+    .optional(),
 });
 
 /**

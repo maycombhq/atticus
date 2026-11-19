@@ -103,8 +103,10 @@ export function RunNewRepos(p: { repos: Repos; platform?: string; io?: RunIo }) 
         </ul>
       )}
       {res?.handoff && !busy && (
-        <div className="stack" role="status">
-          <p className="ev-say">{W.readHandoff}</p>
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {W.readHandoff}
+          </p>
           <Command text={res.handoff.command} label={W.readHandoff} noRun />
           <button type="button" className="btn primary" onClick={() => go(true)}>
             {W.readDone}
@@ -112,8 +114,10 @@ export function RunNewRepos(p: { repos: Repos; platform?: string; io?: RunIo }) 
         </div>
       )}
       {res && !res.handoff && !busy && (
-        <div className="stack" role="status">
-          <p className="ev-say">{W.onMap(res.done, res.of)}</p>
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {W.onMap(res.done, res.of)}
+          </p>
           {res.done > 0 && (
             <a className="btn" href="#/map">
               {W.showThem}

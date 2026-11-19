@@ -220,7 +220,7 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     expect((await g.interfaces()).some((i) => i.flags?.includes("declared-link"))).toBe(false);
     const c = Api.BoxCorrections.parse((await g.call(`/api/boxes/corrections?repo=${A}`)).body);
     expect(c.items.find((x) => x.kind === "arrow")?.says).toMatch(
-      /confirmed by code on \d{4}-\d{2}-\d{2}$/,
+      /confirmed by code on \d{4}-\d{2}-\d{2}/,
     );
     // Each find replaced its callee's entry: one entry for forge-ledger.
     const report = parse(readFileSync(join(g.root, "facts", `${A}.find.yaml`), "utf8")) as {

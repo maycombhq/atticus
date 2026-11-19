@@ -1123,8 +1123,8 @@ export function Pairing(p: {
         />
       )}
       {written && applied && (
-        <div className="stack" role="status">
-          <p className="ev-say">
+        <div className="stack">
+          <p role="status" className="ev-say">
             {applied.built
               ? COPY.connectAB.connected(d.from, d.toName)
               : COPY.connectAB.savedNotBuilt}
@@ -1222,8 +1222,10 @@ function MakeRule({ repo, line }: { repo: string; line: string }) {
   const [error, setError] = useState<string | undefined>();
   if (made)
     return (
-      <div className="stack" role="status">
-        <p className="ev-say">{C.ruleMade(made.file)}</p>
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {C.ruleMade(made.file)}
+        </p>
         <Cmd text={made.activate} />
       </div>
     );

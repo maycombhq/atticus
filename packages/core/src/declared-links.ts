@@ -758,10 +758,16 @@ export async function retireArrow(
     list.items[i] as { range?: [number, number, number] | null },
     list.items.length === 1,
   );
-  if (after !== undefined && o.lowerTo !== undefined && isSeq(list) && list.items.length === 1)
+  // The last arrow gone: back to the lowest version the profile needs (2 with topics, else 1),
+  // so an older Atticus reads it again; an Undo puts back exactly the version it raised.
+  const topics = (doc.toJS() as { systems?: { topics?: unknown[] }[] }).systems?.some(
+    (x) => !!x.topics?.length,
+  );
+  const lowerTo = o.lowerTo ?? (topics ? 2 : 1);
+  if (after !== undefined && isSeq(list) && list.items.length === 1)
     after = after.replace(
       new RegExp(`^schemaVersion:[ \\t]*${PROFILE_SCHEMA_VERSION}([ \\t]*(#.*)?)$`, "m"),
-      `schemaVersion: ${o.lowerTo}$1`,
+      `schemaVersion: ${lowerTo}$1`,
     );
   if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
     throw new DeclareError(

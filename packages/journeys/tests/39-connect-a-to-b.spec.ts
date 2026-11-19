@@ -33,13 +33,13 @@ test("an outside system is connected to a repo by declaring the arrow, in one go
     await page.getByLabel("The other box").selectOption({ label: "repo: forge-ledger" });
     const panel = page.locator(".connect-panel");
     await expect(
-      panel.getByRole("heading", { name: "Connect northwind-pay to forge-ledger" }),
+      panel.getByRole("heading", { name: "Connect Northwind Pay to forge-ledger" }),
     ).toBeVisible();
     await expect(
       panel.getByRole("radio", { name: "northwind-pay calls forge-ledger" }),
     ).toBeChecked();
     await expect(
-      panel.getByText(/Atticus found no call in Northwind Pay's code that goes to forge-ledger/),
+      panel.getByText(/Northwind Pay has no code in the estate, so no call of it can be read/),
     ).toBeVisible({ timeout: 60_000 });
     return panel;
   };
@@ -77,4 +77,32 @@ test("an outside system is connected to a repo by declaring the arrow, in one go
   await again.getByRole("button", { name: "Show the arrow" }).click({ timeout: 120_000 });
   await expect(page.locator(DECLARED)).toHaveCount(1, { timeout: 60_000 });
   await accessible(page, "the map with a declared arrow");
+
+  // Its panel again: the person's word, with Remove it, its lines first, then taken out and built.
+  const connect = page.getByRole("button", { name: "Connect to…" });
+  await expect(async () => {
+    await page
+      .locator('.react-flow__node[data-id="system:northwind-pay"]')
+      .click({ timeout: 2_000 });
+    await expect(connect).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await connect.click();
+  await page.getByLabel("The other box").selectOption({ label: "repo: forge-ledger" });
+  const declared = page.locator(".connect-panel");
+  await expect(declared.getByText(/No code was read for this arrow\./)).toBeVisible({
+    timeout: 60_000,
+  });
+  await accessible(page, "Connect, an arrow declared already");
+  await declared.getByRole("button", { name: "Remove it" }).click();
+  await expect(declared.getByText("These lines go from the profile:")).toBeVisible({
+    timeout: 60_000,
+  });
+  await accessible(page, "Connect, the lines Remove takes out");
+  await declared.getByRole("button", { name: "Remove it: take these lines out and build" }).click();
+  await expect(
+    declared.getByText("Done: the declared arrow is out of the profile, and the map built again."),
+  ).toBeVisible({ timeout: 120_000 });
+  expect(profile()).toBe(before);
+  await expect(page.locator(DECLARED)).toHaveCount(0, { timeout: 60_000 });
+  await accessible(page, "Connect, the declared arrow removed");
 });

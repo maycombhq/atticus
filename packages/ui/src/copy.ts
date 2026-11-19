@@ -8162,6 +8162,8 @@ export const COPY = {
         `${a} already calls ${b}: ${n} call${n === 1 ? "" : "s"} read from code. There is nothing to add.`,
       declared: (name: string, date: string, why: string) =>
         `${name} declared this arrow on ${date}: "${why}".`,
+      declareNoCode: (a: string, b: string, name: string) =>
+        `${a} has no code in the estate, so no call of it can be read. You can still draw the arrow to ${b}: it will be your word, drawn dashed and marked "declared by ${name}".`,
       declare: (a: string, b: string, name: string) =>
         `Atticus found no call in ${a}'s code that goes to ${b}. You can still draw the arrow: it will be your word, drawn dashed and marked "declared by ${name}".`,
       needs: "Something is missing before these two boxes can be connected:",
@@ -8192,6 +8194,8 @@ export const COPY = {
     shownCount: (n: number) =>
       `${n} declared arrow${n === 1 ? "" : "s"} the code now shows: retire ${n === 1 ? "it" : "them"} when you agree.`,
     shownOpen: (a: string, b: string) => `${a} → ${b}`,
+    raisesProfile: (file: string, from: number, to: number) =>
+      `This raises ${file} from profile version ${from} to ${to}: an Atticus older than 2.0.0-beta.30 refuses it. Upgrade everyone who works in this metarepo before it merges.`,
     retireConfirm: (label: string) => `${label}: take these lines out and build`,
     declaredPanel: (name: string, date: string, a: string, b: string, why: string) =>
       `${name} declared on ${date} that ${a} calls ${b}: "${why}". No code was read for this arrow.`,
@@ -8205,10 +8209,8 @@ export const COPY = {
     },
     toItself: (system: string) => `Connect to ${system} itself`,
     addRepo: "Add its repo…",
-    readNow: (box: string) => `Read ${box} now`,
     checkNow: (box: string) => `Check ${box}'s facts now`,
     addAndGo: (label: string) => `Add ${label} and continue`,
-    declareNow: "Declare the arrow now",
     details: "Details",
     // ADR 0204 5.2 and 5.3: nine statuses shown as four, ten reasons as four; the exact one kept.
     shown: {

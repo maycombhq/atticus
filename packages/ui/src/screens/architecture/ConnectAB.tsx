@@ -89,7 +89,9 @@ export function ConnectAB(p: {
     <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
       <div className="box-pop-head">
         <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
-          {W.title(name(caller), callee ? name(callee) : W.pickOtherNone)}
+          {v
+            ? W.title(v.fromName, v.toName)
+            : W.title(name(caller), callee ? name(callee) : W.pickOtherNone)}
         </h4>
         <button type="button" className="btn" onClick={p.onClose}>
           {COPY.connect.close}
@@ -181,7 +183,9 @@ function Mechanism(p: {
         : v.mechanism === "declared" && v.declared
           ? W.mechanism.declared(v.declared.by, day(v.declared.at), v.declared.why)
           : v.mechanism === "declare"
-            ? W.mechanism.declare(a, b, me)
+            ? v.from.system
+              ? W.mechanism.declareNoCode(a, b, me)
+              : W.mechanism.declare(a, b, me)
             : W.mechanism.needs;
   return (
     <div className="stack">
@@ -243,6 +247,7 @@ function Need(p: {
 }) {
   const { n } = p;
   const [boundary, setBoundary] = useState<"internal" | "vendor">("internal");
+  const pickId = useId();
   const words =
     n.need === "pick-repo"
       ? W.need["pick-repo"](n.label, n.repos?.length ?? 0)
@@ -257,7 +262,7 @@ function Need(p: {
             <label key={r} className="row" style={{ gap: 6 }}>
               <input
                 type="radio"
-                name={`pick-${n.end}`}
+                name={`${pickId}-pick`}
                 onChange={() => p.pick(n.end, { repo: r })}
               />
               <span className="mono">{r}</span>
@@ -282,7 +287,7 @@ function Need(p: {
               <label key={x} className="row" style={{ gap: 6 }}>
                 <input
                   type="radio"
-                  name={`boundary-${n.end}`}
+                  name={`${pickId}-boundary`}
                   checked={boundary === x}
                   onChange={() => setBoundary(x)}
                 />
@@ -487,8 +492,10 @@ function FindButton(p: { v: Api.ConnectViewT; io: Omit<ConnectIo, "read">; reloa
         {busy ? W.finding : label}
       </button>
       {handoff && (
-        <div className="stack" role="status">
-          <p className="ev-say">{W.handoff}</p>
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {W.handoff}
+          </p>
           <Command text={handoff} label={W.handoff} noRun />
           <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
             {W.readAnswer}
@@ -590,8 +597,10 @@ function RuleFromFind(p: { repo: string; to: Api.LinkBoxT }) {
   const [error, setError] = useState<string | undefined>();
   if (made)
     return (
-      <div className="stack" role="status">
-        <p className="ev-say">{W.ruleDrafted(made.file)}</p>
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {W.ruleDrafted(made.file)}
+        </p>
         <Command text={made.activate} label={W.makeRule} noRun />
       </div>
     );
@@ -732,8 +741,10 @@ export function DeclareArrow(p: {
     );
   if (done)
     return (
-      <div className="stack" role="status">
-        <p className="ev-say">{done.built ? W.connected(v.fromName, v.toName) : W.savedNotBuilt}</p>
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {done.built ? W.connected(v.fromName, v.toName) : W.savedNotBuilt}
+        </p>
         {done.lines.length > 0 && (
           <details>
             <summary className="hud">{W.wrote}</summary>
@@ -802,7 +813,9 @@ export function DeclareArrow(p: {
             ? W.declareRoutes(routes.size)
             : p.addSystem
               ? W.addAndGo(p.addSystem.name)
-              : W.declare)}
+              : v.needs.some((n) => n.need === "no-repo")
+                ? W.toItself(v.toName)
+                : W.declare)}
       </button>
       {error && (
         <p role="alert" className="state error">
