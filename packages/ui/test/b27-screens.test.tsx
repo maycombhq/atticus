@@ -623,8 +623,10 @@ describe("17: the upgrade panel", () => {
   });
 
   it("reads what the run changed from the job's result (final round)", async () => {
-    const { followJob } = await import("../src/app/job.js");
-    expect(followJob.toString()).toMatch(/result: j\.result/);
+    // ADR 0202 (the review): followJob follows the job it started by its id, with followJobId.
+    const { followJob, followJobId } = await import("../src/app/job.js");
+    expect(followJob.toString()).toMatch(/followJobId\(jobId/);
+    expect(followJobId.toString()).toMatch(/result: j\.result/);
     const src = readFileSync(new URL("../src/app/upgrade.tsx", import.meta.url), "utf8");
     expect(src).toMatch(/const upgraded = r\.result\?\.upgraded;/);
     expect(src).not.toMatch(/view\.upgraded/);
