@@ -178,6 +178,14 @@ function calledName(words: string[]): string | undefined {
   return rest.length === 1 && PLAIN.test(rest[0]!) && !KIND_WORDS[rest[0]!] ? rest[0] : undefined;
 }
 
+/**
+ * A name shaped like an id or a topic's name: a dot, a dash or an underscore in it
+ * (`forge-portal`, `forge.orders.shipped`). Only such a name is said to be missing where a plain
+ * word ("who sends notifications?", "what does billing use") stays a word search, as it was (the
+ * review of b30/proof-fixes).
+ */
+const ID_SHAPED = /[._-]/;
+
 /** Words that say a name is a topic's, never the name. */
 const TOPIC_NOUNS = new Set("topic topics event events queue message messages".split(" "));
 
@@ -191,16 +199,26 @@ function nameAfter(words: string[], verb: RegExp): string | undefined {
   const rest = words
     .slice(at + 1)
     .filter((w) => !STOP.has(w) && !NOUNS.has(w) && !TOPIC_NOUNS.has(w));
-  return rest.length === 1 && PLAIN.test(rest[0]!) && !KIND_WORDS[rest[0]!] ? rest[0] : undefined;
+  return rest.length === 1 &&
+    PLAIN.test(rest[0]!) &&
+    ID_SHAPED.test(rest[0]!) &&
+    !KIND_WORDS[rest[0]!]
+    ? rest[0]
+    : undefined;
 }
 
-/** The one name in "what does X call" when no record is X. */
+/** The one name in "what does X call" when no record is X, shaped like an id. */
 function callerName(words: string[]): string | undefined {
   const from = words.indexOf("does");
   const to = words.findIndex((w, n) => n > from && /^(calls?|uses?|depends?|talks?)$/.test(w));
   if (words[0] !== "what" || from !== 1 || to < 0) return undefined;
   const rest = words.slice(from + 1, to).filter((w) => !STOP.has(w) && !NOUNS.has(w));
-  return rest.length === 1 && PLAIN.test(rest[0]!) && !KIND_WORDS[rest[0]!] ? rest[0] : undefined;
+  return rest.length === 1 &&
+    PLAIN.test(rest[0]!) &&
+    ID_SHAPED.test(rest[0]!) &&
+    !KIND_WORDS[rest[0]!]
+    ? rest[0]
+    : undefined;
 }
 
 /** The first word of the question that names a catalog record, longest first. */

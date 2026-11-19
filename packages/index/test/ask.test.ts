@@ -172,6 +172,15 @@ describe("Ask: plain questions become catalog queries, and the query is always s
       ["which calls go through the gateway", "kind:interface via:gateway"],
       ["which interfaces use quillfeather", "kind:interface"],
       ["who uses forge-portal", "uses forge-portal"],
+      // A plain word is a word search, as it was: only a name shaped like an id or a topic (a dot,
+      // a dash or an underscore in it) is said to be missing (the review of b30/proof-fixes).
+      ["who sends notifications?", "sends notifications"],
+      ["what produces invoices", "produces invoices"],
+      ["what does billing use", "billing use"],
+      ["what does billing call?", "billing call"],
+      ["who receives payments?", "receives payments"],
+      ["who listens to alerts", "listens alerts"],
+      ["who publishes reports?", "publishes reports"],
     ] as const)
       expect(translate(q, lookup).query, q).toBe(query);
     // One reading did change (b30 proof run): a topic the map lacks is said to be missing, where

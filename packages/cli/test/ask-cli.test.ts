@@ -186,6 +186,16 @@ describe("atticus ask: every reading the base had is kept (ADR 0201, review of b
     ["who consumes ledger-api", "kind:interface to:ledger-api"],
     ["what calls northwind-pay", "kind:interface to:northwind-pay"],
     ["who uses forge-portal", "uses forge-portal"],
+    // A plain word is a word search, as it was: only a name shaped like an id or a topic (a dot,
+    // a dash or an underscore in it) is said to be missing (the review of b30/proof-fixes).
+    ["who sends notifications?", "sends notifications"],
+    ["what produces invoices", "produces invoices"],
+    ["what does billing use", "billing use"],
+    ["what does billing call?", "billing call"],
+    ["who receives payments?", "receives payments"],
+    ["who listens to alerts", "listens alerts"],
+    // Here reports is a system the map has: the base's search for it.
+    ["who publishes reports?", "reports"],
     ["what breaks if transfers.completed changes", "breaks transfers.completed changes"],
     ["list interfaces for transfers.completed", "kind:interface"],
     ["who reads entry", "refby:ledger-db.entry kind:component"],
