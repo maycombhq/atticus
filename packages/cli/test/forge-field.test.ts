@@ -97,13 +97,20 @@ describe("fixtures/forge-field", () => {
    * have a call `c-1` left loose make one record: the other repo's loose end is in no record,
    * so impact's "loose end Atticus couldn't follow" (packages/index/src/graph.ts) never names it.
    * The tidy Forge fixture's fact ids are unique across repos, so nothing found it there. When
-   * the ids carry their repo this passes, and `it.fails` says so: make it `it`.
+   * the ids carry their repo (the owner's decision; another change builds it) this passes, and
+   * `it.fails` says so: make it `it`.
    */
   it.fails(
     "has a record for every repo's loose call, when two repos have a call of the same id",
     async () => {
       const corrections = new Set<string>();
-      const facts: { repo: string; id: string; host?: string; kind: string }[] = [];
+      const facts: {
+        repo: string;
+        id: string;
+        host?: string;
+        kind: string;
+        cite: { file: string; line: number };
+      }[] = [];
       for (const n of await readdir(join(e.root, "facts"))) {
         const text = await readFile(join(e.root, "facts", n), "utf8");
         const lines = text
@@ -123,12 +130,15 @@ describe("fixtures/forge-field", () => {
             /^(@forgeTargetUrl\d@|api\.northwind-pay\.example)$/.test(f.host ?? ""),
         )
         .filter((f) => !corrections.has(`${f.repo} ${f.id}`))
-        .map((f) => `${f.repo} ${f.id}`);
+        .map((f) => `${f.repo} ${f.cite.file}:${f.cite.line}`);
+      // By what each Unresolved record cites (repo, file and line), never by its id, so this
+      // holds whatever the ids become.
       const got = new Set(
         records
           .filter((r) => r.kind === "Unresolved")
-          .flatMap((r) => ev(r).map((x) => `${x.repo} ${r.id.replace(/^unresolved\./, "")}`)),
+          .flatMap((r) => ev(r).map((x) => `${x.repo} ${x.path}:${x.line}`)),
       );
+      expect(want.length).toBeGreaterThan(0);
       expect(want.filter((w) => !got.has(w))).toEqual([]);
     },
   );

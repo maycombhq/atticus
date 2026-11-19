@@ -609,6 +609,10 @@ export async function writeManifest(root: string, repos: readonly ManifestRepo[]
  * (the assistant's, with their snapshots, as `verify --write` leaves them); no clone, no network.
  * Fact ids carry their repo's short name: two repos' loose calls of one id make one catalog record
  * today (the known bug forge-field.test.ts holds as `it.fails`).
+ *
+ * TODO(beta.30, Unresolved ids with their repo): when "has a record for every repo's loose call,
+ * when two repos have a call of the same id" (packages/cli/test/forge-field.test.ts) passes, give
+ * every repo the same call ids (`c-0`, `c-1`, …), as assistants name them in the field.
  */
 export interface ShapeSketch {
   /** How many services, 2 to 4, from the pool. */

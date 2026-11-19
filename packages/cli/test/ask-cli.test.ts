@@ -335,7 +335,18 @@ describe("atticus ask on the field-shaped estate", () => {
   it.fails("names both consumers of a topic with consumers in two repos", async () => {
     const r = await ask(`who consumes the topic ${e.topic!.name}?`);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("is received by 2 components");
-    for (const l of e.topic!.listeners) expect(r.out).toMatch(new RegExp(`Component +${l} `));
+    // The receivers block only: a listener named in the Further rows doesn't count.
+    const at = r.out.indexOf(" is received by ");
+    expect(at, r.out).toBeGreaterThanOrEqual(0);
+    const end = r.out.indexOf("\nFurther, through a receiver");
+    const block = r.out.slice(at, end < 0 ? undefined : end);
+    expect(block).toMatch(/ is received by 2 components:/);
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const l of e.topic!.listeners)
+      expect(block).toMatch(
+        new RegExp(
+          `Component +${esc(l)} .* receives ${esc(e.topic!.name)} from ${esc(e.topic!.publisher)}`,
+        ),
+      );
   });
 });

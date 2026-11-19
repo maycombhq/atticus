@@ -5,7 +5,7 @@ import fc from "fast-check";
 import { afterAll, describe, expect, it } from "vitest";
 import type { CatalogRecord, Fact } from "@maycombhq/core";
 import { buildAndWrite, factsSnapshotWrites, readCatalog } from "@maycombhq/scanner";
-import { main } from "../../src/main.js";
+import { HELP_TEXT, main } from "../../src/main.js";
 import { candidatesOf } from "../../src/ui-api-links.js";
 import { shapeArb, writeShapeEstate, type ShapeSketch } from "./estate.js";
 import { SHAPE_INVARIANTS, type ShapeInvariant } from "./invariants.js";
@@ -83,8 +83,23 @@ async function snapshot(
   }
 }
 
-/** A command's words name a next step: an atticus command, or the app's button for one. */
-const NEXT = /\batticus [a-z]/;
+/** The command line's own commands, by their first word, as its help lists them. */
+const COMMANDS = new Set([...HELP_TEXT.matchAll(/^\s*atticus ([a-z][a-z-]*)/gm)].map((m) => m[1]!));
+
+/**
+ * The commands a refusal offers to go on with: `atticus <command>` where the command is one
+ * the command line has (a word such as "atticus can't" is no offer), written as a step: after
+ * "run", "Do:", a colon, an opening bracket or a backquote, or as the whole text.
+ */
+export function offered(text: string): string[] {
+  return [...text.matchAll(/(?:^|run |Run |Do: |: |\(|`)atticus ([a-z][a-z-]*)(?: [^\s`),;]+)*/g)]
+    .filter((m) => COMMANDS.has(m[1]!))
+    .map((m) => m[0].replace(/^(run |Run |Do: |: |\(|`)/, ""));
+}
+
+/** A line `file:line` names, and no longer line that starts with it (":1" is not ":12"). */
+export const cites = (text: string, file: string, line: number) =>
+  new RegExp(`${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:${line}(?!\\d)`).test(text);
 
 async function run(args: string[]) {
   const lines: string[] = [];
@@ -110,13 +125,13 @@ async function check(k: ShapeSketch): Promise<void> {
   }
   const records: CatalogRecord[] = (await readCatalog(join(root, "catalog", "generated"))).records;
   // What cites each line: an arrow (an Interface), or a loose end (an Unresolved record).
-  const cites = new Map<string, Set<string>>();
+  const citedBy = new Map<string, CatalogRecord[]>();
   for (const r of records)
     for (const x of r.evidence as { repo?: string; path?: string; line?: number }[])
       if (x.repo && x.path) {
         const at = `${x.repo}\u0000${x.path}\u0000${x.line}`;
-        if (!cites.has(at)) cites.set(at, new Set());
-        cites.get(at)!.add(r.kind);
+        if (!citedBy.has(at)) citedBy.set(at, []);
+        citedBy.get(at)!.push(r);
       }
   const questions = await readdir(join(root, "questions")).catch(() => [] as string[]);
   const asked = (
@@ -127,7 +142,7 @@ async function check(k: ShapeSketch): Promise<void> {
     const other = e.repos.find((r) => r !== repo)!;
     const { view } = await candidatesOf(root, repo, { repo: other });
     for (const r of [view.noCalls, view.noApis])
-      if (r && !NEXT.test(r.command))
+      if (r && !(offered(r.command).length && r.command.startsWith("atticus ")))
         fail("every-refusal-has-a-next-step", `${repo}'s Connect panel says ${JSON.stringify(r)}`);
     const mine = e.calls.filter((c) => c.repo === repo);
     for (const c of mine) {
@@ -138,9 +153,26 @@ async function check(k: ShapeSketch): Promise<void> {
           `${repo}'s call ${c.fact} (${c.via}) is listed ${listed.length} times by Connect`,
         );
       const l = listed[0]!;
-      const kinds = cites.get(`${repo}\u0000${c.file}\u0000${c.line}`) ?? new Set<string>();
-      const drawn = kinds.has("Interface");
-      const looseEnd = kinds.has("Unresolved");
+      const by = citedBy.get(`${repo}\u0000${c.file}\u0000${c.line}`) ?? [];
+      const arrows = by.filter((r) => r.kind === "Interface");
+      const drawn = arrows.length > 0;
+      const looseEnd = by.some((r) => r.kind === "Unresolved");
+      const flags = new Set(arrows.flatMap((r) => (r as { flags?: string[] }).flags ?? []));
+      // Each way a call is made, what it must come to (the owner's rule: an arrow comes from a
+      // cited line or a person).
+      const route = (why: string) =>
+        fail(
+          "every-call-accounted",
+          `${repo}'s call ${c.fact} (${k0(c)}) ${why} (Connect: ${l.status})`,
+        );
+      if ((c.via === "host" || c.via === "forward") && !flags.has("joined-by-host"))
+        route("names a host the manifest lists, and no arrow joined by its host cites it");
+      if (c.via === "proxy" && !drawn) route("goes through the proxy, and no arrow cites it");
+      // An unset `${NAME}` host is drawn by its path today: held apart, as it.fails below.
+      if (c.via === "token" && c.host.startsWith("@") && drawn && !flags.has("joined-by-person"))
+        route("names a deploy token nothing sets, and is drawn though no person joined it");
+      if (c.via === "outside" && l.status !== "outside" && l.status !== "asked")
+        route("names the outside vendor, and is neither placed outside nor asked");
       if ((l.status === "joined" || l.status === "here") && !drawn)
         fail(
           "every-call-accounted",
@@ -150,7 +182,7 @@ async function check(k: ShapeSketch): Promise<void> {
       tally.set(k, (tally.get(k) ?? 0) + 1);
       const loose =
         looseEnd || (l.status !== "joined" && l.status !== "here" && l.status !== "paired");
-      const questioned = asked.includes(`${c.file}:${c.line}`) || l.status === "asked";
+      const questioned = cites(asked, c.file, c.line) || l.status === "asked";
       if (!drawn && !(loose || questioned))
         fail(
           "every-call-accounted",
@@ -161,7 +193,7 @@ async function check(k: ShapeSketch): Promise<void> {
   // A command that refuses here names the command to go on with: verify needs the clone.
   for (const repo of e.repos) {
     const r = await run(["verify", repo, "--root", root]);
-    if (r.code !== 0 && !NEXT.test(r.said))
+    if (r.code !== 0 && !offered(r.said).length)
       fail("every-refusal-has-a-next-step", `atticus verify ${repo} exits ${r.code}: ${r.said}`);
   }
 }
@@ -189,6 +221,55 @@ describe("the estate's shape: every call accounted for, every refusal with a nex
         );
     },
     Math.max(300_000, RUNS * 60_000),
+  );
+
+  it("takes as a next step only a command the command line has, and a line only as itself", () => {
+    expect(offered("forge-x: isn't cloned here yet; run atticus workspace sync")).toEqual([
+      "atticus workspace sync",
+    ]);
+    expect(offered("Do: atticus upgrade")).toEqual(["atticus upgrade"]);
+    expect(offered("This atticus can't read it.")).toEqual([]);
+    expect(offered("run atticus nosuchcommand")).toEqual([]);
+    expect(cites("evidence: [src/A.java:12]", "src/A.java", 1)).toBe(false);
+    expect(cites("evidence: [src/A.java:1]", "src/A.java", 1)).toBe(true);
+  });
+
+  /**
+   * Found by the shape generator (beta.30 slice 9), held before its fix (the owner's rule, in
+   * packages/core/src/facts-join.ts: a host written as a deploy token nothing sets is asked
+   * about, since a path guess would be an arrow no line cites). `WHOLE_HOST_TOKEN` matches only
+   * `@name@`, so a call to `${FORGE_LEDGER_URL}` that nothing sets is drawn by its path, an
+   * inferred arrow flagged joined-by-path, where `@forgeLedgerUrl@` is asked. When the join asks
+   * about it too, this passes and `it.fails` says so: make it `it`.
+   */
+  it.fails(
+    "a host written as ${NAME} that nothing sets is asked about, never drawn by its path",
+    async () => {
+      const k: ShapeSketch = {
+        services: 2,
+        dotted: false,
+        noSystem: false,
+        proxy: "none",
+        nested: false,
+        calls: [{ from: 1, to: 0, ep: 0, via: "token" }],
+        token: "dollar",
+      };
+      const root = await mkdtemp(join(tmpdir(), "b30-fd-shape-"));
+      dirs.push(root);
+      const e = await writeShapeEstate(root, k, snapshot);
+      await buildAndWrite(root, { command: "atticus catalog build" });
+      const c = e.calls.find((x) => x.via === "token")!;
+      expect(c.host).toMatch(/^\$\{/);
+      const records = (await readCatalog(join(root, "catalog", "generated"))).records;
+      const drawn = records.filter(
+        (r) =>
+          r.kind === "Interface" &&
+          (r.evidence as { repo?: string; path?: string; line?: number }[]).some(
+            (x) => x.repo === c.repo && x.path === c.file && x.line === c.line,
+          ),
+      );
+      expect(drawn.map((r) => (r as { flags?: string[] }).flags)).toEqual([]);
+    },
   );
 
   it("the shapes the generator makes each appear in a fixed seed's runs", () => {

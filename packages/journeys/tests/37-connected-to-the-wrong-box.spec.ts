@@ -257,10 +257,10 @@ test.describe("the field-shaped estate", () => {
     await tick.check();
     // Its line names the other box: the move waits for why.
     const why = panel.getByRole("textbox", { name: `Why ${call} doesn't go where its line says` });
-    if (await why.count()) {
-      await expect(move).toBeDisabled();
-      await why.fill(WHY);
-    }
+    await expect(why).toBeVisible();
+    await expect(move).toBeDisabled();
+    await expect(panel.getByText(/overrides what the code says/).first()).toBeVisible();
+    await why.fill(WHY);
     await expect(move).toBeEnabled();
     await accessible(page, "Connect on the field-shaped estate, a call ticked");
 
