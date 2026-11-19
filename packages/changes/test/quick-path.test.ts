@@ -36,6 +36,24 @@ async function quickChange() {
   return { root, c, dir: changeFolder(root, c.id) };
 }
 
+describe("a quick change's status (b30 proof run)", () => {
+  it("says its files are written and no stage ran, never that the stories stage is done", async () => {
+    const { root, c, dir } = await quickChange();
+    // Nothing written yet: there is no work to speak of.
+    expect((await assess(await loadChangeContext(root), c)).progress).toBeUndefined();
+    for (const f of ["proposal.md", "design.md", "tasks.md", "specs"])
+      await cp(join(FORGE_CHANGE, f), join(dir, f), { recursive: true });
+    const r = await assess(await loadChangeContext(root), c);
+    expect(r.progress?.summary).toBe(
+      'No stage runs on the quick path: tasks.md is written; waiting on "Plan ready" (the plan hand-off, not raised yet).',
+    );
+    expect(r.progress?.summary).not.toMatch(/Stories/);
+    // Every cite of a risk factor and of an added test names a file: nothing prints as "()".
+    for (const f of r.risk.factors) for (const cite of f.cites ?? []) expect(cite).not.toBe("");
+    for (const a of r.tests.added ?? []) for (const cite of a.cites) expect(cite).not.toBe("");
+  });
+});
+
 describe("a change made from a requirements file", () => {
   it("is in plan with the file copied byte for byte, no brief and no template", async () => {
     const { c, dir } = await quickChange();

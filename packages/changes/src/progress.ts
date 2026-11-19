@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { PHASES, type ChangeLifecycle, type ChangeType } from "@maycombhq/core";
+import { PHASES, quickPathOf, type ChangeLifecycle, type ChangeType } from "@maycombhq/core";
 import type { ChangeContext } from "./context.js";
 import { handoffName, statePhase } from "./lifecycle.js";
 import { personWrittenPlanning, stageIdle, stageWorkDone, writesPlanning } from "./planning.js";
@@ -108,6 +108,17 @@ export function workProgress(
     s.state === "person" ? `${s.stage} (written by a person)` : s.stage;
   const name = handoffName(type, phase);
   let summary: string;
+  // ADR 0201 (b30 proof run): a quick change has no stories stage to call done. Its files are
+  // written by a person or the spec writer, and that is what is said.
+  const written = quickPathOf(type) ? own.find((s) => s.state === "person") : undefined;
+  if (written && !under) {
+    const files = written.files ?? [];
+    return {
+      done,
+      ahead,
+      summary: `No stage runs on the quick path: ${files.length ? `${and(files)} ${files.length === 1 ? "is" : "are"} written` : "its files are written"}; waiting on "${name}" (the ${phase} hand-off${raised ? " PR to merge" : ", not raised yet"}).`,
+    };
+  }
   if (under)
     summary = `The ${under.stage} stage is ${under.state === "questions" ? "waiting on answers" : under.state}${done.length ? ` (${and(done)} done)` : ""}; the change is in ${state}.`;
   else if (!current || !stageWorkDone(current.state))
