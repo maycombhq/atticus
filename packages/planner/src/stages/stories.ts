@@ -142,7 +142,7 @@ import {
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
 import { plannedRepos, unreadConsumer } from "./planned.js";
-import { readOperations } from "./operations.js";
+import { checkOperations, readOperations } from "./operations.js";
 import {
   checkOperationStories,
   OPERATION_STORIES_FORMAT,
@@ -4250,7 +4250,8 @@ export async function storiesStage(
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
-  estate.outside = new Set(((await readPlacement(dir))?.outside ?? []).map((x) => x.id));
+  const placement = await readPlacement(dir);
+  estate.outside = new Set((placement?.outside ?? []).map((x) => x.id));
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
@@ -4623,6 +4624,15 @@ Rules:
         standards: new Set(standards.keys()),
       }),
       ...checkOperationStories(a.operations, opStories),
+      // ADR 0203 review: the operations file as it is now, checked as the architecture stage
+      // checks it (a person may have edited it since): no story is written from a plan it refuses.
+      ...checkOperations(
+        opsRead.file?.operations ?? [],
+        opsRead.file?.waves,
+        estate,
+        placement ?? { newFlows: [] },
+        plannedRepos(deltas, estate),
+      ).filter((i) => i.blocking),
       ...(await coverageIssues(unwrittenChecks(a, stories), {
         ...(judging ? { runtime: judging } : {}),
         store,

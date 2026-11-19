@@ -146,6 +146,15 @@ function suggestedOrder(units: Unit[], needs: Need[]): Unit[] {
   return out;
 }
 
+/** With no deploy order given: the target flows' steps in an order that meets every need. */
+export function suggestedDeploy(deltas: FlowDelta[], e: Estate): DeployStep[] {
+  const { units, needs } = deployNeeds(deltas, e);
+  return suggestedOrder(units, needs).map((u) => ({
+    repo: u.repo,
+    ...(u.kind === "migration" ? { migration: u.name } : {}),
+  }));
+}
+
 const unitWords = (u: Unit) => (u.kind === "migration" ? `migration ${u.name}` : u.name);
 
 /**

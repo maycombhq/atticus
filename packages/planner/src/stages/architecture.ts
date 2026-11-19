@@ -81,7 +81,7 @@ import {
   tableConsumers,
   type Retyped,
 } from "./contracts.js";
-import { deployIssues, renderDeploy } from "./deploy-order.js";
+import { deployIssues, renderDeploy, suggestedDeploy } from "./deploy-order.js";
 import {
   checkOperations,
   operationDeployIssues,
@@ -2343,11 +2343,14 @@ export function renderArchitecture(
   // B-arch: the breaking contract changes with who they break, and the deploy order drafted.
   lines.push(
     ...renderBreaking(deltas, e),
-    // ADR 0203 B: the operations with today's records cited; with no deploy order given, theirs
-    // is waves first, then after, then file order.
+    // ADR 0203 B: the operations with today's records cited; with no deploy order given, one
+    // order holds both: the flows' migrations and code, then the operations as they are scheduled.
     ...renderOperations(ops.operations, ops.waves, e),
     ...renderDeploy(
-      deploy ?? (ops.operations.length ? suggestedOperationOrder(ops.operations, ops.waves) : []),
+      deploy ??
+        (ops.operations.length
+          ? [...suggestedDeploy(deltas, e), ...suggestedOperationOrder(ops.operations, ops.waves)]
+          : []),
       plannedRepos(deltas, e),
     ),
     ...withOperationRollback(renderRollback(deltas, e), ops.operations),

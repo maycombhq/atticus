@@ -375,6 +375,10 @@ export interface ProposalCapability {
   op: "ADDED" | "MODIFIED" | "REMOVED";
 }
 
+/** A capability's words in the proposal: its flow and name, or its operations (no flow). */
+const capWords = (c: ProposalCapability) =>
+  c.flow ? `flow \`${c.flow}\` (${bare(c.name)})` : bare(c.name);
+
 /**
  * proposal.md from the brief and the feature placed against the estate: Why (the brief's
  * problem; OpenSpec asks for 50 to 1000 characters), What Changes (the summary, each flow changed,
@@ -425,15 +429,14 @@ export function renderProposal(
     if (added.length)
       lines.push(
         "### New Capabilities",
-        ...added.map((c) => `- \`${c.capability}\`: flow \`${c.flow}\` (${bare(c.name)})`),
+        ...added.map((c) => `- \`${c.capability}\`: ${capWords(c)}`),
         "",
       );
     if (other.length)
       lines.push(
         "### Modified Capabilities",
         ...other.map(
-          (c) =>
-            `- \`${c.capability}\`: flow \`${c.flow}\` (${bare(c.name)})${c.op === "REMOVED" ? ", removed" : ""}`,
+          (c) => `- \`${c.capability}\`: ${capWords(c)}${c.op === "REMOVED" ? ", removed" : ""}`,
         ),
         "",
       );
@@ -544,6 +547,36 @@ export async function openspecFiles(
       .filter(([, c]) => deltas.some((d) => d.capability === c)),
   );
   const dir = changeFolder(root, change);
+  // ADR 0203 B: one capability a repo, `<repo>-operations`, a requirement an operation story, a
+  // scenario a criterion. Always ADDED: a requirement is named for its change, so an archived
+  // operation of the same title is never merged with it.
+  const ops = operations ?? (await readOperations(dir)).file;
+  const opDeltas = new Map<string, SpecDelta>();
+  for (const r of operationRequirements(
+    change,
+    operationStories(ops?.operations ?? [], ops?.waves),
+    answer.operations,
+  )) {
+    const capability = `${r.repo}-operations`;
+    const d = opDeltas.get(capability) ?? {
+      capability,
+      flow: "",
+      ...(existing.some((x) => x.id === capability)
+        ? {}
+        : {
+            purpose: `Work in ${r.repo} that changes no runtime step: deployments, pipelines, configuration, secrets, routes and cut-overs. Atticus writes it from the operation stories of each change.`,
+          }),
+      added: [],
+      modified: [],
+      removed: [],
+    };
+    d.added.push({
+      name: r.name,
+      text: r.text,
+      scenarios: uniqueNames(r.criteria.map(scenarioOf)),
+    });
+    opDeltas.set(capability, d);
+  }
   const placed = await readFile(join(dir, "feature.yaml"), "utf8")
     .then((t) => FeaturePlacement.safeParse(parse(t)))
     .catch(() => undefined);
@@ -556,51 +589,28 @@ export async function openspecFiles(
     const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
     proposal = renderProposal(title, placed.data, brief, {
       repoOf: (f) => estate?.flowById.get(f)?.repo,
-      capabilities: deltas.map((d) => {
-        const s = stories.find((x) => x.flow === d.flow)!;
-        return {
+      capabilities: [
+        ...deltas.map((d): ProposalCapability => {
+          const s = stories.find((x) => x.flow === d.flow)!;
+          return {
+            capability: d.capability,
+            flow: d.flow,
+            name: s.name,
+            op: d.purpose
+              ? "ADDED"
+              : d.removed.length && !d.modified.length
+                ? "REMOVED"
+                : "MODIFIED",
+          };
+        }),
+        ...[...opDeltas.values()].map((d): ProposalCapability => ({
           capability: d.capability,
-          flow: d.flow,
-          name: s.name,
-          op: d.purpose ? "ADDED" : d.removed.length && !d.modified.length ? "REMOVED" : "MODIFIED",
-        };
-      }),
+          flow: "",
+          name: `operations: ${d.added.map((r) => r.name).join("; ")}`,
+          op: d.purpose ? "ADDED" : "MODIFIED",
+        })),
+      ],
     });
-  }
-  // ADR 0203 B: one capability a repo, `<repo>-operations`, a requirement an operation story, a
-  // scenario a criterion; MODIFIED where openspec/specs has the requirement, its scenarios kept.
-  const ops = operations ?? (await readOperations(dir)).file;
-  const opDeltas = new Map<string, SpecDelta>();
-  for (const r of operationRequirements(
-    change,
-    operationStories(ops?.operations ?? [], ops?.waves),
-    answer.operations,
-  )) {
-    const capability = `${r.repo}-operations`;
-    const had = existing.find((x) => x.id === capability);
-    const prior = had?.requirements.find((x) => x.name.toLowerCase() === r.name.toLowerCase());
-    const fresh = uniqueNames(r.criteria.map(scenarioOf));
-    const d = opDeltas.get(capability) ?? {
-      capability,
-      flow: "",
-      ...(had
-        ? {}
-        : {
-            purpose: `Work in ${r.repo} that changes no runtime step: deployments, pipelines, configuration, secrets, routes and cut-overs. Atticus writes it from the operation stories of each change.`,
-          }),
-      added: [],
-      modified: [],
-      removed: [],
-    };
-    const kept = (prior?.scenarios ?? [])
-      .filter((x) => !fresh.some((f) => f.name.toLowerCase() === x.name.toLowerCase()))
-      .map((x) => ({ name: x.name, body: x.rawText.trim() }));
-    (prior ? d.modified : d.added).push({
-      name: prior?.name ?? r.name,
-      text: r.text,
-      scenarios: [...kept, ...fresh],
-    });
-    opDeltas.set(capability, d);
   }
   return {
     deltas,

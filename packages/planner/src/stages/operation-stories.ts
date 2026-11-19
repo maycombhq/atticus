@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { GENERATED_MARK } from "@maycombhq/changes";
 import type { StageIssue } from "./loop.js";
-import { bareWords, inAfterOrder, OPERATIONS_FILE, operationWave } from "./operations.js";
-import type { Operation, Wave } from "./schema.js";
+import { bareWords, inAfterOrder, OPERATIONS_FILE, operationSchedule } from "./operations.js";
+import { redactWords, type Operation, type Wave } from "./schema.js";
 
 /**
  * ADR 0203 part B, point 5: stories and tasks of operations, by a small renderer of their own
@@ -13,7 +13,7 @@ import type { Operation, Wave } from "./schema.js";
  * `<repo>-operations`, in specs/.
  */
 
-const Words = z.string().trim().min(1);
+const Words = z.string().trim().min(1).transform(redactWords);
 /** The assistant's words for one operation's story, in the story writer's answer. */
 export const OperationWords = z.strictObject({
   /** The operation's id, as `_operations.yaml` has it. */
@@ -47,28 +47,18 @@ export function operationStories(
   ops: readonly Operation[],
   waves?: readonly Wave[],
 ): OperationStory[] {
-  const label = (o: Operation, repo: string) =>
-    `o${ops.indexOf(o) + 1}.${o.repos.indexOf(repo) + 1}`;
-  // Each repo's tasks in the order they run: `after` kept, else file order.
-  const lastOf = new Map<string, string>();
-  for (const o of inAfterOrder(ops)) for (const repo of o.repos) lastOf.set(repo, label(o, repo));
-  const lastOfWave = (w: number) =>
-    [...lastOf].filter(([repo]) => operationWave(waves, repo) === w).map(([, l]) => l);
+  const { tasks } = operationSchedule(ops, waves);
   return ops.map((o, i) => ({
     id: `o${i + 1}-${o.id}`,
     operation: o,
-    tasks: o.repos.map((repo) => {
-      const wave = operationWave(waves, repo);
-      const before = ops
-        .filter((x) => (o.after ?? []).includes(x.id))
-        .flatMap((x) => (x.repos.includes(repo) ? [repo] : x.repos).map((r) => label(x, r)));
-      return {
-        label: label(o, repo),
-        repo,
-        wave,
-        after: [...new Set([...(wave > 1 ? lastOfWave(wave - 1) : []), ...before])],
-      };
-    }),
+    tasks: tasks
+      .filter((t) => t.operation === o)
+      .map((t) => ({
+        label: t.label,
+        repo: t.repo,
+        wave: t.wave,
+        after: t.waits.map((x) => x.label),
+      })),
   }));
 }
 
@@ -175,7 +165,7 @@ function renderStory(s: OperationStory, w: OperationWords | undefined): string {
       "",
       `- Operation: ${o.id} (${o.kind}), in ${OPERATIONS_FILE}; wave ${t.wave}`,
       ...(o.today?.length ? [`- Today: ${o.today.join(", ")} (catalog records)`] : []),
-      ...(sets.length ? [`- Sets, checked from a rescan: ${sets.join(", ")}`] : []),
+      ...(sets.length ? [`- Sets: ${sets.join(", ")}`] : []),
       ...(t.after.length ? [`- After: ${t.after.join(", ")}`] : []),
       ...(o.undo ? [`- Undo: ${o.undo}`] : []),
       `- Acceptance criteria: the ${criteriaOf(w, t.repo).length} under Task ${t.label} in Acceptance criteria`,
@@ -221,7 +211,8 @@ export function operationRequirements(
       .filter((t) => criteriaOf(w, t.repo).length)
       .map((t) => ({
         repo: t.repo,
-        name: bareWords(w!.title),
+        // Named for its change, so a later change with the same title is its own requirement.
+        name: `${bareWords(w!.title)} (${change})`,
         text: `The team SHALL complete operation \`${s.operation.id}\` (${s.operation.kind}) in ${t.repo}: ${bareWords(s.operation.what)}.\n\nOperation: \`${s.operation.id}\`; story ${s.id} of ${change}.`,
         criteria: criteriaOf(w, t.repo),
       }));
@@ -239,6 +230,8 @@ export function withOperationStories(
   written: { index: string; tasks: string },
   ticked: ReadonlySet<string> = new Set(),
 ): { files: Record<string, string>; index: string; tasks: string } {
+  // A change with no operation: the flows' files exactly as they were written.
+  if (!stories.length) return { files: {}, ...written };
   const wordsOf = (s: OperationStory) => words?.find((x) => x.id === s.operation.id);
   const files = Object.fromEntries(
     stories.map((s) => [`stories/${s.id}.md`, renderStory(s, wordsOf(s))]),

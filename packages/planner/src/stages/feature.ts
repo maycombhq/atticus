@@ -277,7 +277,7 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // ADR 0203 B: an operation's repo is checked as a new flow's is; an outside party is one the
   // catalog doesn't have.
   for (const o of p.operations ?? [])
-    for (const repo of o.repos.filter((r) => !repos.has(r)))
+    for (const repo of o.repos.filter((r) => !repos.has(r) || e.archivedRepos.has(r)))
       if (o.newRepo && !e.archivedRepos.has(repo))
         out.push({
           rule: "feature.planned-repo",
@@ -475,7 +475,18 @@ export async function featureStage(
     });
 
   // ADR 0203 B: what runs today, as data: where each repo runs, its deployments and settings.
-  sources.push(...runsTodaySource(estate, estateRepos(estate)));
+  // Only for the repos in scope: those the brief, stories or attached files name, and those of
+  // the change's systems.
+  const said = [brief, ...stories.map((s) => s.text), ...attached.map((s) => s.text)].join("\n");
+  const ofSystems = change.systems.flatMap(
+    (s) => (estate.byId.get(s) as { repos?: string[] } | undefined)?.repos ?? [],
+  );
+  sources.push(
+    ...runsTodaySource(
+      estate,
+      [...estateRepos(estate)].filter((r) => ofSystems.includes(r) || said.includes(r)),
+    ),
+  );
 
   // H2: the closest past corrections of this stage, when there are any (else nothing changes).
   const past = await pastCorrectionsSource(root, {

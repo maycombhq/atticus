@@ -8,6 +8,7 @@ import type { StageIssue } from "./loop.js";
 import { schemaProblems } from "./schema-words.js";
 import {
   OperationsFile,
+  redactWords,
   STAGE_SCHEMA_VERSION,
   type DeployStep,
   type FeaturePlacement,
@@ -26,6 +27,9 @@ export const OPERATIONS_FILE = "target-flows/_operations.yaml";
 type Rec = Estate["records"][number] & Record<string, unknown>;
 type Cite = { repo?: string; path?: string; line?: number };
 const TODAY_KINDS = ["Component", "Deployment", "Setting", "GatewayRoute", "Endpoint"];
+/** An undo that says how: not empty, a dash, "n/a", "none" or "tbd", and more than a word. */
+const realUndo = (undo: string | undefined) =>
+  !!undo && bare(undo).length >= 10 && !/^(n\/?a|none|tbd|todo|-+)$/i.test(bare(undo));
 const andList = (xs: string[]) =>
   xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
@@ -113,7 +117,9 @@ export function runsTodaySource(e: Estate, repos: Iterable<string>): SourceInput
     if (!rows.some((r) => r.kind !== "Component" || r.runtime)) return [];
     const line = (r: Rec) =>
       `${r.id}: ${r.kind === "Deployment" ? `Deployment of ${String(r.component)}` : r.kind}${r.kind === "Setting" ? " " : ", "}${todayWords(r)}`;
-    return [`# ${repo}\n${rows.map(line).join("\n")}`];
+    // The same redaction a fact's quote gets: a key or a host that carries a secret never
+    // enters a prompt.
+    return [`# ${repo}\n${rows.map((r) => redactWords(line(r))).join("\n")}`];
   });
   if (!blocks.length) return [];
   return [
@@ -142,18 +148,102 @@ function inAfterOrder(ops: readonly Operation[]): Operation[] {
   return out;
 }
 
-/** With no deploy order given: waves first, then `after`, then file order. */
+/** One task the operations give: an operation in one of its repos, and what it waits for. */
+export interface ScheduledTask {
+  operation: Operation;
+  repo: string;
+  wave: number;
+  /** As tasks.md numbers it: `o<operation>.<repo>`. */
+  label: string;
+  /** What its line says it comes after: the last tasks of the wave before, and its `after`. */
+  waits: ScheduledTask[];
+  /** The task before it in its own repo, which tasks.md's order makes it wait for. */
+  prev?: ScheduledTask;
+}
+
+/**
+ * The one order of a change's operation tasks (waves, `after`, and each repo's own order), as
+ * the stories write it into tasks.md and design.md lists it: every task with what it waits for,
+ * the tasks in an order that keeps every wait, and, when no such order exists, a ring of tasks
+ * that each wait for the next (the first waits for the last again).
+ */
+export function operationSchedule(
+  ops: readonly Operation[],
+  waves?: readonly Wave[],
+): { tasks: ScheduledTask[]; order: ScheduledTask[]; ring: ScheduledTask[] } {
+  const tasks: ScheduledTask[] = ops.flatMap((operation, i) =>
+    operation.repos.map((repo, k) => ({
+      operation,
+      repo,
+      wave: waveOf(waves, repo),
+      label: `o${i + 1}.${k + 1}`,
+      waits: [],
+    })),
+  );
+  const of = (o: Operation, repo?: string) =>
+    tasks.filter((t) => t.operation === o && (repo === undefined || t.repo === repo));
+  const rank = new Map(inAfterOrder(ops).map((o, i) => [o, i]));
+  const key = (t: ScheduledTask) =>
+    t.wave * 1e6 + rank.get(t.operation)! * 1e3 + t.operation.repos.indexOf(t.repo);
+  const inRepo = (repo: string) =>
+    tasks.filter((t) => t.repo === repo).sort((x, y) => key(x) - key(y));
+  // The last tasks of a wave: each of its repos' last. A wave with no task holds nothing back.
+  const lastOf = (w: number) =>
+    [...new Set(tasks.filter((t) => t.wave === w).map((t) => t.repo))].map((r) =>
+      inRepo(r).at(-1)!,
+    );
+  for (const t of tasks) {
+    const mine = inRepo(t.repo);
+    const prev = mine[mine.indexOf(t) - 1];
+    if (prev) t.prev = prev;
+    let w = t.wave - 1;
+    while (w > 1 && !lastOf(w).length) w--;
+    const after = ops
+      .filter((x) => (t.operation.after ?? []).includes(x.id))
+      .flatMap((x) => (x.repos.includes(t.repo) ? of(x, t.repo) : of(x)));
+    t.waits = [...new Set([...(w >= 1 ? lastOf(w) : []), ...after])].filter((x) => x !== t);
+  }
+  const edges = (t: ScheduledTask) => [...t.waits, ...(t.prev ? [t.prev] : [])];
+  const order: ScheduledTask[] = [];
+  let left = [...tasks].sort((x, y) => key(x) - key(y));
+  for (;;) {
+    const next = left.find((t) => edges(t).every((x) => !left.includes(x)));
+    if (!next) break;
+    order.push(next);
+    left = left.filter((t) => t !== next);
+  }
+  // What is left waits on itself: the shortest way from one of them back to it.
+  const ring: ScheduledTask[] = [];
+  for (const start of tasks.filter((t) => left.includes(t))) {
+    const from = new Map<ScheduledTask, ScheduledTask>();
+    const todo = [start];
+    while (todo.length && !ring.length) {
+      const t = todo.shift()!;
+      for (const x of edges(t).filter((x) => left.includes(x))) {
+        if (x === start) {
+          for (let y: ScheduledTask | undefined = t; y; y = from.get(y)) ring.unshift(y);
+          break;
+        }
+        if (!from.has(x) && x !== start) {
+          from.set(x, t);
+          todo.push(x);
+        }
+      }
+    }
+    if (ring.length) break;
+  }
+  return { tasks, order: [...order, ...left], ring };
+}
+
+/** With no deploy order given: the schedule's order (waves first, then `after`, then file order). */
 export function suggestedOperationOrder(
   ops: readonly Operation[],
   waves?: readonly Wave[],
 ): (DeployStep & { operation: string })[] {
-  const last = Math.max(1, waves?.length ?? 1);
-  const out: (DeployStep & { operation: string })[] = [];
-  for (let w = 1; w <= last; w++)
-    for (const o of inAfterOrder(ops))
-      for (const repo of o.repos)
-        if (waveOf(waves, repo) === w) out.push({ repo, operation: o.id });
-  return out;
+  return operationSchedule(ops, waves).order.map((t) => ({
+    repo: t.repo,
+    operation: t.operation.id,
+  }));
 }
 
 /** The architecture stage's checks of a change's operations: all blocking but the last, a note. */
@@ -181,7 +271,8 @@ export function checkOperations(
   ]);
   const ids = ops.map((o) => o.id);
   for (const o of ops) {
-    for (const repo of o.repos.filter((r) => !known.has(r)))
+    // An archived repo takes no new work, whatever the catalog still holds of it.
+    for (const repo of o.repos.filter((r) => !known.has(r) || e.archivedRepos.has(r)))
       issue(
         "unknown-repo",
         `${o.id}:${repo}`,
@@ -196,7 +287,7 @@ export function checkOperations(
           `Operation ${o.id} cites ${id} under today, which is no ${TODAY_KINDS.slice(0, -1).join(", ")} or Endpoint record of ${andList(o.repos)}: cite records of the operation's own repos, from the runs-today block, or leave today out.`,
         );
     }
-    if (o.kind === "cut-over" && !o.undo)
+    if (o.kind === "cut-over" && !realUndo(o.undo))
       issue(
         "no-undo",
         o.id,
@@ -244,6 +335,18 @@ export function checkOperations(
             repo,
           );
   }
+  // ADR 0203 review: a plan whose tasks could never all run (a wave's task that comes after an
+  // operation done only in a later wave) is refused here, before any story is written.
+  const { ring } = operationSchedule(ops, waves);
+  const name = (t: ScheduledTask) =>
+    `${t.operation.id} in ${t.repo}${waves?.length ? ` (wave ${t.wave})` : ""}`;
+  // Only of a plan whose `after` and waves read: those findings say what to fix first.
+  if (ring.length && !out.some((i) => /^operation\.(after|wave)$/.test(i.rule)))
+    issue(
+      "order",
+      ring.map((t) => t.label).join(">"),
+      `The operations can't be put in an order: ${ring.map(name).join(", which waits for ").replace(", which waits for ", " waits for ")}, which waits for ${name(ring[0]!)}. A wave starts once the wave before it is done, and an operation that comes after another waits for it: move a repo to another wave, take an after away, or leave waves out.`,
+    );
   for (const f of placement.operations ?? [])
     for (const repo of f.repos)
       if (!ops.some((o) => o.kind === f.kind && o.repos.includes(repo)))
@@ -270,14 +373,14 @@ export function checkOperations(
 /**
  * The deploy order's operation steps (`{ repo, operation }`) against the operations: every
  * operation and repo once, `after` kept, and no step of a wave before the last step of the wave
- * before it. With no operation step the suggested order stands and there is nothing to check.
+ * before it. With no deploy order at all the suggested order stands and there is nothing to check.
  */
 export function operationDeployIssues(
   ops: readonly Operation[],
   waves: readonly Wave[] | undefined,
   deploy: readonly DeployStep[] | undefined,
 ): StageIssue[] {
-  if (!ops.length || !deploy?.some((s) => s.operation)) return [];
+  if (!ops.length || !deploy?.length) return [];
   const out: StageIssue[] = [];
   const issue = (rule: string, target: string, message: string, repo: string) =>
     out.push({ rule: `delta.${rule}`, target, message, blocking: true, repo });
@@ -380,4 +483,4 @@ export function withOperationRollback(section: string[], ops: readonly Operation
   ];
 }
 
-export { bare as bareWords, waveOf as operationWave, inAfterOrder };
+export { bare as bareWords, inAfterOrder };

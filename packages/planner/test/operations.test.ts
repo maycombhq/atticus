@@ -18,7 +18,11 @@ import {
   FeaturePlacement,
   FlowDelta,
   loadEstate,
+  Operation,
   operationDeployIssues,
+  operationRequirements,
+  readConformDeltas,
+  runsTodaySource,
   OPERATIONS_FILE,
   OperationsFile,
   operationStories,
@@ -28,7 +32,6 @@ import {
   suggestedOperationOrder,
   withOperationStories,
   type Estate,
-  type Operation,
 } from "../src/index.js";
 
 /**
@@ -608,7 +611,8 @@ describe("stories and tasks from operations", () => {
     // One capability a repo, a requirement an operation story, a scenario a criterion.
     const spec = await readFile(join(dir, "specs/forge-orders-operations/spec.md"), "utf8");
     expect(spec.match(/^### Requirement: /gm)).toHaveLength(3);
-    expect(spec).toContain("### Requirement: Keep the stock timeout\n");
+    expect(spec).toContain(`### Requirement: Keep the stock timeout (${CHANGE})\n`);
+    expect(spec).not.toContain("## MODIFIED");
     expect(spec).toContain("SHALL");
     expect(spec).toContain("- **THEN** stock.timeout is set in the new platform's settings");
     // Done stays done: a second run asks for no draft.
@@ -672,5 +676,210 @@ ${criteria("forge-orders", "stock.timeout is set in the new platform's settings"
       "- [ ] o1.1 Carry the stock timeout over to the new platform's settings (story o1-stock-timeout)",
     );
     expect(await readFile(join(dir, "design.md"), "utf8")).toContain("## Operations");
+  });
+});
+
+// ------------------------------------------------------------------ the review of part B
+
+const RING = `waves:
+  - { repos: [forge-stock] }
+  - { repos: [forge-orders] }
+operations:
+  - id: northwind-config
+    kind: config
+    repos: [forge-orders]
+    what: Give the order service the carrier's endpoint.
+  - id: deploy-new
+    kind: deployment
+    repos: [forge-stock, forge-orders]
+    what: Deploy the service on Forge Cloud.
+    after: [northwind-config]
+  - id: switch
+    kind: cut-over
+    repos: [forge-stock, forge-orders]
+    what: Point the route at the new deployment.
+    after: [deploy-new]
+    undo: Point the route back at the old deployment.
+`;
+
+describe("a plan whose tasks could never be scheduled is refused at the architecture stage", () => {
+  const free = { newFlows: [], operations: [] };
+  const order = (text: string, e: Estate) => {
+    const o = ops(text);
+    return checkOperations(o.operations, o.waves, e, free)
+      .filter((i) => i.rule === "operation.order")
+      .map((i) => i.message);
+  };
+
+  it("names the ring: a wave-1 task that comes after an operation done only in wave 2", async () => {
+    const e = await estate(await estateRoot());
+    expect(order(RING, e)).toEqual([
+      "The operations can't be put in an order: northwind-config in forge-orders (wave 2) waits for switch in forge-stock (wave 1), which waits for deploy-new in forge-stock (wave 1), which waits for northwind-config in forge-orders (wave 2). A wave starts once the wave before it is done, and an operation that comes after another waits for it: move a repo to another wave, take an after away, or leave waves out.",
+    ]);
+    // The same plan without waves can be scheduled.
+    expect(order(RING.slice(RING.indexOf("operations:")), e)).toEqual([]);
+  });
+
+  it("a wave-1 cleanup after a cut-over that spans both waves is refused too", async () => {
+    const e = await estate(await estateRoot());
+    const text = `waves:
+  - { repos: [forge-stock] }
+  - { repos: [forge-orders] }
+operations:
+  - id: switch
+    kind: cut-over
+    repos: [forge-stock, forge-orders]
+    what: Point the route at the new deployment.
+    undo: Point the route back at the old deployment.
+  - id: retire
+    kind: deployment
+    repos: [forge-infra]
+    what: Take the old hosts away.
+    after: [switch]
+`.replace("repos: [forge-stock] }", "repos: [forge-stock, forge-infra] }");
+    expect(order(text, e)).toHaveLength(1);
+    expect(order(text, e)[0]).toContain(
+      "retire in forge-infra (wave 1), which waits for switch in forge-orders (wave 2)",
+    );
+  });
+
+  it("the suggested order and the tasks' waits are one graph: every wait is earlier in the order", () => {
+    for (const text of [OPERATIONS, RING.slice(RING.indexOf("operations:"))]) {
+      const o = ops(text);
+      const steps = suggestedOperationOrder(o.operations, o.waves);
+      const at = new Map<string, number>();
+      const stories = operationStories(o.operations, o.waves);
+      for (const s of stories)
+        for (const t of s.tasks)
+          at.set(
+            t.label,
+            steps.findIndex((x) => x.operation === s.operation.id && x.repo === t.repo),
+          );
+      expect([...at.values()].sort((a, b) => a - b)).toEqual(steps.map((_, i) => i));
+      for (const s of stories)
+        for (const t of s.tasks)
+          for (const a of t.after) expect(at.get(a)!).toBeLessThan(at.get(t.label)!);
+    }
+  });
+
+  it("a wave with no operation in it doesn't let the next wait for nothing", () => {
+    const o = ops(`waves:
+  - { repos: [forge-orders] }
+  - { repos: [forge-infra] }
+  - { repos: [forge-stock] }
+operations:
+  - id: deploy-new
+    kind: deployment
+    repos: [forge-orders, forge-stock]
+    what: Deploy the service on Forge Cloud.
+`);
+    expect(
+      operationStories(o.operations, o.waves)[0]!.tasks.map((t) => [t.label, t.wave, t.after]),
+    ).toEqual([
+      ["o1.1", 1, []],
+      ["o1.2", 3, ["o1.1"]],
+    ]);
+  });
+});
+
+describe("the review's other refusals", () => {
+  it("an undo is a real sentence: n/a, none, a dash or a few letters are refused", async () => {
+    const e = await estate(await estateRoot());
+    for (const undo of ["n/a", "None.", "-", "tbd", "redeploy"])
+      expect(rules(OPERATIONS.replace(/ {4}undo: .*\n/, `    undo: "${undo}"\n`), e)).toEqual([
+        "operation.no-undo: Operation switch is a cut-over and gives no undo: say under undo how it is taken back, in one or two sentences.",
+      ]);
+  });
+
+  it("an archived repo is refused, though the catalog still has its records", async () => {
+    const root = await estateRoot();
+    await mkdir(join(root, "org-pack/profiles/forge-old"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/profiles/forge-old/repos.manifest.yaml"),
+      "schemaVersion: 1\nplatform: forge-old\nrepos:\n  - id: forge-stock\n    url: https://git.example.com/forge/forge-stock.git\n    type: spring-boot\n    owner: team-orders\n    archived: true\n",
+    );
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      MANIFEST.replace(/ {2}- id: forge-stock\n(?: {4}.*\n){3}/, ""),
+    );
+    const got = rules(OPERATIONS, await estate(root)).filter((m) =>
+      m.startsWith("operation.unknown-repo"),
+    );
+    expect(got).toHaveLength(2);
+    expect(got[0]).toBe(
+      "operation.unknown-repo: Operation deploy-new names repo forge-stock, which the estate doesn't have and this change doesn't plan: name a repo from the index, or mark it newRepo: true in feature.yaml. The manifest marks forge-stock archived.",
+    );
+  });
+
+  it("the stories stage checks the operations file again: an undo deleted after architecture is refused", async () => {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, { runtime: assistant([FEATURE]), now: NOW });
+    await architectureStage(root, CHANGE, { runtime: assistant([ARCHITECTURE]), now: NOW });
+    const file = join(root, "openspec/changes", CHANGE, OPERATIONS_FILE);
+    await writeFile(file, (await readFile(file, "utf8")).replace(/ {4}undo: .*\n/, ""));
+    const issues = await checkStageDraft(root, CHANGE, "stories", STORIES);
+    expect(issues.map((i) => i.rule)).toEqual(["operation.no-undo"]);
+  });
+
+  it("an operation's requirement is named for its change and always added", () => {
+    const o = ops();
+    const words = (parse(STORIES) as { operations: Parameters<typeof operationRequirements>[2] })
+      .operations;
+    const reqs = operationRequirements(CHANGE, operationStories(o.operations, o.waves), words);
+    expect(reqs.filter((r) => r.repo === "forge-stock").map((r) => r.name)).toEqual([
+      `Run each service on Forge Cloud (${CHANGE})`,
+      `Move the traffic (${CHANGE})`,
+    ]);
+  });
+
+  it("a secret-looking value in an operation's words or in what runs today is redacted", async () => {
+    const o = Operation.parse({
+      id: "carrier-key",
+      kind: "secret",
+      repos: ["forge-orders"],
+      what: "Set carrier.password=hunter2-s3cret-value in the vault.",
+      sets: { key: "carrier.api-key=sk_live_4eC39HqLyjWDarjtT1zdp7dc" },
+      undo: "Put password: 'old-s3cret-value-9' back.",
+    });
+    expect(JSON.stringify(o)).not.toMatch(/hunter2|sk_live|old-s3cret/);
+    expect(o.what).toContain("<redacted>");
+    const e = await estate(await estateRoot());
+    const setting = e.records.find(
+      (r) => r.id === "forge-orders.setting.stock-timeout",
+    ) as unknown as { key: string };
+    setting.key = "carrier.password=hunter2-s3cret-value";
+    const text = runsTodaySource(e, ["forge-orders"])[0]!.text;
+    expect(text).not.toContain("hunter2");
+    expect(text).toContain(
+      "forge-orders.setting.stock-timeout: Setting carrier.password=<redacted>",
+    );
+  });
+
+  it("a change with no operation gets stories.md and tasks.md exactly as the flows' stories wrote them", () => {
+    const written = {
+      index: "# Stories\n\n| Story | Title |\n",
+      tasks: "# Tasks\n\n## forge-orders\n\n- [ ] 1.1 x\n",
+    };
+    const out = withOperationStories([], undefined, written);
+    expect(out.index).toBe(written.index);
+    expect(out.tasks).toBe(written.tasks);
+    expect(out.files).toEqual({});
+  });
+
+  it("a deploy order that gives only flow steps is told which operation steps it leaves out", () => {
+    const o = ops();
+    const got = operationDeployIssues(o.operations, o.waves, [{ repo: "forge-orders" }]);
+    expect(got).toHaveLength(7);
+    expect(got.every((i) => i.rule === "delta.deploy-missing")).toBe(true);
+  });
+
+  it("the conformance reader passes the operations file by: it is no target flow", async () => {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, { runtime: assistant([FEATURE]), now: NOW });
+    await architectureStage(root, CHANGE, { runtime: assistant([ARCHITECTURE]), now: NOW });
+    expect(await readConformDeltas(join(root, "openspec/changes", CHANGE))).toEqual({
+      deltas: [],
+      problems: [],
+    });
   });
 });

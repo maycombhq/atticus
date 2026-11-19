@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft } from "@maycombhq/core";
+import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft, redactSecrets } from "@maycombhq/core";
 
 /**
  * The files the three stages of a change write into its folder (ADR 0087, revamp plan 4.4):
@@ -12,6 +12,17 @@ import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft } from "@maycombhq/c
 export const STAGE_SCHEMA_VERSION = 1 as const;
 const V = z.literal(STAGE_SCHEMA_VERSION);
 const text = () => z.string().trim().min(1);
+/**
+ * An operation's words (ADR 0203 review): redacted as a fact's quote is, the line and then each
+ * word of it (a `key=value` in the middle of a sentence), on every read, so a secret a model or
+ * a person writes there never reaches design.md, a story, a task or a prompt.
+ */
+export const redactWords = (s: string): string =>
+  redactSecrets(s)
+    .split(/(\s+)/)
+    .map((w) => redactSecrets(w))
+    .join("");
+const safeText = () => text().transform(redactWords);
 const Id = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
@@ -136,8 +147,8 @@ export const FeaturePlacement = z.strictObject({
       z.strictObject({
         kind: OperationKind,
         repos: z.array(Id).min(1),
-        what: text(),
-        why: text(),
+        what: safeText(),
+        why: safeText(),
         newRepo: z.boolean().optional(),
       }),
     )
@@ -409,18 +420,18 @@ export const Operation = z.strictObject({
   id: Id,
   kind: OperationKind,
   repos: z.array(Id).min(1),
-  what: text(),
+  what: safeText(),
   today: z.array(Id).optional(),
   sets: z
     .strictObject({
-      platform: text().optional(),
-      env: text().optional(),
-      host: text().optional(),
-      key: text().optional(),
+      platform: safeText().optional(),
+      env: safeText().optional(),
+      host: safeText().optional(),
+      key: safeText().optional(),
     })
     .optional(),
   after: z.array(Id).optional(),
-  undo: text().optional(),
+  undo: safeText().optional(),
 });
 export type Operation = z.infer<typeof Operation>;
 

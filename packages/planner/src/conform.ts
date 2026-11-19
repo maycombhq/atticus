@@ -651,7 +651,8 @@ export async function readConformDeltas(
   const deltas: Omit<ConformDelta, "today">[] = [];
   const problems: string[] = [];
   const names = (await readdir(join(changeDir, TARGET_DIR)).catch(() => [] as string[]))
-    .filter((f) => f.endsWith(".yaml"))
+    // ADR 0203 B: `_operations.yaml` is the operations' file, no target flow.
+    .filter((f) => f.endsWith(".yaml") && !f.startsWith("_"))
     .sort();
   for (const f of names) {
     const file = `${TARGET_DIR}/${f}`;
