@@ -318,4 +318,24 @@ describe('show on a change (b30 proof run: a quick change read "systems none nam
     ]);
     ix.close();
   });
+
+  it("reads a requirements.md saved as UTF-16 as the door check does", async () => {
+    const root = await retrievalRoot();
+    const dir = join(root, "openspec/changes/add-rate-event");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "change.yaml"),
+      "schemaVersion: 1\nid: add-rate-event\ntitle: Rate-updated event\ntype: quick\nstate: plan\nsystems: []\n",
+    );
+    const text =
+      "# Rate-updated event\r\n\r\n## Planned\r\n\r\n- `forge.rates.updated`: the new topic\r\n";
+    await writeFile(
+      join(dir, "requirements.md"),
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]),
+    );
+    const ix = await openIndex(root);
+    const out = await runContextTool(ix, root, "show", { id: "add-rate-event" });
+    expect(out).toContain("Planned (requirements.md): forge.rates.updated: the new topic.");
+    ix.close();
+  });
 });

@@ -482,7 +482,11 @@ function nodesOf(
 async function changeLines(root: string, file: string): Promise<string[]> {
   const dir = resolve(root, dirname(file));
   if (relative(resolve(root), dir).startsWith("..")) return [];
-  const read = (name: string) => readFile(join(dir, name), "utf8").catch(() => "");
+  // Decoded as the door check does: a requirements.md saved as UTF-16 reads as its text.
+  const read = (name: string) =>
+    readFile(join(dir, name))
+      .then((b) => decodeText(b))
+      .catch(() => "");
   const out: string[] = [];
   const type = /^type:\s*["']?([A-Za-z0-9._-]+)["']?\s*$/m.exec(await read("change.yaml"))?.[1];
   if (type) out.push(`Type: ${type}.`);

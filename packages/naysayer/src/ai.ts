@@ -25,6 +25,7 @@ import {
   type Run,
   type SourceInput,
 } from "@maycombhq/ai";
+import { decodeRequirements } from "@maycombhq/changes";
 import { answersText, checkedAnswerLink } from "./answers.js";
 import { checkAbsences, codeRepos, codeSearchFor, type CodeRepo, type CodeSearch } from "./code.js";
 import { recordedText } from "./recorded.js";
@@ -824,7 +825,10 @@ export async function runLenses(
   // ADR 0201: a quick change, and the requirements file it was made from when it has one.
   const quick = quickPathOf(ctx.type);
   const requirements = quick
-    ? await readFile(join(ctx.files.dir, REQUIREMENTS), "utf8").catch(() => undefined)
+    ? // As the door check reads it (UTF-16 by its byte-order mark), so what is screened is the text.
+      await readFile(join(ctx.files.dir, REQUIREMENTS))
+        .then((b) => decodeRequirements(b))
+        .catch(() => undefined)
     : undefined;
   // One lens per question, whatever lens its rules were written with (ADR 0124 addendum, Part 4).
   for (const lens of QUESTIONS) {
