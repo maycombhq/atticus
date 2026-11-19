@@ -300,6 +300,63 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
     },
     T,
   );
+
+  it(
+    "with no build.json, an undo refuses over a file changed by hand since the undo before it, and overwrites nothing",
+    async () => {
+      const root = await beta26();
+      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+      expect((await run(["catalog", "undo", "--root", root, "--yes"])).code).toBe(0);
+      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
+      // A file the next undo would put back, changed by hand since the last undo left it.
+      const shown = await run(["catalog", "undo", "--root", root, "--json"]);
+      expect(shown.code, shown.err).toBe(0);
+      const plan = (
+        JSON.parse(shown.out) as {
+          plan: { copies: { files: { path: string; after?: string | null }[] }[] };
+        }
+      ).plan;
+      // Not build.json: writing one would make the catalog no longer one from before the slots.
+      const files = plan.copies[0]!.files.filter(
+        (f) => f.after !== undefined && f.path !== "catalog/sources/build.json",
+      );
+      const pick =
+        files.find((f) => f.after !== null && f.path.startsWith("catalog/generated/")) ??
+        files.find((f) => f.after !== null) ??
+        files[0];
+      expect(pick, "the undo copy records what it left").toBeDefined();
+      const abs = join(root, ...pick!.path.split("/"));
+      const { writeFileSync, mkdirSync, rmSync } = await import("node:fs");
+      const was = pick!.after === null ? undefined : readFileSync(abs, "utf8");
+      if (was === undefined) mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, `${was ?? ""}# changed by hand\n`);
+      const mine = readFileSync(abs, "utf8");
+      const allBefore = { generated: generated(root), sources: sources(root) };
+
+      const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toMatch(/^Nothing undone: 1 file was changed since /);
+      expect(refused.err).toContain(pick!.path);
+      expect(refused.err).toContain("run atticus upgrade --yes");
+      const body = JSON.parse(refused.out) as {
+        refused: { reasons: string[]; edits: { path: string }[] };
+      };
+      expect(body.refused.reasons).toEqual(["hand-edits"]);
+      expect(body.refused.edits).toEqual([{ path: pick!.path }]);
+      expect(body.refused.reasons).not.toContain("not-upgraded");
+      // Nothing was put back: the hand edit and every other file are as they were.
+      expect(readFileSync(abs, "utf8")).toBe(mine);
+      expect({ generated: generated(root), sources: sources(root) }).toEqual(allBefore);
+
+      // Put back as it was, the same undo goes through.
+      if (was === undefined) rmSync(abs);
+      else writeFileSync(abs, was);
+      const back = await run(["catalog", "undo", "--root", root, "--yes"]);
+      expect(back.code, back.err).toBe(0);
+      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(true);
+    },
+    T,
+  );
 });
 
 describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
