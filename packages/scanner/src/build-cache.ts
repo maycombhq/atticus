@@ -3,7 +3,13 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmpText, factsParseHooks, writeFileAtomic } from "@maycombhq/core";
+import {
+  appMemoryInUse,
+  cmpText,
+  factsParseHooks,
+  onAppMemoryRelease,
+  writeFileAtomic,
+} from "@maycombhq/core";
 import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
 
 /**
@@ -35,9 +41,21 @@ export const BUILD_CACHE_FORMAT = 2;
  * A test's switches: with `off`, nothing is read from or written to the cache; `stamp` stands
  * for the code's stamp (null: there is none, so the cache is off).
  */
-export const buildCacheHooks: { off?: boolean; stamp?: string | null } = {};
+export const buildCacheHooks: {
+  off?: boolean;
+  stamp?: string | null;
+  /** ADR 0205 step 4's proof: each kept text a build uses is checked against its record's serialization, or a throw. */
+  checkTexts?: boolean;
+} = {};
 
-const stats = { memoHits: 0, memoMisses: 0, textsReused: 0, readersTrusted: 0 };
+const stats = {
+  memoHits: 0,
+  memoMisses: 0,
+  textsReused: 0,
+  readersTrusted: 0,
+  /** ADR 0205 step 4: builds that took the last build's texts from the server's memory. */
+  textsFromMemory: 0,
+};
 /** How often the cache was used in this process (tests and the benchmark read it). */
 export function buildCacheStats(): typeof stats {
   return { ...stats };
@@ -665,12 +683,36 @@ export async function buildKeyOf(o: KeyInputs): Promise<BuildKey | undefined> {
   return { key, unchanged: async () => JSON.stringify(await foldersOf(o)) === was };
 }
 
+/**
+ * ADR 0205 step 4: in the app's server, the texts of the last build kept, in memory, so the next
+ * build takes them without reading the last build back from disk. A text is the serialization of
+ * the record whose JSON hash keys it, whichever build kept it, so these are as good as the file's.
+ */
+let textsInMemory:
+  | {
+      stamp: string | undefined;
+      key: string;
+      texts: KeptTexts;
+      manifest?: { path: string; sha256: string };
+    }
+  | undefined;
+onAppMemoryRelease(() => (textsInMemory = undefined));
+
 /** What a build loads of the last build: whole when its key is this one, else its texts. */
 export async function loadKept<B>(
   stateDir: string,
   key: string | undefined,
 ): Promise<{ hit?: B; texts?: KeptTexts }> {
   if (!cacheOn()) return {};
+  // ADR 0205 step 4: another build's texts from memory, in the app's server (a build of the same
+  // key is the last build whole, read from disk as before).
+  const mem = textsInMemory;
+  if (mem && mem.stamp === codeStamp() && key !== mem.key && appMemoryInUse()) {
+    if (mem.manifest) written.set(mem.manifest.path, mem.manifest.sha256);
+    stats.memoMisses++;
+    stats.textsFromMemory++;
+    return { texts: mem.texts };
+  }
   const text = await readFile(join(buildCacheDirOf(stateDir), MEMO), "utf8").catch(() => undefined);
   if (!text) return {};
   try {
@@ -826,6 +868,20 @@ export async function keepBuild(
     for (const [path, text] of build.files)
       parts.push(JSON.stringify([path, text, s.keys.get(path) ?? ""]));
     await writeFileAtomic(join(dir, MEMO), `${parts.join("\n")}\n`);
+    // ADR 0205 step 4: the texts this build wrote, kept in the app's server for the next build.
+    if (appMemoryInUse()) {
+      const texts: KeptTexts = new Map();
+      for (const [path, text] of build.files) {
+        const k = s.keys.get(path);
+        if (k) texts.set(k, text);
+      }
+      textsInMemory = {
+        stamp: codeStamp(),
+        key: s.key,
+        texts,
+        ...(header.manifest ? { manifest: header.manifest } : {}),
+      };
+    }
   } catch {
     // A build that can't be kept (too big for one string, not plain data) or a cache that can't
     // be written is no cache: the last build kept, now out of date, is taken away.

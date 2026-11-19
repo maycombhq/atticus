@@ -18,6 +18,7 @@ import { hasSecretShape, redactSecrets } from "./cite.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 import { migrationOf, type MigrationFile } from "./migration-files.js";
 import { normalizeFactPaths } from "./fact-paths.js";
+import { appMemory, appMemoryInUse, onAppMemoryRelease } from "./app-memory.js";
 
 /**
  * The facts file (ADR 0124): read, write and project into catalog C1.
@@ -250,6 +251,8 @@ export function forgetFactsParses(): void {
   factsParses.clear();
   factsParseBytes = 0;
 }
+// ADR 0205 step 4: the app's server lets them go after ten idle minutes or when memory runs low.
+onAppMemoryRelease(forgetFactsParses);
 
 function keepFactsParse(key: string, kept: Uint8Array): void {
   if (kept.byteLength > FACTS_PARSES_MAX / 4) return;
@@ -264,6 +267,8 @@ function keepFactsParse(key: string, kept: Uint8Array): void {
 
 export function parseFacts(text: string): ParseFactsResult {
   if (factsParseHooks.off) return parseFactsText(text);
+  // In the app's server, a use keeps them for ten more idle minutes (or lets them go, memory low).
+  if (appMemory.on) appMemoryInUse();
   const key = createHash("sha256").update(text, "utf8").digest("hex");
   const kept = factsParses.get(key) ?? factsParseHooks.store?.get(key);
   if (kept) {

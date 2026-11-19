@@ -8,8 +8,10 @@ import {
   factsParseStats,
   forgetFactsParses,
   settleAfterResult,
+  startAppMemory,
+  stopAppMemory,
 } from "@maycombhq/core";
-import { buildAndWrite } from "@maycombhq/scanner";
+import { buildAndWrite, buildCacheHooks, buildCacheStats } from "@maycombhq/scanner";
 import type { CatalogDiff } from "@maycombhq/scanner";
 import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { bigRepoFacts, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
@@ -99,6 +101,7 @@ afterEach(async () => {
   stepsOff(false);
   delete writeFactsHooks.onDiffs;
   delete factsParseHooks.check;
+  delete buildCacheHooks.checkTexts;
   await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -107,6 +110,16 @@ async function applies(shape: string, off: boolean) {
   const dir = await mkdtemp(join(tmpdir(), `atticus-apply15-${off ? "off" : "on"}-`));
   made.push(dir);
   stepsOff(off);
+  // Step 4, as the app's server keeps it: the last build's texts and the facts parses in memory.
+  if (!off) startAppMemory();
+  try {
+    return await appliesIn(dir, shape, off);
+  } finally {
+    if (!off) stopAppMemory();
+  }
+}
+
+async function appliesIn(dir: string, shape: string, off: boolean) {
   const { root, options } = await SHAPES[shape]!(dir);
   const cold = await buildAndWrite(root, { command: "atticus catalog build" });
   expect(cold.guard.refused).toBeUndefined();
@@ -154,10 +167,20 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       writeFactsHooks.onDiffs = (changed, whole) => both.push([changed, whole]);
       // Step 3, both ways: every kept facts parse is checked against a parse of its text.
       factsParseHooks.check = true;
+      // Step 4, both ways: every kept text a build takes is checked against its serialization.
+      buildCacheHooks.checkTexts = true;
       const kept = factsParseStats.kept;
+      const fromMemory = buildCacheStats().textsFromMemory;
+      const hits = buildCacheStats().memoHits;
       const on = await applies(shape, false);
       delete writeFactsHooks.onDiffs;
       delete factsParseHooks.check;
+      delete buildCacheHooks.checkTexts;
+      // Each write's build took the last build's texts from memory, but one whose inputs were the
+      // last build's, which is that build whole, read from disk as before.
+      const now = buildCacheStats();
+      expect(now.textsFromMemory - fromMemory, "texts from memory").toBeGreaterThanOrEqual(3);
+      expect(now.textsFromMemory - fromMemory + now.memoHits - hits).toBe(4);
       expect(factsParseStats.kept - kept, "facts parses kept and used").toBeGreaterThan(20);
       expect(both.length, "the comparison was made both ways").toBe(4);
       for (const [changed, whole] of both) expect(changed).toEqual(whole);

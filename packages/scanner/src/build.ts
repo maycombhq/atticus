@@ -57,6 +57,7 @@ import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import {
+  buildCacheHooks,
   buildKeyOf,
   hitManifestText,
   isWrittenManifest,
@@ -1766,8 +1767,13 @@ function serializedOf(
     return hit;
   }
   let text = kept ? kept.get(hashOf()) : undefined;
-  if (text !== undefined) textReused();
-  else text = serializeRecord(r);
+  if (text !== undefined) {
+    textReused();
+    if (buildCacheHooks.checkTexts && text !== serializeRecord(r))
+      throw new Error(
+        `ADR 0205: a kept text isn't the serialization of its record (${r.kind}/${r.id})`,
+      );
+  } else text = serializeRecord(r);
   SERIALIZED.set(key, text);
   if (SERIALIZED.size > SERIALIZED_MAX) SERIALIZED.delete(SERIALIZED.keys().next().value!);
   return text;

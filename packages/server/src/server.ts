@@ -9,7 +9,9 @@ import {
   FileChangedError,
   runLogKept,
   settleAfterResult,
+  startAppMemory,
   startAppRun,
+  stopAppMemory,
 } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { badRequest, HttpError, notFound, conflict, problem, Router } from "./http.js";
@@ -503,6 +505,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       indexFilesChanged(o.root);
   });
   if (watcher) trustIndexBetweenChanges(o.root, true);
+  // ADR 0205 step 4: the server keeps the last build's texts and the facts parses in memory
+  // between Applies (let go after ten idle minutes, when memory runs low, and when it closes).
+  startAppMemory();
   return {
     url: `http://127.0.0.1:${port}`,
     port,
@@ -536,7 +541,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         events.closeAll();
         server.closeAllConnections?.();
         // ADR 0205 step 2: an Apply's caches, written after its result, end before the close.
-        server.close(() => void settleAfterResult().then(resolve, resolve));
+        server.close(() => void settleAfterResult().then(stopAppMemory).then(resolve, resolve));
       }),
   };
 }
