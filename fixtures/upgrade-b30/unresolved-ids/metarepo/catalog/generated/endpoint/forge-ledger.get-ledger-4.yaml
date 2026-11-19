@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-ledger.get-ledger-4
+status: current
+confidence: verified
+component: forge-ledger
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: GET
+normalizedPath: /v1/holds/{}/ledger-4
+pathOrTopic: /v1/holds/{id}/ledger-4
+schemaRefs: []

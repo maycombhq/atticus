@@ -1,0 +1,46 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.payment
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: forge-notify.on-forge-payments-settled, forge-payments.delete-payments-3, forge-payments.delete-payments-7, forge-payments.get-payments-0, forge-payments.get-payments-4."
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 4
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 8
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+fields: []
+flags:
+  - undefined
+term: Payment

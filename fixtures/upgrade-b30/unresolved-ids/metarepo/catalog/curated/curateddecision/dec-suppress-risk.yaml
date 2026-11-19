@@ -1,0 +1,12 @@
+schemaVersion: 2
+kind: CuratedDecision
+id: dec-suppress-risk
+status: current
+confidence: asserted
+evidence: []
+target: unresolved.c-risk
+action: suppress
+value: null
+reason: the risk call is being removed
+by: pat
+at: 2026-11-12T00:00:00Z

@@ -173,16 +173,23 @@ describe("J0: config placeholders resolved through the config that sets them", (
     expect(joinFacts({ repos: [...estate()].reverse() })).toEqual(out);
   });
 
-  it("without the config repo, ${PAYMENTS_URL} has no host and falls to the path, as before", () => {
+  // The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): before, it fell to
+  // the path, an arrow flagged joined-by-path that no line cites; now it is asked, as `@name@` is.
+  it("without the config repo, ${PAYMENTS_URL} has no host and is asked about, never joined by its path", () => {
     const bare = joinFacts({ repos: estate({ config: false }) });
-    const [j] = joinOf(bare, "c-post-payment");
-    expect(j).toMatchObject({ how: "path", inferred: { within: "estate" } });
-    expect(j!.through).toBeUndefined();
+    expect(joinOf(bare, "c-post-payment")).toEqual([]);
+    expect(bare.asks.filter((a) => a.call.fact === "c-post-payment").map((a) => a.reason)).toEqual([
+      "unknown-host",
+    ]);
     const records = joinRecords(bare, estate({ config: false }));
-    const pay = records.find((r) => r.kind === "Interface" && r.to === "payments-api") as {
-      flags?: string[];
-    };
-    expect(pay.flags).toEqual([JOINED_BY_PATH]);
+    expect(
+      records.some(
+        (r) =>
+          r.kind === "Interface" &&
+          r.to === "payments-api" &&
+          (r as { flags?: string[] }).flags?.includes(JOINED_BY_PATH),
+      ),
+    ).toBe(false);
     // and the listener's topic, set only in the config repo, is no one's
     expect(joinOf(bare, "c-publish-payment-made")).toEqual([]);
   });
@@ -527,7 +534,9 @@ describe("J0: which settings count for a component, and the forms a placeholder 
         limits,
       ],
     });
-    // no host: the fallback's guess by path, as for any call with none
-    expect(out.joins).toMatchObject([{ how: "path", inferred: { within: "estate" } }]);
+    // No host: a placeholder nothing sets, asked about (the owner, 2026-11-19), never the
+    // fallback's guess by path.
+    expect(out.joins).toEqual([]);
+    expect(out.asks.map((a) => a.reason)).toEqual(["unknown-host"]);
   });
 });

@@ -475,6 +475,44 @@ const idPart = (text: string) => slugify(text).replace(/\./g, "-");
 /** A name as a part of a projected catalog id: its slug, with dots made dashes (a component, a store). */
 export const factIdPart = idPart;
 
+/**
+ * ADR 0124 addendum E-ids (the owner, 2026-11-19): the id of the loose end a fact leaves,
+ * `unresolved.<repo>.<rest>`, the repo as the other ids name it (`factIdPart`, as a component
+ * named for its repo is), so the same fact id in two repos is two records. `rest` is the call's
+ * fact id (`factIdPart`), or a listener's Endpoint id (`<component>.<name>`).
+ */
+export const unresolvedIdOf = (repo: string, rest: string): string =>
+  `unresolved.${idPart(repo)}.${rest}`;
+
+/** The loose ends a listener leaves: its rest is an Endpoint id, `<component>.<name>`. */
+const SUBSCRIBE = "event-subscribe";
+
+/**
+ * ADR 0124 addendum E-ids: an Unresolved record the facts projection made, by the id each repo's
+ * own record has now, once per repo its evidence names, sorted. Before beta.30 the id carried no
+ * repo (`unresolved.<fact id>`, `unresolved.<component>.<name>` for a listener), so two repos'
+ * loose ends with one fact id were one record citing one of them; such an id is named again with
+ * each repo its evidence names. A record of the new form gives its own id. Told apart by shape,
+ * which is unambiguous: a call's fact id part and an Endpoint's name have no dot (`factIdPart`).
+ * Anything else (a built-in reader's loose end, `<owner>.<kind>.<hash>`; no repo): none.
+ */
+export function unresolvedIdsNow(r: {
+  kind: string;
+  id: string;
+  unresolvedKind?: unknown;
+  evidence?: readonly { repo?: string | undefined }[];
+}): string[] {
+  if (r.kind !== "Unresolved" || !r.id.startsWith("unresolved.")) return [];
+  const rest = r.id.slice("unresolved.".length);
+  const dots = rest.split(".").length - 1;
+  const oldDots = r.unresolvedKind === SUBSCRIBE ? 1 : 0;
+  const repos = [...new Set((r.evidence ?? []).flatMap((e) => (e.repo ? [e.repo] : [])))].sort();
+  if (!repos.length) return [];
+  if (dots === oldDots + 1 && repos.some((x) => rest.startsWith(`${idPart(x)}.`))) return [r.id];
+  if (dots !== oldDots) return [];
+  return [...new Set(repos.map((x) => unresolvedIdOf(x, rest)))].sort();
+}
+
 /** The Endpoint id an entry fact projects to in its component (`projectFacts`). */
 export function entryEndpointId(f: FactOf<"entry">, component: string): string {
   const name =
@@ -619,7 +657,8 @@ export function catalogAuth(f: FactOf<"entry">): FactOf<"entry">["auth"] {
  * Facts to C1. Ids are made from the claims, so the same facts give the same ids:
  * Endpoint `<component>.<method-path>`, Interface `if-<hash>`, DataStore `<store>`,
  * Table `<store>.<table>`, Column `<store>.<table>.<column>`, Schema `<endpoint>.<side>`,
- * Deployment `<component>.<env>`, Setting `<component>.<key>`, Flow `<component>.<name>`.
+ * Deployment `<component>.<env>`, Setting `<component>.<key>`, Flow `<component>.<name>`,
+ * Unresolved `unresolved.<repo>.<call>` (ADR 0124 addendum E-ids).
  */
 export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}): ProjectResult {
   const facts = [...input].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -765,7 +804,9 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
           : [evidenceOf(f, "code", "caller")],
       } as CatalogRecord);
     } else {
-      const id = `unresolved.${idPart(f.id)}`;
+      // ADR 0124 addendum E-ids: the repo in every loose end's id, so two repos' calls of one
+      // fact id are two records.
+      const id = unresolvedIdOf(repoOf(f), idPart(f.id));
       catalogIdOf.set(f.id, id);
       issues.push({
         factId: f.id,

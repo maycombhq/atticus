@@ -11,17 +11,17 @@ only when the identity of the fact changes.
 
 ## Conventions by kind
 
-| Kind              | Id                                                                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| System, Component | the name from the profile or repo manifest                                                                                                                                    |
-| Endpoint (REST)   | `<component>.<method>-<last fixed path segment, singular>`, with a short hash of the path when two would collide                                                              |
-| Endpoint (other)  | `<component>.<type prefix>.<name>`, for example `<component>.graphql.query.account`, `<component>.grpc.<package.service.method>`, `<component>.function.<function>.<trigger>` |
-| Topic             | `topic.<topic>`                                                                                                                                                               |
-| Interface         | `if-` and a hash of caller, callee, method and normalized path                                                                                                                |
-| Table, Column     | `<store>.<table>`, `<table>.<column>`                                                                                                                                         |
-| Setting           | `<component>[.<env>].<key>`                                                                                                                                                   |
-| Deployment        | `<component>.<env>`                                                                                                                                                           |
-| Unresolved        | `<owner>.<loose-end kind>.<hash of what it says and where>`                                                                                                                   |
+| Kind              | Id                                                                                                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System, Component | the name from the profile or repo manifest                                                                                                                                                                                                          |
+| Endpoint (REST)   | `<component>.<method>-<last fixed path segment, singular>`, with a short hash of the path when two would collide                                                                                                                                    |
+| Endpoint (other)  | `<component>.<type prefix>.<name>`, for example `<component>.graphql.query.account`, `<component>.grpc.<package.service.method>`, `<component>.function.<function>.<trigger>`                                                                       |
+| Topic             | `topic.<topic>`                                                                                                                                                                                                                                     |
+| Interface         | `if-` and a hash of caller, callee, method and normalized path                                                                                                                                                                                      |
+| Table, Column     | `<store>.<table>`, `<table>.<column>`                                                                                                                                                                                                               |
+| Setting           | `<component>[.<env>].<key>`                                                                                                                                                                                                                         |
+| Deployment        | `<component>.<env>`                                                                                                                                                                                                                                 |
+| Unresolved        | a built-in reader's: `<owner>.<loose-end kind>.<hash of what it says and where>`; one the facts leave: `unresolved.<repo>.<fact id>`, a listener's `unresolved.<repo>.<component>.<name>` (the repo with dots made dashes; ADR 0124 addendum E-ids) |
 
 ## Normalized paths
 

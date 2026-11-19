@@ -1,0 +1,16 @@
+schemaVersion: 5
+kind: Unresolved
+id: unresolved.c-solo
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 6
+    path: src/main/java/forge/client/Client.java
+    repo: forge-ledger
+    side: caller
+    source: code
+owner: forge-ledger
+raw: GET http://@forgeFxUrl@/v1/fx/{id}
+unresolvedKind: http-call

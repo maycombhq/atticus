@@ -93,14 +93,16 @@ describe("why the join left a call (explain)", () => {
     const why = Object.fromEntries((r.left ?? []).map((l) => [l.call.fact, l.reason]));
     expect(why).toEqual({
       "call.get.nowhere": "no-host",
-      "call.get.later": "unresolved-placeholder",
       "call.get.customers-gone": "host-no-route",
       "call.get.ledger-gone": "target-no-route",
       "call.get.health": "generic-path",
       "call.get.none": "answered-none",
       "call.publish.unheard": "topic-unheard",
     });
+    // The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): a host written as
+    // `${LATER_URL}` that nothing sets is asked about, as `@name@` is; it was left before.
     expect(r.asks.map((a) => [a.call.fact, a.reason])).toEqual([
+      ["call.get.later", "unknown-host"],
       ["call.get.unknown", "unknown-host"],
     ]);
   });

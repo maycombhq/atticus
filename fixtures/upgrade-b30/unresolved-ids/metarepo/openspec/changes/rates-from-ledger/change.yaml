@@ -1,0 +1,18 @@
+schemaVersion: 1
+id: rates-from-ledger
+title: Read rates from the ledger
+type: feature
+template: feature
+state: draft
+createdAt: 2026-11-12T09:00:00Z
+createdBy: pat
+systems: []
+touches:
+  dataStores: []
+  interfaces: []
+  records:
+    - unresolved.c-1
+    - unresolved.c-solo
+    - unresolved.forge-notify.on-forge-payments-settled
+  repos: []
+  tables: []

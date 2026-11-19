@@ -1,0 +1,32 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.balance
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: forge-ledger.put-ledger-2, forge-notify.get-notify-0, forge-payments.post-payments-1."
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+fields: []
+flags:
+  - undefined
+term: Balance

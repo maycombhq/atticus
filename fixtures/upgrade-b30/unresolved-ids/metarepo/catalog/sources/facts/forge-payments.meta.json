@@ -1,0 +1,9 @@
+{
+  "slotVersion": 1,
+  "kind": "facts",
+  "repo": "forge-payments",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "factsSchemaVersion": 5,
+  "factsHash": "50cfe67a107b001e06fc1bc1d69f9a2fc37570fe5ff49f4a2018a664ba0ae324",
+  "contracts": null
+}

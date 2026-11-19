@@ -1,0 +1,31 @@
+schemaVersion: 5
+kind: Interface
+id: if-f455263c375ce4d4
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: forge-notify.get-notify-0
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/client/Client.java
+    repo: forge-payments
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+flags:
+  - joined-by-host
+from: forge-payments
+method: GET
+normalizedPath: /v1/balances/{}/notify-0
+sync: sync
+to: forge-notify
+via: direct

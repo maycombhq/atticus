@@ -72,8 +72,10 @@ beforeAll(async () => {
   await cp(join(FIX, "facts"), join(root, "facts"), { recursive: true });
   for (const r of await readdir(join(FIX, "repos")))
     await cp(join(FIX, "repos", r), join(root, "workspace", r), { recursive: true });
-  // The catalog as the estate has it: every repo written once.
-  for (const r of ["forge-accounts", "forge-cards", "forge-payments"])
+  // The catalog as the estate has it: every repo written once. The deploy repo sets the URLs the
+  // services leave as `${PLACEHOLDERS}` (ACCOUNTS_URL): without it, a call to one is asked about
+  // (ADR 0195, the beta.28.1 addendum's sub-addendum), not joined by its path.
+  for (const r of ["forge-deploy-config", "forge-accounts", "forge-cards", "forge-payments"])
     expect(await verifyCommand(root, r, { write: true }, quiet)).toBe(0);
   srv = await startServer({
     root,
@@ -238,7 +240,7 @@ describe(
       // end and unmakes no link (beta.26 kept a link the callee's side held from an earlier write).
       expect(v.preview!.links!.unmade).toEqual([]);
       expect(v.preview!.catalog!.files).toEqual([
-        "catalog/generated/unresolved/unresolved.call-post-notifications.yaml",
+        "catalog/generated/unresolved/unresolved.forge-payments.call-post-notifications.yaml",
       ]);
     });
 

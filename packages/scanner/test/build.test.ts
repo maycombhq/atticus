@@ -282,11 +282,12 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
 
   // Beta.28.1 (field report 4, the review): the join asks about a host written as a deploy token
   // nothing sets, where beta.28 guessed an arrow by the call's path. The same slots then give
-  // fewer arrows, which only the build's own version explains.
+  // fewer arrows, which only the build's own version explains. Beta.30 (ADR 0124 addendum E-ids,
+  // ADR 0195's beta.28.1 sub-addendum) moved the build's version again: the same words.
   it(
-    "an arrow the last build (beta.27.3) drew and this one (beta.28.1) doesn't is explained by the build",
+    "an arrow the last build (beta.27.3) drew and this one (beta.30) doesn't is explained by the build",
     async () => {
-      expect(BUILD_VERSION).toBe("2.0.0-beta.28.1");
+      expect(BUILD_VERSION).toBe("2.0.0-beta.30");
       const root = await forge();
       await buildAndWrite(root, { command: "atticus catalog build" });
       const path = join(root, "catalog/sources/build.json");
@@ -315,7 +316,7 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       const report = await readBuildReport(root);
       const gone = (report?.removed ?? []).find((x) => x.id === was);
       expect(gone?.reasons).toContain("build");
-      expect(gone?.explainedBy).toContain("the build changed (2.0.0-beta.27.3 to 2.0.0-beta.28.1)");
+      expect(gone?.explainedBy).toContain("the build changed (2.0.0-beta.27.3 to 2.0.0-beta.30)");
     },
     T,
   );

@@ -52,6 +52,7 @@ import {
   type TrafficOnFile,
   sharedJoinAbout,
   type TermsResult,
+  unresolvedIdsNow,
 } from "@maycombhq/core";
 import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -2139,6 +2140,75 @@ export function movedArrows(
 }
 
 /** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
+/**
+ * ADR 0124 addendum E-ids (the owner, 2026-11-19): the loose ends this build removes that come
+ * back under their repo's id (`unresolved.<repo>.<fact id>`), each with the ids it is now, by
+ * `<Kind>/<id>`. A loose end of the old form (`unresolved.<fact id>`, no repo) is renamed when an
+ * added record has the id its repo gives it (`unresolvedIdsNow`); a record that two repos' loose
+ * ends shared is renamed into each that is added. Such a removal is a rename, not a loss: it is
+ * listed, and counts toward neither removal limit.
+ */
+export function renamedLooseEnds(
+  removed: readonly CatalogRecord[],
+  added: readonly CatalogRecord[],
+): Map<string, string[]> {
+  const now = new Set(added.filter((x) => x.kind === "Unresolved").map((x) => x.id));
+  const out = new Map<string, string[]>();
+  for (const r of removed) {
+    const ids = unresolvedIdsNow(r).filter((id) => id !== r.id && now.has(id));
+    if (ids.length) out.set(`${r.kind}/${r.id}`, ids);
+  }
+  return out;
+}
+
+/** The words a renamed loose end's removal starts with (`renamedLooseEnds`). */
+export const renamedWords = (ids: readonly string[]): string =>
+  `renamed ${ids.map((id) => `Unresolved/${id}`).join(" and ")} (the repo in its id)`;
+
+/**
+ * ADR 0195, the beta.28.1 addendum and its sub-addendum (the owner, 2026-11-19): an arrow this
+ * build removes because its call's host is a deploy token nothing sets (`@name@`, `${NAME}`,
+ * `$NAME`, `%NAME%`), asked about now where an earlier build guessed the arrow by its path: the
+ * loose end the build adds for the same call (its caller, a line both cite, its raw naming the
+ * token), as `Unresolved/<id>`. Only one such loose end, or none is said.
+ */
+export function askedTokenOf(
+  r: CatalogRecord,
+  addedLooseAt: ReadonlyMap<string, readonly CatalogRecord[]>,
+): string | undefined {
+  if (r.kind !== "Interface") return undefined;
+  const from = (r as unknown as { from?: string }).from;
+  const caller = (r.evidence as { side?: string; repo?: string; path?: string; line?: number }[])
+    .filter((e) => e.side !== "callee" && e.repo && e.path && e.line !== undefined)
+    .map((e) => `${e.repo}\u0000${e.path}\u0000${e.line}`);
+  const ids = new Set<string>();
+  for (const k of new Set(caller))
+    for (const u of addedLooseAt.get(k) ?? [])
+      if (
+        (u as unknown as { owner?: string }).owner === from &&
+        TOKEN_HOST.test(String((u as unknown as { raw?: string }).raw ?? ""))
+      )
+        ids.add(u.id);
+  return ids.size === 1 ? `Unresolved/${[...ids][0]}` : undefined;
+}
+
+/** A loose end's raw whose host is a deploy token: `@name@`, `${NAME}`, `$NAME` or `%NAME%`. */
+const TOKEN_HOST =
+  /(?:^|\s|:\/\/)(?:@[A-Za-z_][A-Za-z0-9_.-]*@|\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::-?)?\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?:[/:?#\s]|$)/;
+
+/** The loose ends among records, by each line they cite (`<repo>\u0000<path>\u0000<line>`). */
+function looseByLine(records: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
+  const out = new Map<string, CatalogRecord[]>();
+  for (const x of records)
+    if (x.kind === "Unresolved")
+      for (const k of new Set(evidenceLines(x))) {
+        const l = out.get(k);
+        if (l) l.push(x);
+        else out.set(k, [x]);
+      }
+  return out;
+}
+
 export function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of records) {
@@ -2809,6 +2879,13 @@ export async function guardBuild(
       addedNow,
       [...oldRecords.values()],
     );
+    // ADR 0124 addendum E-ids: the loose ends removed that come back under their repo's id.
+    const renamedTo = renamedLooseEnds(
+      [...oldRecords].flatMap(([p, r]) => (b.files.has(p) ? [] : [r])),
+      addedNow,
+    );
+    // ADR 0195, the beta.28.1 addendum's sub-addendum: an arrow whose call is asked now.
+    const addedLooseAt = looseByLine(addedNow);
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2951,9 +3028,14 @@ export async function guardBuild(
       const joinedNow = r ? joinedArrowOf(r, addedArrowsAt, looseAt) : undefined;
       // Beta.30: an arrow whose call a person's pairing moved to another box in this build.
       const movedNow = r ? movedTo.get(`${r.kind}/${r.id}`) : undefined;
+      // ADR 0124 addendum E-ids: a loose end under its repo's id now, a rename.
+      const renamedNow = r ? renamedTo.get(`${r.kind}/${r.id}`) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
-        if (back) own.push(back);
+        const asked = askedTokenOf(r, addedLooseAt);
+        if (renamedNow) own.push(renamedWords(renamedNow));
+        else if (asked) own.push(`the host is a deploy token nothing sets: asked now (${asked})`);
+        else if (back) own.push(back);
         // The same words as an arrow that comes back under another callee (`rekeyedWords`).
         else if (movedNow)
           own.push(`its call goes to ${movedNow.to} now (Interface/${movedNow.id})`);
@@ -2975,7 +3057,8 @@ export async function guardBuild(
         reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
-      if ((joinedNow || movedNow) && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
+      if ((joinedNow || movedNow || renamedNow) && removal.explainedBy.length)
+        joinedLooseEnds.add(removal.path);
     }
     mark("removals explained");
     // The records each repo had in the last build, for the share.

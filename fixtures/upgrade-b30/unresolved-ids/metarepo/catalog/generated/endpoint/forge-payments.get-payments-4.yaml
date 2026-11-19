@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-payments.get-payments-4
+status: current
+confidence: verified
+component: forge-payments
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+method: GET
+normalizedPath: /v1/limits/{}/payments-4
+pathOrTopic: /v1/limits/{id}/payments-4
+schemaRefs: []

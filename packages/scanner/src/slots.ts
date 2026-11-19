@@ -58,9 +58,17 @@ export const BUILD_MANIFEST_READS: number = BUILD_MANIFEST_VERSION;
 /**
  * The build's own version (ADR 0195 point 4, review of CS1): bumped whenever the build's passes
  * change what the same slots and inputs give, so a removal an Atticus upgrade makes is explained
- * by it (`build.json`'s `buildVersion`).
+ * by it (`build.json`'s `buildVersion`). 2.0.0-beta.30: the repo in every loose end's id (ADR 0124
+ * addendum E-ids), and a host written as `${NAME}`, `$NAME` or `%NAME%` that nothing sets asked
+ * about (ADR 0195, the beta.28.1 addendum's sub-addendum).
  */
-export const BUILD_VERSION = "2.0.0-beta.28.1";
+export const BUILD_VERSION = "2.0.0-beta.30";
+/**
+ * ADR 0124 addendum E-ids: the first build whose loose ends carry their repo in their ids
+ * (`unresolved.<repo>.<fact id>`). A catalog an earlier build wrote has them as
+ * `unresolved.<fact id>`; `atticus upgrade` names them again, and carries what cites them.
+ */
+export const UNRESOLVED_IDS_BUILD = "2.0.0-beta.30";
 /** The version of `facts/<repo>.crosscheck.yaml`. */
 export const DISMISSALS_VERSION = 1 as const;
 

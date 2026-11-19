@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-ledger.put-ledger-6
+status: current
+confidence: verified
+component: forge-ledger
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 7
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: PUT
+normalizedPath: /v1/rates/{}/ledger-6
+pathOrTopic: /v1/rates/{id}/ledger-6
+schemaRefs: []

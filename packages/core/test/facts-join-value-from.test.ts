@@ -88,10 +88,13 @@ describe("J0: valueFrom and two placeholders in one value", () => {
     }
   });
 
-  it("does not resolve a secretKeyRef to a Secret nobody wrote a value for", () => {
-    const [j] = joinOf(out, "c-post-fraud-score");
-    expect(j).toMatchObject({ how: "path", inferred: { within: "estate" } });
-    expect(j!.through).toBeUndefined();
+  // The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): the placeholder
+  // nothing gives a host is asked about, as `@name@` is, no longer guessed by its path.
+  it("does not resolve a secretKeyRef to a Secret nobody wrote a value for: asked about", () => {
+    expect(joinOf(out, "c-post-fraud-score")).toEqual([]);
+    expect(
+      out.asks.filter((a) => a.call.fact === "c-post-fraud-score").map((a) => a.reason),
+    ).toEqual(["unknown-host"]);
   });
 
   it("puts every line followed in the Interface's evidence", () => {

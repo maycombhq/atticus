@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-ledger.post-ledger-1
+status: current
+confidence: verified
+component: forge-ledger
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: POST
+normalizedPath: /v1/entrys/{}/ledger-1
+pathOrTopic: /v1/entrys/{id}/ledger-1
+schemaRefs: []

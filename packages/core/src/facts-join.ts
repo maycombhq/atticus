@@ -1013,6 +1013,18 @@ interface Node {
  */
 const WHOLE_HOST_TOKEN = /^(?:[a-z][a-z0-9+.-]*:\/\/)?@[A-Za-z_][A-Za-z0-9_.-]*@(?:[/:?#]|$)/i;
 
+/**
+ * ADR 0195, the beta.28.1 addendum's sub-addendum (the owner, 2026-11-19): a host written as an
+ * environment or config placeholder that nothing sets is a deploy token nothing sets too, as
+ * `@name@` is: `${NAME}` (with no default, or an empty one: `${NAME:}`, `${NAME:-}`), the shell's
+ * `$NAME`, and `%NAME%` (a Windows or CI variable). Only as the whole host, and only where the
+ * join reached nothing: a placeholder something sets, or whose default names a host, is resolved
+ * first (`resolve`), and a host it is only part of (`ledger-${ENV}.forge.internal`) is not one.
+ * Nothing resolves `$NAME` or `%NAME%`, so either is always unset to the join.
+ */
+const WHOLE_HOST_PLACEHOLDER =
+  /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::-?)?\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?:[/:?#]|$)/i;
+
 const TOKEN_FORMS: readonly RegExp[] = [
   /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
   /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
@@ -1050,7 +1062,11 @@ export function placeholderIn(
     const colon = inner.indexOf(":");
     const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name) || CAMEL_SIMPLE.test(name)) continue;
-    const fallback = colon < 0 ? undefined : inner.slice(colon + 1).trim();
+    // The owner, 2026-11-19: the shell's `${NAME:-default}` defaults to what follows `:-` where
+    // that is a URL (a Spring default never starts `-https://`); `${NAME:-}` has none.
+    const given = colon < 0 ? undefined : inner.slice(colon + 1).trim();
+    const fallback =
+      given === "-" ? undefined : given?.replace(/^-(?=[a-z][a-z0-9+.-]*:\/\/)/i, "");
     dollar = { at: i, end: j + 1, name, ...(fallback ? { fallback } : {}) };
   }
   // The token forms, each set by the same config facts by its name: the first in the value.
@@ -2766,6 +2782,24 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
           reason: "ambiguous",
           question: callTargetQuestion(f, call.component),
           candidates: viaBase.map(end).sort((x, y) => cmp(x.repo, y.repo) || cmp(x.fact, y.fact)),
+        });
+        continue;
+      }
+      // The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): a host written
+      // as `${NAME}`, `$NAME` or `%NAME%` that nothing sets is asked about as `@name@` is, never
+      // joined by its path alone (`WHOLE_HOST_PLACEHOLDER`). A gateway's BasePath that starts the
+      // whole path it sends still joins it, as beta.25 decided (above): that is a cited line.
+      const unsetHost = [f.host, f.base, ...keyed.map((t) => t.fact.value ?? t.fact.source)].find(
+        (v): v is string => !!v && WHOLE_HOST_PLACEHOLDER.test(v.trim()),
+      );
+      if (namesHost && unsetHost) {
+        const named = f.host ?? unsetHost;
+        asks.push({
+          call: end(call),
+          reason: "unknown-host",
+          host: named,
+          question: forwardHostQuestion(named, call.repo),
+          candidates: [],
         });
         continue;
       }

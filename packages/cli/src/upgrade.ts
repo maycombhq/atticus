@@ -56,6 +56,12 @@ import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
 import { recordUpgraded } from "./propose.js";
 import { refusalEnds } from "./standing.js";
 import { installCommand, VERSION } from "./version.js";
+import {
+  UNRESOLVED_IDS_STEP,
+  unresolvedIdsApply,
+  UnresolvedIdsRefused,
+  unresolvedIdsPending,
+} from "./upgrade-unresolved-ids.js";
 
 /**
  * `atticus upgrade` (ADR 0051): bring a metarepo's files up to what this Atticus writes, after
@@ -72,7 +78,11 @@ export interface Migration {
   summary: string;
   /** Files (relative to the root, "/"-separated) it would change; none means nothing to do. */
   pending(root: string): Promise<string[]>;
-  apply(root: string): Promise<string[]>;
+  /**
+   * `o.allowRemovals`: a step that builds the catalog (ADR 0195 point 4: any command that builds
+   * takes `--allow-removals <count>`) confirms the removals its refusal listed.
+   */
+  apply(root: string, o?: { allowRemovals?: number }): Promise<string[]>;
   /**
    * Round 49: the step can list a file that isn't there yet (it makes it), so a backup finds
    * nothing to keep. For any other step, a listed file that isn't there stops the upgrade.
@@ -431,6 +441,15 @@ export const MIGRATIONS: Migration[] = [
       "Corrections lines at version 2 where they use its fields: an AI pairing, a batch, a rule, an unlink (ADR 0181); the number only",
     pending: (root) => migrateCorrections(root, { dryRun: true }),
     apply: (root) => migrateCorrections(root),
+  },
+  {
+    // ADR 0124 addendum E-ids (the owner, 2026-11-19): last, so it builds once every other step
+    // has written. One build, through the guards, in the build's one write (undo takes it back).
+    id: UNRESOLVED_IDS_STEP,
+    summary:
+      "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; every decision, change, question, spec flow and dismissal that cites one carried to the new id (ADR 0124 addendum E-ids)",
+    pending: (root) => unresolvedIdsPending(root),
+    apply: (root, o) => unresolvedIdsApply(root, o),
   },
 ];
 
@@ -872,6 +891,8 @@ export async function upgradeCommand(
     yes?: boolean;
     /** With --yes: accept the first build's changes, naming their count (`--accept-changes`). */
     acceptChanges?: number;
+    /** ADR 0195 point 4: the count of the removals a step's build listed, confirmed. */
+    allowRemovals?: number;
   },
   io: Output,
   version = VERSION,
@@ -1009,8 +1030,25 @@ export async function upgradeCommand(
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       try {
-        changed.push(...(await m.apply(root)));
+        changed.push(
+          ...(await m.apply(
+            root,
+            o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {},
+          )),
+        );
       } catch (e) {
+        // A step's build its guards refused wrote nothing: said, with how to go on, no stack.
+        if (e instanceof UnresolvedIdsRefused) {
+          const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
+          await keep().catch(() => undefined);
+          io.err(e.message);
+          io.err(
+            `The files as they were before this upgrade are in ${relative(root, backup).split(sep).join("/")}${done.length ? `; these steps had already run: ${done.join(", ")}` : ""}.`,
+          );
+          if (o.json)
+            io.out(JSON.stringify({ refused: { step: p.id, message: e.message } }, null, 2));
+          return 1;
+        }
         // Said with where the files as they were are kept, and which steps already ran.
         const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
         await keep().catch(() => undefined);

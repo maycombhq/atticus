@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildVersion": "2.0.0-beta.28.1",
+  "buildVersion": "2.0.0-beta.30",
   "sources": {
     "catalog/curated": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "catalog/proposals": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

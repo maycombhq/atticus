@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-payments.delete-payments-7
+status: current
+confidence: verified
+component: forge-payments
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 8
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+method: DELETE
+normalizedPath: /v1/accounts/{}/payments-7
+pathOrTopic: /v1/accounts/{id}/payments-7
+schemaRefs: []

@@ -1,0 +1,391 @@
+{
+  "version": 2,
+  "buildVersion": "2.0.0-beta.28.1",
+  "sources": {
+    "catalog/curated": "40ffbf5973c7a3eec4d387527aa4e276e43ec4249f16fc589ceeb519c67d5a5b",
+    "catalog/proposals": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "catalog/sources": "6e360ebe46f99fc8556e53dc366a95760ff4840011e7bd4e03c74189c9ad78a8",
+    "catalog/sources/facts/forge-ledger.jsonl": "e841917ddf7c081dde13323cec4af959d397580761ef2ea64b2099284e582110",
+    "catalog/sources/facts/forge-ledger.meta.json": "e5d0c545665faba6ecb8d84fda86f1d4ad7023d4d1bbfd299e04de80229f4ca8",
+    "catalog/sources/facts/forge-notify.jsonl": "fc0c0c274cec4d64a4fce4748c735112858698b49d2b23562fd08fe341882b53",
+    "catalog/sources/facts/forge-notify.meta.json": "4ed41a913051d10c4265efc4d8cbb61dae4c4a6f16b2378f4238ee48270bd413",
+    "catalog/sources/facts/forge-payments.jsonl": "50cfe67a107b001e06fc1bc1d69f9a2fc37570fe5ff49f4a2018a664ba0ae324",
+    "catalog/sources/facts/forge-payments.meta.json": "91f32088e6387475a0818dd9bc3c7f3699dfcab5d98ccab1744a495484a6e140",
+    "evidence/traffic": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "facts/*.corrections.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "inputs": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "org-pack": "a2a7e8e6a673e08f75a30efb122da5c197476657bde043a434d04c28a6d1f6f0",
+    "questions": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "shared": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "sourceSets": {
+    "3b3bd42818cbf7f4": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-ledger.jsonl",
+      "catalog/sources/facts/forge-ledger.meta.json",
+      "catalog/sources/facts/forge-notify.jsonl",
+      "catalog/sources/facts/forge-notify.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "438a9b40ed5c64f5": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-notify.jsonl",
+      "catalog/sources/facts/forge-notify.meta.json",
+      "catalog/sources/facts/forge-payments.jsonl",
+      "catalog/sources/facts/forge-payments.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "779c445bbac05f9c": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-ledger.jsonl",
+      "catalog/sources/facts/forge-ledger.meta.json",
+      "catalog/sources/facts/forge-notify.jsonl",
+      "catalog/sources/facts/forge-notify.meta.json",
+      "catalog/sources/facts/forge-payments.jsonl",
+      "catalog/sources/facts/forge-payments.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "b6687a457d36d17e": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-payments.jsonl",
+      "catalog/sources/facts/forge-payments.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "eb63333d084d93ac": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-notify.jsonl",
+      "catalog/sources/facts/forge-notify.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "fca7b51de1d3f799": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-ledger.jsonl",
+      "catalog/sources/facts/forge-ledger.meta.json",
+      "catalog/sources/facts/forge-payments.jsonl",
+      "catalog/sources/facts/forge-payments.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ],
+    "ff8cf0c8e3e4ac8f": [
+      "catalog/curated",
+      "catalog/proposals",
+      "catalog/sources",
+      "catalog/sources/facts/forge-ledger.jsonl",
+      "catalog/sources/facts/forge-ledger.meta.json",
+      "evidence/traffic",
+      "facts/*.corrections.jsonl",
+      "inputs",
+      "org-pack",
+      "questions",
+      "shared"
+    ]
+  },
+  "files": [
+    {
+      "path": "catalog/generated/capability/feature.statement-payments.yaml",
+      "sha256": "5a71a629eedbd5562928a9fa467a6366cd7727fc287f545973469ed0b22e342e",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/component/forge-ledger.yaml",
+      "sha256": "44605fb9d6066d991fe04490f29d64ad41836b81fdbd67fcbd391f9508cc579c",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/component/forge-notify.yaml",
+      "sha256": "443a62221b572e87ce42a40ac723adc5ded9e1a2c41029bc42ef7f8aeffa6de3",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/component/forge-payments.yaml",
+      "sha256": "e0c3aab6f474b69ccfa174d3427071c82d64c569bb3adbf090a4f2e601fe2d17",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.delete-ledger-3.yaml",
+      "sha256": "a369b42316f758844e0d5627bbd40aec31c88463bc31501369465eb9d00e46c3",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.delete-ledger-7.yaml",
+      "sha256": "6064762a9665b0da2fc2d2798973dfe4d68e4fa4355e7e289fd5852affafa8b9",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.get-ledger-0.yaml",
+      "sha256": "2d7ffa42e9b361c1a21de6eb2953b658343770861ef439a7880f573f4fbd8d03",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.get-ledger-4.yaml",
+      "sha256": "695cf8d63c7e251fb1178cbf1a88de4550026135a4285ec50eb7c18fce83f30a",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.post-ledger-1.yaml",
+      "sha256": "bd2b94f4100089e623ebe8153a9c5e7304e030d206bcc0c78641efabcfda3f55",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.post-ledger-5.yaml",
+      "sha256": "aa8c4e0b8727855eb7ee04fa34e88b5b75e9b9e64bd8f8e5819d94f822b1f151",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.put-ledger-2.yaml",
+      "sha256": "8a796747ddb31e2b13ba22d882927529304ea4c34c21282021eb46820fa80d8b",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-ledger.put-ledger-6.yaml",
+      "sha256": "bc5186fae291e62e61ceb70107d4cffc6486a38c41d312e1714f006b1e1f24f7",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.delete-notify-3.yaml",
+      "sha256": "b3e5eec8a40af413b341d05fe2c7d899fdec8ce1c46e62ddd8584cf3b1d6ded9",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.delete-notify-7.yaml",
+      "sha256": "7eb687e71a891264a33b765b41426c2c0623ed3d76c063798b6e4835405c4e45",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.get-notify-0.yaml",
+      "sha256": "f4f96085631d956b250c9e977fe3b83e22b5be5f3e9ef0bc87f4d8f391963cbc",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.get-notify-4.yaml",
+      "sha256": "d76de5d9a5a74669597993a89f08ddd15a998bbfa28db43634b3faefea692561",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.on-forge-payments-settled.yaml",
+      "sha256": "92bcb38433135e0381904deecb703bd30c42b102b46ef560e131cfffddce1995",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.post-notify-1.yaml",
+      "sha256": "c2f904e3cdef7557ec258c633e197479ca726b988463387a77b2dc9fe216e8ac",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.post-notify-5.yaml",
+      "sha256": "51fe6f45f9046388fbe1b36e5ad6ddca71ed89d7987f7510db5859dc319ec632",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.put-notify-2.yaml",
+      "sha256": "a711fa10d60b785158d69715fd6615ca17bcc8269f2209ac14364eb13f6fa684",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-notify.put-notify-6.yaml",
+      "sha256": "10314d490243aa9d3dd6b1ece6ecb5e0b87963a0fb561ba240bcd07a0aa28785",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.delete-payments-3.yaml",
+      "sha256": "63fc49cee028155fea7cfa8e7c5ddc7097b8cd030cf37857f3df78a829605f28",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.delete-payments-7.yaml",
+      "sha256": "85159a5c94c8748aa9caa42de1550d671709dff3a9e64fe5a7dad9e2884ac05b",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.get-payments-0.yaml",
+      "sha256": "45a40049c72b8851b7410170d3da5fccebd536355a97c74a89ce87cde058524e",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.get-payments-4.yaml",
+      "sha256": "913b78904ab495d8c6a0c868058ce529b4c2edf46daf7f5a9dd2e3d8f387fa04",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.post-payments-1.yaml",
+      "sha256": "2c63976b347f556451b382dcd65cbcb2ff86bfc3c608e17f159087156044b7e4",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.post-payments-5.yaml",
+      "sha256": "74aeac8a866ae36cfc3a90883e6d1b176d313dd3cf23d788a2b5278e2b58e3d1",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.put-payments-2.yaml",
+      "sha256": "ae6ee9d84f6ab2adcb740cb9b984cdcc555e7c5e61eaa13d59775836e5440e1a",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/endpoint/forge-payments.put-payments-6.yaml",
+      "sha256": "dd4b0284f2d32e645a7f5c553b94adac95319f33b5ba27ed02239bc7aee3b339",
+      "sources": "b6687a457d36d17e"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.account.yaml",
+      "sha256": "fe3b7bdd0cff8d60ab817cfece349f6fa16bc30ffb4d22b3cfe591b56adc381a",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.balance.yaml",
+      "sha256": "f9a7822faae9e5af3074698d6101c78489e53ee3daf129266b078ad587b4598b",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.entry.yaml",
+      "sha256": "ab9728a30093cb33008de8d540041a4167b4e405852943882ebe529cbefcdb99",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.fee.yaml",
+      "sha256": "2a89452699dcf600fdb3e6867373b2b410eab6f589acc02ff99c82063b5cef50",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.hold.yaml",
+      "sha256": "6046134623c5375edf823368d577b0cfad5644af7bc9b6e6d653840cdfd89128",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.ledger.yaml",
+      "sha256": "b9a8cb821f07a2a1a915d7af5349ea5c74d9a244a6526c7900cfabc7bed3feff",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.limit.yaml",
+      "sha256": "8326192b93e98c983acb4a692a17daab760f5589d9309f5fc1c3ffa21217c13d",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.notify.yaml",
+      "sha256": "04b53664b5d6ed259b49665ee32b8e903986e980797a4babd2d3265c3fe3c3b6",
+      "sources": "eb63333d084d93ac"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.payment.yaml",
+      "sha256": "c51bab7932823bb9dc0b6cf74deccef9d89403bb75ed95fafc50bfb7da7fa8f4",
+      "sources": "438a9b40ed5c64f5"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.rate.yaml",
+      "sha256": "a0ced63242b1d527ea2e4abaacad20ecb781329b2c8abae22f2a3e73ffbaa21f",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/glossaryterm/term.statement.yaml",
+      "sha256": "f9f694958e7504e497879a63840a46bfa4e4dcb867b4b8e887f7df7a46bba66b",
+      "sources": "779c445bbac05f9c"
+    },
+    {
+      "path": "catalog/generated/interface/if-46af3f76493fa25b.yaml",
+      "sha256": "22e2537fa5b79e5187a61670ecb560ce1ffd29d9c357d07b2afccec75f0e715e",
+      "sources": "438a9b40ed5c64f5"
+    },
+    {
+      "path": "catalog/generated/interface/if-6e1cbf4a355bdd9a.yaml",
+      "sha256": "0c563ec9e0ede2d51639e4e5cf306e05eb991b996f6aab3a2b14060ee55d8054",
+      "sources": "438a9b40ed5c64f5"
+    },
+    {
+      "path": "catalog/generated/interface/if-6ee4f6ac4f5546c2.yaml",
+      "sha256": "128eb1cff49737bac2dacab24a6e23c30e78ef01193e1c29e28c8cf4031beb17",
+      "sources": "3b3bd42818cbf7f4"
+    },
+    {
+      "path": "catalog/generated/interface/if-7664e3607d36785f.yaml",
+      "sha256": "95eaf0a72b244233fde81fa5d3ff11f7bfc6b73ece957ca3f9c9b3902ea8c3e9",
+      "sources": "fca7b51de1d3f799"
+    },
+    {
+      "path": "catalog/generated/interface/if-7a03a88fe4c10d77.yaml",
+      "sha256": "c221aa7144a7f53a27365c4717f6a78d5f2f60301fa670d3c730dd496933d871",
+      "sources": "3b3bd42818cbf7f4"
+    },
+    {
+      "path": "catalog/generated/interface/if-8f8038d6c3b0084c.yaml",
+      "sha256": "4f0a75af3a1f19ebf8fff31ba758a1129a6e29bfd06f924e2411f77db4f46fe3",
+      "sources": "fca7b51de1d3f799"
+    },
+    {
+      "path": "catalog/generated/interface/if-c0d5c0713cf14dc4.yaml",
+      "sha256": "c8733e8428ddb359373aafc4d50888b8a44f78b622c7a1a864996cf96158fb40",
+      "sources": "fca7b51de1d3f799"
+    },
+    {
+      "path": "catalog/generated/interface/if-e1d90046be65fc53.yaml",
+      "sha256": "683619b0fae9174d811a9a39234ba1d54c6ff803dfd15259ef05b51ca18ea307",
+      "sources": "3b3bd42818cbf7f4"
+    },
+    {
+      "path": "catalog/generated/interface/if-e554d2b8372ef127.yaml",
+      "sha256": "81bdcabb2fd737a5d7b3c763480841e77793d9d57450c88b22c4244c15e6e460",
+      "sources": "fca7b51de1d3f799"
+    },
+    {
+      "path": "catalog/generated/interface/if-f455263c375ce4d4.yaml",
+      "sha256": "6b5d6c93cb9b47a8886d997d8882dba127b721f8736dba6e0e1c793cf74d933a",
+      "sources": "438a9b40ed5c64f5"
+    },
+    {
+      "path": "catalog/generated/unresolved/unresolved.c-1.yaml",
+      "sha256": "1aa908976c06f0a778962bc6adfec46cd7ac66ae6a13258876b5c7abdf69824c",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/unresolved/unresolved.c-solo.yaml",
+      "sha256": "e9fafaa107730c452caf6a8a785467bcf2cc6f65a42dec828d808938267b5c2d",
+      "sources": "ff8cf0c8e3e4ac8f"
+    },
+    {
+      "path": "catalog/generated/unresolved/unresolved.forge-notify.on-forge-payments-settled.yaml",
+      "sha256": "6f4437011006f113dfdcffc9575e4c468f16ad39ccee7bd20b9a3a7aaa7c0f9d",
+      "sources": "eb63333d084d93ac"
+    }
+  ]
+}

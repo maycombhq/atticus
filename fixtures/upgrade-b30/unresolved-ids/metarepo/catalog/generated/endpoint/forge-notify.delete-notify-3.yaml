@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-notify.delete-notify-3
+status: current
+confidence: verified
+component: forge-notify
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 4
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+method: DELETE
+normalizedPath: /v1/limits/{}/notify-3
+pathOrTopic: /v1/limits/{id}/notify-3
+schemaRefs: []

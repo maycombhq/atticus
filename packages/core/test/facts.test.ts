@@ -324,7 +324,7 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
 
   it("says which catalog id each fact became, so a writer can follow them through merge (A3b)", () => {
     expect(out.ids["e-post-entry"]).toBe("ledger-api.post-accounts-accountid-entries");
-    expect(out.ids["c-notify"]).toBe("unresolved.c-notify");
+    expect(out.ids["c-notify"]).toBe("unresolved.forge-ledger.c-notify");
     expect(out.ids["s-entry-write"]).toBe("ledger-db.entry");
     expect(out.ids["w-post-entry"]).toBe("ledger-api.post-a-ledger-entry");
     expect(Object.keys(out.ids)).toEqual([...Object.keys(out.ids)].sort());

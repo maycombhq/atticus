@@ -615,11 +615,11 @@
           }
         },
         {
-          "key": "Unresolved|unresolved.c-notify",
+          "key": "Unresolved|unresolved.forge-ledger.c-notify",
           "kind": "Unresolved",
           "state": "facts-only",
           "facts": {
-            "id": "unresolved.c-notify",
+            "id": "unresolved.forge-ledger.c-notify",
             "value": {
               "owner": "ledger-api",
               "raw": "POST http://notify.internal/notify",
@@ -635,11 +635,11 @@
           }
         },
         {
-          "key": "Unresolved|unresolved.ledger-api.on-forge-payments-settled",
+          "key": "Unresolved|unresolved.forge-ledger.ledger-api.on-forge-payments-settled",
           "kind": "Unresolved",
           "state": "facts-only",
           "facts": {
-            "id": "unresolved.ledger-api.on-forge-payments-settled",
+            "id": "unresolved.forge-ledger.ledger-api.on-forge-payments-settled",
             "value": {
               "owner": "ledger-api",
               "raw": "forge.payments.settled",

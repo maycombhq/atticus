@@ -1,0 +1,31 @@
+schemaVersion: 5
+kind: Interface
+id: if-7664e3607d36785f
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: forge-payments.post-payments-1
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/client/Client.java
+    repo: forge-ledger
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+flags:
+  - joined-by-host
+from: forge-ledger
+method: POST
+normalizedPath: /v1/balances/{}/payments-1
+sync: sync
+to: forge-payments
+via: direct
