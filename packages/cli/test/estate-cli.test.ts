@@ -210,12 +210,12 @@ describe("atticus estate join, flow and lineage (ADR 0085)", () => {
       askedBy: { ...asked[0]!.askedBy, command: "atticus scan" },
     }).toEqual(want);
     expect(asked[0]!.askedBy.command).toBe("atticus estate join");
-    // v30 slice 8: what happened, what it leaves, then the command.
+    // v30 slice 8: the command first, then what happened, then what it leaves.
     expect(j.out).toContain(
       [
+        `Answer it: atticus questions answer ${asked[0]!.id} --option <n> (1 is forge-customers). If several repos share the host, don't pick one: list it under hosts on each in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If an outside system answers on it, pick that option. Words: docs/guide/words.md.`,
         `Calls to localhost:9966 join no repo: no repo lists it under hosts. Asked ${asked[0]!.id}: Which repo answers on localhost:9966?`,
         "The map draws no arrow for these calls until it is answered.",
-        `Answer it: atticus questions answer ${asked[0]!.id} --option <n> (1 is forge-customers). If several repos share the host, list it under hosts on each in repos.manifest.yaml instead; if an outside system answers on it, pick that option. Words: docs/guide/words.md.`,
       ].join("\n"),
     );
     // Asked once: the next join says it's still open.

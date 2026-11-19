@@ -120,11 +120,11 @@ export async function sourcesAdd(
   // shared through a pull request (`https://oauth2:<token>@host`, `https://<token>@host`).
   if (hasCredentials(location)) {
     io.err(
-      // v30 slice 8: what happened, that nothing changed, then what to do.
+      // v30 slice 8: what to do first, then what happened, then that nothing changed.
       [
+        "Give the address without them (https://host/path); Git's credential helper or an environment variable gives them when the wiki is read.",
         "That address has a user name or token in it, and sources.yaml is shared with everyone who reads the org pack.",
         "Nothing was changed.",
-        "Give the address without them (https://host/path); Git's credential helper or an environment variable gives them when the wiki is read.",
       ].join("\n"),
     );
     return 1;

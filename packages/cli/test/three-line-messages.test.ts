@@ -8,11 +8,11 @@ import { newerWords } from "../src/upgrade.js";
 
 /**
  * v30 slice 8 (messages lead with what to do): the longest refusals and build messages are three
- * lines: what happened, that nothing was changed (when true), then the command. A house word
- * left in one points at the glossary (docs/guide/words.md).
+ * lines: what to do first, then what happened, then what wasn't changed (when true). A house
+ * word left in one points at the glossary (docs/guide/words.md).
  */
 describe("a long refusal in three lines", () => {
-  it("a metarepo stamped by an Atticus this one can't read: what, nothing changed, the install", () => {
+  it("a metarepo stamped by an Atticus this one can't read: the install, what, nothing changed", () => {
     const lines = newerWords({
       atticus: "2.0.0-beta.30",
       newer: true,
@@ -20,15 +20,15 @@ describe("a long refusal in three lines", () => {
       pending: [],
     }).split("\n");
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^This metarepo was upgraded by a newer or unknown Atticus/);
-    expect(lines[1]).toBe("Nothing was changed.");
-    expect(lines[2]).toMatch(
+    expect(lines[1]).toMatch(/^This metarepo was upgraded by a newer or unknown Atticus/);
+    expect(lines[2]).toBe("Nothing was changed.");
+    expect(lines[0]).toMatch(
       /^Install the newer Atticus before working here \(npm i -g @maycombhq\/atticus@beta\)/,
     );
-    expect(lines[2]).toContain("git checkout -- .atticus/metarepo.yaml");
+    expect(lines[0]).toContain("git checkout -- .atticus/metarepo.yaml");
   });
 
-  it("a model address not confirmed: what, nothing sent, where to confirm", async () => {
+  it("a model address not confirmed: where to confirm, what, nothing sent", async () => {
     const root = await mkdtemp(join(tmpdir(), "b30-three-lines-"));
     const said = await addressRefusal(root, {
       type: "openai-compatible",
@@ -36,11 +36,18 @@ describe("a long refusal in three lines", () => {
     });
     const lines = said!.split("\n");
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(
+    expect(lines[0]).toMatch(/^Open AI settings in the Atticus app and press Test/);
+    expect(lines[1]).toMatch(
       /^runtime\.yaml sends the model's key to .*, which you haven't confirmed/,
     );
-    expect(lines[1]).toBe("Nothing was sent.");
-    expect(lines[2]).toMatch(/^Open AI settings in the Atticus app and press Test/);
+    expect(lines[2]).toBe("Nothing was sent.");
+  });
+
+  it("a refused build says once, first, that only the catalog is unchanged", async () => {
+    const { catalogUnchanged } = await import("@maycombhq/scanner");
+    expect(catalogUnchanged("catalog/generated")).toBe(
+      "The catalog wasn't changed: catalog/generated is as it was.",
+    );
   });
 
   it("points at the glossary for a house word", () => {

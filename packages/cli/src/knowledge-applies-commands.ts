@@ -56,11 +56,11 @@ export async function changeKnowledge(
   const doc = await readKnowledgeApplies(root, change);
   if (!doc) {
     io.err(
-      // v30 slice 8: what happened, that nothing changed, then what to do.
+      // v30 slice 8: what to do first, then what happened, then that nothing changed.
       [
+        `Its feature stage writes it, with the standards, decisions, processes and wiki sections the change relies on, and every later stage adds to it: atticus change feature ${change}`,
         `${change} has no knowledge list yet (${changesRelOf(root)}/${change}/knowledge.yaml).`,
         "Nothing was changed.",
-        `Its feature stage writes it, with the standards, decisions, processes and wiki sections the change relies on, and every later stage adds to it: atticus change feature ${change}`,
       ].join("\n"),
     );
     return 2;

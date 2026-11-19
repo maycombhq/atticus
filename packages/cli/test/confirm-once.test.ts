@@ -326,9 +326,9 @@ describe("a refused build asks once in a terminal (ADR 0202 point 9)", () => {
       await rm(join(old, ".index", "build-undo"), { recursive: true, force: true });
       const b = await run(["catalog", "build", "--root", old], yes);
       expect(b).toMatchObject({ code: 1, asked: [] });
-      // v30 slice 8: what happened, nothing changed, then the command.
+      // v30 slice 8: the catalog unchanged said once, then the command first, then what happened.
       expect(b.err.join("\n")).toMatch(
-        /was written before beta\.27[^\n]*\nNothing was changed\.\nMove its \d+ record files[^\n]*: atticus upgrade/,
+        /The catalog wasn't changed: catalog\/generated is as it was\.\n(?:[^\n]*\n)*Move its \d+ record files[^\n]*: atticus upgrade[^\n]*\n[^\n]*was written before beta\.27/,
       );
       const unread = await built();
       // No undo copy names its files either, so none can be told from a hand edit.

@@ -86,11 +86,11 @@ export async function addressRefusal(
   const confirmed = await confirmedAddress(root, env);
   const ok = confirmed !== undefined ? confirmed === whereKeyGoes(m) : atProvidersOwnAddress(m);
   if (ok) return undefined;
-  // v30 slice 8: what happened, that nothing was sent, then what to do.
+  // v30 slice 8: what to do first, then what happened, then nothing was sent.
   return [
+    "Open AI settings in the Atticus app and press Test: it asks you to confirm where the key goes. Or run the step yourself in a terminal (ADR 0186).",
     `runtime.yaml sends the model's key to ${addressWords(m)}, which you haven't confirmed${confirmed !== undefined ? " (it changed since you last did)" : ""}.`,
     "Nothing was sent.",
-    "Open AI settings in the Atticus app and press Test: it asks you to confirm where the key goes. Or run the step yourself in a terminal (ADR 0186).",
   ].join("\n");
 }
 

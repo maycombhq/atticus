@@ -883,7 +883,7 @@ export const BUILD_PASSES = [
   "the merge, intake, features and the glossary",
   "link evidence and shared maps",
   "the legacy records",
-  "the curated decisions",
+  "your decisions",
   "each repo's flows and loose calls",
   "the record files and build.json",
 ] as const;
@@ -2554,6 +2554,13 @@ export async function refuseIfNewer(
     : undefined;
 }
 
+/**
+ * v30 slice 8: a refused build's first line, once: the catalog is as it was. Only the catalog:
+ * the command that asked for the build (verify --write, a scan) may have written its own files.
+ */
+export const catalogUnchanged = (genRel: string): string =>
+  `The catalog wasn't changed: ${genRel} is as it was.`;
+
 /** A guard's refusal of a catalog a newer Atticus wrote: nothing else is looked at or said. */
 export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[]): GuardResult {
   return {
@@ -2561,10 +2568,7 @@ export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[])
     edits: [],
     refused: {
       reasons: ["newer-atticus"],
-      message: [
-        `Nothing written: ${genRel} and every slot are as they were.`,
-        newerAtticusWords(files),
-      ].join("\n"),
+      message: [catalogUnchanged(genRel), newerAtticusWords(files)].join("\n"),
       newer: files.map((f) => ({ ...f })),
     },
   };
@@ -2688,11 +2692,10 @@ export async function guardBuild(
     const latest = (await listUndo(o.undoDir))[0];
     if (latest?.command.startsWith("atticus catalog undo")) lines.push(UPGRADE_UNDONE);
     lines.push(
-      // v30 slice 8: what happened, that nothing changed, then what to do.
+      // v30 slice 8: what to do, then what happened (the catalog unchanged is said once, first).
       [
+        `Move its ${onDisk.size} record files into stored reads, nothing lost: atticus upgrade (it shows what it would do first; --yes does it). Or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}. ${WORDS_LINK}`,
         `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}).`,
-        "Nothing was changed.",
-        `Move its ${onDisk.size} record files into the catalog's stored reads, nothing lost: atticus upgrade (it shows what it would do first; --yes does it). Or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}. ${WORDS_LINK}`,
       ].join("\n"),
     );
   } else if (edits.length && o.discardEdits !== edits.length) {
@@ -2701,7 +2704,7 @@ export async function guardBuild(
       `${edits.length} ${edits.length === 1 ? "file" : "files"} under ${genRel} ${edits.length === 1 ? "was" : "were"} changed by hand since the last build, so nothing is overwritten:`,
       ...edits.slice(0, 20).map((e) => `  ${e.how}: ${e.path}`),
       ...(edits.length > 20 ? [`  and ${edits.length - 20} more`] : []),
-      `Make ${edits.length === 1 ? "it" : "them"} curated decisions, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
+      `Keep ${edits.length === 1 ? "it" : "them"} as your decisions, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
     );
     if (o.discardEdits !== undefined)
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
@@ -2996,7 +2999,7 @@ export async function guardBuild(
     if (unexplained.length) {
       reasons.push("unexplained-removals");
       lines.push(
-        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or curated decision explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
+        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or decision of yours explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
         ...unexplained
           .slice(0, 20)
           .map((x) => `  ${x.kind}/${x.id}${x.repos.length ? ` (${x.repos.join(", ")})` : ""}`),
@@ -3045,11 +3048,10 @@ export async function guardBuild(
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
-      // v30 slice 8: what happened, that nothing changed, then what to do.
+      // v30 slice 8: what to do, then what happened (the catalog unchanged is said once, first).
       [
-        `The build has no record from any repo's code, and ${genRel} has some.`,
-        `Nothing was changed: ${genRel} is left as it was.`,
         "Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again; to see how many repos are read: atticus doctor --counts",
+        `The build has no record from any repo's code, and ${genRel} has some.`,
       ].join("\n"),
     );
   }
@@ -3060,9 +3062,9 @@ export async function guardBuild(
       edits,
       refused: {
         reasons,
-        message: [`Nothing written: ${genRel} and every slot are as they were.`, ...lines].join(
-          "\n",
-        ),
+        // v30 slice 8: once, that only the catalog is unchanged (the command that asked for
+        // the build may have written its own files); then each reason, what to do first.
+        message: [catalogUnchanged(genRel), ...lines].join("\n"),
         ...(removals.length ? { removals, allowRemovals: removals.length } : {}),
         ...(unexplained.length ? { unexplained } : {}),
         ...(edits.length || before
@@ -4137,7 +4139,7 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     );
   for (const d of r.build.orphanedDecisions)
     out.push(
-      `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
+      `Your decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
   return out;
 }
