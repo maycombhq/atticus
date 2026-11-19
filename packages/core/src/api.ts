@@ -726,6 +726,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   installs exactly that version. Additive only.
  *   Also in 3.19.0 (ADR 0203): a change's conformance says how many operations it has, which
  *   the check doesn't look at (`operations`), so the app says they aren't checked. Additive only.
+ *   Also in 3.19.0 (ADR 0203 C.3): a finding row's `lens` may be `persona`, and then it carries
+ *   `persona`, the name of the persona whose naysayer raised it; `GET /api/findings?lens=persona`
+ *   lists those, and no question's lens does. Additive only.
  */
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
