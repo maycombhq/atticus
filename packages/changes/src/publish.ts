@@ -177,6 +177,20 @@ export async function pushHandoffBranch(
 }
 
 /**
+ * Whether a branch is checked out in any worktree of this repository (`git worktree list
+ * --porcelain`): moving or deleting it would change a person's checkout under them. When the list
+ * can't be read, it is said checked out, so nothing that would touch it does.
+ */
+export async function branchCheckedOut(
+  tryOut: (args: string[]) => Promise<string | undefined>,
+  branch: string,
+): Promise<boolean> {
+  const list = await tryOut(["worktree", "list", "--porcelain"]);
+  if (list === undefined) return true;
+  return list.split(/\r?\n/).includes(`branch refs/heads/${branch}`);
+}
+
+/**
  * Review round 48: the local hand-off branch follows the published commit only when that can't
  * lose anything. A branch checked out in any worktree (HEAD would move under the person) or with
  * commits the publish didn't start from (their unpushed work) is left as it is; otherwise it moves
@@ -192,8 +206,7 @@ async function keepLocalBranch(
   const ref = `refs/heads/${branch}`;
   const local = await tryOut(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   if (local === commit) return;
-  const list = (await tryOut(["worktree", "list", "--porcelain"])) ?? "";
-  if (list.split(/\r?\n/).includes(`branch ${ref}`)) return;
+  if (await branchCheckedOut(tryOut, branch)) return;
   if (!local) {
     await tryOut(["update-ref", ref, commit, ""]);
     return;

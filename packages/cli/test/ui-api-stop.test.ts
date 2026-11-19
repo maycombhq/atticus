@@ -334,6 +334,43 @@ describe("a stopped Propose's branch here is never left stale (the review)", () 
     expect(g(remote, "rev-list", "--count", `main..${BRANCH}`).trim()).toBe("1");
   }, 60_000);
 
+  /** The stopped branch checked out in a worktree of the person's (`git worktree add`). */
+  const checkedOut = async (root: string) => {
+    const wt = join(root, "..", "wt-propose");
+    g(root, "worktree", "add", "-q", wt, BRANCH);
+    return wt;
+  };
+  /** The worktree is as the person left it: on the branch, at its commit, nothing staged. */
+  const intact = (wt: string, commit: string | undefined) => {
+    expect(g(wt, "branch", "--show-current").trim()).toBe(BRANCH);
+    expect(g(wt, "rev-parse", "HEAD").trim()).toBe(commit);
+    expect(g(wt, "status", "--porcelain").trim()).toBe("");
+  };
+
+  it("proposed again from a new list: a stopped branch checked out in a worktree is kept", async () => {
+    const { root } = await metarepo();
+    expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);
+    const stopped = ref(root, BRANCH);
+    const wt = await checkedOut(root);
+    const again = await propose(root, OTHER, false);
+    expect(again.code, again.said.join("\n")).toBe(0);
+    expect(ref(root, BRANCH)).toBe(stopped);
+    intact(wt, stopped);
+  }, 60_000);
+
+  it("proposed again on the same branch after the file changed: a checked-out branch isn't moved", async () => {
+    const { root, remote } = await metarepo();
+    expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);
+    const stopped = ref(root, BRANCH);
+    const wt = await checkedOut(root);
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 2\n");
+    const again = await propose(root, BRANCH, false);
+    expect(again.code, again.said.join("\n")).toBe(0);
+    expect(ref(remote, BRANCH)).not.toBe(stopped);
+    expect(ref(root, BRANCH)).toBe(stopped);
+    intact(wt, stopped);
+  }, 60_000);
+
   it("a branch here that a person moved meanwhile is left alone", async () => {
     const { root } = await metarepo();
     expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);

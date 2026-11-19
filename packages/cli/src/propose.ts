@@ -19,7 +19,12 @@ import {
 } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { createAdapters, fileStepStore, type GitHost } from "@maycombhq/adapters";
-import { gitHandoffPublisher, mergeChangeText, type HandoffPublisher } from "@maycombhq/changes";
+import {
+  branchCheckedOut,
+  gitHandoffPublisher,
+  mergeChangeText,
+  type HandoffPublisher,
+} from "@maycombhq/changes";
 import { initiativesDirOf } from "@maycombhq/initiatives";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 
@@ -378,7 +383,15 @@ async function tidyStopped(
   const was = await readStopped(root);
   const mine = Object.entries(was).filter(([b]) => b.startsWith(`propose/${scope}/`));
   if (!mine.length) return;
+  const tryOut = (args: string[]) =>
+    git(args, root).then(
+      (r) => r.stdout,
+      () => undefined,
+    );
   for (const [branch, commit] of mine) {
+    // A branch checked out in a worktree is the person's checkout: never moved or deleted under
+    // them (keepLocalBranch's own rule). It stays recorded, for a later Propose once it isn't.
+    if (await branchCheckedOut(tryOut, branch)) continue;
     const ref = `refs/heads/${branch}`;
     // Compare and swap: only a branch still at the stopped commit is touched.
     const args =
