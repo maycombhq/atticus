@@ -93,10 +93,17 @@ export function extendUiRoutes(
         ? async (req) => {
             const { refuseIfNewer } = await import("@maycombhq/scanner");
             const newer = await refuseIfNewer(ctx.root);
-            if (newer)
+            if (newer) {
+              // ADR 0202 point 8: the refusal carries where the metarepo stands.
+              const { standing } = await import("./standing.js");
+              const line = await standing(ctx.root, { quick: true }).then(
+                (v) => v.line,
+                () => undefined,
+              );
               throw new HttpError(409, "Built by a newer Atticus", newer.message, {
-                refused: newer,
+                refused: { ...newer, ...(line ? { standing: line } : {}) },
               });
+            }
             return asTheApp(() => handler(req));
           }
         : (req) => asTheApp(() => handler(req)),

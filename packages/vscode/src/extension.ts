@@ -48,6 +48,7 @@ import { commandText, terminalLine } from "./cli";
 import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
+import { needsEnv } from "./needs";
 import { statusText, stepTitle, watchTooltip, WORDS } from "./words";
 import { chooseModel } from "./vscode-model";
 import type { StepEnd } from "./runner";
@@ -110,6 +111,10 @@ export interface AtticusHandles {
 
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const svc = new Service();
+  // ADR 0202 point 8: every terminal of this window says what the extension needs, so an
+  // `atticus status` the person types there names the install command when theirs is behind.
+  for (const [name, value] of Object.entries(needsEnv()))
+    context.environmentVariableCollection.replace(name, value);
   // The three views a day starts from. Next and Waiting: the steps, then what waits on you (ADR
   // 0105) under them. Questions: the open questions, in the view that had them before ADR 0105.
   const view = new AtticusView(svc);
@@ -357,14 +362,16 @@ ${view.next.why}`
   const inTerminal = (root: string, name: string, args: string[], run = true) => {
     const cmd = svc.command(root);
     const own = run && !cmd.shell;
+    // ADR 0202 point 8: the terminal's atticus hears what this extension needs.
     const t = own
       ? vscode.window.createTerminal({
           name,
           cwd: root,
           shellPath: cmd.file,
           shellArgs: [...cmd.prefix, ...args],
+          env: needsEnv(),
         })
-      : vscode.window.createTerminal({ name, cwd: root });
+      : vscode.window.createTerminal({ name, cwd: root, env: needsEnv() });
     // typed as the configured atticus runs (review round 46), not always a bare `atticus`
     if (!own) t.sendText(terminalLine(cmd, args, vscode.env.shell), run);
     t.show(true);

@@ -1262,3 +1262,67 @@ describe("runLogKept", () => {
     expect(runLogKept(adopted, {})).toBe(true);
   });
 });
+
+/** ADR 0202 point 10: the run's longest silence is kept, so selfcheck's 30-second check has data. */
+describe("a run's record says how long it went without a line", () => {
+  it("keeps the longest gap: before the first line, between two, and after the last", async () => {
+    const root = await fresh();
+    const times = [0, 2_000, 2_500, 42_500, 43_000].map((ms) =>
+      Date.UTC(2026, 10, 18, 9, 0, 0, ms),
+    );
+    let k = 0;
+    const rec = startTerminalRun(root, {
+      positionals: ["verify", "forge-ledger"],
+      flags: ["write"],
+      pid: 7,
+      now: () => new Date(times[Math.min(k++, times.length - 1)]!),
+    })!;
+    rec.line("Reading forge-ledger…");
+    rec.line("Building the catalog: pass 1 of 8…");
+    rec.line("Done.");
+    rec.end(0);
+    const [run] = readTerminalRuns(root);
+    expect(run!.state).toBe("done");
+    expect(run!.longestQuietMs).toBe(40_000);
+  });
+
+  it("a record from before beta.30 has none, and a value that is no number is not read", async () => {
+    const root = await fresh();
+    const rec = startTerminalRun(root, { positionals: ["scan"], flags: [], pid: 8 })!;
+    rec.end(0);
+    const file = join(runningDirOf(root), `${rec.runId}.json`);
+    const json = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(typeof json.longestQuietMs).toBe("number");
+    delete json.longestQuietMs;
+    writeFileSync(file, JSON.stringify(json));
+    expect(readTerminalRuns(root)[0]).not.toHaveProperty("longestQuietMs");
+    writeFileSync(file, JSON.stringify({ ...json, longestQuietMs: "forge" }));
+    expect(readTerminalRuns(root)[0]).not.toHaveProperty("longestQuietMs");
+  });
+});
+
+/** The review of ADR 0202: a question that waits 33 seconds for its answer is no silence. */
+describe("time spent waiting on a person's answer is not the command's silence", () => {
+  it("the clock stops at the question and starts again at the answer", async () => {
+    const root = await fresh();
+    const t0 = Date.UTC(2026, 10, 19, 9, 0, 0);
+    let at = t0;
+    const rec = startTerminalRun(root, {
+      positionals: ["catalog", "build"],
+      flags: [],
+      pid: 9,
+      now: () => new Date(at),
+    })!;
+    at = t0 + 2_000;
+    rec.line("This would remove 7 records…");
+    at = t0 + 3_000;
+    rec.waits(true);
+    // The person reads the list for 33 seconds, then answers.
+    at = t0 + 36_000;
+    rec.waits(false);
+    at = t0 + 37_500;
+    rec.line("Done.");
+    rec.end(0);
+    expect(readTerminalRuns(root)[0]!.longestQuietMs).toBe(2_000);
+  });
+});

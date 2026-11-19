@@ -48,10 +48,13 @@ import {
   specsRelOf,
   WORKSPACE_SCHEMA_VERSION,
   writeFileAtomic,
+  newerThan,
 } from "@maycombhq/core";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
 import { recordUpgraded } from "./propose.js";
+import { refusalEnds } from "./standing.js";
 import { installCommand, VERSION } from "./version.js";
 
 /**
@@ -737,40 +740,7 @@ export function newerWords(c: UpgradeCheck): string {
   return `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}). Install it${u?.atticus ? ` (Atticus ${u.atticus} or later)` : ""} before working in this metarepo, so nothing it wrote is lost; or, if the file was edited by hand, put it back as it was committed. Nothing was changed.`;
 }
 
-/**
- * Round 38: semver order with pre-releases (2.0.0-beta.30 > 2.0.0-beta.21 > 2.0.0-beta.9, and a
- * release above its pre-releases), so an older beta refuses a metarepo a newer beta upgraded.
- */
-export function newerThan(a: string, b: string): boolean {
-  const split = (v: string) => {
-    const [core, pre] = v.trim().replace(/^v/, "").split(/-(.*)/s, 2);
-    return { core: (core ?? "").split(".").map((n) => Number(n) || 0), pre: pre ?? "" };
-  };
-  const x = split(a);
-  const y = split(b);
-  for (let i = 0; i < Math.max(x.core.length, y.core.length); i++) {
-    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0);
-    if (d) return d > 0;
-  }
-  if (x.pre === y.pre) return false;
-  if (!x.pre) return true; // a release is above its pre-releases
-  if (!y.pre) return false;
-  const xp = x.pre.split(".");
-  const yp = y.pre.split(".");
-  for (let i = 0; i < Math.max(xp.length, yp.length); i++) {
-    const p = xp[i];
-    const q = yp[i];
-    if (p === undefined) return false;
-    if (q === undefined) return true;
-    if (p === q) continue;
-    const pn = /^\d+$/.test(p);
-    const qn = /^\d+$/.test(q);
-    if (pn && qn) return Number(p) > Number(q);
-    if (pn !== qn) return !pn; // numeric identifiers sort below the others
-    return p > q;
-  }
-  return false;
-}
+export { newerThan };
 
 /** The steps a stamp records as done: every step but one that has nothing to give yet. */
 async function stampedSteps(root: string): Promise<string[]> {
@@ -779,22 +749,31 @@ async function stampedSteps(root: string): Promise<string[]> {
   return out;
 }
 
-export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
+export async function upgradeCheck(
+  root: string,
+  version = VERSION,
+  /**
+   * ADR 0202 point 8, `quick`: without any step's dry run (they read every record), for the
+   * line after a refusal. A step then counts as pending when the stamp doesn't name its id.
+   */
+  o: { quick?: boolean } = {},
+): Promise<UpgradeCheck> {
   // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
   const [read, found] = await Promise.all([
     readStampFile(root),
     Promise.all(
       MIGRATIONS.map(async (m) => ({
         m,
-        files: await m.pending(root),
-        problems: m.problems ? await m.problems(root) : [],
+        files: o.quick ? [] : await m.pending(root),
+        problems: !o.quick && m.problems ? await m.problems(root) : [],
         unavailable: m.unavailable ? await m.unavailable(root) : false,
       })),
     ),
   ]);
   const { stamp, unread } = read;
+  const named = new Set(read.stamp?.migrations ?? []);
   const pending = found
-    .filter((x) => x.files.length)
+    .filter((x) => (o.quick ? !named.has(x.m.id) && !x.unavailable : x.files.length))
     .map(({ m, files }) => ({ id: m.id, summary: m.summary, files }));
   const problems = found.flatMap((x) => x.problems);
   // Said only where the step still has something to do here: an org pack, and no stamp of it.
@@ -902,20 +881,13 @@ export async function upgradeCommand(
   const newerFiles = await newerCatalogOf(root);
   if (newerFiles) {
     io.err(newerFiles.message);
-    if (o.json)
-      io.out(
-        JSON.stringify(
-          {
-            refused: {
-              reasons: ["newer-atticus"],
-              message: newerFiles.message,
-              newer: newerFiles.files,
-            },
-          },
-          null,
-          2,
-        ),
-      );
+    const refused = {
+      reasons: ["newer-atticus"],
+      message: newerFiles.message,
+      newer: newerFiles.files,
+    };
+    await refusalEnds(root, refused);
+    if (o.json) io.out(JSON.stringify({ refused }, null, 2));
     return 1;
   }
   const c = await upgradeCheck(root, version);
@@ -947,6 +919,7 @@ export async function upgradeCommand(
   ];
   if (c.newer) {
     io.err(newerWords(c));
+    await refusalEnds(root, c);
     if (o.json) io.out(JSON.stringify(c, null, 2));
     return 1;
   }
@@ -1063,7 +1036,7 @@ export async function upgradeCommand(
   const slotsApply =
     o.yes === true && (!slots.differs.length || o.acceptChanges === slots.differs.length);
   const stampCurrent = !!c.stamp && !newerThan(version, c.stamp.atticus);
-  const onlyShown =
+  let onlyShown =
     !c.pending.length && store?.action !== "create" && stampCurrent && slots.pending && !slotsApply;
   if (!onlyShown) await writeFileAtomic(join(root, STAMP_FILE), stringify(stamp));
   if (store?.action === "create") {
@@ -1080,9 +1053,45 @@ export async function upgradeCommand(
     view = await upgradeSlotsView(root, slots);
   }
   let slotsDone: number | undefined | "refused" | "shown" | "changed" = undefined;
+  const recorded = () =>
+    io.out(
+      `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
+    );
+  /** What the run says before the slots step: the steps done, the store, the stamp. */
+  const head = () => {
+    if (c.pending.length) {
+      for (const p of c.pending)
+        io.out(`Done: ${p.summary} (${p.files.length} file${p.files.length === 1 ? "" : "s"})`);
+      io.out(`The files as they were are in ${backup}.`);
+    } else if (store?.action !== "create" && !onlyShown)
+      io.out(`Nothing to change for Atticus ${version}.`);
+    if (store) io.out(storeLine(store));
+    if (!onlyShown) recorded();
+  };
+  // ADR 0202 point 9: in a terminal, with no count given, the step is listed and asked once;
+  // yes is `--yes` with the count listed, anything else leaves it as it is today.
+  let yes = o.yes === true;
+  let acceptChanges = o.acceptChanges;
+  let answered: boolean | undefined;
   if (slots.pending) {
-    const accepted = !slots.differs.length || o.acceptChanges === slots.differs.length;
-    if (!o.yes || !accepted) slotsDone = o.yes ? "refused" : "shown";
+    const n = slots.differs.length;
+    if (io.ask && !o.json && acceptChanges === undefined && (n > 0 || !yes)) {
+      head();
+      for (const l of slotsLines()) io.out(l);
+      answered = await confirmOnce(io, n ? CONFIRM_WORDS.accept(n) : CONFIRM_WORDS.apply);
+      if (answered) {
+        yes = true;
+        if (n) acceptChanges = n;
+        // The run writes after all: the stamp it had left as it was is this run's too.
+        if (onlyShown) {
+          await writeFileAtomic(join(root, STAMP_FILE), stringify(stamp));
+          onlyShown = false;
+          recorded();
+        }
+      }
+    }
+    const accepted = !n || acceptChanges === n;
+    if (!yes || !accepted) slotsDone = yes ? "refused" : "shown";
     else {
       const { acquireLock, LockHeldError } = await import("@maycombhq/core");
       await (await import("./catalog-build-commands.js")).afterListed();
@@ -1119,6 +1128,11 @@ export async function upgradeCommand(
   }
   // Beta.27 review: kept once every step ran, the slots' adoption included.
   if (!onlyShown) await keep();
+  // ADR 0202 point 8: a step refused ends with where the metarepo stands.
+  const standingLine =
+    slotsDone === "refused" || slotsDone === "changed" ? await refusalEnds(root) : undefined;
+  // Whether this run wrote anything before the slots step: another step, the store, the stamp.
+  const wroteBefore = c.pending.length > 0 || store?.action === "create" || !onlyShown;
   if (o.json)
     io.out(
       JSON.stringify(
@@ -1134,31 +1148,25 @@ export async function upgradeCommand(
                 slotsStep: typeof slotsDone === "number" ? "applied" : (slotsDone ?? "none"),
               }
             : {}),
+          ...(standingLine ? { standing: standingLine } : {}),
         },
         null,
         2,
       ),
     );
   else {
-    if (c.pending.length) {
-      for (const p of c.pending)
-        io.out(`Done: ${p.summary} (${p.files.length} file${p.files.length === 1 ? "" : "s"})`);
-      io.out(`The files as they were are in ${backup}.`);
-    } else if (store?.action !== "create" && !onlyShown)
-      io.out(`Nothing to change for Atticus ${version}.`);
-    if (store) io.out(storeLine(store));
-    if (!onlyShown)
-      io.out(
-        `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
-      );
+    if (answered === undefined) head();
     if (slots.pending) {
-      for (const l of slotsLines()) (slotsDone === "refused" ? io.err : io.out)(l);
-      if (slotsDone === "shown")
+      if (answered === undefined)
+        for (const l of slotsLines()) (slotsDone === "refused" ? io.err : io.out)(l);
+      // Declined: nothing of this step; what the run wrote before it is said above.
+      if (answered === false) io.out(wroteBefore ? CONFIRM_WORDS.noStep : CONFIRM_WORDS.no);
+      else if (slotsDone === "shown")
         io.out("Nothing of it written yet: atticus upgrade --yes applies this step.");
       else if (slotsDone === "refused")
         io.err(
-          o.acceptChanges !== undefined
-            ? `Nothing of it written: --accept-changes ${o.acceptChanges} doesn't name the ${slots.differs.length} listed.`
+          acceptChanges !== undefined
+            ? `Nothing of it written: --accept-changes ${acceptChanges} doesn't name the ${slots.differs.length} listed.`
             : `Nothing of it written: the first build changes the catalog, so it waits for atticus upgrade --yes --accept-changes ${slots.differs.length}.`,
         );
       else if (slotsDone === "changed")

@@ -136,7 +136,7 @@ import {
   BUILD_VERSION,
   sha256Of,
   sourcesDirOf,
-  NEWER_ATTICUS_COMMAND,
+  newerAtticusCommand,
   newerAtticusWords,
   newerFileAt,
   versionedFormatOf,
@@ -2228,6 +2228,11 @@ export interface BuildRefusal {
    * all: making them curated would be the wrong move.
    */
   unreadableManifest?: true;
+  /**
+   * ADR 0202 point 8: where the metarepo stands, in one line. The build never sets it: the
+   * command that printed this refusal does, so `--json` and the app's report carry it.
+   */
+  standing?: string;
 }
 
 export interface GuardResult {
@@ -3034,7 +3039,7 @@ export async function guardBuild(
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
-      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again.`,
+      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again. atticus doctor --counts says how many repos are read.`,
     );
   }
 
@@ -3999,7 +4004,7 @@ export async function writeRefusedReport(
 export function refusalCommands(r: BuildRefusal, command: string): string[] {
   // A build.json that doesn't read: build again over every record file, never curate them.
   if (r.unreadableManifest) return [`${command} --discard-edits ${r.discardEdits ?? 0}`];
-  if (r.reasons.includes("newer-atticus")) return [NEWER_ATTICUS_COMMAND];
+  if (r.reasons.includes("newer-atticus")) return [newerAtticusCommand(r.newer)];
   if (r.reasons.includes("not-upgraded")) return ["atticus upgrade", "atticus upgrade --yes"];
   if (r.reasons.includes("unexplained-removals")) return ["atticus support bundle"];
   const allow = r.reasons.includes("large-removals")
@@ -4010,7 +4015,13 @@ export function refusalCommands(r: BuildRefusal, command: string): string[] {
       "atticus catalog edits --curate",
       `${command} --discard-edits ${r.discardEdits ?? 0}${allow}`,
     ];
-  return allow ? [`${command}${allow}`] : [];
+  if (allow) return [`${command}${allow}`];
+  // The review of ADR 0202: the two refusals nothing confirms name a next step too. A scan that
+  // read no repo in full: sync the clones. A build with no record from any repo's code: the
+  // counts say how many repos are read, unread and stale, with nothing named.
+  if (r.reasons.includes("nothing-read")) return ["atticus workspace sync"];
+  if (r.reasons.includes("empty")) return ["atticus doctor --counts"];
+  return [];
 }
 
 /** A build's report before it is written: what it adds, changes and removes against the disk. */

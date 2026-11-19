@@ -15,6 +15,7 @@ import {
 import { readdir } from "node:fs/promises";
 import { branchSlug, createWorkspace, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 import { branchCatalogFolder } from "./repo-branches.js";
 import { buildPlanOf, pageChanged } from "./build-report.js";
 import { diffLines } from "./scan-commands.js";
@@ -145,6 +146,7 @@ export async function scanBranch(
   if (built.changed) io.err(pageChanged("what the build would remove or discard"));
   if (built.guard.refused || built.changed) {
     for (const l of built.guard.refused?.message.split("\n") ?? []) io.err(l);
+    if (built.guard.refused) await refusalEnds(root, built.guard.refused);
     return 1;
   }
   const write = built.write!;
