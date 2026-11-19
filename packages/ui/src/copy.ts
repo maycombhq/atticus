@@ -6029,12 +6029,6 @@ export const COPY = {
       "no-spec": (name: string) => `${name} has no spec on file. Add its OpenAPI file:`,
     } as Record<string, (name: string) => string>,
     /**
-     * Beta.28.1 (field report 4): said only when every call has an arrow drawn, with where they
-     * go; each is still listed below, to move here.
-     */
-    noLoose: (where: string) =>
-      `Every call of this repo has an arrow already (${where}): nothing is loose. To send one here instead, pick its API under "Move a call here".`,
-    /**
      * ADR 0200 (a field report on beta.28.4, "Write 0 pairs"): every call has an arrow and the
      * other box has no API on record, so there is nothing to move a call to either.
      */
@@ -6165,12 +6159,57 @@ export const COPY = {
     /** One box the calls go to now, and how many: `forge-ledger (3)`. */
     linkedTo: (box: string, n: number) => `${box} (${n})`,
     /** The calls that have an arrow elsewhere, to move to this box. */
-    moveTitle: (n: number) =>
-      n === 1
-        ? "Move a call here (1 has an arrow already)"
-        : `Move a call here (${n} have an arrow already)`,
     moveCaption: (from: string, to: string) =>
-      `${from}'s calls with an arrow already: pick an API of ${to} to move one here. Its old arrow goes once the pairing is read.`,
+      `${from}'s calls that go to another box today, to move to ${to}`,
+    /**
+     * Beta.30 (the owner's field report: "it refuses, saying 0 calls to pair, because the calls
+     * are paired with the first, wrong repo"): the calls that go to another box are listed first,
+     * with where each goes and how that was decided, and one action moves the ticked ones.
+     */
+    moveFirst: (n: number, from: string, where: string, to: string) =>
+      `${n === 1 ? `1 call of ${from} goes` : `${n} calls of ${from} go`} to another box today: ${where}. If one really goes to ${to}, tick it, check the API picked for it, and choose Move to ${to}. None is ticked for you.`,
+    /** Where a call goes today and how that was decided (`how`: `connect.how`'s words). */
+    goesToday: (box: string, how?: string) =>
+      how ? `goes to ${box} today: ${how}` : `goes to ${box} today`,
+    how: {
+      code: (box: string) => `read from code (the call's fact names ${box})`,
+      address: (text?: string) =>
+        text ? `matched by its address (its line names ${text})` : "matched by its address",
+      path: "matched by its path alone (a guess: nothing names the box)",
+      gateway: (through: string) =>
+        `it goes through ${through}, a gateway whose route forwards it there`,
+      answer: (who: string | undefined, date: string | undefined, mine: boolean) =>
+        `${mine ? "your answer" : who ? `${who}'s answer` : "an answer"} to a question${date ? ` on ${date}` : ""}`,
+      paired: (who: string | undefined, date: string | undefined, mine: boolean, reason?: string) =>
+        `paired by ${mine ? "you" : (who ?? "a person")}${date ? ` on ${date}` : ""}${reason ? `: "${reason}"` : ""}`,
+      ai: (run?: string) => `decided by AI${run ? ` (${run})` : ""}, not confirmed by a person`,
+    },
+    /** The tick of one call to move, as a screen reader says it. */
+    movePick: (call: string, to: string) => `Move ${call} to ${to}`,
+    moveTo: (to: string) => `Move to ${to}`,
+    moveTickFirst: (to: string) => `Tick a call above to move it to ${to}.`,
+    movePickApi: (to: string) => `Pick the API of ${to} this call goes to.`,
+    /** A ticked call whose cited line names another box: the person overrides the code, with why. */
+    overridesCode: (text: string, box: string, to: string) =>
+      `Its line names ${text}${text === box ? "" : ` (${box}'s)`}: moving it to ${to} overrides what the code says. Say why. Your reason is kept with your pairing, and the call's fact stays as read.`,
+    reasonLabel: (call: string) => `Why ${call} doesn't go where its line says`,
+    reasonHint: "Why (a few words)",
+    moveNeedsReason:
+      "Say why for each ticked call whose line names another box (three characters or more).",
+    replaceConfirm: (who: string, ai: boolean, call: string) =>
+      ai ? `Replace the AI's pairing of ${call}` : `Replace ${who}'s pairing of ${call}`,
+    moveNeedsReplace: "Tick Replace for each pairing of someone else's you are replacing.",
+    moveConfirm: (n: number, to: string) =>
+      `${n === 1 ? "Move 1 call" : `Move ${n} calls`} to ${to}`,
+    /** A call a person's answer placed: the pairing moves this call, and the answer stands. */
+    answerStays: (question: string, box: string) =>
+      `Moving it pairs this call only. The answer to ${question} stands for the other calls it covers and for calls read later, which go to ${box}. If the answer itself is wrong, change it on the Questions page.`,
+    /** A call a gateway forwards: the gateway's own forwarding may be what is wrong. */
+    gatewayHint: (through: string, to: string) =>
+      `Moving it says this call doesn't go through ${through}. If ${through} itself forwards to the wrong service, correct that instead: connect ${through} to ${to}.`,
+    /** Of the calls paired with this box, those whose cited line names another. */
+    pairedOverCode: (n: number, where: string) =>
+      `${n === 1 ? "1 of them goes" : `${n} of them go`} against what the code names (${where}). The fact read from the code stays as it is, and the reason given is kept with the pairing.`,
     /** Where a call goes now (a joined, undrawn or outside call). */
     joinsNow: (box: string) => `goes to ${box} now`,
     undrawnWhy: (box: string) => `the read ties it to ${box}, and no arrow is drawn for it`,

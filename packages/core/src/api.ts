@@ -691,8 +691,18 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   profile, written once, in a fixed order (sorted) whatever order they come in, in one write;
  *   409 and nothing written when the profile has one already; 400 with neither or both. A
  *   request with `route` answers as before. Additive only.
+ * 3.19.0 (ADR 0204, the first of it; 3.18.0 is ADR 0201's `quickPath`. A field report: "the map
+ *   shows a connection to the wrong repo; when I try to reconnect it with the actual one it
+ *   refuses, saying 0 calls to pair"): GET /api/links/candidates says of each call that goes
+ *   somewhere how that was decided (`how`: read from code, its address, its path alone, a
+ *   gateway's route, a person's answer with the question, a person's pairing with its reason,
+ *   or the AI; with who and when), and the box its cited line names when that is another box
+ *   than the one connected to (`codeNames`). POST /api/links/connect takes a `reason` with each
+ *   pair, kept on the pairing's line, and answers 409 to a pair without one whose call has
+ *   `codeNames`: a person overrides what the code says knowingly. The preview of a pairing that
+ *   moves a call no longer says the Apply would refuse. Additive only.
  */
-export const API_VERSION = "3.17.0";
+export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -5437,6 +5447,31 @@ export const CandidateCallView = z.object({
   now: z.string().optional(),
   /** 3.14: who paired the call with the box it goes to now, when a person did. */
   pairedBy: z.string().optional(),
+  /**
+   * 3.19 (ADR 0204, a field report: "it's connected to the wrong box"): for a call that goes
+   * somewhere already, how that was decided: `code`, the call's own fact names the box;
+   * `address`, its host or base path is the box's; `path`, only its path matched (a guess);
+   * `gateway`, a gateway's route forwards it there (`through`: the gateway's repo); `answer`, a
+   * person's answer to `question`; `paired`, a person's pairing (with its `reason`, if they gave
+   * one); `ai`, the AI's. `who` answered or paired, and `at` when.
+   */
+  how: z
+    .object({
+      by: z.enum(["code", "address", "path", "gateway", "answer", "paired", "ai"]),
+      who: z.string().optional(),
+      at: z.string().optional(),
+      question: z.string().optional(),
+      through: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+  /**
+   * 3.19 (ADR 0204): the call's cited line names another box than the one connected to: `box`
+   * that box, `text` what is written (its host, or the target the fact read there). Pairing the
+   * call with this box overrides what the code says, so POST /api/links/connect takes the pair
+   * only with a `reason`.
+   */
+  codeNames: z.object({ box: z.string(), text: z.string() }).optional(),
   suggestion: CandidateSuggestion.optional(),
   /** 2.57: the APIs it most likely is, best first, at most three. */
   suggestions: z.array(CandidateSuggestion).max(3).optional(),
@@ -5965,7 +6000,17 @@ export const ConnectLinksRequest = z.object({
   from: z.string().min(1),
   to: LinkBox,
   pairs: z
-    .array(z.object({ call: z.string().min(1), api: z.string().min(1) }))
+    .array(
+      z.object({
+        call: z.string().min(1),
+        api: z.string().min(1),
+        /**
+         * 3.19 (ADR 0204): why, in the person's words, kept on the pairing's line. Required
+         * (409 without) for a call whose cited line names another box (`codeNames`).
+         */
+        reason: z.string().trim().min(3).max(500).optional(),
+      }),
+    )
     .max(500)
     .default([]),
   /** Answer A's open target question with /** to B, so calls read later follow it too. */

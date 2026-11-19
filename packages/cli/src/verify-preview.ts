@@ -156,7 +156,8 @@ export function confirmOf(
 
 /**
  * The guard's refusal without the unexplained removals a previewed pairing explains: when every
- * one is a loose end the pairing joins now (`joinedArrowOf`, as the guard counts it), the Apply
+ * one is a loose end the pairing joins now (`joinedArrowOf`, as the guard counts it) or an arrow
+ * whose call the pairing moves to another box (`movedArrowOf`, beta.30), the Apply
  * explains them by the pairing on file, and the reason goes; any other leaves it as it is.
  */
 async function pendingExplained(
@@ -173,7 +174,8 @@ async function pendingExplained(
   extra: number | undefined,
 ): Promise<Parameters<typeof confirmOf>[1]> {
   if (!refused?.reasons.includes("unexplained-removals") || !extra) return refused;
-  const { joinedArrowOf, looseEndsAt, pairedArrowsAt } = await import("@maycombhq/scanner");
+  const { joinedArrowOf, looseEndsAt, movedArrowOf, pairedArrowsAt } =
+    await import("@maycombhq/scanner");
   const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
   const made = new Set(p.diff.added.map(k));
   const at = pairedArrowsAt(p.result.records.filter((r) => made.has(k(r))));
@@ -181,7 +183,8 @@ async function pendingExplained(
   const before = new Map(p.existing.map((r) => [k(r), r] as const));
   const all = (refused.unexplained ?? []).every((u) => {
     const r = before.get(k(u));
-    return !!r && !!joinedArrowOf(r, at, loose);
+    // Beta.30: or an arrow whose call the pairing moves to another box (the build says the same).
+    return !!r && (!!joinedArrowOf(r, at, loose) || !!movedArrowOf(r, at));
   });
   return all && refused.unexplained?.length
     ? { ...refused, reasons: refused.reasons.filter((x) => x !== "unexplained-removals") }

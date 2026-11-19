@@ -12,6 +12,7 @@ import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
 import { MapIcon } from "./MapBar.js";
 import { pairedStanding, pairedWho } from "./paired-standing.js";
+import { howWords } from "./Connect.js";
 import {
   addKeys,
   countsWords,
@@ -255,6 +256,8 @@ export interface PairRow {
   pairedAi?: boolean;
   /** ADR 0199 (M1): the box that pairing names, a gateway that forwards the call to `joins`. */
   pairedWith?: string;
+  /** Beta.30: how the box it goes to today was decided, in words (`howWords`). */
+  how?: string;
 }
 
 const normal = (path?: string) => (path ?? "").replace(/\{[^}]*\}/g, "{}").replace(/\/+$/, "");
@@ -292,6 +295,7 @@ export function movableRowsForAdd(c: Api.LinkCandidatesViewT): PairRow[] {
       ...(x.pairedBy ? { pairedBy: x.pairedBy } : {}),
       ...(x.pairedAi ? { pairedAi: true } : {}),
       ...(x.pairedWith ? { pairedWith: x.pairedWith } : {}),
+      ...(howWords(x) ? { how: howWords(x)! } : {}),
     }));
 }
 
@@ -411,14 +415,17 @@ export function PairRowsView(p: {
             {r.joins && (
               <span className="hud">
                 {" · "}
-                {r.pairedBy
-                  ? E.add.pairedWith(
-                      r.pairedBy,
-                      r.pairedWith ?? r.joins,
-                      !!r.pairedAi,
-                      r.pairedWith ? r.joins : undefined,
-                    )
-                  : E.add.joinsNow(r.joins)}
+                {r.how && !r.pairedBy
+                  ? // Beta.30: where it goes today and how that was decided, as Connect says it.
+                    COPY.connect.goesToday(r.joins, r.how)
+                  : r.pairedBy
+                    ? E.add.pairedWith(
+                        r.pairedBy,
+                        r.pairedWith ?? r.joins,
+                        !!r.pairedAi,
+                        r.pairedWith ? r.joins : undefined,
+                      )
+                    : E.add.joinsNow(r.joins)}
               </span>
             )}
           </label>

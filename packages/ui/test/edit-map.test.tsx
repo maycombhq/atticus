@@ -976,6 +976,33 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     expect(page).toContain(esc(E.add.moveCaption("forge_instruments_1-0", "forge-instruments")));
     expect(page).toContain(esc(E.add.joinsNow("forge-ledger")));
     expect(page).toContain(`aria-label="${esc(E.add.callApi("GET /instruments/ping"))}"`);
+    // Beta.30: where the read says how the box was decided, the row says it, as Connect does.
+    const decided = movableRowsForAdd({
+      ...cands,
+      calls: [
+        { ...cands.calls.find((c) => c.fact === "c1")!, how: { by: "code" } },
+        { ...cands.calls.find((c) => c.fact === "c5")!, how: { by: "paired", who: "sam" } },
+      ],
+    });
+    expect(decided.map((r) => r.how)).toEqual([
+      "read from code (the call's fact names forge-ledger)",
+      "paired by sam",
+    ]);
+    const said = html(
+      <MoveCallsView
+        fromLabel="forge_instruments_1-0"
+        toName="forge-instruments"
+        rows={decided}
+        apis={cands.apis}
+        open
+        onPick={noop}
+      />,
+    );
+    expect(said).toContain(
+      esc("goes to forge-ledger today: read from code (the call's fact names forge-ledger)"),
+    );
+    // A person's pairing keeps the words that say pairing it here replaces theirs.
+    expect(said).toContain(esc(E.add.pairedWith("sam", "forge-risk")));
     // Nothing to move: nothing shown.
     expect(
       html(

@@ -22,6 +22,7 @@ import { COPY } from "../../copy.js";
 import { MatchWithCopilot, type MatchIo } from "./Match.js";
 import { AiMark, readyView, useDecisions } from "../../app/decisions.js";
 import { usePopupFocus } from "./popup.js";
+import { useMe } from "../../app/me.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call. From a repo's box, pick the other box (by
@@ -50,16 +51,54 @@ const errorOf = (e: unknown) =>
       ? e.message
       : String(e);
 
-/** The pairs to write: each ticked call with the API picked for it. */
+/**
+ * The pairs to write: each ticked call with the API picked for it, and the person's reason where
+ * they gave one (beta.30: a call whose line names another box is moved only with one).
+ */
 export function pairsOf(
   picked: Readonly<Record<string, string>>,
   ticked: ReadonlySet<string>,
-): { call: string; api: string }[] {
+  reasons: Readonly<Record<string, string>> = {},
+): { call: string; api: string; reason?: string }[] {
   return [...ticked]
     .filter((c) => picked[c])
     .sort()
-    .map((call) => ({ call, api: picked[call]! }));
+    .map((call) => {
+      const reason = (reasons[call] ?? "").trim();
+      return { call, api: picked[call]!, ...(reason ? { reason } : {}) };
+    });
 }
+
+/**
+ * Beta.30: how the box a call goes to today was decided, in plain words, as the read says it
+ * (`how`); nothing when the read doesn't say. `me` is the person using the app, so their own
+ * answer or pairing is said to be theirs.
+ */
+export function howWords(c: Api.CandidateCallViewT, me?: string): string | undefined {
+  const h = c.how;
+  if (!h) return undefined;
+  const date = h.at?.slice(0, 10);
+  const mine = !!me && h.who === me;
+  switch (h.by) {
+    case "code":
+      return C.how.code(c.codeNames?.box ?? c.joins ?? "it");
+    case "address":
+      return C.how.address(c.codeNames?.text);
+    case "path":
+      return C.how.path;
+    case "gateway":
+      return h.through ? C.how.gateway(h.through) : C.how.address(c.codeNames?.text);
+    case "answer":
+      return C.how.answer(h.who, date, mine);
+    case "paired":
+      return C.how.paired(h.who, date, mine, h.reason);
+    case "ai":
+      return C.how.ai(h.who);
+  }
+}
+
+/** The shortest reason that says something. */
+const REASON_MIN = 3;
 
 /** Where calls with an arrow go now, in words: `forge-ledger (3), forge-risk (1)`. */
 export function linkedWords(calls: readonly { joins?: string }[]): string {
@@ -79,12 +118,13 @@ export function initialPicks(v: Api.LinkCandidatesViewT): {
   const picked: Record<string, string> = {};
   const ticked = new Set<string>();
   for (const c of v.calls) {
-    // A call with an arrow already is moved only when the person picks it (field report 4).
-    if (c.status === "paired" || c.status === "joined" || c.status === "here") continue;
+    if (c.status === "paired" || c.status === "here") continue;
     if (c.suggestion) {
       picked[c.fact] = c.suggestion.api;
+      // A call with an arrow already is moved only when the person ticks it (field report 4);
+      // beta.30: its likeliest API is picked, so one tick and Move to… is all it takes.
       // Only the confident ones start ticked: the rest a person looks at (Tick all suggested).
-      if (c.confident) ticked.add(c.fact);
+      if (c.confident && c.status !== "joined") ticked.add(c.fact);
     }
   }
   return { picked, ticked };
@@ -266,6 +306,16 @@ export function PairedStanding(p: { view: Api.LinkCandidatesViewT }) {
           {C.pairedInside(pairedWho(s.inside), s.inside.length, v.from, insideOf)}
         </p>
       )}
+      {s.here.some((c) => c.codeNames) && (
+        // Beta.30: a pairing that goes against what the call's line names is said to (rule 6:
+        // the fact read from code stays; the person's word is beside it, with their reason).
+        <p role="status" className="ev-say">
+          {C.pairedOverCode(
+            s.here.filter((c) => c.codeNames).length,
+            linkedWords(s.here.flatMap((c) => (c.codeNames ? [{ joins: c.codeNames.box }] : []))),
+          )}
+        </p>
+      )}
       {s.elsewhere.length > 0 && (
         <p role="status" className="ev-say">
           {C.pairedElsewhere(
@@ -293,11 +343,19 @@ export function Pairing(p: {
    */
   post?: (body: Api.ConnectLinksRequestT, follow?: JobFollow) => Promise<Api.ConnectLinksResultT>;
   match?: MatchIo;
+  /** The person using the app (tests pass one): their own pairing is replaced without asking. */
+  me?: string;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [rule, setRule] = useState(false);
+  // Beta.30: why, for a call whose line names another box; and the pairings of someone else's
+  // the person said to replace.
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [replace, setReplace] = useState<Set<string>>(new Set());
+  const signedIn = useMe().me?.user;
+  const me = p.me ?? signedIn;
   const [busy, setBusy] = useState<"preview" | "write" | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [preview, setPreview] = useState<Api.ConnectLinksResultT | undefined>();
@@ -372,7 +430,18 @@ export function Pairing(p: {
               .map((c) => c.fact),
           ),
     );
-  const pairs = pairsOf(picked, ticked);
+  const pairs = pairsOf(picked, ticked, reasons);
+  // Beta.30: what a ticked call still needs before it can be previewed or written.
+  const tickedCalls = (v?.calls ?? []).filter((c) => ticked.has(c.fact) && picked[c.fact]);
+  const needsReason = tickedCalls.some(
+    (c) => c.codeNames && (reasons[c.fact] ?? "").trim().length < REASON_MIN,
+  );
+  const needsReplace = tickedCalls.some(
+    (c) => c.status === "joined" && !!c.pairedBy && c.pairedBy !== me && !replace.has(c.fact),
+  );
+  const held = needsReason || needsReplace;
+  const moving = pairs.filter((x) => movable.some((c) => c.fact === x.call));
+  const onlyMoves = moving.length > 0 && moving.length === pairs.length && !rule;
   const post =
     p.post ??
     ((body: Api.ConnectLinksRequestT, follow?: JobFollow) =>
@@ -516,12 +585,16 @@ export function Pairing(p: {
   const row = (c: Api.LinkCandidatesViewT["calls"][number]) => {
     const d = v!;
     const label = `${c.method ?? ""} ${c.path}`.trim();
+    const on = ticked.has(c.fact);
+    const today = c.status === "joined" ? howWords(c, me) : undefined;
     return (
       <li key={c.fact} className="box-call">
         <label className="box-call-head" title={`${label}\n${c.at}`}>
           <input
             type="checkbox"
-            aria-label={`${C.col.pick}: ${label}`}
+            aria-label={
+              c.status === "joined" ? C.movePick(label, d.toName) : `${C.col.pick}: ${label}`
+            }
             checked={ticked.has(c.fact)}
             onChange={(e) =>
               setTicked((t) => {
@@ -558,6 +631,9 @@ export function Pairing(p: {
           </span>
         ) : c.status === "outside" && c.joins && c.joins !== p.box.system ? (
           <span className="box-why">{C.outsideWhy(c.joins)}</span>
+        ) : c.status === "joined" && c.joins && today && !c.pairedWith ? (
+          // Beta.30: where it goes today, and how that was decided.
+          <span className="box-why">{C.goesToday(c.joins, today)}</span>
         ) : c.status === "joined" && c.joins ? (
           <span className="box-why">
             {c.pairedBy
@@ -614,6 +690,43 @@ export function Pairing(p: {
         {c.suggestion && picked[c.fact] === c.suggestion.api && (
           <span className="box-why">{C.suggested(C.why[c.suggestion.why]!)}</span>
         )}
+        {on && !picked[c.fact] && c.status === "joined" && (
+          <span className="box-why" role="note">
+            {C.movePickApi(d.toName)}
+          </span>
+        )}
+        {on && c.codeNames && (
+          // Beta.30 (hard rule 6): the line names another box; the person says why they
+          // override it, and the fact stays as read.
+          <>
+            <span className="box-why" role="note">
+              {C.overridesCode(c.codeNames.text, c.codeNames.box, d.toName)}
+            </span>
+            <input
+              type="text"
+              className="field"
+              aria-label={C.reasonLabel(label)}
+              placeholder={C.reasonHint}
+              maxLength={500}
+              required
+              value={reasons[c.fact] ?? ""}
+              onChange={(e) => {
+                const why = e.target.value;
+                setReasons((x) => ({ ...x, [c.fact]: why }));
+              }}
+            />
+          </>
+        )}
+        {on && c.status === "joined" && c.how?.by === "answer" && c.how.question && c.joins && (
+          <span className="box-why" role="note">
+            {C.answerStays(c.how.question, c.joins)}
+          </span>
+        )}
+        {on && c.status === "joined" && c.how?.through && !c.pairedBy && (
+          <span className="box-why" role="note">
+            {C.gatewayHint(c.how.through, d.toName)}
+          </span>
+        )}
         {/* N3: a person's word is replaced only knowingly. */}
         {c.pairedBy && c.joins && picked[c.fact] && ticked.has(c.fact) && (
           <span className="box-why" role="note">
@@ -625,6 +738,25 @@ export function Pairing(p: {
               c.joins,
             )}
           </span>
+        )}
+        {on && c.status === "joined" && c.pairedBy && c.joins && c.pairedBy !== me && (
+          // Beta.30: another person's pairing (or the AI's) is replaced only on a yes.
+          <label className="box-check">
+            <input
+              type="checkbox"
+              aria-label={C.replaceConfirm(c.pairedBy, !!c.pairedAi, label)}
+              checked={replace.has(c.fact)}
+              onChange={(e) =>
+                setReplace((r) => {
+                  const n = new Set(r);
+                  if (e.target.checked) n.add(c.fact);
+                  else n.delete(c.fact);
+                  return n;
+                })
+              }
+            />
+            {C.replaceConfirm(c.pairedBy, !!c.pairedAi, label)}
+          </label>
         )}
       </li>
     );
@@ -667,13 +799,9 @@ export function Pairing(p: {
         </div>
       )}
       {!d.noCalls && !d.calls.length && <p className="ev-say">{C.noJoinable(d.from)}</p>}
-      {!d.noCalls && !loose.length && movable.length > 0 && (
-        // ADR 0200: with no API of the other box there is no "Move a call here" to point at.
-        <p className="ev-say">
-          {d.apis.length
-            ? C.noLoose(linkedWords(movable))
-            : C.noLooseNoApis(linkedWords(movable), d.toName)}
-        </p>
+      {!d.noCalls && !loose.length && movable.length > 0 && !d.apis.length && (
+        // ADR 0200: with no API of the other box there is nothing to move a call to.
+        <p className="ev-say">{C.noLooseNoApis(linkedWords(movable), d.toName)}</p>
       )}
       {!d.noCalls && loose.length > 0 && !d.apis.length && (
         <p className="ev-say">{C.looseNoApis(loose.length, d.from, d.toName)}</p>
@@ -689,6 +817,43 @@ export function Pairing(p: {
         <p className="ev-say">{C.allHere(d.toName)}</p>
       )}
       {!d.noCalls && <PairedStanding view={d} />}
+      {movable.length > 0 && d.apis.length > 0 && (
+        // Beta.30 (the owner's field report): the calls that go to another box come first, each
+        // with where it goes today and how that was decided; none is ticked, and one action
+        // moves the ticked ones (previewed first, written on the person's confirm).
+        <div className="stack" style={{ gap: 6 }}>
+          <p className="ev-say">
+            {C.moveFirst(movable.length, d.from, linkedWords(movable), d.toName)}
+          </p>
+          <p id={`${callsId}-m`} className="hud box-sub">
+            {C.moveCaption(d.from, d.toName)}
+          </p>
+          <ul className="box-calls" aria-labelledby={`${callsId}-m`}>
+            {movable.map(row)}
+          </ul>
+          {(!moving.length || held) && (
+            <p id={`${callsId}-mwhy`} className="hud">
+              {!moving.length
+                ? C.moveTickFirst(d.toName)
+                : needsReason
+                  ? C.moveNeedsReason
+                  : C.moveNeedsReplace}
+            </p>
+          )}
+          <div className="box-btns">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void send("preview")}
+              disabled={!!busy || !moving.length || held}
+              aria-busy={busy === "preview"}
+              {...(!moving.length || held ? { "aria-describedby": `${callsId}-mwhy` } : {})}
+            >
+              {C.moveTo(d.toName)}
+            </button>
+          </div>
+        </div>
+      )}
       {loose.length > 0 && d.apis.length > 0 && (
         <>
           <p className="ev-say">{C.tally(tally.confident, tally.suggested, tally.none)}</p>
@@ -739,17 +904,6 @@ export function Pairing(p: {
             {loose.map(row)}
           </ul>
         </div>
-      )}
-      {movable.length > 0 && d.apis.length > 0 && (
-        <details className="stack" open={!loose.length}>
-          <summary className="hud">{C.moveTitle(movable.length)}</summary>
-          <p id={`${callsId}-m`} className="hud box-sub">
-            {C.moveCaption(d.from, d.toName)}
-          </p>
-          <ul className="box-calls" aria-labelledby={`${callsId}-m`}>
-            {movable.map(row)}
-          </ul>
-        </details>
       )}
       {here.length > 0 && (
         <details className="stack">
@@ -813,7 +967,7 @@ export function Pairing(p: {
             type="button"
             className="btn"
             onClick={() => void send("preview")}
-            disabled={!!busy || nothing}
+            disabled={!!busy || nothing || held}
             aria-busy={busy === "preview"}
             {...(nothing ? { "aria-describedby": `${callsId}-why` } : {})}
           >
@@ -823,11 +977,15 @@ export function Pairing(p: {
             type="button"
             className="btn primary"
             onClick={() => void send("write")}
-            disabled={!!busy || nothing || !preview || previewed !== asked}
+            disabled={!!busy || nothing || held || !preview || previewed !== asked}
             aria-busy={busy === "write"}
             {...(nothing ? { "aria-describedby": `${callsId}-why` } : {})}
           >
-            {busy === "write" ? C.writing : C.confirm(pairs.length, rule)}
+            {busy === "write"
+              ? C.writing
+              : onlyMoves
+                ? C.moveConfirm(pairs.length, d.toName)
+                : C.confirm(pairs.length, rule)}
           </button>
         </div>
       )}

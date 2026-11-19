@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { joinedArrowOf, looseEndsAt, overRemovalLimits, pairedArrowsAt } from "../src/build.js";
+import {
+  joinedArrowOf,
+  looseEndsAt,
+  movedArrowOf,
+  overRemovalLimits,
+  pairedArrowsAt,
+} from "../src/build.js";
 
 /**
  * Beta.28.1 (field hunt G1, its re-reviews): the large-removal limits, one rule for the guard and
@@ -78,5 +84,68 @@ describe("the removal limits (ADR 0195 point 4)", () => {
     ).toMatchObject({ over: true, big: [["forge-proxy", 2]] });
     const many = Array.from({ length: 201 }, () => ({ repos: [] as string[] }));
     expect(overRemovalLimits(new Map(), many)).toMatchObject({ over: true, counted: 201 });
+  });
+
+  // Beta.30 (the owner's field report: a call joined to the wrong box, moved by a pairing).
+  describe("an arrow a person's pairing moves to another box", () => {
+    const arrow = (id: string, to: string, line: number, o: Record<string, unknown> = {}) =>
+      ({
+        kind: "Interface",
+        id,
+        from: "orders",
+        to,
+        evidence: [
+          { repo: "forge-orders", path: "src/OrdersClient.java", line, side: "caller" },
+          { repo: `forge-${to}`, path: "src/Controller.java", line: 9, side: "callee" },
+        ],
+        ...o,
+      }) as never;
+    const person = { flags: ["joined-by-person"] };
+
+    it("is the pairing's own result: its removal names the new arrow and counts toward no limit", () => {
+      const old = arrow("if-old", "billing", 8, { flags: ["joined-by-host"] });
+      const at = pairedArrowsAt([arrow("if-new", "ledger", 8, person)]);
+      expect(movedArrowOf(old, at)).toEqual({ id: "if-new", to: "ledger" });
+      const had = new Map([["forge-orders", 5]]);
+      expect(
+        overRemovalLimits(had, [{ repos: ["forge-orders"], joined: !!movedArrowOf(old, at) }]),
+      ).toMatchObject({ over: false, counted: 0 });
+      // Not moved, the same removal is over the share (1 of 5).
+      expect(overRemovalLimits(had, [{ repos: ["forge-orders"] }])).toMatchObject({ over: true });
+    });
+
+    it("is told by the caller's line only: never by the callee's, another caller's, or an arrow no person paired", () => {
+      const old = arrow("if-old", "billing", 8);
+      // The new arrow cites the callee's line of the old one, not its caller's.
+      const callee = {
+        kind: "Interface",
+        id: "if-x",
+        from: "orders",
+        to: "ledger",
+        flags: ["joined-by-person"],
+        evidence: [{ repo: "forge-billing", path: "src/Controller.java", line: 9, side: "caller" }],
+      } as never;
+      expect(movedArrowOf(old, pairedArrowsAt([callee]))).toBeUndefined();
+      expect(
+        movedArrowOf(old, pairedArrowsAt([arrow("if-new", "ledger", 8, { ...person, from: "x" })])),
+      ).toBeUndefined();
+      expect(movedArrowOf(old, pairedArrowsAt([arrow("if-new", "ledger", 8)]))).toBeUndefined();
+      expect(
+        movedArrowOf(old, pairedArrowsAt([arrow("if-new", "ledger", 9, person)])),
+      ).toBeUndefined();
+    });
+
+    it("says nothing where two paired arrows cite the line (two calls on one line): each counts", () => {
+      const old = arrow("if-old", "billing", 8);
+      const at = pairedArrowsAt([
+        arrow("if-a", "ledger", 8, person),
+        arrow("if-b", "risk", 8, person),
+      ]);
+      expect(movedArrowOf(old, at)).toBeUndefined();
+      // A loose end is never a moved arrow, and a moved arrow never a joined loose end.
+      expect(
+        movedArrowOf({ kind: "Unresolved", id: "u", owner: "orders", evidence: [] } as never, at),
+      ).toBeUndefined();
+    });
   });
 });

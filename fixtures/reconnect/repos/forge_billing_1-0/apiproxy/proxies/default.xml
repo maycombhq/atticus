@@ -1,0 +1,13 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetStatement">
+      <Condition>(proxy.pathsuffix MatchesPath "/statements/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/billing/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="billing">
+    <TargetEndpoint>TE-Billing</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

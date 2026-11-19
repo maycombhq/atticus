@@ -2023,6 +2023,35 @@ export function joinedArrowOf(
   return ids.size === 1 ? `Interface/${[...ids][0]}` : undefined;
 }
 
+/**
+ * Beta.30 (the owner's field report, "it's connected to the wrong box"): the arrow a person's
+ * pairing moves a removed arrow's call to, among the arrows this build adds: exactly one added
+ * arrow flagged `joined-by-person`, from the same caller, cites a line the removed arrow's caller
+ * side cites. The removal is then the pairing's own result (the call is still on the map, going
+ * where the person said), as a loose end joined now is: it counts toward neither removal limit.
+ * Two such arrows on the removed arrow's lines (two calls cited on one line, both moved) can't be
+ * told apart, so neither is said moved and each counts as any removal.
+ */
+export function movedArrowOf(
+  r: CatalogRecord,
+  addedAt: ReadonlyMap<string, readonly CatalogRecord[]>,
+): { id: string; to: string } | undefined {
+  if (r.kind !== "Interface") return undefined;
+  const from = (r as unknown as { from?: string }).from;
+  if (!from) return undefined;
+  const found = new Map<string, string>();
+  for (const e of r.evidence as { repo?: string; path?: string; line?: number; side?: string }[]) {
+    if (!e.repo || !e.path || e.line === undefined || e.side === "callee") continue;
+    for (const x of addedAt.get(`${e.repo}\u0000${e.path}\u0000${e.line}`) ?? []) {
+      const y = x as unknown as { from?: string; to?: string };
+      if (y.from === from && y.to && x.id !== r.id) found.set(x.id, y.to);
+    }
+  }
+  if (found.size !== 1) return undefined;
+  const [id, to] = [...found][0]!;
+  return { id, to };
+}
+
 /** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
 export function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
   const out = new Map<string, number>();
@@ -2823,9 +2852,14 @@ export async function guardBuild(
       // line, or two such arrows, are no join: each removal counts as any other. Only an
       // explained removal is said joined (below); an unexplained one refuses on its own.
       const joinedNow = r ? joinedArrowOf(r, addedArrowsAt, looseAt) : undefined;
+      // Beta.30: an arrow whose call a person's pairing moved to another box in this build.
+      const movedNow = r ? movedArrowOf(r, addedArrowsAt) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
         if (back) own.push(back);
+        // The same words as an arrow that comes back under another callee (`rekeyedWords`).
+        else if (movedNow)
+          own.push(`its call goes to ${movedNow.to} now (Interface/${movedNow.id})`);
         else if (joinedNow) own.push(`joined now (${joinedNow})`);
         // Only where the repo's read changed and nothing else is why: not a removal an answer,
         // a curated decision or a call the join placed elsewhere makes, nor one a join derives.
@@ -2844,7 +2878,7 @@ export async function guardBuild(
         reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
-      if (joinedNow && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
+      if ((joinedNow || movedNow) && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
     }
     mark("removals explained");
     // The records each repo had in the last build, for the share.
