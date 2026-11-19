@@ -1,7 +1,7 @@
 # 0205. One repo's Apply in fifteen seconds: what was measured, and what is reachable
 
-- Status: proposed (for the owner's approval; nothing is built)
-- Date: 2026-11-19
+- Status: accepted (2026-11-19, by the owner, with the three recommended answers: the 15 s is for the field-shaped estate at up to 60 repos, as a CI budget, and the big estate's times go in the release notes as a stress test; "done" is shown while the caches are written under the lock (step 2); the app may hold up to about 1 GB more for its caches at 100,000 records, let go after ten idle minutes or when memory runs low (step 4))
+- Date: 2026-11-19 (proposed and accepted)
 - Release: 2.0.0-beta.30, slice 10 ([the plan](../plan/v30.md))
 - Builds on: ADR 0195 (point 9 and its addenda of 2026-11-12, 2026-11-13 and 2026-11-15), ADR 0197
 - Contracts: none. C1 to C6 and the facts file are unchanged, and so is every committed file (`catalog/generated`, `catalog/sources`, `build.json`). Only local, git-ignored caches change: the build cache (`.index/build-cache/`, `BUILD_CACHE_FORMAT` goes from 2 to 3) and the parse cache. No migration: an old cache is no cache.
@@ -65,7 +65,7 @@ The field-shaped estate's phases were printed to 0.1 CPU s. "Outside the build" 
 | passes 4 to 7 (link evidence, legacy, curated, per repo)            | 0.1       | 0.20     | 0.32     | ×1.6     |
 | pass 8, the record texts and build.json                             | 0.3       | 1.43     | 3.61     | ×2.5     |
 | outside the build: the comparison, the estate's facts, questions    | 0.6       | 2.35     | 4.43     | ×1.9     |
-| hash every record file (2 worker threads)                           | 0.3       | 0.81     | 1.43     | ×1.8     |
+| hash every record file (kept hashes, 2 worker threads)              | 0.3       | 0.81     | 1.43     | ×1.8     |
 | the guards                                                          | 0.4       | 0.99     | 1.80     | ×1.8     |
 | the report                                                          | 0.1       | 0.09     | 0.19     | ×2.1     |
 | keep the build (the build cache written)                            | 0.3       | 1.04     | 2.29     | ×2.2     |
@@ -116,7 +116,7 @@ Can the last build's results be reused for the repos whose inputs didn't change?
 - **Pass 3, the merge** joins records across repos by key, host, route and system; **the features** trace from every entry point through every call that shares a word (in the big estate every flow visits all the services); **the glossary** counts each word over the whole catalog and cites the first use in each repo. beta.28.2 tried each and found that a cache by one repo's inputs misses on every write that changed code. That still holds; this note found nothing new that changes it. **Out.**
 - **Passes 4 to 7** read the whole join (link evidence) or every record (the legacy overlay, the curated decisions), and cost 0.3 s together.
 - **Pass 8** already reuses each record's text by the hash of its JSON. Making the JSON is the comparison, so it can't be skipped without trusting that a record is unchanged.
-- **The guards** read every record file and hash its bytes (the owner's decision of 2026-11-13: nothing is trusted by a file's size and time), 1.4 s, and compare with build.json, 1.8 s.
+- **The guards** compare every record file's hash with build.json's, 1.8 s. Since beta.28.5 a file whose size, time, change time and identity are the ones its hash was kept by isn't opened again (`packages/core/src/hash-cache.ts`), so most of the 1.4 s of the hash is 100,000 stats and the kept hashes read.
 - **The index.** Apply doesn't build it: the index is opened when a map tool or `atticus ask` needs it (`openIndex`, `packages/index`). There is nothing to skip.
 
 So the only reuse that can be proven inside the passes is pass 2's projection per repo, worth about 1 s at 60 repos and only in the app's process. What can be cut with a proof is around the passes: work that compares, parses and caches the whole catalog to find or keep the part that changed.
@@ -172,7 +172,6 @@ The app's server runs every Apply inside its own long-lived process, yet each wr
 - **The estate join, the merge, the features and the glossary patched for a one-repo change:** can't be proven equal (above).
 - **Hashing the record files while the build runs** (it reads only `catalog/generated`): 1.4 s at 60 repos off the clock on a machine with a spare core. But the hand-edit guard would then see the files as they were when the build started, not as they are just before the write. A hand edit made during the build would be written over. Not without the owner's word, and not proposed.
 - **The features' traces in worker threads:** a trace reads the graph only, so traces can run apart and be put back in order. About half the features' time is the traces (`traceIx`). On these 2 CPUs, with the graph built again in each worker, it saves nothing; on a machine with 8 cores it might save 4 s of the 9.3 at 60 repos. Not measurable here, so not proposed for beta.30.
-- **Trusting a record file's size and time** in the guard: declined by the owner on 2026-11-13, and not asked again.
 
 ## What is reachable in beta.30
 
