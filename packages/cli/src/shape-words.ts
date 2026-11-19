@@ -6,7 +6,8 @@
  * step in a time band. The card holds no name, id, path, hash, count or free text of the estate,
  * so its words can be read off a screen and typed elsewhere from memory. The invented Forge
  * estate of the tests (`packages/cli/test/field-estate.ts`) takes the same words as its `shape`
- * and as `ATTICUS_FIELD_SHAPE`, and makes an estate of that shape from Forge names.
+ * and as `ATTICUS_FIELD_SHAPE`, and makes an estate of that shape from Forge names; reading a
+ * shape back from its words, and the size each band is made at, are that test estate's own.
  *
  * Nothing here reads a file. Whether even these words may be said outside a site is that
  * organisation's decision.
@@ -31,6 +32,19 @@ export const SHAPE_FLAGS = [
 export const PLATFORMS = ["windows", "macos", "linux"] as const;
 export const STEPS = ["sync", "read", "verify", "build", "scan", "other", "none"] as const;
 export const TIME_BANDS = ["under-5s", "5-30s", "30s-2m", "2-10m", "over-10m"] as const;
+/**
+ * How many of something a check found, said as a band: a check's sentence never gives an exact
+ * count of the estate (`atticus selfcheck --names` does, on screen only).
+ */
+export const COUNT_BANDS = [
+  "0",
+  "1-9",
+  "10-99",
+  "100-999",
+  "1k-10k",
+  "10k-100k",
+  "over-100k",
+] as const;
 
 export type RepoBand = (typeof REPO_BANDS)[number];
 export type RecordBand = (typeof RECORD_BANDS)[number];
@@ -38,6 +52,7 @@ export type ShapeFlag = (typeof SHAPE_FLAGS)[number];
 export type Platform = (typeof PLATFORMS)[number];
 export type Step = (typeof STEPS)[number];
 export type TimeBand = (typeof TIME_BANDS)[number];
+export type CountBand = (typeof COUNT_BANDS)[number];
 
 /** What an invented estate is made from: the card's first three lines. */
 export interface Shape {
@@ -66,6 +81,7 @@ export const CARD_WORDS: ReadonlySet<string> = new Set<string>([
   ...PLATFORMS,
   ...STEPS,
   ...TIME_BANDS,
+  ...COUNT_BANDS,
 ]);
 
 export const repoBand = (n: number): RepoBand =>
@@ -81,6 +97,21 @@ export const recordBand = (n: number): RecordBand =>
         : n < 200_000
           ? "50k-200k"
           : "over-200k";
+
+export const countBand = (n: number): CountBand =>
+  n <= 0
+    ? "0"
+    : n < 10
+      ? "1-9"
+      : n < 100
+        ? "10-99"
+        : n < 1_000
+          ? "100-999"
+          : n < 10_000
+            ? "1k-10k"
+            : n < 100_000
+              ? "10k-100k"
+              : "over-100k";
 
 export const timeBand = (ms: number): TimeBand =>
   ms < 5_000
@@ -117,42 +148,3 @@ export function cardLines(c: ShapeCard): string[] {
 /** The shape as `ATTICUS_FIELD_SHAPE` takes it: its words, comma-separated, in the card's order. */
 export const shapeText = (s: Shape): string =>
   [s.repos, s.records, ...orderedFlags(s.flags)].join(",");
-
-/**
- * A shape from its words (commas or spaces between them; the card's other words, a platform or
- * a step and its time, are allowed and ignored). A word that is not on the list is refused: a
- * shape is only ever made of these words. A band left out is the smallest.
- */
-export function parseShape(text: string): Shape {
-  const shape: Shape = { repos: "1-5", records: "under-1k", flags: [] };
-  for (const w of text.split(/[\s,;+]+/).filter(Boolean)) {
-    const word = w.replace(/:$/, "");
-    if ((REPO_BANDS as readonly string[]).includes(word)) shape.repos = word as RepoBand;
-    else if ((RECORD_BANDS as readonly string[]).includes(word)) shape.records = word as RecordBand;
-    else if ((SHAPE_FLAGS as readonly string[]).includes(word)) shape.flags.push(word as ShapeFlag);
-    else if (!CARD_WORDS.has(word))
-      throw new Error(
-        `"${word.slice(0, 40)}" is not a word of the shape card. Its words: ${[...REPO_BANDS, ...RECORD_BANDS, ...SHAPE_FLAGS].join(", ")}.`,
-      );
-  }
-  shape.flags = orderedFlags(shape.flags);
-  return shape;
-}
-
-/** The fixed size each band is made at: how many repos the manifests list in all. */
-export const REPOS_AT: Record<RepoBand, number> = {
-  "1-5": 4,
-  "6-20": 12,
-  "21-50": 40,
-  "51-100": 70,
-  "over-100": 120,
-};
-
-/** The fixed size each band is made at: about how many records the build makes. */
-export const RECORDS_AT: Record<RecordBand, number> = {
-  "under-1k": 500,
-  "1k-10k": 4_000,
-  "10k-50k": 14_000,
-  "50k-200k": 80_000,
-  "over-200k": 250_000,
-};

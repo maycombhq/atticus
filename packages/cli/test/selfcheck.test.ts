@@ -3,10 +3,19 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { factsDirOf, listQuestions, startTerminalRun, type Fact } from "@maycombhq/core";
+import { hostname } from "node:os";
 import {
+  acquireLock,
+  factsDirOf,
+  listQuestions,
+  startTerminalRun,
+  type Fact,
+} from "@maycombhq/core";
+import {
+  buildAndWrite,
   buildCacheHooks,
   buildCatalog,
+  refusalCommands,
   factsSnapshotWrites,
   loadBuildInputs,
 } from "@maycombhq/scanner";
@@ -14,6 +23,7 @@ import { main } from "../src/main.js";
 import {
   CHECK_FLAGS,
   CHECK_IDS,
+  COSTLY_FILES,
   selfcheck,
   SELFCHECK_WORDS,
   selfcheckHooks,
@@ -36,6 +46,7 @@ afterAll(async () => {
 afterEach(() => {
   delete selfcheckHooks.unaccounted;
   delete selfcheckHooks.second;
+  delete selfcheckHooks.refusals;
   vi.unstubAllGlobals();
 });
 
@@ -109,12 +120,32 @@ describe("atticus selfcheck on the invented field estate", () => {
         "passed build-is-repeatable",
         "passed no-long-silence",
       ]);
+      // Counts in bands only: no exact number of the estate above a card that promises none.
       expect(r.out[1]).toMatch(
-        /^passed calls-accounted: \d+ calls: \d+ drawn as a link, \d+ listed as a loose call, \d+ asked about, 0 unaccounted for\.$/,
+        /^passed calls-accounted: every call the join left has a reason: (0|1-9|10-99|100-999|1k-10k) joined or placed outside, (0|1-9|10-99|100-999) asked, (0|1-9|10-99|100-999) left with a reason, 0 with none\.$/,
       );
-      expect(r.out[3]).toMatch(
-        /^passed build-is-repeatable: two builds in memory listed the same \d+ files, byte for byte\.$/,
+      expect(r.out[3]).toBe(
+        "passed build-is-repeatable: two builds in memory listed the same files, byte for byte.",
       );
+      expect(r.out[4]).toBe(
+        "passed no-long-silence: the newest run of each command on record printed a line at least every 30 seconds.",
+      );
+      // The exact numbers are for the person on site, with --names, on screen only.
+      const named = await run(["selfcheck", "--names", "--root", e.root]);
+      const exact = named.out.filter((l) => l.startsWith("  Exact, on this screen only: "));
+      expect(exact).toHaveLength(4);
+      expect(exact[0]).toMatch(
+        /: \d+ joined or placed outside, \d+ asked, \d+ left with a reason, 0 with none\.$/,
+      );
+      expect(exact[2]).toMatch(/: \d+ files listed, 0 differ\.$/);
+      // None of the estate's exact counts (calls, files) is in the checks' own lines.
+      const numbers = [exact[0]!, exact[2]!].flatMap((l) => l.match(/\d{2,}/g) ?? []);
+      expect(numbers.length).toBeGreaterThan(1);
+      const lines = r.out
+        .slice(1, 5)
+        .join("\n")
+        .replace(/\d+k?-\d+k?/g, "");
+      for (const n of numbers) expect(lines, n).not.toContain(n);
       // The card, after the checks: the shape the estate was made from.
       expect(r.out.slice(5)).toEqual([
         "",
@@ -147,7 +178,9 @@ describe("atticus selfcheck on the invented field estate", () => {
       const log = (await readFile(join(e.root, ".atticus", "logs", "atticus.log"), "utf8"))
         .trim()
         .split("\n");
-      expect(log).toHaveLength(2);
+      expect(log).toHaveLength(3);
+      // Only the command's word: never the folder given after --root.
+      for (const l of log) expect((JSON.parse(l) as { command: string }).command).toBe("selfcheck");
       for (const l of log) expect(JSON.parse(l)).toMatchObject({ event: "command", code: 0 });
       expect(log.join("\n")).not.toMatch(/forge-svc|forge-gw|drawn|repos:/);
     },
@@ -216,20 +249,26 @@ describe("atticus selfcheck on the invented field estate", () => {
       expect(r.out[0]).toBe("atticus selfcheck: 1 of 4 checks passed. Nothing was sent anywhere.");
       const under = (id: string) =>
         r.out[r.out.findIndex((l) => l.startsWith(`failed ${id}:`)) + 1];
-      // The first of the check's listed flags that the card finds present.
-      for (const id of ["calls-accounted", "build-is-repeatable", "no-long-silence"] as const) {
-        const flag = CHECK_FLAGS[id].find((f) => SMALL.flags.includes(f))!;
+      // The check about how calls join names the first of its flags the card finds present.
+      expect(under("calls-accounted")).toBe(
+        `  Closest invented shape: deploy-token-hosts. Make it: ATTICUS_FIELD_SHAPE=${make}`,
+      );
+      // A build that isn't repeatable and a long silence are not explained by a shape flag:
+      // none is guessed (a slow answer to a question was once blamed on gateway-proxies).
+      for (const id of ["build-is-repeatable", "no-long-silence"] as const) {
+        expect(CHECK_FLAGS[id]).toBeUndefined();
         expect(under(id)).toBe(
-          `  Closest invented shape: ${flag}. Make it: ATTICUS_FIELD_SHAPE=${make}`,
+          `  Closest invented shape: none: this check is not about the estate's shape. The estate's: ATTICUS_FIELD_SHAPE=${make}`,
         );
       }
-      expect(under("calls-accounted")).toContain("deploy-token-hosts");
-      expect(r.out.join("\n")).toMatch(/failed calls-accounted: \d+ calls: .* 1 unaccounted for\./);
       expect(r.out.join("\n")).toMatch(
-        /failed build-is-repeatable: two builds in memory listed \d+ files, and 1 hash differs between them\./,
+        /failed calls-accounted: a call the join left has no reason: .* 1-9 with none\./,
       );
-      expect(r.out.join("\n")).toContain(
-        "failed no-long-silence: the newest run of 1 long command of 1 went over 30 seconds without a line.",
+      expect(r.out).toContain(
+        "failed build-is-repeatable: two builds in memory listed files whose hashes differ.",
+      );
+      expect(r.out).toContain(
+        "failed no-long-silence: the newest run of a command on record went over 30 seconds without a line.",
       );
       // Without --names, nothing of the estate is said; with it, on screen only.
       expect(r.out.join("\n")).not.toContain("forge-svc-00");
@@ -239,6 +278,7 @@ describe("atticus selfcheck on the invented field estate", () => {
       const j = await run(["selfcheck", "--names", "--json", "--root", e.root]);
       expect(j.code).toBe(1);
       expect(j.out.join("\n")).not.toContain("forge-svc-00");
+      expect(j.out.join("\n")).not.toContain("Exact");
       expect(JSON.parse(j.out.join("\n")).checks[0]).toMatchObject({
         id: "calls-accounted",
         state: "failed",
@@ -250,7 +290,7 @@ describe("atticus selfcheck on the invented field estate", () => {
   );
 
   it(
-    "a refusal that names no command fails refusals-have-next-step: the build's guard over a catalog its sources no longer make",
+    "a build over a catalog its sources no longer make names its next step, and so does a scan that read nothing",
     async () => {
       const e = await estate({ repos: "1-5", records: "under-1k", flags: ["https-origins"] });
       expect((await run(["catalog", "build", "--root", e.root])).code).toBe(0);
@@ -258,18 +298,102 @@ describe("atticus selfcheck on the invented field estate", () => {
       for (const sub of ["facts", "readers", "legacy"])
         await rm(join(e.root, "catalog", "sources", sub), { recursive: true, force: true });
       await rm(factsDirOf(e.root), { recursive: true, force: true });
+      const guard = await buildAndWrite(e.root, { command: "atticus catalog build", check: true });
+      expect(guard.guard.refused?.reasons).toEqual(["empty"]);
+      expect(refusalCommands(guard.guard.refused!, "atticus catalog build")).toEqual([
+        "atticus doctor --counts",
+      ]);
+      expect(refusalCommands({ reasons: ["nothing-read"], message: "" }, "atticus scan")).toEqual([
+        "atticus workspace sync",
+      ]);
+      // That command says, here, that no repo is read: the thing to put right.
+      const counts = await run(["doctor", "--counts", "--root", e.root]);
+      expect(counts.code).toBe(0);
+      expect(counts.out.join("\n")).toMatch(/Repos: \d+ in all, 0 read, \d+ unread/);
+      const r = await run(["selfcheck", "--root", e.root]);
+      expect(r.out).toContain(
+        "passed refusals-have-next-step: every refusal here names a command to go on.",
+      );
+      // No call facts are left to check: skipped, never passed.
+      expect(r.out).toContain("skipped calls-accounted: no call facts to check.");
+    },
+    T,
+  );
+
+  it(
+    "a refusal that names no command fails refusals-have-next-step, and names the closest shape",
+    async () => {
+      const e = await estate({
+        repos: "6-20",
+        records: "under-1k",
+        flags: ["https-origins", "unread-repo"],
+      });
+      // No refusal of Atticus's own is left without a command, so a test makes one.
+      selfcheckHooks.refusals = (list) => list.push({ what: "forge-made-refusal", next: [] });
       const r = await run(["selfcheck", "--root", e.root]);
       expect(r.code).toBe(1);
       const at = r.out.findIndex((l) => l.startsWith("failed refusals-have-next-step:"));
       expect(r.out[at]).toBe(
-        "failed refusals-have-next-step: 2 refusals here, 1 with a command to go on.",
+        "failed refusals-have-next-step: a refusal here names no command to go on.",
       );
-      // No repo is read any more: the nearest invented shape is a repo nobody read.
       expect(r.out[at + 1]).toBe(
-        "  Closest invented shape: unread-repo. Make it: ATTICUS_FIELD_SHAPE=1-5,under-1k,https-origins,unread-repo",
+        "  Closest invented shape: unread-repo. Make it: ATTICUS_FIELD_SHAPE=6-20,under-1k,https-origins,unread-repo",
       );
       const named = await run(["selfcheck", "--names", "--root", e.root]);
-      expect(named.out).toContain("    empty");
+      expect(named.out).toContain("    forge-made-refusal");
+      expect(named.out.join("\n")).toMatch(
+        /Exact, on this screen only: \d refused, \d with a command/,
+      );
+    },
+    T,
+  );
+
+  it(
+    "--quick leaves out the check that builds twice; a large catalog says what the two builds cost first",
+    async () => {
+      const e = await estate({ repos: "1-5", records: "under-1k", flags: ["https-origins"] });
+      const quick = await run(["selfcheck", "--quick", "--root", e.root]);
+      expect(quick.code).toBe(0);
+      expect(quick.out).toContain(
+        "skipped build-is-repeatable: left out with --quick: it builds the catalog twice in memory.",
+      );
+      expect(quick.err).toEqual(["Building in memory…", "Running the build's guard…"]);
+      expect(quick.out).toContain("  records: under-1k");
+      // A small catalog is built twice with no word about cost.
+      const small = await run(["selfcheck", "--root", e.root]);
+      expect(small.err.join("\n")).not.toContain("about");
+      // 5,000 record files on disk: the cost is said before the first build starts.
+      const dir = join(e.root, "catalog", "generated", "system");
+      await mkdir(dir, { recursive: true });
+      for (let k = 0; k < COSTLY_FILES; k++) await writeFile(join(dir, `forge-${k}.yaml`), "");
+      const big = await run(["selfcheck", "--root", e.root]);
+      expect(big.err[0]).toBe(
+        "build-is-repeatable builds the catalog twice in memory: about 1 minute and 0.5 GB here. atticus selfcheck --quick leaves it out.",
+      );
+      expect(big.err[1]).toBe("Building in memory (1 of 2)…");
+    },
+    T,
+  );
+
+  it(
+    "while another command holds the lock it says only that, with nothing of the holder, and exits 2",
+    async () => {
+      const e = await estate({ repos: "1-5", records: "under-1k", flags: [] });
+      const lock = await acquireLock(e.root, "scan", "atticus verify forge-svc-00 --write");
+      try {
+        const r = await run(["selfcheck", "--root", e.root]);
+        expect(r.code).toBe(2);
+        expect(r.out).toEqual([]);
+        expect(r.err).toHaveLength(1);
+        expect(r.err[0]).toMatch(
+          /^Another Atticus command is running on this metarepo \(since [0-9T:.Z-]+\), so selfcheck couldn't run\. Run it again when that command has finished\.$/,
+        );
+        expect(r.err[0]).not.toMatch(/forge-svc|verify|process \d|\.json/);
+        expect(r.err[0]).not.toContain(hostname());
+        expect(r.err[0]).not.toContain(e.root);
+      } finally {
+        await lock.release();
+      }
     },
     T,
   );
@@ -491,22 +615,25 @@ describe("nothing of the estate is in the card, the default output or --json", (
     W.names(1),
     W.card,
     W.notRun,
-    W.calls({ calls: 2, drawn: 1, loose: 1, asked: 1, left: 1 }),
-    W.calls({ calls: 1, drawn: 1, loose: 1, asked: 1, left: 1 }),
+    W.noShape(""),
+    W.exact(""),
+    W.calls({ ok: true, joined: 1, asked: 1, left: 1, none: 0 }),
+    W.calls({ ok: false, joined: 1, asked: 1, left: 1, none: 1 }),
+    W.callsNone,
     W.callsUnread(1),
-    W.callsUnread(2),
     W.refusals({ refusals: 0, named: 0 }),
     W.refusals({ refusals: 1, named: 1 }),
     W.refusals({ refusals: 2, named: 1 }),
-    W.repeatable({ files: 1, differ: 0 }),
-    W.repeatable({ files: 2, differ: 1 }),
-    W.repeatable({ files: 2, differ: 2 }),
-    W.quiet({ runs: 1, over: 0 }),
-    W.quiet({ runs: 2, over: 1 }),
-    W.quiet({ runs: 2, over: 2 }),
+    W.repeatable(true),
+    W.repeatable(false),
+    W.repeatableQuick,
+    W.cost(1, 1),
+    W.quiet(true),
+    W.quiet(false),
     W.quietNone,
-    W.building(1),
-    W.building(2),
+    W.building(1, 1),
+    W.building(1, 2),
+    W.building(2, 2),
     W.guarding,
     "passed failed skipped checks sentence state closest make slowest",
     ...CHECK_IDS,

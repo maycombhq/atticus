@@ -2,20 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   CARD_WORDS,
   cardLines,
-  parseShape,
+  countBand,
   platformWord,
   RECORD_BANDS,
   recordBand,
-  RECORDS_AT,
   REPO_BANDS,
   repoBand,
-  REPOS_AT,
   SHAPE_FLAGS,
   shapeText,
   timeBand,
   type ShapeCard,
 } from "../src/shape-words.js";
-import { fieldOptionsOf, SHAPE_REPOS } from "./field-estate.js";
+import { fieldOptionsOf, parseShape, RECORDS_AT, REPOS_AT, SHAPE_REPOS } from "./field-estate.js";
 
 /** ADR 0202 point 10: the shape card's words are a fixed list, and a shape is made only of them. */
 describe("the shape card's fixed words", () => {
@@ -65,6 +63,22 @@ describe("the shape card's fixed words", () => {
     ).toEqual(["under-5s", "5-30s", "5-30s", "30s-2m", "30s-2m", "2-10m", "2-10m", "over-10m"]);
     for (const b of REPO_BANDS) expect(repoBand(REPOS_AT[b])).toBe(b);
     for (const b of RECORD_BANDS) expect(recordBand(RECORDS_AT[b])).toBe(b);
+    expect(
+      [0, 1, 9, 10, 99, 100, 999, 1_000, 9_999, 10_000, 99_999, 100_000].map(countBand),
+    ).toEqual([
+      "0",
+      "1-9",
+      "1-9",
+      "10-99",
+      "10-99",
+      "100-999",
+      "100-999",
+      "1k-10k",
+      "1k-10k",
+      "10k-100k",
+      "10k-100k",
+      "over-100k",
+    ]);
     expect(["win32", "darwin", "linux", "freebsd"].map(platformWord)).toEqual([
       "windows",
       "macos",

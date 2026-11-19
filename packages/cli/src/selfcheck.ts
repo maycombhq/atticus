@@ -20,6 +20,7 @@ import {
   estateFacts,
   estateRepos,
   factsSlotPaths,
+  generatedDirOf,
   legacyJoinsPath,
   loadBuildInputs,
   manifestAt,
@@ -34,6 +35,7 @@ import { linkCountsOf, type LinkDetail } from "./doctor-counts.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import {
   cardLines,
+  countBand,
   orderedFlags,
   platformWord,
   recordBand,
@@ -68,10 +70,13 @@ export type CheckState = "passed" | "failed" | "skipped";
 export const QUIET_LIMIT_MS = 30_000;
 
 /**
- * Each check's invented regression shapes, nearest first: a failed check names the first of
- * them the card finds present, so the fix can start from the Forge estate of that shape.
+ * The invented shapes that explain a failed check, nearest first, for the two checks that are
+ * about the estate's shape: how its calls join, and where its build refuses. A failed check
+ * names the first of them the card finds present. The other two (a build that isn't repeatable,
+ * a long silence) are not explained by a shape flag, so they name none: a guess there sent
+ * people after the wrong shape.
  */
-export const CHECK_FLAGS: Record<CheckId, readonly ShapeFlag[]> = {
+export const CHECK_FLAGS: Partial<Record<CheckId, readonly ShapeFlag[]>> = {
   "calls-accounted": [
     "deploy-token-hosts",
     "gateway-proxies",
@@ -81,54 +86,75 @@ export const CHECK_FLAGS: Record<CheckId, readonly ShapeFlag[]> = {
     "hand-pairings",
   ],
   "refusals-have-next-step": ["legacy-slots", "hand-pairings", "empty-repo", "unread-repo"],
-  "build-is-repeatable": ["nested-payloads", "dotted-ids", "legacy-slots", "gateway-proxies"],
-  "no-long-silence": [
-    "gateway-proxies",
-    "nested-payloads",
-    "legacy-slots",
-    "ssh-origins",
-    "https-origins",
-  ],
 };
 
-const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+/** Past this many record files, the two builds in memory are said before they start. */
+export const COSTLY_FILES = 5_000;
 
-/** Every word selfcheck prints (ADR 0202: the command line's words, in one constant). */
+const b = countBand;
+
+/**
+ * Every word selfcheck prints (ADR 0202: the command line's words, in one constant). A check's
+ * sentence gives its counts in bands; `exact` is the same with numbers, for `--names` only.
+ */
 export const SELFCHECK_WORDS = {
   head: (p: number, of: number) =>
     `atticus selfcheck: ${p} of ${of} checks passed. Nothing was sent anywhere.`,
   closest: (flag: string | undefined, make: string) =>
     `  Closest invented shape: ${flag ?? "none known: this is a new shape"}. Make it: ATTICUS_FIELD_SHAPE=${make}`,
+  noShape: (make: string) =>
+    `  Closest invented shape: none: this check is not about the estate's shape. The estate's: ATTICUS_FIELD_SHAPE=${make}`,
+  exact: (text: string) => `  Exact, on this screen only: ${text}`,
   names: (count: number) => `  The first ${count}, on this screen only:`,
   card: "Shape card: fixed words only; no name, id, path, hash or count of this estate.",
   notRun: "it could not be run here (atticus selfcheck --names says why, on this screen only).",
-  calls: (c: { calls: number; drawn: number; loose: number; asked: number; left: number }) =>
-    `${n(c.calls, "call")}: ${c.drawn} drawn as a link, ${c.loose} listed as a loose call, ${c.asked} asked about, ${c.left} unaccounted for.`,
+  calls: (c: { ok: boolean; joined: number; asked: number; left: number; none: number }) =>
+    `${c.ok ? "every call the join left has a reason" : "a call the join left has no reason"}: ${b(c.joined)} joined or placed outside, ${b(c.asked)} asked, ${b(c.left)} left with a reason, ${b(c.none)} with none.`,
+  callsExact: (c: { joined: number; asked: number; left: number; none: number }) =>
+    `${c.joined} joined or placed outside, ${c.asked} asked, ${c.left} left with a reason, ${c.none} with none.`,
+  callsNone: "no call facts to check.",
   callsUnread: (repos: number) =>
-    ` ${n(repos, "repo's facts are", "repos' facts are")} not all verified yet, so their calls were not counted.`,
+    ` Repos whose facts are not all verified yet (${b(repos)}) were not counted.`,
   refusals: (c: { refusals: number; named: number }) =>
     c.refusals === 0
       ? "the build's guard and atticus status refuse nothing here."
-      : `${n(c.refusals, "refusal")} here, ${c.named} with a command to go on.`,
-  repeatable: (c: { files: number; differ: number }) =>
-    c.differ === 0
-      ? `two builds in memory listed the same ${n(c.files, "file")}, byte for byte.`
-      : `two builds in memory listed ${n(c.files, "file")}, and ${n(c.differ, "hash differs", "hashes differ")} between them.`,
-  quiet: (c: { runs: number; over: number }) =>
-    c.over === 0
-      ? `the newest run of ${n(c.runs, "long command")} printed a line at least every 30 seconds.`
-      : `the newest run of ${n(c.over, "long command")} of ${c.runs} went over 30 seconds without a line.`,
-  building: (k: number) =>
-    k === 1 ? "Building in memory (1 of 2)…" : "Building in memory (2 of 2), with nothing kept…",
+      : c.named === c.refusals
+        ? "every refusal here names a command to go on."
+        : "a refusal here names no command to go on.",
+  refusalsExact: (c: { refusals: number; named: number }) =>
+    `${c.refusals} refused, ${c.named} with a command to go on.`,
+  repeatable: (same: boolean) =>
+    same
+      ? "two builds in memory listed the same files, byte for byte."
+      : "two builds in memory listed files whose hashes differ.",
+  repeatableExact: (c: { files: number; differ: number }) =>
+    `${c.files} files listed, ${c.differ} differ.`,
+  repeatableQuick: "left out with --quick: it builds the catalog twice in memory.",
+  cost: (minutes: number, gb: number) =>
+    `build-is-repeatable builds the catalog twice in memory: about ${minutes} ${minutes === 1 ? "minute" : "minutes"} and ${gb} GB here. atticus selfcheck --quick leaves it out.`,
+  quiet: (ok: boolean) =>
+    ok
+      ? "the newest run of each command on record printed a line at least every 30 seconds."
+      : "the newest run of a command on record went over 30 seconds without a line.",
+  quietExact: (c: { runs: number; over: number }) =>
+    `${c.runs} commands on record, ${c.over} over 30 seconds.`,
+  building: (k: number, of: number) =>
+    of === 1
+      ? "Building in memory…"
+      : k === 1
+        ? "Building in memory (1 of 2)…"
+        : "Building in memory (2 of 2), with nothing kept…",
   guarding: "Running the build's guard…",
   quietNone:
     "No run on record since this Atticus was installed: run the command once, then selfcheck again.",
+  busy: (since: string) =>
+    `Another Atticus command is running on this metarepo (since ${since}), so selfcheck couldn't run. Run it again when that command has finished.`,
 } as const;
 
 export interface CheckResult {
   id: CheckId;
   state: CheckState;
-  /** One sentence, counts only. */
+  /** One sentence; its counts in bands only. */
   sentence: string;
   /** Under a failed check: its closest invented shape (a flag of the list), when one is known. */
   closest?: ShapeFlag;
@@ -141,20 +167,33 @@ export interface Selfcheck {
   card: ShapeCard;
   /** With `names`: the first 20 ids or paths behind each failed check. Never in `--json`. */
   names: Partial<Record<CheckId, string[]>>;
+  /** With `names`: each check's counts as numbers. Never in `--json`. */
+  exact: Partial<Record<CheckId, string>>;
 }
 
 const NAMES_MAX = 20;
 
 /**
- * A test's switches. The first two checks hold unless Atticus has a bug (the join accounts for
- * every call, and a build is repeatable), so no estate can be made to fail them: a test makes
- * the fault here. `unaccounted` adds to the calls the join left with no reason; `second` stands
+ * A test's switches. Three checks hold unless Atticus has a bug (the join gives every call it
+ * leaves a reason, a build is repeatable, every refusal names a command), so no estate can be
+ * made to fail them: a test makes the fault here. `unaccounted` adds to the calls the join left with no reason; `second` stands
  * for the second build.
  */
 export const selfcheckHooks: {
   unaccounted?: (detail: LinkDetail) => void;
   second?: (b: Build) => Build;
+  /** Adds to what refused here, each with the commands it names. */
+  refusals?: (list: { what: string; next: string[] }[]) => void;
 } = {};
+
+/** How many files under a folder end so; nothing is read but the names. */
+async function countFiles(dir: string, ending: string): Promise<number> {
+  let n = 0;
+  for (const e of await readdir(dir, { withFileTypes: true }).catch(() => []))
+    if (e.isDirectory()) n += await countFiles(join(dir, e.name), ending);
+    else if (e.name.endsWith(ending)) n++;
+  return n;
+}
 
 const exists = (p: string) =>
   stat(p).then(
@@ -266,9 +305,15 @@ function stepOf(command: readonly string[]): Step {
  */
 export async function selfcheck(
   root: string,
-  o: { platform?: string; progress?: (line: string) => void } = {},
+  o: {
+    platform?: string;
+    progress?: (line: string) => void;
+    /** Leave out the check that builds the catalog twice: one build, as any command makes. */
+    quick?: boolean;
+  } = {},
 ): Promise<Selfcheck> {
   const names: Selfcheck["names"] = {};
+  const exact: Selfcheck["exact"] = {};
   const said = (id: CheckId, lines: readonly string[]) => {
     if (lines.length) names[id] = lines.slice(0, NAMES_MAX);
   };
@@ -288,65 +333,97 @@ export async function selfcheck(
     estate = await estateFacts(root, op, "");
     const l = linkCountsOf(estate, op, detail);
     selfcheckHooks.unaccounted?.(detail);
-    // The join gives a reason for every call it leaves; one with none is listed nowhere.
-    const left = detail.unaccounted.length;
-    const drawn = l.verified + l.inferred + l.outside;
-    const loose = Math.max(0, l.unresolved - left);
-    const calls = drawn + l.asked + loose + left;
-    results.set("calls-accounted", {
-      state: left ? "failed" : "passed",
-      sentence:
-        SELFCHECK_WORDS.calls({ calls, drawn, loose, asked: l.asked, left }) +
-        (estate.unverified.length ? SELFCHECK_WORDS.callsUnread(estate.unverified.length) : ""),
-    });
+    // The join gives a reason for every call it leaves; one with none is listed nowhere. This
+    // is the join's own tally: it is not compared with the catalog's arrows or the questions.
+    const none = detail.unaccounted.length;
+    const c = {
+      joined: l.verified + l.inferred + l.outside,
+      asked: l.asked,
+      left: Math.max(0, l.unresolved - none),
+      none,
+    };
+    const unread = estate.unverified.length
+      ? SELFCHECK_WORDS.callsUnread(estate.unverified.length)
+      : "";
+    results.set(
+      "calls-accounted",
+      c.joined + c.asked + c.left + c.none === 0
+        ? { state: "skipped", sentence: SELFCHECK_WORDS.callsNone + unread }
+        : {
+            state: none ? "failed" : "passed",
+            sentence: SELFCHECK_WORDS.calls({ ok: !none, ...c }) + unread,
+          },
+    );
+    exact["calls-accounted"] = SELFCHECK_WORDS.callsExact(c);
     said("calls-accounted", detail.unaccounted);
   } catch (e) {
     failed("calls-accounted", e);
   }
 
   // ---- two builds in memory: the first as any build runs, the second with no kept build read
+  // The curated decisions are read here with nothing kept: a build's own read of them keeps
+  // its parses under .atticus/cache, and selfcheck writes nothing.
+  const inputs = async () => {
+    const pack = op ?? (await loadOrgPack(orgPackDirOf(root)));
+    const curated = await readCatalog(curatedDirOf(root, pack));
+    return loadBuildInputs(root, { op: pack, curated: curated.records });
+  };
   let build: Build | undefined;
-  try {
-    o.progress?.(SELFCHECK_WORDS.building(1));
-    // The curated decisions are read here with nothing kept: a build's own read of them keeps
-    // its parses under .atticus/cache, and selfcheck writes nothing.
-    const inputs = async () => {
-      const pack = op ?? (await loadOrgPack(orgPackDirOf(root)));
-      const curated = await readCatalog(curatedDirOf(root, pack));
-      return loadBuildInputs(root, { op: pack, curated: curated.records });
-    };
-    const first = await buildCatalog(await inputs());
-    o.progress?.(SELFCHECK_WORDS.building(2));
-    const was = buildCacheHooks.off;
-    buildCacheHooks.off = true;
-    try {
-      build = await buildCatalog(await inputs());
-    } finally {
-      if (was === undefined) delete buildCacheHooks.off;
-      else buildCacheHooks.off = was;
-    }
-    if (selfcheckHooks.second) build = selfcheckHooks.second(build);
-    const target = baselineTarget(root);
-    const [a, b] = [first, build].map((x) => manifestAt(x, target));
-    const same = serializeBuildManifest(a!) === serializeBuildManifest(b!);
-    const then = new Map(a!.files.map((f) => [f.path, f.sha256] as const));
-    const differ = same
-      ? []
-      : [...new Set([...then.keys(), ...b!.files.map((f) => f.path)])]
-          .filter((p) => then.get(p) !== b!.files.find((f) => f.path === p)?.sha256)
-          .sort();
+  if (o.quick) {
     results.set("build-is-repeatable", {
-      state: same ? "passed" : "failed",
-      // A list that differs with every file's hash the same differs in its sources: one is said.
-      sentence: SELFCHECK_WORDS.repeatable({
-        files: b!.files.length,
-        differ: same ? 0 : Math.max(differ.length, 1),
-      }),
+      state: "skipped",
+      sentence: SELFCHECK_WORDS.repeatableQuick,
     });
-    said("build-is-repeatable", differ);
-  } catch (e) {
-    failed("build-is-repeatable", e);
-  }
+    // One build, for the guard and the card.
+    o.progress?.(SELFCHECK_WORDS.building(1, 1));
+    build = await buildCatalog(await inputs()).catch(() => undefined);
+  } else
+    try {
+      // What it costs is said before it starts, where the catalog is large: by the record
+      // files on disk (about 5 seconds and 0.1 GB a thousand, for the two builds, as measured
+      // on the invented field estate).
+      const files = await countFiles(generatedDirOf(root), ".yaml");
+      if (files >= COSTLY_FILES)
+        o.progress?.(
+          SELFCHECK_WORDS.cost(
+            Math.max(1, Math.round((files / 1000) * (5 / 60))),
+            Math.max(0.1, Math.round(files / 1000) / 10),
+          ),
+        );
+      o.progress?.(SELFCHECK_WORDS.building(1, 2));
+      const first = await buildCatalog(await inputs());
+      o.progress?.(SELFCHECK_WORDS.building(2, 2));
+      const was = buildCacheHooks.off;
+      buildCacheHooks.off = true;
+      try {
+        build = await buildCatalog(await inputs());
+      } finally {
+        if (was === undefined) delete buildCacheHooks.off;
+        else buildCacheHooks.off = was;
+      }
+      if (selfcheckHooks.second) build = selfcheckHooks.second(build);
+      const target = baselineTarget(root);
+      const [x, y] = [first, build].map((m) => manifestAt(m, target));
+      const same = serializeBuildManifest(x!) === serializeBuildManifest(y!);
+      const then = new Map(x!.files.map((f) => [f.path, f.sha256] as const));
+      const differ = same
+        ? []
+        : [...new Set([...then.keys(), ...y!.files.map((f) => f.path)])]
+            .filter((p) => then.get(p) !== y!.files.find((f) => f.path === p)?.sha256)
+            .sort();
+      results.set("build-is-repeatable", {
+        state: same ? "passed" : "failed",
+        sentence: SELFCHECK_WORDS.repeatable(same),
+      });
+      // A list that differs with every file's hash the same differs in its sources: one is said.
+      exact["build-is-repeatable"] = SELFCHECK_WORDS.repeatableExact({
+        files: y!.files.length,
+        differ: same ? 0 : Math.max(differ.length, 1),
+      });
+      said("build-is-repeatable", differ);
+    } catch (e) {
+      failed("build-is-repeatable", e);
+    }
 
   // ---- the build's guard, as `catalog build --check` runs it, and where the metarepo stands
   try {
@@ -372,10 +449,15 @@ export async function selfcheck(
     if (r) refusals.push({ what: r.reasons.join(", "), next: refusalCommands(r, command) });
     if (where.state !== "up-to-date")
       refusals.push({ what: where.state, next: where.do ? [where.do] : [] });
+    selfcheckHooks.refusals?.(refusals);
     const named = refusals.filter((x) => x.next.length).length;
     results.set("refusals-have-next-step", {
       state: named === refusals.length ? "passed" : "failed",
       sentence: SELFCHECK_WORDS.refusals({ refusals: refusals.length, named }),
+    });
+    exact["refusals-have-next-step"] = SELFCHECK_WORDS.refusalsExact({
+      refusals: refusals.length,
+      named,
     });
     said(
       "refusals-have-next-step",
@@ -413,10 +495,15 @@ export async function selfcheck(
       measured.length
         ? {
             state: over.length ? "failed" : "passed",
-            sentence: SELFCHECK_WORDS.quiet({ runs: measured.length, over: over.length }),
+            sentence: SELFCHECK_WORDS.quiet(!over.length),
           }
         : { state: "skipped", sentence: SELFCHECK_WORDS.quietNone },
     );
+    if (measured.length)
+      exact["no-long-silence"] = SELFCHECK_WORDS.quietExact({
+        runs: measured.length,
+        over: over.length,
+      });
     said(
       "no-long-silence",
       over.map((x) => x.step),
@@ -438,16 +525,16 @@ export async function selfcheck(
   const checks = CHECK_IDS.map((id): CheckResult => {
     const r = results.get(id)!;
     if (r.state !== "failed") return { id, ...r };
-    const closest = CHECK_FLAGS[id].find((f) => flags.includes(f));
+    const closest = CHECK_FLAGS[id]?.find((f) => flags.includes(f));
     return { id, ...r, ...(closest ? { closest } : {}), make };
   });
-  return { checks, card, names };
+  return { checks, card, names, exact };
 }
 
 /** atticus selfcheck [--names] [--json]. 0 when none failed, 1 when one did, 2 for no metarepo. */
 export async function selfcheckCommand(
   root: string,
-  o: { json?: boolean; names?: boolean; platform?: string },
+  o: { json?: boolean; names?: boolean; quick?: boolean; platform?: string },
   io: Output,
 ): Promise<number> {
   if (!isMetarepo(root)) {
@@ -459,8 +546,10 @@ export async function selfcheckCommand(
     lock = await acquireLock(root, "scan", "atticus selfcheck");
   } catch (e) {
     if (e instanceof LockHeldError) {
-      io.err(e.message);
-      return 1;
+      // Nothing of the holder is said: its command can name a repo, and its message a host and
+      // a path. It couldn't run, which is not a failed check: exit 2.
+      io.err(SELFCHECK_WORDS.busy(e.held.startedAt));
+      return 2;
     }
     throw e;
   }
@@ -468,6 +557,7 @@ export async function selfcheckCommand(
   try {
     r = await selfcheck(root, {
       ...(o.platform ? { platform: o.platform } : {}),
+      ...(o.quick ? { quick: true } : {}),
       progress: (l) => (io.progress ?? io.err)(l),
     });
   } finally {
@@ -483,8 +573,9 @@ export async function selfcheckCommand(
   io.out(W.head(r.checks.filter((c) => c.state === "passed").length, r.checks.length));
   for (const c of r.checks) {
     io.out(`${c.state} ${c.id}: ${c.sentence}`);
+    if (o.names && r.exact[c.id]) io.out(W.exact(r.exact[c.id]!));
     if (c.state !== "failed") continue;
-    io.out(W.closest(c.closest, c.make ?? ""));
+    io.out(CHECK_FLAGS[c.id] ? W.closest(c.closest, c.make ?? "") : W.noShape(c.make ?? ""));
     const shown = o.names ? (r.names[c.id] ?? []) : [];
     if (shown.length) {
       io.out(W.names(shown.length));

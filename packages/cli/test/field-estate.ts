@@ -22,10 +22,13 @@ import {
 } from "@maycombhq/scanner";
 import { compoundOf, termId } from "@maycombhq/glossary";
 import {
-  parseShape,
-  RECORDS_AT,
+  CARD_WORDS,
+  orderedFlags,
+  RECORD_BANDS,
   REPO_BANDS,
-  REPOS_AT,
+  SHAPE_FLAGS,
+  type RecordBand,
+  type RepoBand,
   type Shape,
   type ShapeFlag,
 } from "../src/shape-words.js";
@@ -103,6 +106,45 @@ export interface FieldEstateOptions {
    */
   shape?: Shape | string;
 }
+
+/**
+ * A shape from its words (commas or spaces between them; the card's other words, a platform or
+ * a step and its time, are allowed and ignored). A word that is not on the list is refused: a
+ * shape is only ever made of these words. A band left out is the smallest.
+ */
+export function parseShape(text: string): Shape {
+  const shape: Shape = { repos: "1-5", records: "under-1k", flags: [] };
+  for (const w of text.split(/[\s,;+]+/).filter(Boolean)) {
+    const word = w.replace(/:$/, "");
+    if ((REPO_BANDS as readonly string[]).includes(word)) shape.repos = word as RepoBand;
+    else if ((RECORD_BANDS as readonly string[]).includes(word)) shape.records = word as RecordBand;
+    else if ((SHAPE_FLAGS as readonly string[]).includes(word)) shape.flags.push(word as ShapeFlag);
+    else if (!CARD_WORDS.has(word))
+      throw new Error(
+        `"${word.slice(0, 40)}" is not a word of the shape card. Its words: ${[...REPO_BANDS, ...RECORD_BANDS, ...SHAPE_FLAGS].join(", ")}.`,
+      );
+  }
+  shape.flags = orderedFlags(shape.flags);
+  return shape;
+}
+
+/** The fixed size each band is made at: how many repos the manifests list in all. */
+export const REPOS_AT: Record<RepoBand, number> = {
+  "1-5": 4,
+  "6-20": 12,
+  "21-50": 40,
+  "51-100": 70,
+  "over-100": 120,
+};
+
+/** The fixed size each band is made at: about how many records the build makes. */
+export const RECORDS_AT: Record<RecordBand, number> = {
+  "under-1k": 500,
+  "1k-10k": 4_000,
+  "10k-50k": 14_000,
+  "50k-200k": 80_000,
+  "over-200k": 250_000,
+};
 
 /** The invented repos a shape's flags add, each one repo of the manifest. */
 export const SHAPE_REPOS = {
