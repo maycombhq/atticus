@@ -58,7 +58,9 @@ Some work changes no runtime step: a service deployed on another platform, a pip
 
 The architecture stage refuses, by rule: a repo the estate doesn't have and the change doesn't plan (`operation.unknown-repo`); an id under `today` that is no record of the operation's repos (`operation.unknown-today`); a cut-over without `undo` (`operation.no-undo`); an `after` that names no operation, or a circle (`operation.after`); a repo in no wave or in two (`operation.wave`); and an operation the feature lists that is missing (`operation.missing`). It notes, without blocking, a deployment or route operation that cites none of the Deployment records the catalog has (`operation.today-uncited`).
 
-What is not checked: Atticus never connects to a live system, so a cut-over is never verified by it, and the catalog has no record for a pipeline. In this release the conformance check (`atticus change conform`) compares target flows only; it does not yet read `sets`.
+The plan's order is one: waves, then `after`, then each repo's own order. A plan whose tasks could never all run, such as a first-wave task that comes after an operation done only in the second wave, is refused with the ring named (`operation.order`). The stories stage checks the operations file again, so an `undo` taken out after the architecture stage is refused there too. An `undo` says how the cut-over is taken back: `n/a`, `none`, `-` or `tbd` is refused. A secret-looking value written in an operation is redacted, as a fact's quote is.
+
+What is not checked: Atticus never connects to a live system, so a cut-over is never verified by it, and the catalog has no record for a pipeline. In this release `atticus change conform` checks target flows only: for a change whose work is operations it says "This change's work is operations (N): Atticus doesn't check operations against the code in this release", and beside a change's flows it says how many operations are not checked. Comparing what `sets` says with a rescan is not built yet. `atticus change estimate` doesn't size operation tasks, and says how many it leaves out.
 
 ## Drawing a change on the canvas
 
