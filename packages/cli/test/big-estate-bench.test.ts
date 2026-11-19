@@ -1,7 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { Session } from "node:inspector/promises";
-import { tmpdir } from "node:os";
+import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "vitest";
 import {
@@ -21,6 +22,7 @@ import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
 import { bigGatewayId, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
 import { v1Of } from "./build-json-v1.js";
+import { makeFieldEstate } from "./field-estate.js";
 
 /**
  * The benchmark of field report 6 (beta.28.1): not part of `pnpm check`. Run it with
@@ -36,6 +38,16 @@ const N = Number(process.env.ATTICUS_BENCH_REPOS ?? 60);
 const G = Number(process.env.ATTICUS_BENCH_GATEWAYS ?? 0);
 /** ATTICUS_BENCH_WRITES=0: the cold build and the reads only, no write of a changed repo. */
 const WRITES = process.env.ATTICUS_BENCH_WRITES !== "0";
+/**
+ * Beta.30 (slice 10, ADR 0205): ATTICUS_BENCH_FIELD=1 makes the field-shaped estate
+ * (field-estate.ts) at ATTICUS_BENCH_REPOS repos in all, 3 in 8 of them gateway proxies, in place
+ * of big-estate.ts's; ATTICUS_BENCH_RUNS steady writes follow the first (2 by default).
+ */
+const FIELD = !!process.env.ATTICUS_BENCH_FIELD;
+const RUNS = Math.max(1, Number(process.env.ATTICUS_BENCH_RUNS ?? 2));
+const fieldGateways = Math.round((N * 3) / 8);
+/** ATTICUS_BENCH_READS=0: the writes only, none of the reads after them. */
+const READS = process.env.ATTICUS_BENCH_READS !== "0";
 const say = (l: string) => console.log(`bench ${l}`);
 const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(0, 200)}`) };
 
@@ -59,9 +71,18 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
   }
   const t = performance.now();
   const c = process.cpuUsage();
+  // The peak of the process's memory while it runs, sampled every 100 ms.
+  let rss = process.memoryUsage().rss;
+  let heap = process.memoryUsage().heapUsed;
+  const sample = setInterval(() => {
+    const m = process.memoryUsage();
+    rss = Math.max(rss, m.rss);
+    heap = Math.max(heap, m.heapUsed);
+  }, 100);
   try {
     return await run();
   } finally {
+    clearInterval(sample);
     if (session) {
       const { profile } = await session.post("Profiler.stop");
       await writeFile(
@@ -73,7 +94,9 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
     buildPhases.on = undefined;
     const used = process.cpuUsage(c);
     say(
-      `${label}: ${((performance.now() - t) / 1000).toFixed(2)} s (${((used.user + used.system) / 1e6).toFixed(1)} CPU s)`,
+      `${label}: ${((performance.now() - t) / 1000).toFixed(2)} s (${((used.user + used.system) / 1e6).toFixed(1)} CPU s), peak RSS ${(rss / 1e9).toFixed(2)} GB, heap ${(heap / 1e9).toFixed(2)} GB, load ${loadavg()
+        .map((x) => x.toFixed(1))
+        .join(" ")}`,
     );
     // Each phase's wall clock and the CPU the process used meanwhile (every thread's).
     const sum = new Map<string, [number, number]>();
@@ -94,7 +117,11 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     if (!existsSync(join(root, "catalog", "sources", "build.json"))) {
       await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
-      const made = await timed("generate", () => makeBigEstate(dir, { repos: N, gateways: G }));
+      const made = await timed("generate", () =>
+        FIELD
+          ? makeFieldEstate(dir, { services: N - fieldGateways, gateways: fieldGateways })
+          : makeBigEstate(dir, { repos: N, gateways: G }),
+      );
       options = made.options;
       const cold = await timed("cold build (catalog build)", () =>
         buildAndWrite(root, { command: "atticus catalog build" }),
@@ -112,7 +139,7 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     for (const [edit, label] of WRITES
       ? ([
           [first, "first write after an upgrade"],
-          [first + 1, "write"],
+          ...Array.from({ length: RUNS }, (_, k) => [first + 1 + k, `write ${k + 1}`] as const),
         ] as const)
       : []) {
       const facts = await writeBigRepo(root, r, options, edit, true, false);
@@ -128,6 +155,56 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       );
       say(`  written: ${JSON.stringify(w?.written)}`);
     }
+    // ATTICUS_BENCH_CLI=<the CLI's dist/bin.js>: one repo's whole Apply as the command runs it
+    // (`atticus verify <repo> --write`: its own process, verify's check of every fact, then the
+    // write), RUNS times, each after another change of the repo.
+    const cli = process.env.ATTICUS_BENCH_CLI;
+    for (let k = 0; cli && k < RUNS; k++) {
+      const edit = first + 1 + RUNS + k;
+      await writeBigRepo(root, r, options, edit, true, false);
+      const run = spawnSync(
+        "bash",
+        [
+          "-c",
+          `TIMEFORMAT="%R %U %S"; time node --max-old-space-size=4096 "${cli}" verify ${repo} --write > /dev/null 2>&1`,
+        ],
+        { cwd: root, encoding: "utf8" },
+      );
+      const [wall, user, sys] = run.stderr.trim().split(/\s+/).map(Number);
+      say(
+        `atticus verify ${repo} --write (edit ${edit}, its own process): ${wall!.toFixed(2)} s (${(user! + sys!).toFixed(1)} CPU s), exit ${run.status}, load ${loadavg()
+          .map((x) => x.toFixed(1))
+          .join(" ")}`,
+      );
+    }
+    // ATTICUS_BENCH_ONE=1 (or another script's path): each write in a process of its own, `node
+    // test/bench-one-write.mjs <root> <repo>` after another change of the repo, which times it
+    // and prints its phases (the vitest worker stays small on a machine whose memory is shared);
+    // ATTICUS_BENCH_ONE_VERIFY=1 runs verify --write as the app does; ATTICUS_BENCH_ONE_FLAGS are
+    // node's flags for it. Build first: the script runs the built code.
+    const one =
+      process.env.ATTICUS_BENCH_ONE === "1"
+        ? join(import.meta.dirname, "bench-one-write.mjs")
+        : process.env.ATTICUS_BENCH_ONE;
+    for (let k = 0; one && k < RUNS; k++) {
+      const edit = first + 1 + 2 * RUNS + k;
+      await writeBigRepo(root, r, options, edit, true, false);
+      const run = spawnSync(
+        "node",
+        [
+          ...(process.env.ATTICUS_BENCH_ONE_FLAGS ?? "").split(" ").filter(Boolean),
+          one,
+          root,
+          repo,
+          ...(process.env.ATTICUS_BENCH_ONE_VERIFY ? ["--verify"] : []),
+        ],
+        { cwd: root, encoding: "utf8" },
+      );
+      say(
+        `one write (edit ${edit}), exit ${run.status}: ${run.stdout.trim()} ${run.stderr.slice(-400)}`,
+      );
+    }
+    if (!READS) return;
     // ADR 0197: build.json in both versions, the same build: size, the guards' read (a parse,
     // version 1 turned into version 2), the write's serializing, and the round trip.
     {
@@ -175,6 +252,21 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
 });
 
 async function makeOptions() {
+  if (FIELD)
+    return {
+      repos: N - fieldGateways,
+      entries: 60,
+      calls: 40,
+      tables: 8,
+      settings: 40,
+      seed: 1,
+      gateways: fieldGateways,
+      routes: 20,
+      clusters: 1,
+      fieldNames: 6000,
+      termRepos: fieldGateways,
+      termValues: 90,
+    };
   return {
     repos: N,
     entries: 360,
