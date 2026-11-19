@@ -1,0 +1,30 @@
+schemaVersion: 3
+atticus: 2.0.0-beta.28.5
+upgradedAt: 2026-11-19T05:00:00Z
+upgradedBy: pat
+migrations:
+  - catalog-schema-v2
+  - local-files-ignored
+  - state-folders-ignored
+  - gates-v2
+  - flow-schema-v2
+  - change-types-v2
+  - change-types-quick
+  - questions-v3
+  - starter-review
+  - starter-personas
+  - catalog-schema-v3
+  - catalog-schema-v4
+  - sources-v2
+  - sources-v3
+  - stamp-committed
+  - runtime-v2
+  - runtime-v3
+  - roles-v2
+  - org-flow-v2
+  - stories-b-short
+  - manifest-schema-v2
+  - manifest-schema-v3
+  - catalog-schema-v5
+  - runtime-v4
+  - corrections-v2

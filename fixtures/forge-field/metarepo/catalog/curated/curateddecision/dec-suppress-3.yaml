@@ -1,0 +1,12 @@
+schemaVersion: 2
+kind: CuratedDecision
+id: dec-suppress-3
+status: current
+confidence: asserted
+evidence: []
+target: "if-37790a709fd79d8a"
+action: suppress
+value: null
+reason: not a call this service makes
+by: pat
+at: 2026-11-12T00:00:00Z

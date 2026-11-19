@@ -1,0 +1,31 @@
+# Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.
+schemaVersion: 4
+assistants:
+  allowed:
+    - copilot
+    - claude-code
+  default: copilot
+editors:
+  - vscode
+  - intellij
+ai: on
+modes:
+  allowed:
+    - hand-off
+  default: hand-off
+models:
+  allowed: []
+  recommended: {}
+autonomy:
+  default: draft
+  capPerRepo: {}
+  maxFixRounds: 3
+budgets:
+  defaultTokens: 200000
+  perAgent: {}
+retention:
+  runsDays: 30
+telemetry:
+  enabled: false
+adapters:
+  gitHost: manual
