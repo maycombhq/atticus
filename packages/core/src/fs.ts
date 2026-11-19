@@ -477,10 +477,39 @@ export async function readLock(
   }
 }
 
+/** ADR 0205 step 2: work a writer does after its result, each still holding its writer's lock. */
+const afterResult = new Set<Promise<void>>();
+
+/**
+ * ADR 0205 step 2 (the owner's answer of 2026-11-19: "done" is shown while the caches are
+ * written under the lock): run `work` after the caller has given its result. The work must end
+ * by releasing the lock its writer holds. Every later `acquireLock` in this process waits for it
+ * first, so the next writer here never meets that lock held; a failure is swallowed, since the
+ * work is only a cache's (a cache not written is no cache).
+ */
+export function runAfterResult(work: () => Promise<void>): void {
+  const p: Promise<void> = Promise.resolve()
+    .then(work)
+    .catch(() => undefined)
+    .finally(() => afterResult.delete(p));
+  afterResult.add(p);
+}
+
+/** How many `runAfterResult` works of this process haven't ended (the tests). */
+export function afterResultPending(): number {
+  return afterResult.size;
+}
+
+/** Wait for every `runAfterResult` work of this process (a lock's taker, a server closing). */
+export async function settleAfterResult(): Promise<void> {
+  while (afterResult.size) await Promise.all([...afterResult]);
+}
+
 /**
  * Take a lock for a long write (a scan): one at a time per metarepo. A lock whose process is
  * gone was cut short (a crash, a closed terminal); it is taken over and reported as
- * `interrupted`, so the caller can say the last run didn't finish.
+ * `interrupted`, so the caller can say the last run didn't finish. A writer of this process
+ * still writing its caches after its result (`runAfterResult`) is waited for first.
  */
 export async function acquireLock(
   root: string,
@@ -490,6 +519,7 @@ export async function acquireLock(
   /** A lock older than this is taken over (Windows reuses a dead process's PID). */
   o: { maxAgeMs?: number } = {},
 ): Promise<{ release: () => Promise<void>; interrupted?: LockInfo }> {
+  await settleAfterResult();
   const file = lockFileOf(root, name);
   await ensureLocalIgnore(root);
   await mkdir(dirname(file), { recursive: true });

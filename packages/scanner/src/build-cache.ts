@@ -422,10 +422,25 @@ export async function loadReadersTrust(stateDir: string): Promise<void> {
   await Promise.resolve();
 }
 
+/** The checked reads a build used and the folder it loaded them from, as they are now. */
+export interface ReadersUsed {
+  dir: string | undefined;
+  used: Set<string>;
+}
+
+/**
+ * ADR 0205 step 2: the reads this build used, taken before its caches are written after the
+ * caller's result, so a build that loads its inputs meanwhile (a preview's) doesn't change them.
+ */
+export function readersUsedNow(): ReadersUsed {
+  return { dir: readersDir, used: new Set(used) };
+}
+
 /** Write the checked reads this build used (to the state folder it loaded them from) and take away those it didn't. */
-async function keepReadersOnDisk(): Promise<void> {
-  if (!readersDir) return;
-  const dir = readersDir;
+async function keepReadersOnDisk(r: ReadersUsed = { dir: readersDir, used }): Promise<void> {
+  if (!r.dir) return;
+  const dir = r.dir;
+  const used = r.used;
   for (const key of [...used].sort(cmpText)) {
     const json = fresh.get(key);
     if (json === undefined) continue;
@@ -712,9 +727,11 @@ export async function keepBuild(
   build: { records: unknown[]; files: Map<string, string> } & Record<string, unknown>,
   /** The build.json this build writes: its path and text. */
   manifest?: { path: string; text: string },
+  /** The reads it used, when kept later than it built (`readersUsedNow`). */
+  readers?: ReadersUsed,
 ): Promise<void> {
   if (!cacheOn()) return;
-  await keepReadersOnDisk().catch(() => undefined);
+  await keepReadersOnDisk(readers).catch(() => undefined);
   const s = staged.get(build);
   if (!s) return;
   staged.delete(build);

@@ -963,6 +963,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                   write: true,
                   verbose: false,
                   json: false,
+                  // ADR 0205 step 2: "done" shows while the caches are written under the lock.
+                  cachesAfterResult: true,
                   onLeftOut: (l) => (leftOut = l.length),
                   ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
                   ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),

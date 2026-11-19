@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   acquireLock,
+  runAfterResult,
   catalogDirOf,
   currentSignal,
   stoppableSignal,
@@ -667,6 +668,11 @@ export async function writeFactsIntoCatalog(
     /** Told the refused build, when a guard refused it (the app's and --json's report). */
     onRefused?: (r: BuildAndWrite) => void;
     /**
+     * ADR 0205 step 2 (the app's Apply): the local caches are written after this returns, still
+     * under the scan's lock (`runAfterResult`), so "done" shows first.
+     */
+    cachesAfterResult?: boolean;
+    /**
      * The app's confirm (no flag takes it): the plan of the refusal the counts confirm, worked
      * out again under the lock; another list writes nothing (the review of beta.27).
      */
@@ -692,6 +698,8 @@ export async function writeFactsIntoCatalog(
     title: "The write",
     ...(signal ? { signal } : {}),
   });
+  /** ADR 0205 step 2: the caches the build hands over to write after the result. */
+  const later: (() => Promise<void>)[] = [];
   try {
     writeFactsHooks.onWrite?.(repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
@@ -774,6 +782,7 @@ export async function writeFactsIntoCatalog(
       build,
       slots: snap,
       read: existing,
+      ...(o.cachesAfterResult ? { cachesAfter: (w: () => Promise<void>) => later.push(w) } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined
@@ -1166,7 +1175,16 @@ export async function writeFactsIntoCatalog(
     };
   } finally {
     progress.end();
-    await lock.release();
+    // ADR 0205 step 2: the caches after the result, then the lock let go.
+    if (later.length)
+      runAfterResult(async () => {
+        try {
+          for (const w of later) await w();
+        } finally {
+          await lock.release();
+        }
+      });
+    else await lock.release();
   }
 }
 

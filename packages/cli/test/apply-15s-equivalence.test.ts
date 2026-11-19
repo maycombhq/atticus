@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { afterResultPending, settleAfterResult } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
 import type { CatalogDiff } from "@maycombhq/scanner";
 import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
@@ -32,6 +33,18 @@ async function tree(root: string): Promise<Map<string, string>> {
   await walk("");
   return out;
 }
+
+/** The last build kept by the build cache (its header line), once its writes are done. */
+const keptBuild = (root: string) =>
+  readFile(join(root, ".index", "build-cache", "last-build.jsonl"), "utf8").then(
+    (t) => {
+      // Its key hashes the folder too, so the two runs' keys differ; what it holds doesn't.
+      const h = JSON.parse(t.slice(0, t.indexOf("\n"))) as Record<string, unknown>;
+      const manifest = (h.manifest as { sha256?: string } | undefined)?.sha256;
+      return { records: h.records, files: h.files, manifest, lines: t.split("\n").length };
+    },
+    () => undefined,
+  );
 
 type Made = { root: string; options: Awaited<ReturnType<typeof makeBigEstate>>["options"] };
 
@@ -104,13 +117,19 @@ async function applies(shape: string, off: boolean) {
         dir: join(root, "workspace", repo),
         command: `atticus verify ${repo} --write`,
         now: new Date("2026-11-19T09:00:00Z"),
+        // Step 2 (as the app's Apply runs it): the caches after the result, under the lock; the
+        // next write waits for them in acquireLock, and the files are read once they are done.
+        ...(off ? {} : { cachesAfterResult: true }),
       },
       quiet,
     );
     expect(w, `${shape}: the write of ${repo}`).toBeDefined();
+    // The result came back with its caches still to write (step 2), or none (the way before).
+    expect(afterResultPending(), "caches written after the result").toBe(off ? 0 : 1);
     outcomes.push([w?.written, w?.changes, w?.links, w?.questions, w?.map, w?.removed]);
   }
-  return { files: await tree(root), outcomes };
+  await settleAfterResult();
+  return { files: await tree(root), outcomes, kept: await keptBuild(root) };
 }
 
 describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the same words", () => {
@@ -130,6 +149,9 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       );
       const off = await applies(shape, true);
       expect(on.outcomes).toEqual(off.outcomes);
+      // Step 2: the cache written after the result is the one written before it.
+      expect(on.kept).toBeDefined();
+      expect(on.kept).toEqual(off.kept);
       expect([...on.files.keys()].sort()).toEqual([...off.files.keys()].sort());
       expect(on.files.size).toBeGreaterThan(300);
       for (const [p, text] of off.files) expect(on.files.get(p) === text, p).toBe(true);

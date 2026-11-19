@@ -63,6 +63,7 @@ import {
   keepReaders,
   keptReaders,
   keepBuild,
+  readersUsedNow,
   loadKept,
   loadReadersTrust,
   readersKeyOf,
@@ -3703,6 +3704,12 @@ export async function buildAndWrite(
     read?: CatalogFilesRead;
     /** Beta.28.1: with `check`, keep no read cache of the catalog either (a preview's). */
     keepNoReads?: boolean;
+    /**
+     * ADR 0205 step 2: given, a written build's local caches (the build kept, the written texts'
+     * parses) are handed to it to write after the caller's result, still under its lock
+     * (`runAfterResult`), not written before this returns. A cache never changes a byte.
+     */
+    cachesAfter?: (work: () => Promise<void>) => void;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
@@ -3806,12 +3813,20 @@ export async function buildAndWrite(
   });
   mark("report");
   // The build cache keeps what these inputs build, written or refused (point 9); not over a
-  // catalog a newer Atticus wrote (beta.28.2), whose build.json this one doesn't read.
-  if (!guard.refused?.reasons.includes("newer-atticus"))
-    await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
-      path: target.manifest,
-      text: manifests.mine,
-    });
+  // catalog a newer Atticus wrote (beta.28.2), whose build.json this one doesn't read. ADR 0205
+  // step 2: a written build's is kept after the caller's result when it asks.
+  const readers = o.cachesAfter ? readersUsedNow() : undefined;
+  const keep = () =>
+    guard.refused?.reasons.includes("newer-atticus")
+      ? Promise.resolve()
+      : keepBuild(
+          build as unknown as Parameters<typeof keepBuild>[0],
+          { path: target.manifest, text: manifests.mine },
+          readers,
+        );
+  const later: (() => Promise<void>)[] = [];
+  if (o.cachesAfter && !guard.refused) later.push(keep);
+  else await keep();
   mark("keep build");
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
@@ -3866,13 +3881,18 @@ export async function buildAndWrite(
       : undefined;
   mark("catalog after the write");
   // beta.28.2: the parses of the texts written kept for the next read, which parsed them again.
-  if (after && o.read)
-    await keepWrittenParses(
-      o.read,
-      after.written,
-      [...onDisk.keys()].filter((p) => !build.files.has(p)),
-      writtenStats,
-    ).catch(() => undefined);
+  if (after && o.read) {
+    const read = o.read;
+    const gone = [...onDisk.keys()].filter((p) => !build.files.has(p));
+    const parses = () =>
+      keepWrittenParses(read, after.written, gone, writtenStats).catch(() => undefined);
+    if (o.cachesAfter) later.push(parses);
+    else await parses();
+  }
+  if (later.length)
+    o.cachesAfter!(async () => {
+      for (const w of later) await w();
+    });
   mark("parses kept");
   return {
     build,

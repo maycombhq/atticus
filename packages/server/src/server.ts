@@ -8,6 +8,7 @@ import {
   DEFAULT_PORT,
   FileChangedError,
   runLogKept,
+  settleAfterResult,
   startAppRun,
 } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
@@ -534,7 +535,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         stopEmbedding(o.root);
         events.closeAll();
         server.closeAllConnections?.();
-        server.close(() => resolve());
+        // ADR 0205 step 2: an Apply's caches, written after its result, end before the close.
+        server.close(() => void settleAfterResult().then(resolve, resolve));
       }),
   };
 }
