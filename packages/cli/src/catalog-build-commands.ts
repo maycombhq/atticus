@@ -342,7 +342,10 @@ export async function catalogUndo(
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
-    if (g.refused?.reasons.includes("hand-edits")) {
+    // A build.json that doesn't read: the build's guard lists every record file as added, but
+    // the undo puts build.json back, so it is checked as below (the review of the undo test).
+    const unreadable = g.refused?.unreadableManifest === true;
+    if (g.refused?.reasons.includes("hand-edits") && !unreadable) {
       io.err(
         "Nothing undone: files under catalog/generated were changed by hand since the last build. Make them curated (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
@@ -354,11 +357,24 @@ export async function catalogUndo(
     // A catalog with no build.json (an undo took back the upgrade) has no hand-edit guard of the
     // build's: each file it would put back is checked against what the command it takes back
     // left there (the review), so a hand edit made since is never overwritten.
-    if (g.refused?.reasons.includes("not-upgraded")) {
+    if (g.refused?.reasons.includes("not-upgraded") || unreadable) {
       const edited = await undoHandEdits(root, plan);
       if (edited.length) {
+        const one = edited.length === 1;
+        const cmd = plan.copies[0]!.command;
+        // Keeping them and upgrading works only for record files: with any file under
+        // catalog/sources, atticus upgrade counts the slots as done and changes nothing.
+        const upgradeHelps = !unreadable && edited.every((p) => p.startsWith("catalog/generated/"));
+        const left = new Map<string, string | null>();
+        for (const c of plan.copies)
+          for (const f of c.files)
+            if (f.after !== undefined && !left.has(f.path)) left.set(f.path, f.after);
+        const removed = edited.filter((p) => left.get(p) === null).length;
+        const way = upgradeHelps
+          ? `Put ${one ? "it" : "them"} back as ${one ? "it was" : "they were"}, or keep ${one ? "it" : "them"} and run atticus upgrade --yes.`
+          : `Put ${one ? "it" : "them"} back as ${cmd} left ${one ? "it" : "them"}${removed ? ` (${removed === 1 ? "a file it removed: delete it" : "files it removed: delete them"})` : ""}, then run atticus catalog undo again.`;
         io.err(
-          `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
+          `Nothing undone: ${edited.length} ${one ? "file was" : "files were"} changed since ${cmd} wrote ${one ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. ${way}`,
         );
         const refused = { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) };
         await refusalEnds(root, refused);

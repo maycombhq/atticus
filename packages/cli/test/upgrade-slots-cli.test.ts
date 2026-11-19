@@ -301,59 +301,93 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
     T,
   );
 
+  /** After an upgrade and the undo of it: what the next undo would put back, and the upgraded catalog. */
+  async function undoneUpgrade() {
+    const root = await beta26();
+    expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
+    const upgraded = { generated: generated(root), sources: sources(root) };
+    expect((await run(["catalog", "undo", "--root", root, "--yes"])).code).toBe(0);
+    expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
+    const shown = await run(["catalog", "undo", "--root", root, "--json"]);
+    expect(shown.code, shown.err).toBe(0);
+    const plan = (
+      JSON.parse(shown.out) as {
+        plan: { copies: { command: string; files: { path: string; after?: string | null }[] }[] };
+      }
+    ).plan;
+    expect(plan.copies[0]!.command).toBe("atticus catalog undo");
+    return { root, upgraded, files: plan.copies[0]!.files };
+  }
+  const snapshot = (root: string) => ({ generated: generated(root), sources: sources(root) });
+  type Refused = { refused: { reasons: string[]; edits: { path: string }[] } };
+
   it(
-    "with no build.json, an undo refuses over a file changed by hand since the undo before it, and overwrites nothing",
+    "with no build.json, an undo refuses over a file made by hand since the undo before it removed it, says to delete it, and overwrites nothing",
     async () => {
-      const root = await beta26();
-      expect((await run(["upgrade", "--root", root, "--yes"])).code).toBe(0);
-      expect((await run(["catalog", "undo", "--root", root, "--yes"])).code).toBe(0);
-      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
-      // A file the next undo would put back, changed by hand since the last undo left it.
-      const shown = await run(["catalog", "undo", "--root", root, "--json"]);
-      expect(shown.code, shown.err).toBe(0);
-      const plan = (
-        JSON.parse(shown.out) as {
-          plan: { copies: { files: { path: string; after?: string | null }[] }[] };
-        }
-      ).plan;
-      // Not build.json: writing one would make the catalog no longer one from before the slots.
-      const files = plan.copies[0]!.files.filter(
-        (f) => f.after !== undefined && f.path !== "catalog/sources/build.json",
+      const { root, upgraded, files } = await undoneUpgrade();
+      // A file the undo of the upgrade removed (its copy of the catalog from before the upgrade),
+      // made again by hand. Not build.json: that one is the next test's.
+      const pick = files.find((f) =>
+        f.path.startsWith("catalog/sources/legacy/generated-before-upgrade/"),
       );
-      const pick =
-        files.find((f) => f.after !== null && f.path.startsWith("catalog/generated/")) ??
-        files.find((f) => f.after !== null) ??
-        files[0];
       expect(pick, "the undo copy records what it left").toBeDefined();
+      expect(pick!.after).toBeNull();
       const abs = join(root, ...pick!.path.split("/"));
       const { writeFileSync, mkdirSync, rmSync } = await import("node:fs");
-      const was = pick!.after === null ? undefined : readFileSync(abs, "utf8");
-      if (was === undefined) mkdirSync(dirname(abs), { recursive: true });
-      writeFileSync(abs, `${was ?? ""}# changed by hand\n`);
-      const mine = readFileSync(abs, "utf8");
-      const allBefore = { generated: generated(root), sources: sources(root) };
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, "# made by hand\n");
+      const before = snapshot(root);
 
       const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
-      expect(refused.code).toBe(1);
-      expect(refused.err).toMatch(/^Nothing undone: 1 file was changed since /);
-      expect(refused.err).toContain(pick!.path);
-      expect(refused.err).toContain("run atticus upgrade --yes");
-      const body = JSON.parse(refused.out) as {
-        refused: { reasons: string[]; edits: { path: string }[] };
-      };
+      expect(refused.code, refused.err).toBe(1);
+      expect(refused.err).toBe(
+        `Nothing undone: 1 file was changed since atticus catalog undo wrote it: ${pick!.path}. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again.`,
+      );
+      // atticus upgrade is no way out here: with files under catalog/sources it counts as done.
+      expect(refused.err).not.toMatch(/atticus upgrade/);
+      const body = JSON.parse(refused.out) as Refused;
       expect(body.refused.reasons).toEqual(["hand-edits"]);
       expect(body.refused.edits).toEqual([{ path: pick!.path }]);
-      expect(body.refused.reasons).not.toContain("not-upgraded");
-      // Nothing was put back: the hand edit and every other file are as they were.
-      expect(readFileSync(abs, "utf8")).toBe(mine);
-      expect({ generated: generated(root), sources: sources(root) }).toEqual(allBefore);
+      expect(snapshot(root)).toEqual(before);
 
-      // Put back as it was, the same undo goes through.
-      if (was === undefined) rmSync(abs);
-      else writeFileSync(abs, was);
+      // Deleted again, the same undo goes through to the upgraded catalog.
+      rmSync(abs);
       const back = await run(["catalog", "undo", "--root", root, "--yes"]);
       expect(back.code, back.err).toBe(0);
-      expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(true);
+      expect(snapshot(root)).toEqual(upgraded);
+      expect((await run(["catalog", "build", "--root", root, "--check"])).code).toBe(0);
+    },
+    T,
+  );
+
+  it(
+    "a build.json written by hand that doesn't read, after the undo of the upgrade: the undo names it, overwrites nothing, and goes through once it is deleted",
+    async () => {
+      const { root, upgraded, files } = await undoneUpgrade();
+      expect(files.find((f) => f.path === "catalog/sources/build.json")?.after).toBeNull();
+      const manifest = join(root, "catalog", "sources", "build.json");
+      const { writeFileSync, rmSync } = await import("node:fs");
+      writeFileSync(manifest, "this is not a build manifest\n");
+      const before = snapshot(root);
+
+      const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
+      expect(refused.code, refused.err).toBe(1);
+      expect(refused.err).toBe(
+        "Nothing undone: 1 file was changed since atticus catalog undo wrote it: catalog/sources/build.json. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again.",
+      );
+      // Not the build's words for hand edits under catalog/generated: curate refuses here, and
+      // discarding would replace the whole catalog with a build from no slots.
+      expect(refused.err).not.toMatch(/--curate|--discard-edits|atticus upgrade/);
+      const body = JSON.parse(refused.out) as Refused;
+      expect(body.refused.reasons).toEqual(["hand-edits"]);
+      expect(body.refused.edits).toEqual([{ path: "catalog/sources/build.json" }]);
+      expect(snapshot(root)).toEqual(before);
+
+      rmSync(manifest);
+      const back = await run(["catalog", "undo", "--root", root, "--yes"]);
+      expect(back.code, back.err).toBe(0);
+      expect(snapshot(root)).toEqual(upgraded);
+      expect((await run(["catalog", "build", "--root", root, "--check"])).code).toBe(0);
     },
     T,
   );
