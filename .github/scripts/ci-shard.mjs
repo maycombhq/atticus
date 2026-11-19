@@ -30,7 +30,8 @@ const UNIT_WEIGHTS = {
   "@maycombhq/changes": 97,
   "@maycombhq/speckit": 87,
   "@maycombhq/workspace": 85,
-  "@maycombhq/core": 70,
+  // beta.30: on Windows, fs-held-windows.test.ts waits on a file another process really holds.
+  "@maycombhq/core": 85,
   "@maycombhq/learn": 67,
   "@maycombhq/testgen": 61,
   atticus: 59,
@@ -63,6 +64,10 @@ const CLI_WEIGHTS = {
   "big-estate-equivalence.test.ts": 125,
   "big-estate-speed.test.ts": 65,
   "learn-cli.test.ts": 103,
+  // beta.30 (ADR 0201): three changes on the quick path and the staged path, on two field-shaped
+  // estates; 62 s on Linux before the code was there (2026-11-18), with every test failing early.
+  "archetypes.test.ts": 110,
+  "upgrade-b30.test.ts": 12,
   // ADR 0195's property tests: 100 sequences of up to 10 commands took 41 s of CPU on Linux
   // (2026-11-11, beta.26's writers), with the known failures, examples and mutants about 100 s.
   "properties/catalog-properties.test.ts": 100,

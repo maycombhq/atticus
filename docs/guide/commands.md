@@ -85,6 +85,9 @@ Every command under the twelve, with its options.
   atticus change new "<title>" --type <type>  Start a change from a template
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change new ["<title>"] --from <requirements.md>   A quick change from a requirements file, once every question in it is closed and every id it cites is in the map or planned (ADR 0201)
+          [--type quick] [--id id] [--check] [--json]  (--check: the check alone, nothing is created)
+  atticus change new --id <id>         Adopt a plain OpenSpec change folder that change list shows as not adopted
   atticus change sketch <change> --from <file.drawio|.mmd|strokes.yaml|.json> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out), or a strokes file as written (ADR 0193: absorb, retire, call and the rest); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--change <id>] [--limit n] [--json]
@@ -121,6 +124,7 @@ Every command under the twelve, with its options.
   atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--by you] [--openspec-store: also an OpenSpec store, beta]
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
+  atticus next <change>                One change's next step, as next would list it for that change [--all] [--json]
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)

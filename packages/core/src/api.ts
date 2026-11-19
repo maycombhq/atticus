@@ -691,7 +691,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   profile, written once, in a fixed order (sorted) whatever order they come in, in one write;
  *   409 and nothing written when the profile has one already; 400 with neither or both. A
  *   request with `route` answers as before. Additive only.
- * 3.19.0 (ADR 0204, the first of it; 3.18.0 is ADR 0201's `quickPath`. A field report: "the map
+ * 3.18.0 (ADR 0201, the quick path): a change says whether it takes the quick path (`quickPath`
+ *   on a change, beside `fastPath`): its type's only phase before build is plan and it lists no
+ *   stories, so no stage runs for it and its next step is its four files, then one hand-off.
+ *   Additive only.
+ * 3.19.0 (ADR 0204, the first of it. A field report: "the map
  *   shows a connection to the wrong repo; when I try to reconnect it with the actual one it
  *   refuses, saying 0 calls to pair"): GET /api/links/candidates says of each call that goes
  *   somewhere how that was decided (`how`: read from code, its address, its path alone, a
@@ -1157,6 +1161,11 @@ export const ChangeSummary = z.object({
   updatedAt: z.string(),
   /** ADR 0113: it takes the fast path, one step from brief to tasks (its type is small, or its brief says so). */
   fastPath: z.boolean().optional(),
+  /**
+   * 3.18.0 (ADR 0201): it takes the quick path (its type's only phase before build is plan, and
+   * it lists no stories): no stage runs; its proposal, spec deltas, design and tasks, then one hand-off.
+   */
+  quickPath: z.boolean().optional(),
   /**
    * 3.9.0 (beta.23 review): the viewer's roles on the change, from its owners (any case, the
    * words people write for a role, roles.yaml's custom roles); empty when it names them nowhere.

@@ -6,7 +6,7 @@ import {
   RUNTIME_SCHEMA_VERSION,
   Sources,
   TestStrategy,
-  type ChangeType,
+  ChangeType,
 } from "./schema/orgpack.js";
 
 /**
@@ -21,6 +21,20 @@ import {
  * keeps working: each maps to its question (`lensCovers`).
  */
 const all: ChangeType["lenses"] = ["true", "complete", "safe", "ship"];
+
+/**
+ * The quick path's type (ADR 0201): a plain OpenSpec change, with no stage. `specs` is listed
+ * because a change with no spec delta isn't valid OpenSpec. Quick by its shape (`quickPathOf`).
+ */
+export const QUICK_CHANGE_TYPE: ChangeType = ChangeType.parse({
+  id: "quick",
+  name: "Quick path",
+  description:
+    "From a requirements file to a plain OpenSpec change: proposal, spec deltas, design and tasks, written by your personas and grounded in the map. No stage runs. One hand-off before build.",
+  phases: ["plan", "build", "release"],
+  artifacts: ["proposal", "specs", "design", "tasks"],
+  lenses: all,
+});
 
 export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
   // Version 2 (ADR 0113): a small type takes the fast path; the others stay standard.
@@ -123,6 +137,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       artifacts: ["brief", "proposal", "design", "stories", "tasks"],
       lenses: all,
     },
+    QUICK_CHANGE_TYPE,
   ],
 });
 

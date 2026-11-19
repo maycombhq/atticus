@@ -31,7 +31,7 @@ export interface StartingPack {
   platform: string;
   owner: string;
   sources: z.input<typeof Sources>;
-  /** Write the default change types, gates, runtime, test strategy and the starter review (ADR 0120) as files (roles.yaml is deprecated, ADR 0073). */
+  /** Write the default change types, gates, runtime, test strategy, the starter review (ADR 0120) and the starter personas (ADR 0201) as files (roles.yaml is deprecated, ADR 0073). */
   defaults: boolean;
   platformName?: string;
   /**

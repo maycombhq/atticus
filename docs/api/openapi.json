@@ -30195,6 +30195,9 @@
           "fastPath": {
             "type": "boolean"
           },
+          "quickPath": {
+            "type": "boolean"
+          },
           "yourRoles": {
             "type": "array",
             "items": {
@@ -31955,6 +31958,9 @@
             "type": "string"
           },
           "fastPath": {
+            "type": "boolean"
+          },
+          "quickPath": {
             "type": "boolean"
           },
           "yourRoles": {

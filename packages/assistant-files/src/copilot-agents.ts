@@ -1,6 +1,7 @@
 import { stringify } from "yaml";
 import { STEP_CLASSES, type StepClass } from "@maycombhq/core";
 import type { CommandDef } from "./commands.js";
+import { atticusMcpServer } from "./mcp-server.js";
 import type { PluginFile } from "./plugin.js";
 import { metarepoCommands } from "./steps.js";
 
@@ -419,7 +420,7 @@ const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 /** Where VS Code reads a workspace's MCP servers. */
 export const VSCODE_MCP_PATH = ".vscode/mcp.json";
 /** The read-only map tools as an MCP server entry: `atticus mcp` over stdio. */
-export const ATTICUS_MCP_SERVER = { type: "stdio", command: "atticus", args: ["mcp"] } as const;
+export const ATTICUS_MCP_SERVER = atticusMcpServer();
 /**
  * Where Claude Code reads a project's MCP servers. A server here is named `atticus` whether or
  * not the Atticus plugin is installed (a plugin's server has a longer name), so an agent's
