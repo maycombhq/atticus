@@ -5,6 +5,7 @@ import {
   API_VERSION,
   asksOfFinding,
   fastPathOf,
+  quickPathOf,
   Lens,
   questionOfLens,
   rolesOfPerson,
@@ -178,7 +179,7 @@ async function latestFindings(root: string, change: string): Promise<Finding[]> 
   return out;
 }
 
-function summary(c: ChangeLifecycle, findings: Finding[], fast = false) {
+function summary(c: ChangeLifecycle, findings: Finding[], fast = false, quick = false) {
   const open = { blocking: 0, gap: 0, risk: 0, idea: 0 };
   for (const f of findings) if (f.state === "open") open[f.severity] += 1;
   const last = c.history[c.history.length - 1];
@@ -191,6 +192,8 @@ function summary(c: ChangeLifecycle, findings: Finding[], fast = false) {
     openFindings: open,
     updatedAt: last?.at ?? c.createdAt,
     ...(fast ? { fastPath: true } : {}),
+    // 3.18.0 (ADR 0201): it takes the quick path, by its type's shape.
+    ...(quick ? { quickPath: true } : {}),
   };
 }
 
@@ -441,7 +444,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
             await readFile(join(changeFolder(root, c.id), "brief.md"), "utf8").catch(() => ""),
           ).fast;
         body.push({
-          ...summary(c, await latestFindings(root, c.id), fast),
+          ...summary(c, await latestFindings(root, c.id), fast, !!type && quickPathOf(type)),
           yourRoles: rolesOfPerson(ctx.user, c.owners ?? {}, custom),
         });
       }

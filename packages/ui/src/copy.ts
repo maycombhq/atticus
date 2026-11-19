@@ -2289,6 +2289,8 @@ export const COPY = {
     inFlight: "Changes in flight",
     noChanges: "No change is in flight. Start one with New change.",
     stageCol: "Stage",
+    /** ADR 0201: the Stage cell of a quick change before build: it has no stage. */
+    quickPath: "Quick path",
     changeCol: "Change",
     stateCol: "State",
     commandCol: "Run",
@@ -2461,6 +2463,9 @@ export const COPY = {
         `Task ${task} in ${repo} is the next open one. /atticus-task gives your assistant its context: the story, the criteria, the step with today's code and the files to change.`,
       small:
         "A small change: your assistant places it, writes its target flows and words its stories in one step; Atticus runs every stage's checks and the critic at its gate.",
+      /** ADR 0201: a quick change before build, on Home and every planning page. */
+      quickDefine:
+        "On the quick path: hand the cleared requirements to the spec writer (/define-change), which writes the change's files, grounded in the map. No stage runs. Then a person raises its one hand-off.",
       later: "The change is past this stage; its status says what it needs now.",
       refresh:
         "The diagram is drawn from the catalog. When a repo's code has changed, your assistant reads it again and atticus verify --write puts its facts in the catalog.",

@@ -60,6 +60,8 @@ export interface ChangeRow {
   state: string;
   /** ADR 0113: it takes the fast path, one step from brief to tasks. */
   fastPath?: boolean;
+  /** ADR 0201: it takes the quick path: its four files, then one hand-off; no stage runs. */
+  quickPath?: boolean;
   /** Its open findings, as /api/changes counts them: a blocking one marks it blocked on Home. */
   openFindings?: { blocking: number };
 }
@@ -171,9 +173,23 @@ export function taskStep(change: string, t: TaskRow): Step {
   };
 }
 
+const planning = (s: Stage) => s === "feature" || s === "architecture" || s === "stories";
+
+/** ADR 0201: a quick change that isn't built yet: no stage is offered for it. */
+export const quickBeforeBuild = (c: ChangeRow) => !!c.quickPath && planning(stageOf(c.state));
+
 /** The step for a change at its own stage. */
 export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
   const stage = stageOf(c.state);
+  // ADR 0201: a quick change's files are written by its personas, then it is handed off once.
+  // Never a brief, a stage, the fast path's step or a draft.
+  if (quickBeforeBuild(c))
+    return {
+      command: `atticus change status ${c.id}`,
+      why: W.why.quickDefine,
+      slash: metarepo(`/define-change ${c.id}`),
+      after: [handoff(c.id)],
+    };
   // ADR 0113: a small change goes from brief to tasks in one step.
   if (c.fastPath && (stage === "feature" || stage === "architecture" || stage === "stories"))
     return {
@@ -292,6 +308,12 @@ export function stageStep(
   tasks?: TaskRow[],
   cockpit?: Api.ChangeCockpitT,
 ): Step {
+  // ADR 0201: every planning page shows a quick change's own step: with its cockpit, the one
+  // `atticus next` gives (which files are missing, what blocks its gate, its hand-off).
+  if (quickBeforeBuild(c) && planning(page))
+    return cockpit?.next && cockpit.id === c.id
+      ? cockpitStep(c, cockpit.next)
+      : changeStep(c, tasks);
   const own = cockpit?.stages.find((s) => s.stage === page);
   if (cockpit && own && !c.fastPath && stageOf(c.state) !== "done") {
     if (own.state === "done") return gateStep(page, c, cockpit);
@@ -308,7 +330,6 @@ export function stageStep(
       : own;
   }
   // ADR 0113: every planning page shows a small change's one step.
-  const planning = (s: Stage) => s === "feature" || s === "architecture" || s === "stories";
   if (c.fastPath && planning(at) && planning(page)) return changeStep(c, tasks);
   // Ninth UX walk: on Tasks (no stage loop of its own), the stage the change is at is done (it
   // said "at the stories stage" with the stories done): the change's step is that stage's gate,

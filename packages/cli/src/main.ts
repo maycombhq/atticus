@@ -666,6 +666,9 @@ Usage:
   atticus change new "<title>" --type <type>  Start a change from a template
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change new ["<title>"] --from <requirements.md>   A quick change from a requirements file, once every question in it is closed and every id it cites is in the map or planned (ADR 0201)
+          [--type quick] [--id id] [--check] [--json]  (--check: the check alone, nothing is created)
+  atticus change new --id <id>         Adopt a plain OpenSpec change folder that change list shows as not adopted
   atticus change sketch <change> --from <file.drawio|.mmd|strokes.yaml|.json> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out), or a strokes file as written (ADR 0193: absorb, retire, call and the rest); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--change <id>] [--limit n] [--json]
@@ -822,6 +825,7 @@ Usage:
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
+  atticus next <change>                One change's next step, as next would list it for that change [--all] [--json]
   atticus <step> --handoff [--json]    On map, scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4 and characters outside ASCII one each, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
@@ -1323,7 +1327,13 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "next")
     return (await import("./next-commands.js")).nextCommand(
       root,
-      { json: values.json === true, all: values.all === true, queue: values.queue === true },
+      {
+        json: values.json === true,
+        all: values.all === true,
+        queue: values.queue === true,
+        // `atticus next <change-id>`: one change's next step.
+        ...(command ? { change: command } : {}),
+      },
       io,
     );
   if (values.handoff === true && (await import("./handoff-steps.js")).isHandoffStep(group, command))
@@ -3458,6 +3468,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
           ...(list(values.system) ? { systems: list(values.system)! } : {}),
           ...(str(values.like) ? { like: str(values.like)! } : {}),
           ...(str(values.impact) ? { impact: str(values.impact)! } : {}),
+          ...(str(values.from) ? { from: str(values.from)! } : {}),
+          ...(values.check === true ? { check: true } : {}),
+          ...(json ? { json: true } : {}),
         },
         io,
       );

@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   ChangeTouches,
+  changesDirOf,
+  changesRelOf,
   openspecDirOf,
   RecordId,
   type ChangeLifecycle,
@@ -13,6 +15,7 @@ import type { z } from "zod";
 import { changeTypeOf, loadChangeContext } from "./context.js";
 import { ChangeError } from "./errors.js";
 import { phaseState } from "./lifecycle.js";
+import { REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder, changeStore, writeFileAtomic } from "./store.js";
 import { pickTemplate, renderTemplate } from "./templates.js";
 
@@ -33,6 +36,21 @@ export interface NewChangeOptions {
   now?: string;
   /** Create the change through OpenSpec's CLI; without it the folder is written directly. */
   openspec?: OpenSpec;
+  /**
+   * ADR 0201: write no brief.md and name no template: a change made from a requirements file, or
+   * a plain OpenSpec folder adopted as it is. `reason` is the first line of its history.
+   */
+  noBrief?: {
+    reason: string;
+    /** Adopting a folder that is there: only change.yaml is written, no `.openspec.yaml`. */
+    adopt?: boolean;
+  };
+  /**
+   * ADR 0201: the requirements file the change is made from: its bytes, copied as they are to
+   * `<change>/requirements.md`, and how it is named to a person. A different requirements.md
+   * already in the folder is never written over: the change is refused.
+   */
+  requirements?: { file: string; bytes: Uint8Array };
 }
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -86,9 +104,20 @@ async function defaultSchema(root: string): Promise<string> {
  * for an emergency fix).
  */
 export async function newChange(root: string, opts: NewChangeOptions): Promise<ChangeLifecycle> {
+  const id = opts.id ?? slugify(opts.title);
+  // Before anything is written: a folder adopted with its own requirements.md keeps it.
+  const had =
+    opts.requirements && RecordId.safeParse(id).success
+      ? await readFile(join(changesDirOf(root), id, REQUIREMENTS_FILE)).catch(() => undefined)
+      : undefined;
+  if (had && !had.equals(opts.requirements!.bytes))
+    throw new ChangeError(
+      "conflict",
+      `${changesRelOf(root)}/${id}/${REQUIREMENTS_FILE} is there already and differs from ${opts.requirements!.file}. Make the two the same, or pass another --id. Nothing was written.`,
+    );
+
   const ctx = await loadChangeContext(root);
   const type = changeTypeOf(ctx, opts.type);
-  const id = opts.id ?? slugify(opts.title);
   if (!RecordId.safeParse(id).success)
     throw new ChangeError(
       "invalid",
@@ -99,8 +128,8 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
       "invalid",
       `"${id}" can't be a change id: Windows can't open a folder named that (con, nul, com1 and the like, or a name ending in a dot). Pick another, such as ${id.replace(/[. ]+$/, "").replace(/^([^.]+)/, "$1-change")}.`,
     );
-  const template = pickTemplate(ctx.templates, type.id, opts.template);
-  if (!template)
+  const template = opts.noBrief ? undefined : pickTemplate(ctx.templates, type.id, opts.template);
+  if (!template && !opts.noBrief)
     throw new ChangeError(
       "invalid",
       `Unknown change template ${opts.template}. Use one of: ${ctx.templates.map((t) => t.id).join(", ")}.`,
@@ -112,7 +141,9 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
   const now = opts.now ?? nowIso();
   const by = strip(opts.by);
   const dir = changeFolder(root, id);
-  if (opts.openspec && !(await exists(join(dir, ".openspec.yaml")))) {
+  if (opts.noBrief?.adopt) {
+    // ADR 0201: a plain OpenSpec folder is taken as it is.
+  } else if (opts.openspec && !(await exists(join(dir, ".openspec.yaml")))) {
     await opts.openspec.newChange(id, { description: opts.title });
   } else {
     await mkdir(dir, { recursive: true });
@@ -123,7 +154,9 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
         "utf8",
       );
   }
-  if (!(await exists(join(dir, "brief.md"))))
+  if (opts.requirements && !had)
+    await writeFile(join(dir, REQUIREMENTS_FILE), opts.requirements.bytes);
+  if (template && !(await exists(join(dir, "brief.md"))))
     await writeFileAtomic(
       join(dir, "brief.md"),
       renderTemplate(template, {
@@ -147,7 +180,7 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
     id,
     title: opts.title,
     type: type.id,
-    template: template.id,
+    ...(template ? { template: template.id } : {}),
     state: first,
     owners,
     systems: [...new Set(opts.systems ?? [])].sort(),
@@ -156,7 +189,13 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
     createdAt: now,
     createdBy: by,
     history: [
-      { from: "draft", to: first, at: now, by, reason: `Created from the ${template.id} template` },
+      {
+        from: "draft",
+        to: first,
+        at: now,
+        by,
+        reason: template ? `Created from the ${template.id} template` : opts.noBrief!.reason,
+      },
     ],
     handoffs: [],
   };
