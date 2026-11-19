@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,5 +77,36 @@ describe("data.md and the architecture stage's own artifact (ADR 0006 addendum)"
     expect(fix).toBe(
       "Run atticus change architecture screen-order-consent: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.",
     );
+  });
+
+  it("reads orders.status in a design as the orders table, and a record id that only ends in a table's name as nothing (ADR 0203 review)", async () => {
+    const design = async (line: string) => {
+      const root = await estate();
+      const dir = join(root, "openspec/changes", CHANGE);
+      // A design off the stage path: no target flow says what the change stores.
+      for (const f of [
+        "target-flows",
+        "feature.yaml",
+        "stories",
+        "stories.md",
+        "tasks.md",
+        "stage",
+      ])
+        await rm(join(dir, f), { recursive: true, force: true });
+      await writeFile(join(dir, "design.md"), `# Design\n\n## Operations\n\n${line}\n`);
+      return summaries(
+        await runCritic(root, CHANGE, { now: NOW, gate: "design" }),
+        "constitution.data-doc-present",
+      );
+    };
+    expect(
+      await design(
+        "| deploy-new | deployment | forge-orders | forge-orders.deployment.prod: env prod |",
+      ),
+    ).toEqual([]);
+    expect(await design("The cut-over backfills orders.status before the switch.")).toEqual([
+      "The change touches forge-orders-db but data.md is missing.",
+    ]);
+    expect(await design("It reads forge-orders-db.orders.status as today.")).toHaveLength(1);
   });
 });

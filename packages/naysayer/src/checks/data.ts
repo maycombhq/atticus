@@ -44,7 +44,9 @@ function touchedStores(ctx: CriticContext): { stores: string[]; evidence: Eviden
     for (const l of contentLines(doc)) {
       const migration = /\bV\d+__\w+\.sql\b/.test(l.text);
       const table = tables.find((t) =>
-        new RegExp(`\\b${escapeRe(t.name)}\\.[a-z_]+`, "i").test(l.text),
+        // The table's name where a name starts: `orders.status`, `forge-orders-db.orders.status`.
+        // Not the tail of another id: `forge-orders.deployment.prod` is a record of forge-orders.
+        new RegExp(`(?<![\\w-])${escapeRe(t.name)}\\.[a-z_]+`, "i").test(l.text),
       );
       if (!migration && !table) continue;
       if (table) stores.add(table.dataStore);

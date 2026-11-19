@@ -553,13 +553,6 @@ async function stageFootprint(
     }
     if (doc.errors.length) continue;
     const d = obj(doc.toJS());
-    // ADR 0203 B: the operations' file is the stages' own too; its repos are the change's.
-    if (d && f === "_operations.yaml") {
-      out.from.push(rel);
-      for (const o of Array.isArray(d.operations) ? d.operations : [])
-        for (const repo of strs(obj(o)?.repos)) out.repos.add(repo);
-      continue;
-    }
     const flowId = str(d?.flow);
     if (!d || !flowId) continue;
     out.from.push(rel);
