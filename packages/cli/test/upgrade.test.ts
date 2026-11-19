@@ -83,7 +83,7 @@ const io = () => {
 };
 
 describe("atticus upgrade: OpenSpec's org-flow schema (ADR 0006 addendum)", () => {
-  it("moves an org-flow version 1 schema to version 2, Atticus 1's templates removed", async () => {
+  it("moves an org-flow version 1 schema to the current version, Atticus 1's templates removed", async () => {
     const root = await oldMetarepo();
     const dir = join(root, "openspec/schemas/org-flow");
     await mkdir(join(dir, "templates"), { recursive: true });
@@ -99,7 +99,7 @@ describe("atticus upgrade: OpenSpec's org-flow schema (ADR 0006 addendum)", () =
       version: number;
       artifacts: { id: string }[];
     };
-    expect(schema.version).toBe(2);
+    expect(schema.version).toBe(3);
     expect(schema.artifacts.map((a) => a.id)).toEqual([
       "proposal",
       "design",
