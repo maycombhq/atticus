@@ -11,7 +11,8 @@ import { accessible, expect, open, reconnectJourney, test } from "../support/app
  * forge-orders to forge-ledger, sees those calls listed first with where each goes today and how
  * that was decided, ticks them, says why for the three the code names, says yes to replacing
  * sam's pairing, moves them, applies, and the map draws forge-orders → forge-ledger and no
- * forge-orders → forge-billing. No network; nothing is committed or pushed.
+ * forge-orders → forge-billing. Then Undo and Apply put the arrow back. No network; nothing is
+ * committed or pushed.
  */
 const app = reconnectJourney();
 
@@ -145,4 +146,21 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
     ),
   ).toBeVisible({ timeout: 60_000 });
   await accessible(page, "the map after the move");
+
+  // Undo takes the four lines back at once; the map is the last Apply's until the next, which
+  // the panel says and offers. Applied, the arrow is back where it was, with nothing to confirm.
+  await panel.getByRole("button", { name: "Undo" }).click();
+  await expect(
+    panel.getByText(
+      "Undone: the line is removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairing:",
+    ),
+  ).toBeVisible({ timeout: 30_000 });
+  expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
+  await expect(page.locator(RIGHT)).toHaveCount(1);
+  await panel.getByRole("button", { name: "Apply to forge-orders's map" }).last().click();
+  await expect(page.locator(WRONG)).toHaveAttribute("aria-label", /4 × calls/, {
+    timeout: 120_000,
+  });
+  await expect(page.locator(RIGHT)).toHaveCount(0);
+  await expect(page.getByText(/waits for you/)).toHaveCount(0);
 });

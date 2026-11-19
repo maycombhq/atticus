@@ -196,6 +196,24 @@ describe("the removal limits (ADR 0195 point 4)", () => {
       expect(moved([old], [arrow("if-new", "ledger", 9, "/holds/{}", person)])).toEqual({});
     });
 
+    it("matches a pairing undone the same way: the person's arrow goes, and the call's arrow comes back", () => {
+      const mine = arrow("if-mine", "ledger", 8, "/holds/{}", person);
+      const back = arrow("if-back", "billing", 8, "/holds/{}", { flags: ["joined-by-host"] });
+      const undone = (removed: never[], added: never[], old: never[] = removed) =>
+        Object.fromEntries(movedArrows(removed, added, old, { undone: true }));
+      expect(undone([mine], [back])).toEqual({
+        "Interface/if-mine": { id: "if-back", to: "billing" },
+      });
+      // Only a person's pairing is undone, and only one to one: a lost arrow beside it counts.
+      const lost = arrow("if-lost", "ledger", 8, "/fees/{}", person);
+      expect(undone([mine, lost], [back])).toEqual({
+        "Interface/if-mine": { id: "if-back", to: "billing" },
+      });
+      expect(undone([arrow("if-code", "ledger", 8, "/holds/{}")], [back])).toEqual({});
+      // Without `undone`, an arrow no person paired excuses nothing.
+      expect(moved([mine], [back])).toEqual({});
+    });
+
     it("says nothing where two paired arrows could be the removed arrow's, and never of a loose end", () => {
       const old = arrow("if-old", "billing", 8, "/holds/{}");
       const two = [

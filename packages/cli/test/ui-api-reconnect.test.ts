@@ -300,6 +300,27 @@ describe("the removal guard and a move (ADR 0195)", () => {
     expect(line).toMatchObject({ fact: CALLS.host.call, link: { repo: B }, reason: WHY });
     expect(await g.arrows()).toEqual({ [C]: 2, [B]: 3, [VENDOR]: 1 });
   }, 120_000);
+
+  it("Undo then Apply puts the arrows back with nothing to confirm (the review)", async () => {
+    const mine = corrections().trim().split("\n").slice(2);
+    expect(mine).toHaveLength(3);
+    for (const line of mine) {
+      const u = await g.call(`/api/facts/${A}/corrections/undo`, "POST", { line });
+      expect(u.status, JSON.stringify(u.body)).toBe(200);
+    }
+    const out: string[] = [];
+    const code = await verifyCommand(
+      g.root,
+      A,
+      { commit: COMMIT[A]!, dir: join(g.root, "workspace", A), write: true, now: () => AT },
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+    );
+    expect(code, out.join("\n")).toBe(0);
+    const removed = out.filter((l) => l.trim().startsWith("removed Interface/"));
+    expect(removed).toHaveLength(3);
+    for (const l of removed) expect(l).toContain(`its call goes to ${C} now`);
+    expect(await g.arrows()).toEqual({ [C]: 5, [VENDOR]: 1 });
+  }, 120_000);
 });
 
 describe("a move beside real removals, and moves that go stale (the review)", () => {

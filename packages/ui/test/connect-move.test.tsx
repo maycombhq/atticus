@@ -200,6 +200,7 @@ describe("Move to forge-ledger", () => {
         commit: "git add facts",
       } as Api.ConnectLinksResultT);
     };
+    const undone: string[] = [];
     const m = mount(
       Pairing as never,
       {
@@ -207,6 +208,10 @@ describe("Move to forge-ledger", () => {
         box,
         me: "pat",
         post,
+        undoLine: (line: string) => {
+          undone.push(line);
+          return Promise.resolve();
+        },
         cands: { state: "ready", data: view(calls), reload: () => undefined },
       } as never,
     );
@@ -226,7 +231,7 @@ describe("Move to forge-ledger", () => {
       m.render();
     };
     const said = () => text(m.tree);
-    return { m, els, tick, button, click, said, sent };
+    return { m, els, tick, button, click, said, sent, undone };
   };
   const pick = (c: Api.CandidateCallViewT) => C.movePick(`GET ${c.path}`, "forge-ledger");
 
@@ -237,6 +242,8 @@ describe("Move to forge-ledger", () => {
     expect(t.button(C.moveTo("forge-ledger"))!.props.disabled).toBe(false);
     // An answered question: the pairing moves this call; the answer itself is said to stand.
     expect(t.said()).toContain(C.answerStays("q-00000000000c", "forge-billing"));
+    // Before anything is written, no Apply of this panel's is on the page.
+    expect(t.els().some((x) => x.props.scope === "corrections")).toBe(false);
     await t.click(C.moveTo("forge-ledger"));
     expect(t.sent).toEqual([
       {
@@ -317,6 +324,33 @@ describe("Move to forge-ledger", () => {
     expect(t.button(C.moveTo("forge-ledger"))!.props.disabled).toBe(true);
     t.tick(C.replaceConfirm("sam", false, "GET /entries/{id}"));
     expect(t.button(C.moveTo("forge-ledger"))!.props.disabled).toBe(false);
+  });
+
+  it("offers Answer it again on a call an answer placed, and says new calls still follow the answer (the review)", () => {
+    const t = start([byAnswer]);
+    t.tick(pick(byAnswer));
+    expect(t.said()).toContain(
+      "Moving it pairs this call only. The answer to q-00000000000c stands: the other calls it covers, and new calls that match it, still go to forge-billing until it is answered again.",
+    );
+    const again = t
+      .els()
+      .find((x) => x.type === "a" && text(x.props.children) === C.answerAgain("q-00000000000c"))!;
+    expect(again.props.href).toBe("#/questions/q-00000000000c");
+  });
+
+  it("says after Undo that the map still draws the move until the repo is applied, and offers that Apply (the review)", async () => {
+    const t = start([byAnswer]);
+    t.tick(pick(byAnswer));
+    await t.click(C.moveTo("forge-ledger"));
+    await t.click(C.moveConfirm(1, "forge-ledger"));
+    await t.click(C.undo);
+    expect(t.undone).toEqual([JSON.stringify({ call: "call.12", api: "e12" })]);
+    expect(t.said()).toContain(C.undone);
+    expect(t.said()).toContain(C.undoneApply("forge-orders"));
+    // The Apply that redraws the map, for this repo's corrections.
+    expect(
+      t.els().some((x) => x.props.scope === "corrections" && x.props.repo === "forge-orders"),
+    ).toBe(true);
   });
 
   it("says where to correct a gateway's own forwarding, beside moving the one call", () => {

@@ -38,7 +38,13 @@ Your pairing wins over how the call was joined before. Three cases ask something
 
 - **The line names the other box** (its host is that box's, or the fact read there names it). The panel says so and asks why; your reason is kept on the pairing's line. The fact stays in the repo's facts as read, verified on its line: a pairing never changes or removes a fact read from code. The right box's panel then says how many pairings go against what the code names. If the code itself is what changed, read the repo again instead.
 - **Somebody else paired it**, or the AI did. The panel says who, and you tick **Replace** for it. Your own pairing is replaced without asking.
-- **An answer placed it.** The move pairs the calls you tick. The answer still stands for the other calls it covers and for calls read later; if the answer itself is wrong, change it on the Questions page.
+- **An answer placed it.** The move pairs the calls you tick. The answer stands: the other calls it covers, and new calls that match it, still go to the old box until it is answered again, and the row links **Answer <question> again**.
+
+**Edit the map**'s **Add a link** asks for the same reason before a pair that goes over what the line names is added to your changes. Under **Corrections and declarations**, such a pairing reads "… goes to GET /holds/{id} on forge-ledger, moved by pat from forge-billing over what its line names (billing.forge.example)", with the reason.
+
+**Undo** removes the lines the move wrote. The map is the last Apply's until the next, so the panel says so and offers **Apply**: the arrow is then back where it was.
+
+The removal guard excuses only the arrow of a call you moved (or whose move you undid), matched one to one with the arrow that takes its place. Anything else the same Apply removes is listed with its own reason and counts toward the limits.
 
 A call that goes through a gateway can be moved the same way, which says this call doesn't go through that gateway. When it is the gateway that forwards to the wrong service, correct the gateway instead: connect the gateway's box to the right service.
 

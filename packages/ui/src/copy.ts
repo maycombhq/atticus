@@ -6209,7 +6209,12 @@ export const COPY = {
       `${n === 1 ? "Move 1 call" : `Move ${n} calls`} to ${to}`,
     /** A call a person's answer placed: the pairing moves this call, and the answer stands. */
     answerStays: (question: string, box: string) =>
-      `Moving it pairs this call only. The answer to ${question} stands for the other calls it covers and for calls read later, which go to ${box}. If the answer itself is wrong, change it on the Questions page.`,
+      `Moving it pairs this call only. The answer to ${question} stands: the other calls it covers, and new calls that match it, still go to ${box} until it is answered again.`,
+    /** The link to the question a person's answer placed the call by. */
+    answerAgain: (question: string) => `Answer ${question} again`,
+    /** After Undo: the pairing's line is gone; the map is the last Apply's until the next. */
+    undoneApply: (from: string) =>
+      `The map still draws what ${from}'s last Apply drew. Apply ${from} again to draw it without the pairing:`,
     /** A call a gateway forwards: the gateway's own forwarding may be what is wrong. */
     gatewayHint: (through: string, to: string) =>
       `Moving it says this call doesn't go through ${through}. If ${through} itself forwards to the wrong service, correct that instead: connect ${through} to ${to}.`,

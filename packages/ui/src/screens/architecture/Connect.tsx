@@ -347,6 +347,8 @@ export function Pairing(p: {
   match?: MatchIo;
   /** The person using the app (tests pass one): their own pairing is replaced without asking. */
   me?: string;
+  /** Tests pass their own; the app removes the line through the local API. */
+  undoLine?: (line: string) => Promise<unknown>;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -572,11 +574,15 @@ export function Pairing(p: {
     setError(undefined);
     let left = written.lines;
     try {
+      const undoLine =
+        p.undoLine ??
+        ((line: string) =>
+          api(`/api/facts/${encodeURIComponent(p.from)}/corrections/undo`, {
+            method: "POST",
+            body: { line },
+          }));
       for (const line of written.lines) {
-        await api(`/api/facts/${encodeURIComponent(p.from)}/corrections/undo`, {
-          method: "POST",
-          body: { line },
-        });
+        await undoLine(line);
         // Each line undone is off the list, so trying again undoes only the rest.
         left = left.filter((l) => l !== line);
       }
@@ -729,7 +735,10 @@ export function Pairing(p: {
         )}
         {on && c.status === "joined" && c.how?.by === "answer" && c.how.question && c.joins && (
           <span className="box-why" role="note">
-            {C.answerStays(c.how.question, c.joins)}
+            {C.answerStays(c.how.question, c.joins)}{" "}
+            <a href={`#/questions/${encodeURIComponent(c.how.question)}`}>
+              {C.answerAgain(c.how.question)}
+            </a>
           </span>
         )}
         {on && c.status === "joined" && c.how?.through && !c.pairedBy && (
@@ -1045,9 +1054,14 @@ export function Pairing(p: {
         </div>
       )}
       {undone && (
-        <p role="status" className="ev-say">
-          {undoneWords(undone)}
-        </p>
+        // The review: an undone pairing is off the file at once and off the map at the repo's
+        // next Apply, which is said and offered here.
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {undoneWords(undone)} {undone.lines.length > 0 ? C.undoneApply(d.from) : ""}
+          </p>
+          {undone.lines.length > 0 && <ApplyAndPropose scope="corrections" repo={d.from} />}
+        </div>
       )}
     </div>
   );

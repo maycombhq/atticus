@@ -22,6 +22,7 @@ import {
   drawsAnother,
   pairOf,
   movableRowsForAdd,
+  lacksReason,
   MoveCallsView,
   pairRowsForAdd,
   pairRowsForRedirect,
@@ -1003,6 +1004,60 @@ describe("adding and redirecting from a repo's box: Connect to…'s pairing", ()
     );
     // A person's pairing keeps the words that say pairing it here replaces theirs.
     expect(said).toContain(esc(E.add.pairedWith("sam", "forge-risk")));
+    // The review: a call whose line names another box asks why, as Connect does, once an API
+    // is picked for it; the reason goes with the pair, and the form holds back without it.
+    const named = movableRowsForAdd({
+      ...cands,
+      calls: [
+        {
+          ...cands.calls.find((c) => c.fact === "c1")!,
+          how: { by: "address" },
+          codeNames: { box: "forge-ledger", text: "ledger.forge.example" },
+        },
+      ],
+    });
+    expect(named[0]!.codeNames).toEqual({ box: "forge-ledger", text: "ledger.forge.example" });
+    const quiet = html(
+      <MoveCallsView
+        fromLabel="forge_instruments_1-0"
+        toName="forge-instruments"
+        rows={named}
+        apis={cands.apis}
+        open
+        onPick={noop}
+        onReason={noop}
+      />,
+    );
+    expect(quiet).not.toContain("overrides what the code says");
+    const picked = [{ ...named[0]!, api: "e1" }];
+    const asks = html(
+      <MoveCallsView
+        fromLabel="forge_instruments_1-0"
+        toName="forge-instruments"
+        rows={picked}
+        apis={cands.apis}
+        open
+        onPick={noop}
+        onReason={noop}
+      />,
+    );
+    expect(asks).toContain(
+      esc(COPY.connect.overridesCode("ledger.forge.example", "forge-ledger", "forge-instruments")),
+    );
+    expect(asks).toContain(
+      `aria-label="${esc(COPY.connect.reasonLabel("GET /instruments/ping"))}"`,
+    );
+    expect(lacksReason(picked)).toBe(true);
+    expect(lacksReason([{ ...picked[0]!, reason: " ok " }])).toBe(true);
+    const withWhy = [{ ...picked[0]!, reason: " The proxy moved. " }];
+    expect(lacksReason(withWhy)).toBe(false);
+    expect(pairOf("forge_instruments_1-0", { repo: "forge-instruments" }, withWhy)).toEqual({
+      from: "forge_instruments_1-0",
+      to: { repo: "forge-instruments" },
+      pairs: [{ call: "c1", api: "e1", reason: "The proxy moved." }],
+    });
+    // A call not picked needs no reason.
+    expect(lacksReason(named)).toBe(false);
     // Nothing to move: nothing shown.
     expect(
       html(
