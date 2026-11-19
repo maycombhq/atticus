@@ -237,9 +237,9 @@ export function renderTemplate(t: Pick<ChangeTemplate, "body">, vars: TemplateVa
 }
 
 /**
- * The brief a type starts from when no template has the type's own id: the built-in types whose
- * briefs are named otherwise. Without it the first of the type by id was taken (beta.30: a plain
- * bug fix got the data-fix brief).
+ * The built-in brief a type starts from when no template has the type's own id: the built-in
+ * types whose briefs are named otherwise. Without it the first of the type by id was taken
+ * (beta.30: a plain bug fix got the data-fix brief).
  */
 const USUAL_TEMPLATE: Readonly<Record<string, string>> = {
   "bug-fix": "defect-fix",
@@ -247,8 +247,11 @@ const USUAL_TEMPLATE: Readonly<Record<string, string>> = {
 };
 
 /**
- * The template for a new change: the one asked for, else the one with the type's id, else the
- * type's usual one, else the first whose changeType is the type, else the feature template.
+ * The template for a new change: the one asked for; else the organisation's own for the type
+ * (hard rule 7: an org pack's template wins over a built-in one, whatever it is named); else the
+ * built-in for the type; else the feature template. Among the organisation's, and then among the
+ * built-in ones: the one with the type's id, then the type's usual one, then the first whose
+ * changeType is the type.
  */
 export function pickTemplate(
   templates: readonly ChangeTemplate[],
@@ -256,10 +259,13 @@ export function pickTemplate(
   wanted?: string,
 ): ChangeTemplate | undefined {
   if (wanted) return templates.find((t) => t.id === wanted);
+  const forType = (from: readonly ChangeTemplate[]) =>
+    from.find((t) => t.id === type) ??
+    from.find((t) => t.id === USUAL_TEMPLATE[type] && t.changeType === type) ??
+    from.find((t) => t.changeType === type);
   return (
-    templates.find((t) => t.id === type) ??
-    templates.find((t) => t.id === USUAL_TEMPLATE[type] && t.changeType === type) ??
-    templates.find((t) => t.changeType === type) ??
+    forType(templates.filter((t) => t.source !== "built-in")) ??
+    forType(templates) ??
     templates.find((t) => t.id === "feature")
   );
 }

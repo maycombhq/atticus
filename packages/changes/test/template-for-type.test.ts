@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -87,15 +87,52 @@ describe("the brief a new change starts from, by its type", () => {
     }
   });
 
-  it("takes the organisation's own brief for a type before the built-in default", () => {
-    const own = { ...BUILT_IN_TEMPLATES[0]!, id: "a-forge-bug", changeType: "bug-fix" };
-    // The type's id first, then its usual brief, then any of its type, then feature.
-    expect(pickTemplate([own, ...BUILT_IN_TEMPLATES], "bug-fix")!.id).toBe("defect-fix");
-    const without = BUILT_IN_TEMPLATES.filter((t) => t.id !== "defect-fix");
-    expect(pickTemplate([own, ...without], "bug-fix")!.id).toBe("a-forge-bug");
-    expect(pickTemplate([{ ...own, id: "bug-fix" }, ...BUILT_IN_TEMPLATES], "bug-fix")!.id).toBe(
-      "bug-fix",
-    );
+  it("takes the organisation's own brief for a type before the built-in default", async () => {
+    // Review of beta.30 (hard rule 7): an org pack's template for a type wins over a built-in
+    // one, whatever it is named; the built-in defaults are only for a type the org has none for.
+    const root = await forgeMetarepo();
+    try {
+      const dir = join(root, "org-pack/process/change-templates");
+      const own = (id: string, changeType: string) =>
+        writeFile(
+          join(dir, `${id}.md`),
+          `---\nid: ${id}\nname: Forge ${id}\nchangeType: ${changeType}\ndescription: Forge's own.\n---\n# {{title}}\n\n## Forge's own\n`,
+        );
+      await own("bug-triage", "bug-fix");
+      await own("app-config", "config-change");
+      await own("api-onboarding", "integration");
+      const ctx = await loadChangeContext(root);
+      expect(ctx.problems).toEqual([]);
+      const picked = (type: string) => pickTemplate(ctx.templates, type)!.id;
+      expect(picked("bug-fix")).toBe("bug-triage");
+      expect(picked("config-change")).toBe("app-config");
+      expect(picked("integration")).toBe("api-onboarding");
+      // A type the organisation wrote no brief for keeps the built-in default.
+      expect(picked("emergency-fix")).toBe("emergency-fix");
+      expect(picked("tech-debt")).toBe("tech-debt");
+      const c = await newChange(root, {
+        title: "Onboard Northwind Pay's refunds",
+        type: "integration",
+        by: "pat",
+        now: T0,
+      });
+      expect(c.template).toBe("api-onboarding");
+      expect(await readText(join(changeFolder(root, c.id), "brief.md"))).toContain(
+        "## Forge's own",
+      );
+      // Among the organisation's own for a type: the one with the type's id, then the one that
+      // replaces the type's usual built-in, then the first.
+      await own("defect-fix", "bug-fix");
+      expect(pickTemplate((await loadChangeContext(root)).templates, "bug-fix")!.id).toBe(
+        "defect-fix",
+      );
+      await own("bug-fix", "bug-fix");
+      expect(pickTemplate((await loadChangeContext(root)).templates, "bug-fix")!.id).toBe(
+        "bug-fix",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
     expect(pickTemplate(BUILT_IN_TEMPLATES, "something-new")!.id).toBe("feature");
   });
 });
