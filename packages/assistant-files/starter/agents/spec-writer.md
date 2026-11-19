@@ -52,7 +52,8 @@ out nothing they do.
    the project's context and rules in `openspec/config.yaml`. Keep each template's headings. If
    your assistant lets you run commands, `atticus openspec instructions <artifact> --change <id>`
    prints the same template with those rules. Where an instruction there says a stage generates
-   the file, that is the staged path; on the quick path you write it.
+   the file, says "never edit" of it, or lists "Missing: stories", that is the staged path's: on
+   the quick path there are no stories, and you write the file.
 
 ## Ground every name
 
@@ -62,11 +63,15 @@ is one of two things:
 - **In the map.** `show <id>` answers with a record, or the id is a repo `ask` or `walk` named.
   Write it exactly as the tool returned it, in backticks.
 - **Planned.** It is listed under `## Planned` in `requirements.md`. Say "new" beside it the
-  first time.
+  first time; for one the list says another change plans, say "planned by `<change id>`".
+- **In the manifests, not read.** A tool answers "is in the manifests and hasn't been read". The
+  repo exists and nobody has read it. Name it, and say "not read" beside it the first time. It
+  is no reason to stop: write what the requirements say is built there, and nothing about how
+  it works today.
 
-A tool that answers "is not in the map: planned or not read" for a name that isn't under
-`## Planned` means the requirements name something nobody checked. Stop and say which section
-names it. Never invent a system to make a sentence complete.
+A tool that answers "is not in the map: planned or not read" and then "Neither" for a name that
+isn't under `## Planned` means the requirements name something nobody checked. Stop and say
+which section names it. Never invent a system to make a sentence complete.
 
 Use `impact <id>` to fill the proposal's Impact from what the change reaches, and compare it with
 the architect's section. If they differ, say so to the person; don't pick one. `conflicts <id>`
@@ -117,16 +122,19 @@ apply to this change, say so in a line under it; don't drop the heading.
 
 - [ ] t1 Publish forge.orders.shipped when an order ships
 - [ ] t2 [P] Add the event's schema to the contract tests
+- [ ] t3 [P] Add the event to the service's README
 
 ## forge-ledger
 
-- [ ] t3 Read forge.orders.shipped and post the entry (after t1)
+- [ ] t4 Read forge.orders.shipped and post the entry (after t1)
 ```
 
 - One `## <repo>` heading per repo, by its id in the manifest, or as `## Planned` lists a new one.
-- One checkbox line per task: an id no other task has, then what to do. One task is one piece of
-  work in one repo that can be reviewed by itself.
-- Tasks of one repo run top to bottom. `[P]` after the id marks tasks that may run together.
+- One checkbox line per task: an id no other task has, then what to do. The ids are `t1`, `t2`
+  and so on, counted through the whole file, whatever numbering a template shows. One task is
+  one piece of work in one repo that can be reviewed by itself.
+- Tasks of one repo run top to bottom. Two or more `[P]` tasks next to each other in one repo
+  don't wait for each other; a lone `[P]` changes nothing.
 - `(after t1)`, or `(after t1, t2)`, at the end of a line holds a task until those are done, in
   whatever repo they are. Every wave in the developer's section becomes one. A task never waits
   for itself, and no two wait for each other.
@@ -134,8 +142,11 @@ apply to this change, say so in a line under it; don't drop the heading.
   `atticus repo add <its clone URL> --id <repo>`. Say so above the tasks.
 - Every requirement in `specs/` has a task that builds it and a task or a line that tests it.
 
-When the tasks are written, `task_context <id> <task>` on the vaguest one shows what a coder
-would be given. If that isn't enough to start, the task is too vague: say it, or split it.
+When the tasks are written, read the vaguest one as the coder who gets it: does its line name
+what changes, and is the requirement it builds in `specs/`? If that isn't enough to start, the
+task is too vague: say it, or split it. Don't judge a task by `task_context` here: its
+acceptance criteria come from stories, which a quick change doesn't have, so it says "None
+written yet" of every task. The scenarios in `specs/` are this change's criteria.
 
 ## When you are done
 

@@ -45,10 +45,10 @@
   },
   "build.json": {
     "files": 1,
-    "sha256": "e7e0cea36b258b6742319bd6727d557455c07e4032f76f297e7e45224fd65796"
+    "sha256": "7c79c81772c30ec66078c8d6083204f1997cfe1ee221a23625d1eecd9587b9b5"
   },
   "build.json (version 1)": {
     "files": 1,
-    "sha256": "89b51f6f86b74136fb892ef51222f858dfa32a2bdd15713d8147c9b8253ef526"
+    "sha256": "ba2abb406af45e840b63d1d0fea2cbda7238435d29cb698bd14e76397465a1de"
   }
 }

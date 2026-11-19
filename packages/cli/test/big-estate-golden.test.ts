@@ -25,7 +25,9 @@ import { v1Of } from "./build-json-v1.js";
  * the org pack, whose tree hash build.json records. Both build.json digests were recorded again,
  * deliberately; no record's digest moved. And again where the quick path met them: `atticus init`
  * also writes the `quick` change type into change-types.yaml (with the file as it was before that
- * entry, the digests recorded for the personas alone still matched).
+ * entry, the digests recorded for the personas alone still matched). Once more after the
+ * real-model run of the personas (2.0.0-beta.30): the starters' words changed, so the org pack's
+ * tree hash did; both build.json digests were recorded again and no record's digest moved.
  */
 const GOLDEN = join(import.meta.dirname, "golden", "big-estate.json");
 let dir: string | undefined;
