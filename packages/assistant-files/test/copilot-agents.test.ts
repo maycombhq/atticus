@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  atticusMcpServer,
   COPILOT_AGENTS,
   copilotAgentFiles,
   describeStep,
@@ -45,7 +46,7 @@ describe("the files Copilot reads", () => {
       "atticus-agents.json",
     ]);
     expect(JSON.parse(byPath.get(".vscode/mcp.json")!)).toEqual({
-      servers: { atticus: { type: "stdio", command: "atticus", args: ["mcp"] } },
+      servers: { atticus: atticusMcpServer() },
     });
   });
 

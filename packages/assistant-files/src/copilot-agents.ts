@@ -1,6 +1,7 @@
 import { stringify } from "yaml";
 import { STEP_CLASSES, type StepClass } from "@maycombhq/core";
 import type { CommandDef } from "./commands.js";
+import { atticusMcpServer } from "./mcp-server.js";
 import type { PluginFile } from "./plugin.js";
 import { metarepoCommands } from "./steps.js";
 
@@ -482,7 +483,7 @@ export function copilotAgentFiles(version: string): PluginFile[] {
     {
       path: ".vscode/mcp.json",
       content: json({
-        servers: { atticus: { type: "stdio", command: "atticus", args: ["mcp"] } },
+        servers: { atticus: atticusMcpServer() },
       }),
     },
     {

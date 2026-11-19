@@ -35,6 +35,13 @@ Copilot session itself instead of you pasting it (copilot-acp, ADR 0171).
    | `.github/instructions/atticus-tools.instructions.md` | Atticus's commands and MCP tools, applied to every file.                                                           |
    | `.vscode/mcp.json`                                   | Registers the read-only `atticus mcp` server.                                                                      |
 
+   `.vscode/mcp.json` starts the server the same way on Windows, macOS and Linux, so one committed
+   file serves the whole team. Its command is `node`, with a one-line launcher that starts
+   `atticus mcp`: on Windows `atticus` is `atticus.cmd`, which a program can start only through a
+   shell, and `mcp.json` has no per-platform form, so the entry doesn't lean on how an editor
+   starts a `.cmd`. The same entry works under `mcpServers` in Claude Code's `.mcp.json`. `node`
+   and `atticus` both have to be on the PATH the editor sees, which they are after either install.
+
    Copy those three folders into the metarepo, in a pull request like any other change to it. Each
    agent carries, word for word, the protocol of the slash commands it covers, so it says the same
    thing `/atticus-map` and the others do.
@@ -118,7 +125,8 @@ to open and what it says, including the fall back to `@atticus`.
 - that Copilot's agent mode obeys the instructions — that it runs the Atticus command instead of
   reasoning its way to an answer, writes to the exact path, and loops on the check;
 - that `.vscode/mcp.json` registers the `atticus` server where the organisation's policy allows MCP
-  servers at all;
+  servers at all (that the entry starts the server and lists its tools when an editor runs it as
+  written is tested on Windows and Linux; that VS Code and Claude Code then show the tools is not);
 - that the model picked for the kind of step is the model the request actually runs on, and what it
   costs in premium requests;
 - that `workbench.action.chat.open` opens agent mode on a named custom agent in that VS Code
