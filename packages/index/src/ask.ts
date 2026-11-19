@@ -55,6 +55,11 @@ export interface Hit {
   byName?: boolean;
   also?: string[];
   topic?: Omit<Hit, "topic">;
+  /**
+   * A repo's id whose repo has several components: all of them, sorted (`id` is the first).
+   * A question of calls asks of every one; one that walks or owns a single record has none.
+   */
+  ids?: string[];
 }
 
 /**
@@ -157,10 +162,17 @@ export function askLookup(ix: AskIndex): Lookup {
     // A repo by its id, as its one component (beta.30, the field-shaped estate: a repo id with
     // dots is the component `forge-instruments-svc`, and was said not to be read).
     try {
-      const c = ix.query(`kind:component repo:${w}`, { limit: 2 }).rows;
-      if (c.length === 1) {
+      const c = [
+        ...new Set(ix.query(`kind:component repo:${w}`, { limit: 50 }).rows.map((r) => r.id)),
+      ].sort();
+      if (c.length) {
         const t = topicNamed();
-        return { id: c[0]!.id, kind: c[0]!.kind, ...(t ? { topic: t } : {}) };
+        return {
+          id: c[0]!,
+          kind: "Component",
+          ...(c.length > 1 ? { ids: c } : {}),
+          ...(t ? { topic: t } : {}),
+        };
       }
     } catch {
       // not a value the query language takes
@@ -301,7 +313,11 @@ export function translate(
     return hit?.byName ? undefined : hit;
   });
   // Who receives or publishes to a word that is a repo's id and a topic's name means the topic.
-  const topic = () => named(words, (w) => lookup(w)?.topic) ?? rec ?? named(words, lookup);
+  // "What does X …" asks what the repo does, never of the topic of its name.
+  const topic = () =>
+    (has(/\bwhat does\b/) ? undefined : named(words, (w) => lookup(w)?.topic)) ??
+    rec ??
+    named(words, lookup);
   const has = (re: RegExp) => re.test(lower);
   const receivers = (hit: Hit, name?: string): Asked => {
     const also = hit.also ?? [];
@@ -320,8 +336,9 @@ export function translate(
       id: hit.id,
       also,
       named: label,
-      query: `impact ${ids.join(" ")}`,
-      explanation: `Read as: who receives ${label}, at each of its ${ids.length} consumers (${ids.join(", ")}): the receivers first, then what a change reaches past them.`,
+      // A command that runs: `atticus impact` walks one record, the first; the others are named.
+      query: `impact ${hit.id}`,
+      explanation: `Read as: who receives ${label}, at each of its ${ids.length} consumers (${ids.join(", ")}): the receivers first, then what a change reaches past them. The query walks the first; impact ${also.join(", impact ")} walk${also.length === 1 ? "s" : ""} the other${also.length === 1 ? "" : "s"}.`,
       receivers: true,
     };
   };
@@ -334,9 +351,10 @@ export function translate(
         return h?.id === hit.id || h?.topic?.id === hit.id;
       });
   // The calls and events on an entry or a topic are the Interfaces that name it as `endpoint`.
-  const onEndpoint = (id: string, publish: boolean): Asked => ({
+  const onEndpoint = (id: string, publish: boolean, also: string[] = []): Asked => ({
     action: "query",
-    query: `kind:interface endpoint:${id}`,
+    // A topic with one Endpoint per consumer: the interfaces on any of them.
+    query: `kind:interface endpoint:${[id, ...also].join(",")}`,
     explanation: publish
       ? `Read as: the interfaces that publish to ${id}; each one's "from" is the publisher.`
       : `Read as: the interfaces that call ${id}; each one's "from" is the caller.`,
@@ -355,9 +373,10 @@ export function translate(
 
   // A repo's id that is a topic's name too (beta.30): who receives or publishes to it is the
   // topic's, before any reading of the repo's component.
-  const both = named(words, (w) => lookup(w)?.topic);
+  // "What does X consume (or send)?" asks what the repo does: the repo's reading, not the topic's.
+  const both = has(/\bwhat does\b/) ? undefined : named(words, (w) => lookup(w)?.topic);
   if (both && has(RECEIVES)) return receivers(both, both.also?.length ? wordOf(both) : undefined);
-  if (both && has(PUBLISHES)) return onEndpoint(both.id, true);
+  if (both && has(PUBLISHES)) return onEndpoint(both.id, true, both.also);
 
   // A system only the calls name has no record to walk or own: what reaches it are its callers.
   if (rec?.kind === OUTSIDE)
@@ -366,8 +385,11 @@ export function translate(
       query: `kind:interface to:${rec.id}`,
       explanation: `Read as: the calls to ${rec.id}, a system outside the estate that the code calls.`,
     };
+  // A repo of several components: who calls it or what it calls asks of every one of them.
+  const all = rec ? (rec.ids ?? [rec.id]).join(",") : "";
+  const one = !!rec && !(rec.ids && rec.ids.length > 1);
   if (has(/\b(break|breaks|affected|impacted|impact|reach|reaches|depends? on)\b/)) {
-    if (rec)
+    if (rec && one)
       return {
         action: "impact",
         id: rec.id,
@@ -375,11 +397,11 @@ export function translate(
         explanation: `Read as: what a change to ${rec.id} reaches, hop by hop, with owners.`,
       };
   }
-  if (rec && has(/\bwhat does\b.*\b(call|use|depend|talk)/))
+  if (rec && has(/\bwhat does\b.*\b(call|use|depend|talk|send|publish|emit|produce)/))
     return {
       action: "query",
-      query: `kind:interface from:${rec.id}`,
-      explanation: `Read as: the interfaces ${rec.id} calls.`,
+      query: `kind:interface from:${all}`,
+      explanation: `Read as: the interfaces ${all} call${one ? "s" : ""}.`,
     };
   if (rec && has(/\b(who|what|which)\b.*\b(calls?|uses?|consumes?|reads?|writes?)\b/)) {
     // A topic's consumers aren't an Interface's `to`: an event Interface names the topic under
@@ -395,11 +417,11 @@ export function translate(
       };
     return {
       action: "query",
-      query: `kind:interface to:${rec.id}`,
-      explanation: `Read as: the interfaces whose callee is ${rec.id}.`,
+      query: `kind:interface to:${all}`,
+      explanation: `Read as: the interfaces whose callee is ${one ? rec.id : `one of ${all}`}.`,
     };
   }
-  if (rec && has(/\bwho owns\b|\bowner of\b/))
+  if (rec && one && has(/\bwho owns\b|\bowner of\b/))
     return {
       action: "owner",
       id: rec.id,
@@ -460,7 +482,7 @@ export function translate(
   if (end?.kind === "Endpoint") return receivers(end, end.also?.length ? wordOf(end) : undefined);
   // Who publishes to a topic the map holds, by its id or its name (b30 proof run).
   const published = has(PUBLISHES) ? topic() : undefined;
-  if (published?.kind === "Endpoint") return onEndpoint(published.id, true);
+  if (published?.kind === "Endpoint") return onEndpoint(published.id, true, published.also);
   // The same two questions about a name the map lacks were a word search that found nothing.
   if (!rec && !topic()) {
     const received = has(RECEIVES)

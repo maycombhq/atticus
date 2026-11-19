@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { COPY } from "../src/copy.js";
 import { AskReceivers } from "../src/screens/Explore.js";
 
 // Beta.30: the app's Ask answers who receives a topic with consumers in two repos on its own
@@ -36,6 +37,22 @@ describe("Ask: a topic received at two Endpoints", () => {
     expect(html).not.toContain("if-0673a0bdf333cde7");
     expect(html.match(/href="#\/impact\?q=forge-svc-0[03]\.on-forge-items-settled"/g)).toHaveLength(
       2,
+    );
+  });
+
+  it("names its list by the Read as line, and says so in words when nothing receives it", () => {
+    const r = { root: "a.on-t", roots: ["a.on-t", "b.on-t"], receivers: [], further: [] };
+    const empty = renderToStaticMarkup(<AskReceivers r={r} labelledBy="ask-read-as" />);
+    expect(empty).toContain(COPY.explore.noReceivers);
+    expect(empty).not.toContain("<ul");
+    const one = renderToStaticMarkup(
+      <AskReceivers
+        r={{ ...r, receivers: [{ kind: "Component", id: "a", reason: "receives t from p" }] }}
+        labelledBy="ask-read-as"
+      />,
+    );
+    expect(one).toContain(
+      '<ul class="stack" style="gap:4px;margin:0;padding-left:18px" aria-labelledby="ask-read-as">',
     );
   });
 });

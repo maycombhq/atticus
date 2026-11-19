@@ -90,16 +90,27 @@ export interface AskedReceivers {
  * Impact page walks one record): each receiver with why, and what breaks at each of the topic's
  * Endpoints. The words are the answer's own; the link's are the Impact page's.
  */
-export function AskReceivers({ r }: { r: AskedReceivers }) {
+export function AskReceivers({ r, labelledBy }: { r: AskedReceivers; labelledBy?: string }) {
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <ul className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
-        {r.receivers.map((x) => (
-          <li key={`${x.kind}|${x.id}`}>
-            <span className="mono">{x.id}</span> <span className="muted">{x.reason}</span>
-          </li>
-        ))}
-      </ul>
+      {r.receivers.length === 0 && (
+        <p className="muted" style={{ margin: 0 }}>
+          {T.noReceivers}
+        </p>
+      )}
+      {r.receivers.length > 0 && (
+        <ul
+          className="stack"
+          style={{ gap: 4, margin: 0, paddingLeft: 18 }}
+          aria-labelledby={labelledBy}
+        >
+          {r.receivers.map((x) => (
+            <li key={`${x.kind}|${x.id}`}>
+              <span className="mono">{x.id}</span> <span className="muted">{x.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
         {(r.roots ?? [r.root]).map((id) => (
           <a
@@ -261,9 +272,11 @@ export function Explore({ hash }: { hash: string }) {
           <View of={asked}>
             {(a) => (
               <div className="stack" style={{ gap: 6 }}>
-                <p style={{ margin: 0 }}>{a.explanation}</p>
+                <p id="ask-read-as" style={{ margin: 0 }}>
+                  {a.explanation}
+                </p>
                 {a.action === "impact" && a.receivers && a.also?.length ? (
-                  <AskReceivers r={a.receivers} />
+                  <AskReceivers r={a.receivers} labelledBy="ask-read-as" />
                 ) : null}
                 {a.action === "owner" && (
                   <p style={{ margin: 0, fontSize: 18 }}>

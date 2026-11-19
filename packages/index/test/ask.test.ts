@@ -166,15 +166,24 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     expect(translate("who calls forge-ledger?", look).query).toBe("kind:interface to:ledger-api");
   });
 
-  it("never picks one of a repo's two components for it", () => {
+  it("asks of every component of a repo of two for its calls, and walks or owns neither", () => {
     const look = askLookup(
       fieldIndex({ components: { "forge-portal": ["portal-web", "portal-bff"] } }),
     );
-    expect(look("forge-portal")).toBeUndefined();
+    expect(look("forge-portal")).toEqual({
+      id: "portal-bff",
+      kind: "Component",
+      ids: ["portal-bff", "portal-web"],
+    });
     expect(translate("who calls forge-portal?", look)).toMatchObject({
       action: "query",
-      query: "kind:interface to:forge-portal",
+      query: "kind:interface to:portal-bff,portal-web",
     });
+    expect(translate("what does forge-portal call?", look).query).toBe(
+      "kind:interface from:portal-bff,portal-web",
+    );
+    expect(translate("what breaks if forge-portal changes", look).action).not.toBe("impact");
+    expect(translate("who owns forge-portal", look).action).not.toBe("owner");
   });
 
   it("a repo id that is also a topic's name: the topic for who receives or publishes, the repo otherwise", () => {
@@ -194,6 +203,13 @@ describe("Ask: plain questions become catalog queries, and the query is always s
       query: "kind:interface endpoint:forge-audit.on-forge-events",
     });
     expect(translate("who calls forge.events?", look).query).toBe("kind:interface to:forge-events");
+    // "What does X …" asks what the repo does.
+    expect(translate("what does forge.events consume?", look).query).toBe(
+      "kind:interface to:forge-events",
+    );
+    expect(translate("what does forge.events send?", look).query).toBe(
+      "kind:interface from:forge-events",
+    );
   });
 
   it("a topic with consumers in two repos is received by both: every Endpoint of its name (beta.30)", () => {
@@ -215,11 +231,16 @@ describe("Ask: plain questions become catalog queries, and the query is always s
       id: "svc-00.on-forge-items-settled",
       also: ["svc-03.on-forge-items-settled"],
       named: "forge.items.settled",
-      query: "impact svc-00.on-forge-items-settled svc-03.on-forge-items-settled",
+      // A query that runs (atticus impact walks one record): the first, the other named.
+      query: "impact svc-00.on-forge-items-settled",
       explanation:
-        "Read as: who receives forge.items.settled, at each of its 2 consumers (svc-00.on-forge-items-settled, svc-03.on-forge-items-settled): the receivers first, then what a change reaches past them.",
+        "Read as: who receives forge.items.settled, at each of its 2 consumers (svc-00.on-forge-items-settled, svc-03.on-forge-items-settled): the receivers first, then what a change reaches past them. The query walks the first; impact svc-03.on-forge-items-settled walks the other.",
       receivers: true,
     });
+    // Who publishes to it: the interfaces on any of its Endpoints.
+    expect(translate("who publishes to the topic forge.items.settled?", look).query).toBe(
+      "kind:interface endpoint:svc-00.on-forge-items-settled,svc-03.on-forge-items-settled",
+    );
   });
 
   it("never lists every interface for who calls a name the map lacks (ADR 0201)", () => {

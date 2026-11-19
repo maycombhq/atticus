@@ -7508,7 +7508,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "ask",
       summary:
-        "Answer a plain-language question from the catalog; the query used is always returned. 3.6.0 (ADR 0191): `knowledge` (KnowledgeAnswerView) says what the organisation's knowledge items, wiki snapshots and inputs/ files say to it, each cited",
+        "Answer a plain-language question from the catalog; the query used is always returned. 3.6.0 (ADR 0191): `knowledge` (KnowledgeAnswerView) says what the organisation's knowledge items, wiki snapshots and inputs/ files say to it, each cited. 3.19.0 (beta.30): when the answer is who receives a topic, `receivers` (root, roots?, receivers, affected, further, gaps: every Endpoint of the topic, each record once); `also` (the topic's other Endpoints, one per consumer) and `named` (its name); `query` and `impact` stay the first Endpoint's walk",
       tag: "catalog",
       params: [q("q", str, "The question, e.g. who calls ledger-api?")],
       ok: {
