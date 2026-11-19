@@ -989,10 +989,9 @@ export const COPY = {
     /** The pages, by screen id. */
     screens: {
       home: "Home",
-      canvas: "Estate canvas",
-      trust: "Trust",
+      canvas: "Map",
+      trust: "Read status",
       explore: "Search the catalog",
-      map: "Ecosystem map",
       impact: "Impact explorer",
       features: "Features",
       orgpack: "Org pack",
@@ -1034,9 +1033,64 @@ export const COPY = {
       /** ADR 0181: what the AI decided, its batches and Undo. */
       decisions: "Decided by AI",
       /** ADR 0195 (CS3): the readers' cross-check, and the catalog's builds. */
-      crosscheck: "Readers found / facts say",
+      crosscheck: "Cross-check",
       catalogBuilds: "Catalog builds",
+      /** v30 slice 8: Model runs, Prompt history, Scans and Catalog builds, as one page's tabs. */
+      activity: "Activity",
     },
+    /**
+     * v30 slice 8: the names pages had before (docs/guide/words.md). Ctrl+K still finds a page by
+     * them; no page shows them.
+     */
+    formerly: {
+      canvas: "Estate canvas",
+      map: "Ecosystem map",
+      trust: "Trust",
+      crosscheck: "Readers found / facts say",
+    },
+    /**
+     * v30 slice 8: a page's "what next", one line under its tabs, on the pages that had none (a
+     * page that ends in its own next step, a form's button or a stage's, has no line here).
+     */
+    nextLabel: "Next",
+    next: {
+      canvas:
+        "Pick a box to see what it is, where it was found and what is missing; a box with something missing says the command that fills it.",
+      flows: "Pick a flow to follow it step by step, each step citing its line of code.",
+      trust:
+        "Read again a repo that is behind or read only in part, then Apply it, so the map is up to date.",
+      contracts:
+        "Pick an API, an interface or a table to see who calls it; open Impact from it before changing one.",
+      impact: "Type a record's id, then check every box it reaches before you change it.",
+      decisions:
+        "Check each decision against its cited line: keep it, Correct it, or Undo its batch.",
+      crosscheck:
+        "For each repo, check the cited line, then keep what the readers got right as your own fact, or dismiss it.",
+      mismatches:
+        "Open a mismatch's arrow on the Map to see both sides; fix the code, or say on the arrow that the mismatch is known.",
+      systems: "Pick a system to read its guide; a cell marked unknown is a repo to read next.",
+      outside: "Say who owns each outside system, and connect the repos that call it from the Map.",
+      activity:
+        "Open a run to see what was asked and what came back; a failed scan or build says its next command.",
+      features: "Pick a feature to see the repos and flows it spans.",
+      diagrams: "Check each diagram against the map: Reconcile lists where they differ.",
+      reconcile:
+        "Take each difference: correct the diagram, or correct the map with its cited line.",
+      explore: "Ask a question in words, or type an id; open a result on the Map or in Impact.",
+      evals: "Run the checks again after a change to the org pack or the AI settings.",
+      learning: "Keep what is right as an org-pack rule; drop the rest.",
+      words: "Every word Atticus uses, in one place: docs/guide/words.md has the same list.",
+    } as Record<string, string>,
+    /** The Activity page: what ran, a tab each. */
+    activityTabs: "Activity pages",
+    activityIntro:
+      "What ran on this metarepo: what Atticus asked a model, what people asked their assistant, the scans and the catalog's builds. What runs now is in the Console at the foot.",
+  },
+  /** v30 slice 8: a box's panel opens the Map's pages about that box (they were Map's tabs). */
+  boxPages: {
+    contracts: "Its contracts",
+    impact: "What breaks if it changes",
+    decisions: "What the AI decided here",
   },
   /**
    * ADR 0195 (ticket CS3): the readers' cross-check (Map › Trust › Readers found / facts say) and
@@ -3559,10 +3613,7 @@ export const COPY = {
     generatedFromTheCatalog: "Generated from the catalog",
     theCatalogIsEmpty:
       "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
-    around: (focus: string | number) => `Around ${focus}`,
-    ecosystemMap: "Ecosystem map",
     showAll: "Show all",
-    clickANodeTo: "Click a node to centre it",
     gaps: (gaps: string | number) => ` · ${gaps} gaps`,
     verified: (verified: string | number, total: string | number, v: string | number) =>
       `${verified}/${total} verified${v}`,

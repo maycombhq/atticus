@@ -24,8 +24,8 @@ import { AiChip, Person, ThemeSwitch, useAskExample, type Health } from "./chrom
 import { CommandPalette, type PaletteCommand } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
 import { Nav } from "./nav.js";
-import { screenOf, type ScreenDef } from "./screens.js";
-import { SectionTabs } from "./tabs.js";
+import { movedHash, screenOf, type ScreenDef } from "./screens.js";
+import { PageNext, SectionTabs } from "./tabs.js";
 import { inEditor } from "./theme.js";
 import { focusAfterLayoutSwitch, useLayout, type Layout } from "./shell/layout.js";
 import { inEditorPanel } from "./shell/host.js";
@@ -44,12 +44,19 @@ const T = COPY.shell;
 function useHash(ide: boolean): string {
   const [h, set] = useState(() => {
     const given = location.hash;
-    const start = ide ? startHash(given) : given;
-    if (start !== given) history.replaceState(history.state, "", start);
+    const asked = ide ? startHash(given) : given;
+    // v30 slice 8: a page folded into another opens at its new place, its query kept.
+    const start = movedHash(asked) ?? asked;
+    // (No history outside a browser: a page rendered on its own, in a test, just shows it.)
+    if (start !== given) globalThis.history?.replaceState(history.state, "", start);
     return start;
   });
   useEffect(() => {
-    const on = () => set(location.hash);
+    const on = () => {
+      const moved = movedHash(location.hash);
+      if (moved) history.replaceState(history.state, "", moved);
+      set(location.hash);
+    };
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
@@ -393,6 +400,7 @@ export function App() {
                   <ActivityStrip />
                   <h1 className="sr">{bare ? COPY.setup.title : current.label}</h1>
                   {!bare && <SectionTabs current={current} hash={hash} full={full} />}
+                  {!bare && <PageNext current={current} />}
                   {page}
                 </main>
                 <ActivityConsole />
@@ -417,6 +425,7 @@ export function App() {
                       {/* What runs (a Copilot run's own strip, ADR 0173), above the page. */}
                       <ActivityStrip />
                       {!bare && <SectionTabs current={current} hash={hash} full={full} />}
+                      {!bare && <PageNext current={current} />}
                     </>
                   }
                 >

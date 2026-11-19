@@ -21,7 +21,7 @@ const CENSUS = {
   /** The twelve a person meets first (ADR 0124 addendum D-cli). */
   topCommands: 12,
   /** Pages in the app (`packages/ui/src/app/screens.ts`). */
-  screens: 58, // ADR 0195 (CS3): Readers found / facts say, beside Trust, and Catalog builds, beside Scans; ADR 0181: Decided by AI, beside Trust; ADR 0164 (F7): Mismatches; ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
+  screens: 54, // v30 slice 8 (fewer pages): Model runs, Prompt history, Scans and Catalog builds became one Activity page, and the Ecosystem map left (retiredScreens); ADR 0195 (CS3): Readers found / facts say, beside Trust, and Catalog builds, beside Scans; ADR 0181: Decided by AI, beside Trust; ADR 0164 (F7): Mismatches; ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
   /** Views in VS Code's Atticus container, and the commands its palette offers. */
   vscodeViews: 7,
   // 2026-11-01 (beta.10 caught up in VS Code): counted as the commands the palette offers (every
@@ -35,6 +35,29 @@ const CENSUS = {
   /** Tabs of IntelliJ's tool window (`Copy.kt`'s `*_TAB`). */
   intellijTabs: 9,
   retired: [],
+  /**
+   * Pages folded into another (docs/plan/v30.md, slice 8: "the surface census changes", no ADR):
+   * each keeps its address in screens.ts's MOVED, which opens its new place.
+   */
+  retiredScreens: [
+    { id: "runs", decided: "v30 slice 8", instead: "Activity › Model runs (#/activity?tab=runs)" },
+    {
+      id: "history",
+      decided: "v30 slice 8",
+      instead: "Activity › Prompt history (#/activity?tab=history)",
+    },
+    { id: "scans", decided: "v30 slice 8", instead: "Activity › Scans (#/activity?tab=scans)" },
+    {
+      id: "catalog-builds",
+      decided: "v30 slice 8",
+      instead: "Activity › Catalog builds (#/activity?tab=catalog-builds)",
+    },
+    {
+      id: "map",
+      decided: "v30 slice 8",
+      instead: "Map (the drawing) and Systems (its coverage and guides, #/systems)",
+    },
+  ],
 };
 
 /** The pages, by id, in the order screens.ts lists them. Every one must have a component. */
@@ -52,7 +75,6 @@ const SCREENS = [
   "outside",
   "mismatches",
   "crosscheck",
-  "map",
   "features",
   "mappings",
   "diagrams",
@@ -87,14 +109,11 @@ const SCREENS = [
   "orgpack-draft",
   "repos",
   "ai",
-  "runs",
+  "activity",
   "orgpack",
   "onboarding",
-  "scans",
-  "catalog-builds",
   "intake",
   "settings",
-  "history",
   "evals",
   "learning",
 ];
@@ -140,6 +159,16 @@ if (missing.length)
 const added = found.filter((id) => !SCREENS.includes(id));
 if (added.length)
   problems.push(`pages screens.ts has that the census doesn't name: ${added.join(", ")}`);
+
+// A retired page keeps its address: screens.ts's MOVED opens its new place (bookmarks, editors).
+const moved = /export const MOVED[^=]*= \{([\s\S]*?)\n\};/.exec(screensSrc);
+for (const r of CENSUS.retiredScreens) {
+  if (found.includes(r.id)) problems.push(`${r.id} is retired (${r.decided}) but still a page`);
+  if (!moved || !new RegExp(`(^|\\s)"?${r.id}"?: \\{ to:`, "m").test(moved[1]))
+    problems.push(
+      `${r.id} was retired (${r.decided}) but screens.ts's MOVED doesn't open its new place (${r.instead})`,
+    );
+}
 
 // Every page has a component: the app falls back to "being built" for one that doesn't, which is
 // how a page quietly stops working (ADR 0129 §2.3).

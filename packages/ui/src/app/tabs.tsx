@@ -75,3 +75,18 @@ export function SectionTabs({
     </div>
   );
 }
+
+/**
+ * v30 slice 8: a page's "what next", one line under its tabs, on the pages that had none
+ * (COPY.nav.next). Nothing for a page that ends in its own next step.
+ */
+export function PageNext({ current }: { current: ScreenDef }) {
+  const next = T.next[current.id];
+  if (!next) return null;
+  return (
+    <p className="page-next muted">
+      <strong>{T.nextLabel}: </strong>
+      {next}
+    </p>
+  );
+}

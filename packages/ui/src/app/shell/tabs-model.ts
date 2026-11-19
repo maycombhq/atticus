@@ -1,5 +1,5 @@
 import { COPY } from "../../copy.js";
-import { changeOf, screenOf } from "../screens.js";
+import { changeOf, movedHash, screenOf } from "../screens.js";
 
 /**
  * ADR 0194: the IDE layout's tabs, as data. The address (#/...) stays the page shown, so deep
@@ -68,7 +68,9 @@ function capped(s: TabsState): TabsState {
 }
 
 /** The address moved to a page: open its tab, or focus it and keep the address in it. */
-export function openTab(s: TabsState, hash: string): TabsState {
+export function openTab(s: TabsState, asked: string): TabsState {
+  // v30 slice 8: a page folded into another is kept at its new address.
+  const hash = movedHash(asked) ?? asked;
   const key = tabKeyOf(hash);
   // Home is one page: an old address of it, or one the app doesn't know, opens it as #/home.
   const h = key === HOME_KEY || !PAGE_HASH.test(hash) ? HOME_HASH : hash;

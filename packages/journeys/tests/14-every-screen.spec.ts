@@ -1,5 +1,5 @@
 import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
-import { SCREENS } from "../support/screens.js";
+import { MOVED, SCREENS } from "../support/screens.js";
 
 /**
  * WCAG 2.1 AA on every screen in the dark theme: axe reports no moderate, serious or critical violation
@@ -40,3 +40,10 @@ test("the command palette is accessible and takes you anywhere", async ({ page }
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/governance$/);
 });
+
+// v30 slice 8: a page folded into another keeps its address, which opens its new place.
+for (const [old, now] of MOVED)
+  test(`#/${old} opens its new place`, async ({ page }) => {
+    await open(page, app(), old);
+    await expect(page).toHaveURL(now);
+  });

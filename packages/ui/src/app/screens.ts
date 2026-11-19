@@ -3,17 +3,21 @@ import { COPY } from "../copy.js";
 /**
  * The app's map (the product owner's Surfaces design; ADR 0119 before it, plan 4.5, B1 and ADR
  * 0105). Six entries: Home (one page: what needs you, then the estate and the changes in flight),
- * Map (the estate, its flows, contracts, impact and how far to trust it), Change (every change,
- * one at a glance, then a tab per stage), Questions (everything open), Knowledge (the org's wikis
- * and documents, cited) and Set up (what the files hold, as forms). The app shows files and asks
- * questions; it runs no scans, model calls or git.
+ * Map (the map, its flows and its read status), Change (every change, one at a glance, then a tab
+ * per stage), Questions (everything open), Knowledge (the org's wikis and documents, cited) and
+ * Set up (what the files hold, as forms, and Activity). The app shows files and asks questions; it
+ * runs no scans, model calls or git.
  *
  * Every other page is under More pages, at the bottom of the menu (the D-app addendum's
  * follow-up, 2026-10-25: hidden behind `atticus ui --full` they were too hard to find, and seeing
  * what the AI was asked is part of trusting it), grouped by section, and Ctrl+K finds every page.
  * With `atticus ui --full` More pages starts open and every page is a tab of its section too.
- * Model runs is a tab of Set up, beside AI. No route is removed or renamed, so every old address
- * still opens its page.
+ *
+ * v30 slice 8 (fewer pages): the Map keeps Map, Flows and Read status; Contracts, Impact and
+ * Decided by AI open from a box's panel, for that box. Model runs, Prompt history, Scans and
+ * Catalog builds are the tabs of one Activity page. The Ecosystem map, a second drawing of the
+ * Map, is gone: its coverage and guides are on Systems. A page folded away keeps its address
+ * (MOVED), which opens its new place, so every bookmark and editor link still works.
  */
 
 export const SECTIONS = ["Home", "Map", "Change", "Questions", "Knowledge", "SetUp"] as const;
@@ -47,6 +51,8 @@ export interface ScreenDef {
 const N = COPY.nav;
 const S = COPY.nav.screens;
 const K = COPY.knowledge.nav;
+/** The names pages had before v30 slice 8: Ctrl+K still finds a page by them. */
+const F = COPY.nav.formerly;
 
 export const SCREENS: ScreenDef[] = [
   // Home: one page (the product owner, 2026-10-24): what needs you, then the estate and the
@@ -65,17 +71,20 @@ export const SCREENS: ScreenDef[] = [
   // ADR 0188: the daily pages are tabs of their sections by default, not only under More pages.
   { id: "todo", label: S.todo, section: "Home" },
 
-  // Map: the estate drawn, its flows, contracts, what breaks, and how far to trust it.
-  { id: "canvas", label: S.canvas, section: "Map" },
+  // Map: the estate drawn, its flows, and how far each repo was read (v30 slice 8: three tabs).
+  { id: "canvas", label: S.canvas, section: "Map", also: [F.canvas, F.map] },
   { id: "flows", label: COPY.flows.title, section: "Map" },
-  { id: "contracts", label: S.contracts, section: "Map" },
-  { id: "impact", label: S.impact, section: "Map" },
-  { id: "trust", label: S.trust, section: "Map" },
-  // ADR 0181: what the AI decided, beside Trust (which audits it): Correct, and each batch's Undo.
+  { id: "trust", label: S.trust, section: "Map", also: [F.trust] },
+  // v30 slice 8: about one box, so opened from its panel (for that box); the estate-wide page is
+  // under More pages, and Ctrl+K finds it.
+  { id: "contracts", label: S.contracts, section: "Map", full: true },
+  { id: "impact", label: S.impact, section: "Map", full: true },
+  // ADR 0181: what the AI decided (Read status audits it): Correct, and each batch's Undo.
   {
     id: "decisions",
     label: S.decisions,
     section: "Map",
+    full: true,
     also: [COPY.decisions.chip, COPY.decisions.batchesTitle],
   },
   // Ask (the box at the top), and a system's page (WP7.7).
@@ -85,9 +94,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "outside", label: S.outside, section: "Map", aside: true },
   // F7 (ADR 0164): the contract check on every link, linked from Trust and Why is this linked?.
   { id: "mismatches", label: S.mismatches, section: "Map", aside: true },
-  // ADR 0195 (CS3): the readers' cross-check, linked from Trust and Scans.
-  { id: "crosscheck", label: S.crosscheck, section: "Map", aside: true },
-  { id: "map", label: S.map, section: "Map", full: true },
+  // ADR 0195 (CS3): the readers' cross-check, linked from Read status and Scans.
+  { id: "crosscheck", label: S.crosscheck, section: "Map", aside: true, also: [F.crosscheck] },
   { id: "features", label: S.features, section: "Map", full: true },
   { id: "mappings", label: S.mappings, section: "Map", full: true },
   { id: "diagrams", label: S.diagrams, section: "Map", full: true },
@@ -143,24 +151,21 @@ export const SCREENS: ScreenDef[] = [
   { id: "repos", label: S.repos, section: "SetUp" },
   // ADR 0121: how AI runs here, chosen in a form.
   { id: "ai", label: S.ai, section: "SetUp" },
-  // What Atticus asked a model and what came back (ADR 0106), beside how AI runs here: the first
-  // place a person looking for "what was the AI asked" opens (2026-10-25).
-  { id: "runs", label: S.runs, section: "SetUp" },
+  // v30 slice 8: what ran, as one page with a tab each: what Atticus asked a model and what came
+  // back (ADR 0106), what people asked their assistant (ADR 0110), the scans, and the catalog's
+  // builds (ADR 0195). Beside how AI runs here: the first place a person looking for "what was
+  // the AI asked" opens (2026-10-25).
+  // Ctrl+K offers each tab by its name too (activityItems in palette.tsx).
+  { id: "activity", label: S.activity, section: "SetUp" },
   { id: "orgpack", label: S.orgpack, section: "SetUp" },
   // Seventh UX walk: the org pack's checks, beside the org pack.
   { id: "governance", label: S.governance, section: "SetUp", full: true },
   // The first steps, from Home's next step.
   { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
-  { id: "scans", label: S.scans, section: "SetUp" },
-  // ADR 0195 (CS3): the catalog's builds: confirm a refused build, undo, prune; linked from Scans.
-  { id: "catalog-builds", label: S.catalogBuilds, section: "SetUp", aside: true },
   { id: "intake", label: S.intake, section: "SetUp", full: true },
   { id: "settings", label: S.settings, section: "SetUp", full: true },
 
-  // Atticus itself, under More pages: what people asked their assistant (ADR 0110), its quality
-  // and what it learned.
-  // ADR 0188: beside Model runs, a tab of Set up (it was under More pages only).
-  { id: "history", label: S.history, section: "SetUp" },
+  // Atticus itself, under More pages: its quality and what it learned.
   { id: "evals", label: S.evals, section: "Atticus", full: true },
   { id: "learning", label: S.learning, section: "Atticus", full: true },
 ];
@@ -205,11 +210,65 @@ export function morePages(): MoreGroup[] {
   });
 }
 
+/** The tabs of the Activity page, by the address each had as a page of its own. */
+export const ACTIVITY_TABS = ["runs", "history", "scans", "catalog-builds"] as const;
+export type ActivityTab = (typeof ACTIVITY_TABS)[number];
+
+/** Each Activity tab's name: the name of the page it was before v30 slice 8. */
+export const ACTIVITY_LABELS: Readonly<Record<ActivityTab, string>> = {
+  runs: S.runs,
+  history: S.history,
+  scans: S.scans,
+  "catalog-builds": S.catalogBuilds,
+};
+
+/**
+ * v30 slice 8: pages folded into another. The old address is rewritten to the new place (its
+ * query kept), so a bookmark, an editor's link or an old link in a page still opens it.
+ */
+export const MOVED: Readonly<Record<string, { to: string; tab?: ActivityTab }>> = {
+  runs: { to: "activity", tab: "runs" },
+  history: { to: "activity", tab: "history" },
+  scans: { to: "activity", tab: "scans" },
+  "catalog-builds": { to: "activity", tab: "catalog-builds" },
+  // The Ecosystem map drew the Map a second time; its coverage and system guides are on Systems.
+  map: { to: "systems" },
+};
+
 /**
  * Addresses of pages merged into another: the old address opens the page it is part of now, so
  * every bookmark and editor link still works. The Overview is part of Home (2026-10-24).
  */
-export const OLD_ADDRESSES: Readonly<Record<string, string>> = { dashboard: "home" };
+export const OLD_ADDRESSES: Readonly<Record<string, string>> = {
+  dashboard: "home",
+  ...Object.fromEntries(Object.entries(MOVED).map(([from, m]) => [from, m.to])),
+};
+
+/** The address a moved page's old address opens now, its query kept; undefined if it didn't move. */
+export function movedHash(hash: string): string | undefined {
+  const path = hash.replace(/^#\/?/, "");
+  const [id = "", ...rest] = path.split("?");
+  const m = MOVED[id];
+  if (!m) return undefined;
+  const query = rest.join("?");
+  const parts = [m.tab ? `tab=${m.tab}` : "", query].filter(Boolean).join("&");
+  return `#/${m.to}${parts ? `?${parts}` : ""}`;
+}
+
+/** An Activity tab's address, with its own query (`activityHref("runs", { run })`). */
+export function activityHref(tab: ActivityTab, query: Record<string, string | undefined> = {}) {
+  const q = new URLSearchParams({ tab });
+  for (const [k, v] of Object.entries(query)) if (v) q.set(k, v);
+  return `#/activity?${q.toString()}`;
+}
+
+/** The Activity tab an address shows: its `?tab=`, else the old page's own address, else runs. */
+export function activityTabOf(hash: string): ActivityTab {
+  const asked = hashParam(hash, "tab") ?? hash.replace(/^#\/?/, "").split(/[/?]/)[0];
+  return (ACTIVITY_TABS as readonly string[]).includes(asked ?? "")
+    ? (asked as ActivityTab)
+    : "runs";
+}
 
 /** The page a hash opens; an unknown one opens Home. */
 export function screenOf(hash: string): ScreenDef {
