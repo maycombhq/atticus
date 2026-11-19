@@ -3,6 +3,7 @@ import { readChangeFiles, readStoryIndex } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { previewTaskRun, runTask, type RunTaskOptions, type TaskRunPreview } from "./run.js";
 import { readTaskRun, type RunLevel, type TaskRunRecord, type TaskRunState } from "./store.js";
+import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
 
 /**
  * ADR 0181 part 4: Run all ready tasks. The tech lead or architect runs every task of a change
@@ -15,7 +16,9 @@ import { readTaskRun, type RunLevel, type TaskRunRecord, type TaskRunState } fro
  * A task depends on the tasks of the stories its story depends on (stories.md, "Depends on"), and
  * (ninth UX walk) on the earlier tasks of its own repo in tasks.md order, since each task's draft
  * starts from the change branch: a task marked [P] (Spec Kit's marker) doesn't wait for the [P]
- * tasks just before it in its repo. It is done when it is ticked in tasks.md (a merged PR ticks it). The cross-repo order is the
+ * tasks just before it in its repo. ADR 0201 (waves): a task that says `(after <task id>)` in
+ * tasks.md also waits, across repos, for each task it names; one that names a task tasks.md
+ * doesn't have, or tasks that name each other, are never ready. It is done when it is ticked in tasks.md (a merged PR ticks it). The cross-repo order is the
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
@@ -27,6 +30,8 @@ export interface ReadyInput {
   stories: string[];
   /** Ninth UX walk: tasks.md marks it [P], so it may go with the [P] tasks next to it in its repo. */
   parallel?: boolean | undefined;
+  /** ADR 0201 (waves): the tasks its line names in `(after …)`; it waits for each, across repos. */
+  after?: readonly string[] | undefined;
   /** Where its last task run stands, if it ran. */
   state?: TaskRunState | undefined;
   /** For a task whose PR is open: the Git host says it was merged or closed (review round 43). */
@@ -54,6 +59,11 @@ export interface ReadyPlan {
   tasks: ReadyTask[];
   /** The ids of the ready ones, in the order they run. */
   ready: string[];
+  /**
+   * ADR 0201 (waves): what the reader of tasks.md wants a person to know and holds nothing: a
+   * not-done task whose title ends in a bracket that starts with "after" and names no task.
+   */
+  notes?: string[];
 }
 
 /** The states in which a task has run and waits on its PR, the assistant or a person: not run again here. */
@@ -68,18 +78,29 @@ const PAST: Partial<Record<TaskRunState, string>> = {
 };
 
 /**
- * Ninth UX walk: the not-done tasks before `t` in its own repo, in tasks.md order. A [P] task
- * doesn't wait for the [P] tasks right before it in its repo (they go together), only for what is
- * before them.
+ * The tasks in run order, each moved after every not-done task it names in `(after …)`. A task
+ * that is never ready (`stuck`) stays where it was: its names put nothing in order.
  */
-function sameRepoBefore(tasks: readonly ReadyInput[], t: ReadyInput): string[] {
-  const mine = tasks.slice(0, tasks.indexOf(t)).filter((x) => x.repo === t.repo);
-  let cut = mine.length;
-  if (t.parallel) while (cut > 0 && mine[cut - 1]!.parallel) cut--;
-  return mine
-    .slice(0, cut)
-    .filter((x) => !x.done)
-    .map((x) => x.id);
+function afterOrder(order: readonly ReadyInput[], stuck: ReadonlyMap<ReadyInput, string>) {
+  const open = new Set(order.filter((t) => !t.done).map((t) => t.id));
+  const out: ReadyInput[] = [];
+  const placed = new Set<string>();
+  let left = [...order];
+  while (left.length) {
+    const held: ReadyInput[] = [];
+    for (const t of left)
+      if (
+        stuck.has(t) ||
+        (t.after ?? []).every((id) => id === t.id || !open.has(id) || placed.has(id))
+      ) {
+        out.push(t);
+        placed.add(t.id);
+      } else held.push(t);
+    // Nothing moved: what is left waits on a task that is stuck, kept in the order it had.
+    if (held.length === left.length) return [...out, ...held];
+    left = held;
+  }
+  return out;
 }
 
 /** Which tasks are ready, and the order to run them in (pure: files are read by `readyTasksOf`). */
@@ -98,15 +119,20 @@ export function planReadyTasks(o: {
   o.tasks.forEach((t, i) => {
     if (!firstOfRepo.has(t.repo)) firstOfRepo.set(t.repo, i);
   });
-  const order = o.tasks
-    .map((t, i) => ({ t, i }))
-    .sort(
-      (a, b) =>
-        rank(a.t.repo) - rank(b.t.repo) ||
-        firstOfRepo.get(a.t.repo)! - firstOfRepo.get(b.t.repo)! ||
-        a.i - b.i,
-    )
-    .map((x) => x.t);
+  // ADR 0201 (waves): what holds a task for ever, said in place of what it waits for.
+  const never = neverReady(o.tasks);
+  const order = afterOrder(
+    o.tasks
+      .map((t, i) => ({ t, i }))
+      .sort(
+        (a, b) =>
+          rank(a.t.repo) - rank(b.t.repo) ||
+          firstOfRepo.get(a.t.repo)! - firstOfRepo.get(b.t.repo)! ||
+          a.i - b.i,
+      )
+      .map((x) => x.t),
+    never,
+  );
   const out: ReadyTask[] = [];
   for (const t of order) {
     if (t.done) continue;
@@ -115,17 +141,22 @@ export function planReadyTasks(o: {
       .filter((x) => x.id !== t.id && !x.done && x.stories.some((s) => before.has(s)))
       .map((x) => x.id);
     const sameRepo = sameRepoBefore(o.tasks, t).filter((id) => !byStory.includes(id));
-    const waitsFor = o.tasks
-      .map((x) => x.id)
-      .filter((id) => byStory.includes(id) || sameRepo.includes(id));
+    // ADR 0201 (waves): the not-ticked tasks its line names, in any repo.
+    const after = afterWaits(o.tasks, t).filter((id) => !byStory.includes(id));
+    const afterOnly = after.filter((id) => !sameRepo.includes(id));
+    const waitsFor = [...new Set(o.tasks.map((x) => x.id))].filter(
+      (id) => byStory.includes(id) || sameRepo.includes(id) || after.includes(id),
+    );
     const past = t.state && !(t.state === "pr-open" && t.prSettled) ? PAST[t.state] : undefined;
-    const named = [
+    const waits = [
       ...byStory,
       ...(sameRepo.length ? [`${sameRepo.join(", ")} (same repo)`] : []),
+      ...(afterOnly.length ? [`${afterOnly.join(", ")} (after)`] : []),
     ].join(", ");
-    const why = waitsFor.length
-      ? `it waits for ${waitsFor.length === 1 ? "task" : "tasks"} ${named} to be done first`
-      : past;
+    const tasksWord = (ids: readonly string[]) => (ids.length === 1 ? "task" : "tasks");
+    const why =
+      never.get(t) ??
+      (waitsFor.length ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first` : past);
     out.push({
       id: t.id,
       repo: t.repo,
@@ -150,7 +181,8 @@ export async function readyTasksOf(
 ): Promise<ReadyPlan> {
   const files = await readChangeFiles(changeFolder(root, change));
   const tasks: ReadyInput[] = [];
-  for (const t of readChangeTasks(files)) {
+  const read = readChangeTasks(files);
+  for (const t of read) {
     const r = await readTaskRun(root, change, t.id).catch(() => undefined);
     const pr = o.prStates?.get(t.id);
     tasks.push({
@@ -159,15 +191,23 @@ export async function readyTasksOf(
       done: t.done,
       stories: t.stories,
       ...(t.parallel ? { parallel: true } : {}),
+      ...(t.after ? { after: t.after } : {}),
       ...(r ? { state: r.state } : {}),
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });
   }
-  return planReadyTasks({
+  const plan = planReadyTasks({
     tasks,
     stories: readStoryIndex(files),
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
   });
+  const notes = read
+    .filter((t) => !t.done && t.afterWords)
+    .map(
+      (t) =>
+        `Task ${t.id}'s title ends "${t.afterWords}": no task has ${/[,;]|\sand\s/i.test(t.afterWords!) ? "those ids" : "that id"}, so it is read as part of the title`,
+    );
+  return notes.length ? { ...plan, notes } : plan;
 }
 
 /** One task's outcome in a Run all ready tasks. */

@@ -1,6 +1,16 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
 import type { SourceInput } from "@maycombhq/ai";
-import { readRepoSpec, specsDirOf, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
+import {
+  orgPackDirOf,
+  orgPackRelOf,
+  readRepoSpec,
+  RepoManifest,
+  specsDirOf,
+  type CatalogRecord,
+  type FlowRecord,
+} from "@maycombhq/core";
 
 /**
  * The estate as the stages read it (ADR 0087): every repo's spec of flows (ADR 0079) and the
@@ -28,6 +38,115 @@ export interface Estate {
   endpoints: Set<string>;
   /** Files in specs/ that didn't read. */
   problems: string[];
+  /**
+   * ADR 0201: the repo ids of every manifest (org-pack/profiles/<platform>/repos.manifest.yaml)
+   * that reads, archived repos left out. A repo a manifest lists is the estate's, read or not
+   * (amending ADR 0189 point 9). A manifest that doesn't read lists none, and is in `problems`.
+   */
+  manifestRepos: Set<string>;
+  /** The repos a manifest marks archived: they take no new work, and a finding says so. */
+  archivedRepos: Set<string>;
+  /** Of `problems`, the manifests that didn't read (their repos aren't counted). */
+  manifestProblems: string[];
+}
+
+/** What the manifests say, as the estate keeps it. */
+export interface ManifestRead {
+  repos: readonly string[];
+  archived: readonly string[];
+  problems: readonly string[];
+}
+
+/**
+ * ADR 0201: the estate's repos, which are the repos with a flow or a record and the manifests'.
+ * A read repo with nothing found in it, and a repo nobody read, are the estate too.
+ */
+export function estateRepos(e: Pick<Estate, "flows" | "records" | "manifestRepos">): Set<string> {
+  return new Set([
+    ...e.flows.map((f) => f.repo),
+    ...e.records
+      .map((r) => (r as { repo?: unknown }).repo)
+      .filter((x): x is string => typeof x === "string"),
+    ...e.manifestRepos,
+  ]);
+}
+
+/**
+ * The manifest repos nobody read: those no Component record is built in. Only these are known by
+ * their repo id where a component is named (a call's target, a consumer, a dependency); a repo
+ * that was read is known by the component the map found in it.
+ */
+export function unreadRepos(e: Pick<Estate, "records" | "manifestRepos">): Set<string> {
+  const read = new Set(
+    (e.records as Rec[]).flatMap((r) =>
+      r.kind === "Component" && typeof r.repo === "string" ? [r.repo] : [],
+    ),
+  );
+  return new Set([...e.manifestRepos].filter((id) => !read.has(id)));
+}
+
+/**
+ * Why a repo a draft names isn't the estate's, when the manifests can say: it is archived, or a
+ * manifest didn't read. Words that follow the finding's own sentence; empty when neither.
+ */
+export function notEstateWhy(
+  e: Pick<Estate, "archivedRepos" | "manifestProblems">,
+  repo: string,
+): string {
+  if (e.archivedRepos.has(repo)) return ` The manifest marks ${repo} archived.`;
+  const n = e.manifestProblems.length;
+  if (!n) return "";
+  return ` ${n === 1 ? "A manifest" : `${n} manifests`} didn't read, so ${n === 1 ? "its" : "their"} repos aren't counted: ${e.manifestProblems.join("; ")}`;
+}
+
+/**
+ * The manifests as the workspace reads them (`loadRepos`, which the planner can't import): each
+ * org-pack/profiles/<platform>/repos.manifest.yaml checked against the same schema, and a repo
+ * id in one profile only. Where `loadRepos` throws, the manifest lists no repo here and is said
+ * as a problem, so a stage still runs and its finding says why the repo isn't counted.
+ */
+export async function readManifests(root: string): Promise<ManifestRead> {
+  const profiles = join(orgPackDirOf(root), "profiles");
+  const repos: string[] = [];
+  const archived: string[] = [];
+  const problems: string[] = [];
+  const where = new Map<string, string>();
+  for (const d of (await readdir(profiles, { withFileTypes: true }).catch(() => []))
+    .filter((x) => x.isDirectory())
+    .map((x) => x.name)
+    .sort()) {
+    const text = await readFile(join(profiles, d, "repos.manifest.yaml"), "utf8").catch(
+      () => undefined,
+    );
+    if (text === undefined) continue;
+    const rel = `${orgPackRelOf(root)}/profiles/${d}/repos.manifest.yaml`;
+    let raw: unknown;
+    try {
+      raw = parse(text);
+    } catch (e) {
+      problems.push(`${rel}: invalid YAML: ${(e as Error).message.split("\n")[0]}`);
+      continue;
+    }
+    const m = RepoManifest.safeParse(raw);
+    if (!m.success) {
+      problems.push(
+        `${rel}: ${m.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`,
+      );
+      continue;
+    }
+    const twice = m.data.repos.find((r) => where.has(r.id));
+    if (twice) {
+      problems.push(
+        `${rel}: repo id ${twice.id} is in both ${where.get(twice.id)} and ${m.data.platform}`,
+      );
+      continue;
+    }
+    for (const r of m.data.repos) {
+      where.set(r.id, m.data.platform);
+      (r.archived ? archived : repos).push(r.id);
+    }
+  }
+  return { repos, archived, problems };
 }
 
 /** Read every repo's spec under specs/ and index it with the catalog. */
@@ -43,13 +162,15 @@ export async function loadEstate(root: string, records: CatalogRecord[]): Promis
     for (const f of s.flows) flows.push({ repo, flow: f });
     for (const p of s.problems) problems.push(`${p.file}: ${p.message}`);
   }
-  return estateOf(records, flows, problems);
+  const manifest = await readManifests(root);
+  return estateOf(records, flows, [...problems, ...manifest.problems], manifest);
 }
 
 export function estateOf(
   records: CatalogRecord[],
   flows: SpecFlow[],
   problems: string[] = [],
+  manifest: ManifestRead = { repos: [], archived: [], problems: [] },
 ): Estate {
   const byId = new Map((records as Rec[]).map((r) => [r.id, r]));
   const flowById = new Map(flows.map((f) => [f.flow.id, f]));
@@ -65,6 +186,9 @@ export function estateOf(
     flowById,
     endpoints,
     problems,
+    manifestRepos: new Set(manifest.repos),
+    archivedRepos: new Set(manifest.archived),
+    manifestProblems: [...manifest.problems],
   };
 }
 

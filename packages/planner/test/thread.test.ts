@@ -214,7 +214,15 @@ describe("the components a change plans", () => {
   });
 
   it("may be deployed: the deploy order names a planned repo, marked planned", () => {
-    const e = { ...estate, records: [], byId: new Map(), flowById: new Map() } as never;
+    const e = {
+      ...estate,
+      records: [],
+      byId: new Map(),
+      flowById: new Map(),
+      manifestRepos: new Set(),
+      archivedRepos: new Set(),
+      manifestProblems: [],
+    } as never;
     const issues = deployIssues(
       [scheduler, calls],
       [{ repo: "forge-scheduler" }, { repo: "forge-orders" }],

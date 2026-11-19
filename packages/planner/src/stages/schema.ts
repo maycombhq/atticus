@@ -95,7 +95,17 @@ export const FeaturePlacement = z.strictObject({
     )
     .default([]),
   /** Flows that don't exist yet. */
-  newFlows: z.array(z.strictObject({ name: text(), repo: Id, why: text() })).default([]),
+  newFlows: z
+    .array(
+      z.strictObject({
+        name: text(),
+        repo: Id,
+        /** ADR 0201: the repo doesn't exist yet; this change plans it (a note, not a refusal). */
+        newRepo: z.boolean().optional(),
+        why: text(),
+      }),
+    )
+    .default([]),
   gaps: z
     .array(
       z.strictObject({

@@ -66,6 +66,7 @@ import {
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
+import { QUICK_PATH_RULES, quickPathHint } from "../quick-path.js";
 import { rerunOf } from "./waiting.js";
 import { citeFiles } from "./cite.js";
 import { unfence, YAML_QUOTE_RULE } from "./answer.js";
@@ -99,7 +100,10 @@ import { STAGE_PHASE, STAGE_SCHEMA_VERSION, Stage, StageLoop, type LoopFinding }
  * back unchanged twice (three drafts in a row), or comes back after it was gone, stops the
  * loop: a finding a person can decide becomes a question (ADR 0078); a drafting finding (the
  * shape of what the assistant wrote, finding-kind.ts) stops it with a plain message naming
- * the finding and the file to fix. A stage is done when nothing blocking is open and no
+ * the finding and the file to fix. ADR 0201 amends that end rule: a blocking finding that says the
+ * change isn't one for the staged path (QUICK_PATH_RULES: it places nothing, or changes no step)
+ * ends the loop on the draft it first appears in, with the finding and the quick path's hint; no
+ * second draft is asked for and no question is raised. A stage is done when nothing blocking is open and no
  * question it raised is open; then a person approves its PR.
  */
 
@@ -1353,6 +1357,8 @@ export async function runStageLoop<A>(
     // A finding a person answered, back in a draft that was given the answer: the assistant
     // doesn't follow it, and drafting again won't change that.
     const ignored: LoopFinding[] = [];
+    // ADR 0201: findings that say the change belongs on the quick path, not here.
+    const offPath: LoopFinding[] = [];
     const byFp = new Map(loop.findings.map((f) => [f.fingerprint, f]));
     for (const i of found) {
       const fp = issueFingerprint(i.rule, i.target, i.evidence ?? "");
@@ -1382,6 +1388,11 @@ export async function runStageLoop<A>(
       }
       // Waiting on a person's decision already: never a question, never a drafting stop.
       if (i.proposed) continue;
+      // ADR 0201: not a change for the staged path. It ends the loop on this draft (below).
+      if (f.blocking && QUICK_PATH_RULES.has(f.rule)) {
+        offPath.push(f);
+        continue;
+      }
       // Sightings up to a stop a person has since dealt with don't count again.
       const seen = f.seenIn.filter((x) => x > (f.stoppedAt ?? 0));
       const repeated = seen.length >= 3 && seen.at(-3) === n - 2 && seen.at(-2) === n - 1;
@@ -1401,6 +1412,22 @@ export async function runStageLoop<A>(
           await retireOpen(root, f.question, `Draft ${n} no longer has it: ${f.message}`, at);
     await retireSettledEscalations(root, change.id, loop, at);
     await writeLoop(dir, loop);
+
+    // ADR 0201 (amending ADR 0087's end rule): the draft says the change places nothing or
+    // changes no step. Another draft would say the same and it is no question for a person, so
+    // the loop ends here, on the draft it first appears in, with the finding and where to go.
+    if (offPath.length) {
+      for (const f of offPath) f.stoppedAt = n;
+      await stopNow(
+        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: it found nothing for the staged path to plan.`,
+        [
+          ...offPath.map(
+            (f) => `  - ${f.message} (rule ${f.rule}; in ${f.evidence ?? `${rel}/${spec.source}`})`,
+          ),
+          quickPathHint(),
+        ],
+      );
+    }
 
     // ADR 0115 addendum (2026-10-25): a blocking finding an assistant proposed is not relevant
     // waits on a person. Drafting again won't decide it, and the stage isn't done while it waits.

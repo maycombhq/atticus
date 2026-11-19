@@ -20,7 +20,14 @@ import { itemLine } from "./knowledge-lines.js";
 import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
-import { estateIndex, loadEstate, systemOf, type Estate } from "./estate.js";
+import {
+  estateIndex,
+  estateRepos,
+  loadEstate,
+  notEstateWhy,
+  systemOf,
+  type Estate,
+} from "./estate.js";
 import { designText, readFigma, type DesignRead } from "./figma.js";
 import {
   runStageLoop,
@@ -98,6 +105,7 @@ flows:               # existing flows it touches (flow ids from the index)
 newFlows:            # flows the change needs that don't exist yet
   - name: <what a person would call it>
     repo: <the repo it would live in>
+    newRepo: true    # only when that repo doesn't exist yet and this change plans it; else leave the line out
     why: <one sentence>
 gaps:                # what the estate lacks for this change, at a high level
   - what: <what is missing>
@@ -238,18 +246,23 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
         f.id,
         `Flow ${f.id} isn't in any repo's spec. Name a flow id from the index, or put it under newFlows.`,
       );
-  const repos = new Set([
-    ...e.flows.map((f) => f.repo),
-    ...e.records
-      .map((r) => (r as { repo?: unknown }).repo)
-      .filter((x): x is string => typeof x === "string"),
-  ]);
+  // ADR 0201: a manifest repo is the estate's, read or not; a repo the answer marks as new
+  // passes with a note; anything else is refused.
+  const repos = estateRepos(e);
   for (const n of p.newFlows)
-    if (!repos.has(n.repo))
+    if (repos.has(n.repo)) continue;
+    else if (n.newRepo && !e.archivedRepos.has(n.repo))
+      out.push({
+        rule: "feature.planned-repo",
+        target: `${n.name}:${n.repo}`,
+        message: `New flow "${n.name}" is put in ${n.repo}, a new repo this change plans. Once it is created on your Git host, add it: atticus repo add <its clone URL> --id ${n.repo}.`,
+        blocking: false,
+      });
+    else
       issue(
         "feature.unknown-repo",
         `${n.name}:${n.repo}`,
-        `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.`,
+        `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.${notEstateWhy(e, n.repo)}`,
       );
   if (p.features.length + p.flows.length + p.newFlows.length === 0)
     issue(

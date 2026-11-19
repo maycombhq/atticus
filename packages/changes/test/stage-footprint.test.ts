@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,24 @@ async function estate(): Promise<string> {
   });
   return root;
 }
+
+describe("the repos tasks.md names (ADR 0201)", () => {
+  it("count when a manifest lists them, read or not; a heading nothing knows doesn't", async () => {
+    const root = await estate();
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      "schemaVersion: 1\nplatform: forge\nrepos:\n  - id: forge-infra\n    url: https://git.example.com/forge/forge-infra.git\n    type: infra\n    owner: team-platform\n",
+    );
+    await appendFile(
+      join(root, "openspec/changes", CHANGE, "tasks.md"),
+      "\n## forge-infra\n\n- [ ] 9.1 Give the consent topic its retention\n\n## forge-nowhere\n\n- [ ] 9.2 A slip of a heading\n",
+    );
+    const ctx = await loadChangeContext(root);
+    const fp = await changeFootprint(ctx, await changeStore(root).read(CHANGE));
+    expect(fp.repos).toEqual(["forge-infra", "forge-orders"]);
+  });
+});
 
 describe("a change's footprint from the stages' files (B-change)", () => {
   it("reads feature.yaml and the target flows, though change.yaml declares nothing", async () => {

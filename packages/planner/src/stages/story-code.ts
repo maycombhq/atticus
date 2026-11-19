@@ -1,4 +1,4 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { estimateTokens, type SourceInput } from "@maycombhq/ai";
 import { isSecretPath, redactSecrets } from "@maycombhq/core";
@@ -77,6 +77,18 @@ export async function checkoutHas(
   const full = await inside(base, path);
   if (!full) return undefined;
   return (await stat(full)).isDirectory() ? "dir" : "file";
+}
+
+/**
+ * ADR 0201: whether a repo's checkout is an empty repo, which is one with no folder at its root
+ * other than hidden ones (.git, .github). A change that starts a repo gives it its layout, so a
+ * new file's folder isn't one the repo has yet. False without a checkout.
+ */
+export async function checkoutEmpty(root: string, repo: string): Promise<boolean> {
+  const base = defaultCodeDir(root, repo);
+  if (!base) return false;
+  const entries = await readdir(base, { withFileTypes: true }).catch(() => undefined);
+  return !!entries && !entries.some((d) => d.isDirectory() && !d.name.startsWith("."));
 }
 
 const andList = (xs: string[]) =>

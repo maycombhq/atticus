@@ -759,10 +759,15 @@ async function stageFootprint(
     }
   }
 
-  // tasks.md: the repos its tasks are grouped under (a repo the specs or the catalog know).
+  // tasks.md: the repos its tasks are grouped under (a repo the specs or the catalog know, or,
+  // ADR 0201, one a manifest lists, so the critic sees the repos of a change on the quick path).
+  const manifestRepos = new Set(
+    ctx.orgPack.profiles.flatMap((p) => p.repos?.repos.map((r) => r.id) ?? []),
+  );
   const taskRepos: string[] = [];
   for (const m of tasksText.matchAll(/^##\s+(\S+)\s*$/gm))
-    if (catalogRepos.has(m[1]!) || (await specs.hasRepo(m[1]!))) taskRepos.push(m[1]!);
+    if (catalogRepos.has(m[1]!) || manifestRepos.has(m[1]!) || (await specs.hasRepo(m[1]!)))
+      taskRepos.push(m[1]!);
   if (taskRepos.length) {
     out.from.push("tasks.md");
     for (const r of taskRepos) out.repos.add(r);

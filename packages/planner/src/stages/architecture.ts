@@ -33,6 +33,7 @@ import {
   outsideSystems,
   scopeRepos,
   type Estate,
+  unreadRepos,
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { openspecInstructionSource } from "./openspec-files.js";
@@ -66,7 +67,7 @@ import {
   type DeltaStep,
   type FeaturePlacement,
 } from "./schema.js";
-import { checkoutHas, readCheckoutFile } from "./story-code.js";
+import { checkoutEmpty, checkoutHas, readCheckoutFile } from "./story-code.js";
 import { callsAt, declaresMethod, doneAt, flowCitesFile } from "./places.js";
 import {
   consumerIssues,
@@ -1022,7 +1023,15 @@ export async function placeIssues(
         const there =
           (root ? (await checkoutHas(root, d.repo, folder)) === "dir" : false) ||
           citesFolder(e, d.repo, folder);
-        if (!there)
+        if (!there && root && (await checkoutEmpty(root, d.repo)))
+          // ADR 0201: an empty repo has no layout to follow yet: a note, not a refusal.
+          issue(
+            "new",
+            "delta.new-folder",
+            `${change} puts the new code in a new file ${f}, and ${d.repo} is an empty repo: the change gives it its layout, so the folder isn't checked.`,
+            false,
+          );
+        else if (!there)
           issue(
             "new",
             "delta.new-folder",
@@ -1360,6 +1369,9 @@ export function checkDeltas(
   };
 
   const planned = plannedComponents(deltas, e);
+  // ADR 0201 (amending ADR 0189 point 9): a manifest repo nobody read is known as a planned
+  // component is. A repo that was read is known by the component the map found in it.
+  const unread = unreadRepos(e);
   const seen = new Set<string>();
   for (const d of deltas) {
     const t = d.flow;
@@ -1461,6 +1473,7 @@ export function checkDeltas(
         !s.to.new &&
         !outside &&
         !planned.has(s.to.component) &&
+        !unread.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(

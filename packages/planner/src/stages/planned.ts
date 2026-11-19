@@ -1,4 +1,4 @@
-import type { Estate } from "./estate.js";
+import { unreadRepos, type Estate } from "./estate.js";
 import type { FlowDelta } from "./schema.js";
 
 /**
@@ -47,6 +47,24 @@ export function plannedComponents(
     if (x.flows.length && x.flows.every((f) => removed.has(f)))
       out.set(component, { component, action: "retire", repo: x.repo });
   return out;
+}
+
+/**
+ * ADR 0201: a consumer the catalog doesn't have that is still known, and why its use can't be
+ * checked: a repo a manifest lists that nobody read, or a component this change plans (ADR 0189).
+ * The words that end the note; undefined for an id nothing knows, which is refused as before.
+ */
+export function unreadConsumer(
+  id: string,
+  deltas: readonly FlowDelta[],
+  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos">,
+): string | undefined {
+  // A repo that was read is known by its component: only one nobody read is named by its repo.
+  if (unreadRepos(e).has(id))
+    return `is in the manifest and hasn't been read, so its use can't be checked: atticus map ${id}`;
+  if (plannedComponents(deltas, e).get(id)?.action === "new")
+    return "is planned in this change and hasn't been read, so its use can't be checked.";
+  return undefined;
 }
 
 /** The repos a change's planned new components deploy from. */
