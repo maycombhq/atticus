@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LineCounter, isMap, isSeq, parse, parseDocument } from "yaml";
 import {
+  normalizePath,
   readFlow,
   specFlowFiles,
   type CatalogRecord,
@@ -130,11 +131,26 @@ export const wordsOf = (s: string): string[] =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
-/** `POST /a/{id}` as its method and its path with every parameter written `{}`. */
-function entryParts(entry: string): { method?: string; path: string } {
+/**
+ * `POST /a/{id}` as its method and its path, normalised as the join normalises a path (core's
+ * `normalizePath`: every parameter `{}`, no query string or fragment, no trailing or doubled
+ * slash), after a scheme and host are dropped: `POST https://host/a/7?x=1` is `POST /a/{}`'s
+ * entry too. Case is kept: `/A` may be another route. A topic is its name, trimmed.
+ */
+export function entryParts(entry: string): { method?: string; path: string } {
   const m = /^\s*([A-Za-z]+)\s+(\S+)/.exec(entry);
-  const norm = (p: string) => p.replace(/\{[^}]*\}/g, "{}").replace(/:[A-Za-z_]\w*/g, "{}");
-  return m ? { method: m[1]!.toUpperCase(), path: norm(m[2]!) } : { path: norm(entry.trim()) };
+  const ORIGIN = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*/;
+  const norm = (p: string) => {
+    const t = p.trim();
+    // With its scheme and host gone, what is left is a path: "/" when nothing is.
+    const local = ORIGIN.test(t) ? `/${t.replace(ORIGIN, "")}` : t;
+    // normalizePath empties a parameter that is a whole segment; one inside a segment
+    // (`/orders/{id}.pdf`, `/orders({key})`) is emptied here too, so its name never decides.
+    return normalizePath(local)
+      .replace(/\{[^}]*\}/g, "{}")
+      .replace(/:[A-Za-z_]\w*/g, "{}");
+  };
+  return m ? { method: m[1]!.toUpperCase(), path: norm(m[2]!) } : { path: norm(entry) };
 }
 
 const str = (x: unknown): string | undefined => (typeof x === "string" && x ? x : undefined);
