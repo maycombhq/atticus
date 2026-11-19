@@ -162,6 +162,12 @@ const obj = (x: unknown): Record<string, unknown> | undefined =>
 const FIELD_LISTS = ["sends", "returns", "reads", "checks", "from", "to", "required"] as const;
 
 /** A step's words cut to a quote: the first 90 characters. */
+/**
+ * ADR 0203: an operation's words that say it moves data: a migration file, a backfill, a data
+ * migration, or a migration of rows, tables or columns. "Migrate the services" is no data change.
+ */
+const MOVES_DATA =
+  /\bV\d+__\w+\.sql\b|\bbackfill|\bdata migration\b|\bmigrat\w*\s+(?:the\s+)?(?:data|rows|tables?|columns?)\b/i;
 const quote = (s: string) => (s.length > 90 ? `${s.slice(0, 87).trimEnd()}...` : s);
 
 interface Today {
@@ -406,7 +412,12 @@ export async function changeFootprint(
     signals.push({
       factor: "spread",
       detail: `${spread.length} repos (${spread.join(", ")})`,
-      cite: staged.deployFile ?? staged.from.find((f) => f.startsWith("target-flows/")) ?? "",
+      // ADR 0203 review: never an empty citation; the file the repos were read from.
+      cite:
+        staged.deployFile ??
+        staged.from.find((f) => f.startsWith("target-flows/")) ??
+        staged.from[0] ??
+        "change.yaml",
     });
 
   return {
@@ -553,6 +564,28 @@ async function stageFootprint(
     }
     if (doc.errors.length) continue;
     const d = obj(doc.toJS());
+    // ADR 0203: the operations' file is the stages' own: its repos are the change's, and an
+    // operation that says it moves data is a schema change, cited at its line.
+    if (d && f === "_operations.yaml") {
+      out.from.push(rel);
+      const items = doc.get("operations", true);
+      (Array.isArray(d.operations) ? d.operations : []).forEach((raw, i) => {
+        const o = obj(raw);
+        for (const repo of strs(o?.repos)) out.repos.add(repo);
+        const what = str(o?.what) ?? "";
+        if (!MOVES_DATA.test(what)) return;
+        const node = (items as { items?: unknown[] } | undefined)?.items?.[i] as
+          { get?: (k: string, keep: boolean) => unknown } | undefined;
+        const r = (node?.get?.("what", true) as { range?: [number, number, number] } | null)?.range;
+        const at = r ? lines.linePos(r[0]).line : undefined;
+        out.signals.push({
+          factor: "schema",
+          detail: `operation ${str(o?.id) ?? i + 1} moves data: "${quote(what)}"`,
+          cite: at ? `${rel}:${at}` : rel,
+        });
+      });
+      continue;
+    }
     const flowId = str(d?.flow);
     if (!d || !flowId) continue;
     out.from.push(rel);
@@ -772,6 +805,9 @@ async function stageFootprint(
         const repo = str(obj(raw)?.repo);
         if (repo) out.repos.add(repo);
       }
+      // ADR 0203: the repos the feature's operations are done in.
+      for (const raw of Array.isArray(placed.operations) ? placed.operations : [])
+        for (const repo of strs(obj(raw)?.repos)) out.repos.add(repo);
     }
   }
 

@@ -64,6 +64,17 @@ function touchedStores(ctx: CriticContext): { stores: string[]; evidence: Eviden
 const onStagePath = (ctx: CriticContext) =>
   ctx.footprint.from.some((f) => f.startsWith("target-flows/"));
 
+/**
+ * ADR 0203: the schema change is an operation's alone (one that says it moves data), which no
+ * target flow carries, so the stage can't write data.md from it.
+ */
+const byOperations = (ctx: CriticContext) => {
+  const schema = ctx.footprint.signals.filter((s) => s.factor === "schema");
+  return (
+    schema.length > 0 && schema.every((s) => s.cite.startsWith("target-flows/_operations.yaml"))
+  );
+};
+
 /** Whether its target flows change the schema: a new table, a migration, or a column with a type. */
 const changesSchema = (ctx: CriticContext) =>
   ctx.footprint.signals.some((s) => s.factor === "schema");
@@ -96,9 +107,11 @@ export const dataDocPresent: DeterministicCheckDef = {
       // The stage writes data.md from the target flows, so on that path the fix is to run it,
       // not to write the document by hand (ADR 0006 addendum 2026-10-26).
       fix: {
-        text: onStagePath(ctx)
-          ? `Run atticus change architecture ${ctx.change.id}: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.`
-          : "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
+        text: byOperations(ctx)
+          ? `An operation of ${ctx.change.id} moves data, and the stages write data.md only from target flows: give the migration as a step of a target flow (store.migration) and run atticus change architecture ${ctx.change.id}, or write data.md yourself (the Changes table, backfill, classification and retention); the stage keeps a data.md a person wrote.`
+          : onStagePath(ctx)
+            ? `Run atticus change architecture ${ctx.change.id}: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.`
+            : "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
       },
       evidence: [...stores.filter((s) => ctx.byId.has(s)).map(recordEvidence), ...evidence],
       key: "data-doc",

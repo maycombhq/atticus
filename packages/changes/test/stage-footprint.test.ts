@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,74 @@ async function estate(): Promise<string> {
   });
   return root;
 }
+
+describe("a change's operations (ADR 0203)", () => {
+  const OPS = (what = "Deploy the service on the new platform.") =>
+    `schemaVersion: 1\nchange: ${CHANGE}\noperations:\n  - id: deploy-new\n    kind: deployment\n    repos: [forge-stock, forge-deploy]\n    what: ${what}\n`;
+  /** The change with its operations and no target flow. */
+  async function operationsOnly(what?: string) {
+    const root = await estate();
+    const dir = join(root, "openspec/changes", CHANGE);
+    await rm(join(dir, "target-flows"), { recursive: true, force: true });
+    await rm(join(dir, "tasks.md"), { force: true });
+    await mkdir(join(dir, "target-flows"), { recursive: true });
+    await writeFile(join(dir, "target-flows/_operations.yaml"), OPS(what));
+    const ctx = await loadChangeContext(root);
+    return { root, dir, ctx, fp: await changeFootprint(ctx, await changeStore(root).read(CHANGE)) };
+  }
+
+  it("lists the operations' repos, read from the stages' own file, and cites it for the spread", async () => {
+    const { fp, ctx } = await operationsOnly();
+    expect(fp.from).toContain("target-flows/_operations.yaml");
+    expect(fp.repos).toEqual(["forge-deploy", "forge-orders", "forge-stock"]);
+    expect(fp.flows.map((f) => f.id)).not.toContain("_operations");
+    const spread = fp.signals!.filter((x) => x.factor === "spread");
+    expect(spread).toEqual([
+      {
+        factor: "spread",
+        detail: "3 repos (forge-deploy, forge-orders, forge-stock)",
+        cite: "target-flows/_operations.yaml",
+      },
+    ]);
+    const risk = scoreRisk({ type: "feature", footprint: fp }, ctx.policy);
+    for (const f of risk.factors) for (const c of f.cites ?? []) expect(c).not.toBe("");
+    // A platform move is no data change.
+    expect(fp.signals!.filter((x) => x.factor === "schema")).toEqual([]);
+  });
+
+  it("before the architecture stage, takes the operations' repos from feature.yaml, and cites it", async () => {
+    const root = await estate();
+    const dir = join(root, "openspec/changes", CHANGE);
+    for (const f of ["target-flows", "tasks.md"])
+      await rm(join(dir, f), { recursive: true, force: true });
+    await appendFile(
+      join(dir, "feature.yaml"),
+      "operations:\n  - kind: deployment\n    repos: [forge-stock, forge-deploy]\n    what: Deploy it.\n    why: It moves.\n",
+    );
+    const fp = await changeFootprint(
+      await loadChangeContext(root),
+      await changeStore(root).read(CHANGE),
+    );
+    expect(fp.repos).toEqual(expect.arrayContaining(["forge-deploy", "forge-stock"]));
+    expect(fp.signals!.find((x) => x.factor === "spread")?.cite).toBe("feature.yaml");
+  });
+
+  it("an operation that moves data is a schema change, cited at its line", async () => {
+    for (const what of [
+      "Run V7__backfill_status.sql on the new database.",
+      "Backfill orders.status from the old hosts.",
+    ]) {
+      const { fp } = await operationsOnly(what);
+      expect(fp.signals!.filter((x) => x.factor === "schema")).toEqual([
+        {
+          factor: "schema",
+          detail: `operation deploy-new moves data: "${what}"`,
+          cite: "target-flows/_operations.yaml:7",
+        },
+      ]);
+    }
+  });
+});
 
 describe("the repos tasks.md names (ADR 0201)", () => {
   it("count when a manifest lists them, read or not; a heading nothing knows doesn't", async () => {
