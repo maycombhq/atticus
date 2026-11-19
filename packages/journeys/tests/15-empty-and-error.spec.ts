@@ -1,13 +1,25 @@
+import type { Page } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { accessible, expect, startApp, stopApp, test, type App } from "../support/app.js";
+import {
+  accessible,
+  expect,
+  forgeFieldMetarepo,
+  startApp,
+  stopApp,
+  test,
+  type App,
+} from "../support/app.js";
 
 /**
  * Every screen on a brand-new metarepo (nothing scanned, no change) says what to do, never an
- * error; and when the local server can't be reached, every screen says so in words.
+ * error; and when the local server can't be reached, every screen says so in words. Beta.30
+ * (slice 9): every screen on the field-shaped estate (fixtures/forge-field: an empty repo, a repo
+ * nobody read, a repo with no System, an id with dots, a legacy slot, token hosts) says what to
+ * do, never an error, too.
  */
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../cli/dist/bin.js");
@@ -87,6 +99,33 @@ for (const route of ROUTES)
     expect(errors).toEqual([]);
     await accessible(page, `${route} (empty)`);
   });
+
+async function saysWhatToDo(page: Page, a: App, route: string, where: string) {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(`${a.url}/#/${route}`);
+  await expect(page.locator(".panel").first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText(/Couldn't load this/)).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await accessible(page, `${route} (${where})`);
+}
+
+test.describe("the field-shaped estate", () => {
+  let field: App | undefined;
+  test.beforeAll(async () => {
+    field = await startApp(await forgeFieldMetarepo());
+  });
+  test.afterAll(async () => {
+    if (field) await stopApp(field);
+  });
+  for (const route of ROUTES)
+    test(`#/${route} on the field-shaped estate says what to do, not an error`, async ({
+      page,
+    }) => {
+      await saysWhatToDo(page, field!, route, "field");
+    });
+});
 
 for (const route of [
   "home",
