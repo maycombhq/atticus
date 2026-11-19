@@ -6213,8 +6213,8 @@ export const COPY = {
     /** The link to the question a person's answer placed the call by. */
     answerAgain: (question: string) => `Answer ${question} again`,
     /** After Undo: the pairing's line is gone; the map is the last Apply's until the next. */
-    undoneApply: (from: string) =>
-      `The map still draws what ${from}'s last Apply drew. Apply ${from} again to draw it without the pairing:`,
+    undoneApply: (from: string, n = 1) =>
+      `The map still draws what ${from}'s last Apply drew. Apply ${from} again to draw it without the pairing${n === 1 ? "" : "s"}; Atticus asks you to confirm when that removes many arrows:`,
     /** A call a gateway forwards: the gateway's own forwarding may be what is wrong. */
     gatewayHint: (through: string, to: string) =>
       `Moving it says this call doesn't go through ${through}. If ${through} itself forwards to the wrong service, correct that instead: connect ${through} to ${to}.`,
@@ -6296,6 +6296,7 @@ export const COPY = {
     ruleWritten: (q: string) => `The open target question ${q} is answered with /**.`,
     undo: "Undo",
     undone: "Undone: the line is removed.",
+    undoneLines: (n: number) => `Undone: the ${n} lines are removed.`,
     undoneRuleStays: (q: string, target: string) =>
       `Undone: the pair lines are removed. The rule's answer is not undone: the target question ${q} still sends this repo's loose calls, and calls read later, to ${target} (/**). To take it back, answer ${q} again on the Questions page.`,
     nothingPicked: "Pick at least one pair, or the rule for all.",

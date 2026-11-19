@@ -48,10 +48,11 @@ import { looksLikeGatewayType } from "./ui-api-links.js";
 const REPO = /^[A-Za-z0-9._-]{1,200}$/;
 
 /**
- * The box a pairing's call line names, when it is another than the pairing's: read from the
- * repo's facts and the manifests (`decidedOf`); nothing where the facts don't read.
+ * What a repo's facts say of a pairing: the box its call's line names, when it is another than
+ * the pairing's (`decidedOf`), and whether the last read has the call at all (by its id, else
+ * by its cited line). Nothing where the facts don't read.
  */
-async function overOf(root: string, repo: string) {
+async function pairingsRead(root: string, repo: string) {
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
   const parsed = text.trim() ? parseFacts(text) : undefined;
   if (!parsed?.ok) return undefined;
@@ -64,7 +65,10 @@ async function overOf(root: string, repo: string) {
       calls.find((f) => f.id === c.fact)?.id ??
       calls.find((f) => f.cite.file === c.target.file && f.cite.line === c.target.line)?.id;
     const names = id ? d.codeNames(id) : undefined;
-    return names && names.box !== (c.link?.repo ?? c.link?.system) ? names : undefined;
+    return {
+      gone: !id,
+      names: names && names.box !== (c.link?.repo ?? c.link?.system) ? names : undefined,
+    };
   };
 }
 
@@ -399,17 +403,21 @@ export function uiDeclaredRoutes(
         ).catch(() => "");
         // Beta.30 (the review): a pairing that goes over what the call's line names says so, with
         // the box it was moved from and the person's reason (hard rule 6: the fact stays as read).
-        const over = text.includes('"link"') ? await overOf(ctx.root, repo) : undefined;
+        const read = text.includes('"link"') ? await pairingsRead(ctx.root, repo) : undefined;
         // Each line on its own, so Undo removes exactly the line a correction came from.
         for (const line of text.split(/\r?\n/).filter((l) => l.trim())) {
           const c = parseCorrections(line).corrections[0];
           if (!c) continue;
-          const names = c.action === "link" && !c.ai ? over?.(c) : undefined;
+          const of = c.action === "link" ? read?.(c) : undefined;
+          const names = c.ai ? undefined : of?.names;
+          const said = names
+            ? `${says(c)}, moved by ${c.by} from ${names.box} over what its line names (${names.text})${c.reason ? `: "${c.reason}"` : ""}`
+            : says(c);
           items.push({
             kind: c.action,
-            says: names
-              ? `${says(c)}, moved by ${c.by} from ${names.box} over what its line names (${names.text})${c.reason ? `: "${c.reason}"` : ""}`
-              : says(c),
+            // The re-review: a pairing whose call the last read doesn't have is kept, and said.
+            says: of?.gone ? `${said} (its call isn't in the last read)` : said,
+            ...(of?.gone ? { stale: true } : {}),
             ...(names ? { over: { ...names, ...(c.reason ? { reason: c.reason } : {}) } } : {}),
             by: c.by,
             at: c.at,

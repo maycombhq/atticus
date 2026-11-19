@@ -11,7 +11,7 @@ import { accessible, expect, open, reconnectJourney, test } from "../support/app
  * forge-orders to forge-ledger, sees those calls listed first with where each goes today and how
  * that was decided, ticks them, says why for the three the code names, says yes to replacing
  * sam's pairing, moves them, applies, and the map draws forge-orders → forge-ledger and no
- * forge-orders → forge-billing. Then Undo and Apply put the arrow back. No network; nothing is
+ * forge-orders → forge-billing. Then Undo and Apply, with its removals confirmed, put the arrow back. No network; nothing is
  * committed or pushed.
  */
 const app = reconnectJourney();
@@ -148,19 +148,33 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
   await accessible(page, "the map after the move");
 
   // Undo takes the four lines back at once; the map is the last Apply's until the next, which
-  // the panel says and offers. Applied, the arrow is back where it was, with nothing to confirm.
+  // the panel says and offers, with the confirm it may ask for.
   await panel.getByRole("button", { name: "Undo" }).click();
   await expect(
     panel.getByText(
-      "Undone: the line is removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairing:",
+      "Undone: the 4 lines are removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairings; Atticus asks you to confirm when that removes many arrows:",
     ),
   ).toBeVisible({ timeout: 30_000 });
   expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
   await expect(page.locator(RIGHT)).toHaveCount(1);
   await panel.getByRole("button", { name: "Apply to forge-orders's map" }).last().click();
+  // Four arrows of a small repo go: over the removal limits, so the Apply waits for a confirm
+  // (the build can't tell an Undo from a file reverted by hand). Nothing is written yet.
+  await expect(panel.getByText("The build waits for you: nothing has been written.")).toBeVisible({
+    timeout: 90_000,
+  });
+  await expect(page.locator(RIGHT)).toHaveCount(1);
+  await page.getByRole("button", { name: "Review the 4 removals" }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm 4 removals" });
+  const listed = dialog.getByRole("table", { name: "The records the build would remove" });
+  await expect(listed).toContainText("A pairing changed (facts/*.corrections.jsonl)");
+  await expect(listed).toContainText("its call goes to forge-billing now");
+  await accessible(page, "the confirm of an undone move's removals");
+  await dialog.getByLabel("Type 4 to confirm exactly these").fill("4");
+  await dialog.getByRole("button", { name: "Apply, removing 4 records" }).click();
+  // Confirmed: the arrow is back where it was.
   await expect(page.locator(WRONG)).toHaveAttribute("aria-label", /4 × calls/, {
     timeout: 120_000,
   });
   await expect(page.locator(RIGHT)).toHaveCount(0);
-  await expect(page.getByText(/waits for you/)).toHaveCount(0);
 });

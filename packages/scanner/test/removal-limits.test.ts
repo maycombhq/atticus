@@ -196,22 +196,28 @@ describe("the removal limits (ADR 0195 point 4)", () => {
       expect(moved([old], [arrow("if-new", "ledger", 9, "/holds/{}", person)])).toEqual({});
     });
 
-    it("matches a pairing undone the same way: the person's arrow goes, and the call's arrow comes back", () => {
+    it("excuses nothing for a pairing taken back: Undo, a hand edit and a bad merge look the same (the re-review)", () => {
       const mine = arrow("if-mine", "ledger", 8, "/holds/{}", person);
       const back = arrow("if-back", "billing", 8, "/holds/{}", { flags: ["joined-by-host"] });
-      const undone = (removed: never[], added: never[], old: never[] = removed) =>
-        Object.fromEntries(movedArrows(removed, added, old, { undone: true }));
-      expect(undone([mine], [back])).toEqual({
-        "Interface/if-mine": { id: "if-back", to: "billing" },
-      });
-      // Only a person's pairing is undone, and only one to one: a lost arrow beside it counts.
-      const lost = arrow("if-lost", "ledger", 8, "/fees/{}", person);
-      expect(undone([mine, lost], [back])).toEqual({
-        "Interface/if-mine": { id: "if-back", to: "billing" },
-      });
-      expect(undone([arrow("if-code", "ledger", 8, "/holds/{}")], [back])).toEqual({});
-      // Without `undone`, an arrow no person paired excuses nothing.
+      // The person's arrow goes and the code's comes back: a removal like any other.
       expect(moved([mine], [back])).toEqual({});
+    });
+
+    it("doesn't excuse an arrow two call sites make when only one of them moved (the re-review)", () => {
+      // One arrow for the same call made on lines 8 and 30; the call on line 8 is moved.
+      const both = arrow("if-both", "billing", 8, "/holds/{}", {}, [30]);
+      const added = [arrow("if-new", "ledger", 8, "/holds/{}", person)];
+      expect(moved([both], added)).toEqual({});
+      // Both sites moved (one pairing each, merged into one arrow): the whole arrow is.
+      const whole = [arrow("if-new", "ledger", 8, "/holds/{}", person, [30])];
+      expect(moved([both], whole)).toEqual({ "Interface/if-both": { id: "if-new", to: "ledger" } });
+    });
+
+    it("excuses nothing where the pairing's entry is gone in the same build: no arrow was added for it", () => {
+      const old = arrow("if-old", "billing", 8, "/holds/{}");
+      expect(moved([old], [])).toEqual({});
+      // A paired arrow of another call on another line is no arrow of this call.
+      expect(moved([old], [arrow("if-other", "ledger", 12, "/fees/{}", person)])).toEqual({});
     });
 
     it("says nothing where two paired arrows could be the removed arrow's, and never of a loose end", () => {

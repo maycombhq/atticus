@@ -301,26 +301,69 @@ describe("the removal guard and a move (ADR 0195)", () => {
     expect(await g.arrows()).toEqual({ [C]: 2, [B]: 3, [VENDOR]: 1 });
   }, 120_000);
 
-  it("Undo then Apply puts the arrows back with nothing to confirm (the review)", async () => {
-    const mine = corrections().trim().split("\n").slice(2);
-    expect(mine).toHaveLength(3);
-    for (const line of mine) {
-      const u = await g.call(`/api/facts/${A}/corrections/undo`, "POST", { line });
-      expect(u.status, JSON.stringify(u.body)).toBe(200);
-    }
-    const out: string[] = [];
-    const code = await verifyCommand(
-      g.root,
-      A,
-      { commit: COMMIT[A]!, dir: join(g.root, "workspace", A), write: true, now: () => AT },
-      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+  it("a single Undo is under the limits; pairings taken back in bulk wait for the confirm, each with its true reason (the re-review)", async () => {
+    const run = async (allow?: number) => {
+      const out: string[] = [];
+      const code = await verifyCommand(
+        g.root,
+        A,
+        {
+          commit: COMMIT[A]!,
+          dir: join(g.root, "workspace", A),
+          write: true,
+          now: () => AT,
+          ...(allow !== undefined ? { allowRemovals: allow } : {}),
+        },
+        { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      );
+      return { code, out, said: out.join("\n") };
+    };
+    const file = join(g.root, "facts", `${A}.corrections.jsonl`);
+    const seeded = corrections().trim().split("\n").slice(0, 2).join("\n") + "\n";
+    // One pairing undone: one arrow of the repo's records, under the 10% share.
+    const last = corrections().trim().split("\n").at(-1)!;
+    const u = await g.call(`/api/facts/${A}/corrections/undo`, "POST", { line: last });
+    expect(u.status, JSON.stringify(u.body)).toBe(200);
+    const one = await run();
+    expect(one.code, one.said).toBe(0);
+    expect(await g.arrows()).toEqual({ [C]: 3, [B]: 2, [VENDOR]: 1 });
+    // Six calls moved and applied.
+    const six = (["host", "fact", "answer", "theirs", "mine", "gateway"] as const).map((k) => ({
+      ...CALLS[k],
+      reason: WHY,
+    }));
+    const have = new Set(
+      corrections()
+        .trim()
+        .split("\n")
+        .slice(2)
+        .map((l) => (JSON.parse(l) as Json).fact as string),
     );
-    expect(code, out.join("\n")).toBe(0);
-    const removed = out.filter((l) => l.trim().startsWith("removed Interface/"));
-    expect(removed).toHaveLength(3);
-    for (const l of removed) expect(l).toContain(`its call goes to ${C} now`);
+    const w = await g.call("/api/links/connect", "POST", {
+      from: A,
+      to: { repo: B },
+      pairs: six.filter((x) => !have.has(x.call)),
+    });
+    expect(w.status, JSON.stringify(w.body)).toBe(200);
+    expect((await run()).code).toBe(0);
+    expect(await g.arrows()).toEqual({ [B]: 6, [VENDOR]: 1 });
+    // The corrections file reverted by hand, as a bad merge would: the guard can't tell that
+    // from six Undos, so the six arrows wait for a confirm, and none is said moved by a person.
+    writeFileSync(file, seeded);
+    const r = await run();
+    expect(r.code, r.said).toBe(1);
+    const count = Number(/--allow-removals (\d+)\./.exec(r.said)?.[1]);
+    const would = r.out.filter((l) => l.includes("would remove Interface/"));
+    expect(would).toHaveLength(6);
+    expect(count).toBeGreaterThanOrEqual(6);
+    for (const l of would) expect(l).toContain("an input changed (facts/*.corrections.jsonl)");
+    expect(r.said).toMatch(/\d+ of forge-orders's \d+/);
+    expect(await g.arrows()).toEqual({ [B]: 6, [VENDOR]: 1 });
+    // Confirmed with the count listed, it writes.
+    const ok = await run(count);
+    expect(ok.code, ok.said).toBe(0);
     expect(await g.arrows()).toEqual({ [C]: 5, [VENDOR]: 1 });
-  }, 120_000);
+  }, 180_000);
 });
 
 describe("a move beside real removals, and moves that go stale (the review)", () => {
@@ -428,6 +471,12 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
       `correction: pat's pairing of call ${CALLS.answer.call} (${FILE}:12) with GET /fees/{id} on ${B} meets no call in this read; it is kept in the file and applied when the call is read again`,
     );
     expect(await h.arrows()).toEqual({ [C]: 4, [B]: 1, [VENDOR]: 1 });
+    // Corrections and declarations marks it: kept, and its call isn't in the last read.
+    const items = (await h.call(`/api/boxes/corrections?repo=${A}`)).body.items as Json[];
+    const gone = items.filter((x) => x.stale);
+    expect(gone.map((x) => x.says)).toEqual([
+      `call https://fees.forge.internal/fees/{id} (${FILE}:12) goes to GET /fees/{id} on ${B} (its call isn't in the last read)`,
+    ]);
     // Read again, the call is paired as the person said.
     writeFileSync(factsFile(), was);
     const again = await run(h);

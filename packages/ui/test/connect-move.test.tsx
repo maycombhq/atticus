@@ -19,7 +19,7 @@ vi.mock("react", async () => {
   const { shim } = await import("./support/hooks.js");
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
-const { Pairing, howWords, initialPicks, pairsOf } =
+const { Pairing, howWords, initialPicks, pairsOf, undoneWords } =
   await import("../src/screens/architecture/Connect.js");
 
 const C = COPY.connect;
@@ -345,8 +345,14 @@ describe("Move to forge-ledger", () => {
     await t.click(C.moveConfirm(1, "forge-ledger"));
     await t.click(C.undo);
     expect(t.undone).toEqual([JSON.stringify({ call: "call.12", api: "e12" })]);
-    expect(t.said()).toContain(C.undone);
-    expect(t.said()).toContain(C.undoneApply("forge-orders"));
+    expect(t.said()).toContain(
+      "Undone: the line is removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairing; Atticus asks you to confirm when that removes many arrows:",
+    );
+    // The re-review: four lines undone are said as four.
+    expect(undoneWords({ lines: ["a", "b", "c", "d"] })).toBe("Undone: the 4 lines are removed.");
+    expect(C.undoneApply("forge-orders", 4)).toBe(
+      "The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairings; Atticus asks you to confirm when that removes many arrows:",
+    );
     // The Apply that redraws the map, for this repo's corrections.
     expect(
       t.els().some((x) => x.props.scope === "corrections" && x.props.repo === "forge-orders"),

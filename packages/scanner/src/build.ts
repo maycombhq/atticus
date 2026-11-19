@@ -2041,24 +2041,18 @@ export function joinedArrowOf(
  * - where none does and R is N's only candidate, R when it is the caller's only arrow of the
  *   last build on a line the two share, with no loose end of the caller there (which the pairing
  *   may have joined instead).
- * Each added arrow so excuses at most one removal; every other removal counts toward the limits
- * and keeps its own reason.
+ * And only whole: every line R's caller side cites (in the repos N cites) is one N cites too, so
+ * an arrow two call sites make is not moved when one of them is. Each added arrow so excuses at
+ * most one removal; every other removal counts toward the limits and keeps its own reason. A
+ * pairing taken back (Undo, a hand edit, a merge: the build can't tell them apart) excuses
+ * nothing: the arrows it removes go through the limits.
  */
 export function movedArrows(
   removed: readonly CatalogRecord[],
   added: readonly CatalogRecord[],
   old: Iterable<CatalogRecord>,
-  /**
-   * `undone`: the other way round, for a pairing a person took back (Undo) or replaced: the
-   * removed arrows that are a person's pairing (`joined-by-person`), each matched the same way
-   * with an added arrow no person paired, where the call goes again as the code or an answer
-   * says. The caller takes it only where the corrections changed in this build.
-   */
-  o: { undone?: boolean } = {},
 ): Map<string, { id: string; to: string }> {
   type Arrow = { from?: string; to?: string; method?: string; normalizedPath?: string };
-  const byPerson = (x: CatalogRecord) =>
-    x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person");
   const fromOf = (r: CatalogRecord) => (r as unknown as Arrow).from;
   const callerLines = (r: CatalogRecord) => [
     ...new Set(
@@ -2079,8 +2073,8 @@ export function movedArrows(
       (x.method ?? "").toUpperCase() === (y.method ?? "").toUpperCase()
     );
   };
-  const paired = added.filter((x) =>
-    o.undone ? x.kind === "Interface" && !byPerson(x) : byPerson(x),
+  const paired = added.filter(
+    (x) => x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"),
   );
   const out = new Map<string, { id: string; to: string }>();
   if (!paired.length) return out;
@@ -2101,9 +2095,7 @@ export function movedArrows(
         arrowsAt.set(k, (arrowsAt.get(k) ?? 0) + 1);
       }
   const looseAt = looseEndsAt(olds);
-  const gone = removed.filter(
-    (r) => r.kind === "Interface" && !!fromOf(r) && (!o.undone || byPerson(r)),
-  );
+  const gone = removed.filter((r) => r.kind === "Interface" && !!fromOf(r));
   /** Each removed arrow's candidates, and each added arrow's. */
   const candidates = new Map<CatalogRecord, Set<CatalogRecord>>();
   const claimants = new Map<CatalogRecord, CatalogRecord[]>();
@@ -2131,7 +2123,15 @@ export function movedArrows(
           arrowsAt.get(`${from}\u0000${l}`) === 1 &&
           !looseAt.get(`${from}\u0000${l}`),
       );
-    const is = same.length ? same.length === 1 && same[0] === r : alone();
+    // The re-review: an arrow two call sites make is moved only when every one of its caller
+    // lines (in the repos the new arrow cites) is the new arrow's too; with one site moved
+    // and the other lost, the arrow is a removal like any other.
+    const theirLines = new Set(callerLines(n));
+    const repos = new Set([...theirLines].map((l) => l.split("\u0000")[0]));
+    const whole = callerLines(r)
+      .filter((l) => repos.has(l.split("\u0000")[0]))
+      .every((l) => theirLines.has(l));
+    const is = whole && (same.length ? same.length === 1 && same[0] === r : alone());
     const to = (n as unknown as Arrow).to;
     if (is && to) out.set(`${r.kind}/${r.id}`, { id: n.id, to });
   }
@@ -2804,13 +2804,6 @@ export async function guardBuild(
       addedNow,
       [...oldRecords.values()],
     );
-    // And the pairings a person took back, whose call goes again where it went before.
-    const undoneTo = movedArrows(
-      [...oldRecords].flatMap(([p, r]) => (b.files.has(p) ? [] : [r])),
-      addedNow,
-      [...oldRecords.values()],
-      { undone: true },
-    );
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2836,13 +2829,10 @@ export async function guardBuild(
       const why = new Set<string>();
       const kinds = new Set<RemovalReason>();
       let estate = false;
-      // A corrections file changed since: what a person's Undo, or a new pairing, changes.
-      let corrections = false;
       for (const s of thenOf(f))
         if (!nowSources.has(`${s.path}\u0000${s.sha256}`)) {
           if (s.path === ALL_SLOTS) estate = true;
           else {
-            if (s.path.endsWith(".corrections.jsonl")) corrections = true;
             why.add(sourceWords(s.path, b));
             kinds.add(/(^|\/)sources\//.test(s.path) ? "slot" : "input");
           }
@@ -2955,14 +2945,7 @@ export async function guardBuild(
       // explained removal is said joined (below); an unexplained one refuses on its own.
       const joinedNow = r ? joinedArrowOf(r, addedArrowsAt, looseAt) : undefined;
       // Beta.30: an arrow whose call a person's pairing moved to another box in this build.
-      // Or a pairing a person took back: only where a corrections file changed, and never
-      // where the arrow goes because its box did (archived, or off the manifests).
-      const movedNow = r
-        ? (movedTo.get(`${r.kind}/${r.id}`) ??
-          (corrections && !kinds.has("archived") && !kinds.has("manifest")
-            ? undoneTo.get(`${r.kind}/${r.id}`)
-            : undefined))
-        : undefined;
+      const movedNow = r ? movedTo.get(`${r.kind}/${r.id}`) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
         if (back) own.push(back);

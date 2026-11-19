@@ -226,8 +226,11 @@ export function AiPairedBetween(p: { from: string; box: Api.LinkBoxT }) {
  * rule for all was written too, its answer to the target question stays, said with where to
  * take it back.
  */
-export function undoneWords(w: Pick<Api.ConnectLinksResultT, "rule">): string {
-  return w.rule ? C.undoneRuleStays(w.rule.question, w.rule.target) : C.undone;
+export function undoneWords(
+  w: Pick<Api.ConnectLinksResultT, "rule"> & { lines?: readonly string[] },
+): string {
+  if (w.rule) return C.undoneRuleStays(w.rule.question, w.rule.target);
+  return (w.lines?.length ?? 1) > 1 ? C.undoneLines(w.lines!.length) : C.undone;
 }
 
 /**
@@ -1058,7 +1061,8 @@ export function Pairing(p: {
         // next Apply, which is said and offered here.
         <div className="stack">
           <p role="status" className="ev-say">
-            {undoneWords(undone)} {undone.lines.length > 0 ? C.undoneApply(d.from) : ""}
+            {undoneWords(undone)}{" "}
+            {undone.lines.length > 0 ? C.undoneApply(d.from, undone.lines.length) : ""}
           </p>
           {undone.lines.length > 0 && <ApplyAndPropose scope="corrections" repo={d.from} />}
         </div>
