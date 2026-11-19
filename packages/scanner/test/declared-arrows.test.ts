@@ -27,7 +27,7 @@ const arrow = (more: Partial<DeclaredLink> = {}): DeclaredLink => ({
   from: { repo: "forge-proxy-accounts-v1" },
   to: { repo: "forge-portal-bff" },
   why: "The proxy's target is set at deploy time; the platform team confirmed it.",
-  by: "Ada Example",
+  by: "ada.example",
   at: AT,
   ...more,
 });
@@ -102,7 +102,7 @@ describe("declared arrows in the build (ADR 0204)", () => {
         direction: "outbound",
         conflicts: [],
         flags: [DECLARED_LINK],
-        evidence: [{ source: "manual", path: "profiles/forge/profile.yaml", by: "Ada Example" }],
+        evidence: [{ source: "manual", path: "profiles/forge/profile.yaml", by: "ada.example" }],
       },
     ]);
     // It reads as a C1 record, and is never verified.
@@ -123,7 +123,7 @@ describe("declared arrows in the build (ADR 0204)", () => {
       {
         from: "repo:forge-proxy-accounts-v1",
         to: "repo:forge-portal-bff",
-        by: "Ada Example",
+        by: "ada.example",
         at: AT,
         calls: 1,
       },

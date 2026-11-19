@@ -103,12 +103,17 @@ export const Approver = z
  */
 export const ROLES_SCHEMA_VERSION = 3 as const;
 
-/** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
-const TeamPerson = z
+/**
+ * A person by their Git handle, as Atticus records `by` (`gitUser`'s handle): one line, no spaces.
+ * A team's people, and since ADR 0204's second review who declared an arrow.
+ */
+export const PersonHandle = z
   .string()
   .min(1)
   .max(100)
   .regex(/^@?[A-Za-z0-9][A-Za-z0-9._-]*$/, "a person's Git handle, such as pat or pat.doe");
+/** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
+const TeamPerson = PersonHandle;
 
 export const Team = z.strictObject({
   /** The id a repo manifest's `owner` names, e.g. team-ledger. */
@@ -1659,7 +1664,8 @@ export const PROFILE_TOPICS_VERSION = 2 as const;
 
 /** One end of a declared arrow: a repo of the manifests or a system of the profiles. */
 export const ArrowEnd = z.union([
-  z.strictObject({ repo: z.string().min(1).max(200) }),
+  // The second review: a repo end is an id as the manifests' are, so it never reaches a path.
+  z.strictObject({ repo: RecordId }),
   z.strictObject({ system: RecordId }),
 ]);
 export type ArrowEnd = z.infer<typeof ArrowEnd>;
@@ -1674,8 +1680,11 @@ export const DeclaredLink = z.strictObject({
   to: ArrowEnd,
   /** Why it is so: required, and only ever data (never an instruction to a reader). */
   why: z.string().trim().min(3).max(500),
-  /** The Git user who declared it, and when. */
-  by: z.string().min(1),
+  /**
+   * The Git user who declared it (their handle, one line: the second review, while version 3 is
+   * unreleased), and when.
+   */
+  by: PersonHandle,
   at: z.iso.datetime({ offset: true }),
   /** Not built yet: the Interface is `planned-new`. */
   planned: z.boolean().optional(),

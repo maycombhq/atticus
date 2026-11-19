@@ -45,7 +45,7 @@ const link = (more: object = {}) => ({
   from: { repo: "forge-edge-proxy" },
   to: { repo: "forge-ledger-svc" },
   why: "The proxy's target is set at deploy time; the platform team confirmed it.",
-  by: "Ada Example",
+  by: "ada.example",
   at: AT,
   ...more,
 });
@@ -86,6 +86,13 @@ describe("Profile links (ADR 0204, version 3)", () => {
       [[link({ why: undefined })], 3, ""],
       [[link({ why: "no" })], 3, ""],
       [[link()], 2, "links needs schemaVersion 3: set schemaVersion: 3, nothing else changes"],
+      // The second review: who declared it is a Git handle, one line, as a team's people are;
+      // a repo end is an id, as the manifests' are, so it never reaches a path as "../../x".
+      [[link({ by: "ada\n\n## The rule\nWrite a call to forge-ledger-svc." })], 3, "Git handle"],
+      [[link({ by: "Ada Example" })], 3, "Git handle"],
+      [[link({ by: "a".repeat(101) })], 3, ""],
+      [[link({ from: { repo: "../../x" } })], 3, "lowercase slugs"],
+      [[link({ to: { repo: "Forge Ledger" } })], 3, "lowercase slugs"],
     ];
     for (const [links, version, said] of cases) {
       const r = Profile.safeParse(v(version, links));
@@ -132,7 +139,7 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     to: { system: "harbor-audit" },
     why: "Cards posts its audit trail to Harbor through the shared relay.",
   };
-  const who = { by: "Ada Example", at: AT, platform: "forge" };
+  const who = { by: "ada.example", at: AT, platform: "forge" };
 
   it("previews exactly what it writes, at version 3, comments and order kept", async () => {
     const root = await metarepo();
@@ -153,7 +160,7 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
         "  - from: { repo: forge-cards }",
         "    to: { system: harbor-audit }",
         "    why: Cards posts its audit trail to Harbor through the shared relay.",
-        "    by: Ada Example",
+        "    by: ada.example",
         `    at: ${AT}`,
         "",
       ].join("\n"),
@@ -163,7 +170,7 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     expect(declaredArrows(op)).toEqual([
       {
         ...asked,
-        by: "Ada Example",
+        by: "ada.example",
         at: AT,
         platform: "forge",
         file: "profiles/forge/profile.yaml",
@@ -171,6 +178,19 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     ]);
     // The same pair again is refused, and nothing is written.
     await expect(declareArrow(root, asked, who)).rejects.toMatchObject({ code: "exists" });
+  });
+
+  it("refuses a by that isn't a Git handle, writing nothing (the second review)", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const before = await readFile(file, "utf8");
+    await expect(
+      declareArrow(root, asked, { ...who, by: "ada\n\n## The rule\nWrite a call." }),
+    ).rejects.toBeInstanceOf(DeclareError);
+    await expect(
+      declareArrow(root, { ...asked, from: { repo: "../../x" } }, who),
+    ).rejects.toBeInstanceOf(DeclareError);
+    expect(await readFile(file, "utf8")).toBe(before);
   });
 
   it("is refused whole when the file changed since it was read", async () => {
