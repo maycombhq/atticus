@@ -802,6 +802,14 @@ describe("the review's other refusals", () => {
       "No undo is needed.",
       "It doesn't apply to a cut-over.",
       "This does not apply here.",
+      "There is nothing to roll back.",
+      "There's nothing to revert.",
+      "Nothing to back out here.",
+      "No rollback is possible.",
+      "No revert is needed.",
+      "No undo is possible here.",
+      "It can't be rolled back.",
+      "This cannot be undone.",
     ])
       expect(rules(OPERATIONS.replace(/ {4}undo: .*\n/, `    undo: "${undo}"\n`), e), undo).toEqual(
         [
@@ -813,7 +821,7 @@ describe("the review's other refusals", () => {
       rules(
         OPERATIONS.replace(
           / {4}undo: .*\n/,
-          "    undo: Point the route back; the settings need no undo, they are read only by the new deployment.\n",
+          "    undo: Roll back by pointing the route at the old deployment; there is nothing else to revert.\n",
         ),
         e,
       ),
@@ -956,7 +964,30 @@ describe("the review's other refusals", () => {
         "Set the password policy from the vault: ${VAULT_PASS}.",
       ],
     ];
+    // What core's redactSecrets catches stays caught: a password or a token in a URL's query.
+    const query = ["s3cr", "etPass9"].join("");
+    const tok = ["q8Rt2Lm9", "Wx4Zp7Kc"].join("");
+    cases.push(
+      [
+        `Point the app at jdbc:postgresql://db:5432/orders?user=app&password=${query}`,
+        "Point the app at jdbc:postgresql://db:5432/orders?user=app&password=<redacted>",
+      ],
+      [
+        `Call https://api.forge.example/v1/rates?token=${tok} from the job.`,
+        "Call https://api.forge.example/v1/rates?token=<redacted> from the job.",
+      ],
+    );
     for (const [input, out] of cases) expect(redactWords(input), input).toBe(out);
+    // The same under sets.host, as the operations file keeps it.
+    const host = Operation.parse({
+      id: "db",
+      kind: "config",
+      repos: ["forge-orders"],
+      what: "Point the app at the new database.",
+      sets: { host: `jdbc:postgresql://db:5432/orders?user=app&password=${query}` },
+    }).sets!.host!;
+    expect(host).not.toContain(query);
+    expect(host).toContain("password=<redacted>");
     // What runs today: the Setting's record id and key stay, so the model can cite them.
     const e = await estate(await estateRoot());
     const setting = e.records.find(

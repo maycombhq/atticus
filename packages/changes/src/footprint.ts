@@ -163,11 +163,46 @@ const FIELD_LISTS = ["sends", "returns", "reads", "checks", "from", "to", "requi
 
 /** A step's words cut to a quote: the first 90 characters. */
 /**
- * ADR 0203: an operation's words that say it moves data: a migration file, a backfill, a data
- * migration, or a migration of rows, tables or columns. "Migrate the services" is no data change.
+ * ADR 0203: an operation's words that say it changes the database: a migration file or tool
+ * (Flyway, Liquibase, "the migrations"), a backfill, a data migration or "the existing data", a
+ * migration of rows, tables or columns, or a table, column or index dropped, altered, added,
+ * created, renamed or truncated. "Migrate the services" is no data change.
  */
-const MOVES_DATA =
-  /\bV\d+__\w+\.sql\b|\bbackfill|\bdata migration\b|\bmigrat\w*\s+(?:the\s+)?(?:data|rows|tables?|columns?)\b/i;
+const MOVES_DATA = new RegExp(
+  [
+    /\bV\d+__\w+\.sql\b/,
+    /\bbackfill/,
+    /\bdata migrations?\b/,
+    /\bexisting (?:data|rows)\b/,
+    /\b(?:flyway|liquibase)\b/,
+    /\b(?:the|its|their|pending|database|schema)\s+migrations\b/,
+    /\bmigrat\w*\s+(?:the\s+)?(?:data|rows|tables?|columns?)\b/,
+    /\b(?:drop|alter|add|create|rename|truncate)\w*\s+(?:(?:an?|the|its|their|old|new)\s+){0,2}(?:[\w.]+\s+)?(?:tables?|columns?|index(?:es)?|schema)\b/,
+  ]
+    .map((r) => r.source)
+    .join("|"),
+  "i",
+);
+
+/** `<table>.<column>` in an operation's words that is a Column record the catalog has. */
+function namesColumn(what: string, records: readonly CatalogRecord[]): boolean {
+  for (const m of what.matchAll(/(?<![\w.-])([a-z_][\w]*)\.([a-z_]\w*)(?![\w.-])/gi)) {
+    const [, table, column] = m;
+    const tables = records.filter(
+      (r) => r.kind === "Table" && (r as { name?: string }).name === table,
+    );
+    if (
+      records.some(
+        (r) =>
+          r.kind === "Column" &&
+          (r as { name?: string }).name === column &&
+          tables.some((t) => t.id === (r as { table?: string }).table),
+      )
+    )
+      return true;
+  }
+  return false;
+}
 const quote = (s: string) => (s.length > 90 ? `${s.slice(0, 87).trimEnd()}...` : s);
 
 interface Today {
@@ -573,7 +608,7 @@ async function stageFootprint(
         const o = obj(raw);
         for (const repo of strs(o?.repos)) out.repos.add(repo);
         const what = str(o?.what) ?? "";
-        if (!MOVES_DATA.test(what)) return;
+        if (!MOVES_DATA.test(what) && !namesColumn(what, ctx.records)) return;
         const node = (items as { items?: unknown[] } | undefined)?.items?.[i] as
           { get?: (k: string, keep: boolean) => unknown } | undefined;
         const r = (node?.get?.("what", true) as { range?: [number, number, number] } | null)?.range;

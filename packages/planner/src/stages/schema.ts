@@ -7,6 +7,7 @@ import {
   looksLikeSecret,
   maskSecretShapes,
   QuestionDraft,
+  redactSecrets,
 } from "@maycombhq/core";
 
 /**
@@ -34,7 +35,8 @@ const core = (w: string) => /^([("'`]*)(.*?)([)"'`.,;:!?]*)$/.exec(w)!;
 const FILLER = /^(?::|=|is|are|to|as|of|be)$/i;
 
 /**
- * An operation's words, redacted by the facts' rules (core's): the shapes a log masks (a URL's
+ * An operation's words, redacted by the facts' rules (core's): `redactSecrets` on each word, the
+ * shapes a log masks (a URL's
  * password, a bearer or Basic token, the well-known token shapes); a credential with no scheme
  * (`user:pass@host`); and, after a word that names a secret (`password`, `pay-api-key`, as a
  * fact's key is judged), the value that follows, in `key=value`, `key: value` or prose, when it
@@ -50,6 +52,9 @@ export function redactWords(text: string): string {
   );
   const words = out.split(/(\s+)/);
   for (let i = 0; i < words.length; i += 2) {
+    // Core's own rules, a word at a time (a URL's `password=` or `token=`, a key's literal), so
+    // what they catch stays caught and a name before a colon is never taken for a key's value.
+    words[i] = redactSecrets(words[i]!);
     const [, pre, w, post] = core(words[i]!);
     // key=value in one word.
     const eq = /^([\w.-]+)=(.+)$/.exec(w!);

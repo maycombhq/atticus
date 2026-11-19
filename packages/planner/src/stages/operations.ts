@@ -32,8 +32,19 @@ const TODAY_KINDS = ["Component", "Deployment", "Setting", "GatewayRoute", "Endp
  * An undo that says how: not empty, a dash, "n/a", "none" or "tbd", more than a word, and not a
  * sentence that only says no undo applies ("Not applicable here.", "Nothing to undo.").
  */
-const NO_UNDO =
-  /^(?:(?:it|this|that)\s+)?(?:n\/?a|none(?:\s+needed)?|tbd|todo|-+|not\s+applicable|(?:does\s*n[o']t|does\s+not|doesn't)\s+apply|nothing\s+to\s+undo|no\s+undo(?:\s+is)?(?:\s+needed)?)\b(?:\s+(?:here|to\s+.+|for\s+.+|needed|is\s+needed))?$/i;
+const BACK = String.raw`(?:roll(?:ed|ing)?\s*back|rollback|revert(?:ed)?|undo(?:ne)?|back(?:ed)?\s*out|backout)`;
+const NO_UNDO = new RegExp(
+  [
+    String.raw`^(?:(?:it|this|that)\s+)?(?:n\/?a|none(?:\s+needed)?|tbd|todo|-+|not\s+applicable|(?:does\s*n[o']t|does\s+not|doesn't)\s+apply|nothing\s+to\s+undo|no\s+undo(?:\s+is)?(?:\s+needed)?)\b(?:\s+(?:here|to\s+.+|for\s+.+|needed|is\s+needed))?$`,
+    // "There is nothing to roll back.", "Nothing to back out here."
+    String.raw`^(?:there\s+is\s+|there's\s+)?nothing\s+to\s+${BACK}(?:\s+(?:here|now|for\s+.+))?$`,
+    // "No rollback is possible.", "No revert is needed."
+    String.raw`^no\s+${BACK}(?:\s+(?:is|was))?(?:\s+(?:possible|needed|required|applies))?(?:\s+(?:here|now|for\s+.+))?$`,
+    // "It can't be rolled back.", "This cannot be undone."
+    String.raw`^(?:(?:it|this|that)\s+)?(?:can(?:no|')t|cannot|can\s+not)\s+be\s+${BACK}(?:\s+(?:here|now))?$`,
+  ].join("|"),
+  "i",
+);
 const realUndo = (undo: string | undefined) =>
   !!undo && bare(undo).length >= 10 && !NO_UNDO.test(bare(undo));
 const andList = (xs: string[]) =>

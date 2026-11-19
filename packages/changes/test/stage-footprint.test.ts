@@ -110,6 +110,14 @@ describe("a change's operations (ADR 0203)", () => {
     for (const what of [
       "Run V7__backfill_status.sql on the new database.",
       "Backfill orders.status from the old hosts.",
+      "Drop the old orders table once nothing reads it.",
+      "Add an index on the orders table.",
+      "Alter the purpose column to hold the new codes.",
+      "Run the Flyway migrations on the new database.",
+      "Run the Liquibase changelog against the new database.",
+      "Migrate the existing data to the new database.",
+      // A table's column the catalog has, by its table's name.
+      "Keep customer_consent.revoked_at in step with the old database.",
     ]) {
       const { fp } = await operationsOnly(what);
       expect(fp.signals!.filter((x) => x.factor === "schema")).toEqual([
@@ -119,6 +127,22 @@ describe("a change's operations (ADR 0203)", () => {
           cite: "target-flows/_operations.yaml:7",
         },
       ]);
+    }
+  });
+
+  it("an operation that moves no data is no schema change, however it is worded", async () => {
+    for (const what of [
+      "Migrate the services to the new platform.",
+      "Deploy forge-orders.deployment.prod on the new platform.",
+      "Add the new route to the gateway.",
+      "Move the order service's settings table entry to the vault.",
+      "Point customer_consent.nothing at the new host.",
+    ]) {
+      const { fp } = await operationsOnly(what);
+      expect(
+        fp.signals!.filter((x) => x.factor === "schema"),
+        what,
+      ).toEqual([]);
     }
   });
 });
