@@ -26,6 +26,11 @@ interface Finding {
   severity: string;
   state?: string;
 }
+/** One gate's newest round, as `atticus findings <change> --json` prints it. */
+interface GateFindings {
+  gate?: string;
+  findings?: Finding[];
+}
 interface Step {
   id: string;
   title: string;
@@ -87,14 +92,18 @@ export async function readWaiting(run: WaitingRun, o: { filter?: string }): Prom
   const changes = (
     await json<{ id: string; title: string; state: string }[]>(["change", "list", "--json"], [])
   ).filter((c) => !CLOSED.has(c.state));
+  // `atticus findings <change> --json` prints each gate's newest round with its findings inside
+  // (beta.30: read as a list of findings, each gate printed as "undefined (undefined)"). A
+  // finding raised again at a later gate is one finding to act on, listed once.
   const findings = new Map<string, Finding[]>();
-  for (const c of changes)
-    findings.set(
-      c.id,
-      (await json<Finding[]>(["findings", c.id, "--json"], [])).filter(
-        (f) => (f.state ?? "open") === "open",
-      ),
-    );
+  for (const c of changes) {
+    const open = new Map<string, Finding>();
+    for (const g of await json<GateFindings[]>(["findings", c.id, "--json"], []))
+      for (const f of g?.findings ?? [])
+        if ((f.state ?? "open") === "open" && !open.has(f.id))
+          open.set(f.id, { id: f.id, summary: f.summary, severity: f.severity, state: "open" });
+    findings.set(c.id, [...open.values()]);
+  }
   const unverified = await json<unknown[]>(["knowledge", "list", "--unverified", "--json"], []);
 
   const words = o.filter?.trim().toLowerCase();

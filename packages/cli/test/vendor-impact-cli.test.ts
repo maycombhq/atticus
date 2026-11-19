@@ -155,7 +155,8 @@ describe("atticus change new --impact", () => {
       ),
     ).toBe(0);
     expect(c.out).toEqual([
-      "Created absorb-northwind-pay-2-0-0 (integration, from the decommission template). It is in define.",
+      // Beta.30: it said "from the decommission template", and the brief was the one for retiring a system.
+      "Created absorb-northwind-pay-2-0-0 (integration, from the integration template). It is in define.",
       "Its footprint is what Northwind Pay 2.0.0 reaches: 3 repos, 3 flows, 4 Interfaces. The impact is attached as inputs/northwind-pay-2-0-0-impact.md.",
       "Write the brief: openspec/changes/absorb-northwind-pay-2-0-0/brief.md",
     ]);

@@ -42,7 +42,7 @@ import { readNeeds, seedCollisions, type SeedCollision } from "@maycombhq/planne
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { readTaskRun } from "@maycombhq/taskrun";
-import { readCatalog } from "@maycombhq/scanner";
+import { NEWER_ATTICUS_COMMAND, readCatalog } from "@maycombhq/scanner";
 import { baseClonePath } from "@maycombhq/workspace";
 import { rulesLackingAll } from "./reading-rules.js";
 import type { Output } from "./commands.js";
@@ -1362,7 +1362,7 @@ export function nextSteps(s: NextState): NextStep[] {
   if (s.newerCatalog)
     out.push({
       step: "upgrade-atticus",
-      command: "npm i -g @maycombhq/atticus@beta",
+      command: NEWER_ATTICUS_COMMAND,
       why: s.newerCatalog,
       person: true,
     });

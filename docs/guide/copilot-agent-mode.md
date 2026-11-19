@@ -16,7 +16,7 @@ Copilot session itself instead of you pasting it (copilot-acp, ADR 0171).
 
 ## Setup
 
-1. **Install Atticus's command line** so `atticus` is on your PATH (`npm install -g @maycombhq/atticus`,
+1. **Install Atticus's command line** so `atticus` is on your PATH (`npm install -g @maycombhq/atticus@<version>`, the version your team uses,
    or the offline bundle; see [Installing Atticus](install.md)). Every check in every step is one of
    its commands, so without it agent mode has nothing to check against.
 2. **Put the agent files in the metarepo.** They live in this repository at `plugins/copilot/`,

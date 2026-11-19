@@ -637,13 +637,20 @@ export async function newerFileAt(abs: string, rel: string, name = rel): Promise
 }
 
 /**
+ * What upgrades Atticus itself (ADR 0197): never `atticus upgrade`, which is for an older
+ * catalog. The catalog's files say their format's version, not the Atticus that wrote them, so
+ * no exact version can be named here; the refusal's words and its `command` are this one line.
+ */
+export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
+
+/**
  * The refusal's words for files a newer Atticus wrote (ADR 0197, beta.28.2): upgrade Atticus,
  * and never `atticus upgrade`, which would take a newer catalog for an older one.
  */
 export function newerAtticusWords(files: readonly NewerFile[]): string {
   const f = files[0]!;
   const more = files.length > 1 ? `, and ${files.length - 1} more of its files` : "";
-  return `This metarepo's catalog was built by a newer Atticus (${f.name} ${f.field === "version" ? "version" : f.field} ${f.version}; this Atticus reads up to ${f.reads}${more}): upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run \`atticus upgrade\`.`;
+  return `This metarepo's catalog was built by a newer Atticus (${f.name} ${f.field === "version" ? "version" : f.field} ${f.version}; this Atticus reads up to ${f.reads}${more}): upgrade Atticus (${NEWER_ATTICUS_COMMAND}), don't run \`atticus upgrade\`.`;
 }
 
 /**

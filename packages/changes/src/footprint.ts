@@ -569,15 +569,25 @@ async function stageFootprint(
 
     // Its entry: today's trigger, or the new flow's own.
     const trigger = today?.flow.trigger.ref;
-    if (trigger && get("Endpoint", trigger)) out.entries.add(trigger);
-    else {
+    let entryToday = false;
+    if (trigger && get("Endpoint", trigger)) {
+      out.entries.add(trigger);
+      entryToday = true;
+    } else {
       const entry = str(obj(d.trigger)?.entry);
       if (entry && component) {
         const ep = endpointOf(component, entry);
-        if (ep) out.entries.add(ep.id);
-        else out.newEntries.add(`${component} ${entry}`);
+        if (ep) {
+          out.entries.add(ep.id);
+          entryToday = true;
+        } else out.newEntries.add(`${component} ${entry}`);
       }
     }
+    // Beta.30: a flow that is new, on an entry that is new too, has no one using it today, so
+    // the fields its steps require break no one (its entry was scored "breaks who uses it
+    // today"). A flow called new on an entry people call today is weighed as a changed one; and
+    // what the draft says outright (breaking: true, the consumers it breaks) always counts.
+    const unused = change === "new" && !today && !entryToday;
     if (strs(d.consumers).length || change === "remove")
       out.signals.push({
         factor: "breaking",
@@ -703,11 +713,12 @@ async function stageFootprint(
           detail: `${kind} step carries ${[...new Set(fieldHit)].join(", ")}`,
           cite,
         });
-      if (s.breaking === true || strs(fields.required).length)
+      const required = unused ? [] : strs(fields.required);
+      if (s.breaking === true || required.length)
         out.signals.push({
           factor: "breaking",
-          detail: strs(fields.required).length
-            ? `${kind} step now requires ${strs(fields.required).join(", ")}`
+          detail: required.length
+            ? `${kind} step now requires ${required.join(", ")}`
             : `${kind} step "${quote(what)}" is marked breaking`,
           cite,
         });

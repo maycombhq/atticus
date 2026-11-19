@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { changesRelOf, taskBranch, type ChangeLifecycle } from "@maycombhq/core";
@@ -295,15 +295,27 @@ export async function taskContext(
   const today = delta ? estate.flowById.get(delta.flow) : undefined;
   // B-tasks: the steps the task covers, each with the delta's step.
   const parts = dt ? partsOf(dt).map((p) => ({ p, s: delta?.steps[p.position - 1] })) : [];
-  if (!dt)
-    notes.push(
-      `Task ${id} isn't one the target flows give, so it has no step or cited code here; read its story.`,
-    );
-
   const storyId = line.story ?? dt?.story;
   const storyText = storyId
     ? await readFile(join(dir, "stories", `${storyId}.md`), "utf8").catch(() => undefined)
     : undefined;
+  if (!dt) {
+    // Beta.30: it said "read its story" whether or not there was one. What is there to read:
+    // the story's file, or the task's own line and the change's files.
+    const head = `Task ${id} isn't one the target flows give, so it has no step or cited code here`;
+    const rest = `work from its line in tasks.md and the change's files in ${rel}/.`;
+    if (storyText) notes.push(`${head}; read its story (stories/${storyId}.md).`);
+    else if (storyId)
+      notes.push(`${head}, and its story ${storyId} has no file under stories/: ${rest}`);
+    else {
+      const any = (await readdir(join(dir, "stories")).catch(() => [])).some((n) =>
+        n.endsWith(".md"),
+      );
+      notes.push(
+        `${head}, and ${any ? "tasks.md names no story for it" : `${change.id} has no stories`}: ${rest}`,
+      );
+    }
+  }
   const sf = storyText ? readStoryFile(storyText) : undefined;
   const answer = await readStoriesAnswer(dir);
   // B-once: the criteria that accept the task, its own and those written on another task.

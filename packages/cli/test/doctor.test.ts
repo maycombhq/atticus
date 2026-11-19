@@ -13,6 +13,7 @@ import {
 } from "../src/doctor.js";
 import { setupSteps } from "../src/baseline-commands.js";
 import { upgradeCommand } from "../src/upgrade.js";
+import { VERSION } from "../src/version.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 let root: string;
@@ -39,6 +40,8 @@ const healthy = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   assistantFiles: async () => ({ missing: [], stale: [], edited: [] }),
   // Round 50: this machine's credential store, empty here (never the real one in a test).
   keys: { get: () => undefined, set: () => undefined, forget: () => undefined },
+  // Beta.30: PowerShell and npm are never run in a test (doctor-windows-shell.test.ts passes their output).
+  commandOutput: async () => undefined,
   ...o,
 });
 
@@ -84,6 +87,10 @@ describe("atticus doctor", () => {
       expect(byId(checks, id).status, id).toBe("fail");
       expect(byId(checks, id).fix, id).toBeTruthy();
     }
+    // Beta.30: reinstalling means this version, not whatever a tag points at.
+    expect(byId(checks, "openspec").fix).toContain(
+      `npm install -g @maycombhq/atticus@${VERSION} from your npm mirror`,
+    );
     const out: string[] = [];
     const code = await doctorCommand(
       root,

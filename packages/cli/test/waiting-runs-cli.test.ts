@@ -76,16 +76,29 @@ const CANNED: Record<string, unknown> = {
     },
     { id: "old-statement-export", title: "Old statement export", state: "released" },
   ],
+  // As `atticus findings <change> --json` prints them: each gate's newest round, its findings inside.
   "findings refunds-through-northwind-pay --json": [
     {
-      id: "f-1",
-      summary: "No timeout on the Northwind Pay refund call",
-      severity: "blocking",
-      state: "open",
+      gate: "design",
+      round: 1,
+      findings: [
+        {
+          id: "f-1",
+          summary: "No timeout on the Northwind Pay refund call",
+          severity: "blocking",
+          state: "open",
+        },
+      ],
     },
   ],
   "findings add-transfer-limit --json": [
-    { id: "f-2", summary: "Name the limit's currency", severity: "minor", state: "closed" },
+    {
+      gate: "design",
+      round: 2,
+      findings: [
+        { id: "f-2", summary: "Name the limit's currency", severity: "minor", state: "closed" },
+      ],
+    },
   ],
   "knowledge list --unverified --json": [{ id: "ledger-team" }, { id: "s-gw-vnd" }],
 };

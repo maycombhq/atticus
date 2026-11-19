@@ -150,7 +150,7 @@ describe("new changes", () => {
 });
 
 describe("change templates", () => {
-  it("has the nine built-in templates, each an empty skeleton", () => {
+  it("has the ten built-in templates, each an empty skeleton", () => {
     expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual([
       "feature",
       "defect-fix",
@@ -161,6 +161,8 @@ describe("change templates", () => {
       "vulnerability-fix",
       "config-flag",
       "data-fix",
+      // Beta.30: a new integration starts from its own brief, not the one for retiring a system.
+      "integration",
       "decommission",
     ]);
     for (const t of BUILT_IN_TEMPLATES) expect(isFilled(t.body), t.id).toBe(false);
@@ -172,7 +174,7 @@ describe("change templates", () => {
     expect(forge.templates.find((t) => t.id === "feature")!.source).toBe(
       "process/change-templates/feature.md",
     );
-    expect(forge.templates.filter((t) => t.source === "built-in")).toHaveLength(8);
+    expect(forge.templates.filter((t) => t.source === "built-in")).toHaveLength(9);
 
     const root = await forgeMetarepo();
     const dir = join(root, "org-pack/process/change-templates");

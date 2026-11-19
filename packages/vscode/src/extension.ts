@@ -24,7 +24,14 @@ import {
 } from "./beta11";
 import { answerApp, saveFromApp, bundledHtml } from "./app-bundle";
 import { evidenceRows } from "./question-evidence";
-import { diagramHash, MIN_CLI, panelHtml, versionAtLeast, type RunningApp } from "./app-panel";
+import {
+  diagramHash,
+  MIN_CLI,
+  panelHtml,
+  versionAtLeast,
+  versionIn,
+  type RunningApp,
+} from "./app-panel";
 import { changeDiagramHash, estimateHash } from "./change-map";
 import { HISTORY_HASH } from "./history";
 import { chatHandler } from "./chat";
@@ -262,10 +269,7 @@ ${view.next.why}`
         });
     else if (!svc.cliOk)
       void vscode.window
-        .showWarningMessage(
-          "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
-          "Check again",
-        )
+        .showWarningMessage(WORDS.cliMissing(MIN_CLI), "Check again")
         .then((p) => p && vscode.commands.executeCommand("atticus.checkHealth"));
     return root && svc.cliOk ? root : undefined;
   };
@@ -643,7 +647,7 @@ ${view.next.why}`
     const v = await svc.cli(at)(["--version"]);
     svc.cliOk = v.code === 0;
     // An atticus older than the extension's flags and pages: said once, the app still starts.
-    const found = /\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?/i.exec(v.stdout)?.[0];
+    const found = versionIn(v.stdout);
     if (svc.cliOk && found && !versionAtLeast(found, MIN_CLI) && !warnedOld) {
       warnedOld = true;
       void vscode.window.showWarningMessage(WORDS.cliOld(found, MIN_CLI));
@@ -709,7 +713,7 @@ ${view.next.why}`
     refreshAll();
     if (!svc.cliOk) {
       const pick = await vscode.window.showWarningMessage(
-        "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
+        WORDS.cliMissing(MIN_CLI),
         "How to install",
         "Set the path",
       );

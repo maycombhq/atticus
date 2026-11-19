@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { delimiter, join } from "node:path";
+import { delimiter, join, win32 } from "node:path";
 import {
   ASSISTANT_FORMATS,
   assistantTier,
@@ -54,7 +54,7 @@ import {
 import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { newerAtticusOf, upgradeCheck, type UpgradeCheck } from "./upgrade.js";
-import { versionAtLeast } from "./version.js";
+import { installCommand, versionAtLeast } from "./version.js";
 import { defaultKeyStore, keyEnvFromEnvironment, type KeyStore } from "@maycombhq/model-providers";
 export { versionAtLeast };
 
@@ -133,6 +133,123 @@ export interface DoctorDeps {
   copilotAcp?: (o: { command: string; cwd: string }) => Promise<CopilotAcpProbe>;
   /** This machine's credential store (atticus secret set), asked by name only. Tests pass one. */
   keys?: KeyStore;
+  /**
+   * Beta.30: what a program on this machine prints (PowerShell's execution policy, npm's global
+   * folder; asked on Windows only), or undefined when it can't be run. Tests pass the output.
+   */
+  commandOutput?: (
+    program: "powershell" | "pwsh" | "npm",
+    args: string[],
+  ) => Promise<string | undefined>;
+  /** Whether a file is there (npm's atticus.ps1, looked for on Windows only). Tests pass one. */
+  fileExists?: (file: string) => boolean;
+}
+
+/**
+ * What a program prints, or undefined when it isn't there, fails or takes too long. The program
+ * and its arguments are doctor's own words, never a person's: npm is npm.cmd on Windows, which
+ * Node starts only through the shell.
+ */
+async function defaultCommandOutput(
+  program: "powershell" | "pwsh" | "npm",
+  args: string[],
+): Promise<string | undefined> {
+  const { execFile } = await import("node:child_process");
+  return new Promise((resolve) => {
+    execFile(
+      program === "npm" ? "npm.cmd" : `${program}.exe`,
+      args,
+      { timeout: 15_000, windowsHide: true, encoding: "utf8", shell: program === "npm" },
+      (err, stdout) => resolve(err ? undefined : stdout),
+    );
+  });
+}
+
+/** The execution policies under which PowerShell runs a local, unsigned script (atticus.ps1). */
+const POLICY_RUNS: Record<string, boolean> = {
+  restricted: false,
+  allsigned: false,
+  remotesigned: true,
+  unrestricted: true,
+  bypass: true,
+};
+const POLICY_NAME: Record<string, string> = {
+  restricted: "Restricted",
+  allsigned: "AllSigned",
+  remotesigned: "RemoteSigned",
+  unrestricted: "Unrestricted",
+  bypass: "Bypass",
+};
+
+/** A Windows folder as PATH compares them: no quotes, one kind of slash, no trailing one, no case. */
+const winFolder = (d: string) =>
+  d
+    .trim()
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/\//g, "\\")
+    .replace(/\\+$/, "")
+    .toLowerCase();
+
+/**
+ * Beta.30, Windows: the two reasons the first `atticus` after `npm install -g` isn't found or
+ * won't start. PowerShell picks npm's atticus.ps1, which its execution policy may block
+ * (atticus.cmd needs none); and npm's global folder may not be on PATH. The policy is asked of
+ * Windows PowerShell and of PowerShell 7 where it is installed (each has its own), and said
+ * only where an atticus.ps1 is installed: on PATH, or in npm's global folder. A program that
+ * didn't answer says nothing: the offline bundle has no .ps1 and needs neither.
+ */
+async function windowsShellChecks(
+  env: NodeJS.ProcessEnv,
+  ask: NonNullable<DoctorDeps["commandOutput"]>,
+  fileExists: (file: string) => boolean,
+): Promise<DoctorCheck[]> {
+  const out: DoctorCheck[] = [];
+  const quiet = (p: Promise<string | undefined>) => p.catch(() => undefined);
+  const POLICY = ["-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"];
+  const [policyOut, pwshOut, prefixOut] = await Promise.all([
+    quiet(ask("powershell", POLICY)),
+    quiet(ask("pwsh", POLICY)),
+    quiet(ask("npm", ["config", "get", "prefix"])),
+  ]);
+  const prefix = (prefixOut ?? "").trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+  const pathDirs = (env.PATH ?? env.Path ?? "").split(";");
+  const shim = [...pathDirs, prefix]
+    .map((d) => d.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean)
+    .some((d) => fileExists(win32.join(d, "atticus.ps1")));
+  const shells = [
+    { name: "Windows PowerShell", policy: (policyOut ?? "").trim().toLowerCase() },
+    { name: "PowerShell 7", policy: (pwshOut ?? "").trim().toLowerCase() },
+  ].filter((x) => x.policy in POLICY_RUNS);
+  if (shim && shells.length) {
+    const blocked = shells.filter((x) => !POLICY_RUNS[x.policy]);
+    const same = shells.every((x) => x.policy === shells[0]!.policy);
+    const is = same
+      ? `PowerShell's execution policy is ${POLICY_NAME[shells[0]!.policy]}`
+      : `PowerShell's execution policy is ${shells.map((x) => `${POLICY_NAME[x.policy]} in ${x.name}`).join(" and ")}`;
+    const who = same ? "it" : blocked.map((x) => x.name).join(" and ");
+    out.push({
+      id: "powershell-policy",
+      label: "PowerShell scripts (Windows)",
+      status: blocked.length ? "warn" : "ok",
+      detail: blocked.length
+        ? `${is}: ${who} won't run atticus.ps1, the script npm installs, so atticus ${same ? "in PowerShell" : "there"} fails with "running scripts is disabled on this system"`
+        : `${is}: ${same ? "it runs" : "both run"} atticus.ps1`,
+      fix: "In PowerShell, run atticus.cmd instead of atticus (it needs no policy; Command Prompt and Git Bash run it already), or allow local scripts for your user, in the PowerShell that is blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned. If your organisation sets the policy, atticus.cmd is the way.",
+    });
+  }
+  if (prefix) {
+    const dirs = pathDirs.map(winFolder);
+    const on = dirs.includes(winFolder(prefix));
+    out.push({
+      id: "npm-path",
+      label: "npm's global folder (Windows)",
+      status: on ? "ok" : "warn",
+      detail: `npm's global folder (${prefix}) ${on ? "is" : "isn't"} on PATH`,
+      fix: `A terminal finds atticus after npm install -g only with that folder on PATH: add ${prefix} to your user PATH (Settings › Edit environment variables for your account › Path › New), then open a new terminal.`,
+    });
+  }
+  return out;
 }
 
 export interface AssistantFilesState {
@@ -257,6 +374,15 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       }
     });
   const openspecSoon = openspecVersion();
+  const windowsSoon =
+    platform === "win32"
+      ? windowsShellChecks(
+          env,
+          deps.commandOutput ?? defaultCommandOutput,
+          deps.fileExists ?? existsSync,
+        )
+      : undefined;
+  windowsSoon?.catch(() => undefined);
   const storesSoon = (deps.openspecStores ?? (() => openspecHasStores()))().catch(() => false);
   // Outside a metarepo only the machine is checked (the metarepo's checks would read defaults
   // and ask for an upgrade of a folder that isn't one).
@@ -276,6 +402,9 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     detail: `Node ${node} (needs ${MIN_NODE} or later)`,
     fix: `Install Node ${MIN_NODE} or later (the LTS 22 line), or use the offline bundle, which carries its own.`,
   });
+
+  // ---- Windows: PowerShell's execution policy, npm's global folder on PATH (beta.30)
+  if (platform === "win32") out.push(...(await windowsSoon!));
 
   // ---- Git
   const gitConfig = async (key: string) => {
@@ -342,7 +471,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     detail: osv
       ? `OpenSpec ${osv} (tested with ${OPENSPEC_PINNED})`
       : "the bundled OpenSpec CLI didn't run",
-    fix: "Reinstall Atticus (it carries a pinned OpenSpec): npm install -g @maycombhq/atticus from your npm mirror, or with the offline bundle run its install script again.",
+    fix: `Reinstall Atticus (it carries a pinned OpenSpec): ${installCommand()} from your npm mirror, or with the offline bundle run its install script again.`,
   });
 
   // ADR 0126: OpenSpec's stores are beta and optional. Atticus reads the stores the org pack
@@ -560,7 +689,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           : "up to date",
     fix: up.newer
       ? newerAtticusOf(up)
-        ? `Install Atticus ${newerAtticusOf(up)} or later before working in this metarepo (npm install -g @maycombhq/atticus@${newerAtticusOf(up)} from your npm mirror, or that version's offline bundle).`
+        ? `Install Atticus ${newerAtticusOf(up)} or later before working in this metarepo (${installCommand(newerAtticusOf(up))} from your npm mirror, or that version's offline bundle).`
         : "Install the Atticus that upgraded this metarepo before working in it; or, if .atticus/metarepo.yaml was edited by hand, put it back as it was in Git. Don't run atticus upgrade until then."
       : "Run atticus upgrade, then commit what it changed in a pull request.",
   });
@@ -794,7 +923,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
             : // ADR 0124 addendum D-npm: an npm install carries the model's and onnxruntime's
               // bytes, so the default is ready with nothing fetched.
               `${ort ? "ready: " : ""}${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}), ${e.setting === "bundled" ? "installed with Atticus" : "the folder runtime.yaml names"}, in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
-      fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/atticus on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror (npm install -g @maycombhq/atticus) or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
+      fix: `The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/atticus on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror (${installCommand()}) or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.`,
     });
   }
   const live = Object.entries(rt.adapters).filter(

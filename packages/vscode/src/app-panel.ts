@@ -243,23 +243,44 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
 /** The prerelease words in order; a release comes after them all. */
 const PRERELEASE = ["alpha", "beta", "rc"];
 
+/** A version as Atticus writes one: 2.0.0, 2.0.0-beta.21, 2.0.0-beta.28.5. */
+const VERSION = /(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)((?:\.\d+)*))?/i;
+
 /**
- * `a` is at least `b`, for versions like 2.0.0-beta.21: alpha before beta before rc before the
- * release (review round 46: 2.0.0-rc.1 counted older than 2.0.0-beta.21), then the number.
+ * The version in what `atticus --version` printed, with every number of its pre-release
+ * (2.0.0-beta.28.5 whole, not 2.0.0-beta.28), or undefined when it names none.
+ */
+export function versionIn(text: string): string | undefined {
+  return VERSION.exec(text)?.[0];
+}
+
+/**
+ * `a` is at least `b`, for versions like 2.0.0-beta.21 and 2.0.0-beta.28.5: alpha before beta
+ * before rc before the release (review round 46: 2.0.0-rc.1 counted older than 2.0.0-beta.21),
+ * then every number after the word in turn (beta.30: 2.0.0-beta.28.1 passed for
+ * 2.0.0-beta.28.5), a version with fewer of them before one with more (beta.28 before
+ * beta.28.5), as semver orders them. The same order as the command line's own (`newerThan`).
  */
 export function versionAtLeast(a: string, b: string): boolean {
   const parse = (v: string) => {
-    const m = /(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?/i.exec(v);
+    const m = VERSION.exec(v);
     if (!m) return undefined;
     // a word not in the list ranks before alpha
     const word = m[4] ? PRERELEASE.indexOf(m[4].toLowerCase()) : PRERELEASE.length;
-    return {
-      n: [Number(m[1]), Number(m[2]), Number(m[3]), word, m[4] ? Number(m[5]) : 0],
-    };
+    const pre = (m[5] ?? "").split(".").filter(Boolean).map(Number);
+    return { core: [Number(m[1]), Number(m[2]), Number(m[3]), word], pre };
   };
   const x = parse(a);
   const y = parse(b);
   if (!x || !y) return true; // an unreadable version is given the benefit of the doubt
-  for (let i = 0; i < x.n.length; i++) if (x.n[i] !== y.n[i]) return x.n[i]! > y.n[i]!;
+  for (let i = 0; i < x.core.length; i++)
+    if (x.core[i] !== y.core[i]) return x.core[i]! > y.core[i]!;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i];
+    const q = y.pre[i];
+    if (p === undefined) return false; // fewer numbers: the earlier one
+    if (q === undefined) return true;
+    if (p !== q) return p > q;
+  }
   return true;
 }
