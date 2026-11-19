@@ -23,6 +23,9 @@ import {
   buildContext,
   findingIdFor,
   lensAgent,
+  recordedFacts,
+  recordedText,
+  RECORDED_RULE,
   parseDoc,
   parseLensOutput,
   questionOfRule,
@@ -416,6 +419,7 @@ export async function handUp(
     lens.reason = `agent ${agent.id} reads neither tasks nor repo code`;
   else {
     const levels = criticCtx.classifications;
+    const recorded = await recordedFacts(root, t.change.id).catch(() => []);
     const sources: SourceInput[] = [
       {
         id: "0-instructions",
@@ -441,6 +445,28 @@ export async function handUp(
         classification: "public",
         trusted: true,
       },
+      // ADR 0203 A: what people recorded on the change's findings (an accepted stage finding
+      // among them), as data, so the hand-up's review doesn't raise it again.
+      ...(recorded.length
+        ? [
+            {
+              id: "0-recorded-rule",
+              kind: "instruction" as const,
+              origin: "atticus/speckit",
+              text: RECORDED_RULE,
+              classification: "public",
+              trusted: true,
+            },
+            {
+              id: "recorded-by-people",
+              kind: "document" as const,
+              origin: "review/ (what people recorded on this change's findings)",
+              text: recordedText(recorded),
+              classification: "internal",
+              priority: 9,
+            },
+          ]
+        : []),
       ...docs.map((d) => ({
         id: d.path,
         kind: "artifact" as const,

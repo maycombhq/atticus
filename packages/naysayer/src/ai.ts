@@ -304,7 +304,7 @@ function codeRule(repos: readonly CodeRepo[]): string {
 }
 
 /** What a lens is told about the facts people recorded (ADR 0115 addendum, W2). */
-const RECORDED_RULE = `People recorded facts and decisions on this change's findings at its reviews; the "recorded-by-people" data block lists each with the gate, who and when. A fact a person recorded is not raised again: don't report it as a finding or a gap, at this gate or any other. You may challenge one only with new evidence you cite (a line of the draft, the estate or the code that contradicts it), naming the recorded finding in why.`;
+export const RECORDED_RULE = `People recorded facts and decisions on this change's findings at its reviews; the "recorded-by-people" data block lists each with the gate, who and when. A fact a person recorded is not raised again: don't report it as a finding or a gap, at this gate or any other. You may challenge one only with new evidence you cite (a line of the draft, the estate or the code that contradicts it), naming the recorded finding in why.`;
 
 function instructions(
   ctx: CriticContext,
