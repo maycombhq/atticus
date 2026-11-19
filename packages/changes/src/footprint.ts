@@ -578,7 +578,10 @@ async function stageFootprint(
         else out.newEntries.add(`${component} ${entry}`);
       }
     }
-    if (strs(d.consumers).length || change === "remove")
+    // Beta.30: a flow that is new (not in the catalog today) has no one using it, so nothing it
+    // requires or is marked with breaks anyone: its entry was scored "breaks who uses it today".
+    const unused = change === "new" && !today;
+    if (!unused && (strs(d.consumers).length || change === "remove"))
       out.signals.push({
         factor: "breaking",
         detail:
@@ -703,7 +706,7 @@ async function stageFootprint(
           detail: `${kind} step carries ${[...new Set(fieldHit)].join(", ")}`,
           cite,
         });
-      if (s.breaking === true || strs(fields.required).length)
+      if (!unused && (s.breaking === true || strs(fields.required).length))
         out.signals.push({
           factor: "breaking",
           detail: strs(fields.required).length
