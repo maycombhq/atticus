@@ -136,6 +136,20 @@ export const BUILT_IN_TEMPLATES: readonly ChangeTemplate[] = [
     ["Data owner", "Who owns the data and must approve the fix."],
   ]),
   builtIn(
+    "integration",
+    "New or changed integration",
+    "integration",
+    "Two systems start to exchange something, or change how they do.",
+    [
+      ["What connects", "The systems on each side, by name or catalog id, and who owns each."],
+      ["Why", "What the integration makes possible, for whom, and why now."],
+      ["What is exchanged", "The calls, events or files, in which direction, and how often."],
+      ["Data", "What data crosses, and whether any of it is personal or sensitive."],
+      ["When it fails", "What each side does when the other is slow, down or wrong."],
+      ["Open questions", "Anything you don't know yet, and who might."],
+    ],
+  ),
+  builtIn(
     "decommission",
     "Decommission",
     "integration",
@@ -223,8 +237,18 @@ export function renderTemplate(t: Pick<ChangeTemplate, "body">, vars: TemplateVa
 }
 
 /**
- * The template for a new change: the one asked for, else the one with the type's id, else
- * the first whose changeType is the type, else the feature template.
+ * The brief a type starts from when no template has the type's own id: the built-in types whose
+ * briefs are named otherwise. Without it the first of the type by id was taken (beta.30: a plain
+ * bug fix got the data-fix brief).
+ */
+const USUAL_TEMPLATE: Readonly<Record<string, string>> = {
+  "bug-fix": "defect-fix",
+  "config-change": "config-flag",
+};
+
+/**
+ * The template for a new change: the one asked for, else the one with the type's id, else the
+ * type's usual one, else the first whose changeType is the type, else the feature template.
  */
 export function pickTemplate(
   templates: readonly ChangeTemplate[],
@@ -234,6 +258,7 @@ export function pickTemplate(
   if (wanted) return templates.find((t) => t.id === wanted);
   return (
     templates.find((t) => t.id === type) ??
+    templates.find((t) => t.id === USUAL_TEMPLATE[type] && t.changeType === type) ??
     templates.find((t) => t.changeType === type) ??
     templates.find((t) => t.id === "feature")
   );
