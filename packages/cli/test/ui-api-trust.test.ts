@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import {
 } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiTrustRoutes } from "../src/ui-api-trust.js";
+import { seedForgeField, type ForgeField } from "./forge-field.js";
 
 /**
  * GET /api/trust (ADR 0124 addendum, the Map's Trust tab): per repo, from files only, the facts,
@@ -439,5 +440,61 @@ describe("GET /api/trust?repo=<id>&rejected=1 (ADR 0202 point 4)", () => {
     const v = Api.TrustView.parse((await get("/api/trust?repo=forge-events")).body);
     expect(v.repos.map((x) => x.repo)).toEqual(["forge-events"]);
     expect(v.repos[0]!.lists!.excluded).toEqual(["generated/client.ts"]);
+  });
+});
+
+// Beta.30 (slice 9): the Trust tab on the field-shaped estate (fixtures/forge-field).
+describe("GET /api/trust on the field-shaped estate", () => {
+  let fsrv: RunningServer;
+  let dir: string;
+  let e: ForgeField & { root: string };
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "b30-fd-trust-"));
+    e = await seedForgeField(dir);
+    fsrv = await startServer({ root: e.root, port: 0, extend: (r, ctx) => uiTrustRoutes(r, ctx) });
+  }, 300_000);
+  afterAll(async () => {
+    await fsrv?.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("has a row for every repo the manifest lists, each with the command to go on", async () => {
+    const v = await view(fsrv);
+    expect(v.repos.map((r) => r.repo).sort()).toEqual([...e.manifest].sort());
+    for (const r of v.repos) expect(r.next?.command, r.repo).toMatch(/^atticus (map|verify) /);
+    // The id with dots is named as it is, in its paths and its command.
+    const dotted = v.repos.find((r) => r.repo === "forge.instruments.svc")!;
+    expect(dotted.facts.path).toBe("facts/forge.instruments.svc.jsonl");
+    expect(dotted.next?.command).toBe("atticus verify forge.instruments.svc");
+  });
+
+  it("says the clones' facts are of their commit, and the repos nobody read are not read", async () => {
+    const v = await view(fsrv);
+    const of = (id: string) => v.repos.find((r) => r.repo === id)!;
+    for (const c of e.clones)
+      expect(of(c), c).toMatchObject({
+        facts: { present: true, commit: e.commits[c] },
+        checkout: { present: true, commit: e.commits[c] },
+        sameCommit: true,
+        catalog: { from: "facts" },
+      });
+    // The empty repo is cloned with nothing in it; the unread one isn't cloned.
+    expect(of(e.emptyRepo!)).toMatchObject({
+      facts: { present: false },
+      checkout: { present: true },
+      state: "not-read",
+      catalog: { from: "none" },
+      next: { command: `atticus map ${e.emptyRepo}` },
+    });
+    expect(of(e.unreadRepo!)).toMatchObject({
+      facts: { present: false },
+      checkout: { present: false },
+      state: "not-read",
+      next: { command: `atticus map ${e.unreadRepo}` },
+    });
+    // The legacy service has no facts: its records are kept from before the upgrade.
+    const legacy = of(e.legacy[0]!);
+    expect(legacy).toMatchObject({ facts: { present: false }, state: "not-read" });
+    expect(legacy.catalog.fromFacts + legacy.catalog.fromReaders).toBeGreaterThan(0);
   });
 });

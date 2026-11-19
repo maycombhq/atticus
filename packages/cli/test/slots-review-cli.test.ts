@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { deserializeRecord, serializeRecord, type CatalogRecord } from "@maycombhq/core";
 import { listHooks } from "../src/catalog-build-commands.js";
 import { main } from "../src/main.js";
+import { seedForgeField } from "./forge-field.js";
 
 /**
  * ADR 0195, the joint review's findings on the build after an upgrade: a legacy join leaves
@@ -623,6 +624,40 @@ describe("edits --curate on a catalog whose upgrade was undone (property seed 15
         expect(j.refused?.reasons).toEqual(["not-upgraded"]);
       }
       expect(files(decisions)).toEqual(before);
+    },
+    T,
+  );
+});
+
+// Beta.30 (slice 9): the removal guard on the field-shaped estate (fixtures/forge-field): a
+// legacy slot from before the upgrade that lost most of its records, among slots read from facts.
+describe("the large-removal guard on the field-shaped estate", () => {
+  it(
+    "refuses with the count, names it, confirms only that count, and undo puts the catalog back",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "b30-fd-guard-"));
+      made.push(dir);
+      const e = await seedForgeField(dir);
+      const generated = join(e.root, "catalog", "generated");
+      const before = files(generated);
+      const slot = join(e.root, "catalog", "sources", "readers", `${e.legacy[0]!}.json`);
+      const s = JSON.parse(readFileSync(slot, "utf8")) as { status: string; records: unknown[] };
+      expect(s.status).toBe("legacy");
+      writeFileSync(slot, JSON.stringify({ ...s, records: s.records.slice(0, 1) }, null, 2) + "\n");
+      const refused = await atticus(e.root, "catalog", "build");
+      expect(refused.code).not.toBe(0);
+      const n = Number(/--allow-removals (\d+)/.exec(refused.all())?.[1]);
+      expect(n, refused.all()).toBeGreaterThan(1);
+      expect(files(generated)).toEqual(before);
+      const wrong = await atticus(e.root, "catalog", "build", "--allow-removals", String(n + 1));
+      expect(wrong.code).not.toBe(0);
+      expect(files(generated)).toEqual(before);
+      const yes = await atticus(e.root, "catalog", "build", "--allow-removals", String(n));
+      expect(yes.code, yes.all()).toBe(0);
+      expect(Object.keys(files(generated)).length).toBe(Object.keys(before).length - n);
+      const undo = await atticus(e.root, "catalog", "undo", "--yes");
+      expect(undo.code, undo.all()).toBe(0);
+      expect(files(generated)).toEqual(before);
     },
     T,
   );

@@ -1,0 +1,23 @@
+schemaVersion: 1
+id: publish-settled-refunds
+title: Publish settled refunds
+type: quick
+state: plan
+authors: {}
+createdAt: 2026-11-19T05:00:00Z
+createdBy: pat
+handoffs: []
+history:
+  - from: draft
+    to: plan
+    at: 2026-11-19T05:00:00Z
+    by: pat
+    reason: Created from requirements.md
+owners: {}
+systems: []
+touches:
+  dataStores: []
+  interfaces: []
+  records: []
+  repos: []
+  tables: []

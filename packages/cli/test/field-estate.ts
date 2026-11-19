@@ -98,6 +98,23 @@ export interface FieldEstateOptions {
   /** A topic one service publishes to and another listens to (its name). None by default. */
   topic?: string;
   /**
+   * Beta.30 (slice 9): the services that listen to the topic, by number. The fourth by default
+   * (`FIELD_TOPIC_LISTENER`); two give the topic consumers in two repos.
+   */
+  topicListeners?: number[];
+  /**
+   * Beta.30 (slice 9): the last `dollarTokens` gateway proxies write their target URL as
+   * `${TARGET_URL}` (a setting their deploy file sets per environment by that name) instead of
+   * the deploy token `@targetUrl@`. None by default.
+   */
+  dollarTokens?: number;
+  /**
+   * Beta.30 (slice 9, as fixtures/reconnect): one call of the first service, joined by its
+   * address to the service it names, really goes to another service that serves the same API
+   * (`FieldEstate.wrongBox`). None by default.
+   */
+  wrongBox?: boolean;
+  /**
    * ADR 0202 point 10: the shape card's words (`atticus selfcheck` prints them), as an object or
    * as the card's text. The estate is then made at that shape: each band at its one fixed size
    * (`REPOS_AT`, `RECORDS_AT`), and each flag adds its invented Forge shape, the others left
@@ -299,16 +316,46 @@ export const FIELD_TOPIC_PUBLISHER = bigRepoId(2);
 export const FIELD_TOPIC_LISTENER = bigRepoId(3);
 
 /**
- * The two facts of the estate's topic: the publisher's call from its first entry, and the
+ * More facts for a repo read from facts: appended to its working file, its snapshot written
+ * again, and in a repo that has a clone, each new line its fact cites (line 1 of a file of its own).
+ */
+async function addFacts(
+  root: string,
+  repo: string,
+  extra: readonly { quote: string; fact: Record<string, unknown> }[],
+  clone: boolean,
+): Promise<void> {
+  const path = join(factsDirOf(root), `${repo}.jsonl`);
+  const had = (await readFile(path, "utf8"))
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Fact);
+  const base = { commit: BIG_COMMIT, verified: "line", by: "assistant", conf: "declared", repo };
+  const facts = [...had, ...extra.map((x) => ({ ...base, ...x.fact }) as unknown as Fact)];
+  await writeFile(path, facts.map((f) => JSON.stringify(f)).join("\n") + "\n");
+  for (const w of factsSnapshotWrites(root, repo, facts, { commit: BIG_COMMIT, contracts: null })) {
+    await mkdir(dirname(w.path), { recursive: true });
+    await writeFile(w.path, w.text!);
+  }
+  if (clone)
+    for (const x of extra) {
+      const file = (x.fact.cite as { file: string }).file;
+      const p = join(root, "workspace", repo, ...file.split("/"));
+      await mkdir(dirname(p), { recursive: true });
+      await writeFile(p, `        ${x.quote}\n`);
+    }
+}
+
+/**
+ * The facts of the estate's topic: the publisher's call from its first entry, and each
  * listener's entry. In a repo that has a clone, the line it cites is written there too.
  */
 async function writeTopic(
   root: string,
   topic: string,
-  options: FieldEstate["options"],
   checkouts: number,
+  listeners: readonly number[] = [3],
 ): Promise<void> {
-  const base = { commit: BIG_COMMIT, verified: "line", by: "assistant", conf: "declared" };
   const publish = {
     file: "src/main/java/forge/events/ItemEvents.java",
     quote: `kafka.send("${topic}", event);`,
@@ -317,10 +364,10 @@ async function writeTopic(
     file: "src/main/java/forge/events/ItemListener.java",
     quote: `@KafkaListener(topics = "${topic}")`,
   };
-  const extra: [number, typeof publish, Record<string, unknown>][] = [
+  const extra: [number, string, Record<string, unknown>][] = [
     [
       2,
-      publish,
+      publish.quote,
       {
         kind: "call",
         id: "c-publish-topic",
@@ -331,9 +378,9 @@ async function writeTopic(
         cite: { file: publish.file, line: 1, value: topic, quote: publish.quote },
       },
     ],
-    [
-      3,
-      listen,
+    ...listeners.map((r): [number, string, Record<string, unknown>] => [
+      r,
+      listen.quote,
       {
         kind: "entry",
         id: "e-on-topic",
@@ -342,32 +389,10 @@ async function writeTopic(
         handler: "ItemListener.on",
         cite: { file: listen.file, line: 1, value: topic, quote: listen.quote },
       },
-    ],
+    ]),
   ];
-  for (const [r, at, fact] of extra) {
-    const repo = bigRepoId(r);
-    const facts = [
-      ...bigRepoFacts(r, options).facts,
-      { ...base, repo, ...fact } as unknown as Fact,
-    ];
-    await writeFile(
-      join(factsDirOf(root), `${repo}.jsonl`),
-      facts.map((f) => JSON.stringify(f)).join("\n") + "\n",
-    );
-    for (const w of factsSnapshotWrites(root, repo, facts, {
-      commit: BIG_COMMIT,
-      contracts: null,
-    })) {
-      await mkdir(dirname(w.path), { recursive: true });
-      await writeFile(w.path, w.text!);
-    }
-    // In a clone, the line the fact cites.
-    if (r < checkouts) {
-      const p = join(root, "workspace", repo, ...at.file.split("/"));
-      await mkdir(dirname(p), { recursive: true });
-      await writeFile(p, `        ${at.quote}\n`);
-    }
-  }
+  for (const [r, quote, fact] of extra)
+    await addFacts(root, bigRepoId(r), [{ quote, fact }], r < checkouts);
 }
 
 /**
@@ -402,7 +427,19 @@ export interface FieldEstate {
   /** The repo the manifest lists that nobody read (`unreadRepo`). */
   unreadRepo?: string;
   /** The estate's topic, who publishes to it and who listens (`topic`). */
-  topic?: { name: string; publisher: string; listener: string };
+  topic?: { name: string; publisher: string; listener: string; listeners: string[] };
+  /**
+   * The call joined to the wrong box (`wrongBox`): `from`'s call `call` is joined by its
+   * address to `joins`, and `goes`, which serves the same API, is where it really goes.
+   */
+  wrongBox?: {
+    from: string;
+    call: string;
+    method: string;
+    path: string;
+    joins: string;
+    goes: string;
+  };
 }
 
 /** The glossary term the v-th field name is (big-estate.ts's `fieldNames`), by its id. */
@@ -459,7 +496,82 @@ export async function makeFieldEstate(
     );
   if (given.emptyRepo)
     await mkdir(join(root, "workspace", given.emptyRepo, ".git"), { recursive: true });
-  if (given.topic) await writeTopic(root, given.topic, options, checkouts);
+  if (given.topic) await writeTopic(root, given.topic, checkouts, given.topicListeners);
+  // ---- beta.30 (slice 9): gateway proxies whose target URL is `${TARGET_URL}`, a setting
+  //      their deploy file names, instead of the deploy token `@targetUrl@`
+  for (let g = Math.max(0, gateways - (given.dollarTokens ?? 0)); g < gateways; g++) {
+    const repo = bigGatewayId(g);
+    const facts = bigGatewayFacts(g, options).map((f) => {
+      const text = JSON.stringify(f);
+      if (f.kind !== "config") return JSON.parse(text.replaceAll("@targetUrl@", "${TARGET_URL}"));
+      // The deploy file sets the setting by its name.
+      return JSON.parse(text.replaceAll("@targetUrl@", "TARGET_URL"));
+    }) as Fact[];
+    await writeFile(
+      join(factsDirOf(root), `${repo}.jsonl`),
+      facts.map((f) => JSON.stringify(f)).join("\n") + "\n",
+    );
+    for (const w of factsSnapshotWrites(root, repo, facts, {
+      commit: BIG_COMMIT,
+      contracts: null,
+    })) {
+      await mkdir(dirname(w.path), { recursive: true });
+      await writeFile(w.path, w.text!);
+    }
+  }
+  // ---- beta.30 (slice 9, as fixtures/reconnect): a call joined to the wrong box. The first
+  //      service's first call by address to a service read from facts; the same API is served
+  //      by another service (read from facts, with a clone when one has), where it really goes.
+  let wrongBox: FieldEstate["wrongBox"];
+  if (given.wrongBox) {
+    const legacyIds = new Set(
+      Array.from({ length: Math.min(given.legacy ?? 4, services - 2) }, (_, k) =>
+        bigRepoId(services - 1 - k),
+      ),
+    );
+    const from = bigRepoId(0);
+    const calls = bigRepoFacts(0, options).facts.filter(
+      (f): f is Fact & { kind: "call"; host: string; method: string; path: string } =>
+        f.kind === "call" && /^forge-svc-\d+\.forge\.example$/.test(f.host ?? ""),
+    );
+    const call = calls.find((c) => !legacyIds.has(c.host.split(".")[0]!));
+    if (!call)
+      throw new Error(
+        "wrongBox: the first service has no call by address to a service read from facts.",
+      );
+    const joins = call.host.split(".")[0]!;
+    const goes = Array.from({ length: services }, (_, r) => bigRepoId(r)).find(
+      (id) => id !== from && id !== joins && !legacyIds.has(id),
+    );
+    if (!goes) throw new Error("wrongBox: no third service read from facts.");
+    const annotation = `${call.method[0]}${call.method.slice(1).toLowerCase()}Mapping`;
+    const quote = `@${annotation}("${call.path}")`;
+    await addFacts(
+      root,
+      goes,
+      [
+        {
+          quote,
+          fact: {
+            kind: "entry",
+            id: "e-wrong-box",
+            entryType: "rest",
+            method: call.method,
+            path: call.path,
+            handler: "WrongBoxController.serve",
+            cite: {
+              file: "src/main/java/forge/web/WrongBoxController.java",
+              line: 1,
+              value: call.path,
+              quote,
+            },
+          },
+        },
+      ],
+      Number(goes.slice(-2)) < checkouts,
+    );
+    wrongBox = { from, call: call.id, method: call.method, path: call.path, joins, goes };
+  }
   // ---- a shape's own repos and origins (ADR 0202 point 10); nothing without a shape
   if (flags) {
     const manifest = join(root, "org-pack/profiles/github/repos.manifest.yaml");
@@ -692,9 +804,11 @@ export async function makeFieldEstate(
           topic: {
             name: given.topic,
             publisher: FIELD_TOPIC_PUBLISHER,
-            listener: FIELD_TOPIC_LISTENER,
+            listener: bigRepoId((given.topicListeners ?? [3])[0]!),
+            listeners: (given.topicListeners ?? [3]).map(bigRepoId),
           },
         }
       : {}),
+    ...(wrongBox ? { wrongBox } : {}),
   };
 }
