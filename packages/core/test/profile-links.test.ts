@@ -2,7 +2,7 @@ import { cp, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Profile as Beta285Profile } from "./frozen/profile-beta28-5.js";
 import {
   declareArrow,
@@ -15,6 +15,21 @@ import {
   PROFILE_SCHEMA_VERSION,
   retireArrow,
 } from "../src/index.js";
+
+/** A writer landing between declareArrow's read and its write, only while a test sets it. */
+const between: { edit?: (path: string) => Promise<void> } = {};
+vi.mock("../src/fs.js", async () => {
+  const real = await vi.importActual<typeof import("../src/fs.js")>("../src/fs.js");
+  return {
+    ...real,
+    writeFileIfUnchanged: async (path: string, expected: string, next: string) => {
+      const edit = between.edit;
+      between.edit = undefined;
+      if (edit) await edit(path);
+      return real.writeFileIfUnchanged(path, expected, next);
+    },
+  };
+});
 
 /**
  * ADR 0204 1.4 (C6, profile version 3): a declared arrow is one item of the profile's `links`.
@@ -162,11 +177,11 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     const root = await metarepo();
     const file = join(root, ...PROFILE);
     const real = await readFile(file, "utf8");
-    // A writer landing between the read and the write: the write sees other bytes.
-    const { writeFileIfUnchanged } = await import("../src/fs.js");
-    await expect(writeFileIfUnchanged(file, `${real}# edited\n`, "x")).rejects.toBeInstanceOf(
-      FileChangedError,
-    );
+    // A person's edit lands after declareArrow read the profile and before it writes.
+    between.edit = async (path) => writeFile(path, `${real}# edited by hand\n`);
+    await expect(declareArrow(root, asked, who)).rejects.toBeInstanceOf(FileChangedError);
+    // Refused whole: the person's edit stays, no arrow and no version raise written over it.
+    expect(await readFile(file, "utf8")).toBe(`${real}# edited by hand\n`);
   });
 
   it("retires exactly its item, every other byte as it was", async () => {
