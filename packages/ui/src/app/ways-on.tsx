@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import type { Api } from "@maycombhq/core";
 import { api, ApiError } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
+import { UndoConfirm } from "./confirm-dialog.js";
 import { followJob, type UndoWay } from "./job.js";
 import { hashParam } from "./screens.js";
 import { panelId } from "./ui.js";
@@ -86,13 +88,7 @@ export function InstallCopy() {
 }
 
 /** POST /api/support/bundle's answer (API 3.19.0). */
-export interface SupportBundleSaved {
-  file: string;
-  name: string;
-  bytes: number;
-  files: string[];
-  zip?: string;
-}
+export type SupportBundleSaved = Api.SupportBundleViewT;
 
 /** Where saving a support bundle stands, in the panel that asked. */
 export type BundleState =
@@ -272,84 +268,57 @@ const when = (iso: string) => iso.replace("T", " ").replace(/\.\d+Z$|Z$/, " UTC"
 export const undoWords = (u: UndoWay): string =>
   u.ofThis ? W.undoThis : W.undoLastOf(u.command, when(u.at));
 
+type UndoPlan = NonNullable<Api.CatalogUndoViewT["plan"]>;
+
 /** Where an error's Undo stands. */
 export type UndoState =
   | { state: "idle" }
   | { state: "listing" }
-  | { state: "asking"; files: { path: string; to: "file" | "absent" }[] }
-  | { state: "undoing" }
+  | { state: "asking"; plan: UndoPlan }
   | { state: "undone" }
   | { state: "failed"; why: string };
-
-interface UndoListed {
-  plan?: { files: { path: string; to: "file" | "absent" }[] };
-  problem?: string;
-}
 
 /** Undo from an error, in each of its states (tests render each). */
 export function UndoHereView(p: {
   undo: UndoWay;
   at: UndoState;
   onOpen: () => void;
-  onUndo: () => void;
+  onUndo: () => Promise<void>;
   onBack: () => void;
 }) {
   const a = p.at;
-  const ask = useRef<HTMLParagraphElement | null>(null);
   const said = useRef<HTMLParagraphElement | null>(null);
-  // WCAG 2.4.3: the confirm takes the keyboard on its question (never on Undo, so Enter doesn't
-  // confirm a list nobody read); what the Undo did takes it once it has ended.
+  // What the Undo did takes the keyboard once it has ended (its dialog is gone). Go back gives
+  // it to the button that opened the dialog, which the dialog itself does as it closes.
   useEffect(() => {
-    if (a.state === "asking") ask.current?.focus();
     if (a.state === "undone" || a.state === "failed") said.current?.focus();
   }, [a.state]);
-  const busy = a.state === "listing" || a.state === "undoing";
   return (
     <div className="stack" style={{ gap: 6 }}>
-      {a.state !== "asking" && a.state !== "undone" && (
+      {a.state !== "undone" && (
         <div>
           <button
             type="button"
             className="btn"
             onClick={p.onOpen}
-            disabled={busy}
-            aria-busy={busy || undefined}
+            aria-disabled={a.state === "listing" || undefined}
+            aria-busy={a.state === "listing" || undefined}
           >
-            {a.state === "listing"
-              ? W.undoListing
-              : a.state === "undoing"
-                ? W.undoing
-                : undoWords(p.undo)}
+            {a.state === "listing" ? W.undoListing : undoWords(p.undo)}
           </button>
         </div>
       )}
       {a.state === "asking" && (
-        <div className="stack" role="group" aria-label={undoWords(p.undo)} style={{ gap: 6 }}>
-          <p className="work-say" style={{ margin: 0 }}>
-            {W.undoPutsBack(a.files.length)}
-          </p>
-          {a.files.length > 0 && (
-            <ul className="ev-list mono" aria-label={W.undoFilesLabel} style={{ margin: 0 }}>
-              {a.files.map((f) => (
-                <li key={f.path}>
-                  {f.to === "absent" ? COPY.catalogBuild.remove : COPY.catalogBuild.restore}{" "}
-                  {f.path}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="li-delete-ask" style={{ margin: 0 }} tabIndex={-1} ref={ask}>
-            {W.undoAsk}
-          </p>
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="btn primary" onClick={p.onUndo}>
-              {W.undoYes}
-            </button>
-            <button type="button" className="btn" onClick={p.onBack}>
-              {W.undoBack}
-            </button>
-          </div>
-        </div>
+        // The confirm undo has on Catalog builds: the builds it takes back by number and
+        // command, a rename's note, every file; titled with which build this error names.
+        <UndoConfirm
+          plan={a.plan}
+          title={undoWords(p.undo)}
+          ask={W.undoAsk}
+          confirm={W.undoYes}
+          onConfirm={p.onUndo}
+          onClose={p.onBack}
+        />
       )}
       {a.state === "undone" && (
         <p role="status" className="work-say" style={{ margin: 0 }} tabIndex={-1} ref={said}>
@@ -367,10 +336,10 @@ export function UndoHereView(p: {
 
 /**
  * ADR 0202 point 3: Undo the last build in one click from an error. The click opens the confirm
- * undo has, here: the files it puts back (GET /api/build/undo?n=), "Take back this build?", and
- * Undo, which sends the error's own three values (POST /api/build/undo: n, files, plan), so a
- * list that changed meanwhile is refused, as on Catalog builds. Nothing is undone without the
- * confirm.
+ * undo has, here (GET /api/build/undo?n=: the builds it takes back and the files it puts back),
+ * asks "Take back this build?", and Undo sends the error's own three values
+ * (POST /api/build/undo: n, files, plan), so a list that changed meanwhile is refused, as on
+ * Catalog builds, and said in the dialog. Nothing is undone without the confirm.
  */
 export function UndoHere(p: { undo: UndoWay; onDone?: (() => void) | undefined }) {
   const [at, setAt] = useState<UndoState>({ state: "idle" });
@@ -381,30 +350,23 @@ export function UndoHere(p: { undo: UndoWay; onDone?: (() => void) | undefined }
       at={at}
       onBack={() => setAt({ state: "idle" })}
       onOpen={() => {
+        if (at.state === "listing") return;
         setAt({ state: "listing" });
-        api<UndoListed>(`/api/build/undo?n=${p.undo.n}`, { quiet: true }).then(
+        api<Api.CatalogUndoViewT>(`/api/build/undo?n=${p.undo.n}`, { quiet: true }).then(
           (v) =>
             setAt(
               v.plan
-                ? { state: "asking", files: v.plan.files }
+                ? { state: "asking", plan: v.plan }
                 : { state: "failed", why: v.problem ?? COPY.catalogBuild.undoNone },
             ),
           (e: unknown) => setAt({ state: "failed", why: why(e) }),
         );
       }}
-      onUndo={() => {
-        setAt({ state: "undoing" });
-        followJob("/api/build/undo", {
-          n: p.undo.n,
-          files: p.undo.files,
-          plan: p.undo.plan,
-        }).then(
-          () => {
-            setAt({ state: "undone" });
-            p.onDone?.();
-          },
-          (e: unknown) => setAt({ state: "failed", why: why(e) }),
-        );
+      onUndo={async () => {
+        const { n, files, plan } = p.undo;
+        await followJob("/api/build/undo", { n, files, plan });
+        setAt({ state: "undone" });
+        p.onDone?.();
       }}
     />
   );

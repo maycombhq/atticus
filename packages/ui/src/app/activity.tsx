@@ -13,6 +13,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
+import { stopOffered } from "./job.js";
 import {
   CopilotRunTabs,
   matching,
@@ -115,7 +116,7 @@ export function stopHint(
  * runs). An entry that is stopping keeps its button, disabled, saying so.
  */
 export const canStop = (e: Pick<Entry, "stop" | "stoppable" | "stopping">): boolean =>
-  !!e.stop && (e.stoppable !== false || e.stopping === true);
+  !!e.stop && (stopOffered(e, true) || e.stopping === true);
 
 /** Stop's words: "Stop after this repo" while a job of several is inside a write. */
 export const stopWords = (e: Pick<Entry, "stopLands">): string =>

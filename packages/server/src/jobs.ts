@@ -36,11 +36,7 @@ export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
  * it again after a reload. `map-edits` is Edit the map's Apply my changes.
  */
 export const JOB_ACTIONS = Api.JOB_ACTIONS;
-export type JobAction = (typeof JOB_ACTIONS)[number];
-export interface JobFor {
-  action: JobAction;
-  repo?: string;
-}
+export type JobFor = Api.JobForT;
 
 export interface Job {
   id: string;

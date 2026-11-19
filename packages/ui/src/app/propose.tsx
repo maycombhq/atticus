@@ -381,8 +381,9 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
   const look = useAction();
   const send = useAction();
   // Beta.30: the push's time so far in the panel. ADR 0202 point 2: its step, and Stop until
-  // just before the push (the job says when a Stop can no longer take effect).
-  const job = useJobRun();
+  // just before the push (the job says when a Stop can no longer take effect). A server that
+  // doesn't say (older than 3.19.0) would push all the same: no Stop is offered against it.
+  const job = useJobRun({ stopOnlyWhenSaid: true });
   const id = useId();
   // Eighth UX walk: Push and open the PR goes once it is done; its lines take the keyboard.
   const pushed = useRef<HTMLDivElement>(null);
@@ -514,8 +515,9 @@ export function BringIn() {
   const up = useAction();
   // App-only audit: the job runs for a while (a fetch); its Console entry shows it as it goes.
   const [jobId, setJobId] = useState<string | undefined>();
-  // ADR 0202 point 2: its step, and Stop until the working tree is about to be changed.
-  const job = useJobRun();
+  // ADR 0202 point 2: its step, and Stop until the working tree is about to be changed; none
+  // against a server that doesn't say it is stoppable (it would bring in all the same).
+  const job = useJobRun({ stopOnlyWhenSaid: true });
   const offer = act.note && !act.note.ok ? upstreamOffered(act.note.text) : undefined;
   return (
     <div className="stack" style={{ gap: 4 }}>

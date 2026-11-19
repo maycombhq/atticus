@@ -1,3 +1,4 @@
+import type { Api } from "@maycombhq/core";
 import { api, ApiError } from "../api/client.js";
 
 /** API 3.9.0 (ADR 0188): the step the app offers after a refusal or a failed job. */
@@ -26,14 +27,7 @@ export function nextAfter(e: unknown): NextStep | undefined {
  * API 3.19.0 (ADR 0202 point 3): the build an error's Undo would take back, with what its confirm
  * sends to POST /api/build/undo. `ofThis`: the job that failed took that undo copy itself.
  */
-export interface UndoWay {
-  n: number;
-  files: number;
-  plan: string;
-  command: string;
-  at: string;
-  ofThis: boolean;
-}
+export type UndoWay = Api.UndoWayT;
 
 /** A job's result's or a 409 problem's `undo`, when it is one; undefined otherwise. */
 export function undoWayOf(x: unknown): UndoWay | undefined {
@@ -73,10 +67,18 @@ export function undoAfter(e: unknown): { undo?: UndoWay; known: boolean } {
 }
 
 /** What a job says of Stop (API 3.19.0); nothing from an older server. */
-export interface StopStands {
-  stoppable?: boolean;
-  stopLands?: "now" | "after-write";
-}
+export type StopStands = Pick<Api.JobT, "stoppable" | "stopLands">;
+
+/**
+ * The one rule for offering Stop: the job says it is stoppable. From a server that says nothing
+ * (older than 3.19.0), `whenUnsaid`: Stop while it runs for work that server stops (an Apply, a
+ * build, a scan), never for work it would carry on with all the same (Propose, Bring in).
+ */
+export const stopOffered = (s: StopStands, whenUnsaid: boolean): boolean =>
+  s.stoppable ?? whenUnsaid;
+
+/** A job the page could no longer ask about: its polls failed, one after another. */
+export class JobLost extends Error {}
 
 /** A job that failed or stopped: its lines (why), and what the app offers next. */
 export class JobFailed extends Error {
@@ -110,24 +112,48 @@ export async function followJob(
   /** App-only audit: hears the job's id at once, so the page can link its Console entry. */
   onJob?: (jobId: string) => void,
   /** Beta.28.4: hears how far the job is on each look while it runs (the repo an Apply is on). */
-  onProgress?: (
-    p: { done: number; total: number; message: string; stopping?: boolean } & StopStands,
-  ) => void,
+  onProgress?: (p: Progress) => void,
 ): Promise<{ code: number; lines: string[]; result?: Record<string, unknown> }> {
   const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
   onJob?.(jobId);
+  return followJobId(jobId, wait, onProgress);
+}
+
+/** A job as a poll reads it. */
+interface PolledJob extends StopStands {
+  state: string;
+  errors: string[];
+  progress?: { done: number; total: number; message: string };
+  /** Stop was asked and it is ending (a run over several repos: after the repo it writes). */
+  stopping?: boolean;
+  result?: { code?: number; lines?: string[]; next?: unknown; [k: string]: unknown };
+}
+
+type Progress = { done: number; total: number; message: string; stopping?: boolean } & StopStands;
+
+/**
+ * A job followed to its end by its id: the one followJob started, or (ADR 0202 point 5) one a
+ * panel found again after a reload. `retries`: how many polls in a row may fail before the job
+ * is said lost (`JobLost`); none unless asked, so a follow fails as it always did.
+ */
+export async function followJobId(
+  jobId: string,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  onProgress?: (p: Progress) => void,
+  retries = 0,
+): Promise<{ code: number; lines: string[]; result?: Record<string, unknown> }> {
+  let missed = 0;
   for (;;) {
-    const j = await api<{
-      state: string;
-      errors: string[];
-      progress?: { done: number; total: number; message: string };
-      /** Stop was asked and it is ending (a run over several repos: after the repo it writes). */
-      stopping?: boolean;
-      /** API 3.19.0: whether a Stop asked now would end it, and where it would land. */
-      stoppable?: boolean;
-      stopLands?: "now" | "after-write";
-      result?: { code?: number; lines?: string[]; next?: unknown; [k: string]: unknown };
-    }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+    let j: PolledJob;
+    try {
+      j = await api<PolledJob>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+      missed = 0;
+    } catch (e) {
+      if (!retries) throw e;
+      if (++missed > retries) throw new JobLost(e instanceof Error ? e.message : String(e));
+      await wait(700);
+      continue;
+    }
     if (j.state !== "running" && j.state !== "queued") {
       const code = j.result?.code ?? (j.state === "done" ? 0 : 1);
       const failed = j.state !== "done" || code !== 0;

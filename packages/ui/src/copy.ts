@@ -144,6 +144,9 @@ export const COPY = {
       tooLateNow: "Too late to stop: the write has started and finishes whole.",
       /** ADR 0202 point 5: a finished job found again that refused (nothing was written). */
       refused: (time: string) => `Refused after ${time}: nothing was written.`,
+      /** A found job whose polls failed one after another: it may still be running. */
+      lost: "Lost touch with the job:",
+      checkAgain: "Check again",
       /** A job this page found running or just ended, started before the page was loaded. */
       found: "Started before this page was loaded:",
       linesLabel: (what: string) => `What it printed last: ${what}`,
@@ -1169,11 +1172,7 @@ export const COPY = {
     undoLastOf: (command: string, time: string) => `Undo the last build (${command}, ${time})`,
     undoListing: "Listing the files it puts back…",
     undoAsk: "Take back this build?",
-    undoPutsBack: (n: number) =>
-      n === 0 ? "It puts back no file." : `It puts back ${n} ${n === 1 ? "file" : "files"}:`,
-    undoFilesLabel: "The files it puts back",
     undoYes: "Undo",
-    undoBack: "Go back",
     undoing: "Undoing…",
     undone: "Undone: the files are as they were before that build.",
     undoFailed: (why: string) => `Nothing was undone: ${why}`,

@@ -428,26 +428,32 @@ describe("an Apply that failed", () => {
 });
 
 describe("the other waits that follow a job", () => {
-  it("Propose for review says its time and that it is running, with Stop until its push (ADR 0202)", async () => {
-    starts.set("/api/propose", "job-p");
-    jobs.set("job-p", [running("Proposing for review")]);
-    const m = mount(Propose as never, { scope: "answers" } as never);
-    const btn = (label: string) =>
-      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === label)!;
-    (btn(P.propose).props.onClick as () => void)();
-    await tick();
-    m.render();
-    (btn(P.yes(1)).props.onClick as () => void)();
-    await tick();
-    await tick();
-    m.render();
-    const p = all(m.tree).find((e) => e.type === JobProgress)!.props as Parameters<
-      typeof JobProgress
-    >[0];
-    expect(p.what).toBe(P.proposingSay);
-    // ADR 0202 point 2: the job hears Stop until just before the push, and says when it can't.
-    expect(typeof p.onStop).toBe("function");
-  });
+  it.each([
+    ["says it is stoppable", { stoppable: true, stopLands: "now" }, "function"],
+    ["is an older one, which says nothing (it would push anyway)", {}, "undefined"],
+  ])(
+    "Propose for review says its time and that it is running; Stop when the server %s",
+    async (_w, says, stop) => {
+      starts.set("/api/propose", "job-p");
+      jobs.set("job-p", [running("Proposing for review", says)]);
+      const m = mount(Propose as never, { scope: "answers" } as never);
+      const btn = (label: string) =>
+        all(m.tree).find((e) => e.type === "button" && text(e.props.children) === label)!;
+      (btn(P.propose).props.onClick as () => void)();
+      await tick();
+      m.render();
+      (btn(P.yes(1)).props.onClick as () => void)();
+      await tick();
+      await tick();
+      m.render();
+      const p = all(m.tree).find((e) => e.type === JobProgress)!.props as Parameters<
+        typeof JobProgress
+      >[0];
+      expect(p.what).toBe(P.proposingSay);
+      // ADR 0202 point 2: Stop only while the job itself says it is stoppable (until its push).
+      expect(typeof p.onStop).toBe(stop);
+    },
+  );
 
   it("Edit the map's Apply shows the job's step where it said only that it was saving", () => {
     const out = html(
