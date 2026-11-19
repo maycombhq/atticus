@@ -274,7 +274,7 @@ describe("atticus skills import, write and list", () => {
     expect((await sourcesOf(root)).map((s) => `${s.kind} ${s.name}`)).toContain(
       "skill define-change",
     );
-    expect((await sourcesOf(root)).filter((s) => s.kind === "agent")).toHaveLength(14);
+    expect((await sourcesOf(root)).filter((s) => s.kind === "agent")).toHaveLength(15);
     expect(await skillsWriteCommand(root, {}, io().io)).toBe(0);
     const c = io();
     expect(await skillsWriteCommand(root, { check: true }, c.io)).toBe(0);

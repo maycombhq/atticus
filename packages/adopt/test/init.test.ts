@@ -41,6 +41,7 @@ describe("init", () => {
       "org-pack/agents/product-owner-naysayer.md",
       "org-pack/agents/domain-architect.md",
       "org-pack/agents/qa-naysayer.md",
+      "org-pack/agents/spec-writer.md",
       "org-pack/skills/define-change/SKILL.md",
       "openspec/config.yaml",
       "openspec/schemas/org-flow/schema.yaml",
@@ -48,7 +49,7 @@ describe("init", () => {
       "catalog/curated/README.md",
     ])
       expect(r.created, f).toContain(f);
-    expect(r.created.filter((f) => /^org-pack\/agents\/[a-z-]+\.md$/.test(f))).toHaveLength(14);
+    expect(r.created.filter((f) => /^org-pack\/agents\/[a-z-]+\.md$/.test(f))).toHaveLength(15);
     // roles.yaml is deprecated (ADR 0073): a new metarepo doesn't get one.
     expect(r.created).not.toContain("org-pack/roles.yaml");
     expect(parse(await readFile(join(root, "org-pack/pack.yaml"), "utf8"))).toEqual({

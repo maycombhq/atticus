@@ -32,11 +32,11 @@ An agent of your own may list `tools` and `handoffs` (ADR 0201). Each is written
 | `tools: read`           | `Read`                                                          | `read`                                                                              |
 | `tools: search`         | `Grep, Glob`                                                    | `search`                                                                            |
 | `tools: edit`           | `Edit, Write`                                                   | `edit`                                                                              |
-| `tools: atticus/<tool>` | `mcp__atticus__<tool>`                                          | `atticus/<tool>`                                                                    |
+| `tools: atticus/<tool>` | `mcp__atticus__<tool>`                                          | `atticus/*`, once (the form Copilot's reference documents; the server only reads)   |
 | any other tool          | as written                                                      | `Read` as `read`, `Grep` and `Glob` as `search`; else left out, and said            |
 | `handoffs`              | a last line of the body: "When you are done, hand to: <names>." | `handoffs: [{ label, agent, prompt, send: false }]`; a person presses each hand-off |
 
-An agent that lists no tools is written as before. One that lists them has only those in Copilot from now on, so `atticus skills write --check` reports its files as behind once after the upgrade. A map tool `atticus mcp` doesn't serve and a hand-off to an agent the org pack lacks are left out and named. `atticus skills write` also writes the metarepo's `.vscode/mcp.json` with the `atticus` server: a new file where there is none, the server added where the file has others, nothing where it has one or doesn't read as JSON.
+An agent that lists no tools is written as before. One that lists them has only those in Copilot from now on, so `atticus skills write --check` reports its files as behind once after the upgrade. A map tool `atticus mcp` doesn't serve and a hand-off to an agent the org pack lacks are left out and named. A hand-off with no prompt of its own gets "Take over from here.". `atticus skills write` also writes the metarepo's `.vscode/mcp.json` (VS Code and Copilot) and `.mcp.json` (Claude Code) with the `atticus` server: a new file where there is none, the server added where the file has others, nothing where it has one or doesn't read as JSON.
 
 ## Your edits are kept
 
