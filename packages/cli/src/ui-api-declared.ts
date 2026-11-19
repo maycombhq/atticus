@@ -510,12 +510,21 @@ export function uiDeclaredRoutes(
       // ADR 0204: the declared arrows at either end of the box, each with its Remove.
       const box: Api.LinkBoxT = repo ? { repo } : { system: system! };
       const op = await loadOrgPack(orgPackDirOf(ctx.root));
+      const { readFindReport, findFilesOf } = await import("./connect-find.js");
       for (const d of declaredArrows(op)) {
         const [f, t] = [boxOfEnd(d.from), boxOfEnd(d.to)];
         if (![f, t].some((x) => x.repo === box.repo && x.system === box.system)) continue;
+        // A.6: said from the find's report beside the line; the profile isn't changed by a find.
+        const find = f.repo
+          ? (
+              await readFindReport(
+                join(ctx.root, ...findFilesOf(ctx.root, f.repo, t).report.split("/")),
+              )
+            ).find((e) => e.outcome === "found" && e.to.repo === t.repo && e.to.system === t.system)
+          : undefined;
         items.push({
           kind: "arrow",
-          says: `${boxWords(f)} calls ${boxWords(t)}, declared: "${d.why}"${d.planned ? " (not built yet)" : ""}`,
+          says: `${boxWords(f)} calls ${boxWords(t)}, declared: "${d.why}"${d.planned ? " (not built yet)" : ""}${find ? `, confirmed by code on ${find.at.slice(0, 10)}` : ""}`,
           by: d.by,
           at: d.at,
           file: arrowView(ctx.root, d).file,

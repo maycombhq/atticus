@@ -8218,5 +8218,31 @@ export const COPY = {
       none: "you said it calls nothing here",
     },
     exact: (word: string) => `exactly: ${word}`,
+    // ADR 0204 addendum A: find a declared arrow in the code.
+    find: "Find it in the code",
+    findAgain: "Find it again",
+    readAgain: "Read again anyway",
+    finding: "Finding it in the code…",
+    handoff:
+      "Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code:",
+    readAnswer: "Read the answer",
+    outcome: {
+      found: (date: string) => `confirmed by code on ${date}`,
+      "found-loose": (at: string, what: string, b: string) =>
+        `Atticus found the call at ${at}. Its address is set outside the code (${what}), so the code doesn't say it goes to ${b}.`,
+      elsewhere: (a: string, c: string, at: string, name: string, b: string) =>
+        `The code shows ${a} calling ${c} at ${at}, not ${b}. ${name} declared that ${a} calls ${b}.`,
+      "not-found": (date: string, n: number) =>
+        `Read on ${date}: no code found for it. Atticus looked at ${n} file${n === 1 ? "" : "s"}.`,
+    },
+    looked: "The files it looked at",
+    rejectedFact: (fact: string, why: string) => `${fact} was rejected: ${why}`,
+    connectThese: (n: number, b: string) => `Connect these ${n} call${n === 1 ? "" : "s"} to ${b}`,
+    moveThis: (b: string) => `Move this call to ${b}`,
+    keepBoth: "Keep both",
+    kept: "Both arrows stay.",
+    makeRule: "Make this a reading rule",
+    ruleDrafted: (file: string) =>
+      `Drafted in ${file}. It is given to no read until a person sets it active:`,
   },
 } as const;

@@ -14553,6 +14553,213 @@
         }
       }
     },
+    "/api/connect/find": {
+      "post": {
+        "operationId": "findDeclaredArrow",
+        "summary": "3.19.0 (ADR 0204 A): find a declared arrow in the caller's code, as a job: the brief from the profile's item (a hint, never evidence), the assistant's session or the hand-off, the answer checked, verify --write, and the outcome told from the catalog after the build; its result `answer` is FindResult",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "copilot-acp",
+                      "hand-off"
+                    ]
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "job": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its result `answer` is FindResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reading-rules/from-find": {
+      "post": {
+        "operationId": "ruleFromFind",
+        "summary": "3.19.0 (ADR 0204 A.8): Make this a reading rule from a call a find confirmed: a draft in org-pack/reading-rules/types/<type>.yaml, given to no read until a person sets it active",
+        "tags": [
+          "workspace"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "repo",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleFromPairingResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/map/edits/undo": {
       "post": {
         "operationId": "undoMapEdits",
@@ -44063,6 +44270,112 @@
           },
           "routes": {
             "type": "boolean"
+          },
+          "find": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "at": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "found",
+                  "found-loose",
+                  "elsewhere",
+                  "not-found"
+                ]
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "looked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "other": {
+                "type": "string"
+              },
+              "rejected": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "shape": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "at",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "to",
+              "at",
+              "outcome",
+              "facts",
+              "looked"
+            ],
+            "additionalProperties": false
+          },
+          "findAgain": {
+            "type": "string",
+            "enum": [
+              "again",
+              "anyway"
+            ]
           }
         },
         "required": [
@@ -44073,6 +44386,147 @@
           "mechanism",
           "needs",
           "existing"
+        ],
+        "additionalProperties": false
+      },
+      "FindResult": {
+        "type": "object",
+        "properties": {
+          "handoff": {
+            "type": "object",
+            "properties": {
+              "brief": {
+                "type": "string"
+              },
+              "answer": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brief",
+              "answer",
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "at": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "found",
+                  "found-loose",
+                  "elsewhere",
+                  "not-found"
+                ]
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "looked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "other": {
+                "type": "string"
+              },
+              "rejected": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "shape": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "at",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "to",
+              "at",
+              "outcome",
+              "facts",
+              "looked"
+            ],
+            "additionalProperties": false
+          },
+          "brief": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "leftOut": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "brief",
+          "leftOut"
         ],
         "additionalProperties": false
       },

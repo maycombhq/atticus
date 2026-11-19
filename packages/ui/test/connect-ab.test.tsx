@@ -166,6 +166,61 @@ describe("Connect <A> to <B> (ADR 0204 1.2, 1.3)", () => {
   });
 });
 
+describe("Find it in the code in the panel (ADR 0204 A.5, A.7)", () => {
+  const d: Api.DeclaredArrowViewT = {
+    from: PROXY.box,
+    to: LEDGER.box,
+    why: "The proxy's target is set at deploy time.",
+    by: "Ada Example",
+    at: "2026-11-18T10:02:00Z",
+    file: "org-pack/profiles/forge/profile.yaml",
+  };
+  const entry = (o: Partial<Api.FindEntryViewT>): Api.FindEntryViewT => ({
+    to: LEDGER.box,
+    at: "2026-11-19T09:00:00Z",
+    outcome: "not-found",
+    facts: [],
+    looked: ["apiproxy/targets/TE.xml", "deploy/values.yaml"],
+    ...o,
+  });
+  const at = (find: Api.FindEntryViewT, more: Partial<Api.ConnectViewT> = {}) =>
+    plain(html(base({ mechanism: "declared", declared: d, find, ...more })));
+  it("offers the find on a declared arrow, and says each outcome with its way on", () => {
+    expect(plain(html(base({ mechanism: "declared", declared: d })))).toContain(W.find);
+    const found = at(
+      entry({
+        outcome: "found",
+        facts: ["call.f-1"],
+        shape: { type: "rest", at: "a.xml:3", value: "@t@" },
+      }),
+    );
+    expect(found).toContain(W.outcome.found("2026-11-19"));
+    expect(found).toContain(W.retire);
+    expect(found).toContain(W.makeRule);
+    expect(found).not.toContain(W.find);
+    const loose = at(
+      entry({
+        outcome: "found-loose",
+        facts: ["call.f-1"],
+        shape: { type: "rest", at: "a.xml:3", value: "@targetUrl@" },
+      }),
+    );
+    expect(loose).toContain(W.outcome["found-loose"]("a.xml:3", "@targetUrl@", "forge-ledger-svc"));
+    expect(loose).toContain(W.connectThese(1, "forge-ledger-svc"));
+    const other = at(entry({ outcome: "elsewhere", facts: ["call.f-1"], other: "forge-billing" }));
+    expect(other).toContain(W.keepBoth);
+    expect(other).toContain("The code shows forge-edge-proxy calling forge-billing");
+    const none = at(entry({ rejected: [{ fact: "call.f-2", why: "claim-not-on-line" }] }), {
+      findAgain: "anyway",
+    });
+    expect(none).toContain(W.outcome["not-found"]("2026-11-19", 2));
+    expect(none).toContain(W.looked);
+    expect(none).toContain(W.rejectedFact("call.f-2", "claim-not-on-line"));
+    expect(none).toContain(W.readAgain);
+    expect(at(entry({}), { findAgain: "again" })).toContain(W.findAgain);
+  });
+});
+
 describe("four words for nine statuses and ten reasons (ADR 0204 5.2, 5.3)", () => {
   const call = (o: Partial<Api.CandidateCallViewT>): Api.CandidateCallViewT => ({
     fact: "call.get.holds-id",

@@ -733,7 +733,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   or the same pair), and its undo takes `kind: link`. POST /api/map/edits takes an `add` of
  *   `kind: link`, and its result says what each change wrote (`wrote`), which POST
  *   /api/map/edits/undo takes back, then builds once. GET /api/boxes/corrections lists a box's
- *   declared arrows (`kind: arrow`). An Interface's join says who declared it
+ *   declared arrows (`kind: arrow`). POST /api/connect/find finds a declared arrow in the
+ *   caller's code (a job, `FindResult`; addendum A), GET /api/connect carries the last find
+ *   (`find`, `findAgain`), and POST /api/reading-rules/from-find drafts a reading rule from the
+ *   call it confirmed. An Interface's join says who declared it
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
  */
@@ -6598,6 +6601,27 @@ export const DeclaredArrowView = z.object({
   planned: z.boolean().optional(),
   file: z.string(),
 });
+/**
+ * 3.19.0 (ADR 0204 A.6): what the last "Find it in the code" said of one declared arrow, from
+ * `facts/<A>.find.yaml`: told from the catalog after the build, never from the session. `facts`
+ * are the call facts it rests on; `other` the box the code shows instead (`elsewhere`);
+ * `rejected` the facts the verifier refused; `shape` the first found call's type, the exact
+ * reason it was left (5.3) and its line, for Make this a reading rule.
+ */
+export const FindOutcome = z.enum(["found", "found-loose", "elsewhere", "not-found"]);
+export const FindEntryView = z.object({
+  to: LinkBox,
+  at: z.string(),
+  commit: z.string().optional(),
+  outcome: FindOutcome,
+  facts: z.array(z.string()),
+  looked: z.array(z.string()),
+  other: z.string().optional(),
+  rejected: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
+  shape: z
+    .object({ type: z.string(), why: z.string().optional(), at: z.string(), value: z.string() })
+    .optional(),
+});
 /** 3.19.0 (ADR 0204 3.1): what is missing before two boxes can be connected, each with its fix. */
 export const ConnectNeed = z.object({
   need: z.enum(["pick-repo", "no-repo", "read", "verify", "add-system"]),
@@ -6632,6 +6656,10 @@ export const ConnectView = z.object({
   superseded: z.object({ calls: z.number().int().positive() }).optional(),
   /** The callee is a gateway and the caller an outside system: its routes can be declared. */
   routes: z.boolean().optional(),
+  /** A.6: the last find's entry for these two boxes, when there is one. */
+  find: FindEntryView.optional(),
+  /** A.7: after `not-found`, `again` (the clone moved, or a reading rule became active) or `anyway`. */
+  findAgain: z.enum(["again", "anyway"]).optional(),
 });
 /** 3.19.0: a declared arrow asked for (POST /api/declared-links `kind: link`, Edit the map). */
 export const ArrowRequestFields = {
@@ -6662,6 +6690,32 @@ export const MapEditWrote = z.union([
 ]);
 /** 3.19.0: POST /api/map/edits/undo, exactly what an Apply wrote, then one build. */
 export const MapEditsUndoRequest = z.strictObject({ wrote: z.array(MapEditWrote).min(1).max(100) });
+/** 3.19.0 (ADR 0204 A.9): POST /api/connect/find, a job; its result `answer` is FindResult. */
+export const ConnectFindRequest = z.strictObject({
+  from: z.string().min(1).max(200),
+  to: LinkBox,
+  mode: z.enum(["copilot-acp", "hand-off"]).optional(),
+  /** Hand-off: the person's assistant wrote the answer; read it and go on. */
+  read: z.boolean().optional(),
+  job: z.boolean().optional(),
+});
+export const FindResult = z.object({
+  /** The read waits for the person's assistant: the brief, where its answer goes, what to paste. */
+  handoff: z.object({ brief: z.string(), answer: z.string(), command: z.string() }).optional(),
+  entry: FindEntryView.optional(),
+  brief: z.string(),
+  report: z.string().optional(),
+  /** What of the answer was left out (an id that is no call fact of A, a file A doesn't have). */
+  leftOut: z.array(z.string()),
+});
+/** 3.19.0 (ADR 0204 A.8): POST /api/reading-rules/from-find, a draft rule from a find's call. */
+export const RuleFromFindRequest = z.strictObject({
+  repo: z.string().min(1).max(200),
+  to: LinkBox,
+});
+export type FindEntryViewT = z.infer<typeof FindEntryView>;
+export type ConnectFindRequestT = z.infer<typeof ConnectFindRequest>;
+export type FindResultT = z.infer<typeof FindResult>;
 export type DeclaredArrowViewT = z.infer<typeof DeclaredArrowView>;
 export type ConnectNeedT = z.infer<typeof ConnectNeed>;
 export type ConnectViewT = z.infer<typeof ConnectView>;
@@ -9445,6 +9499,32 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/connect/find": {
+    post: {
+      id: "findDeclaredArrow",
+      summary:
+        "3.19.0 (ADR 0204 A): find a declared arrow in the caller's code, as a job: the brief from the profile's item (a hint, never evidence), the assistant's session or the hand-off, the answer checked, verify --write, and the outcome told from the catalog after the build; its result `answer` is FindResult",
+      tag: "scans",
+      body: ConnectFindRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its result `answer` is FindResult",
+      },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/reading-rules/from-find": {
+    post: {
+      id: "ruleFromFind",
+      summary:
+        "3.19.0 (ADR 0204 A.8): Make this a reading rule from a call a find confirmed: a draft in org-pack/reading-rules/types/<type>.yaml, given to no read until a person sets it active",
+      tag: "workspace",
+      body: RuleFromFindRequest,
+      ok: { status: 200, schema: "RuleFromPairingResult", description: "OK" },
+      errors: [400, 404, 409],
+    },
+  },
   "/api/map/edits/undo": {
     post: {
       id: "undoMapEdits",
@@ -10607,6 +10687,7 @@ export function openApiDocument(): Record<string, unknown> {
     FileChangeResult,
     DeclarableRoutesView,
     ConnectView,
+    FindResult,
     SketchStrokeRequest,
     SketchResult,
     AddableView,

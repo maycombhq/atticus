@@ -1,6 +1,13 @@
 import { useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useJobRead, type JobWaitParts, type Loaded } from "../../api/client.js";
+import {
+  api,
+  ApiError,
+  callAsJob,
+  useJobRead,
+  type JobWaitParts,
+  type Loaded,
+} from "../../api/client.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobWait } from "../../app/job-wait.js";
 import { Propose } from "../../app/propose.js";
@@ -27,10 +34,13 @@ export interface ConnectIo {
   read: (path: string | undefined) => Loaded<Api.ConnectViewT> & JobWaitParts;
   post: <T>(path: string, body: unknown) => Promise<T>;
   follow: (path: string, body: unknown) => ReturnType<typeof followJob>;
+  /** ADR 0204 A: POST /api/connect/find as a job. */
+  find: (body: Api.ConnectFindRequestT) => Promise<Api.FindResultT>;
 }
 const APP: Omit<ConnectIo, "read"> = {
   post: <T,>(path: string, body: unknown) => api<T>(path, { method: "POST", body }),
   follow: (path, body) => followJob(path, body),
+  find: (body) => callAsJob<Api.FindResultT>("/api/connect/find", { ...body }),
 };
 const say = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
 const name = (b: Api.LinkBoxT) => b.repo ?? b.system ?? "";
@@ -195,7 +205,9 @@ function Mechanism(p: {
           {W.show}
         </button>
       )}
-      {v.mechanism === "declared" && v.declared && <Declared v={v} d={v.declared} io={p.io} />}
+      {v.mechanism === "declared" && v.declared && (
+        <Declared v={v} d={v.declared} io={p.io} reload={p.reload} />
+      )}
       {(v.mechanism === "declare" ||
         declaring ||
         v.needs.some((n) => ["read", "verify", "no-repo"].includes(n.need))) &&
@@ -297,6 +309,7 @@ function Declared(p: {
   v: Api.ConnectViewT;
   d: Api.DeclaredArrowViewT;
   io: Omit<ConnectIo, "read">;
+  reload(): void;
 }) {
   const { v, d } = p;
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
@@ -327,6 +340,7 @@ function Declared(p: {
           {W.superseded(v.fromName, v.toName, v.superseded.calls, d.by, day(d.at))}
         </p>
       )}
+      {v.find && <FindOutcome v={v} e={v.find} by={d.by} />}
       <div className="box-btns">
         <button
           type="button"
@@ -335,8 +349,11 @@ function Declared(p: {
           disabled={state === "busy"}
           aria-busy={state === "busy"}
         >
-          {v.superseded ? W.retire : W.remove}
+          {v.superseded || v.find?.outcome === "found" ? W.retire : W.remove}
         </button>
+        {v.from.repo && v.find?.outcome !== "found" && (
+          <FindButton v={v} io={p.io} reload={p.reload} />
+        )}
       </div>
       {error && (
         <p role="alert" className="state error">
@@ -344,6 +361,178 @@ function Declared(p: {
         </p>
       )}
     </div>
+  );
+}
+
+/** ADR 0204 A.1, A.7: Find it in the code, as one job; a hand-off pauses with what to paste. */
+function FindButton(p: { v: Api.ConnectViewT; io: Omit<ConnectIo, "read">; reload(): void }) {
+  const { v } = p;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [handoff, setHandoff] = useState<string | undefined>();
+  const go = (read: boolean) => {
+    setBusy(true);
+    setError(undefined);
+    p.io
+      .find({ from: v.from.repo!, to: v.to, ...(read ? { read: true } : {}) })
+      .then(
+        (r) => {
+          if (r.handoff) setHandoff(r.handoff.command);
+          else {
+            setHandoff(undefined);
+            p.reload();
+          }
+        },
+        (e: unknown) => setError(errorOf(e)),
+      )
+      .finally(() => setBusy(false));
+  };
+  const label = !v.find ? W.find : v.findAgain === "again" ? W.findAgain : W.readAgain;
+  return (
+    <>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => go(false)}
+        disabled={busy}
+        aria-busy={busy}
+      >
+        {busy ? W.finding : label}
+      </button>
+      {handoff && (
+        <div className="stack" role="status">
+          <p className="ev-say">{W.handoff}</p>
+          <Command text={handoff} label={W.handoff} noRun />
+          <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
+            {W.readAnswer}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** ADR 0204 A.5: the outcome, told from the catalog, with each one's way on. */
+function FindOutcome(p: { v: Api.ConnectViewT; e: Api.FindEntryViewT; by: string }) {
+  const { v, e } = p;
+  const [kept, setKept] = useState(false);
+  const at = e.shape?.at ?? "";
+  // The calls it found, today's pairing of them, ticked (A.5's found-loose and elsewhere).
+  const calls = v.candidates
+    ? {
+        ...v.candidates,
+        calls: v.candidates.calls
+          .filter((c) => e.facts.includes(c.fact))
+          .map((c) => (c.suggestion ? { ...c, confident: true } : c)),
+      }
+    : undefined;
+  const pair = calls && calls.calls.length > 0 && (
+    <Pairing from={calls.from} box={v.to} cands={{ state: "ready", data: calls }} />
+  );
+  if (e.outcome === "found")
+    return (
+      <div className="stack">
+        <p className="ev-say">{W.outcome.found(day(e.at))}</p>
+        <RuleFromFind repo={v.from.repo!} to={v.to} />
+      </div>
+    );
+  if (e.outcome === "found-loose")
+    return (
+      <div className="stack">
+        <p className="ev-say">{W.outcome["found-loose"](at, e.shape?.value ?? "", v.toName)}</p>
+        <p className="hud">{W.connectThese(e.facts.length, v.toName)}</p>
+        {pair}
+        <RuleFromFind repo={v.from.repo!} to={v.to} />
+      </div>
+    );
+  if (e.outcome === "elsewhere")
+    return (
+      <div className="stack">
+        <p className="ev-say">
+          {W.outcome.elsewhere(v.fromName, e.other ?? "", at || e.facts[0] || "", p.by, v.toName)}
+        </p>
+        {kept ? (
+          <p role="status" className="ev-say">
+            {W.kept}
+          </p>
+        ) : (
+          <button type="button" className="btn" onClick={() => setKept(true)}>
+            {W.keepBoth}
+          </button>
+        )}
+        {pair && (
+          <details>
+            <summary className="hud">{W.moveThis(v.toName)}</summary>
+            {pair}
+          </details>
+        )}
+      </div>
+    );
+  return (
+    <div className="stack">
+      <p className="ev-say">{W.outcome["not-found"](day(e.at), e.looked.length)}</p>
+      {e.looked.length > 0 && (
+        <details>
+          <summary className="hud">{W.looked}</summary>
+          <ul className="mono">
+            {e.looked.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {(e.rejected ?? []).map((r) => (
+        <p key={r.fact} className="ev-say">
+          {W.rejectedFact(r.fact, r.why)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** ADR 0204 A.8: a draft reading rule from the call a find confirmed; active only by a person. */
+function RuleFromFind(p: { repo: string; to: Api.LinkBoxT }) {
+  const [busy, setBusy] = useState(false);
+  const [made, setMade] = useState<Api.RuleFromPairingResultT | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  if (made)
+    return (
+      <div className="stack" role="status">
+        <p className="ev-say">{W.ruleDrafted(made.file)}</p>
+        <Command text={made.activate} label={W.makeRule} noRun />
+      </div>
+    );
+  return (
+    <>
+      <button
+        type="button"
+        className="btn"
+        disabled={busy}
+        aria-busy={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(undefined);
+          api<Api.RuleFromPairingResultT>("/api/reading-rules/from-find", {
+            method: "POST",
+            body: { repo: p.repo, to: p.to },
+          })
+            .then(setMade, (e: unknown) => setError(errorOf(e)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {W.makeRule}
+      </button>
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 

@@ -28,6 +28,20 @@ On the map a declared arrow is a dashed line in the declared layer, labelled "de
 
 **Undo** takes back exactly what the button wrote, while it is still as written, and builds once; when the arrow or the lines changed since, it says what changed and removes nothing (undo it under **Corrections and declarations** then).
 
+### Find it in the code
+
+A declared arrow says where to look; it is never evidence. **Find it in the code**, on a declared arrow's panel (or `atticus connect find <repo> --to <repo> | --system <id>` in a terminal), has your assistant read the caller's code for the call:
+
+- Atticus writes a brief, `facts/<repo>.find.md`, from the arrow: who declared it and why (fenced as data, never an instruction), what the map knows of the callee (its entries, hosts and base path, topics, the gateway routes that forward to it, the settings and deploy tokens other repos reach it by; at most 200 of each, nearest to the caller's loose calls first), and where to look in the caller (its calls with no arrow and why each was left, its config, deployment, pipeline and proxy target files, then the files no fact cites). Its rule: write a call only where a line shows it; never write a fact because the arrow says there is one.
+- Where the app can start the assistant, it is one unattended session; else the panel says what to paste into Copilot Chat or Claude Code, and **Read the answer** goes on (`--read` in a terminal). The session writes ordinary facts (file, line, value, quote) and one answer, `proposals/find/<repo>--<box>.yaml` (`looked`, `found`, `elsewhere`, `none`). Atticus checks the answer (an id that is no call fact of the repo, or a file it doesn't have, is left out and listed), then `atticus verify <repo> --write` checks every fact on its line and builds.
+- **The outcome is told from the catalog after the build**, never from what the session says:
+  - **found**: a real call goes the same way. The code's arrow is drawn, the declared one isn't, and the arrow reads "confirmed by code on <date>", with **Retire the declared arrow**.
+  - **found-loose**: the call is read but its address is set outside the code (a setting, a deploy token), so the code doesn't say where it goes: "Atticus found the call at <file:line>…", with **Connect these N calls to <box>**, today's pairing of them.
+  - **elsewhere**: the code shows the call going to another box. Both arrows are drawn until you choose **Keep both**, **Move this call to <box>** or **Retire the declared arrow**.
+  - **not-found**: "Read on <date>: no code found for it. Atticus looked at N files.", with the files and any fact the verifier rejected, and why. The button then reads **Find it again** when the clone has moved past the read or a reading rule became active since, else **Read again anyway**.
+- The outcome is kept in `facts/<repo>.find.yaml`, one entry per callee, proposed with the facts. A find never changes the profile.
+- **Make this a reading rule**, after a found call, drafts a rule from its line (`org-pack/reading-rules/types/<type>.yaml`, "from a declared arrow the code confirmed"), given to no read until a person sets it active (`atticus rules activate`).
+
 ### Pair the calls
 
 For the calls the code shows, the panel lists the caller's calls with the other box's APIs: a service's entries, a gateway's routes, or an outside system's operations from its intaken spec. For each call the likeliest API is picked already, and the panel says why: the same path (a `/v1` or `/v2` in front doesn't count), the same once the call's setting is filled in from the repo's config (`${refunds.base}/request`), the same but for a prefix or a parameter, what a gateway's route forwards to, the operation's name saying the same as the call site's constant, or names alike (`captureChargePath` and `/partners/northwind/charges/{chargeId}/capture`). Each call's select lists its three likeliest APIs first; with many APIs, a search box narrows the rest.
