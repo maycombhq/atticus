@@ -6678,6 +6678,25 @@ export const ConnectView = z.object({
   /** A.7: after `not-found`, `again` (the clone moved, or a reading rule became active) or `anyway`. */
   findAgain: z.enum(["again", "anyway"]).optional(),
 });
+/**
+ * 3.19.0 (ADR 0204 1.6, 1.7): GET /api/declared-links/arrow?interface=<id>, the profile's arrow
+ * a drawn declared Interface is; GET /api/declared-links/superseded, the declared arrows the code
+ * now shows (the last build's), for the count above the map.
+ */
+export const ArrowOfInterfaceView = z.object({ declared: DeclaredArrowView });
+export const SupersededArrowsView = z.object({
+  items: z.array(
+    z.object({
+      from: LinkBox,
+      to: LinkBox,
+      by: z.string(),
+      at: z.string(),
+      calls: z.number().int().positive(),
+    }),
+  ),
+});
+export type ArrowOfInterfaceViewT = z.infer<typeof ArrowOfInterfaceView>;
+export type SupersededArrowsViewT = z.infer<typeof SupersededArrowsView>;
 /** 3.19.0: a declared arrow asked for (POST /api/declared-links `kind: link`, Edit the map). */
 /** ADR 0204 3.1 (`add-system`): the system only the code names, added in the arrow's write. */
 export const AddSystemOnArrow = z.strictObject({
@@ -9566,6 +9585,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/declared-links/arrow": {
+    get: {
+      id: "getDeclaredArrowOf",
+      summary:
+        "3.19.0 (ADR 0204 1.6): the profile's declared arrow a drawn Interface flagged declared-link is, with who, when and why",
+      tag: "views",
+      params: [q("interface", str, "The Interface's id")],
+      ok: { status: 200, schema: "ArrowOfInterfaceView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/declared-links/superseded": {
+    get: {
+      id: "getSupersededArrows",
+      summary:
+        "3.19.0 (ADR 0204 1.7): the declared arrows the code now shows, as the last build listed them, for the count above the map",
+      tag: "views",
+      ok: { status: 200, schema: "SupersededArrowsView", description: "OK" },
+      errors: [],
+    },
+  },
   "/api/connect/find": {
     post: {
       id: "findDeclaredArrow",
@@ -10769,6 +10809,8 @@ export function openApiDocument(): Record<string, unknown> {
     FileChangeResult,
     DeclarableRoutesView,
     ConnectView,
+    ArrowOfInterfaceView,
+    SupersededArrowsView,
     FindResult,
     ReposRunResult,
     SketchStrokeRequest,

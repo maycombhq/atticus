@@ -189,3 +189,51 @@ describe("what is missing, in the same write (ADR 0204 3.1, 1.3)", () => {
     });
   });
 });
+
+describe("Retire the declared arrow (ADR 0204 1.7, the review)", () => {
+  it("previews the lines it removes, then takes the item out and builds through Undo's job", async () => {
+    const { RetireArrow } = await import("../src/screens/architecture/ConnectAB.js");
+    const d = { ...WROTE[0]!.link, file: "org-pack/profiles/forge/profile.yaml" };
+    const sent: { path: string; body: unknown }[] = [];
+    const m = mount(
+      RetireArrow as never,
+      {
+        d,
+        retire: true,
+        io: {
+          post: (path: string, body: unknown) => {
+            sent.push({ path, body });
+            return Promise.resolve({
+              written: false,
+              files: [{ file: d.file, changes: [{ was: `why: ${WHY}` }] }],
+              verify: "",
+              commit: "",
+            });
+          },
+          follow: (path: string, body: unknown) => {
+            sent.push({ path, body });
+            return Promise.resolve({ code: 0, lines: [], result: { built: true } });
+          },
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name)!;
+    (button(W.retire).props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(`- why: ${WHY}`);
+    expect(sent[0]).toMatchObject({
+      path: "/api/declared-links/undo",
+      body: { kind: "link", preview: true },
+    });
+    (button(W.retireConfirm(W.retire)).props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(sent[1]).toEqual({
+      path: "/api/map/edits/undo",
+      body: { wrote: [{ edit: 0, file: d.file, link: d }] },
+    });
+    expect(text(m.tree)).toContain(W.retired);
+  });
+});

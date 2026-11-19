@@ -62,7 +62,7 @@ export function ConnectAB(p: {
   boxes: readonly BoxChoice[];
   onClose(): void;
   /** The arrow is on the map: the canvas is read again. */
-  onShown?(): void;
+  onShown?(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
   io?: Partial<ConnectIo>;
 }) {
   const io = { ...APP, ...p.io };
@@ -163,7 +163,7 @@ function Mechanism(p: {
   v: Api.ConnectViewT;
   reload(): void;
   pick(end: "from" | "to", box: Api.LinkBoxT): void;
-  onShown?(): void;
+  onShown?(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
 }) {
   const { v } = p;
   const me = useMe().me?.user ?? "you";
@@ -206,7 +206,7 @@ function Mechanism(p: {
         </>
       )}
       {v.mechanism === "connected" && p.onShown && (
-        <button type="button" className="btn" onClick={p.onShown}>
+        <button type="button" className="btn" onClick={() => p.onShown!(v.from, v.to)}>
           {W.show}
         </button>
       )}
@@ -306,26 +306,6 @@ function Declared(p: {
   reload(): void;
 }) {
   const { v, d } = p;
-  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
-  const [error, setError] = useState<string | undefined>();
-  const remove = () => {
-    setState("busy");
-    setError(undefined);
-    p.io.post("/api/declared-links/undo", { kind: "link", from: d.from, to: d.to }).then(
-      () => setState("done"),
-      (e: unknown) => {
-        setError(errorOf(e));
-        setState("idle");
-      },
-    );
-  };
-  if (state === "done")
-    return (
-      <div className="stack" role="status">
-        <p className="ev-say">{W.retired}</p>
-        <Propose scope="org-pack" />
-      </div>
-    );
   return (
     <div className="stack">
       <p className="ev-say">{W.declaredPanel(d.by, day(d.at), v.fromName, v.toName, d.why)}</p>
@@ -336,24 +316,137 @@ function Declared(p: {
       )}
       {v.find && <FindOutcome v={v} e={v.find} by={d.by} />}
       <div className="box-btns">
-        <button
-          type="button"
-          className="btn"
-          onClick={remove}
-          disabled={state === "busy"}
-          aria-busy={state === "busy"}
-        >
-          {v.superseded || v.find?.outcome === "found" ? W.retire : W.remove}
-        </button>
+        <RetireArrow
+          d={d}
+          io={p.io}
+          retire={!!v.superseded || v.find?.outcome === "found"}
+          onDone={p.reload}
+        />
         {v.from.repo && v.find?.outcome !== "found" && (
           <FindButton v={v} io={p.io} reload={p.reload} />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * ADR 0204 1.7 (the review): Remove it / Retire the declared arrow, through the guarded path: the
+ * lines it removes previewed first, then exactly that item taken out and the map built once
+ * (POST /api/map/edits/undo), a build that would remove more waiting for the person's confirm.
+ */
+export function RetireArrow(p: {
+  d: Api.DeclaredArrowViewT;
+  io: Omit<ConnectIo, "read">;
+  retire: boolean;
+  onDone?: () => void;
+}) {
+  const { d } = p;
+  const [lines, setLines] = useState<string[] | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<"built" | Api.BuildRefusalViewT | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const label = p.retire ? W.retire : W.remove;
+  const preview = () => {
+    setBusy(true);
+    setError(undefined);
+    p.io
+      .post<Api.FileChangeResultT>("/api/declared-links/undo", {
+        kind: "link",
+        from: d.from,
+        to: d.to,
+        preview: true,
+      })
+      .then(
+        (r) => setLines(r.files.flatMap((f) => f.changes.flatMap((c) => (c.was ? [c.was] : [])))),
+        (e: unknown) => setError(errorOf(e)),
+      )
+      .finally(() => setBusy(false));
+  };
+  const go = () => {
+    setBusy(true);
+    setError(undefined);
+    p.io
+      .follow("/api/map/edits/undo", { wrote: [{ edit: 0, file: d.file, link: d }] })
+      .then(
+        () => {
+          setDone("built");
+          p.onDone?.();
+        },
+        (e: unknown) => {
+          const refused =
+            e instanceof JobFailed
+              ? (e.result?.refused as Api.BuildRefusalViewT | undefined)
+              : undefined;
+          if (refused) setDone(refused);
+          else setError(errorOf(e));
+        },
+      )
+      .finally(() => setBusy(false));
+  };
+  if (done)
+    return (
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {done === "built" ? W.retired : W.undoneWaits}
+        </p>
+        {done !== "built" && <RefusalLink refused={done} />}
+        <Propose scope="org-pack" />
+      </div>
+    );
+  return (
+    <>
+      {!lines ? (
+        <button type="button" className="btn" onClick={preview} disabled={busy} aria-busy={busy}>
+          {label}
+        </button>
+      ) : (
+        <div className="stack">
+          <p className="hud">{W.retireLines}</p>
+          <pre className="mono">{lines.map((l) => `- ${l}`).join("\n")}</pre>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={go}
+            disabled={busy}
+            aria-busy={busy}
+          >
+            {busy ? W.undoing : W.retireConfirm(label)}
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="state error">
           {error}
         </p>
       )}
+    </>
+  );
+}
+
+/** ADR 0204 1.6: a drawn declared arrow's own panel, from the profile's item, with Remove it. */
+export function DeclaredArrowLink(p: {
+  join: Api.HierJoinT;
+  from: string;
+  to: string;
+  io?: Partial<ConnectIo> & { arrow?: (path: string) => Loaded<Api.ArrowOfInterfaceViewT> };
+}) {
+  const path = `/api/declared-links/arrow?interface=${encodeURIComponent(p.join.interface)}`;
+  const live = useApi<Api.ArrowOfInterfaceViewT>(p.io?.arrow ? undefined : path);
+  const r = p.io?.arrow ? p.io.arrow(path) : live;
+  const io = { ...APP, ...p.io };
+  if (r.state === "loading") return <p className="state">{W.loading}</p>;
+  if (r.state === "error")
+    return (
+      <p role="alert" className="state error">
+        {r.error}
+      </p>
+    );
+  const d = r.data.declared;
+  return (
+    <div className="stack">
+      <p className="ev-say">{W.declaredPanel(d.by, day(d.at), p.from, p.to, d.why)}</p>
+      <RetireArrow d={d} io={io} retire={false} />
     </div>
   );
 }
@@ -541,7 +634,7 @@ type Done = { wrote: Api.MapEditWroteT[]; lines: string[]; built: boolean };
 export function DeclareArrow(p: {
   v: Api.ConnectViewT;
   io: Omit<ConnectIo, "read">;
-  onShown?(): void;
+  onShown?(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
   /** ADR 0204 3.1: the end that is a system only the code names, added in the same write. */
   addSystem?: { name: string; boundary: "vendor" | "internal" };
 }) {
@@ -650,7 +743,7 @@ export function DeclareArrow(p: {
         <p className="hud">{W.notProposed}</p>
         <div className="box-btns">
           {p.onShown && done.built && (
-            <button type="button" className="btn" onClick={p.onShown}>
+            <button type="button" className="btn" onClick={() => p.onShown!(v.from, v.to)}>
               {W.show}
             </button>
           )}

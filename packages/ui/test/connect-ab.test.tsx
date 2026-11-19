@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { ConnectAB } from "../src/screens/architecture/ConnectAB.js";
+import { ConnectAB, DeclaredArrowLink } from "../src/screens/architecture/ConnectAB.js";
+import { arrowBetween, ShownByCode } from "../src/screens/architecture/Architecture.js";
 import { shownReason, shownStatus } from "../src/screens/architecture/Connect.js";
 import { canvasGraph } from "../src/screens/architecture/model.js";
 
@@ -348,5 +349,77 @@ describe("a declared arrow on the map (ADR 0204 1.6)", () => {
       declared: true,
       label: expect.stringContaining("declared by Ada Example"),
     });
+  });
+});
+
+describe("the declared arrows the code now shows, and a drawn one's panel (ADR 0204 1.6, 1.7, 2.4)", () => {
+  it("counts them above the map, each opening Connect for its two boxes", () => {
+    const h = renderToStaticMarkup(
+      <ShownByCode
+        onOpen={() => undefined}
+        read={{
+          state: "ready",
+          data: {
+            items: [
+              {
+                from: PROXY.box,
+                to: LEDGER.box,
+                by: "Ada Example",
+                at: "2026-11-18T10:02:00Z",
+                calls: 2,
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(h).toContain(W.shownCount(1));
+    expect(h).toContain(W.shownOpen("forge-edge-proxy", "forge-ledger-svc"));
+    expect(
+      renderToStaticMarkup(
+        <ShownByCode onOpen={() => undefined} read={{ state: "ready", data: { items: [] } }} />,
+      ),
+    ).toBe("");
+  });
+
+  it("says a drawn declared arrow is the person's word, with Remove it", () => {
+    const d: Api.DeclaredArrowViewT = {
+      from: PROXY.box,
+      to: LEDGER.box,
+      why: "The proxy's target is set at deploy time.",
+      by: "Ada Example",
+      at: "2026-11-18T10:02:00Z",
+      file: "org-pack/profiles/forge/profile.yaml",
+    };
+    const h = plain(
+      renderToStaticMarkup(
+        <DeclaredArrowLink
+          join={
+            {
+              interface: "if-0123456789abcdef",
+              from: "edge-proxy",
+              to: "ledger-svc",
+            } as Api.HierJoinT
+          }
+          from="forge-edge-proxy"
+          to="forge-ledger-svc"
+          io={{ arrow: () => ({ state: "ready", data: { declared: d } }) }}
+        />,
+      ),
+    );
+    expect(h).toContain("No code was read for this arrow.");
+    expect(h).toContain(W.remove);
+  });
+
+  it("finds the arrow between two boxes either way round, by the boxes the canvas draws", () => {
+    const node = (id: string, kind: string, label: string) =>
+      ({ id, kind, label, properties: {} }) as unknown as Api.HierNodeT;
+    const nodes = new Map([
+      ["repo:forge-edge-proxy", node("repo:forge-edge-proxy", "repo", "forge-edge-proxy")],
+      ["repo:forge-ledger-svc", node("repo:forge-ledger-svc", "repo", "forge-ledger-svc")],
+    ]);
+    const links = [{ id: "e1", from: "repo:forge-ledger-svc", to: "repo:forge-edge-proxy" }];
+    expect(arrowBetween(links, (id) => nodes.get(id), PROXY.box, LEDGER.box)).toBe("e1");
+    expect(arrowBetween(links, (id) => nodes.get(id), PROXY.box, { system: "x" })).toBeUndefined();
   });
 });

@@ -8187,7 +8187,12 @@ export const COPY = {
     superseded: (a: string, b: string, n: number, name: string, date: string) =>
       `The code now shows ${a} calling ${b} (${n} call${n === 1 ? "" : "s"}). The arrow ${name} declared on ${date} is no longer needed.`,
     retire: "Retire the declared arrow",
-    retired: "Retired: the declared arrow is out of the profile.",
+    retired: "Done: the declared arrow is out of the profile, and the map built again.",
+    retireLines: "These lines go from the profile:",
+    shownCount: (n: number) =>
+      `${n} declared arrow${n === 1 ? "" : "s"} the code now shows: retire ${n === 1 ? "it" : "them"} when you agree.`,
+    shownOpen: (a: string, b: string) => `${a} → ${b}`,
+    retireConfirm: (label: string) => `${label}: take these lines out and build`,
     declaredPanel: (name: string, date: string, a: string, b: string, why: string) =>
       `${name} declared on ${date} that ${a} calls ${b}: "${why}". No code was read for this arrow.`,
     declaredBy: (name: string) => `declared by ${name}`,

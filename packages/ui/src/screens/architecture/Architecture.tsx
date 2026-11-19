@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
+import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { latestCall } from "../../api/latest.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
@@ -249,6 +249,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  // ADR 0204 2.4: the arrow Show the arrow asked for, picked once the map draws it.
+  const [toSelect, setToSelect] = useState<{ a: Api.LinkBoxT; b: Api.LinkBoxT } | undefined>();
   // Beta.28: the link just deleted from its panel (what the panel says once it left the picture).
   const [deletedLink, setDeletedLink] = useState<
     { link: string; from: string; to: string; interfaces: ReadonlySet<string> } | undefined
@@ -705,6 +707,13 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     graph.boxes.length > 0 &&
     arrangement.state === "ready" &&
     arrangement.key === key;
+  useEffect(() => {
+    if (!toSelect) return;
+    const id = arrowBetween(graph.links, find, toSelect.a, toSelect.b);
+    if (!id) return;
+    setPickedLink({ id, keyboard: false });
+    setToSelect(undefined);
+  }, [graph, toSelect]);
   const reveal = revealOf({
     adding,
     connecting: connecting
@@ -721,6 +730,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     <div className="bento">
       {/* Corrections drawn here and not yet applied: Apply for them all, on the map itself. */}
       <CorrectionsToApply />
+      {/* ADR 0204 1.7: the declared arrows the code now shows, each opening its Retire. */}
+      <ShownByCode
+        onOpen={(a, b) =>
+          setConnecting({
+            from: say(a),
+            a: { label: say(a), box: a },
+            initial: { label: say(b), box: b },
+          })
+        }
+      />
       {/* Beta.26: one panel, the canvas taking most of it: one slim bar of controls above it,
           the tools a drawer over it, the legend in its corner, the details beside it. */}
       <section
@@ -1151,8 +1170,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                             {...(connecting.initial ? { b: connecting.initial } : {})}
                             boxes={boxes}
                             onClose={() => setConnecting(undefined)}
-                            onShown={() => {
+                            onShown={(a, b) => {
                               setConnecting(undefined);
+                              // ADR 0204 2.4: Show the arrow selects it once the map is read again.
+                              setToSelect({ a, b });
                               reloadViews();
                             }}
                           />
@@ -1634,4 +1655,65 @@ export function ArrangementBar(p: {
       {p.moved > 0 && <span className="hud">{WORDS.moved(p.moved)}</span>}
     </div>
   );
+}
+
+/** ADR 0204 1.7: "N declared arrows the code now shows", above the map; each opens Connect. */
+export function ShownByCode(p: {
+  onOpen(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
+  read?: Loaded<Api.SupersededArrowsViewT>;
+}) {
+  const live = useApi<Api.SupersededArrowsViewT>(
+    p.read ? undefined : "/api/declared-links/superseded",
+  );
+  const r = p.read ?? live;
+  const items = r.state === "ready" ? r.data.items : [];
+  if (!items.length) return null;
+  const name = (b: Api.LinkBoxT) => b.repo ?? b.system ?? "";
+  return (
+    <div
+      className="run-note stack"
+      style={{ gap: 4 }}
+      role="region"
+      aria-label={COPY.connectAB.shownCount(items.length)}
+    >
+      <p className="ev-say" style={{ margin: 0 }}>
+        {COPY.connectAB.shownCount(items.length)}
+      </p>
+      <div className="box-btns">
+        {items.map((x) => (
+          <button
+            key={`${say(x.from)}>${say(x.to)}`}
+            type="button"
+            className="btn"
+            onClick={() => p.onOpen(x.from, x.to)}
+          >
+            {COPY.connectAB.shownOpen(name(x.from), name(x.to))}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ADR 0204 2.4: the link drawn between two boxes (either way round), by the boxes the canvas
+ * draws them as: a repo's own box, its component's, or a system that holds only it.
+ */
+export function arrowBetween(
+  links: readonly { id: string; from: string; to: string }[],
+  find: (id: string) => Api.HierNodeT | undefined,
+  a: Api.LinkBoxT,
+  b: Api.LinkBoxT,
+): string | undefined {
+  const of = (id: string) => {
+    const n = find(id);
+    const x = drawnBoxOf(n) ?? boxOf(n);
+    return x ? say(x) : undefined;
+  };
+  const [x, y] = [say(a), say(b)];
+  const l = links.find((k) => {
+    const [f, t] = [of(k.from), of(k.to)];
+    return (f === x && t === y) || (f === y && t === x);
+  });
+  return l?.id;
 }

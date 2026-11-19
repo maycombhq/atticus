@@ -14598,6 +14598,99 @@
         }
       }
     },
+    "/api/declared-links/arrow": {
+      "get": {
+        "operationId": "getDeclaredArrowOf",
+        "summary": "3.19.0 (ADR 0204 1.6): the profile's declared arrow a drawn Interface flagged declared-link is, with who, when and why",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "interface",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Interface's id",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrowOfInterfaceView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/declared-links/superseded": {
+      "get": {
+        "operationId": "getSupersededArrows",
+        "summary": "3.19.0 (ADR 0204 1.7): the declared arrows the code now shows, as the last build listed them, for the count above the map",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersededArrowsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connect/find": {
       "post": {
         "operationId": "findDeclaredArrow",
@@ -44592,6 +44685,136 @@
           "mechanism",
           "needs",
           "existing"
+        ],
+        "additionalProperties": false
+      },
+      "ArrowOfInterfaceView": {
+        "type": "object",
+        "properties": {
+          "declared": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "why": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "planned": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "why",
+              "by",
+              "at",
+              "file"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "declared"
+        ],
+        "additionalProperties": false
+      },
+      "SupersededArrowsView": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "system": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "to": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "system": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "calls": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "from",
+                "to",
+                "by",
+                "at",
+                "calls"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
         ],
         "additionalProperties": false
       },

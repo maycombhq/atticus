@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -218,15 +218,53 @@ describe("a declared arrow (ADR 0204 1.4 to 1.7, 2.2, 2.4)", () => {
     const v = await connect(`repo:${A}`, `repo:${B}`);
     expect(v.mechanism).toBe("declared");
     expect(v.superseded?.calls).toBeGreaterThan(0);
-    // Nothing in the profile changed by itself; Retire takes the item.
+    // Said above the map and on both ends' Corrections and declarations (the review).
+    const shown = Api.SupersededArrowsView.parse(
+      (await g.call("/api/declared-links/superseded")).body,
+    );
+    expect(shown.items).toEqual([expect.objectContaining({ from: { repo: A }, to: { repo: B } })]);
+    for (const q of [`repo=${A}`, `repo=${B}`]) {
+      const c = Api.BoxCorrections.parse((await g.call(`/api/boxes/corrections?${q}`)).body);
+      expect(c.items.find((x) => x.kind === "arrow")?.says, q).toMatch(/the code now shows it/);
+    }
+    // Nothing in the profile changed by itself; Retire takes the item, through the guarded
+    // path: its lines previewed, then the item out and the map built.
     expect(profile()).toContain("Orders posts holds to the ledger.");
-    const r = await g.call("/api/declared-links/undo", "POST", {
+    const pre = await g.call("/api/declared-links/undo", "POST", {
       kind: "link",
       from: mine.from,
       to: mine.to,
+      preview: true,
     });
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(pre.status, JSON.stringify(pre.body)).toBe(200);
+    expect(profile()).toContain("Orders posts holds to the ledger.");
+    const d = v.declared!;
+    const u = await job("/api/map/edits/undo", { wrote: [{ edit: 0, file: d.file, link: d }] });
+    expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(true);
     expect(profile()).not.toContain("Orders posts holds to the ledger.");
+    expect(
+      Api.SupersededArrowsView.parse((await g.call("/api/declared-links/superseded")).body).items,
+    ).toEqual([]);
+  }, 300_000);
+
+  it("a drawn declared arrow says which item it is, and Edit the map's Delete takes the item away", async () => {
+    const link = { from: { system: OUTSIDE }, to: { repo: B }, why: WHY };
+    const j = await job("/api/map/edits", {
+      edits: [{ kind: "add", add: { kind: "link", ...link } }],
+    });
+    expect(j.result.built).toBe(true);
+    const [i] = await declared();
+    const a = await g.call(`/api/declared-links/arrow?interface=${i!.id}`);
+    expect(a.status, JSON.stringify(a.body)).toBe(200);
+    expect(Api.ArrowOfInterfaceView.parse(a.body).declared).toMatchObject({ why: WHY, by: "pat" });
+    const del = await job("/api/map/edits", {
+      edits: [{ kind: "delete", delete: { interfaces: [i!.id], from: OUTSIDE, to: B } }],
+    });
+    expect(del.result.built, (del.result.lines as string[]).join("\n")).toBe(true);
+    expect(profile()).not.toContain(WHY);
+    expect(await declared()).toHaveLength(0);
+    // No curated suppress was written for it: one source of truth, the profile.
+    expect(existsSync(join(g.root, "catalog", "curated", "curateddecision"))).toBe(false);
   }, 300_000);
 });
 

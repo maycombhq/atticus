@@ -1505,6 +1505,15 @@ export async function applyMapEdits(
           for (const target of ids) {
             // A link a person declared on the canvas: the declaration goes, not a suppress of it.
             const decl = await canvasDeclarationOf(root, byId.get(target));
+            if (decl?.kind === "link") {
+              const { retireArrow } = await import("@maycombhq/core");
+              const res = await retireArrow(root, decl.arrow, { platform: decl.arrow.platform });
+              replaced(join(root, ...res.rel.split("/")), i, res);
+              inputs.add("org-pack");
+              io.out(`${said}: took the declared arrow out of ${res.rel}.`);
+              targets.add(target);
+              continue;
+            }
             if (decl) {
               const { systemInUse } = await import("./ui-api-declared.js");
               const res = await undeclareLink(root, decl, {
@@ -1817,9 +1826,19 @@ export async function undoMapEdits(
 export async function canvasDeclarationOf(
   root: string,
   r: CatalogRecord | undefined,
-): Promise<{ kind: "topic" | "call"; system: string; value: string } | undefined> {
+): Promise<
+  | { kind: "topic" | "call"; system: string; value: string }
+  | { kind: "link"; arrow: import("@maycombhq/core").DeclaredArrow }
+  | undefined
+> {
   if (r?.kind !== "Interface") return undefined;
   if (!r.evidence.some((e) => e.source === "manual")) return undefined;
+  // ADR 0204 (the review): a declared arrow is the profile's item; Delete takes the item away.
+  if ((r as { flags?: string[] }).flags?.includes("declared-link")) {
+    const { arrowOfInterface } = await import("./ui-api-declared.js");
+    const arrow = await arrowOfInterface(root, await loadOrgPack(orgPackDirOf(root)), r.id);
+    return arrow ? { kind: "link", arrow } : undefined;
+  }
   const { declaredOf } = await import("@maycombhq/core");
   const norm = (p: string) =>
     p
