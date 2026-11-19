@@ -3393,8 +3393,10 @@ export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { pro
  * The files an undo would put back that were changed since the command it takes back wrote them
  * (a hand edit, or a write no undo copy covers): each file's bytes now against what the newest
  * copy touching it says it left. Copies from before this was recorded say nothing, and are
- * trusted. `atticus catalog undo` refuses over them where the build's own hand-edit guard can't
- * see (a catalog with no build.json: an undo that took back the upgrade).
+ * trusted. Given the undo folder, a file that already holds what the undo puts back is skipped
+ * (a write killed after its copy was taken never reached it). `atticus catalog undo` refuses over
+ * the rest: always for files outside catalog/generated (slot files, build.json), and for every
+ * file where the build's own hand-edit guard can't see (no build.json that reads).
  */
 export async function undoHandEdits(
   root: string,
