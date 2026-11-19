@@ -144,7 +144,7 @@ export async function checkMapEdits(
           const { writeArrow } = await import("./ui-api-declared.js");
           await writeArrow(
             root,
-            { from: a.from, to: a.to, why: a.why, planned: a.planned },
+            { from: a.from, to: a.to, why: a.why, planned: a.planned, addSystem: a.addSystem },
             { by: "preview", at: new Date(0).toISOString(), preview: true },
           );
         } catch (err) {

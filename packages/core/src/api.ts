@@ -2390,6 +2390,13 @@ export const MapEditAdd = z.discriminatedUnion("kind", [
       .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
     why: z.string().trim().min(3).max(500),
     planned: z.boolean().optional(),
+    /** ADR 0204 3.1: the end that is a system only the code names, added in the same write. */
+    addSystem: z
+      .strictObject({
+        name: z.string().min(1).max(120),
+        boundary: z.enum(["vendor", "internal"]),
+      })
+      .optional(),
   }),
 ]);
 export type MapEditAddT = z.infer<typeof MapEditAdd>;
@@ -2507,6 +2514,12 @@ export const MapEditsResult = z.object({
           edit: z.number().int(),
           file: z.string(),
           link: z.record(z.string(), z.unknown()),
+          addedSystem: z.string().optional(),
+        }),
+        z.object({
+          edit: z.number().int(),
+          file: z.string(),
+          route: z.object({ system: z.string(), value: z.string() }),
         }),
       ]),
     )
@@ -6665,11 +6678,17 @@ export const ConnectView = z.object({
   findAgain: z.enum(["again", "anyway"]).optional(),
 });
 /** 3.19.0: a declared arrow asked for (POST /api/declared-links `kind: link`, Edit the map). */
+/** ADR 0204 3.1 (`add-system`): the system only the code names, added in the arrow's write. */
+export const AddSystemOnArrow = z.strictObject({
+  name: z.string().min(1).max(120),
+  boundary: z.enum(["vendor", "internal"]),
+});
 export const ArrowRequestFields = {
   from: LinkBox,
   to: LinkBox,
   why: z.string().trim().min(3).max(500),
   planned: z.boolean().optional(),
+  addSystem: AddSystemOnArrow.optional(),
 };
 export const DeclareArrowRequest = z.strictObject({
   kind: z.literal("link"),
@@ -6689,7 +6708,19 @@ export const UndeclareArrowRequest = z.strictObject({
  */
 export const MapEditWrote = z.union([
   z.strictObject({ edit: z.number().int(), file: z.string(), lines: z.array(z.string()).min(1) }),
-  z.strictObject({ edit: z.number().int(), file: z.string(), link: DeclaredArrowView }),
+  z.strictObject({
+    edit: z.number().int(),
+    file: z.string(),
+    link: DeclaredArrowView,
+    /** The system the same write added (3.1), taken away with it while still as added. */
+    addedSystem: z.string().optional(),
+  }),
+  /** A gateway route a system was declared to call (1.3's "Say which routes"). */
+  z.strictObject({
+    edit: z.number().int(),
+    file: z.string(),
+    route: z.object({ system: z.string(), value: z.string() }),
+  }),
 ]);
 /** 3.19.0: POST /api/map/edits/undo, exactly what an Apply wrote, then one build. */
 export const MapEditsUndoRequest = z.strictObject({ wrote: z.array(MapEditWrote).min(1).max(100) });

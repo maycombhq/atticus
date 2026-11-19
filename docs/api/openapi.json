@@ -6543,6 +6543,28 @@
                                     },
                                     "planned": {
                                       "type": "boolean"
+                                    },
+                                    "addSystem": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "boundary": {
+                                          "type": "string",
+                                          "enum": [
+                                            "vendor",
+                                            "internal"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "boundary"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -6772,6 +6794,28 @@
                                     },
                                     "planned": {
                                       "type": "boolean"
+                                    },
+                                    "addSystem": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "boundary": {
+                                          "type": "string",
+                                          "enum": [
+                                            "vendor",
+                                            "internal"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "boundary"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -14991,12 +15035,49 @@
                                 "at",
                                 "file"
                               ]
+                            },
+                            "addedSystem": {
+                              "type": "string"
                             }
                           },
                           "required": [
                             "edit",
                             "file",
                             "link"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "edit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "file": {
+                              "type": "string"
+                            },
+                            "route": {
+                              "type": "object",
+                              "properties": {
+                                "system": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "system",
+                                "value"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "edit",
+                            "file",
+                            "route"
                           ],
                           "additionalProperties": false
                         }
@@ -50965,12 +51046,50 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "addedSystem": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "edit",
                     "file",
                     "link"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "edit": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "system": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "system",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "edit",
+                    "file",
+                    "route"
                   ],
                   "additionalProperties": false
                 }

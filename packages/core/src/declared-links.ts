@@ -644,7 +644,17 @@ function checkedProfile(rel: string, before: string, doc: Document): string {
 export async function declareArrow(
   root: string,
   a: ArrowAsked,
-  o: { by: string; at: string; platform: string; preview?: boolean },
+  o: {
+    by: string;
+    at: string;
+    platform: string;
+    preview?: boolean;
+    /**
+     * ADR 0204 3.1 (`add-system`): a system only the code names, added to this profile's systems
+     * in the same write as the arrow, with who and when on its id (as the canvas adds one).
+     */
+    addSystem?: { id: string; name: string; boundary: "vendor" | "internal" };
+  },
 ): Promise<{
   rel: string;
   changes: LineChange[];
@@ -654,6 +664,25 @@ export async function declareArrow(
 }> {
   const f = await profileOf(root, o.platform);
   const doc = parseDocument(migrateProfileText(f.text, PROFILE_SCHEMA_VERSION).text);
+  if (o.addSystem) {
+    let seq = doc.get("systems");
+    if (!isSeq(seq)) {
+      doc.set("systems", doc.createNode([]));
+      seq = doc.get("systems");
+    }
+    if (!isSeq(seq)) throw new DeclareError("invalid", `${f.rel}: its systems isn't a list.`);
+    if (seq.items.some((x) => isMap(x) && x.get("id") === o.addSystem!.id))
+      throw new DeclareError("exists", `${f.rel} has the system ${o.addSystem.id} already.`);
+    if (seq.items.length === 0) seq.flow = false;
+    const fields = { ...o.addSystem, aliases: [] };
+    const added = doc.createNode(fields) as YAMLMap;
+    (added.items[0]!.value as { comment?: string | null }).comment = addedComment(
+      o.by,
+      o.at,
+      addedHash(fields),
+    );
+    seq.add(added);
+  }
   let list = doc.get("links");
   if (!isSeq(list)) {
     doc.set("links", doc.createNode([]));
@@ -725,4 +754,34 @@ export async function retireArrow(
   const changes = changedLines(f.text, after);
   if (!o.preview) await writeFileIfUnchanged(f.path, f.raw, wrote);
   return { rel: f.rel, changes, written: !o.preview, before: f.raw, wrote };
+}
+
+/**
+ * ADR 0204 2.4: Undo of an arrow whose write added a system (`addSystem`): the system goes too,
+ * only while it is still exactly as added (its fields hash to its comment's) and nothing else
+ * names it in the profile. Else it is left, and said by the caller.
+ */
+export async function removeAddedSystem(
+  root: string,
+  o: { platform: string; system: string },
+): Promise<{ removed: boolean; rel: string }> {
+  const f = await profileOf(root, o.platform);
+  const doc = parseDocument(f.text);
+  const seq = doc.get("systems");
+  const sys = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === o.system) : undefined;
+  if (!isSeq(seq) || !isMap(sys)) return { removed: false, rel: f.rel };
+  const idNode = sys.items.find((p) => isScalar(p.key) && p.key.value === "id")?.value as
+    { comment?: string | null } | undefined;
+  const hash = ADDED.exec(idNode?.comment ?? "")?.[3];
+  const links = (doc.toJS() as { links?: DeclaredLink[] }).links ?? [];
+  const named = links.some((l) =>
+    [l.from, l.to].some((e) => "system" in e && e.system === o.system),
+  );
+  if (!hash || addedHash(sys.toJS(doc) as Record<string, unknown>) !== hash || named)
+    return { removed: false, rel: f.rel };
+  const after = withoutItem(f.text, sys as { range?: [number, number, number] | null }, false);
+  if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
+    return { removed: false, rel: f.rel };
+  await writeFileIfUnchanged(f.path, f.raw, inEol(after, f.eol));
+  return { removed: true, rel: f.rel };
 }

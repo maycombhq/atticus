@@ -112,3 +112,80 @@ describe("the declare button (ADR 0204 2.1 to 2.4)", () => {
     expect(text(alert)).toContain("already calls forge-ledger-svc");
   });
 });
+
+describe("what is missing, in the same write (ADR 0204 3.1, 1.3)", () => {
+  const say = "GET /billing/v1/statements/{id}";
+  const mountWith = (props: Record<string, unknown>) => {
+    const sent: { path: string; body: unknown }[] = [];
+    const m = mount(
+      DeclareArrow as never,
+      {
+        ...props,
+        io: {
+          post: (path: string, body: unknown) => {
+            sent.push({ path, body });
+            return Promise.resolve({ written: false, files: [], verify: "", commit: "" });
+          },
+          follow: (path: string, body: unknown) => {
+            sent.push({ path, body });
+            return Promise.resolve({ code: 0, lines: [], result: { built: true, wrote: [] } });
+          },
+          routes: () => ({
+            state: "ready",
+            data: {
+              system: "northwind-cards",
+              inProfile: true,
+              gateways: [],
+              target: {
+                repo: "forge-edge-proxy",
+                gateway: true,
+                entries: 1,
+                routes: [{ id: "r-1", path: "/billing/v1/statements/{id}", at: "a.xml:4", say }],
+              },
+            },
+          }),
+        },
+      } as never,
+    );
+    const els = () => all(m.tree);
+    const button = () => els().find((e) => e.type === "button")!;
+    return { m, els, button, sent };
+  };
+
+  it("adds the system only the code names with the arrow, its button saying so", async () => {
+    const t = mountWith({
+      v: { ...v, from: { system: "harbor-unknown" } },
+      addSystem: { name: "harbor-unknown", boundary: "internal" },
+    });
+    expect(text(t.button().props.children)).toBe(W.addAndGo("harbor-unknown"));
+    const why = t.els().find((e) => e.type === "textarea")!;
+    (why.props.onChange as (e: unknown) => void)({ target: { value: WHY } });
+    t.m.render();
+    (t.button().props.onClick as () => void)();
+    for (let n = 0; n < 5; n++) await tick();
+    expect(t.sent[1]!.body).toMatchObject({
+      edits: [
+        { add: { kind: "link", addSystem: { name: "harbor-unknown", boundary: "internal" } } },
+      ],
+    });
+  });
+
+  it("declares the routes ticked under Say which routes, in place of the arrow", async () => {
+    const t = mountWith({ v: { ...v, from: { system: "northwind-cards" }, routes: true } });
+    // RoutesFold is its own component: render it with the form's own props.
+    const fold = t.els().find((e) => typeof e.props.onPick === "function")!;
+    (fold.props.onPick as (s: Set<string>) => void)(new Set([say]));
+    t.m.render();
+    expect(text(t.button().props.children)).toBe(W.declareRoutes(1));
+    expect(t.button().props.disabled).toBe(false);
+    (t.button().props.onClick as () => void)();
+    for (let n = 0; n < 5; n++) await tick();
+    expect(t.sent[0]).toEqual({
+      path: "/api/declared-links",
+      body: { kind: "call", system: "northwind-cards", routes: [say], preview: true },
+    });
+    expect(t.sent[1]!.body).toEqual({
+      edits: [{ kind: "add", add: { kind: "call", system: "northwind-cards", route: say } }],
+    });
+  });
+});

@@ -1582,14 +1582,19 @@ export async function applyMapEdits(
           const { writeArrow } = await import("./ui-api-declared.js");
           const res = await writeArrow(
             root,
-            { from: a.from, to: a.to, why: a.why, planned: a.planned },
+            { from: a.from, to: a.to, why: a.why, planned: a.planned, addSystem: a.addSystem },
             { by, at },
           );
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
+          if (res.addedSystem)
+            io.out(
+              `${said}: added the system ${res.addedSystem} to ${res.rel}, in the same write.`,
+            );
           wrote.push({
             edit: i,
             file: res.rel,
+            ...(res.addedSystem ? { addedSystem: res.addedSystem } : {}),
             link: {
               from: a.from,
               to: a.to,
@@ -1612,6 +1617,8 @@ export async function applyMapEdits(
           const res = await declareLink(root, d, { by, at, ...(create ? { create } : {}) });
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
+          if (d.kind === "call")
+            wrote.push({ edit: i, file: res.rel, route: { system: d.system, value: d.route } });
           // Beta.28.1: a box no System of the profiles was gets one first, said.
           if (res.created)
             io.out(
@@ -1710,8 +1717,13 @@ export async function undoMapEdits(
     const { removeCorrectionLines } = await import("./ui-api-links.js");
     const op = await loadOrgPack(orgPackDirOf(root));
     const changed: string[] = [];
+    const { declaredOf, undeclareLink } = await import("@maycombhq/core");
     for (const w of wrote) {
-      if ("lines" in w) {
+      if ("route" in w) {
+        const on = (await declaredOf(root, w.route.system)).list;
+        if (!on.some((x) => x.kind === "call" && x.value === w.route.value && x.by))
+          changed.push(`${w.file} (the route ${w.route.value} isn't as written)`);
+      } else if ("lines" in w) {
         const text = await readFile(join(root, ...w.file.split("/")), "utf8").catch(() => "");
         const have = new Set(text.split(/\r?\n/));
         if (w.lines.some((l) => !have.has(l))) changed.push(`${w.file} (a line it wrote is gone)`);
@@ -1728,7 +1740,10 @@ export async function undoMapEdits(
       return 1;
     }
     for (const w of wrote) {
-      if ("lines" in w) {
+      if ("route" in w) {
+        await undeclareLink(root, { kind: "call", system: w.route.system, value: w.route.value });
+        io.out(`Took the declared route ${w.route.value} out of ${w.file}.`);
+      } else if ("lines" in w) {
         await removeCorrectionLines(join(root, ...w.file.split("/")), w.lines);
         io.out(
           `Took back ${w.lines.length} line${w.lines.length === 1 ? "" : "s"} from ${w.file}.`,
@@ -1737,6 +1752,15 @@ export async function undoMapEdits(
         const platform = w.file.split("/").slice(-2)[0]!;
         await retireArrow(root, { from: endOf(w.link.from), to: endOf(w.link.to) }, { platform });
         io.out(`Took the declared arrow out of ${w.file}.`);
+        if (w.addedSystem) {
+          const { removeAddedSystem } = await import("@maycombhq/core");
+          const r = await removeAddedSystem(root, { platform, system: w.addedSystem });
+          io.out(
+            r.removed
+              ? `Took the system ${w.addedSystem} it added out of ${w.file}.`
+              : `Left the system ${w.addedSystem} in ${w.file}: it changed since, or something names it.`,
+          );
+        }
       }
     }
     // What the Undo took back is the build's changed input: the removals it explains are this

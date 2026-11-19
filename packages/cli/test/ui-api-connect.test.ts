@@ -249,3 +249,69 @@ describe("a pairing written and applied in one job (ADR 0204 decision 2)", () =>
     expect(await g.arrows()).toEqual(arrowsBefore);
   }, 300_000);
 });
+
+describe("what is missing, fixed in the same write (ADR 0204 3.1, 1.3)", () => {
+  it("adds a system only the code names in the arrow's own write, and Undo takes both away", async () => {
+    const before = profile();
+    const link = {
+      kind: "link",
+      from: { system: "harbor-unknown" },
+      to: { repo: B },
+      why: "Harbor reads the ledger's holds each night.",
+      addSystem: { name: "Harbor Unknown", boundary: "internal" },
+    };
+    const p = await g.call("/api/declared-links", "POST", { ...link, preview: true });
+    expect(p.status, JSON.stringify(p.body)).toBe(200);
+    const now = Api.FileChangeResult.parse(p.body)
+      .files[0]!.changes.map((c) => c.now ?? "")
+      .join("\n");
+    expect(now).toContain("id: harbor-unknown");
+    expect(now).toContain("from: { system: harbor-unknown }");
+    const j = await job("/api/map/edits", { edits: [{ kind: "add", add: link }] });
+    expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
+    const wrote = Api.MapEditsResult.parse(j.result).wrote!;
+    expect(wrote[0]).toMatchObject({ addedSystem: "harbor-unknown" });
+    expect((await declared()).map((x) => x.from)).toContain("harbor-unknown");
+    const u = await job("/api/map/edits/undo", { wrote });
+    expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(true);
+    expect(profile()).not.toContain("harbor-unknown");
+    expect(profile().replace(/schemaVersion: \d/, "")).toBe(
+      before.replace(/schemaVersion: \d/, ""),
+    );
+  }, 300_000);
+
+  it("declares the gateway routes an outside system calls, written and undone in one go", async () => {
+    const r = await g.call(`/api/declared-links/routes?system=${OUTSIDE}&repo=${GATEWAY}`);
+    const say = Api.DeclarableRoutesView.parse(r.body).target!.routes[0]!.say;
+    const v = await connect(`system:${OUTSIDE}`, `repo:${GATEWAY}`);
+    expect(v.routes).toBe(true);
+    // Declare's Undo takes a route back from a system written as a block (as the canvas adds one).
+    writeFileSync(
+      join(g.root, ...PROFILE),
+      profile().replace(
+        "  - { id: northwind-cards, name: Northwind Cards, boundary: vendor, aliases: [] }",
+        "  - id: northwind-cards\n    name: Northwind Cards\n    boundary: vendor\n    aliases: []",
+      ),
+    );
+    const j = await job("/api/map/edits", {
+      edits: [{ kind: "add", add: { kind: "call", system: OUTSIDE, route: say } }],
+    });
+    expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
+    const wrote = Api.MapEditsResult.parse(j.result).wrote!;
+    expect(wrote).toEqual([
+      {
+        edit: 0,
+        file: "org-pack/profiles/forge/profile.yaml",
+        route: { system: OUTSIDE, value: say },
+      },
+    ]);
+    const calls = () =>
+      (parse(profile()) as { systems: { id: string; calls?: { route?: string }[] }[] }).systems
+        .find((x) => x.id === OUTSIDE)
+        ?.calls?.map((c) => c.route) ?? [];
+    expect(calls()).toContain(say);
+    const u = await job("/api/map/edits/undo", { wrote });
+    expect(u.state, JSON.stringify(u)).toBe("done");
+    expect(calls()).not.toContain(say);
+  }, 300_000);
+});

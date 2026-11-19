@@ -4,6 +4,7 @@ import {
   api,
   ApiError,
   callAsJob,
+  useApi,
   useJobRead,
   type JobWaitParts,
   type Loaded,
@@ -34,6 +35,8 @@ export interface ConnectIo {
   read: (path: string | undefined) => Loaded<Api.ConnectViewT> & JobWaitParts;
   post: <T>(path: string, body: unknown) => Promise<T>;
   follow: (path: string, body: unknown) => ReturnType<typeof followJob>;
+  /** Tests pass the gateway's routes (GET /api/declared-links/routes). */
+  routes?: (path: string) => Loaded<Api.DeclarableRoutesViewT>;
   /** ADR 0204 A: POST /api/connect/find as a job. */
   find: (body: Api.ConnectFindRequestT) => Promise<Api.FindResultT>;
 }
@@ -240,8 +243,7 @@ function Need(p: {
   reload(): void;
 }) {
   const { n } = p;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [boundary, setBoundary] = useState<"internal" | "vendor">("internal");
   const words =
     n.need === "pick-repo"
       ? W.need["pick-repo"](n.label, n.repos?.length ?? 0)
@@ -274,31 +276,24 @@ function Need(p: {
         <Command text={n.command} label={W.checkNow(n.label)} scope="corrections" />
       )}
       {n.need === "add-system" && (
-        <button
-          type="button"
-          className="btn"
-          disabled={busy}
-          aria-busy={busy}
-          onClick={() => {
-            setBusy(true);
-            setError(undefined);
-            const box = n.end === "from" ? p.v.from : p.v.to;
-            p.io
-              .post("/api/boxes", { id: box.system, name: n.label, boundary: "internal" })
-              .then(
-                () => p.reload(),
-                (e: unknown) => setError(errorOf(e)),
-              )
-              .finally(() => setBusy(false));
-          }}
-        >
-          {W.addAndGo(n.label)}
-        </button>
-      )}
-      {error && (
-        <p role="alert" className="state error">
-          {error}
-        </p>
+        <>
+          <fieldset className="row" style={{ gap: 12, border: 0, padding: 0, margin: 0 }}>
+            <legend className="hud">{W.boundary(n.label)}</legend>
+            {(["internal", "vendor"] as const).map((x) => (
+              <label key={x} className="row" style={{ gap: 6 }}>
+                <input
+                  type="radio"
+                  name={`boundary-${n.end}`}
+                  checked={boundary === x}
+                  onChange={() => setBoundary(x)}
+                />
+                {W.boundaries[x]}
+              </label>
+            ))}
+          </fieldset>
+          {/* The System is added in the same write as the arrow, shown in its preview (3.1). */}
+          <DeclareArrow v={p.v} io={p.io} addSystem={{ name: n.label, boundary }} />
+        </>
       )}
     </div>
   );
@@ -547,6 +542,8 @@ export function DeclareArrow(p: {
   v: Api.ConnectViewT;
   io: Omit<ConnectIo, "read">;
   onShown?(): void;
+  /** ADR 0204 3.1: the end that is a system only the code names, added in the same write. */
+  addSystem?: { name: string; boundary: "vendor" | "internal" };
 }) {
   const id = useId();
   const { v } = p;
@@ -556,24 +553,38 @@ export function DeclareArrow(p: {
   const [error, setError] = useState<string | undefined>();
   const [done, setDone] = useState<Done | undefined>();
   const [undone, setUndone] = useState(false);
-  const ok = why.trim().length >= 3 && why.trim().length <= 500;
+  // ADR 0204 1.3: an outside system calling a gateway may say which routes; none, the arrow.
+  const [routes, setRoutes] = useState<Set<string>>(new Set());
+  const ok =
+    (why.trim().length >= 3 && why.trim().length <= 500) || (!!v.routes && routes.size > 0);
   const link = {
     kind: "link",
     from: v.from,
     to: v.to,
     why: why.trim(),
     ...(planned ? { planned } : {}),
+    ...(p.addSystem ? { addSystem: p.addSystem } : {}),
   };
+  const routing = !!v.routes && !!v.from.system && routes.size > 0;
+  const picked = [...routes].sort();
   const go = async () => {
     setError(undefined);
     try {
       setBusy(COPY.connect.previewing);
-      const pre = await p.io.post<Api.FileChangeResultT>("/api/declared-links", {
-        ...link,
-        preview: true,
-      });
+      const pre = await p.io.post<Api.FileChangeResultT>(
+        "/api/declared-links",
+        routing
+          ? { kind: "call", system: v.from.system, routes: picked, preview: true }
+          : { ...link, preview: true },
+      );
       setBusy(W.declaring);
-      const r = await p.io.follow("/api/map/edits", { edits: [{ kind: "add", add: link }] });
+      const edits = routing
+        ? picked.map((route) => ({
+            kind: "add",
+            add: { kind: "call", system: v.from.system, route },
+          }))
+        : [{ kind: "add", add: link }];
+      const r = await p.io.follow("/api/map/edits", { edits });
       const res = (r.result ?? {}) as Partial<Api.MapEditsResultT>;
       setDone({
         wrote: (res.wrote ?? []) as Api.MapEditWroteT[],
@@ -660,6 +671,15 @@ export function DeclareArrow(p: {
         <input type="checkbox" checked={planned} onChange={(e) => setPlanned(e.target.checked)} />
         {W.planned}
       </label>
+      {v.routes && v.from.system && v.to.repo && (
+        <RoutesFold
+          system={v.from.system}
+          repo={v.to.repo}
+          picked={routes}
+          onPick={setRoutes}
+          io={p.io}
+        />
+      )}
       <button
         type="button"
         className="btn primary"
@@ -667,7 +687,12 @@ export function DeclareArrow(p: {
         aria-busy={!!busy}
         onClick={() => void go()}
       >
-        {busy ?? W.declare}
+        {busy ??
+          (routing
+            ? W.declareRoutes(routes.size)
+            : p.addSystem
+              ? W.addAndGo(p.addSystem.name)
+              : W.declare)}
       </button>
       {error && (
         <p role="alert" className="state error">
@@ -675,5 +700,47 @@ export function DeclareArrow(p: {
         </p>
       )}
     </div>
+  );
+}
+
+/** ADR 0204 1.3: "Say which routes (optional)", ADR 0200's list of the gateway's routes. */
+function RoutesFold(p: {
+  system: string;
+  repo: string;
+  picked: ReadonlySet<string>;
+  onPick(s: Set<string>): void;
+  io: Omit<ConnectIo, "read">;
+}) {
+  const path = `/api/declared-links/routes?system=${encodeURIComponent(p.system)}&repo=${encodeURIComponent(p.repo)}`;
+  const live = useApi<Api.DeclarableRoutesViewT>(p.io.routes ? undefined : path);
+  const r = p.io.routes ? p.io.routes(path) : live;
+  const list = r.state === "ready" ? (r.data.target?.routes ?? []).filter((x) => !x.declared) : [];
+  return (
+    <details className="stack">
+      <summary className="hud">{W.routesFold}</summary>
+      <p className="hud">{W.routesHint}</p>
+      {r.state === "loading" && <p className="state">{W.routesLoading}</p>}
+      {r.state === "error" && (
+        <p role="alert" className="state error">
+          {r.error}
+        </p>
+      )}
+      {r.state === "ready" && !list.length && <p className="state">{W.routesNone}</p>}
+      {list.map((x) => (
+        <label key={x.id} className="row" style={{ gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={p.picked.has(x.say)}
+            onChange={(e) => {
+              const n = new Set(p.picked);
+              if (e.target.checked) n.add(x.say);
+              else n.delete(x.say);
+              p.onPick(n);
+            }}
+          />
+          <span className="mono">{x.say}</span> <span className="hud">{x.at}</span>
+        </label>
+      ))}
+    </details>
   );
 }

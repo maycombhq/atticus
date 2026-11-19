@@ -542,11 +542,25 @@ export function uiDeclaredRoutes(
  */
 export async function writeArrow(
   root: string,
-  a: { from: Api.LinkBoxT; to: Api.LinkBoxT; why: string; planned?: boolean | undefined },
+  a: {
+    from: Api.LinkBoxT;
+    to: Api.LinkBoxT;
+    why: string;
+    planned?: boolean | undefined;
+    /** ADR 0204 3.1: the end that is a system only the code names, added in the same write. */
+    addSystem?: { name: string; boundary: "vendor" | "internal" } | undefined;
+  },
   o: { by: string; at: string; preview?: boolean },
 ) {
   const op = await loadOrgPack(orgPackDirOf(root));
-  for (const b of [a.from, a.to])
+  const unknown = [a.from, a.to].filter((b) => !knownEnd(op, b));
+  const adding =
+    a.addSystem && unknown.length === 1 && unknown[0]!.system
+      ? { id: unknown[0]!.system, ...a.addSystem }
+      : undefined;
+  if (adding && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(adding.id))
+    throw badRequest(`${adding.id} isn't a system id: lowercase letters, digits and - only.`);
+  for (const b of [a.from, a.to].filter((x) => x.system !== adding?.id))
     if (!knownEnd(op, b))
       throw notFound(
         `No ${b.repo ? "repo of the manifests" : "system of the profiles"} is ${boxWords(b)}.`,
@@ -555,11 +569,17 @@ export async function writeArrow(
     throw badRequest("An arrow's two ends differ: pick another box.");
   const n = await realCalls(root, op, a.from, a.to);
   if (n) throw conflict(connectedWords(a.from, a.to, n));
-  return declareArrow(
+  const platform = arrowPlatform(
+    op,
+    a.from.system === adding?.id ? a.to : a.from,
+    a.to.system === adding?.id ? a.from : a.to,
+  );
+  const res = await declareArrow(
     root,
     { from: endOf(a.from), to: endOf(a.to), why: a.why, ...(a.planned ? { planned: true } : {}) },
-    { ...o, platform: arrowPlatform(op, a.from, a.to) },
+    { ...o, platform, ...(adding ? { addSystem: adding } : {}) },
   );
+  return { ...res, ...(adding ? { addedSystem: adding.id } : {}) };
 }
 
 const arrowChange = (

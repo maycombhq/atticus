@@ -8244,6 +8244,17 @@ export const COPY = {
     makeRule: "Make this a reading rule",
     ruleDrafted: (file: string) =>
       `Drafted in ${file}. It is given to no read until a person sets it active:`,
+    boundary: (label: string) => `What ${label} is`,
+    boundaries: { internal: "another team's system", vendor: "a vendor's" } as Record<
+      string,
+      string
+    >,
+    routesFold: "Say which routes (optional)",
+    routesHint:
+      "Tick the gateway routes it calls, and each is declared as a route instead of the arrow; tick none for the arrow.",
+    routesLoading: "Reading the gateway's routes…",
+    routesNone: "No route of this gateway is on record.",
+    declareRoutes: (n: number) => `Connect: declare ${n} route${n === 1 ? "" : "s"}`,
     // ADR 0204 decision 4: new repos in one go.
     run: (n: number) => `Sync, read and apply these ${n}`,
     continue: (n: number) => `Continue: ${n} left`,
