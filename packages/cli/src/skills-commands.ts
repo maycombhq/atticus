@@ -498,6 +498,9 @@ const MCP_FILES = [
   { path: CLAUDE_MCP_PATH, key: "mcpServers", fresh: claudeMcpJson },
 ] as const;
 
+/** Where a person finds the `atticus` server entry to copy: the committed Copilot plugin's file. */
+const MCP_ENTRY_SOURCE = "plugins/copilot/.vscode/mcp.json in Atticus's repository";
+
 /**
  * One of the metarepo's MCP files (ADR 0201): `.vscode/mcp.json` for VS Code and `.mcp.json` for
  * Claude Code. A new file where there is none; the `atticus` server added where the file reads as
@@ -512,7 +515,8 @@ async function mcpPlan(
   if (raw === undefined) return { text: f.fresh(), added: false };
   const unread = {
     added: false,
-    note: `${f.path} doesn't read as JSON, so it is left as it is. Add the atticus server to its ${f.key} yourself: "atticus": ${JSON.stringify(ATTICUS_MCP_SERVER)}`,
+    // The entry is pointed to, not printed: its launcher is a long line of code.
+    note: `${f.path} doesn't read as JSON, so it is left as it is. Add the atticus server to its ${f.key} yourself: copy the "atticus" entry from ${MCP_ENTRY_SOURCE} (the guide's troubleshooting page has it too).`,
   };
   let doc: unknown;
   try {
@@ -524,7 +528,21 @@ async function mcpPlan(
   const servers = (doc as Record<string, unknown>)[f.key];
   if (servers !== undefined && (!servers || typeof servers !== "object" || Array.isArray(servers)))
     return unread;
-  if (servers && "atticus" in servers) return { added: false };
+  if (servers && "atticus" in servers) {
+    // The person's own entry is never changed. One that starts a bare `atticus` (Atticus's own
+    // before beta.30) can't be started by every editor on Windows, so that much is said.
+    const own = (servers as Record<string, unknown>).atticus;
+    const bare =
+      !!own && typeof own === "object" && (own as { command?: unknown }).command === "atticus";
+    return {
+      added: false,
+      ...(bare
+        ? {
+            note: `${f.path} has an atticus server that starts a bare "atticus", which VS Code can start on Windows and some editors can't. To start it the same way everywhere, take that entry out and run atticus skills write again: it adds the entry that does (the one in ${MCP_ENTRY_SOURCE}).`,
+          }
+        : {}),
+    };
+  }
   const indent = /^([ \t]+)\S/m.exec(raw)?.[1] ?? "  ";
   const eol = raw.includes("\r\n") ? "\r\n" : "\n";
   const text = JSON.stringify(

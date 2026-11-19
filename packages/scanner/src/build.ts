@@ -2023,6 +2023,121 @@ export function joinedArrowOf(
   return ids.size === 1 ? `Interface/${[...ids][0]}` : undefined;
 }
 
+/**
+ * Beta.30 (the owner's field report, "it's connected to the wrong box"): the arrows this build
+ * removes because a person's pairing moved their call to another box, each with the arrow the
+ * pairing adds, by `<Kind>/<id>`. Such a removal is the pairing's own result (the call is still
+ * on the map, going where the person said), as a loose end joined now is: it counts toward
+ * neither removal limit.
+ *
+ * The review of the fix: matched one to one, by the call, never by a cited line alone (an arrow
+ * carries no call id; several calls may cite one line, and a proxy bundle's calls all cite its
+ * target's). A removed arrow R and an added arrow N flagged `joined-by-person` are candidates
+ * when they have the same caller and N cites a line R's caller side cites. R is moved to N only
+ * when N is R's one candidate (among several, the one that makes R's call) and R is the one
+ * removed arrow that is N's:
+ * - of the removed arrows that are N's candidates, the one that makes the same call as N (its
+ *   method and path), when exactly one does;
+ * - where none does and R is N's only candidate, R when it is the caller's only arrow of the
+ *   last build on a line the two share, with no loose end of the caller there (which the pairing
+ *   may have joined instead).
+ * And only whole: every line R's caller side cites (in the repos N cites) is one N cites too, so
+ * an arrow two call sites make is not moved when one of them is. Each added arrow so excuses at
+ * most one removal; every other removal counts toward the limits and keeps its own reason. A
+ * pairing taken back (Undo, a hand edit, a merge: the build can't tell them apart) excuses
+ * nothing: the arrows it removes go through the limits.
+ */
+export function movedArrows(
+  removed: readonly CatalogRecord[],
+  added: readonly CatalogRecord[],
+  old: Iterable<CatalogRecord>,
+): Map<string, { id: string; to: string }> {
+  type Arrow = { from?: string; to?: string; method?: string; normalizedPath?: string };
+  const fromOf = (r: CatalogRecord) => (r as unknown as Arrow).from;
+  const callerLines = (r: CatalogRecord) => [
+    ...new Set(
+      (r.evidence as { repo?: string; path?: string; line?: number; side?: string }[]).flatMap(
+        (e) =>
+          e.repo && e.path && e.line !== undefined && e.side !== "callee"
+            ? [`${e.repo}\u0000${e.path}\u0000${e.line}`]
+            : [],
+      ),
+    ),
+  ];
+  const sameCall = (a: CatalogRecord, b: CatalogRecord) => {
+    const x = a as unknown as Arrow;
+    const y = b as unknown as Arrow;
+    return (
+      !!x.normalizedPath &&
+      x.normalizedPath === y.normalizedPath &&
+      (x.method ?? "").toUpperCase() === (y.method ?? "").toUpperCase()
+    );
+  };
+  const paired = added.filter(
+    (x) => x.kind === "Interface" && (x.flags ?? []).includes("joined-by-person"),
+  );
+  const out = new Map<string, { id: string; to: string }>();
+  if (!paired.length) return out;
+  // The added paired arrows by `<from>\u0000<caller line>`.
+  const addedAt = new Map<string, CatalogRecord[]>();
+  for (const n of paired)
+    for (const l of callerLines(n)) {
+      const k = `${fromOf(n) ?? ""}\u0000${l}`;
+      addedAt.set(k, [...(addedAt.get(k) ?? []), n]);
+    }
+  // How many arrows, and loose ends, each caller had on each line in the last build.
+  const olds = [...old];
+  const arrowsAt = new Map<string, number>();
+  for (const r of olds)
+    if (r.kind === "Interface")
+      for (const l of callerLines(r)) {
+        const k = `${fromOf(r) ?? ""}\u0000${l}`;
+        arrowsAt.set(k, (arrowsAt.get(k) ?? 0) + 1);
+      }
+  const looseAt = looseEndsAt(olds);
+  const gone = removed.filter((r) => r.kind === "Interface" && !!fromOf(r));
+  /** Each removed arrow's candidates, and each added arrow's. */
+  const candidates = new Map<CatalogRecord, Set<CatalogRecord>>();
+  const claimants = new Map<CatalogRecord, CatalogRecord[]>();
+  for (const r of gone) {
+    const mine = new Set<CatalogRecord>();
+    for (const l of callerLines(r))
+      for (const n of addedAt.get(`${fromOf(r)!}\u0000${l}`) ?? []) if (n.id !== r.id) mine.add(n);
+    candidates.set(r, mine);
+    for (const n of mine) claimants.set(n, [...(claimants.get(n) ?? []), r]);
+  }
+  for (const r of gone) {
+    // Its one candidate; among several (a line many calls cite), the one that makes its call.
+    const mine = [...candidates.get(r)!];
+    const makes = mine.length > 1 ? mine.filter((x) => sameCall(r, x)) : mine;
+    if (makes.length !== 1) continue;
+    const n = makes[0]!;
+    const theirs = claimants.get(n) ?? [];
+    const same = theirs.filter((x) => sameCall(x, n));
+    const from = fromOf(r)!;
+    const alone = () =>
+      theirs.length === 1 &&
+      callerLines(r).some(
+        (l) =>
+          callerLines(n).includes(l) &&
+          arrowsAt.get(`${from}\u0000${l}`) === 1 &&
+          !looseAt.get(`${from}\u0000${l}`),
+      );
+    // The re-review: an arrow two call sites make is moved only when every one of its caller
+    // lines (in the repos the new arrow cites) is the new arrow's too; with one site moved
+    // and the other lost, the arrow is a removal like any other.
+    const theirLines = new Set(callerLines(n));
+    const repos = new Set([...theirLines].map((l) => l.split("\u0000")[0]));
+    const whole = callerLines(r)
+      .filter((l) => repos.has(l.split("\u0000")[0]))
+      .every((l) => theirLines.has(l));
+    const is = whole && (same.length ? same.length === 1 && same[0] === r : alone());
+    const to = (n as unknown as Arrow).to;
+    if (is && to) out.set(`${r.kind}/${r.id}`, { id: n.id, to });
+  }
+  return out;
+}
+
 /** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
 export function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
   const out = new Map<string, number>();
@@ -2683,6 +2798,12 @@ export async function guardBuild(
     // make a box nobody meant) still goes through the limits.
     const addedArrowsAt = pairedArrowsAt(addedNow);
     const looseAt = looseEndsAt(oldRecords.values());
+    // Beta.30: the arrows removed because a person's pairing moved their call, one to one.
+    const movedTo = movedArrows(
+      [...oldRecords].flatMap(([p, r]) => (b.files.has(p) ? [] : [r])),
+      addedNow,
+      [...oldRecords.values()],
+    );
     const addedBy = new Map<string, number>();
     for (const x of addedNow)
       for (const repo of repoOfEvidence(x)) addedBy.set(repo, (addedBy.get(repo) ?? 0) + 1);
@@ -2823,9 +2944,14 @@ export async function guardBuild(
       // line, or two such arrows, are no join: each removal counts as any other. Only an
       // explained removal is said joined (below); an unexplained one refuses on its own.
       const joinedNow = r ? joinedArrowOf(r, addedArrowsAt, looseAt) : undefined;
+      // Beta.30: an arrow whose call a person's pairing moved to another box in this build.
+      const movedNow = r ? movedTo.get(`${r.kind}/${r.id}`) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
         if (back) own.push(back);
+        // The same words as an arrow that comes back under another callee (`rekeyedWords`).
+        else if (movedNow)
+          own.push(`its call goes to ${movedNow.to} now (Interface/${movedNow.id})`);
         else if (joinedNow) own.push(`joined now (${joinedNow})`);
         // Only where the repo's read changed and nothing else is why: not a removal an answer,
         // a curated decision or a call the join placed elsewhere makes, nor one a join derives.
@@ -2844,7 +2970,7 @@ export async function guardBuild(
         reasons: order.filter((k) => kinds.has(k)),
       };
       (removal.explainedBy.length ? removals : unexplained).push(removal);
-      if (joinedNow && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
+      if ((joinedNow || movedNow) && removal.explainedBy.length) joinedLooseEnds.add(removal.path);
     }
     mark("removals explained");
     // The records each repo had in the last build, for the share.

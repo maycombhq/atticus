@@ -18,8 +18,10 @@ import {
 } from "@maycombhq/core";
 import { main } from "../src/main.js";
 import { initCommand } from "../src/setup-commands.js";
+import { installCommand } from "../src/version.js";
 import {
   contentOf,
+  installedStarters,
   MIGRATIONS,
   STAMP_FILE,
   starterPersonasStep,
@@ -107,7 +109,29 @@ const FIXTURE_STARTERS = [
     text: "---\nname: define-change\n---\n\nA fixture skill.\n",
   },
 ];
-const fixtureStarters = async () => FIXTURE_STARTERS;
+/**
+ * The same starter as a folder, read by the walker the installed one is read by, with what a
+ * starter folder may hold beside its files: a README of its own and one in each folder.
+ */
+let fixtureDir: Promise<string> | undefined;
+const fixtureStarters = async () => {
+  fixtureDir ??= (async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-starter-b30-"));
+    const files = [
+      ...FIXTURE_STARTERS,
+      { path: "README.md", text: "Not copied: only agents/ and skills/ go into an org pack.\n" },
+      { path: "agents/README.md", text: "About the starter's agents.\n" },
+      { path: "skills/README.md", text: "About the starter's skills.\n" },
+      { path: "skills/define-change/notes.md", text: "Notes on the skill.\n" },
+    ];
+    for (const f of files) {
+      await mkdir(dirname(join(dir, f.path)), { recursive: true });
+      await writeFile(join(dir, f.path), f.text);
+    }
+    return dir;
+  })();
+  return starterPersonaFiles(await fixtureDir);
+};
 
 const changed = (root: string) =>
   git(root, "status", "--porcelain=v1", "--untracked-files=all")
@@ -250,6 +274,10 @@ describe("atticus upgrade to beta.30: the starter personas (starter-personas)", 
           FIXTURE_STARTERS.find((s) => `org-pack/${s.path}` === f)!.text,
         );
       expect(await readFile(join(root, "org-pack/agents/developer.md"), "utf8")).toBe(mine);
+      // Only the starter's agents and skills: its READMEs and a skill's notes stay where they are.
+      for (const f of ["README.md", "agents/README.md", "skills/README.md"])
+        expect(existsSync(join(root, "org-pack", f)), f).toBe(false);
+      expect(existsSync(join(root, "org-pack/skills/define-change/notes.md"))).toBe(false);
       // It lost nothing.
       const after = await contentOf(root, ["org-pack"]);
       for (const [f, hash] of before) expect(after.get(f), f).toBe(hash);
@@ -321,6 +349,64 @@ describe("atticus upgrade to beta.30: what a step can't do is said, and waits", 
   );
 
   it(
+    "says the starters aren't in this install, on --check and on the upgrade, until they are",
+    async () => {
+      const root = await b285Metarepo();
+      const words = `The starter personas aren't in this install: reinstall Atticus (${installCommand(B30)}), then run atticus upgrade again.`;
+      const at = MIGRATIONS.findIndex((m) => m.id === "starter-personas");
+      const real = MIGRATIONS[at]!;
+      // An install whose starter folder is missing.
+      MIGRATIONS[at] = starterPersonasStep(() =>
+        installedStarters(() => starterPersonaFiles(join(root, "no-starter-here"))),
+      );
+      try {
+        const c = await upgradeCheck(root, B30);
+        expect(c.unavailable).toEqual([words]);
+        expect(c.pending.map((p) => p.id)).toEqual(["change-types-quick"]);
+        const check = io();
+        expect(await upgradeCommand(root, { check: true }, check.io, B30)).toBe(1);
+        expect(check.err).toEqual([words]);
+        const run = io();
+        expect(await upgradeCommand(root, { by: "pat" }, run.io, B30)).toBe(0);
+        expect(run.err).toEqual([words]);
+        // Nothing else is pending now: it is still said, and never "Up to date" with no word.
+        const again = io();
+        expect(await upgradeCommand(root, { check: true }, again.io, B30)).toBe(0);
+        expect(again.err).toEqual([words]);
+        expect(again.out).toEqual([`Up to date for Atticus ${B30}, but for the starter personas.`]);
+        const json = io();
+        expect(await upgradeCommand(root, { check: true, json: true }, json.io, B30)).toBe(0);
+        expect(JSON.parse(json.out.join("\n"))).toMatchObject({ unavailable: [words] });
+      } finally {
+        MIGRATIONS[at] = real;
+      }
+      // With the starter installed the same metarepo gets the files, and nothing is said.
+      const c = await upgradeCheck(root, B30);
+      expect(c.unavailable).toBeUndefined();
+      expect(c.pending.map((p) => p.id)).toEqual(["starter-personas"]);
+      const r = io();
+      expect(await upgradeCommand(root, { by: "pat" }, r.io, B30)).toBe(0);
+      expect(r.err).toEqual([]);
+      const done = io();
+      expect(await upgradeCommand(root, { check: true }, done.io, B30)).toBe(0);
+      expect(done.out).toEqual([`Up to date for Atticus ${B30}.`]);
+      expect(done.err).toEqual([]);
+    },
+    T,
+  );
+
+  it("takes only a starter folder that isn't there as nothing to give: any other error is said", async () => {
+    const fails = (code: string) => () =>
+      Promise.reject(Object.assign(new Error(`${code}: reading the starter`), { code }));
+    expect(await installedStarters(fails("ENOENT"))).toEqual([]);
+    await expect(installedStarters(fails("EACCES"))).rejects.toThrow("EACCES: reading the starter");
+    await expect(
+      installedStarters(() => Promise.reject(new Error("not a file error"))),
+    ).rejects.toThrow("not a file error");
+    expect((await installedStarters()).length).toBe(16);
+  });
+
+  it(
     "says what to add by hand when change-types.yaml keeps its types on one line",
     async () => {
       const flow =
@@ -364,6 +450,11 @@ describe("a new metarepo's org pack", () => {
     });
     const starters = (await starterPersonaFiles()).map((f) => f.path);
     expect(starters).toHaveLength(16);
+    // No README is seeded from the starter: the org pack has none of its own at its top, and
+    // the one in agents/ is the org pack's own.
+    expect(starters.filter((f) => /readme/i.test(f))).toEqual([]);
+    expect(existsSync(join(dir, "README.md"))).toBe(false);
+    expect(await readFile(join(dir, "agents/README.md"), "utf8")).toMatch(/^# Agents\n/);
     expect(written).toEqual(
       expect.arrayContaining([
         ...starters.filter((f) => f !== "agents/developer.md"),

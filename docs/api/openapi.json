@@ -6553,6 +6553,11 @@
                                       "api": {
                                         "type": "string",
                                         "minLength": 1
+                                      },
+                                      "reason": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 500
                                       }
                                     },
                                     "required": [
@@ -6756,6 +6761,11 @@
                                       "api": {
                                         "type": "string",
                                         "minLength": 1
+                                      },
+                                      "reason": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 500
                                       }
                                     },
                                     "required": [
@@ -11572,6 +11582,11 @@
                         "api": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 500
                         }
                       },
                       "required": [
@@ -41078,6 +41093,59 @@
                 "pairedBy": {
                   "type": "string"
                 },
+                "how": {
+                  "type": "object",
+                  "properties": {
+                    "by": {
+                      "type": "string",
+                      "enum": [
+                        "code",
+                        "address",
+                        "path",
+                        "gateway",
+                        "answer",
+                        "paired",
+                        "ai",
+                        "kept"
+                      ]
+                    },
+                    "who": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "through": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "by"
+                  ],
+                  "additionalProperties": false
+                },
+                "codeNames": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "box",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
                 "suggestion": {
                   "type": "object",
                   "properties": {
@@ -43800,6 +43868,25 @@
                 },
                 "stale": {
                   "type": "boolean"
+                },
+                "over": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "box",
+                    "text"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

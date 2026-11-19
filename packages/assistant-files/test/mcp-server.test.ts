@@ -13,26 +13,51 @@ import { ATTICUS_MCP_LAUNCHER, atticusMcpServer, copilotAgentFiles } from "../sr
 
 type Spawned = { command: string; args: string[]; options: Record<string, unknown> };
 
+/** The environment the launcher is started in, in these tests. */
+const ENV = { PATH: "/usr/bin", FORGE: "1" };
+/** The server's process id, in these tests. */
+const PID = 4321;
+
 /** Run the launcher as `node -e` would, on a platform, with nothing started. */
-function launch(platform: NodeJS.Platform) {
+function launch(
+  platform: NodeJS.Platform,
+  o: { pid?: number | undefined; env?: Record<string, string> } = { pid: PID },
+) {
   const spawned: Spawned[] = [];
+  const sync: Spawned[] = [];
   const handlers = new Map<string, (v: unknown) => void>();
+  const own = new Map<string, () => void>();
   const exits: number[] = [];
   const errors: string[] = [];
+  let kills = 0;
+  const env: Record<string, string> = { ...(o.env ?? ENV) };
   runInNewContext(ATTICUS_MCP_LAUNCHER, {
-    process: { platform, exit: (c: number) => exits.push(c) },
+    process: {
+      platform,
+      env,
+      exit: (c: number) => exits.push(c),
+      on: (e: string, f: () => void) => own.set(e, f),
+    },
     console: { error: (m: string) => errors.push(m) },
     require: (name: string) => {
       expect(name).toBe("node:child_process");
       return {
         spawn: (command: string, args: string[], options: Record<string, unknown>) => {
           spawned.push({ command, args, options });
-          return { on: (e: string, f: (v: unknown) => void) => handlers.set(e, f) };
+          return {
+            pid: o.pid,
+            kill: () => kills++,
+            on: (e: string, f: (v: unknown) => void) => handlers.set(e, f),
+          };
+        },
+        spawnSync: (command: string, args: string[], options: Record<string, unknown>) => {
+          sync.push({ command, args, options });
+          return { status: 0 };
         },
       };
     },
   });
-  return { spawned, handlers, exits, errors };
+  return { spawned, sync, handlers, own, exits, errors, env, kills: () => kills };
 }
 
 describe("the atticus MCP server entry (beta.30)", () => {
@@ -59,9 +84,20 @@ describe("the atticus MCP server entry (beta.30)", () => {
       {
         command: "atticus mcp",
         args: [],
-        options: { stdio: "inherit", shell: true, windowsHide: true },
+        options: {
+          stdio: "inherit",
+          shell: true,
+          windowsHide: true,
+          // cmd.exe looks in the current folder before PATH unless this is set: an atticus.cmd
+          // at the workspace's root must never win over the one that is installed.
+          env: { ...ENV, NoDefaultCurrentDirectoryInExePath: "1" },
+        },
       },
     ]);
+  });
+
+  it("on Windows leaves its own environment as it was", () => {
+    expect(launch("win32").env).toEqual(ENV);
   });
 
   it.each(["darwin", "linux"] as const)("on %s starts atticus mcp itself, no shell", (platform) => {
@@ -69,7 +105,7 @@ describe("the atticus MCP server entry (beta.30)", () => {
       {
         command: "atticus",
         args: ["mcp"],
-        options: { stdio: "inherit", shell: false, windowsHide: true },
+        options: { stdio: "inherit", shell: false, windowsHide: true, env: ENV },
       },
     ]);
   });
@@ -93,10 +129,77 @@ describe("the atticus MCP server entry (beta.30)", () => {
     },
   );
 
+  // Windows' own taskkill by its full path: a bare name is looked for in the current folder
+  // first, which is the workspace. Given five seconds, so a launcher that is ending never hangs.
+  const WINDOWS = { ...ENV, SystemRoot: "C:\\Windows" };
+  const TASKKILL = {
+    command: "C:\\Windows/System32/taskkill.exe",
+    args: ["/pid", String(PID), "/T", "/F"],
+    options: { stdio: "ignore", windowsHide: true, timeout: 5000 },
+  };
+
+  it("calls taskkill by name only where Windows doesn't say where it is installed", () => {
+    const w = launch("win32");
+    w.own.get("exit")!();
+    expect(w.sync).toEqual([{ ...TASKKILL, command: "taskkill" }]);
+  });
+
+  it.each(["SIGTERM", "SIGINT", "SIGHUP"])(
+    "told to end (%s), it ends the server too: the shell's whole tree on Windows",
+    (signal) => {
+      // cmd.exe, atticus.cmd and the node it starts: ending the shell alone leaves the server.
+      const w = launch("win32", { pid: PID, env: WINDOWS });
+      w.own.get(signal)!();
+      expect(w.sync).toEqual([TASKKILL]);
+      expect(w.kills()).toBe(0);
+      expect(w.exits).toEqual([1]);
+      // The exit that follows doesn't end it twice.
+      w.own.get("exit")!();
+      expect(w.sync).toHaveLength(1);
+
+      const l = launch("linux");
+      l.own.get(signal)!();
+      expect(l.kills()).toBe(1);
+      expect(l.sync).toEqual([]);
+      expect(l.exits).toEqual([1]);
+      l.own.get("exit")!();
+      expect(l.kills()).toBe(1);
+    },
+  );
+
+  it("ends the server when it exits for any other reason, and never one that has ended", () => {
+    const w = launch("win32", { pid: PID, env: WINDOWS });
+    w.own.get("exit")!();
+    expect(w.sync).toEqual([TASKKILL]);
+    const l = launch("darwin");
+    l.own.get("exit")!();
+    expect(l.kills()).toBe(1);
+
+    // The server ended on its own: nothing is left to end, and no other process has its id.
+    for (const platform of ["win32", "linux"] as const) {
+      const a = launch(platform);
+      a.handlers.get("exit")!(0);
+      a.own.get("exit")!();
+      a.own.get("SIGTERM")!();
+      expect(a.sync).toEqual([]);
+      expect(a.kills()).toBe(0);
+      // It never started: there is no process to end.
+      const b = launch(platform, { pid: undefined });
+      b.own.get("exit")!();
+      expect(b.sync).toEqual([]);
+      expect(b.kills()).toBe(0);
+      const c = launch(platform);
+      c.handlers.get("error")!(new Error("spawn atticus ENOENT"));
+      c.own.get("exit")!();
+      expect(c.sync).toEqual([]);
+      expect(c.kills()).toBe(0);
+    }
+  });
+
   it("has no character a Windows shell would read, should an editor start node through one", () => {
     // VS Code quotes each argument when the command it finds is a .cmd (a node.cmd wrapper, say).
     // Inside quotes cmd.exe still reads % and ", and ^ & | < > ! outside them.
     expect(ATTICUS_MCP_LAUNCHER).not.toMatch(/["%^&|<>!\r\n`$\\]/);
-    expect(ATTICUS_MCP_LAUNCHER.length).toBeLessThan(500);
+    expect(ATTICUS_MCP_LAUNCHER.length).toBeLessThan(1000);
   });
 });
