@@ -103,6 +103,9 @@ The orders service SHALL publish `forge.orders.shipped` once for each shipped or
   `openspec/specs/` already has is `## MODIFIED Requirements`, with the whole requirement as it
   will read; one that goes away is `## REMOVED Requirements`.
 - Every requirement says SHALL or MUST and has at least one scenario, with values.
+- Don't write "MUST ignore", "skip", "disregard" or "bypass" in a requirement: the critic reads
+  them as instructions to the reader. Say what the system does instead: "MUST NOT apply an event
+  whose…", "MUST leave … unchanged".
 - **State at least one delta.** A change with none is not valid OpenSpec, and the hand-off
   refuses it. A migration that changes no behaviour still states one, for what it changes in
   operation: where the service runs, how it is deployed, what it is called, what is switched off

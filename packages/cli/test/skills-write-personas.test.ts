@@ -535,7 +535,10 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       "Don't judge a task by `task_context` here",
     ])
       expect(spec, words).toContain(words);
-    expect(spec).not.toMatch(/MUST ignore/);
+    // A requirement worded "MUST ignore" is flagged by design: the spec writer is told how to word it.
+    expect(spec).toContain(
+      'Don\'t write "MUST ignore", "skip", "disregard" or "bypass" in a requirement: the critic reads them as instructions to the reader. Say what the system does instead: "MUST NOT apply an event whose…", "MUST leave … unchanged".',
+    );
     // No example marks one task alone [P]: a lone [P] changes nothing.
     for (const f of files)
       for (const block of f.text.matchAll(/^ *## forge-orders\n[\s\S]*?(?=^ *## |^ *```)/gm))
