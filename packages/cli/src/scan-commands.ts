@@ -27,6 +27,8 @@ import {
   type UnreadRepo,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
+import "./this-atticus.js";
+import { refusalEnds } from "./standing.js";
 import { askHosts } from "./host-questions.js";
 import { buildPlanOf, pageChanged, refusalPlanOf } from "./build-report.js";
 
@@ -408,6 +410,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     const refusal = newerAtticusRefusal(relative(root, out).split(sep).join("/"), newer).refused!;
     if (!o.dryRun) await writeRefusedReport(root, command, refusal);
     io.err(refusal.message);
+    await refusalEnds(root, refusal);
     if (o.json) io.out(JSON.stringify({ written: false, refused: refusal }, null, 2));
     return 1;
   }
@@ -475,6 +478,10 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           plan: refusalPlanOf(guardRefused),
         }
       : undefined);
+  // ADR 0202 point 8: a refusal of the build's ends with where the metarepo stands.
+  if (refused?.reasons.length) await refusalEnds(root, refused);
+  // The build's own refusal is the one a terminal's question is about (confirm-once.ts).
+  if (guardRefused) await refusalEnds(root, guardRefused);
   const w = built?.write;
   const diff = refused
     ? { added: [], removed: [], changed: [], evidenceOnly: [] }

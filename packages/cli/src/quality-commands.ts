@@ -33,6 +33,7 @@ import {
 } from "@maycombhq/testgen";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 import { table } from "./table.js";
 
 /**
@@ -399,6 +400,7 @@ async function glossaryBuild(root: string, command: string, io: Output): Promise
     const r = await buildAndWrite(root, { command: "atticus catalog build" });
     if (r.guard.refused) {
       for (const l of r.guard.refused.message.split("\n")) io.err(l);
+      await refusalEnds(root, r.guard.refused);
       return 1;
     }
     return 0;

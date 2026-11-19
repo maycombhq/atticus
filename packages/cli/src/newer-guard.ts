@@ -1,4 +1,5 @@
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the writers of the build's
@@ -167,9 +168,11 @@ export async function refuseNewerCommand(
   json: boolean,
 ): Promise<number | undefined> {
   const { refuseIfNewer } = await import("@maycombhq/scanner");
+  await import("./this-atticus.js");
   const r = await refuseIfNewer(root);
   if (!r) return undefined;
   io.err(r.message);
+  await refusalEnds(root, r);
   if (json) io.out(JSON.stringify({ written: false, refused: r }, null, 2));
   return 1;
 }

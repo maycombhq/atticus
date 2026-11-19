@@ -19,8 +19,9 @@ describe("the one command that installs Atticus, on the command line", () => {
           if (/npm i(nstall)? -g @maycombhq\/atticus/.test(l)) lines.push(`${f}: ${l.trim()}`);
     expect(lines).toEqual(["version.ts: `npm install -g @maycombhq/atticus@${version}`;"]);
     // A catalog a newer Atticus built: the build's own command (ADR 0197), not a line of ours.
+    // ADR 0202 point 7: by its exact version when the newer build.json names its Atticus.
     expect(await readFile(join(src, "next-commands.ts"), "utf8")).toContain(
-      "command: NEWER_ATTICUS_COMMAND,",
+      "command: s.newerCommand ?? NEWER_ATTICUS_COMMAND,",
     );
   });
 });

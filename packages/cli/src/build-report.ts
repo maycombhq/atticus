@@ -20,6 +20,7 @@ import {
   type BuildReport,
   type Removal,
 } from "@maycombhq/scanner";
+import "./this-atticus.js";
 
 /**
  * What the app shows of the catalog's build (ADR 0195 points 4, 6 and 7, ticket CS3), read from
@@ -109,6 +110,9 @@ export function refusalView(
     ...(r.discardEdits !== undefined ? { discardEdits: r.discardEdits } : {}),
     ...(r.unread ? { unread: r.unread } : {}),
     ...(r.unreadableManifest ? { unreadableManifest: true as const } : {}),
+    // ADR 0202 points 7 and 8: the files a newer Atticus wrote, and where the metarepo stands.
+    ...(r.newer ? { newer: r.newer.map((f) => ({ ...f })) } : {}),
+    ...(r.standing ? { standing: r.standing } : {}),
     command: next,
     plan: refusalPlanOf(r),
   };

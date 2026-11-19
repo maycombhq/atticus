@@ -97,6 +97,7 @@ import {
 } from "@maycombhq/verify";
 import { baseClonePath, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 import { askHosts } from "./host-questions.js";
 import { termsWrite } from "./term-lines.js";
 import { checkoutOf } from "./facts-files.js";
@@ -787,6 +788,7 @@ export async function writeFactsIntoCatalog(
     if (built.changed) io.err(pageChanged("what the build would remove or discard"));
     if (built.guard.refused || built.changed) {
       if (built.guard.refused) for (const l of buildLines(root, built)) io.err(l);
+      if (built.guard.refused) await refusalEnds(root, built.guard.refused);
       if (built.guard.refused) o.onRefused?.(built);
       return undefined;
     }
