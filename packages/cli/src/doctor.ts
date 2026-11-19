@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { delimiter, join } from "node:path";
+import { delimiter, join, win32 } from "node:path";
 import {
   ASSISTANT_FORMATS,
   assistantTier,
@@ -137,7 +137,12 @@ export interface DoctorDeps {
    * Beta.30: what a program on this machine prints (PowerShell's execution policy, npm's global
    * folder; asked on Windows only), or undefined when it can't be run. Tests pass the output.
    */
-  commandOutput?: (program: "powershell" | "npm", args: string[]) => Promise<string | undefined>;
+  commandOutput?: (
+    program: "powershell" | "pwsh" | "npm",
+    args: string[],
+  ) => Promise<string | undefined>;
+  /** Whether a file is there (npm's atticus.ps1, looked for on Windows only). Tests pass one. */
+  fileExists?: (file: string) => boolean;
 }
 
 /**
@@ -146,13 +151,13 @@ export interface DoctorDeps {
  * Node starts only through the shell.
  */
 async function defaultCommandOutput(
-  program: "powershell" | "npm",
+  program: "powershell" | "pwsh" | "npm",
   args: string[],
 ): Promise<string | undefined> {
   const { execFile } = await import("node:child_process");
   return new Promise((resolve) => {
     execFile(
-      program === "npm" ? "npm.cmd" : "powershell.exe",
+      program === "npm" ? "npm.cmd" : `${program}.exe`,
       args,
       { timeout: 15_000, windowsHide: true, encoding: "utf8", shell: program === "npm" },
       (err, stdout) => resolve(err ? undefined : stdout),
@@ -188,35 +193,53 @@ const winFolder = (d: string) =>
 /**
  * Beta.30, Windows: the two reasons the first `atticus` after `npm install -g` isn't found or
  * won't start. PowerShell picks npm's atticus.ps1, which its execution policy may block
- * (atticus.cmd needs none); and npm's global folder may not be on PATH. A program that didn't
- * answer says nothing: the offline bundle needs neither.
+ * (atticus.cmd needs none); and npm's global folder may not be on PATH. The policy is asked of
+ * Windows PowerShell and of PowerShell 7 where it is installed (each has its own), and said
+ * only where an atticus.ps1 is installed: on PATH, or in npm's global folder. A program that
+ * didn't answer says nothing: the offline bundle has no .ps1 and needs neither.
  */
 async function windowsShellChecks(
   env: NodeJS.ProcessEnv,
   ask: NonNullable<DoctorDeps["commandOutput"]>,
+  fileExists: (file: string) => boolean,
 ): Promise<DoctorCheck[]> {
   const out: DoctorCheck[] = [];
   const quiet = (p: Promise<string | undefined>) => p.catch(() => undefined);
-  const [policyOut, prefixOut] = await Promise.all([
-    quiet(ask("powershell", ["-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"])),
+  const POLICY = ["-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"];
+  const [policyOut, pwshOut, prefixOut] = await Promise.all([
+    quiet(ask("powershell", POLICY)),
+    quiet(ask("pwsh", POLICY)),
     quiet(ask("npm", ["config", "get", "prefix"])),
   ]);
-  const policy = (policyOut ?? "").trim().toLowerCase();
-  if (policy in POLICY_RUNS) {
-    const runs = POLICY_RUNS[policy]!;
+  const prefix = (prefixOut ?? "").trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+  const pathDirs = (env.PATH ?? env.Path ?? "").split(";");
+  const shim = [...pathDirs, prefix]
+    .map((d) => d.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean)
+    .some((d) => fileExists(win32.join(d, "atticus.ps1")));
+  const shells = [
+    { name: "Windows PowerShell", policy: (policyOut ?? "").trim().toLowerCase() },
+    { name: "PowerShell 7", policy: (pwshOut ?? "").trim().toLowerCase() },
+  ].filter((x) => x.policy in POLICY_RUNS);
+  if (shim && shells.length) {
+    const blocked = shells.filter((x) => !POLICY_RUNS[x.policy]);
+    const same = shells.every((x) => x.policy === shells[0]!.policy);
+    const is = same
+      ? `PowerShell's execution policy is ${POLICY_NAME[shells[0]!.policy]}`
+      : `PowerShell's execution policy is ${shells.map((x) => `${POLICY_NAME[x.policy]} in ${x.name}`).join(" and ")}`;
+    const who = same ? "it" : blocked.map((x) => x.name).join(" and ");
     out.push({
       id: "powershell-policy",
       label: "PowerShell scripts (Windows)",
-      status: runs ? "ok" : "warn",
-      detail: runs
-        ? `PowerShell's execution policy is ${POLICY_NAME[policy]}: it runs atticus.ps1`
-        : `PowerShell's execution policy is ${POLICY_NAME[policy]}: it won't run atticus.ps1, the script npm installs, so atticus in PowerShell fails with "running scripts is disabled on this system"`,
-      fix: "In PowerShell, run atticus.cmd instead of atticus (it needs no policy; Command Prompt and Git Bash run it already), or allow local scripts for your user: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned. If your organisation sets the policy, atticus.cmd is the way.",
+      status: blocked.length ? "warn" : "ok",
+      detail: blocked.length
+        ? `${is}: ${who} won't run atticus.ps1, the script npm installs, so atticus ${same ? "in PowerShell" : "there"} fails with "running scripts is disabled on this system"`
+        : `${is}: ${same ? "it runs" : "both run"} atticus.ps1`,
+      fix: "In PowerShell, run atticus.cmd instead of atticus (it needs no policy; Command Prompt and Git Bash run it already), or allow local scripts for your user, in the PowerShell that is blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned. If your organisation sets the policy, atticus.cmd is the way.",
     });
   }
-  const prefix = (prefixOut ?? "").trim().split(/\r?\n/).at(-1)?.trim() ?? "";
   if (prefix) {
-    const dirs = (env.PATH ?? env.Path ?? "").split(";").map(winFolder);
+    const dirs = pathDirs.map(winFolder);
     const on = dirs.includes(winFolder(prefix));
     out.push({
       id: "npm-path",
@@ -353,7 +376,11 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   const openspecSoon = openspecVersion();
   const windowsSoon =
     platform === "win32"
-      ? windowsShellChecks(env, deps.commandOutput ?? defaultCommandOutput)
+      ? windowsShellChecks(
+          env,
+          deps.commandOutput ?? defaultCommandOutput,
+          deps.fileExists ?? existsSync,
+        )
       : undefined;
   windowsSoon?.catch(() => undefined);
   const storesSoon = (deps.openspecStores ?? (() => openspecHasStores()))().catch(() => false);

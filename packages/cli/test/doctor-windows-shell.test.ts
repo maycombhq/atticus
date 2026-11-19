@@ -17,9 +17,17 @@ let root: string;
 const NPM = "C:\\Users\\pat\\AppData\\Roaming\\npm";
 
 const machine = (
-  o: Partial<DoctorDeps> & { policy?: string | undefined; prefix?: string | undefined },
+  o: Partial<DoctorDeps> & {
+    policy?: string | undefined;
+    prefix?: string | undefined;
+    /** PowerShell 7's policy; not installed unless given. */
+    pwsh?: string;
+    /** Where npm's atticus.ps1 is; in npm's global folder unless given. */
+    shims?: string[];
+  },
   asked: string[] = [],
 ): DoctorDeps => ({
+  fileExists: (f) => (o.shims ?? [`${NPM}\\atticus.ps1`]).includes(f),
   env: { PATH: `C:\\Windows\\system32;C:\\Program Files\\nodejs;${NPM}` },
   platform: "win32",
   nodeVersion: "22.13.1",
@@ -37,6 +45,7 @@ const machine = (
   commandOutput: async (program, args) => {
     asked.push([program, ...args].join(" "));
     if (program === "powershell") return "policy" in o ? o.policy : "RemoteSigned\r\n";
+    if (program === "pwsh") return o.pwsh;
     if (program === "npm") return "prefix" in o ? o.prefix : `${NPM}\r\n`;
     return undefined;
   },
@@ -68,6 +77,7 @@ describe("atticus doctor on Windows: PowerShell and npm's global folder", () => 
     });
     expect(asked).toEqual([
       "powershell -NoProfile -NonInteractive -Command Get-ExecutionPolicy",
+      "pwsh -NoProfile -NonInteractive -Command Get-ExecutionPolicy",
       "npm config get prefix",
     ]);
   });
@@ -134,6 +144,61 @@ describe("atticus doctor on Windows: PowerShell and npm's global folder", () => 
     );
     expect(byId(odd, "powershell-policy")).toBeUndefined();
     expect(byId(odd, "npm-path")).toBeUndefined();
+  });
+
+  it("says nothing of the policy when no atticus.ps1 is installed (the offline bundle has none)", async () => {
+    // Review of beta.30: the policy only matters to npm's .ps1 shim.
+    const none = await doctorChecks(root, machine({ policy: "Restricted\r\n", shims: [] }));
+    expect(byId(none, "powershell-policy")).toBeUndefined();
+    expect(byId(none, "npm-path")?.status).toBe("ok");
+    // The shim counts wherever PATH finds it, and in npm's folder though PATH doesn't have it yet.
+    const elsewhere = await doctorChecks(
+      root,
+      machine({
+        policy: "Restricted\r\n",
+        env: { PATH: "C:\\Windows\\system32;C:\\Tools\\node\\" },
+        shims: ["C:\\Tools\\node\\atticus.ps1"],
+      }),
+    );
+    expect(byId(elsewhere, "powershell-policy")?.status).toBe("warn");
+    const offPath = await doctorChecks(
+      root,
+      machine({ policy: "Restricted\r\n", env: { PATH: "C:\\Windows\\system32" } }),
+    );
+    expect(byId(offPath, "powershell-policy")?.status).toBe("warn");
+  });
+
+  it("reads PowerShell 7's policy too, and names the one that is blocked", async () => {
+    const both = byId(
+      await doctorChecks(root, machine({ policy: "Restricted\r\n", pwsh: "RemoteSigned\n" })),
+      "powershell-policy",
+    )!;
+    expect(both.status).toBe("warn");
+    expect(both.detail).toBe(
+      "PowerShell's execution policy is Restricted in Windows PowerShell and RemoteSigned in PowerShell 7: Windows PowerShell won't run atticus.ps1, the script npm installs, so atticus there fails with \"running scripts is disabled on this system\"",
+    );
+    const seven = byId(
+      await doctorChecks(root, machine({ policy: "RemoteSigned\r\n", pwsh: "AllSigned\n" })),
+      "powershell-policy",
+    )!;
+    expect(seven.status).toBe("warn");
+    expect(seven.detail).toContain("PowerShell 7 won't run atticus.ps1");
+    expect(seven.fix).toContain("in the PowerShell that is blocked");
+    const fine = byId(
+      await doctorChecks(root, machine({ policy: "RemoteSigned\r\n", pwsh: "Unrestricted\n" })),
+      "powershell-policy",
+    )!;
+    expect(fine).toMatchObject({
+      status: "ok",
+      detail:
+        "PowerShell's execution policy is RemoteSigned in Windows PowerShell and Unrestricted in PowerShell 7: both run atticus.ps1",
+    });
+    // Only PowerShell 7 answered.
+    const only = byId(
+      await doctorChecks(root, machine({ policy: undefined, pwsh: "Restricted\n" })),
+      "powershell-policy",
+    )!;
+    expect(only.detail).toMatch(/^PowerShell's execution policy is Restricted: it won't run/);
   });
 
   it("asks neither anywhere but Windows", async () => {
