@@ -1132,7 +1132,7 @@ export const COPY = {
    * there today: a page, a build, or a command to copy.
    */
   waysOn: {
-    installCommand: "npm i -g @maycombhq/atticus@beta",
+    installCommand: NEWER_ATTICUS_COMMAND,
     copyInstall: "Copy the install command",
     copyInstallLabel: (cmd: string) => `Copy the install command: ${cmd}`,
     supportCommand: "atticus support bundle",
