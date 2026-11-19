@@ -50,7 +50,7 @@ describe("Connect against a box with no spec and no loose call", () => {
     const out = render(view());
     expect(out).toContain(C.noApis["no-spec"]!("Harbor Audit"));
     expect(out).toContain(C.noLooseNoApis("forge-ledger (2)", "Harbor Audit"));
-    expect(out).not.toContain(C.noLoose("forge-ledger (2)"));
+    expect(out).not.toContain(C.moveTo("Harbor Audit"));
     expect(out).not.toContain("Move a call here");
   });
 
@@ -100,8 +100,8 @@ describe("Connect with something to pair", () => {
   it("holds the write back with the reason while nothing is ticked, and never counts zero pairs", () => {
     const out = render(view({ apis, noApis: undefined }));
     // Every call has an arrow; Harbor Audit has an API to move one to.
-    expect(out).toContain(C.noLoose("forge-ledger (2)"));
-    expect(out).toContain(C.moveTitle(2));
+    expect(out).toContain(C.moveFirst(2, "forge-edge", "forge-ledger (2)", "Harbor Audit"));
+    expect(out).toContain(C.moveTickFirst("Harbor Audit"));
     expect(out).not.toContain("Write 0 pairs");
     expect(out).toContain(C.pickFirst);
     expect(out).toMatch(

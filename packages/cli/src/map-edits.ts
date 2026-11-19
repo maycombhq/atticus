@@ -7,7 +7,7 @@ import {
   DeclareError,
   loadOrgPack,
   orgPackDirOf,
-  type Api,
+  Api,
 } from "@maycombhq/core";
 import { estateRepos, factsSlotPaths, readCatalog } from "@maycombhq/scanner";
 import { HttpError } from "@maycombhq/server";
@@ -62,6 +62,7 @@ export async function checkMapEdits(
   const waits = new Set<string>();
   for (const [edit, e] of edits.entries()) {
     const said: string[] = [];
+    const needs: Api.PairNeedsReasonT[] = [];
     const theirs = new Set<string>();
     if (e.kind !== "add" && !e.delete.interfaces.length)
       said.push(
@@ -103,6 +104,8 @@ export async function checkMapEdits(
           at: new Date(0).toISOString(),
           redundant: "skip",
           already: NONE_PAIRED,
+          // Beta.30 (the review): as Connect to…, a pair over what the line names says why.
+          needReason: true,
         });
         // A lined arrow's redirect pairs the calls the arrow is: each pair's call cites one of
         // the deleted Interfaces' caller lines (a lineless arrow's are the person's pick).
@@ -126,6 +129,8 @@ export async function checkMapEdits(
       } catch (err) {
         if (!(err instanceof HttpError)) throw err;
         said.push(err.detail ?? err.title);
+        const lacks = Api.PairNeedsReason.array().safeParse(err.extra.needsReason);
+        if (lacks.success) needs.push(...lacks.data);
       }
       callers.add(p.from);
       if (p.to.repo && unread(p.to.repo)) waits.add(p.to.repo);
@@ -163,7 +168,12 @@ export async function checkMapEdits(
         for (const r of repos)
           if (/gateway|proxy|apigee/i.test(r.type ?? "") && unread(r.id)) waits.add(r.id);
     }
-    if (said.length) problems.push({ edit, message: said.join(" ") });
+    if (said.length)
+      problems.push({
+        edit,
+        message: said.join(" "),
+        ...(needs.length ? { needsReason: needs } : {}),
+      });
   }
   return {
     problems,

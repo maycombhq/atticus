@@ -54,7 +54,7 @@ import type { Output } from "./commands.js";
 import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
 import { recordUpgraded } from "./propose.js";
 import { refusalEnds } from "./standing.js";
-import { VERSION } from "./version.js";
+import { installCommand, VERSION } from "./version.js";
 
 /**
  * `atticus upgrade` (ADR 0051): bring a metarepo's files up to what this Atticus writes, after
@@ -84,6 +84,8 @@ export interface Migration {
    * stamp doesn't record it and a later upgrade runs it.
    */
   unavailable?(root: string): Promise<boolean>;
+  /** What --check and the upgrade say, in one line, while the step is unavailable and not done. */
+  unavailableWords?(version: string): string;
 }
 
 const rel = (prefix: string, files: string[]) => files.map((f) => `${prefix}/${f}`);
@@ -452,9 +454,18 @@ export interface StarterFile {
   text: string | Uint8Array;
 }
 
-/** The starter files this Atticus is installed with; none when they aren't there. */
-async function installedStarters(): Promise<StarterFile[]> {
-  return starterPersonaFiles().catch(() => []);
+/**
+ * The starter files this Atticus is installed with; none when its starter folder isn't there
+ * (`ENOENT`). Any other failure (a folder that can't be read, say) is thrown, never taken as
+ * "nothing to give". `read` reads the starter (tests give their own).
+ */
+export async function installedStarters(
+  read: () => Promise<StarterFile[]> = starterPersonaFiles,
+): Promise<StarterFile[]> {
+  return read().catch((e: NodeJS.ErrnoException) => {
+    if (e?.code === "ENOENT") return [];
+    throw e;
+  });
 }
 
 /**
@@ -485,6 +496,8 @@ export function starterPersonasStep(
     creates: true,
     pending: async (root) => (await plan(root)).map((f) => f.rel),
     unavailable: async () => (await files()).length === 0,
+    unavailableWords: (version) =>
+      `The starter personas aren't in this install: reinstall Atticus (${installCommand(version)}), then run atticus upgrade again.`,
     async apply(root) {
       const out: string[] = [];
       for (const f of await plan(root)) {
@@ -700,6 +713,11 @@ export interface UpgradeCheck {
   pending: { id: string; summary: string; files: string[] }[];
   /** Round 49: files a step leaves as they are, with why. */
   problems?: string[];
+  /**
+   * ADR 0201: what a step that has nothing to give in this install says (the starter personas
+   * of an install without its starter folder), while the stamp doesn't name the step.
+   */
+  unavailable?: string[];
 }
 
 /**
@@ -772,6 +790,7 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
         m,
         files: await m.pending(root),
         problems: m.problems ? await m.problems(root) : [],
+        unavailable: m.unavailable ? await m.unavailable(root) : false,
       })),
     ),
   ]);
@@ -780,6 +799,12 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
     .filter((x) => x.files.length)
     .map(({ m, files }) => ({ id: m.id, summary: m.summary, files }));
   const problems = found.flatMap((x) => x.problems);
+  // Said only where the step still has something to do here: an org pack, and no stamp of it.
+  const unavailable = (await exists(join(root, ...packRel(root, "pack.yaml").split("/"))))
+    ? found
+        .filter((x) => x.unavailable && !stamp?.migrations.includes(x.m.id))
+        .flatMap((x) => (x.m.unavailableWords ? [x.m.unavailableWords(version)] : []))
+    : [];
   return {
     atticus: version,
     ...(stamp ? { stamp } : {}),
@@ -789,6 +814,7 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
     ...(unread ? { unreadStamp: unread } : {}),
     pending,
     ...(problems.length ? { problems } : {}),
+    ...(unavailable.length ? { unavailable } : {}),
   };
 }
 
@@ -943,6 +969,8 @@ export async function upgradeCommand(
   }
   // Round 49: what a step leaves as it is (a copy of a question, say) is said, each time.
   for (const p of c.problems ?? []) io.err(`Left as it is: ${p}`);
+  // ADR 0201: a step this install can't run is said, never passed over as "Up to date".
+  for (const u of c.unavailable ?? []) io.err(u);
   const store = o.openspecStore ? await openspecStorePlan(root) : undefined;
   if (store?.action === "refused") {
     io.err(store.why!);
@@ -960,7 +988,11 @@ export async function upgradeCommand(
         ),
       );
     else if (!steps) {
-      io.out(`Up to date for Atticus ${version}.`);
+      io.out(
+        c.unavailable?.length
+          ? `Up to date for Atticus ${version}, but for the starter personas.`
+          : `Up to date for Atticus ${version}.`,
+      );
       if (store) io.out(storeLine(store));
     } else {
       io.out(`${steps} upgrade step${steps === 1 ? "" : "s"} to run (atticus upgrade):`);

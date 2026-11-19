@@ -1557,6 +1557,7 @@ export async function applyMapEdits(
             at,
             redundant: "skip",
             already: already.get(boxKey(e.pair)) ?? new Map(),
+            needReason: true,
           });
           for (const x of p.skipped) io.out(`${said}: ${x.said}`);
           const lines = p.corrections.map(correctionLine);

@@ -160,24 +160,34 @@ export function parseRequirements(text: string): ParsedRequirements {
     for (const r of rows) taken.add(r.line);
     if (role() && mine.length) out.roles.push({ role: role(), rows });
   };
-  // The fence that is open, with the line it opened on.
-  let fence: { char: string; length: number; line: number } | undefined;
+  // The fence that is open, with the line it opened on, and how many blockquotes deep it opened.
+  let fence: { char: string; length: number; line: number; depth: number } | undefined;
   // The line an HTML comment opened on, while it is open.
   let comment: number | undefined;
   let table: Table | undefined;
   let afterBlank = false;
   // Each line outside fences, without what HTML comments hold; a quoted table is read as a table.
   const body: (string | undefined)[] = lines.map((raw, i) => {
-    const f = /^(`{3,}|~{3,})(.*)$/.exec(raw.trim());
+    // A fence may be inside a blockquote, at any depth: its lines carry the quote's marks, and it
+    // ends, closed or not, with the quote it opened in: on the first line with fewer marks.
+    const quote = /^ {0,3}(?:> ?)+/.exec(raw)?.[0] ?? "";
+    const inner = raw.slice(quote.length);
+    const depth = quote.split(">").length - 1;
+    if (fence && depth < fence.depth) fence = undefined;
     // Fences as CommonMark has them: three or more of one character, no backtick after a
     // backtick fence's opener; closed by at least as many of the same, and nothing else.
     if (fence) {
-      if (f && f[1]![0] === fence.char && f[1]!.length >= fence.length && !f[2]!.trim())
-        fence = undefined;
+      // Any indent closes one (a fence in a list item is indented with it): a line wrongly
+      // taken as closing only means more of the file is read.
+      const c = /^\s*(`{3,}|~{3,})\s*$/.exec(fence.depth ? inner : raw);
+      if (c && c[1]![0] === fence.char && c[1]!.length >= fence.length) fence = undefined;
       return undefined;
     }
+    // An opener is indented three spaces at most: four or more, or a tab, is indented code, and
+    // taking it as a fence would hide what follows it.
+    const f = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(inner);
     if (comment === undefined && f && !(f[1]![0] === "`" && f[2]!.includes("`"))) {
-      fence = { char: f[1]![0]!, length: f[1]!.length, line: i + 1 };
+      fence = { char: f[1]![0]!, length: f[1]!.length, line: i + 1, depth };
       return undefined;
     }
     const kept: string[] = [];
