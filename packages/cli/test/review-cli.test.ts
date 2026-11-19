@@ -112,7 +112,7 @@ describe("atticus review", () => {
       expect(await reviewCommand(root, file, {}, c.io, { runtime: model(), now: NOW })).toBe(0);
       expect(c.err).toEqual([]);
       expect(c.out).toEqual([
-        `${file}:11: ${NAYSAYER}: Nothing says what the ledger does with a shipment it has booked. [-]`,
+        `${file}:11: ${NAYSAYER}: Nothing says what the ledger does with a shipment it has booked. [requirements.md:11]`,
         `${file}:15: atticus: topic.orders-shipped is listed under Planned, so the map can't check it yet [topic.orders-shipped]`,
         `${file}:16: atticus: Application architect has an open question: "Is the ledger ready?". Answer it (State answered) or accept it (State accepted, with who and why), then run this again. [requirements.open-question]`,
         `${file}:16: atticus: the evidence names forge-nowhere, which is not in the map and not listed under "## Planned". Name an id the map has (atticus query forge-nowhere), or list it under Planned. [requirements.unknown-id]`,
@@ -155,6 +155,95 @@ describe("atticus review", () => {
       await reviewCommand(root, file, { write: true }, twice.io, { runtime: model(), now: NOW });
       expect(twice.out.at(-1)).toBe(`${file} has every row already.`);
       expect(await readFile(file, "utf8")).toBe(text);
+    },
+    T,
+  );
+
+  it(
+    "--write keeps the file's encoding (UTF-16, a UTF-8 BOM) and each line's own ending",
+    async () => {
+      const root = await forgeRoot();
+      const rows = (text: string) =>
+        text.split(/\r\n|\n/).filter((l) => l.endsWith("| - | - | open |"));
+      // UTF-16LE with its byte-order mark, as Windows PowerShell 5 writes it.
+      const u16 = join(root, "u16.md");
+      await writeFile(
+        u16,
+        Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(FILE, "utf16le")]),
+      );
+      await reviewCommand(root, u16, { write: true }, capture().io, { runtime: model(), now: NOW });
+      const b16 = await readFile(u16);
+      expect([...b16.subarray(0, 2)]).toEqual([0xff, 0xfe]);
+      const t16 = b16.subarray(2).toString("utf16le");
+      expect(rows(t16).length).toBeGreaterThan(0);
+      expect(t16.startsWith("# Shipped-orders event\n")).toBe(true);
+      // UTF-8 with a byte-order mark.
+      const bom = join(root, "bom.md");
+      await writeFile(
+        bom,
+        Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(FILE, "utf8")]),
+      );
+      await reviewCommand(root, bom, { write: true }, capture().io, { runtime: model(), now: NOW });
+      const b8 = await readFile(bom);
+      expect([...b8.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+      expect(b8.subarray(3, 5).toString("utf8")).toBe("# ");
+      // Mixed endings: every line Atticus didn't add keeps its own; a new row takes the one before it.
+      const mixed = join(root, "mixed.md");
+      const lines = FILE.split("\n");
+      const text = lines
+        .map((l, i) => (i === lines.length - 1 ? l : l + (i % 2 ? "\r\n" : "\n")))
+        .join("");
+      await writeFile(mixed, text);
+      await reviewCommand(root, mixed, { write: true }, capture().io, {
+        runtime: model(),
+        now: NOW,
+      });
+      const after = await readFile(mixed, "utf8");
+      const withoutNew = after
+        .split(/(?<=\n)/)
+        .filter((l) => !/\| - \| - \| open \|\r?\n$/.test(l) || text.includes(l))
+        .join("");
+      expect(withoutNew).toBe(text);
+    },
+    T,
+  );
+
+  it(
+    "--write is idempotent for a question that holds a bar",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "requirements.md");
+      await writeFile(file, FILE);
+      const barred = () =>
+        new MockRuntime(
+          (req) =>
+            req.agent.id !== NAYSAYER
+              ? "findings: []"
+              : [
+                  "findings:",
+                  `  - rule: persona.${NAYSAYER}`,
+                  "    kind: issue",
+                  "    artifact: requirements.md",
+                  "    locator: { line: 11 }",
+                  '    summary: "Is it ledger | billing that books it?"',
+                  "    why: Two readers.",
+                  "    fix: Say which.",
+                  "    evidence:",
+                  '      - { path: requirements.md, line: 11, quote: "books each shipment" }',
+                  "",
+                ].join("\n"),
+          { now: () => NOW },
+        );
+      await reviewCommand(root, file, { write: true }, capture().io, {
+        runtime: barred(),
+        now: NOW,
+      });
+      const once = await readFile(file, "utf8");
+      expect(once).toContain("| Is it ledger \\| billing that books it? | - |");
+      const twice = capture();
+      await reviewCommand(root, file, { write: true }, twice.io, { runtime: barred(), now: NOW });
+      expect(twice.out.at(-1)).toBe(`${file} has every row already.`);
+      expect(await readFile(file, "utf8")).toBe(once);
     },
     T,
   );

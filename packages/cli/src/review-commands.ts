@@ -91,18 +91,24 @@ const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
 /** The file with each finding not already there added as a row of its role's table. */
 export function withRows(text: string, found: ReviewFinding[]): { text: string; added: number } {
-  const eol = text.includes("\r\n") ? "\r\n" : "\n";
-  const lines = text.split(/\r?\n/);
+  // Each line with its own ending, so a file of mixed endings keeps every one; a new line takes
+  // the ending of the line before it (else the file's first, else LF).
+  const parts = text.split(/(\r\n|\n|\r)/);
+  const lines = parts
+    .filter((_, i) => i % 2 === 0)
+    .map((t, i) => ({ text: t, eol: parts[2 * i + 1] ?? "" }));
   const parsed = parseRequirements(text);
+  const same = (q: string) => q.replace(/\s+/g, " ").trim();
   let added = 0;
   const byRole = new Map<string, ReviewFinding[]>();
   for (const f of found)
     if (f.role) {
       const have = parsed.roles.find((r) => r.role === f.role)?.rows ?? [];
       const mine = byRole.get(f.role) ?? [];
+      // Like with like: a row's cell as the door check reads it (a \| is a bar) and the question.
       if (
-        have.some((r) => r.cells[0] === cell(f.question)) ||
-        mine.some((m) => m.question === f.question)
+        have.some((r) => r.cells[0] === same(f.question)) ||
+        mine.some((m) => same(m.question) === same(f.question))
       )
         continue;
       byRole.set(f.role, [...mine, f]);
@@ -110,9 +116,9 @@ export function withRows(text: string, found: ReviewFinding[]): { text: string; 
   // From the bottom up, so earlier lines keep their numbers.
   const places = [...byRole].map(([role, list]) => {
     const rows = list.map(
-      // A door-check finding's evidence is its code, which no map has: its row cites none.
+      // Evidence is map ids: a door-check code or a naysayer's quote is none.
       (f) =>
-        `| ${cell(f.question)} | ${f.evidence.startsWith("requirements.") ? "-" : cell(f.evidence)} | ${f.who} | - | - | open |`,
+        `| ${cell(f.question)} | ${f.who !== "atticus" || f.evidence.startsWith("requirements.") ? "-" : cell(f.evidence)} | ${f.who} | - | - | open |`,
     );
     added += rows.length;
     const table = parsed.roles.find((r) => r.role === role);
@@ -121,13 +127,43 @@ export function withRows(text: string, found: ReviewFinding[]): { text: string; 
       "| Question | Evidence | Asked by | Answered by | Answer | State |",
       "| --- | --- | --- | --- | --- | --- |",
     ];
-    const heading = lines.findIndex((l) => l.trim() === `## ${role}`);
+    const heading = lines.findIndex((l) => l.text.trim() === `## ${role}`);
     if (heading >= 0) return { at: heading + 1, rows: ["", ...header, ...rows] };
-    const end = lines.length && lines.at(-1) === "" ? lines.length - 1 : lines.length;
+    const end = lines.length && lines.at(-1)!.text === "" ? lines.length - 1 : lines.length;
     return { at: end, rows: ["", `## ${role}`, "", ...header, ...rows] };
   });
-  for (const p of places.sort((a, b) => b.at - a.at)) lines.splice(p.at, 0, ...p.rows);
-  return { text: lines.join(eol), added };
+  const first = lines.find((l) => l.eol)?.eol ?? "\n";
+  for (const p of places.sort((a, b) => b.at - a.at)) {
+    const before = lines[p.at - 1];
+    const eol = before?.eol || first;
+    // Appending after a last line with no ending: it gets one, and the new last line has none.
+    const last = p.at === lines.length && before && !before.eol;
+    if (last) before.eol = eol;
+    lines.splice(
+      p.at,
+      0,
+      ...p.rows.map((t, k) => ({ text: t, eol: last && k === p.rows.length - 1 ? "" : eol })),
+    );
+  }
+  return { text: lines.map((l) => l.text + l.eol).join(""), added };
+}
+
+/** The file's encoding, from its byte-order mark, so a write gives back what was read. */
+const encodingOf = (b: Uint8Array) =>
+  b[0] === 0xff && b[1] === 0xfe
+    ? "utf-16le"
+    : b[0] === 0xfe && b[1] === 0xff
+      ? "utf-16be"
+      : b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf
+        ? "utf-8-bom"
+        : "utf-8";
+
+function encode(text: string, encoding: ReturnType<typeof encodingOf>): Uint8Array {
+  if (encoding === "utf-8") return Buffer.from(text, "utf8");
+  if (encoding === "utf-8-bom")
+    return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]);
+  const le = Buffer.from(`\ufeff${text}`, "utf16le");
+  return encoding === "utf-16le" ? le : le.swap16();
 }
 
 export async function reviewCommand(
@@ -151,8 +187,11 @@ export async function reviewCommand(
   const file = change ? join(changeFolder(root, change.id), REQUIREMENTS_FILE) : target;
   const shown = change ? `${change.id}/${REQUIREMENTS_FILE}` : target;
   let text: string;
+  let encoding: ReturnType<typeof encodingOf>;
   try {
-    text = decodeRequirements(await readFile(file));
+    const bytes = await readFile(file);
+    encoding = encodingOf(bytes);
+    text = decodeRequirements(bytes);
   } catch (e) {
     io.err(REVIEW_WORDS.unreadable(shown, (e as Error).message.split("\n")[0]!));
     return 1;
@@ -222,7 +261,7 @@ export async function reviewCommand(
           line: q.line,
           who: q.persona,
           question: q.question,
-          evidence: "-",
+          evidence: q.evidence,
           role: mine.find((p) => p.name === q.persona)!.owns!,
         });
     }
@@ -232,7 +271,7 @@ export async function reviewCommand(
   if (o.write) {
     const w = withRows(text, found);
     wrote = w.added;
-    if (w.added) await writeFileAtomic(file, w.text);
+    if (w.added) await writeFileAtomic(file, encode(w.text, encoding));
   }
   if (o.json) {
     io.out(
