@@ -5,6 +5,8 @@ import { dirname, join, relative } from "node:path";
 import {
   catalogDirOf,
   changesRelOf,
+  commitCurrent,
+  currentSignal,
   decisionsRelOf,
   factsDirOf,
   mapDirOf,
@@ -311,7 +313,28 @@ export async function proposePlan(
   };
 }
 
-/** Commits, pushes and opens the PR for exactly the files the person saw. */
+/**
+ * ADR 0202 point 2: what Propose and Bring in say when a Stop is heard before their commit point
+ * (Propose: just before the push; Bring in: just before the working tree is changed).
+ */
+export const PROPOSE_STOPPED = (branch: string) =>
+  `Stopped before the push: nothing left this machine. The commit is on ${branch} here; Propose again pushes it.`;
+/** A Stop heard before the commit was made, or where the branch here couldn't take it. */
+export const PROPOSE_STOPPED_EARLY =
+  "Stopped before the push: nothing left this machine. Nothing was committed.";
+export const BRING_IN_STOPPED = "Stopped before anything was brought in: your copy is as it was.";
+/** The code a step ends with when a Stop ended it (as a process a signal ended: 128 + SIGINT). */
+export const STOPPED_CODE = 130;
+
+class StoppedBeforePush extends Error {}
+
+const filesWord = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
+
+/**
+ * Commits, pushes and opens the PR for exactly the files the person saw. ADR 0202 point 2: it
+ * says each step as it starts (`io.progress`) and checks the job's signal between them; a Stop
+ * heard before the push pushes nothing and opens no PR. From the push on it finishes.
+ */
 export async function proposeForReview(
   root: string,
   o: {
@@ -325,9 +348,19 @@ export async function proposeForReview(
     gitHost?: GitHost;
     publisher?: HandoffPublisher;
     now?: Date;
+    /** The signal a Stop aborts (the job's own when left out). */
+    signal?: AbortSignal;
   },
   io: Output,
 ): Promise<number> {
+  const signal = o.signal ?? currentSignal();
+  /** Stop heard, before the push: said, and the step ends there. */
+  const stoppedEarly = (): boolean => {
+    if (!signal?.aborted) return false;
+    io.err(PROPOSE_STOPPED_EARLY);
+    return true;
+  };
+  io.progress?.("Listing what changed…");
   const plan = await proposePlan(root, o.scope, {
     ...(o.git ? { git: o.git } : {}),
     ...(o.now ? { now: o.now } : {}),
@@ -365,10 +398,38 @@ export async function proposeForReview(
   const base = (await gitHost.getRepo(repo)).defaultBranch;
   const title = o.title?.trim() || plan.title;
   const publisher = o.publisher ?? gitHandoffPublisher();
+  if (stoppedEarly()) return STOPPED_CODE;
+  io.progress?.(`Committing ${filesWord(files.length)} to ${plan.branch}…`);
+  let pushing = false;
+  /** The commit point: from here a Stop is too late, and the push and the PR finish. */
+  const startPush = () => {
+    if (pushing) return;
+    pushing = true;
+    commitCurrent();
+    io.progress?.(`Pushing ${plan.branch}…`);
+  };
   try {
-    await publisher.publish({ root, branch: plan.branch, base, files, message: title, approval });
-    io.out(`Pushed ${files.length} file${files.length === 1 ? "" : "s"} to ${plan.branch}.`);
+    await publisher.publish({
+      root,
+      branch: plan.branch,
+      base,
+      files,
+      message: title,
+      approval,
+      beforePush: ({ onBranch }) => {
+        if (signal?.aborted)
+          throw new StoppedBeforePush(
+            onBranch ? PROPOSE_STOPPED(plan.branch) : PROPOSE_STOPPED_EARLY,
+          );
+        startPush();
+      },
+    });
+    io.out(`Pushed ${filesWord(files.length)} to ${plan.branch}.`);
   } catch (e) {
+    if (e instanceof StoppedBeforePush) {
+      io.err(e.message);
+      return STOPPED_CODE;
+    }
     // Review of beta.23: a branch the Git host doesn't have can't be reviewed: no PR is opened
     // (on a manual host no step is recorded to open one), nothing is marked proposed, and the
     // job fails with the reason, so the person fixes it and proposes again.
@@ -380,6 +441,9 @@ export async function proposeForReview(
   // A host's refusal (an open PR from this branch, a branch it can't see) is said, with what was
   // already done, never a 500 (review round 35).
   let pr: { number: number; url: string };
+  // A publisher that never said it was about to push has pushed: the same point, late.
+  startPush();
+  io.progress?.("Opening the pull request…");
   try {
     pr = await gitHost.createPullRequest(
       {
@@ -503,11 +567,19 @@ export async function setUpstream(
 export async function bringInMerged(
   root: string,
   io: Output,
-  o: { git?: GitRunner; now?: Date } = {},
+  o: { git?: GitRunner; now?: Date; signal?: AbortSignal } = {},
 ): Promise<number> {
   const git = o.git ?? createGit();
   const run = async (args: string[]) => (await git(args, root)).stdout;
   const first = (e: unknown) => (e as Error).message.split("\n")[0];
+  // ADR 0202 point 2: it says each step, and a Stop heard before the working tree is changed
+  // ends it there, with nothing changed.
+  const signal = o.signal ?? currentSignal();
+  const stopped = (): boolean => {
+    if (!signal?.aborted) return false;
+    io.err(BRING_IN_STOPPED);
+    return true;
+  };
   const up = (
     await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")
   ).trim();
@@ -521,6 +593,8 @@ export async function bringInMerged(
     );
     return 2;
   }
+  if (stopped()) return STOPPED_CODE;
+  io.progress?.(`Fetching ${up}…`);
   try {
     // --prune: a proposal's branch deleted after its merge stops being marked as proposed.
     await run(["fetch", "--quiet", "--prune", up.split("/")[0]!]);
@@ -532,6 +606,7 @@ export async function bringInMerged(
     () => true,
     () => false,
   );
+  if (stopped()) return STOPPED_CODE;
   if (!ancestor) {
     io.err(
       `Your branch has commits ${up} doesn't, so nothing was changed. Push them in a pull request, or ask someone who uses git to bring the two together.`,
@@ -701,6 +776,13 @@ export async function bringInMerged(
   const restoreHeld = async () => {
     for (const [k, text] of held) await writeFile(join(root, k), text, "utf8");
   };
+  // The commit point: nothing of the working tree has been touched yet.
+  if (stopped()) return STOPPED_CODE;
+  commitCurrent();
+  const commits = Number(
+    (await run(["rev-list", "--count", `HEAD..${up}`]).catch(() => "")).trim() || "0",
+  );
+  if (commits > 0) io.progress?.(`Bringing in ${commits} commit${commits === 1 ? "" : "s"}…`);
   try {
     for (const k of ownClash) {
       const inHead = await run(["cat-file", "-e", `HEAD:${k}`]).then(
@@ -723,6 +805,7 @@ export async function bringInMerged(
       done.push(t.path);
     }
     await run(["merge", "--ff-only", "--quiet", up]);
+    if (held.size) io.progress?.("Putting your own edits back…");
     await restoreHeld();
   } catch (e) {
     await putBack();

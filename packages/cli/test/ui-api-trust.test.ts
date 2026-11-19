@@ -371,3 +371,73 @@ describe("a live-looking secret in a config file (beta.24)", () => {
     expect(ledger.verify.report?.secrets).toBeUndefined();
   });
 });
+
+/** ADR 0202 point 4: one repo's rejected facts only, every line, for the refusal's link. */
+describe("GET /api/trust?repo=<id>&rejected=1 (ADR 0202 point 4)", () => {
+  const get = async (path: string) => {
+    const r = await fetch(srv.url + path, { headers: { "X-Atticus-Token": srv.token } });
+    return { status: r.status, body: (await r.json()) as unknown };
+  };
+
+  it("returns only that repo's row, its lists holding only the rejected lines", async () => {
+    const r = await get("/api/trust?repo=forge-events&rejected=1");
+    expect(r.status).toBe(200);
+    const v = Api.TrustView.parse(r.body);
+    expect(v.repos.map((x) => x.repo)).toEqual(["forge-events"]);
+    expect(v.repos[0]!.lists!.rejected.map((x) => x.code)).toEqual([
+      "claim-not-on-line",
+      "bad-question",
+    ]);
+    expect(v.repos[0]!.lists!.rejected[0]).toMatchObject({
+      fact: "e-post-entry",
+      file: "src/main/java/forge/ledger/EntryController.java",
+      code: "claim-not-on-line",
+      message: "line 22 doesn't say /accounts/{accountId}/entries",
+    });
+    expect(v.repos[0]!.lists).toMatchObject({ excluded: [], asked: [], unverified: [] });
+    expect(v.answerBoxes).toBeUndefined();
+    expect(v.contracts).toBeUndefined();
+    // The whole view is as it was.
+    const all = Api.TrustView.parse((await get("/api/trust")).body);
+    expect(all.repos.length).toBeGreaterThan(1);
+    expect(all.repos.find((x) => x.repo === "forge-events")!.lists!.excluded).toEqual([
+      "generated/client.ts",
+    ]);
+  });
+
+  it("every line, with no cap", async () => {
+    const one = JSON.stringify({ code: "claim-not-on-line", message: "not there" });
+    const had = await readFile(join(root, "facts/forge-events.rejected.jsonl"), "utf8");
+    await writeFile(
+      join(root, "facts/forge-events.rejected.jsonl"),
+      Array.from({ length: 300 }, () => one).join("\n") + "\n",
+    );
+    try {
+      const v = Api.TrustView.parse((await get("/api/trust?repo=forge-events&rejected=1")).body);
+      expect(v.repos[0]!.lists!.rejected).toHaveLength(300);
+    } finally {
+      await writeFile(join(root, "facts/forge-events.rejected.jsonl"), had);
+    }
+  });
+
+  it("a repo with none rejected: its row, with an empty list", async () => {
+    const v = Api.TrustView.parse((await get("/api/trust?repo=forge-ledger&rejected=1")).body);
+    expect(v.repos.map((x) => x.repo)).toEqual(["forge-ledger"]);
+    expect(v.repos[0]!.lists!.rejected).toEqual([]);
+  });
+
+  it("an id that is no repo is 404; rejected=1 without repo is 400", async () => {
+    const none = await get("/api/trust?repo=forge-nowhere&rejected=1");
+    expect(none.status).toBe(404);
+    expect(Api.Problem.parse(none.body).detail).toContain("forge-nowhere");
+    const bad = await get("/api/trust?rejected=1");
+    expect(bad.status).toBe(400);
+    expect(Api.Problem.parse(bad.body).detail).toContain("repo");
+  });
+
+  it("repo alone gives that repo's row with its lists as they are", async () => {
+    const v = Api.TrustView.parse((await get("/api/trust?repo=forge-events")).body);
+    expect(v.repos.map((x) => x.repo)).toEqual(["forge-events"]);
+    expect(v.repos[0]!.lists!.excluded).toEqual(["generated/client.ts"]);
+  });
+});

@@ -277,6 +277,38 @@ export async function catalogUndoView(root: string, n?: number): Promise<Api.Cat
   };
 }
 
+/**
+ * ADR 0202 point 3: the newest undo copy here, named so a job can tell afterwards whether it took
+ * one itself. Undefined with none.
+ */
+export async function undoMark(root: string): Promise<string | undefined> {
+  const c = (await listUndo(await undoDirOf(root)))[0];
+  return c ? `${c.n}\u0000${c.command}\u0000${c.at}` : undefined;
+}
+
+/**
+ * ADR 0202 point 3: what an error's Undo would take back, when a build can be: what
+ * GET /api/build/undo?n=1 lists (`n`, `files`, the plan's hash, which its confirm sends back) and
+ * that undo copy's command and time. `ofThis` only when `since` is given and the newest copy
+ * isn't the one it marked: the job that failed took it. Undefined with no build to undo.
+ */
+export async function undoWayOf(
+  root: string,
+  since?: { mark: string | undefined },
+): Promise<Api.UndoWayT | undefined> {
+  const v = await catalogUndoView(root, 1);
+  const copy = v.copies[0];
+  if (!v.plan || !copy) return undefined;
+  return {
+    n: 1,
+    files: v.plan.files.length,
+    plan: v.plan.hash,
+    command: copy.command,
+    at: copy.at,
+    ofThis: !!since && (await undoMark(root)) !== since.mark,
+  };
+}
+
 /** The hash of an undo's plan (GET /api/build/undo's `plan.hash`): the builds and the files. */
 export function undoPlanHash(
   plan: Exclude<Awaited<ReturnType<typeof planUndo>>, { problem: string }>,

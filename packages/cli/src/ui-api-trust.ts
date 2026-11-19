@@ -478,19 +478,46 @@ async function refFiles(dir: string): Promise<string[]> {
   return out.sort();
 }
 
+/**
+ * ADR 0202 point 4: the view with only one repo's row (404 for an id that is no repo). With
+ * `rejected`, its lists hold only the rejected lines, every one; the estate's own parts (the
+ * answers' boxes, the contract check's counts) are left out.
+ */
+export function trustOfRepo(all: View, repo: string, rejected: boolean): View {
+  const row = all.repos.find((r) => r.repo === repo);
+  if (!row) throw notFound(`There is no repo ${repo} on Map › Trust.`);
+  if (!rejected) return { ...all, repos: [row] };
+  return {
+    factsDir: all.factsDir,
+    repos: [
+      {
+        ...row,
+        lists: { rejected: row.lists?.rejected ?? [], excluded: [], asked: [], unverified: [] },
+      },
+    ],
+    problems: all.problems,
+  };
+}
+
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
   return (
     r
       // beta.23: kept until a change is heard or a base clone's commit moves (watched-memo.ts).
-      .add("GET", "/api/trust", async () => ({
-        status: 200,
-        body: await keptAnswer(
+      .add("GET", "/api/trust", async ({ query }) => {
+        // ADR 0202 point 4: one repo's row, and with rejected=1 only its rejected facts.
+        const repo = query.get("repo") ?? undefined;
+        const rejected = query.get("rejected") === "1";
+        if (rejected && !repo)
+          throw badRequest("rejected=1 goes with repo: say which repo's rejected facts.");
+        const all = await keptAnswer(
           ctx.root,
           "trust",
           () => trustView(ctx.root),
           () => checkoutsStamp(ctx.root),
-        ),
-      }))
+        );
+        if (repo === undefined) return { status: 200, body: all };
+        return { status: 200, body: trustOfRepo(all, repo, rejected) };
+      })
       // Beta.24 review: put right a box an answer's words made: Ignore, or a real system's name.
       // Local writes in the metarepo, previewed first, for Propose for review.
       .add("POST", "/api/trust/answer-boxes/ignore", ({ body }) => answerBoxRoute(ctx, body, false))

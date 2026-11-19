@@ -201,13 +201,21 @@ export async function readyTasksOf(
     stories: readStoryIndex(files),
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
   });
-  const notes = read
-    .filter((t) => !t.done && t.afterWords)
-    .map(
-      (t) =>
-        `Task ${t.id}'s title ends "${t.afterWords}": no task has ${/[,;]|\sand\s/i.test(t.afterWords!) ? "those ids" : "that id"}, so it is read as part of the title`,
-    );
+  const notes = read.flatMap((t) => afterWordsNote(t) ?? []);
   return notes.length ? { ...plan, notes } : plan;
+}
+
+/**
+ * The plan's note about one task: a not-done task whose title ends in a bracket that starts with
+ * "after" and names no task, so it was read as the title's own words. Undefined otherwise.
+ */
+export function afterWordsNote(t: {
+  id: string;
+  done: boolean;
+  afterWords?: string | undefined;
+}): string | undefined {
+  if (t.done || !t.afterWords) return undefined;
+  return `Task ${t.id}'s title ends "${t.afterWords}": no task has ${/[,;]|\sand\s/i.test(t.afterWords) ? "those ids" : "that id"}, so it is read as part of the title`;
 }
 
 /** One task's outcome in a Run all ready tasks. */

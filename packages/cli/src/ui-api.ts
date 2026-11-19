@@ -72,6 +72,7 @@ import {
   raiseTaskPr,
   readTaskRun,
   saveTaskRun,
+  afterWordsNote,
   readyTasksOf,
   runReadyTasks,
   settleTaskPr,
@@ -489,6 +490,8 @@ async function taskViews(
   const out: Api.TaskT[] = [];
   for (const [i, t] of tasks.entries()) {
     const w = t.done ? undefined : waits.get(t.id);
+    // ADR 0202 point 6: why it isn't ready, whatever holds it, and the plan's note about it.
+    const note = t.done ? undefined : afterWordsNote(t);
     const u = unmerged.get(t.id);
     const decision = await readTaskDecision(root, change, t.id).catch(() => undefined);
     const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
@@ -523,6 +526,8 @@ async function taskViews(
         : {}),
       // Only beside a run: the card reads it to offer Build and raise PR.
       ...(tr ? { repoBuilds: builds.get(t.repo) ?? false } : {}),
+      ...(w && !w.ready && w.why ? { why: w.why } : {}),
+      ...(note ? { note } : {}),
     });
   }
   return out;
@@ -627,6 +632,15 @@ async function artifactPath(
   return files[0]!;
 }
 
+/** ADR 0202 point 3: the page actions whose job builds the catalog (an Undo can follow a failure). */
+const UNDO_AFTER: ReadonlySet<string> = new Set([
+  "apply",
+  "apply-all",
+  "build",
+  "upgrade",
+  "map-edits",
+]);
+
 /** The most files one GET .../artifacts/{artifact}/files gives (3.12.0). */
 export const ARTIFACT_FILES_MAX = 200;
 
@@ -693,8 +707,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   const asJob = (
     what: string,
     work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
-    o: { severalWrites?: { heard: string; stopping: string } } = {},
+    o: { severalWrites?: { heard: string; stopping: string }; for?: Api.JobForT } = {},
   ) => {
+    // ADR 0202 point 3: a job that builds the catalog says, when it fails or is refused, which
+    // build an Undo would take back (its own, when it took an undo copy before it failed).
+    const builds = !!o.for && UNDO_AFTER.has(o.for.action);
     // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
     // while Apply writes facts or Propose commits them. The refusal names the one that runs.
     const busy = ctx.jobs.runningOf("local");
@@ -711,6 +728,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // Its last word keeps that count (a run over 7 repos that stopped after 3 ends as 3 of
         // 7, not 1 of 1); work that counts nothing ends as one step of one, as before.
         let counted: { done: number; total: number } | undefined;
+        const undoOf = builds ? await import("./build-report.js") : undefined;
+        const mark = await undoOf?.undoMark(root).catch(() => undefined);
         const res = await work((done, total, message) => {
           counted = { done, total };
           c.progress(done, total, message);
@@ -735,13 +754,28 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const { appLines } = await import("./handoff-resume.js");
         const lines = appLines(raw);
         const next = res.code === 0 ? undefined : syncNextOf(raw);
+        // Not after a person's Stop: nothing failed, and what it wrote it wrote whole.
+        const undo =
+          res.code !== 0 && !c.cancelled
+            ? await undoOf?.undoWayOf(root, { mark }).catch(() => undefined)
+            : undefined;
         return {
-          result: { ...res.extra, code: res.code, lines, ...(next ? { next } : {}) },
+          result: {
+            ...res.extra,
+            code: res.code,
+            lines,
+            ...(next ? { next } : {}),
+            ...(undo ? { undo } : {}),
+          },
           // Its errors are the lines it said as errors (all its lines when it said none so).
           errors: res.code === 0 ? [] : res.err.length ? appLines(res.err) : lines,
         };
       },
-      { title: what, ...(o.severalWrites ? { severalWrites: o.severalWrites } : {}) },
+      {
+        title: what,
+        ...(o.severalWrites ? { severalWrites: o.severalWrites } : {}),
+        ...(o.for ? { for: o.for } : {}),
+      },
     );
     localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };
@@ -899,46 +933,54 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // The review of beta.27: a confirm is of the list shown, as POST /api/build's. The
         // refusal's plan comes with its counts, and is the latest build's own (no writer since);
         // verify --write works it out again under the lock before it writes.
-        await refusalStillListed(b, (c) => c === `atticus verify ${repo} --write`);
-        return asJob(`Applying to ${repo}`, async () => {
-          const { lastBuildOf } = await import("./build-report.js");
-          const before = JSON.stringify((await lastBuildOf(root)) ?? null);
-          // The hunt of beta.28.1 (S1): the count of facts left out, told by verify itself; its
-          // lines show only the first few.
-          let leftOut = 0;
-          const ran = await run((io) =>
-            verifyCommand(
-              root,
-              repo,
-              {
-                write: true,
-                verbose: false,
-                json: false,
-                onLeftOut: (l) => (leftOut = l.length),
-                ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
-                ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
-                ...(b.plan !== undefined ? { plan: b.plan } : {}),
-              },
-              io,
-            ),
-          );
-          if (ran.code === 0) return ran;
-          // Beta.28.1: written, with rejected facts left out (exit 3): the Apply is done, and its
-          // lines name each fact left out and the file to fix it in.
-          if (ran.code === APPLIED_WITH_LEFT_OUT)
-            return {
-              ...ran,
-              code: 0,
-              // The count the app's Apply says ("Applied, N facts left out"), its lines below it.
-              extra: { leftOut },
-            };
-          // The build this Apply ran refused (a large removal, a hand edit): its listing, which
-          // the app's confirm step shows and confirms with its counts. Only this job's report.
-          const last = await lastBuildOf(root);
-          return last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before
-            ? { ...ran, extra: { refused: last.refused } }
-            : ran;
-        });
+        const { conflictWithUndo } = await import("./ui-api-catalog.js");
+        await conflictWithUndo(root, () =>
+          refusalStillListed(b, (c) => c === `atticus verify ${repo} --write`),
+        );
+        const applyFor = { for: { action: "apply" as const, repo } };
+        return asJob(
+          `Applying to ${repo}`,
+          async () => {
+            const { lastBuildOf } = await import("./build-report.js");
+            const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+            // The hunt of beta.28.1 (S1): the count of facts left out, told by verify itself; its
+            // lines show only the first few.
+            let leftOut = 0;
+            const ran = await run((io) =>
+              verifyCommand(
+                root,
+                repo,
+                {
+                  write: true,
+                  verbose: false,
+                  json: false,
+                  onLeftOut: (l) => (leftOut = l.length),
+                  ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                  ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
+                  ...(b.plan !== undefined ? { plan: b.plan } : {}),
+                },
+                io,
+              ),
+            );
+            if (ran.code === 0) return ran;
+            // Beta.28.1: written, with rejected facts left out (exit 3): the Apply is done, and its
+            // lines name each fact left out and the file to fix it in.
+            if (ran.code === APPLIED_WITH_LEFT_OUT)
+              return {
+                ...ran,
+                code: 0,
+                // The count the app's Apply says ("Applied, N facts left out"), its lines below it.
+                extra: { leftOut },
+              };
+            // The build this Apply ran refused (a large removal, a hand edit): its listing, which
+            // the app's confirm step shows and confirms with its counts. Only this job's report.
+            const last = await lastBuildOf(root);
+            return last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before
+              ? { ...ran, extra: { refused: last.refused } }
+              : ran;
+          },
+          applyFor,
+        );
       })
       // Ninth UX walk: the upgrade steps this metarepo waits on (runtime.yaml at an older schema,
       // say), and atticus upgrade run here as a local job on the person's click. It backs up what
@@ -983,12 +1025,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           throw conflict(`Nothing to upgrade: up to date for Atticus ${c.atticus}.`);
         // Beta.27 review, final round: the job says what the run changed besides the stamp, so
         // the panel never reads it from the GET before the run.
-        return asJob("Upgrading the metarepo", async () => {
-          const ran = await run((io) => upgradeCommand(root, { by: user }, io));
-          const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
-          const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
-          return { ...ran, extra: { upgraded } };
-        });
+        return asJob(
+          "Upgrading the metarepo",
+          async () => {
+            const ran = await run((io) => upgradeCommand(root, { by: user }, io));
+            const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
+            const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
+            return { ...ran, extra: { upgraded } };
+          },
+          { for: { action: "upgrade" } },
+        );
       })
       .add("GET", "/api/propose", async ({ query }) => {
         const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
@@ -1020,25 +1066,34 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // PR (ADR 0183, 0186); the session token alone is 403.
         confirmed("propose", b.scope, b.confirmation);
         const { proposeForReview } = await import("./propose.js");
-        return asJob("Proposing for review", () =>
-          run((io) =>
-            proposeForReview(
-              root,
-              {
-                scope: b.scope,
-                by: user,
-                files: b.files,
-                ...(b.title ? { title: b.title } : {}),
-                ...(b.branch ? { branch: b.branch } : {}),
-              },
-              io,
+        // ADR 0202 point 2: it says each step and hears Stop until just before the push (the
+        // job's signal, which proposeForReview reads); from the push on it finishes.
+        return asJob(
+          "Proposing for review",
+          () =>
+            run((io) =>
+              proposeForReview(
+                root,
+                {
+                  scope: b.scope,
+                  by: user,
+                  files: b.files,
+                  ...(b.title ? { title: b.title } : {}),
+                  ...(b.branch ? { branch: b.branch } : {}),
+                  ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+                },
+                io,
+              ),
             ),
-          ),
+          { for: { action: "propose" } },
         );
       })
       .add("POST", "/api/propose/bring-in", async () => {
         const { bringInMerged } = await import("./propose.js");
-        return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)));
+        // ADR 0202 point 2: Stop is heard until just before the working tree is changed.
+        return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)), {
+          for: { action: "bring-in" },
+        });
       })
       // App-only audit (3.3.0): Set the upstream, when Bring in found the branch follows none and
       // the remote has the same branch: a local setting of this copy (nothing is sent).
@@ -2084,7 +2139,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               errors: res.code === 2 ? res.err : [],
             };
           },
-          { title: scanTitle, log: { ids: b.repos ?? [] } },
+          { title: scanTitle, log: { ids: b.repos ?? [] }, for: { action: "scan" } },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -2116,6 +2171,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           {
             title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones",
             log: { ids: b.repos ?? [] },
+            for: { action: "sync" },
           },
         );
         return { status: 202, body: { jobId: job.id } };

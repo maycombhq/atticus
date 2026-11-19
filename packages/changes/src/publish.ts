@@ -17,6 +17,12 @@ export interface HandoffPublisher {
     files: string[];
     message: string;
     approval: Approval;
+    /**
+     * ADR 0202 point 2: called once the commit is made and before anything is pushed, with the
+     * commit and whether the branch here holds it. If it throws, nothing is pushed and the
+     * publish fails with what it threw (a Stop before the push).
+     */
+    beforePush?: (at: { commit: string; onBranch: boolean }) => void | Promise<void>;
   }): Promise<{
     commit: string;
     /** Review round 48: false when the branch on the remote was already at `commit`. */
@@ -57,6 +63,7 @@ export function gitHandoffPublisher(
     base,
     files,
     message,
+    beforePush,
   }: Parameters<HandoffPublisher["publish"]>[0]): ReturnType<HandoffPublisher["publish"]> {
     {
       const git = createGit({ env });
@@ -89,11 +96,30 @@ export function gitHandoffPublisher(
         if (files.length > 0) await staged(["add", "-f", "--", ...files], root);
         const tree = (await staged(["write-tree"], root)).stdout.trim();
         const startTree = await out(["rev-parse", `${start}^{tree}`]);
+        // ADR 0202: a commit an earlier publish made here and never pushed (stopped before its
+        // push) is the one that goes up, when it is this start's and these files' still.
+        const ref = `refs/heads/${branch}`;
+        const kept = await tryOut(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+        const keptIsThis =
+          !!kept &&
+          kept !== start &&
+          (await tryOut(["rev-parse", "--verify", "--quiet", `${kept}^{tree}`])) === tree &&
+          (await tryOut(["rev-parse", "--verify", "--quiet", `${kept}^`])) === start;
         const commit =
-          tree === startTree ? start : await out(["commit-tree", tree, "-p", start, "-m", message]);
+          tree === startTree
+            ? start
+            : keptIsThis
+              ? kept
+              : await out(["commit-tree", tree, "-p", start, "-m", message]);
         // App-only audit: the local branch holds the commit before the push, so a push that
         // fails leaves it here for Push again (or the person) to send.
         await keepLocalBranch(out, tryOut, branch, start, commit);
+        if (beforePush)
+          await beforePush({
+            commit,
+            onBranch:
+              (await tryOut(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])) === commit,
+          });
         // The commit goes up by itself: never forced, so the remote's branch only moves on.
         await out(["push", "--quiet", remote, `${commit}:refs/heads/${branch}`]);
         return { commit, changed: commit !== onRemote };
