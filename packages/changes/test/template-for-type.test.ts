@@ -135,4 +135,55 @@ describe("the brief a new change starts from, by its type", () => {
     }
     expect(pickTemplate(BUILT_IN_TEMPLATES, "something-new")!.id).toBe("feature");
   });
+
+  it("doesn't take a built-in brief the organisation rewrote as its brief for the whole type (review of beta.30)", async () => {
+    // An org pack that only rewrites data-fix.md or decommission.md has changed those briefs,
+    // not said that every bug fix is a data fix or every integration a retirement.
+    const root = await forgeMetarepo();
+    try {
+      const dir = join(root, "org-pack/process/change-templates");
+      const own = (id: string, changeType: string) =>
+        writeFile(
+          join(dir, `${id}.md`),
+          `---\nid: ${id}\nname: Forge ${id}\nchangeType: ${changeType}\ndescription: Forge's own.\n---\n# {{title}}\n\n## Forge's own\n`,
+        );
+      await own("data-fix", "bug-fix");
+      await own("vulnerability-fix", "bug-fix");
+      await own("decommission", "integration");
+      let t = (await loadChangeContext(root)).templates;
+      expect(t.find((x) => x.id === "data-fix")!.source).toBe(
+        "process/change-templates/data-fix.md",
+      );
+      expect(pickTemplate(t, "bug-fix")!.id).toBe("defect-fix");
+      expect(pickTemplate(t, "integration")!.id).toBe("integration");
+      // Asked for, the organisation's rewrite is what is used.
+      expect(pickTemplate(t, "bug-fix", "data-fix")!.source).toBe(
+        "process/change-templates/data-fix.md",
+      );
+      // The usual brief rewritten is the organisation's, and is the type's.
+      await own("defect-fix", "bug-fix");
+      await own("integration", "integration");
+      t = (await loadChangeContext(root)).templates;
+      expect(pickTemplate(t, "bug-fix")).toMatchObject({
+        id: "defect-fix",
+        source: "process/change-templates/defect-fix.md",
+      });
+      expect(pickTemplate(t, "integration")!.source).toBe(
+        "process/change-templates/integration.md",
+      );
+      // A brief of the organisation's own name for the type comes before a rewritten built-in
+      // that isn't the usual one, and after the usual one it rewrote.
+      await own("bug-triage", "bug-fix");
+      t = (await loadChangeContext(root)).templates;
+      expect(pickTemplate(t, "bug-fix")!.id).toBe("defect-fix");
+      const noUsual = t.filter((x) => x.id !== "defect-fix");
+      expect(pickTemplate(noUsual, "bug-fix")!.id).toBe("bug-triage");
+      // A built-in id given another type by the organisation counts for that type as its own.
+      await own("tech-debt", "bug-fix");
+      t = (await loadChangeContext(root)).templates;
+      expect(pickTemplate(t, "tech-debt")!.id).toBe("tech-debt");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

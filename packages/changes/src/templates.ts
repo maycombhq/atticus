@@ -249,9 +249,13 @@ const USUAL_TEMPLATE: Readonly<Record<string, string>> = {
 /**
  * The template for a new change: the one asked for; else the organisation's own for the type
  * (hard rule 7: an org pack's template wins over a built-in one, whatever it is named); else the
- * built-in for the type; else the feature template. Among the organisation's, and then among the
- * built-in ones: the one with the type's id, then the type's usual one, then the first whose
- * changeType is the type.
+ * type's usual brief; else the first of the type; else the feature template.
+ *
+ * The organisation's own for a type, in order: the one with the type's id, the one that rewrites
+ * the type's usual brief, then the first whose changeType is the type. A built-in brief the
+ * organisation only rewrote (the same id for the same type: its data-fix.md, its
+ * decommission.md) isn't that last one: rewriting the data-fix brief doesn't say every bug fix
+ * is a data fix. It keeps the built-in's place, and is what `--template` gives.
  */
 export function pickTemplate(
   templates: readonly ChangeTemplate[],
@@ -259,13 +263,17 @@ export function pickTemplate(
   wanted?: string,
 ): ChangeTemplate | undefined {
   if (wanted) return templates.find((t) => t.id === wanted);
-  const forType = (from: readonly ChangeTemplate[]) =>
-    from.find((t) => t.id === type) ??
-    from.find((t) => t.id === USUAL_TEMPLATE[type] && t.changeType === type) ??
-    from.find((t) => t.changeType === type);
+  const usual = (t: ChangeTemplate) => t.id === USUAL_TEMPLATE[type] && t.changeType === type;
+  const org = templates.filter((t) => t.source !== "built-in");
+  const rewrite = (t: ChangeTemplate) =>
+    BUILT_IN_TEMPLATES.some((b) => b.id === t.id && b.changeType === t.changeType);
   return (
-    forType(templates.filter((t) => t.source !== "built-in")) ??
-    forType(templates) ??
+    org.find((t) => t.id === type) ??
+    org.find(usual) ??
+    org.find((t) => t.changeType === type && !rewrite(t)) ??
+    templates.find((t) => t.id === type) ??
+    templates.find(usual) ??
+    templates.find((t) => t.changeType === type) ??
     templates.find((t) => t.id === "feature")
   );
 }
