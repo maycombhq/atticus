@@ -71,6 +71,49 @@ interface Asked {
   error?: string;
   /** ADR 0191: what the organisation's knowledge says to the question, each cited. */
   knowledge?: Api.KnowledgeAnswerViewT;
+  /** Beta.30: a topic's other Endpoints, when it has one per consumer (read from facts). */
+  also?: string[];
+  /** Who receives a topic: its receivers at every one of its Endpoints, apart from what lies past. */
+  receivers?: AskedReceivers;
+}
+
+/** GET /api/ask's `receivers` (`receiversOfAll`): each record once. */
+export interface AskedReceivers {
+  root: string;
+  roots?: string[];
+  receivers: { kind: string; id: string; reason: string }[];
+  further: { kind: string; id: string; reason: string }[];
+}
+
+/**
+ * Beta.30: who receives a topic with consumers in several repos, on the Ask panel itself (one
+ * Impact page walks one record): each receiver with why, and what breaks at each of the topic's
+ * Endpoints. The words are the answer's own; the link's are the Impact page's.
+ */
+export function AskReceivers({ r }: { r: AskedReceivers }) {
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <ul className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
+        {r.receivers.map((x) => (
+          <li key={`${x.kind}|${x.id}`}>
+            <span className="mono">{x.id}</span> <span className="muted">{x.reason}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+        {(r.roots ?? [r.root]).map((id) => (
+          <a
+            key={id}
+            href={`#/impact?q=${encodeURIComponent(id)}`}
+            className="btn"
+            style={{ textDecoration: "none" }}
+          >
+            {T.whatBreaksIfThis}: <span className="mono">{id}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Detail({ row }: { row: Row }) {
@@ -182,6 +225,9 @@ export function Explore({ hash }: { hash: string }) {
   useEffect(() => {
     if (asked.state !== "ready") return;
     if (asked.data.action === "impact" && asked.data.id) {
+      // A topic received at several Endpoints is answered here (AskReceivers): one Impact page
+      // walks one of them.
+      if (asked.data.receivers && asked.data.also?.length) return;
       location.hash = `#/impact?q=${encodeURIComponent(asked.data.id)}`;
       return;
     }
@@ -216,6 +262,9 @@ export function Explore({ hash }: { hash: string }) {
             {(a) => (
               <div className="stack" style={{ gap: 6 }}>
                 <p style={{ margin: 0 }}>{a.explanation}</p>
+                {a.action === "impact" && a.receivers && a.also?.length ? (
+                  <AskReceivers r={a.receivers} />
+                ) : null}
                 {a.action === "owner" && (
                   <p style={{ margin: 0, fontSize: 18 }}>
                     {a.owner ? (

@@ -336,6 +336,45 @@ export function receiversOf(
 }
 
 /**
+ * Who receives any of several roots (beta.30: a topic read from facts is one Endpoint per
+ * consumer): each root's receivers and what lies past them, each record once, the first root's
+ * first. One root is `receiversOf` as it is; several add `roots`. What `atticus ask` and the
+ * app's Ask (GET /api/ask) both answer.
+ */
+export function receiversOfAll(
+  ix: CatalogIndex,
+  roots: string[],
+  depth = 4,
+  owners: Parameters<typeof impact>[3] = {},
+): NonNullable<ReturnType<typeof receiversOf>> & { roots?: string[] } {
+  const each = roots.flatMap((x) => receiversOf(ix, x, depth, owners) ?? []);
+  if (!each.length) return { root: roots[0]!, receivers: [], affected: [], further: [], gaps: [] };
+  if (each.length === 1 || roots.length === 1) return each[0]!;
+  const once = <T extends { kind: string; id: string }>(xs: T[], skip = new Set<string>()) => {
+    const seen = new Set(skip);
+    return xs.filter((a) => !seen.has(`${a.kind}|${a.id}`) && seen.add(`${a.kind}|${a.id}`));
+  };
+  const receivers = once(each.flatMap((r) => r.receivers));
+  const not = new Set([
+    ...receivers.map((a) => `${a.kind}|${a.id}`),
+    ...roots.map((x) => `Endpoint|${x}`),
+  ]);
+  return {
+    root: each[0]!.root,
+    roots,
+    receivers,
+    affected: once(each.flatMap((r) => r.affected)),
+    further: once(
+      each.flatMap((r) => r.further),
+      not,
+    ),
+    gaps: [
+      ...new Map(each.flatMap((r) => r.gaps).map((g) => [`${g.record}|${g.question}`, g])).values(),
+    ],
+  };
+}
+
+/**
  * What a word names in the map when no record has it as its id: the one Endpoint whose path or
  * topic is exactly it (the lookup the door check uses, ADR 0201 addendum), or the ids of the
  * several that have it. Undefined when none has.

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { startServer } from "@maycombhq/server";
 import { main } from "../src/main.js";
 import { seedForgeField, type ForgeField } from "./forge-field.js";
 
@@ -383,5 +384,45 @@ describe("atticus ask on the field-shaped estate", () => {
       ).toBe(false);
     const pub = await ask(`who publishes to the topic ${t.name}?`);
     expect(pub.out).toContain(`${t.publisher} →`);
+  }, 120_000);
+
+  it("the app's Ask (GET /api/ask) answers the same: both receivers, apart from what lies past them, and the publisher", async () => {
+    const t = e.topic!;
+    const srv = await startServer({ root: e.root, port: 0 });
+    try {
+      const get = async (q: string) => {
+        const r = await fetch(`${srv.url}/api/ask?q=${encodeURIComponent(q)}`, {
+          headers: { "X-Atticus-Token": srv.token },
+        });
+        expect(r.status).toBe(200);
+        return (await r.json()) as Record<string, unknown>;
+      };
+      type Walk = { kind: string; id: string }[];
+      const a = (await get(`who consumes the topic ${t.name}?`)) as {
+        action: string;
+        also: string[];
+        receivers: { roots: string[]; receivers: Walk; further: Walk };
+      };
+      expect(a.action).toBe("impact");
+      expect(a.also).toHaveLength(1);
+      expect(a.receivers.roots).toHaveLength(2);
+      expect(
+        a.receivers.receivers
+          .filter((x) => x.kind === "Component")
+          .map((x) => x.id)
+          .sort(),
+      ).toEqual([...t.listeners].sort());
+      for (const l of t.listeners)
+        expect(
+          a.receivers.further.some((x) => x.kind === "Component" && x.id === l),
+          l,
+        ).toBe(false);
+      const p = (await get(`who publishes to the topic ${t.name}?`)) as {
+        result: { rows: { name: string }[] };
+      };
+      expect(p.result.rows.some((r) => r.name.startsWith(`${t.publisher} →`))).toBe(true);
+    } finally {
+      await srv.close();
+    }
   }, 120_000);
 });

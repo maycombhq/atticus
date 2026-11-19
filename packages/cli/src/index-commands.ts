@@ -3,7 +3,7 @@ import {
   mapIdOf,
   openIndex,
   QueryError,
-  receiversOf,
+  receiversOfAll,
   runContextTool,
   askLookup,
   mapFault,
@@ -203,43 +203,6 @@ const impactRows = (affected: Affected[]) =>
     ["KIND", "ID", "OWNER", "WHY"],
     affected.map((a) => [a.kind, a.id, a.owner ?? NO_OWNER, a.reason]),
   );
-
-/**
- * Who receives any of several roots (beta.30: a topic read from facts is one Endpoint per
- * consumer): each root's receivers and what lies past them, each record once, the first root's
- * first. One root is `receiversOf` as it is; several add `roots`.
- */
-function receiversOfAll(
-  ix: Parameters<typeof receiversOf>[0],
-  roots: string[],
-  depth: number,
-  owners: Parameters<typeof receiversOf>[3],
-) {
-  const each = roots.flatMap((x) => receiversOf(ix, x, depth, owners) ?? []);
-  if (each.length === 1 || roots.length === 1) return each[0]!;
-  const once = <T extends { kind: string; id: string }>(xs: T[], skip = new Set<string>()) => {
-    const seen = new Set(skip);
-    return xs.filter((a) => !seen.has(`${a.kind}|${a.id}`) && seen.add(`${a.kind}|${a.id}`));
-  };
-  const receivers = once(each.flatMap((r) => r.receivers));
-  const not = new Set([
-    ...receivers.map((a) => `${a.kind}|${a.id}`),
-    ...roots.map((x) => `Endpoint|${x}`),
-  ]);
-  return {
-    root: each[0]!.root,
-    roots,
-    receivers,
-    affected: once(each.flatMap((r) => r.affected)),
-    further: once(
-      each.flatMap((r) => r.further),
-      not,
-    ),
-    gaps: [
-      ...new Map(each.flatMap((r) => r.gaps).map((g) => [`${g.record}|${g.question}`, g])).values(),
-    ],
-  };
-}
 
 /**
  * atticus impact <id>: what a change to the record reaches. Exit 1 when the id isn't in the
