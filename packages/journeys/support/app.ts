@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
@@ -632,8 +632,19 @@ export async function forgeFieldMetarepo(): Promise<string> {
   const info = fieldInfo();
   const root = await mkdtemp(join(tmpdir(), "atticus-journey-field-"));
   await cp(join(FIELD, "metarepo"), root, { recursive: true });
+  // The stamp names the Atticus that wrote the fixture: the one under test upgraded it, so a
+  // release since doesn't make every page say to upgrade.
+  const version = /\d+\.\d+\.\d+\S*/.exec(
+    spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).stdout,
+  )?.[0];
+  if (!version) throw new Error("atticus --version named no version.");
+  const stamp = join(root, ".atticus", "metarepo.yaml");
+  writeFileSync(
+    stamp,
+    readFileSync(stamp, "utf8").replace(/^atticus: .*$/m, `atticus: ${version}`),
+  );
   // Each clone at its one commit, made the same on every machine (packages/cli/test/forge-field.ts
-  // `commitClone`): its facts cite that commit.
+  // `commitClone`): its facts cite that commit. Hermetic: no user or system git config is read.
   const env = {
     ...process.env,
     GIT_AUTHOR_NAME: "Forge",
@@ -642,12 +653,14 @@ export async function forgeFieldMetarepo(): Promise<string> {
     GIT_COMMITTER_EMAIL: "forge@example.com",
     GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
     GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: "1",
   };
   for (const id of info.clones) {
     const clone = join(root, "workspace", id);
     await cp(join(FIELD, "repos", id), clone, { recursive: true });
-    const g = (...a: string[]) =>
-      spawnSync(
+    const g = (...a: string[]) => {
+      const r = spawnSync(
         "git",
         [
           "-c",
@@ -659,10 +672,14 @@ export async function forgeFieldMetarepo(): Promise<string> {
           ...a,
         ],
         { cwd: clone, env, encoding: "utf8" },
-      ).stdout.trim();
-    g("init", "-q", "-b", "main");
+      );
+      if (r.status !== 0)
+        throw new Error(`git ${a.join(" ")} failed in ${id}'s clone: ${r.stderr || r.error}`);
+      return r.stdout.trim();
+    };
+    g("init", "-q", "-b", "main", "--object-format=sha1");
     g("add", "-A");
-    g("commit", "-qm", "Forge fixture");
+    g("commit", "-q", "--no-verify", "-m", "Forge fixture");
     const head = g("rev-parse", "HEAD");
     if (head !== info.commits[id])
       throw new Error(

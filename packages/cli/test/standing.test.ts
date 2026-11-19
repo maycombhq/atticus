@@ -10,7 +10,7 @@ import { main } from "../src/main.js";
 import { EXTENSION_NEEDS, standing, STANDING_WORDS } from "../src/standing.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { VERSION } from "../src/version.js";
-import { seedForgeField } from "./forge-field.js";
+import { seedForgeField, stampWith } from "./forge-field.js";
 
 /**
  * ADR 0202 point 8: `atticus status` says where a metarepo stands in one line, with the one
@@ -480,26 +480,30 @@ describe("atticus status on the field-shaped estate", () => {
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "b30-fd-standing-"));
       made.push(dir);
+      // Seeded as this Atticus upgrades it: the stamp is this Atticus's, whatever wrote the fixture.
       const e = await seedForgeField(dir);
       const r = await run(["status", "--root", e.root], NO_EXT);
-      const stamp = /^atticus: (.+)$/m.exec(
-        await readFile(join(e.root, ".atticus", "metarepo.yaml"), "utf8"),
-      )![1]!;
-      // The fixture's stamp names the Atticus that wrote it: a release since says to upgrade.
-      if (stamp === VERSION) {
-        expect(r).toEqual({
-          code: 0,
-          err: [],
-          out: [
-            `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Nothing to do.`,
-          ],
-        });
-      } else {
-        expect(r.code).toBe(1);
-        expect(r.out[0]).toMatch(/ Do: atticus upgrade$/);
-      }
+      expect(r).toEqual({
+        code: 0,
+        err: [],
+        out: [
+          `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Nothing to do.`,
+        ],
+      });
       const j = await run(["status", "--json", "--root", e.root], NO_EXT);
-      expect(JSON.parse(j.out.join("\n"))).toMatchObject({ atticus: VERSION, line: r.out[0] });
+      expect(JSON.parse(j.out.join("\n"))).toMatchObject({
+        atticus: VERSION,
+        state: "up-to-date",
+        stamp: VERSION,
+        line: r.out[0],
+      });
+      // An older stamp (a fixture written by an Atticus before a release): one line, upgrade.
+      await stampWith(e.root, "2.0.0-beta.9");
+      const older = await run(["status", "--root", e.root], NO_EXT);
+      expect(older.code).toBe(1);
+      expect(older.out).toEqual([
+        `You are on Atticus ${VERSION}. This metarepo is at 2.0.0-beta.9 (.atticus/metarepo.yaml), and this Atticus reads its catalog. Do: atticus upgrade`,
+      ]);
     },
     T,
   );

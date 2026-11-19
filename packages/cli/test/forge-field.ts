@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { factsDirOf, type Fact } from "@maycombhq/core";
 import { buildAndWrite, factsSnapshotWrites } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
+import { VERSION } from "../src/version.js";
 import { EMPTY_REPO, NEW_EVENT, TOPIC, UNREAD_REPO } from "./archetypes-changes.js";
 import {
   makeFieldEstate,
@@ -100,6 +101,9 @@ export function commitClone(dir: string): string {
     GIT_COMMITTER_EMAIL: "forge@example.com",
     GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
     GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
+    // Hermetic: no user or system config (a template, a hook, another object format) is read.
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: "1",
   };
   const git = (...a: string[]) =>
     execFileSync(
@@ -115,9 +119,9 @@ export function commitClone(dir: string): string {
       ],
       { cwd: dir, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     ).trim();
-  git("init", "-q", "-b", "main");
+  git("init", "-q", "-b", "main", "--object-format=sha1");
   git("add", "-A");
-  git("commit", "-qm", "Forge fixture");
+  git("commit", "-q", "--no-verify", "-m", "Forge fixture");
   return git("rev-parse", "HEAD");
 }
 
@@ -257,6 +261,14 @@ export async function writeForgeField(out: string): Promise<void> {
   }
 }
 
+/** Set the metarepo stamp's Atticus version (`.atticus/metarepo.yaml`). */
+export async function stampWith(root: string, version: string): Promise<void> {
+  const p = join(root, STAMP);
+  const text = await readFile(p, "utf8");
+  if (!/^atticus: .*$/m.test(text)) throw new Error(`${STAMP} names no Atticus version.`);
+  await writeFile(p, text.replace(/^atticus: .*$/m, `atticus: ${version}`));
+}
+
 /** The fixture's `estate.json`. */
 export async function forgeFieldEstate(fixture = FORGE_FIELD_DIR): Promise<ForgeField> {
   return JSON.parse(await readFile(join(fixture, "estate.json"), "utf8")) as ForgeField;
@@ -268,12 +280,15 @@ export async function forgeFieldEstate(fixture = FORGE_FIELD_DIR): Promise<Forge
  */
 export async function seedForgeField(
   dir: string,
-  o: { build?: boolean; fixture?: string } = {},
+  o: { build?: boolean; fixture?: string; stamp?: "as-written" } = {},
 ): Promise<ForgeField & { root: string }> {
   const fixture = o.fixture ?? FORGE_FIELD_DIR;
   const estate = await forgeFieldEstate(fixture);
   const root = join(dir, "forge");
   await cp(join(fixture, "metarepo"), root, { recursive: true });
+  // The stamp names the Atticus that wrote the fixture; a seed is upgraded by this one, so a
+  // release since doesn't make every seed say "Do: atticus upgrade" (o.stamp keeps it as written).
+  if (o.stamp !== "as-written") await stampWith(root, VERSION);
   for (const id of estate.clones) {
     const clone = join(root, "workspace", id);
     await cp(join(fixture, "repos", id), clone, { recursive: true });
