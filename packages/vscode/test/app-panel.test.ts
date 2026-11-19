@@ -11,6 +11,7 @@ import {
   startApp,
   stopChild,
   versionAtLeast,
+  versionIn,
 } from "../src/app-panel";
 import { WORDS } from "../src/words";
 import { commandText } from "../src/cli";
@@ -197,6 +198,33 @@ describe("the atticus found against the one the extension needs", () => {
     expect(versionAtLeast("1.9.9", "2.0.0-beta.21")).toBe(false);
     expect(versionAtLeast("dev", "2.0.0-beta.21")).toBe(true);
     expect(WORDS.cliOld("2.0.0-beta.20", MIN_CLI)).toContain("2.0.0-beta.20");
+  });
+
+  it("compares every number of the pre-release, so a patch of a beta is told from the one before it", () => {
+    // 2.0.0-beta.28.1 passed for 2.0.0-beta.28.5: only the first number after the word was read.
+    expect(versionAtLeast("2.0.0-beta.28.1", "2.0.0-beta.28.5")).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.28.5", "2.0.0-beta.28.5")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.28.10", "2.0.0-beta.28.9")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.28.9", "2.0.0-beta.28.10")).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.29", "2.0.0-beta.28.5")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.28", "2.0.0-beta.28.5")).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.28.5", "2.0.0-beta.28")).toBe(true);
+    expect(versionAtLeast("2.0.0", "2.0.0-beta.28.5")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.28.5", "2.0.0")).toBe(false);
+    expect(versionAtLeast("v2.0.0-beta.28.4\n", MIN_CLI)).toBe(false);
+    // What `atticus --version` prints around it doesn't change the answer.
+    expect(versionAtLeast("atticus 2.0.0-beta.28.4 (node 22)", MIN_CLI)).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.28.5+build.7", MIN_CLI)).toBe(true);
+  });
+
+  it("reads the whole version from what atticus --version printed, so the installed patch isn't cut short", () => {
+    // Cut to 2.0.0-beta.28, an up-to-date 2.0.0-beta.28.5 would be warned about as too old.
+    expect(versionIn("2.0.0-beta.28.5\n")).toBe("2.0.0-beta.28.5");
+    expect(versionIn("atticus 2.0.0-beta.28.1")).toBe("2.0.0-beta.28.1");
+    expect(versionIn("2.0.0-beta.29\n")).toBe("2.0.0-beta.29");
+    expect(versionIn("2.0.0\n")).toBe("2.0.0");
+    expect(versionIn("dev")).toBeUndefined();
+    expect(versionAtLeast(versionIn("2.0.0-beta.28.5\n")!, MIN_CLI)).toBe(true);
   });
 
   it("orders the prerelease words alpha, beta, rc, then the release (review round 46)", () => {

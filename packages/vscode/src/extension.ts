@@ -24,7 +24,14 @@ import {
 } from "./beta11";
 import { answerApp, saveFromApp, bundledHtml } from "./app-bundle";
 import { evidenceRows } from "./question-evidence";
-import { diagramHash, MIN_CLI, panelHtml, versionAtLeast, type RunningApp } from "./app-panel";
+import {
+  diagramHash,
+  MIN_CLI,
+  panelHtml,
+  versionAtLeast,
+  versionIn,
+  type RunningApp,
+} from "./app-panel";
 import { changeDiagramHash, estimateHash } from "./change-map";
 import { HISTORY_HASH } from "./history";
 import { chatHandler } from "./chat";
@@ -643,7 +650,7 @@ ${view.next.why}`
     const v = await svc.cli(at)(["--version"]);
     svc.cliOk = v.code === 0;
     // An atticus older than the extension's flags and pages: said once, the app still starts.
-    const found = /\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?/i.exec(v.stdout)?.[0];
+    const found = versionIn(v.stdout);
     if (svc.cliOk && found && !versionAtLeast(found, MIN_CLI) && !warnedOld) {
       warnedOld = true;
       void vscode.window.showWarningMessage(WORDS.cliOld(found, MIN_CLI));
