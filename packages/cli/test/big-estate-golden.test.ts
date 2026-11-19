@@ -20,6 +20,10 @@ import { v1Of } from "./build-json-v1.js";
  * no record's digest moved. "build.json (version 1)" is the digest of the version 1 it gives
  * back (`manifestToV1`): the digest beta.28.1 recorded for "build.json", f7faea44…, so the same
  * build means the same in either version, byte for byte.
+ *
+ * ADR 0201 (beta.30): `atticus init` writes the starter personas and the define-change skill into
+ * the org pack, whose tree hash build.json records. Both build.json digests were recorded again,
+ * deliberately; no record's digest moved.
  */
 const GOLDEN = join(import.meta.dirname, "golden", "big-estate.json");
 let dir: string | undefined;

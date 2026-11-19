@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { notInMap } from "@maycombhq/index";
 
 /**
  * `atticus mcp` (ADR 0104): an MCP server over stdio for an assistant (the Claude Code plugin
@@ -26,6 +27,13 @@ export interface McpTool {
   description: string;
   args: Arg[];
   argv: (a: Record<string, string | boolean | undefined>) => string[];
+  /**
+   * The argument that is a map id (ADR 0201). When the command refuses it as not in the map, the
+   * tool answers with that sentence: a planned or unread id is something to know, not a failure.
+   */
+  mapId?: string;
+  /** Exit codes that are an answer when the command printed one (conflicts: 1 is "some overlap"). */
+  answersOnExit?: number[];
 }
 
 const s = (name: string, description: string, required = true): Arg => ({
@@ -108,7 +116,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "ask",
     description:
-      'A plain question about the estate ("who calls ledger-api?"), read as a catalog query or an impact walk and run; it says the query it ran, and every record cites its file and line (atticus ask).',
+      'A plain question about the estate ("who calls ledger-api?", "who consumes the topic transfers.completed?"), read as a catalog query or an impact walk and run; the answer carries how it was read (readAs) and the query it ran, and every record cites its file and line (atticus ask).',
     args: [s("question", "The question, in plain words.")],
     argv: (a) => ["ask", String(a.question), "--json"],
   },
@@ -177,6 +185,7 @@ export const MCP_TOOLS: McpTool[] = [
       "One record, flow, flow step (flow-id#n), knowledge item, change, answered question or wiki section in full, by its id, with the file it was read from and whether it was verified (atticus context show).",
     args: [s("id", "The id, as search or a record names it.")],
     argv: (a) => ["context", "show", String(a.id)],
+    mapId: "id",
   },
   {
     name: "walk",
@@ -194,6 +203,7 @@ export const MCP_TOOLS: McpTool[] = [
       ...(a.hops ? ["--hops", String(a.hops)] : []),
       ...(a.kind ? ["--kind", String(a.kind)] : []),
     ],
+    mapId: "id",
   },
   {
     name: "show_code",
@@ -259,9 +269,10 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "impact",
     description:
-      "What a change to one record reaches, with owners and open questions (atticus impact).",
+      "What a change to one record reaches, with owners and open questions; an id the map lacks answers that it is planned or not read (atticus impact).",
     args: [s("id", "The record's id.")],
     argv: (a) => ["impact", String(a.id)],
+    mapId: "id",
   },
   {
     name: "knowledge_items",
@@ -292,6 +303,20 @@ export const MCP_TOOLS: McpTool[] = [
     description: "Every change in the metarepo with its state (atticus change list).",
     args: [],
     argv: () => ["change", "list", "--json"],
+  },
+  {
+    name: "conflicts",
+    description:
+      "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, only the pairs that overlap on it. It lists overlaps between open changes, not every change that touches the id; changes lists them all (atticus change conflicts).",
+    args: [
+      s(
+        "id",
+        "A system, record or repo id; one the change plans and the map lacks is fine.",
+        false,
+      ),
+    ],
+    argv: (a) => ["change", "conflicts", ...(a.id ? ["--touching", String(a.id)] : []), "--json"],
+    answersOnExit: [1],
   },
   {
     name: "change_status",
@@ -492,6 +517,11 @@ export async function handleMcp(
         a[arg.name] = value;
       }
       const r = await run(tool.argv(a));
+      // An id the map lacks is an answer (ADR 0201): planned, or not read yet.
+      const lacks = tool.mapId && a[tool.mapId] ? notInMap(String(a[tool.mapId])) : undefined;
+      if (r.code !== 0 && lacks && (r.err.trim() === lacks || r.out.trim() === lacks))
+        return ok(text(lacks));
+      if (tool.answersOnExit?.includes(r.code) && r.out.trim()) return ok(text(r.out.trim()));
       if (r.code !== 0 && !r.out.trim())
         return ok(
           text(r.err.trim() || `atticus ${tool.argv(a).join(" ")} stopped (exit ${r.code}).`, true),

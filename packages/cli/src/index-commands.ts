@@ -4,6 +4,8 @@ import {
   QueryError,
   runContextTool,
   askLookup,
+  mapFault,
+  notInMap,
   translate,
   type CatalogIndex,
 } from "@maycombhq/index";
@@ -36,16 +38,43 @@ export async function askCommand(
   io: Output,
 ): Promise<number> {
   const asked = await withIndex(root, io, (ix) => {
-    return translate(question, askLookup(ix));
+    return translate(question, askLookup(ix), () => mapFault(ix, root));
   });
+  // The question names something the map lacks, and the map couldn't be read: an error that
+  // says what is wrong, never an empty answer read as "planned or not read".
+  if (asked.action === "query" && asked.fault) {
+    io.err(asked.fault);
+    return 1;
+  }
+  const answer = (to: Output) =>
+    asked.action === "impact"
+      ? impactCommand(root, asked.id, { json: o.json === true }, to)
+      : queryCommand(root, asked.query, { json: o.json === true }, to);
   if (!o.json) {
     io.out(asked.explanation);
     io.out(`Query: ${asked.query}`);
     io.out("");
+    return answer(io);
   }
-  if (asked.action === "impact")
-    return impactCommand(root, asked.id, { json: o.json === true }, io);
-  return queryCommand(root, asked.query, { json: o.json === true }, io);
+  // ADR 0201: one object, how the question was read beside the answer's own keys, so a tool
+  // (which asks with --json) keeps the "Read as" line.
+  const out: string[] = [];
+  const code = await answer({ out: (l) => out.push(l), err: io.err });
+  let body: unknown;
+  try {
+    body = JSON.parse(out.join("\n"));
+  } catch {
+    for (const l of out) io.out(l);
+    return code;
+  }
+  io.out(
+    JSON.stringify(
+      { readAs: asked.explanation, query: asked.query, ...(body as Record<string, unknown>) },
+      null,
+      2,
+    ),
+  );
+  return code;
 }
 
 export async function queryCommand(
@@ -158,7 +187,8 @@ export async function impactCommand(
   return withIndex(root, io, (ix) => {
     const r = impact(ix, id, o.depth ?? 4);
     if (!r) {
-      io.err(`No record with id "${id}" in the catalog. Try: atticus query ${id}`);
+      // "Not in the map" only when the map was read whole and has no such id (ADR 0201).
+      io.err(mapFault(ix, root) ?? notInMap(id));
       return 1;
     }
     if (o.json) {

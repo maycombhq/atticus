@@ -36,12 +36,20 @@ describe("init", () => {
       "org-pack/profiles/shop/repos.manifest.yaml",
       "org-pack/checklists/README.md",
       "org-pack/checklists/review.yaml",
+      // ADR 0201: the starter personas, a naysayer for each, and the skill that runs them.
+      "org-pack/agents/product-owner.md",
+      "org-pack/agents/product-owner-naysayer.md",
+      "org-pack/agents/domain-architect.md",
+      "org-pack/agents/qa-naysayer.md",
+      "org-pack/agents/spec-writer.md",
+      "org-pack/skills/define-change/SKILL.md",
       "openspec/config.yaml",
       "openspec/schemas/org-flow/schema.yaml",
       "catalog/generated/README.md",
       "catalog/curated/README.md",
     ])
       expect(r.created, f).toContain(f);
+    expect(r.created.filter((f) => /^org-pack\/agents\/[a-z-]+\.md$/.test(f))).toHaveLength(15);
     // roles.yaml is deprecated (ADR 0073): a new metarepo doesn't get one.
     expect(r.created).not.toContain("org-pack/roles.yaml");
     expect(parse(await readFile(join(root, "org-pack/pack.yaml"), "utf8"))).toEqual({

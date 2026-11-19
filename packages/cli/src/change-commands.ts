@@ -11,6 +11,7 @@ import {
   changeBranch,
   changesRelOf,
   handoffBranch,
+  isMetarepoRoot,
   loadOrgPack,
   orgPackDirOf,
   type ManualStep,
@@ -1004,19 +1005,33 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
   return 0;
 }
 
-/** atticus change conflicts: open changes touching the same records or repos. Exit 1 when any overlap. */
+/**
+ * atticus change conflicts [--touching <id>]: open changes touching the same records or repos;
+ * with an id, only the overlaps that id is in (ADR 0201; an id the map lacks is fine: two changes
+ * may plan the same repo). Exit 1 when any overlap.
+ */
 export async function changeConflicts(
   root: string,
-  o: { json?: boolean },
+  o: { json?: boolean; touching?: string },
   io: Output,
 ): Promise<number> {
-  const pairs = await detectConflicts(root);
+  // Nothing overlaps where there is nothing to read: said as a fault, never as "no overlap".
+  if (!isMetarepoRoot(root)) {
+    io.err(
+      "This folder is not a metarepo (it has no org-pack/), so it has no changes to compare. Run atticus in a metarepo, or pass --root <metarepo>.",
+    );
+    return 2;
+  }
+  const all = await detectConflicts(root);
+  const pairs = o.touching
+    ? all.filter((p) => Object.values(p.overlap).some((v) => v.includes(o.touching!)))
+    : all;
   if (o.json) {
     io.out(JSON.stringify(pairs, null, 2));
     return pairs.length ? 1 : 0;
   }
   if (pairs.length === 0) {
-    io.out("No open changes overlap.");
+    io.out(o.touching ? `No open changes both touch ${o.touching}.` : "No open changes overlap.");
     return 0;
   }
   for (const p of pairs) {

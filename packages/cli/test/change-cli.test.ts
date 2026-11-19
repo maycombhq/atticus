@@ -249,6 +249,18 @@ describe("atticus change", () => {
     expect(c.out).toEqual([
       "add-transfer-limit and show-transfer-history both touch systems ledger, portal",
     ]);
+    // ADR 0201: only the overlaps that touch one id; an id the map lacks is fine (it may be planned).
+    c = capture();
+    expect(await changeConflicts(root, { touching: "ledger" }, c.io)).toBe(1);
+    expect(c.out).toEqual([
+      "add-transfer-limit and show-transfer-history both touch systems ledger, portal",
+    ]);
+    c = capture();
+    expect(await changeConflicts(root, { touching: "forge-portal" }, c.io)).toBe(0);
+    expect(c.out).toEqual(["No open changes both touch forge-portal."]);
+    c = capture();
+    expect(await changeConflicts(root, { touching: "forge-portal", json: true }, c.io)).toBe(0);
+    expect(c.out).toEqual(["[]"]);
 
     await cp(join(CHANGE_FIXTURES, "design"), join(root, "openspec/changes/add-transfer-limit"), {
       recursive: true,

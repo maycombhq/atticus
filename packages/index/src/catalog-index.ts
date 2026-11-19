@@ -385,6 +385,19 @@ export class CatalogIndex {
     return row ? (JSON.parse(row.json) as CatalogRecord) : undefined;
   }
 
+  /**
+   * The catalog's record files that didn't read as a record, by path. Kept by the index (a file
+   * it holds with no record), so it is the same on every open, not only the one that read them.
+   */
+  unreadRecords(limit = 5): { files: string[]; total: number } {
+    const where = "FROM files WHERE source = 'catalog' AND path NOT IN (SELECT file FROM records)";
+    const total = (this.db.prepare(`SELECT count(*) AS n ${where}`).get() as { n: number }).n;
+    const files = (
+      this.db.prepare(`SELECT path ${where} ORDER BY path LIMIT ?`).all(limit) as { path: string }[]
+    ).map((r) => r.path);
+    return { files, total };
+  }
+
   /** Every record with this id, whatever its kind. */
   find(id: string): CatalogRecord[] {
     return (

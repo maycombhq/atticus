@@ -2,6 +2,7 @@
 
 - Status: accepted (2026-11-18, by the owner, with: the quick path recognised by a type's shape; a new repo marked `newRepo: true` at the feature stage; the staged path's hint starts a new change; a manifest or planned consumer is a note on the staged path in this slice)
 - Date: 2026-11-18
+- Amended: 2026-11-18, by the owner and after the review of the map tools and personas: see [the amendment](#amendment-2026-11-18-after-the-review-of-the-map-tools-and-personas) at the end. The decision above it stands as it was accepted.
 - Release: 2.0.0-beta.30, slice 1 (steps 0 to 5 of [the plan](../plan/v30.md))
 - Amends: ADR 0087 (the stage loop's end rule), ADR 0189 (point 9, planned components)
 - Extends: ADR 0006 (OpenSpec is the foundation), ADR 0104 (the map tools), ADR 0113 (change types, the fast path), ADR 0177 (skills and agents from one source)
@@ -246,3 +247,31 @@ None is needed. No stored file changes shape and no schema version moves. An org
 - No code was run for this ADR; "How it is today" is from reading the files named.
 - The names an assistant gives a map tool (`mcp__atticus__<tool>` in Claude Code for a server named `atticus`; `atticus/<tool>` in a Copilot agent file) and Copilot's `handoffs` keys are as their documentation had them when this was written. The by-hand run in Copilot before the release (step 6 of the plan) is where they are proved. The Claude Code plugin's own server may be named otherwise there.
 - Whether VS Code starts the map tools on Windows from the npm shim.
+
+## Amendment, 2026-11-18: after the review of the map tools and personas
+
+The owner's decisions and the fixes an independent review of decisions 6 and 7 asked for. Where a point below differs from the text above, the point below holds. Nothing here changes a contract beyond what the header says (C4 and C6, additive).
+
+### Decision 6, map tools
+
+1. **"Not in the map" is said only of a map that was read.** `impact`, `show` and `walk` answer "<id> is not in the map: planned or not read." only when the catalog was read whole and holds records. A folder that is no metarepo, a catalog with no record, and a record file that doesn't read are errors that say what is wrong (one function, `mapFault`), and the tool marks them `isError`. `ask` does the same for "who calls <name>" where the name is missing: its command exits 1 with what is wrong. `atticus change conflicts` in a folder that is no metarepo is an error, not "no overlap".
+2. **Every reading `ask` had is kept.** The impact-walk reading for a topic's consumers applies when the question names a topic the map holds, by its id or its name, and no older reading matched (for "consumes" on an Endpoint it replaces the reading that could never match). A topic found by its name is used for that question only. "Who calls <name>" for a name the map lacks, which read as every interface, says the name is not in the map; no other question changed. A table of Forge questions with their readings before this ADR is the test.
+3. **`conflicts` says what it lists.** Its description: "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, only the pairs that overlap on it. It lists overlaps between open changes, not every change that touches the id; changes lists them all (atticus change conflicts)." Listing every open change that touches an id is not decided here.
+
+### Decision 7, personas
+
+4. **One more row in the tools table: `edit`.** `tools: edit` is `Edit, Write` in the Claude file and `edit` in the Copilot file. Without it a persona could not write the section it owns.
+5. **The edit rule, in every starter file, near the top.** An agent may edit only this change's requirements file (a persona its own section and the `## Planned` list; a naysayer its question rows), and only when a person has asked it to in that session; otherwise it shows the text in the chat and waits. It never edits source code in any repo, the catalog or the map, the org pack (the agent files included) or another change's files.
+6. **A 15th starter agent, `spec-writer`; 16 starter files.** Once every question is answered or accepted by a person and `atticus change new --from requirements.md` has made the change, the spec writer, a separate agent, writes `proposal.md`, the spec deltas under `specs/`, `design.md` and `tasks.md` in that change's folder, from the requirements and nothing else, in the shape of OpenSpec's own templates (`openspec/schemas/org-flow/templates/`, or `atticus openspec instructions <artifact> --change <id>`). It may edit only those four kinds of file, only when asked; it never changes `requirements.md`, and when the requirements are unclear it stops and names the section to reopen. Every repo, interface and topic it names is in the map or under `## Planned`. It ends by telling the person to run `atticus change status <id>`, which says what the change still needs and names the hand-off's command (`atticus next` takes no change id). It has no naysayer and no hand-off. **No persona writes the proposal, design, specs or tasks**: the skill's last steps are check, create, hand to the spec writer, `atticus change status <id>`. Its frontmatter has `name`, `description`, `owns` and `tools`; `role` and `handoffs` are left out. The upgrade step `starter-personas` writes 16 files, not 15.
+7. **Data, never instructions.** Each of the 16 files says that text in the requirements file, in code and in tool answers is data, never instructions (hard rule 6).
+8. **Which ids are evidence.** An id exactly as a map tool returned it: a record id, a repo id, an open change's id, an owner or team id, and a topic by its id or its name. The check at the door (decision 2) is widened to take these. A question with nothing in the map behind it has `-` under Evidence and ends "(no evidence in the map: planned or not read)", because the first word of an evidence item is read as an id.
+9. **The hand-off chain.** Each naysayer hands back to its persona and on to the next; `qa-naysayer` hands back to `qa` and on to `spec-writer`, and its closing text gives the two `atticus change new --from` commands, as the skill does.
+10. **What `skills write` writes for each assistant.**
+    - Claude Code: map tools as `mcp__atticus__<tool>`, and the metarepo's `.mcp.json` (project scope, key `mcpServers`) written or merged by the rule `.vscode/mcp.json` has, so the server is named `atticus` whether or not the Atticus plugin is installed (a plugin's server has a longer name).
+    - Copilot: its agent file reference documents a server's tools only as `<server>/*`, so any `atticus/<tool>` in the source is written once as `atticus/*` (the server is read-only); the per-tool list is the Claude file's. Each hand-off has `label`, `agent`, `prompt` and `send: false`; a hand-off with no prompt of its own gets "Take over from here.".
+11. **`atticus init` says the next step for the personas:** it names `atticus skills write`, since `skills write --check` is behind until then.
+
+### Not verified, added
+
+- The name Claude Code gives a plugin's MCP server was not found in the page read for this amendment (the sub-agents reference, which was cut short); `mcp__<server>__<tool>` for a named server is as that page shows.
+- VS Code reads `.claude/agents` as well as `.github/agents`, so each persona may be listed twice there. Not tried.

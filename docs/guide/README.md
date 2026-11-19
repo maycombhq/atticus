@@ -9,6 +9,7 @@
 - [Reading rules your organisation owns](reading-rules.md): rules for how your repos are read, by repo, by type or for every repo, written by hand or drafted by Copilot, tried before they are kept, and taken from another team pinned at a version.
 - [Component types your organisation owns](component-types.md): what each kind of component is, in your words, with how a read recognises one, how the canvas draws it and what it must and must not do; the reads, the canvas and the stages follow it.
 - [Skills and agents from other teams](skills-and-agents.md): take another team's skills, agents and instructions as a pinned, reviewed copy, written for Claude Code and Copilot from one source, your edits kept.
+- [The map your personas ask](the-map-your-personas-ask.md): give your own personas the map (`atticus mcp`), or start from the seven personas and naysayers Atticus ships; how the loop runs, and how to add a persona with two files and one line.
 - [Teaching Atticus your house frameworks](frameworks.md): framework models from source, JARs, documents or an assistant's draft, and the tests that gate them.
 - [Org knowledge](knowledge.md): add a wiki, a document or an API guide, scan it, ask it, and see, confirm or exclude what applies to a change.
 - [A vendor's API changes](vendor-specs.md): feed each version of a vendor's spec beside the last, see what changed and what in the estate it reaches, and start a change from it.

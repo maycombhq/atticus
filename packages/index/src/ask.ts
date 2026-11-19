@@ -8,15 +8,38 @@
 export type Asked =
   | { action: "impact"; id: string; query: string; explanation: string }
   | { action: "owner"; id: string; query: string; explanation: string }
-  | { action: "query"; query: string; explanation: string };
+  | {
+      action: "query";
+      query: string;
+      explanation: string;
+      /**
+       * Set when the question names something the map lacks and the map couldn't be read (no
+       * metarepo, no catalog, a record file that doesn't read): what is wrong. The name can't
+       * then be called planned or not read, and the query's empty answer means nothing.
+       */
+      fault?: string;
+    };
 
-export type Lookup = (word: string) => { id: string; kind: string } | undefined;
+/**
+ * What a question's word names. `byName` is a topic found by its name, not its id: only the
+ * question of who receives it reads it so (ADR 0201), and every other reading is as if the word
+ * named nothing, as it was before.
+ */
+export type Lookup = (word: string) => { id: string; kind: string; byName?: boolean } | undefined;
 
 /**
  * The kind a lookup gives a system only the calls name: no record is it (a model provider, a
  * vendor), but interfaces go to it. A question naming one searches its calls.
  */
 export const OUTSIDE = "Outside";
+
+/**
+ * What every command and tool says of an id the map lacks (ADR 0201): the change plans it, or
+ * nobody read it yet. An answer, not a failure: a persona is told so and goes on.
+ */
+export function notInMap(id: string): string {
+  return `${id} is not in the map: planned or not read.`;
+}
 
 /** What `askLookup` needs of the index. */
 export interface AskIndex {
@@ -30,7 +53,7 @@ const PLAIN = /^[a-z0-9][a-z0-9._-]*$/;
 /**
  * Look a question's word up in the catalog, the way `atticus ask` and the app's Ask both do: a
  * record by its id; else an outside system the interfaces call (or are called from) by that name;
- * else a table by its name (a real metarepo, 2026-10-25: "what calls the LLM?" listed every
+ * else a table by its name; else a topic by its name, marked `byName` (a real metarepo, 2026-10-25: "what calls the LLM?" listed every
  * interface, because nothing named `llm` was a record).
  */
 export function askLookup(ix: AskIndex): Lookup {
@@ -51,6 +74,10 @@ export function askLookup(ix: AskIndex): Lookup {
     try {
       const t = ix.query(`kind:table name:${w}`, { limit: 1 }).rows[0];
       if (t) return { id: t.id, kind: t.kind };
+      // A topic by its name (`transfers.completed` is the Endpoint `topic.transfers-completed`).
+      const e = ix.query(`kind:endpoint endpointType:event-topic pathOrTopic:${w}`, { limit: 1 })
+        .rows[0];
+      if (e) return { id: e.id, kind: e.kind, byName: true };
     } catch {
       // not a value the query language takes
     }
@@ -83,6 +110,29 @@ const STOP = new Set(
   ),
 );
 
+/** A topic's other end is whoever receives it: the verbs that ask for them. */
+const RECEIVES =
+  /\b(who|what|which)\b.*\b(consumes?|subscribes?|subscribed|receives?|listens?|listening)\b/;
+/** After "calls", these make it a noun ("what calls are inferred"), not a verb with a name after. */
+const NOT_A_NAME = new Set(
+  "are is were have has go goes going through via from without with in at".split(" "),
+);
+/** Words that say what kind of thing the name is, never the name. */
+const NOUNS = new Set("service component system repo app job".split(" "));
+
+/**
+ * The one name "who calls X" asks about when no record is X (ADR 0201): the single plain word
+ * left after "calls". Undefined when the words after it aren't one name.
+ */
+function calledName(words: string[]): string | undefined {
+  const at = words.findIndex((w) => w === "calls" || w === "call");
+  if (at < 1 || !/^(who|what|which)$/.test(words[0]!)) return undefined;
+  const after = words.slice(at + 1);
+  if (!after.length || NOT_A_NAME.has(after[0]!)) return undefined;
+  const rest = after.filter((w) => !STOP.has(w) && !NOUNS.has(w));
+  return rest.length === 1 && PLAIN.test(rest[0]!) && !KIND_WORDS[rest[0]!] ? rest[0] : undefined;
+}
+
 /** The first word of the question that names a catalog record, longest first. */
 function named(words: string[], lookup: Lookup) {
   for (const w of [...words].sort((a, b) => b.length - a.length)) {
@@ -92,7 +142,12 @@ function named(words: string[], lookup: Lookup) {
   return undefined;
 }
 
-export function translate(question: string, lookup: Lookup): Asked {
+export function translate(
+  question: string,
+  lookup: Lookup,
+  /** Why the map can't say what it lacks (`mapFault`), asked only when a name is missing. */
+  fault?: () => string | undefined,
+): Asked {
   const q = question.trim();
   const lower = q.toLowerCase();
   const words = lower
@@ -100,8 +155,20 @@ export function translate(question: string, lookup: Lookup): Asked {
     .split(/\s+/)
     .map((w) => w.replace(/\.$/, ""))
     .filter(Boolean);
-  const rec = named(words, lookup);
+  // A topic found by its name answers only who receives it: every older reading sees the records
+  // it always saw, and never that name in their place.
+  const rec = named(words, (w) => {
+    const hit = lookup(w);
+    return hit?.byName ? undefined : hit;
+  });
+  const topic = () => rec ?? named(words, lookup);
   const has = (re: RegExp) => re.test(lower);
+  const receivers = (id: string): Asked => ({
+    action: "impact",
+    id,
+    query: `impact ${id}`,
+    explanation: `Read as: who receives ${id}, from what a change to it reaches.`,
+  });
 
   // A system only the calls name has no record to walk or own: what reaches it are its callers.
   if (rec?.kind === OUTSIDE)
@@ -126,6 +193,9 @@ export function translate(question: string, lookup: Lookup): Asked {
       explanation: `Read as: the interfaces ${rec.id} calls.`,
     };
   if (rec && has(/\b(who|what|which)\b.*\b(calls?|uses?|consumes?|reads?|writes?)\b/)) {
+    // A topic's consumers aren't an Interface's `to`: an event Interface names the topic under
+    // `endpoint`, and its `to` is the subscriber. The impact walk follows that (ADR 0201).
+    if (rec.kind === "Endpoint" && has(/\bconsumes?\b/)) return receivers(rec.id);
     if (rec.kind === "Table" || rec.kind === "Column")
       return {
         action: "query",
@@ -171,12 +241,31 @@ export function translate(question: string, lookup: Lookup): Asked {
       // A link a person paired cites both ends: not one seen at one end (ADR 0174).
       if (has(/\bone end\b/)) terms.push("-flags:joined-by-person");
     }
+    // "Who calls X" where nothing is X read as every interface. X is said to be missing (ADR 0201).
+    const missing =
+      terms.length === 1 && terms[0] === "kind:interface" && !topic()
+        ? calledName(words)
+        : undefined;
+    if (missing) {
+      // "Not in the map" only of a map that was read whole (ADR 0201 amendment).
+      const why = fault?.();
+      return {
+        action: "query",
+        query: `kind:interface to:${missing}`,
+        explanation: `Read as: the interfaces whose callee is ${missing}. ${why ?? notInMap(missing)}`,
+        ...(why ? { fault: why } : {}),
+      };
+    }
     return {
       action: "query",
       query: terms.join(" "),
       explanation: `Read as: ${KIND_WORDS[kindWord]} records${terms.length > 1 ? " where " + terms.slice(1).join(", ") : ""}.`,
     };
   }
+
+  // No older reading matched: who subscribes to, receives or listens to a topic the map holds.
+  const end = has(RECEIVES) ? topic() : undefined;
+  if (end?.kind === "Endpoint") return receivers(end.id);
 
   const text = words.filter((w) => !STOP.has(w));
   const query = rec ? rec.id : text.join(" ");

@@ -6,9 +6,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Added
 
-- **Waves in `tasks.md`.** A task line may end `(after <task id>)`, or several ids as `(after t1, t2)` or `(after t1 and t2)`, among the brackets that end the line (before or after `(story …)`). `atticus task run-ready` holds the task, across repos, until each task it names is ticked, and runs it after them. A task that can never run is named with its reason: it names an id `tasks.md` doesn't have, its id is used twice, or it and other tasks each wait for the other, by `(after …)` alone or against the order of a repo's tasks. `atticus task run` refuses a task its `(after …)` holds in the same words. A bracket that names no task, "(after lunch)", stays part of the title, and `run-ready` notes how it was read. `[P]` and the order within a repo are as before; the guide's OpenSpec page describes the format (ADR 0201).
-- **A repo the change plans passes the feature stage.** A new flow whose answer marks its repo `newRepo: true` is placed with a note (`feature.planned-repo`) that names `atticus repo add <its clone URL> --id <repo>`; `atticus change feature` prints it. The feature prompt gained one line for it (ADR 0201).
-
 ### Changed
 
 - **One repo's Apply shows what it is doing, in the panel that started it.** Where the app said "Applying…" and linked the Console, the panel now shows the step the job is on (the server's own line, such as "Writing the catalog (1,204 record files)… (41 s in)"), the time so far, a "Still running" line (at 30 s, 1 min and 2 min, then every 5 min), Stop (heard until the catalog's write starts; a Stop that comes after it says it came too late and the write finishes whole) and a Done line with the time it took, which stays. An Apply a person stopped says the catalog was not written, and no longer that verify found problems. The same for Edit the map's Apply my changes, Catalog builds' Build now and making hand edits curated. Propose for review shows its time so far and that it is running; it has no step and no Stop, because the server sends none for a push. No change to the local API.
@@ -18,6 +15,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **A new file's folder in an empty repo is a note.** `delta.new-folder` no longer blocks when the repo's checkout has no folder at its root other than hidden ones; a place that isn't a path still does (ADR 0201).
 - **The staged path says where to go, once.** A feature draft that touches nothing (`feature.nothing-placed`) and a fast-path draft that changes no step (`small.no-target-flow`) stop the stage on the first draft, with the finding and one hint that names the quick path and `atticus change new --from <requirements.md>`; no second draft is asked for and no question is raised. `atticus plan stories` on a change with nothing to plan is refused with the same hint (ADR 0201, amending ADR 0087's end rule).
 - **A task under a repo no manifest lists says what to do.** The refusal now names `atticus repo add <its clone URL> --id <repo>` for a new repo, or fixing the heading in `tasks.md` for a slip (ADR 0201).
+- **An id the map lacks is said in one sentence everywhere:** "`<id>` is not in the map: planned or not read." from `atticus impact`, `atticus context show` and `atticus context walk` (exit codes as before), and the `impact`, `show` and `walk` tools answer with it instead of an error result (C4, additive). It is said only of a map that was read: a folder that is no metarepo, a catalog with no record and a record file that doesn't read are errors that say what is wrong.
 
 ### Fixed
 
@@ -30,6 +28,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **`atticus change architecture` says "Target flows: none"** when the design changes no flow, where it printed `Target flows: ,`.
 - **`atticus task context` no longer says "read its story" when there is none.** For a task the target flows don't give, it names the story's file, or says the change has no stories (or the task names none) and points at the task's line in `tasks.md` and the change's folder.
 - **A new flow's entry is no longer scored as "breaks who uses it today".** A flow that is new, on an entry that is new too, has no users today, so the fields its steps require add nothing to the risk score. A field an existing flow now requires still does; so does a flow called new on an entry people call today (however its path is written: a trailing slash, a query string or a whole URL is the same entry), a step marked `breaking: true`, and the consumers a flow lists.
+- **`atticus ask "who consumes the topic transfers.completed?"` names the consumers `atticus impact` names.** It was read as the calls to the topic, which an event never is; for this question a topic is also found by its name, not only its id.
+- **`atticus ask "who calls <a name the map lacks>"` no longer lists every interface.** It says the name is not in the map. Every other question reads as it did.
+- **`atticus ask --json` keeps how the question was read** (`readAs`, `query`), so the `ask` tool shows it.
 
 ## 2.0.0-beta.28.5 (2026-11-17)
 

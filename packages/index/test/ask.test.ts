@@ -79,6 +79,102 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     expect(look('a"b')).toBeUndefined();
   });
 
+  it("reads who consumes a topic as the impact walk: an event Interface's `to` is the subscriber (ADR 0201)", () => {
+    const withTopic = (w: string) =>
+      w === "topic.transfers-completed" ? { id: w, kind: "Endpoint" } : lookup(w);
+    for (const q of [
+      "who consumes topic.transfers-completed?",
+      "Who subscribes to topic.transfers-completed",
+      "who receives topic.transfers-completed?",
+      "who listens to topic.transfers-completed",
+      "who is listening to the topic topic.transfers-completed?",
+    ])
+      expect(translate(q, withTopic), q).toEqual({
+        action: "impact",
+        id: "topic.transfers-completed",
+        query: "impact topic.transfers-completed",
+        explanation:
+          "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+      });
+    // A component's consumers are still its callers.
+    expect(translate("who consumes ledger-api", withTopic).query).toBe(
+      "kind:interface to:ledger-api",
+    );
+  });
+
+  it("finds a topic by its name, marked so: only the consumers question uses it", () => {
+    const look = askLookup({
+      find: () => [],
+      query: (q: string) =>
+        q === "kind:endpoint endpointType:event-topic pathOrTopic:transfers.completed"
+          ? { rows: [{ id: "topic.transfers-completed", kind: "Endpoint" }] }
+          : { rows: [] },
+    });
+    expect(look("transfers.completed")).toEqual({
+      id: "topic.transfers-completed",
+      kind: "Endpoint",
+      byName: true,
+    });
+    expect(look("transfers.started")).toBeUndefined();
+    // By name it answers who receives the topic, and changes no other reading.
+    expect(translate("who consumes the topic transfers.completed?", look)).toMatchObject({
+      action: "impact",
+      id: "topic.transfers-completed",
+    });
+    expect(translate("what breaks if transfers.completed changes", look)).toMatchObject({
+      action: "query",
+      query: "breaks transfers.completed changes",
+    });
+    expect(translate("list interfaces for transfers.completed", look).query).toBe("kind:interface");
+  });
+
+  it("never lists every interface for who calls a name the map lacks (ADR 0201)", () => {
+    for (const [q, name] of [
+      ["who calls forge-portal?", "forge-portal"],
+      ["what calls the quillfeather service", "quillfeather"],
+    ] as const) {
+      const t = translate(q, lookup);
+      expect(t, q).toMatchObject({ action: "query", query: `kind:interface to:${name}` });
+      expect(t.explanation).toBe(
+        `Read as: the interfaces whose callee is ${name}. ${name} is not in the map: planned or not read.`,
+      );
+    }
+  });
+
+  it("says the map's fault, never \"planned or not read\", where the map couldn't be read (review)", () => {
+    const fault = "The map holds no records in this metarepo yet.";
+    const t = translate("who calls forge-portal?", lookup, () => fault);
+    expect(t).toEqual({
+      action: "query",
+      query: "kind:interface to:forge-portal",
+      explanation: `Read as: the interfaces whose callee is forge-portal. ${fault}`,
+      fault,
+    });
+    // A map that was read whole has no fault: the name is planned or not read.
+    const ok = translate("who calls forge-portal?", lookup, () => undefined);
+    expect(ok.explanation).toMatch(/forge-portal is not in the map: planned or not read\.$/);
+    expect(ok).not.toHaveProperty("fault");
+    // The fault is asked for only when a name is missing.
+    let asked = 0;
+    translate("who calls ledger-api?", lookup, () => (asked++, fault));
+    expect(asked).toBe(0);
+  });
+
+  it("keeps every older reading: a way, a kind or a tag is never taken for a missing name", () => {
+    for (const [q, query] of [
+      ["what calls the gateway", "kind:interface via:gateway"],
+      ["which interfaces use the gateway", "kind:interface via:gateway"],
+      ["which interfaces use the event bus", "kind:interface via:event-bus"],
+      ["who uses pii", "kind:column classification:personal*"],
+      ["what calls are inferred?", "kind:interface confidence:inferred"],
+      ["which calls go through the gateway", "kind:interface via:gateway"],
+      ["which interfaces use quillfeather", "kind:interface"],
+      ["who uses forge-portal", "uses forge-portal"],
+      ["who consumes the topic forge.orders.shipped?", "consumes topic forge.orders.shipped"],
+    ] as const)
+      expect(translate(q, lookup).query, q).toBe(query);
+  });
+
   it("says what it couldn't place when a question names nothing in the catalog", () => {
     const t = translate("what breaks if the moon changes", lookup);
     expect(t.action).toBe("query");
