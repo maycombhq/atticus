@@ -242,6 +242,86 @@ describe("a table the parser can't be sure of is refused, never passed over", ()
     ]);
   });
 
+  it("never lets another table swallow the questions table under it (the re-review)", () => {
+    const text = [
+      "## Arch",
+      "",
+      "| Repo | Owner |",
+      "|---|---|",
+      "| forge-ledger | pat |",
+      "",
+      HEADER,
+      "| Who owns it? | nope | arch-naysayer | | | open |",
+    ].join("\n");
+    const r = checkRequirements(parseRequirements(text), has, "r.md");
+    expect(r.ok).toBe(false);
+    expect(r.questions).toBe(1);
+    expect(r.reasons.map((x) => [x.code, x.line])).toEqual([
+      // The other table sits where a role's questions are.
+      ["requirements.unreadable", 3],
+      ["requirements.open-question", 9],
+      ["requirements.unknown-id", 9],
+    ]);
+    // With no blank line between them, too: a row over a delimiter row is always a header.
+    const tight = text.replace("| forge-ledger | pat |\n\n", "| forge-ledger | pat |\n");
+    expect(checkRequirements(parseRequirements(tight), has).reasons.map((x) => x.code)).toEqual([
+      "requirements.unreadable",
+      "requirements.open-question",
+      "requirements.unknown-id",
+    ]);
+    // A plain row after a blank line still belongs to the table above it.
+    const cont = `## QA\n\n${HEADER}\n${answered}\n\n\n${OPEN}\n`;
+    expect(codes(cont)).toEqual([["requirements.open-question", 8]]);
+  });
+
+  it("checks an item's first word even when a file beside it is in backticks (the re-review)", () => {
+    const row = (evidence: string) =>
+      `## QA\n\n${HEADER}\n| Q? | ${evidence} | nay | pat | a | answered |\n`;
+    const unknown = (evidence: string) =>
+      checkRequirements(parseRequirements(row(evidence)), has)
+        .reasons.map((x) => /names (\S+),/.exec(x.message)?.[1])
+        .sort();
+    expect(unknown("nope `src/a.java:41`")).toEqual(["nope"]);
+    expect(unknown("forge-ledger `src/a.java:41` `nope-two`; `nope-three` build.gradle")).toEqual([
+      "nope-three",
+      "nope-two",
+    ]);
+    // A first word is the id whatever it looks like; only later words can be files.
+    expect(unknown("`src/a.java:41`")).toEqual(["src/a.java:41"]);
+    expect(unknown("forge-ledger `pom.xml` `App.java:3` `deploy/values.yaml`")).toEqual([]);
+    // A dotted name is not a file: it is checked.
+    expect(unknown("forge-ledger `orders.shipped`")).toEqual(["orders.shipped"]);
+    expect(unknown("-; forge-ledger, -")).toEqual([]);
+  });
+
+  it("refuses a headerless row after a blank line, with or without its leading bar", () => {
+    const bare = "Is it retried? | - | qa-naysayer | | | open";
+    // After its own table: read as its row.
+    expect(codes(`## QA\n\n${HEADER}\n${answered}\n\n${bare}\n`)).toEqual([
+      ["requirements.open-question", 7],
+    ]);
+    // After prose, with no header: refused, never dropped.
+    expect(codes(`## QA\n\n${HEADER}\n${answered}\n\nText.\n\n${bare}\n`)).toEqual([
+      ["requirements.unreadable", 9],
+    ]);
+    expect(codes(`## QA\n\nText.\n\n${bare}\n`)).toEqual([["requirements.unreadable", 5]]);
+    // After a table of another width: its own table, refused; not a row of the other.
+    expect(
+      codes(`## Notes\n\n| Repo | Owner |\n|---|---|\n| forge-ledger | pat |\n\n${OPEN}\n`),
+    ).toEqual([["requirements.unreadable", 7]]);
+    // Prose with a bar or two is prose.
+    expect(codes(`## QA\n\nUse a | b, or c | d.\n`)).toEqual([]);
+  });
+
+  it("reads a long file in time that grows with its length", () => {
+    const blanks = Array.from({ length: 60000 }, () => "").join("\n");
+    const text = `## QA\n\n${HEADER}\n${answered}\n${blanks}\n${OPEN}\n`;
+    const started = Date.now();
+    const r = checkRequirements(parseRequirements(text), has);
+    expect(r.reasons.map((x) => x.code)).toEqual(["requirements.open-question"]);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   it("reads a long Planned list once each, in order", () => {
     const ids = Array.from({ length: 5000 }, (_, i) => `forge-new-${i % 2500}`);
     const p = parseRequirements(`## Planned\n\n${ids.map((i) => `- \`${i}\`: new`).join("\n")}\n`);

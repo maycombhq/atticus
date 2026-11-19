@@ -63,6 +63,10 @@ const plain = (c: string) => c.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim()
 const isDelimiter = (line: string) =>
   line.includes("|") && line.includes("-") && /^[\s|:-]+$/.test(line);
 
+/** A line that is a table's row on its face: it starts with a bar, or has five or more. */
+const rowLike = (line: string) =>
+  line.startsWith("|") || (line.match(/(?<!\\)\|/g)?.length ?? 0) >= 5;
+
 /** A word without the backticks around it or the colon after it. */
 const bare = (w: string) => w.replace(/^`+|[`:,;]+$/g, "").trim();
 
@@ -114,6 +118,7 @@ export function parseRequirements(text: string): ParsedRequirements {
   };
   let fence: { char: string; length: number } | undefined;
   let table: Table | undefined;
+  let afterBlank = false;
   for (let i = 0; i < lines.length; i++) {
     const line = body[i]!;
     // Fences as CommonMark has them: three or more of one character, no backtick after a
@@ -129,19 +134,23 @@ export function parseRequirements(text: string): ParsedRequirements {
       table = undefined;
       continue;
     }
-    if (table) {
+    // A row over a delimiter row is a header, and always starts a table of its own.
+    const header = line.includes("|") && isDelimiter(body[i + 1] ?? "");
+    if (table && !header) {
       if (line === "") {
-        // A blank line ends the table unless a row follows it.
-        const next = body.slice(i + 1).find((l) => l !== "");
-        if (!next?.startsWith("|")) table = undefined;
+        afterBlank = true;
         continue;
       }
-      if (line.includes("|")) {
-        if (!isDelimiter(line)) table.rows.push({ line: i + 1, cells: cellsOf(line) });
+      // After a blank line, only a row of the table's own width goes on with it.
+      const cells = line.includes("|") ? cellsOf(line) : [];
+      if (afterBlank ? rowLike(line) && cells.length === table.header.length : cells.length > 0) {
+        afterBlank = false;
+        if (!isDelimiter(line)) table.rows.push({ line: i + 1, cells });
         continue;
       }
-      table = undefined;
     }
+    table = undefined;
+    afterBlank = false;
     const h = /^(#{1,2})\s+(.+?)\s*#*$/.exec(lines[i]!.trim());
     if (h) {
       close();
@@ -150,7 +159,7 @@ export function parseRequirements(text: string): ParsedRequirements {
       section = { kind, heading: h[2]!, tables: [] };
       continue;
     }
-    if (line.startsWith("|") || (line.includes("|") && isDelimiter(body[i + 1] ?? ""))) {
+    if (header || rowLike(line)) {
       table = { line: i + 1, header: cellsOf(line), rows: [] };
       section.tables.push(table);
       continue;
@@ -166,17 +175,32 @@ export function parseRequirements(text: string): ParsedRequirements {
   return out;
 }
 
+/** The endings of a file's name, so `pom.xml` is a file and the topic `orders.shipped` is not. */
+const FILE_ENDINGS =
+  /\.(java|kts?|scala|groovy|gradle|xml|ya?ml|json|properties|toml|ini|conf|cfg|env|sql|[cm]?[jt]sx?|py|rb|go|rs|cs|cshtml|php|html?|s?css|md|txt|sh|ps1|proto|avsc|graphql|tf)$/i;
+
+/** A word that names a file, not an id: a path with a slash or a file's ending, with or without `:line`. */
+const isFile = (w: string) => {
+  const path = w.replace(/:\d+$/, "");
+  return path !== w || /[\\/]/.test(path) || FILE_ENDINGS.test(path);
+};
+
 /**
- * The map ids a row's Evidence names: `-` is none; items are split by `;` or `,`. In an item,
- * every word in backticks that isn't a file (`src/a.java:41`, `pom.xml:7`) is an id or a name
- * (an entry's path starts with `/`); with none, its first word.
+ * The map ids a row's Evidence names. Items are split by `;` or `,`; `-` is none. An item's
+ * first word, in backticks or bare, is its id, whatever it looks like. Every other word in
+ * backticks is checked too unless it is a file (`src/a.java:41`, `pom.xml`).
  */
 function evidenceIds(cell: string): string[] {
-  if (cell === "" || cell === "-") return [];
-  const ids = cell.split(/[;,]/).flatMap((item) => {
-    const ticked = [...item.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.trim());
-    const named = ticked.filter((w) => !/^[^/]+[\\/]|:\d+$/.test(w));
-    return ticked.length ? named : [bare(item.trim().split(/\s+/)[0] ?? "")];
+  const ids = cell.split(/[;,]/).flatMap((raw) => {
+    const item = raw.trim();
+    if (item === "" || item === "-") return [];
+    const first = /^`([^`]+)`/.exec(item);
+    const rest = item.slice(first ? first[0].length : (/^\S+/.exec(item)?.[0].length ?? 0));
+    const more = [...rest.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.trim());
+    return [
+      first ? first[1]!.trim() : bare(item.split(/\s+/)[0]!),
+      ...more.filter((w) => !isFile(w)),
+    ];
   });
   return [...new Set(ids.filter(Boolean))];
 }

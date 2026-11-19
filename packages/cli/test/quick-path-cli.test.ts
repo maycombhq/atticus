@@ -738,6 +738,51 @@ describe("what is next for a quick change", () => {
   });
 });
 
+describe("atticus next <change-id>", () => {
+  it(
+    "shows that one change's next step, in words and JSON, and says when there is no such change",
+    async () => {
+      const { root, file } = await withFile(requirements());
+      expect(await changeNew(root, { from: file, by: "pat" }, capture().io, { now: NOW })).toBe(0);
+      expect(
+        await changeNew(
+          root,
+          { title: "Cap transfers", type: "feature", by: "pat" },
+          capture().io,
+          {
+            now: NOW,
+          },
+        ),
+      ).toBe(0);
+      const id = "shipped-orders-event";
+      const want = changeSteps((await readNextState(root)).changes.find((c) => c.id === id)!);
+      const c = capture();
+      expect(await main(["next", id, "--root", root], c.io)).toBe(0);
+      expect(c.out[0]).toBe(`Next: atticus change status ${id}`);
+      expect(c.out.join("\n")).toContain(`/define-change ${id}`);
+      expect(c.out.join("\n")).toContain(`Why: ${want[0]!.why}`);
+      // The other change's step, not the estate's first.
+      const o = capture();
+      expect(await main(["next", "cap-transfers", "--root", root], o.io)).toBe(0);
+      expect(o.out.join("\n")).toContain("cap-transfers");
+      expect(o.out.join("\n")).not.toContain(id);
+      const j = capture();
+      expect(await main(["next", id, "--json", "--root", root], j.io)).toBe(0);
+      const said = JSON.parse(j.out.join("\n")) as {
+        next: { step: string; change: string };
+        steps: { step: string; change?: string }[];
+      };
+      expect(said.next).toMatchObject({ step: "quick-define", change: id });
+      expect(said.steps.map((x) => x.step)).toEqual(want.map((x) => x.step));
+      const none = capture();
+      expect(await main(["next", "no-such-change", "--root", root], none.io)).toBe(1);
+      expect(none.out).toEqual([]);
+      expect(none.err).toEqual(["No change no-such-change here: atticus change list lists them."]);
+    },
+    T,
+  );
+});
+
 describe("the local API's change row (3.18.0)", () => {
   it(
     "says quickPath for a quick change, in the list and on the change, and not for another",

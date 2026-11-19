@@ -1681,7 +1681,13 @@ export function nextSteps(s: NextState): NextStep[] {
 
 export async function nextCommand(
   root: string,
-  o: { json?: boolean; all?: boolean; queue?: boolean },
+  o: {
+    json?: boolean;
+    all?: boolean;
+    queue?: boolean;
+    /** `atticus next <change-id>`: that one change's steps, as `next` would list them for it. */
+    change?: string;
+  },
   io: Output,
 ): Promise<number> {
   // Outside a metarepo, there is no next step to read: say how to make or open one (ADR 0119).
@@ -1691,7 +1697,12 @@ export async function nextCommand(
   }
   const state = await readNextState(root);
   if (o.queue) return queueOut(state, o, io);
-  const steps = nextSteps(state);
+  const one = o.change ? state.changes.find((c) => c.id === o.change) : undefined;
+  if (o.change && !one) {
+    io.err(`No change ${o.change} here: atticus change list lists them.`);
+    return 1;
+  }
+  const steps = one ? changeSteps(one) : nextSteps(state);
   const runtime = await loadOrgPack(orgPackDirOf(root))
     .then((op) => op.runtime)
     .catch(() => undefined);
@@ -1744,6 +1755,10 @@ export async function nextCommand(
     x.slash
       ? `In ${typeIn}${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
       : undefined;
+  if (one && !steps.length) {
+    io.out(`Nothing is next for ${one.id}: it is ${one.state}.`);
+    return 0;
+  }
   if (!o.all) {
     const n = steps[0]!;
     io.out(`Next: ${n.command}`);
@@ -1751,7 +1766,9 @@ export async function nextCommand(
     if (sl) io.out(sl);
     io.out(`Why: ${n.why}`);
     if (steps.length > 1)
-      io.out(`${plural(steps.length - 1, "more step")} after this one: atticus next --all`);
+      io.out(
+        `${plural(steps.length - 1, "more step")} after this one: atticus next${one ? ` ${one.id}` : ""} --all`,
+      );
     return 0;
   }
   steps.forEach((x, i) => {

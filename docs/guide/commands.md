@@ -124,6 +124,7 @@ Every command under the twelve, with its options.
   atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--by you] [--openspec-store: also an OpenSpec store, beta]
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
+  atticus next <change>                One change's next step, as next would list it for that change [--all] [--json]
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
