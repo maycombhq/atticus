@@ -639,7 +639,7 @@ Usage:
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
   atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; the next verify write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
-  atticus triage decide <item> <n>     Choose option n for a triage item; writes your decision
+  atticus triage decide <item> <n>     Choose option n for a triage item; writes your choice (one of your changes)
           [--reason text]
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
@@ -716,7 +716,7 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
-  atticus catalog build                Build catalog/generated from the stored reads and inputs (ADR 0195): after a file of your decisions is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
+  atticus catalog build                Build catalog/generated from the stored reads and inputs (ADR 0195): after a file of your changes is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
           [--check]                    Write nothing; exit 1 when catalog/generated isn't what the stored reads build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
           [--curate]                   Keep each as your edit, to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files

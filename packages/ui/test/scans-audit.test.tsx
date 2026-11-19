@@ -42,7 +42,7 @@ describe("Set up › Scans (app-only audit)", () => {
       },
     };
     const r = scanRefused(job)!;
-    expect(r.title).toBe("Nothing written: the catalog is as it was.");
+    expect(r.title).toBe("The catalog wasn't changed.");
     expect(r.lines).toEqual([
       "forge-ledger: not cloned here. Sync repos, then check again.",
       "forge-events: its clone can't be read. Sync repos to clone it again.",

@@ -159,7 +159,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   );
   // ADR 0195 point 4: the nothing-read guard writes no slot either, and says so.
   await expect(panel.getByRole("log")).toContainText(
-    "Nothing written: the scan read no repo in full, so the catalog and every stored read are as they were",
+    "The catalog wasn't changed: the scan read no repo in full, so the catalog and every stored read are as they were",
   );
   await expect(panel.getByRole("log")).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",

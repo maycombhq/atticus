@@ -106,7 +106,7 @@ export function scanRefusal(
       ...(u.runs ? { runs: u.runs } : {}),
     })),
     message: [
-      "Nothing written: the scan read no repo in full, so the catalog and every stored read are as they were:",
+      "The catalog wasn't changed: the scan read no repo in full, so the catalog and every stored read are as they were:",
       ...lines.map((l) => `  ${l}`),
       "Clone the repos (atticus workspace sync) or fix what stopped their read, then scan again.",
     ].join("\n"),

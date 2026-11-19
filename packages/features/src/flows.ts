@@ -10,6 +10,9 @@ import { overlaps, splitWords, tokens } from "./words.js";
  * happen, a call seen at one end only, or a loose end in a component the flow passes.
  */
 
+/** v30 slice 8: an Unresolved record that is an HTTP call: on the map, a call with no arrow. */
+const isHttpCall = (kind: string): boolean => kind === "http-call" || kind === "call";
+
 export type LooseEndKind = "unknown-caller" | "unknown-trigger" | "one-end" | "loose-end";
 
 export interface LooseEnd {
@@ -104,7 +107,10 @@ export function featureFlows(
             add({
               kind: "loose-end",
               record: u.id,
-              text: `${v.component} has a loose end Atticus couldn't follow (${u.raw})`,
+              // v30 slice 8 (docs/guide/words.md): an HTTP call's loose end has no arrow.
+              text: isHttpCall(u.unresolvedKind)
+                ? `${v.component} has a call with no arrow (${u.raw}): Atticus couldn't tell where it goes`
+                : `${v.component} has a loose end Atticus couldn't follow (${u.raw})`,
             });
     }
     const first = feature.entryPoints[0];

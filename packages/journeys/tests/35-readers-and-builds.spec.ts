@@ -322,7 +322,7 @@ test("a catalog from before beta.27 is upgraded from the app, every file listed 
     const before = catalogFiles(root);
     await open(page, old, "catalog-builds");
     const panel = page.locator(".panel", {
-      has: page.getByRole("heading", { name: "Upgrade to source slots" }),
+      has: page.getByRole("heading", { name: "Upgrade to stored reads" }),
     });
     await expect(panel.getByText("The first build after it gives every record")).toBeVisible();
     await expect(

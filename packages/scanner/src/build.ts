@@ -883,7 +883,7 @@ export const BUILD_PASSES = [
   "the merge, intake, features and the glossary",
   "link evidence and shared maps",
   "the legacy records",
-  "your decisions",
+  "your changes",
   "each repo's flows and loose calls",
   "the record files and build.json",
 ] as const;
@@ -2548,7 +2548,7 @@ export async function refuseIfNewer(
   return files.length
     ? {
         reasons: ["newer-atticus"],
-        message: `Nothing written: ${newerAtticusWords(files)}`,
+        message: `The catalog wasn't changed: ${newerAtticusWords(files)}`,
         newer: files,
       }
     : undefined;
@@ -2704,7 +2704,7 @@ export async function guardBuild(
       `${edits.length} ${edits.length === 1 ? "file" : "files"} under ${genRel} ${edits.length === 1 ? "was" : "were"} changed by hand since the last build, so nothing is overwritten:`,
       ...edits.slice(0, 20).map((e) => `  ${e.how}: ${e.path}`),
       ...(edits.length > 20 ? [`  and ${edits.length - 20} more`] : []),
-      `Keep ${edits.length === 1 ? "it" : "them"} as your decisions, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
+      `Keep ${edits.length === 1 ? "it" : "them"} as your edits, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
     );
     if (o.discardEdits !== undefined)
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
@@ -2999,7 +2999,7 @@ export async function guardBuild(
     if (unexplained.length) {
       reasons.push("unexplained-removals");
       lines.push(
-        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or decision of yours explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
+        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or change of yours explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
         ...unexplained
           .slice(0, 20)
           .map((x) => `  ${x.kind}/${x.id}${x.repos.length ? ` (${x.repos.join(", ")})` : ""}`),
@@ -4158,7 +4158,7 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     );
   for (const d of r.build.orphanedDecisions)
     out.push(
-      `Your decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
+      `Your change ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
   return out;
 }

@@ -31,11 +31,16 @@ describe("one name per thing", () => {
     expect(term("Read status")).toMatchObject({ was: "Trust" });
     expect(term("Cross-check")).toMatchObject({ was: "Readers found / facts say" });
     expect(term("call with no arrow")).toMatchObject({ was: "loose call" });
-    expect(term("your decision")).toMatchObject({ was: "curated decision" });
-    expect(term("your kept edit")).toBeUndefined();
+    // Everything a person told Atticus that the build keeps is one of "your changes"; a decision
+    // is only the AI's, or the knowledge kind.
+    expect(term("your changes")).toMatchObject({ was: "curated decision" });
+    expect(term("your kept edit")!.says).toMatch(/one of your changes/);
+    expect(term("decision")!.says).toMatch(/Only the AI's decisions/);
+    expect(term("your decision")).toBeUndefined();
+    expect(term("loose end")!.says).toMatch(/for a call, the map draws no arrow/);
     for (const t of ["Apply", "Write", "Propose", "your changes", "outside system", "Activity"])
       expect(term(t), t).toBeDefined();
-    expect(term("Apply")!.says).toMatch(/Apply means only this/);
+    expect(term("Apply")!.says).toMatch(/The button Apply means only this/);
     expect(COPY.glossary.intro).toContain("docs/guide/words.md");
     const out = renderToStaticMarkup(<Words />);
     expect(out).toContain(COPY.glossary.was("loose call"));

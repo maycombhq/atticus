@@ -671,7 +671,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const curatedBefore = files(join(root, "catalog", "curated"));
       const curate = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
       expect(curate.code).toBe(1);
-      expect(curate.err).toMatch(/An added record can't be kept as your decision/);
+      expect(curate.err).toMatch(/An added record can't be kept as your edit/);
       expect(curate.err).toMatch(/a fact in facts\/<repo>\.jsonl/);
       expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
       const build = await run(["catalog", "build", "--root", root]);
@@ -700,7 +700,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         stringify({ ...doc, auth: "mtls", evidence: [{ source: "manual", by: "pat" }] }),
       );
       const list = await run(["catalog", "edits", "--root", root]);
-      expect(list.out).toMatch(/changes evidence, which your decision can't set/);
+      expect(list.out).toMatch(/changes evidence, which a kept edit can't set/);
       expect(list.out).toMatch(/atticus catalog edits --curate --drop-fields 1/);
       const curatedBefore = files(join(root, "catalog", "curated"));
       const plain = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
@@ -734,7 +734,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         "pat",
       ]);
       expect(ok.code, ok.err).toBe(0);
-      expect(ok.out).toMatch(/kept as your decision without evidence/);
+      expect(ok.out).toMatch(/kept as your edit without evidence/);
       expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
       const now = readFileSync(path, "utf8");
       expect(now).toMatch(/^auth: mtls$/m);

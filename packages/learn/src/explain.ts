@@ -65,7 +65,7 @@ const KIND_TEXT: Record<string, string> = {
   Capability: "a feature: what a set of entry points adds up to for its users",
   Unresolved: "a loose end: a call or access found on one side only, not yet matched",
   CuratedDecision:
-    "your decision (CuratedDecision): a person's decision replayed over the catalog on every build",
+    "one of your changes (CuratedDecision): what a person told Atticus (a choice, a tag, a kept edit), replayed over the catalog on every build",
   GlossaryTerm: "a glossary term: a business word and what it means",
 };
 

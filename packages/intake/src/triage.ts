@@ -59,8 +59,8 @@ function readingItems(input: BuildTriageInput): TriageItem[] {
         records: [d.id!],
         options: [opt.make(itemId, "suppress", d.id!, null, "Nothing more to take from it")],
         next: picture
-          ? "Redraw it in draw.io with the catalog shape library (atticus diagram library) and drop the .drawio file into inputs/: Atticus reads it exactly. Or record what it shows as owner answers and your decisions."
-          : "Record the facts it holds as owner answers or your decisions, or link the page as a source; Atticus never takes a fact from it on its own.",
+          ? "Redraw it in draw.io with the catalog shape library (atticus diagram library) and drop the .drawio file into inputs/: Atticus reads it exactly. Or record what it shows as owner answers and your changes."
+          : "Record the facts it holds as owner answers or your changes, or link the page as a source; Atticus never takes a fact from it on its own.",
       } satisfies TriageItem;
     });
 }

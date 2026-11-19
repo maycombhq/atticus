@@ -55,7 +55,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - Readers found / facts say → **Cross-check**
   - "Apply" means only "update the map from what was read": Apply fix → **Write the fix**, Apply to similar → **Write to similar**; "applies", "the commands still apply" and the like say what they mean
   - loose call → **call with no arrow**
-  - curated decision, "make them curated" → **your decision**, "keep them as your decisions" (every decision a person made that the build keeps: a triage answer, a tag, a hand edit kept)
+  - curated decision → one of **your changes** (everything a person told Atticus that the build keeps: an answer, a correction, a triage choice, a tag, a kept edit, a deleted link), named as the one meant where it helps (your answer, your correction, your kept edit); "make them curated" → "keep them as your edits"; **decision** is left for the AI's decisions and the knowledge kind
+  - a loose end, when it is an HTTP call → **a call with no arrow** (in the gap questions)
   - the answers and corrections (shown together) → **your changes**
   - system (for a box outside the estate) → **outside system**: "Repo, outside system or team", "Outside systems of the profile", "Rename to a real repo or outside system"
   - readers slot, source slot, facts slot, "a slot behind it" → said without the slot word in everyday text (Scans, Cross-check, the scan's and the upgrade's lines); kept on Catalog builds, the page for diagnosing a build
@@ -132,6 +133,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Local API 3.19.0 (additive)
 
+- **v30 slice 8.** `GET /api/catalog/{kind}` takes `?repo=`: the records whose own `repo` field is that repo (Impact asked of a repo box lists the repo's components; `?q=` matches only ids and names, and a repo's name is rarely in its components').
 - **ADR 0202, points 1 to 6.** New routes: `POST /api/support/bundle` (`SupportBundleView`: `file`, `name`, `bytes`, `files`, and `zip` in base64 up to 8 MB; no body, no job, no network call) and `GET /api/jobs?action=&repo=` (`{ jobs }`: the running ones that match, then the finished ones still kept, newest first). New parameters: `repo` and `rejected=1` on `GET /api/trust` (only that repo's row, its lists holding only the rejected lines, every one; 404 for an id that is no repo, 400 for `rejected=1` without `repo`). New optional fields: `stoppable`, `stopLands` (`now` or `after-write`) and `for` (`{ action, repo? }`) on a job; `stoppable` and `stopLands` on a Console entry; `undo` (`n`, `files`, `plan`, `command`, `at`, `ofThis`) on the result of a local job that builds and ended failed or refused, and on the 409 of `POST /api/build` and `POST /api/facts/{repo}/apply`; `why` and `note` on a task. `for.action` is one of the ADR's nine or `map-edits` (Edit the map's Apply my changes). No field is removed or changes meaning, and an app against an older server shows what it showed before: Stop while an Apply or a build runs (none for Propose and Bring in, which that server doesn't stop), the link to the Undo panel, the command to copy.
 
 ## 2.0.0-beta.28.5 (2026-11-17)

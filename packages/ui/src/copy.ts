@@ -1252,7 +1252,7 @@ export const COPY = {
   catalogBuild: {
     title: "Catalog builds",
     intro:
-      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and your decisions. Nothing is removed or overwritten without being shown first, and every build can be undone.",
+      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and your changes. Nothing is removed or overwritten without being shown first, and every build can be undone.",
     openFromScans: "Catalog builds: confirm, undo, prune",
     sourcesTitle: "Where each repo's records come from",
     sourcesCaption: "Each repo's source in the build",
@@ -1317,7 +1317,7 @@ export const COPY = {
     cancel: "Cancel",
     editsTitle: "Hand edits",
     editsIntro:
-      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits keeps each as your decision, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
+      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits keeps each as your kept edit, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
     /** Beta.30: what happened and the way on, for the refusals no confirm goes on from. */
     way: {
       unexplained:
@@ -1332,13 +1332,13 @@ export const COPY = {
     unreadableManifest: (n: number) =>
       `catalog/sources/build.json doesn't read: it was edited or merged by hand. Without it none of the ${n} record files under catalog/generated can be told from a hand edit, so nothing is overwritten.`,
     unreadableIntro:
-      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your decisions isn't the way here.",
+      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
     buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
     curate: (n: number) => (n === 1 ? "Keep my edit" : `Keep my ${n} edits`),
     curating: "Keeping your edits…",
     curateHint:
-      "Writes your decision for each into catalog/curated/, to propose for review, then builds.",
+      "Writes your kept edit for each into catalog/curated/, to propose for review, then builds.",
     // The count is in the dialog it opens, which lists each file and is confirmed with it.
     discard: (_n: number) => "Use Atticus's version…",
     discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
@@ -1380,7 +1380,7 @@ export const COPY = {
       answers: (path: string) => `An answer changed (${path}): your own action`,
       pairings: (path: string) => `A pairing changed (${path})`,
       "org-pack": (path: string) => `The org pack changed (${path})`,
-      curated: (path: string) => `One of your decisions changed (${path})`,
+      curated: (path: string) => `One of your changes changed (${path})`,
       traffic: (path: string) => `The traffic evidence changed (${path})`,
       shared: (path: string) => `A shared map changed (${path})`,
       inputs: (path: string) => `inputs/ changed (${path})`,
@@ -1388,7 +1388,7 @@ export const COPY = {
       federated: (path: string) => `A federated catalog changed (${path})`,
       other: (path: string) => `An input changed (${path})`,
     } as Record<string, (path: string) => string>,
-    upgradeTitle: "Upgrade to source slots",
+    upgradeTitle: "Upgrade to stored reads",
     upgradeIntro:
       "This catalog was written before beta.27. The upgrade moves every record into source slots, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
     upgradeRecords: (records: number, slots: number) =>
@@ -2811,7 +2811,7 @@ export const COPY = {
       },
       {
         term: "Apply",
-        says: "Update the map from what was read: verify checks each fact on its cited line and the catalog is built again. Apply means only this.",
+        says: "Update the map from what was read: verify checks each fact on its cited line and the catalog is built again. The button Apply means only this.",
       },
       {
         term: "Write",
@@ -2824,17 +2824,26 @@ export const COPY = {
       },
       {
         term: "your changes",
-        says: "Your corrections, declarations and answers together, waiting to be applied and proposed.",
+        says: "Everything you told Atticus that the build keeps, in your name: your answers, corrections, declarations, choices on triage items, tags, kept edits and deleted links. Apply puts them on the map; Propose shares them.",
+        was: "curated decision",
       },
       {
-        term: "your decision",
-        says: "Something a person decided that every later build keeps, in your name: an answer to a triage item, a tag, a hand edit to the catalog you kept (Keep my edits).",
-        was: "curated decision",
+        term: "your kept edit",
+        says: "A file of the catalog you changed by hand and kept (Keep my edits): one of your changes.",
+        was: "made curated",
+      },
+      {
+        term: "decision",
+        says: "Only the AI's decisions (Decided by AI) and the knowledge kind (decisions and constraints). What you told Atticus is one of your changes, never a decision.",
       },
       {
         term: "call with no arrow",
         says: "A call read from code whose target Atticus can't tell yet, so the map draws no arrow for it.",
         was: "loose call",
+      },
+      {
+        term: "loose end",
+        says: "A call, publish, listener or table use whose other side Atticus can't find; for a call, the map draws no arrow.",
       },
       {
         term: "repo",
@@ -3789,7 +3798,7 @@ export const COPY = {
     intake: "Intake",
     inputs: "inputs/",
     eachChoiceIsSaved:
-      "Each choice is saved as your decision, in your name. Code always wins over a document until a person decides.",
+      "Each choice is saved in your name, as one of your changes. Code always wins over a document until a person decides.",
     nothingToTriage: "Nothing to triage.",
     needsYou: "Needs you",
     ofReposCloned: (present: string | number, total: string | number) =>
@@ -3801,7 +3810,7 @@ export const COPY = {
     scanCrossCheck:
       "A cross-check, not how the map is made: the built-in readers read every repo's files. A scan keeps each repo read in full, keeps every other repo's last good read and says why, then builds the catalog; for a repo with verified facts, the facts stay its map and the readers' differences are listed under Cross-check. It asks which repo answers on an unknown host only for the repos your assistant has read.",
     /** Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. */
-    scanRefusedTitle: "Nothing written: the catalog is as it was.",
+    scanRefusedTitle: "The catalog wasn't changed.",
     scanRefusedState: "Nothing written",
     scanRefusedList: "Repos the scan didn't read in full",
     scanRefusedWhy: {
@@ -4207,7 +4216,7 @@ export const COPY = {
     columnsTaggedWithA:
       "Columns tagged with a data classification, and so where tagged fields live.",
     noColumnsAreTagged:
-      "No columns are tagged yet. Tag sensitive fields as your decisions so their flows show here.",
+      "No columns are tagged yet. Tag sensitive fields (each tag is one of your changes) so their flows show here.",
     authenticationGaps: "Authentication gaps",
     callsWithNoOauth2: "Calls with no OAuth2, mTLS or API key declared in code or config.",
     everyCallDeclaresHow: "Every call declares how it authenticates.",
@@ -5327,7 +5336,7 @@ export const COPY = {
     editsChanged:
       "The hand edits aren't the ones listed here any more. Nothing was kept: Apply again to list them.",
     curatedApplyAgain: (repo: string) =>
-      `The hand edits are your decisions now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
+      `The hand edits are your kept edits now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
     toHome: "Propose it from Home",
     applyFirst: "Apply your changes first, so the map in the pull request matches them:",
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
@@ -6938,7 +6947,7 @@ export const COPY = {
       `Apply will wait for you to confirm: its build removes ${n} ${n === 1 ? "record" : "records"}, more than the removal guard lets through unasked. Apply lists ${n === 1 ? "it" : "them"}, each with why; confirm there with ${button}.`,
     // The re-review of G1: files under catalog/generated changed by hand stop the Apply first.
     confirmEdits: (n: number, button: string) =>
-      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; keep ${n === 1 ? "it as your decision" : "them as your decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
+      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; keep ${n === 1 ? "it as your edit" : "them as your edits"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
     confirmRefused: (
       reasons: readonly ("nothing-read" | "empty" | "unexplained-removals" | "newer-atticus")[],
