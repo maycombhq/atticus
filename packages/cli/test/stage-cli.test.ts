@@ -508,3 +508,74 @@ describe("atticus bench design", () => {
     );
   });
 });
+
+describe("the architecture stage's last line about its target flows (beta.30)", () => {
+  const PIN = join(FIXTURES, "stages/pin-table");
+  const pinEstate = async () => {
+    const root = await estate();
+    for (const r of parse(readFileSync(join(PIN, "catalog.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error("bad fixture record");
+      const f = join(root, "catalog/generated", recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+    await cp(join(PIN, "pin-order-note"), join(root, "openspec/changes/pin-order-note"), {
+      recursive: true,
+    });
+    return root;
+  };
+  const architecture = async (answer: string, feature?: string) => {
+    const root = await pinEstate();
+    if (feature)
+      await writeFile(join(root, "openspec/changes/pin-order-note/feature.yaml"), feature);
+    const mock = new MockRuntime(
+      (req) =>
+        req.agent.id.endsWith("-critic")
+          ? "findings: []"
+          : req.agent.id === EXPAND_AGENT
+            ? "terms: []\nnames: []\n"
+            : answer,
+      { now: () => NOW },
+    );
+    const o = io();
+    const code = await stageCli(root, ["change", "architecture", "pin-order-note"], {}, o.io, {
+      runtime: mock,
+      now: NOW,
+    });
+    return { code, lines: [...o.out, ...o.err] };
+  };
+
+  it("names each target flow with what happens to it and its steps", async () => {
+    const r = await architecture(readFileSync(join(PIN, "drafts/answered.yaml"), "utf8"));
+    expect(r.code).toBe(0);
+    expect(r.lines).toContain(
+      "Target flows: forge-orders.pin-note (new, 2 steps), forge-orders.unpin-note (new, 2 steps), in openspec/changes/pin-order-note/target-flows/.",
+    );
+  });
+
+  it("says there are none when the design changes no flow, never an empty list", async () => {
+    // From a trial run: "Target flows: , in openspec/changes/<id>/target-flows/."
+    // A feature placed on no flow: the note's wording changes, nothing a flow does.
+    const r = await architecture(
+      "flows: []\n",
+      [
+        "schemaVersion: 1",
+        "change: pin-order-note",
+        "entry: brief",
+        "summary: The order page's help text says a note can be pinned.",
+        "features: []",
+        "flows: []",
+        "newFlows: []",
+        "gaps: []",
+        "conflicts: []",
+        "questions: []",
+        "",
+      ].join("\n"),
+    );
+    expect(r.code).toBe(0);
+    const line = r.lines.find((l) => l.startsWith("Target flows"));
+    expect(r.lines.join("\n")).not.toMatch(/Target flows: ,/);
+    expect(line).toBe("Target flows: none (the design changes no flow).");
+  });
+});

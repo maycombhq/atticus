@@ -259,7 +259,10 @@ export async function stageCli(
       if (json) return out(io, r);
       const extra = r.answer
         ? [
-            `Target flows: ${r.answer.flows.map((d) => `${d.flow} (${d.change}, ${plural(d.steps.length, "step")})`).join(", ")}, in ${changesRelOf(root)}/${arg}/${TARGET_DIR}/.`,
+            // Beta.30: with none it printed "Target flows: , in …".
+            r.answer.flows.length
+              ? `Target flows: ${r.answer.flows.map((d) => `${d.flow} (${d.change}, ${plural(d.steps.length, "step")})`).join(", ")}, in ${changesRelOf(root)}/${arg}/${TARGET_DIR}/.`
+              : "Target flows: none (the design changes no flow).",
             `Next: atticus plan stories ${arg} (or /atticus-stories ${arg}) once the architecture PR is merged.`,
           ]
         : [];
