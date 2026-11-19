@@ -141,6 +141,25 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     }
   });
 
+  it("says the map's fault, never \"planned or not read\", where the map couldn't be read (review)", () => {
+    const fault = "The map holds no records in this metarepo yet.";
+    const t = translate("who calls forge-portal?", lookup, () => fault);
+    expect(t).toEqual({
+      action: "query",
+      query: "kind:interface to:forge-portal",
+      explanation: `Read as: the interfaces whose callee is forge-portal. ${fault}`,
+      fault,
+    });
+    // A map that was read whole has no fault: the name is planned or not read.
+    const ok = translate("who calls forge-portal?", lookup, () => undefined);
+    expect(ok.explanation).toMatch(/forge-portal is not in the map: planned or not read\.$/);
+    expect(ok).not.toHaveProperty("fault");
+    // The fault is asked for only when a name is missing.
+    let asked = 0;
+    translate("who calls ledger-api?", lookup, () => (asked++, fault));
+    expect(asked).toBe(0);
+  });
+
   it("keeps every older reading: a way, a kind or a tag is never taken for a missing name", () => {
     for (const [q, query] of [
       ["what calls the gateway", "kind:interface via:gateway"],

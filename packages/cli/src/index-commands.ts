@@ -38,8 +38,14 @@ export async function askCommand(
   io: Output,
 ): Promise<number> {
   const asked = await withIndex(root, io, (ix) => {
-    return translate(question, askLookup(ix));
+    return translate(question, askLookup(ix), () => mapFault(ix, root));
   });
+  // The question names something the map lacks, and the map couldn't be read: an error that
+  // says what is wrong, never an empty answer read as "planned or not read".
+  if (asked.action === "query" && asked.fault) {
+    io.err(asked.fault);
+    return 1;
+  }
   const answer = (to: Output) =>
     asked.action === "impact"
       ? impactCommand(root, asked.id, { json: o.json === true }, to)

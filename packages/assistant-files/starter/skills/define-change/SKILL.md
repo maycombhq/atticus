@@ -45,7 +45,7 @@ fact about the estate from memory: it comes from a tool answer, or it is listed 
 7. `qa`, then `qa-naysayer`
 
 Last, once the check has passed and the change exists: `spec-writer`. It has no naysayer; the
-critic and `atticus next` check what it writes.
+critic and `atticus change status` say what is wrong with what it writes.
 
 To add a persona, put `<name>.md` and `<name>-naysayer.md` in `agents/` and add one line here.
 A role with nothing to say about this change writes one sentence saying so and why; its naysayer
@@ -182,9 +182,10 @@ again.
 ## Then
 
 ```
-atticus next <id>
+atticus change status <id>
 ```
 
-It checks the change and says what is next: a problem to fix, or, when nothing blocks, the
-hand-off. Stop there: a person raises it (`atticus change handoff <id> --approve`), and merging
-its pull request approves the plan.
+It says what this change still needs: its state, the next step, and under "Blocked by" each file
+that is missing and each blocking finding. When nothing blocks, stop: a person raises the
+hand-off (`atticus change handoff <id> --approve`, which the status names), and merging its pull
+request approves the plan.

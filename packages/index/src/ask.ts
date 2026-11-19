@@ -8,7 +8,17 @@
 export type Asked =
   | { action: "impact"; id: string; query: string; explanation: string }
   | { action: "owner"; id: string; query: string; explanation: string }
-  | { action: "query"; query: string; explanation: string };
+  | {
+      action: "query";
+      query: string;
+      explanation: string;
+      /**
+       * Set when the question names something the map lacks and the map couldn't be read (no
+       * metarepo, no catalog, a record file that doesn't read): what is wrong. The name can't
+       * then be called planned or not read, and the query's empty answer means nothing.
+       */
+      fault?: string;
+    };
 
 /**
  * What a question's word names. `byName` is a topic found by its name, not its id: only the
@@ -132,7 +142,12 @@ function named(words: string[], lookup: Lookup) {
   return undefined;
 }
 
-export function translate(question: string, lookup: Lookup): Asked {
+export function translate(
+  question: string,
+  lookup: Lookup,
+  /** Why the map can't say what it lacks (`mapFault`), asked only when a name is missing. */
+  fault?: () => string | undefined,
+): Asked {
   const q = question.trim();
   const lower = q.toLowerCase();
   const words = lower
@@ -231,12 +246,16 @@ export function translate(question: string, lookup: Lookup): Asked {
       terms.length === 1 && terms[0] === "kind:interface" && !topic()
         ? calledName(words)
         : undefined;
-    if (missing)
+    if (missing) {
+      // "Not in the map" only of a map that was read whole (ADR 0201 amendment).
+      const why = fault?.();
       return {
         action: "query",
         query: `kind:interface to:${missing}`,
-        explanation: `Read as: the interfaces whose callee is ${missing}. ${notInMap(missing)}`,
+        explanation: `Read as: the interfaces whose callee is ${missing}. ${why ?? notInMap(missing)}`,
+        ...(why ? { fault: why } : {}),
       };
+    }
     return {
       action: "query",
       query: terms.join(" "),

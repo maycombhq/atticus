@@ -459,11 +459,13 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       "## forge-orders",
       "(after t1)",
       "[P]",
-      "atticus next <id>",
+      "atticus change status <id>",
       "You never raise, approve or merge anything.",
     ])
       expect(spec, words).toContain(words);
 
+    // The closing command is one that exists: atticus next takes no change id.
+    for (const f of files) expect(f.text, f.path).not.toMatch(/atticus next <|`atticus next`/);
     const skill = files.find((f) => f.path === "skills/define-change/SKILL.md")!;
     const s = splitFm(skill.text);
     expect(s.fm.name).toBe("define-change");
@@ -487,7 +489,7 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       "[P]",
       "## forge-orders",
       "No persona writes the change's files.",
-      "atticus next <id>",
+      "atticus change status <id>",
       "atticus change handoff <id> --approve",
       "only when a person has asked for it in this session",
       "Never edit source code in any repo, the catalog or the map, the org pack (these agent files included) or another change's files.",
@@ -500,7 +502,7 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       "atticus change new --from requirements.md --check",
       "atticus change new --from requirements.md\n",
       "## Hand to the spec writer",
-      "atticus next <id>",
+      "atticus change status <id>",
     ].map((w) => s.body.lastIndexOf(w));
     expect(steps).toEqual([...steps].sort((a, b) => a - b));
     expect(steps.every((n) => n > 0)).toBe(true);
@@ -527,7 +529,7 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       expect(copilot.tools, p).toEqual(["read", "search", "edit", "atticus/*"]);
       expect(copilot.handoffs.every((h) => h.send === false && h.prompt.length > 10)).toBe(true);
     }
-    // The spec writer: its tools in both files, no hand-off (a person runs atticus next).
+    // The spec writer: its tools in both files, no hand-off (a person runs atticus change status).
     const sw = splitFm(read(root, ".claude/agents/spec-writer.md"));
     expect(String(sw.fm.tools)).toMatch(/^Read, Grep, Glob, Edit, Write, mcp__atticus__ask, /);
     expect(String(sw.fm.tools)).toContain("mcp__atticus__task_context");

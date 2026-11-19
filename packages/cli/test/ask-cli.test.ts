@@ -91,6 +91,44 @@ describe("atticus ask", () => {
     expect(j.readAs).toMatch(/forge-portal is not in the map: planned or not read\.$/);
   });
 
+  it('says what is wrong, never "planned or not read", where the map can\'t be read (review)', async () => {
+    const at = async (dir: string, ...args: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main(["ask", "who calls forge-portal?", ...args, "--root", dir], {
+        out: (l) => out.push(l),
+        err: (l) => err.push(l),
+      });
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    // A folder that is no metarepo.
+    const bare = await mkdtemp(join(tmpdir(), "atticus-ask-bare-"));
+    // A metarepo with no catalog yet.
+    const empty = await mkdtemp(join(tmpdir(), "atticus-ask-empty-"));
+    await cp(join(FIXTURES, "forge/metarepo"), empty, { recursive: true });
+    // The Forge catalog with one record file that doesn't read.
+    const broken = await mkdtemp(join(tmpdir(), "atticus-ask-broken-"));
+    await cp(root, broken, { recursive: true });
+    await writeFile(
+      join(broken, "catalog/generated/component/quillfeather.yaml"),
+      "kind: Component\nid: [oops\n",
+    );
+    for (const [dir, why] of [
+      [bare, /is not a metarepo/],
+      [empty, /The map holds no records/],
+      [broken, /couldn't be read whole[\s\S]*quillfeather\.yaml/],
+    ] as const)
+      for (const json of [[], ["--json"]]) {
+        const r = await at(dir, ...json);
+        expect(r.code, `${String(why)} ${json.join("")}`).toBe(1);
+        expect(r.err).toMatch(why);
+        expect(r.out + r.err).not.toMatch(/planned or not read/);
+        expect(r.out).not.toMatch(/0 records|"total"/);
+      }
+    // Read whole, the same question is answered: the name is planned or not read.
+    expect((await run(["ask", "who calls forge-portal?"])).code).toBe(0);
+  }, 120_000);
+
   it("needs a question", async () => {
     expect((await run(["ask"])).code).toBe(2);
   });

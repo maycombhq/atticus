@@ -53,7 +53,7 @@ Then, in your assistant, run `/define-change` on a requirements file. For each r
 3. A person in that role answers each one, or accepts going on without an answer and says why.
 4. The next persona starts.
 
-When every role has had its turn, `atticus change new --from requirements.md --check` says whether the file passes, and the same command without `--check` makes the change. Then the spec writer, a separate agent, writes the change's `proposal.md`, spec deltas, `design.md` and `tasks.md` from the cleared requirements, in the shape of OpenSpec's own templates, and never touches the requirements file: when something is unclear it stops and names the section to reopen. `atticus next <id>` then says what is next, and a person raises the hand-off. Nothing here approves anything: merging the hand-off's pull request does.
+When every role has had its turn, `atticus change new --from requirements.md --check` says whether the file passes, and the same command without `--check` makes the change. Then the spec writer, a separate agent, writes the change's `proposal.md`, spec deltas, `design.md` and `tasks.md` from the cleared requirements, in the shape of OpenSpec's own templates, and never touches the requirements file: when something is unclear it stops and names the section to reopen. `atticus change status <id>` then says what the change still needs, and when nothing blocks, a person raises the hand-off. Nothing here approves anything: merging the hand-off's pull request does.
 
 Three rules are in every one of these files:
 

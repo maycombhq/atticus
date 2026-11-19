@@ -511,6 +511,11 @@ describe("atticus mcp (ADR 0104)", () => {
         expect(r.result.content[0]!.text, name).toMatch(/is not a metarepo/);
         expect(r.result.content[0]!.text, name).not.toMatch(/planned or not read/);
       }
+      const QUESTION = { question: "who calls forge-portal?" };
+      const askBare = await call("ask", QUESTION, real(bare));
+      expect(askBare.result.isError).toBe(true);
+      expect(askBare.result.content[0]!.text).toMatch(/is not a metarepo/);
+      expect(askBare.result.content[0]!.text).not.toMatch(/planned or not read/);
       const noChanges = await call("conflicts", {}, real(bare));
       expect(noChanges.result.isError).toBe(true);
       expect(noChanges.result.content[0]!.text).toMatch(/is not a metarepo/);
@@ -526,6 +531,10 @@ describe("atticus mcp (ADR 0104)", () => {
         expect(r.result.isError, name).toBe(true);
         expect(r.result.content[0]!.text, name).toMatch(/The map holds no records/);
       }
+      const askEmpty = await call("ask", QUESTION, real(empty));
+      expect(askEmpty.result.isError).toBe(true);
+      expect(askEmpty.result.content[0]!.text).toMatch(/The map holds no records/);
+      expect(askEmpty.result.content[0]!.text).not.toMatch(/planned or not read/);
       // There, no open changes overlap, and that is an answer.
       const none = await call("conflicts", {}, real(empty));
       expect(none.result.isError).toBeUndefined();
@@ -555,6 +564,15 @@ describe("atticus mcp (ADR 0104)", () => {
             /couldn't be read whole[\s\S]*quillfeather\.yaml/,
           );
         }
+      const askBroken = await call("ask", QUESTION, real(broken));
+      expect(askBroken.result.isError).toBe(true);
+      expect(askBroken.result.content[0]!.text).toMatch(
+        /couldn't be read whole[\s\S]*quillfeather\.yaml/,
+      );
+      expect(askBroken.result.content[0]!.text).not.toMatch(/planned or not read/);
+      // A question that names what was read is still answered beside the broken file.
+      const askHas = await call("ask", { question: "who calls ledger-api?" }, real(broken));
+      expect(askHas.result.isError).toBeUndefined();
       // What was read is still answered.
       const has = await call("show", { id: "ledger-api" }, real(broken));
       expect(has.result.isError).toBeUndefined();

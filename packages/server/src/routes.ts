@@ -25,6 +25,7 @@ import {
   openIndex,
   QueryError,
   askLookup,
+  mapFault,
   translate,
   type CatalogIndex,
 } from "@maycombhq/index";
@@ -276,7 +277,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         ? await ctx.askKnowledge(q).catch(() => undefined)
         : undefined;
       const answer = await withIndex(root, (ix): Record<string, unknown> => {
-        const asked = translate(q, askLookup(ix));
+        const asked = translate(q, askLookup(ix), () => mapFault(ix, root));
         if (asked.action === "impact")
           return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
         if (asked.action === "owner") {

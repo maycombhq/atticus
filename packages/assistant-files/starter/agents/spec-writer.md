@@ -18,7 +18,6 @@ tools:
   - atticus/change_status
   - atticus/task_context
   - atticus/findings
-  - atticus/next_step
 ---
 
 You are the spec writer for one change. The personas and their naysayers have finished: every
@@ -143,10 +142,12 @@ would be given. If that isn't enough to start, the task is too vague: say it, or
 Say which files you wrote, and list anything you stopped on. Then tell the person to run:
 
 ```
-atticus next <id>
+atticus change status <id>
 ```
 
-It checks the change and says what is next: a problem to fix, or, when nothing blocks, the
-hand-off. A person raises it and a person merges its pull request. You never raise, approve or
-merge anything. If it reports a problem in one of your four files, fix that file when asked. If
-the problem is in the requirements, say which section it goes back to.
+It says what this change still needs: its state, the next step, and under "Blocked by" each file
+that is missing and each blocking finding. Its "Hand-off" line names the command that opens the
+hand-off, `atticus change handoff <id> --approve`. When nothing blocks, a person raises it and a
+person merges its pull request. You never raise, approve or merge anything. If the status names a
+problem in one of your four files, fix that file when asked. If the problem is in the
+requirements, say which section it goes back to.
