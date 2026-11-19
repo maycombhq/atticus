@@ -707,7 +707,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   const asJob = (
     what: string,
     work: (count: (done: number, total: number, message: string) => void) => Promise<Ran>,
-    o: { severalWrites?: { heard: string; stopping: string }; for?: Api.JobForT } = {},
+    o: {
+      severalWrites?: { heard: string; stopping: string };
+      for?: Api.JobForT;
+      hearsStop?: boolean;
+    } = {},
   ) => {
     // ADR 0202 point 3: a job that builds the catalog says, when it fails or is refused, which
     // build an Undo would take back (its own, when it took an undo copy before it failed).
@@ -773,6 +777,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       },
       {
         title: what,
+        // Only work that reads the job's signal is ever stoppable (the review of ADR 0202).
+        ...(o.hearsStop ? { hearsStop: true } : {}),
         ...(o.severalWrites ? { severalWrites: o.severalWrites } : {}),
         ...(o.for ? { for: o.for } : {}),
       },
@@ -937,7 +943,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         await conflictWithUndo(root, () =>
           refusalStillListed(b, (c) => c === `atticus verify ${repo} --write`),
         );
-        const applyFor = { for: { action: "apply" as const, repo } };
+        const applyFor = { for: { action: "apply" as const, repo }, hearsStop: true };
         return asJob(
           `Applying to ${repo}`,
           async () => {
@@ -1085,7 +1091,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 io,
               ),
             ),
-          { for: { action: "propose" } },
+          { for: { action: "propose" }, hearsStop: true },
         );
       })
       .add("POST", "/api/propose/bring-in", async () => {
@@ -1093,6 +1099,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // ADR 0202 point 2: Stop is heard until just before the working tree is changed.
         return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)), {
           for: { action: "bring-in" },
+          hearsStop: true,
         });
       })
       // App-only audit (3.3.0): Set the upstream, when Bring in found the branch follows none and
@@ -1498,7 +1505,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               }),
             };
           },
-          { title: `Run the ready tasks of ${change}`, log: { ids: [change] } },
+          { title: `Run the ready tasks of ${change}`, log: { ids: [change] }, hearsStop: true },
         );
         return { status: 202, body: Api.RunReadyAccepted.parse({ jobId: job.id, tasks }) };
       })
@@ -1908,7 +1915,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             }
             return got;
           },
-          { ids: [params.changeId!] },
+          { ids: [params.changeId!], hearsStop: true },
         );
         if (res.code === 2) throw refused(res);
         ctx.events.publish({
@@ -2139,7 +2146,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               errors: res.code === 2 ? res.err : [],
             };
           },
-          { title: scanTitle, log: { ids: b.repos ?? [] }, for: { action: "scan" } },
+          {
+            title: scanTitle,
+            log: { ids: b.repos ?? [] },
+            for: { action: "scan" },
+            hearsStop: true,
+          },
         );
         return { status: 202, body: { jobId: job.id } };
       })
@@ -2172,6 +2184,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             title: b.repos?.length ? `Sync ${b.repos.join(", ")}` : "Sync the base clones",
             log: { ids: b.repos ?? [] },
             for: { action: "sync" },
+            hearsStop: true,
           },
         );
         return { status: 202, body: { jobId: job.id } };

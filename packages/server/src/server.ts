@@ -364,6 +364,11 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     .add("POST", "/api/jobs/{jobId}/cancel", ({ params }) => {
       const j = jobs.get(params.jobId!);
       if (!j) throw notFound(`There is no job ${params.jobId}.`);
+      // The review of ADR 0202: work that doesn't hear Stop is never said to be stopping.
+      if (j.state === "running" && !jobs.hearsStop(j.id))
+        throw conflict(
+          `${j.title ?? `Job ${j.id}`} can't be stopped: it runs to its end, so what it writes stays whole.`,
+        );
       if (!jobs.cancel(j.id)) throw conflict(`Job ${j.id} already finished (${j.state}).`);
       return { status: 200, body: j };
     });

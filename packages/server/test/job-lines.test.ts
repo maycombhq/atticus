@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { JOB_LINES, JOBS_KEPT, JobManager, jobLine } from "../src/jobs.js";
 
+/** A manager whose jobs hear Stop unless they say otherwise: these tests are of Stop itself. */
+class Hearing extends JobManager {
+  override start(...a: Parameters<JobManager["start"]>): ReturnType<JobManager["start"]> {
+    return super.start(a[0], a[1], { hearsStop: true, ...a[2] });
+  }
+}
+
 /** ADR 0187: a job keeps what it prints, for the Console, and tells whoever listens. */
 
 describe("a job's lines", () => {
   it("keeps what the work prints, from c.line or jobLine anywhere inside it, and tells listeners", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const heard: string[] = [];
     jobs.subscribe((c) => {
       if (c.type === "lines") heard.push(`${c.at}:${c.lines.join("|")}`);
@@ -42,7 +49,7 @@ describe("a job's lines", () => {
   });
 
   it("masks a token by its shape in the live lines, as the run log's record does", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const heard: string[] = [];
     jobs.subscribe((c) => {
       if (c.type === "lines") heard.push(...c.lines);
@@ -69,7 +76,7 @@ describe("a job's lines", () => {
   });
 
   it("gives a job that printed nothing its result's lines and errors when it ends", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const a = jobs.start("local", async () => ({ result: { lines: ["Applied 3 facts"] } }));
     const b = jobs.start("sync", async () => {
       throw new Error("git clone failed");
@@ -81,7 +88,7 @@ describe("a job's lines", () => {
   });
 
   it("keeps a job's last lines only, and the last finished jobs only", async () => {
-    const jobs = new JobManager(() => undefined);
+    const jobs = new Hearing(() => undefined);
     const j = jobs.start("scan", async (c) => {
       for (let i = 0; i < JOB_LINES + 5; i++) c.line(`l${i}`);
     });

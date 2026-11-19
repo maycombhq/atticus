@@ -160,7 +160,7 @@ export function uiModelRunRoutes(
                 ctx,
                 `Applying to ${repo}`,
                 () => runStep(["verify", repo, "--write"]),
-                { ids: [repo] },
+                { ids: [repo], hearsStop: true },
               );
               raw.push(...v.out, ...v.err);
               errs.push(...v.err);
@@ -184,7 +184,7 @@ export function uiModelRunRoutes(
               errors: code === 0 ? [] : errs.length ? appLines(errs) : [],
             };
           },
-          { title: `atticus ${words.join(" ")}`, log },
+          { title: `atticus ${words.join(" ")}`, log, hearsStop: true },
         );
         return { status: 202, body: { jobId: job.id, model } };
       })

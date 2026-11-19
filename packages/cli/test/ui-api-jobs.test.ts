@@ -92,7 +92,11 @@ describe("GET /api/jobs (ADR 0202 point 5)", () => {
         await new Promise<void>((r) => (go = r));
         return {};
       },
-      { title: "Applying to forge-ledger", for: { action: "apply", repo: "forge-ledger" } },
+      {
+        title: "Applying to forge-ledger",
+        for: { action: "apply", repo: "forge-ledger" },
+        hearsStop: true,
+      },
     );
     const entry = async () =>
       Api.ActivityList.parse((await get("/api/activity")).body).entries.find(
@@ -107,5 +111,27 @@ describe("GET /api/jobs (ADR 0202 point 5)", () => {
     go();
     await ctx.jobs.settle(job.id);
     expect((await entry()).stoppable).toBe(false);
+  });
+  it("a job whose work doesn't hear Stop offers none, refuses one, and never ends Stopped", async () => {
+    let go!: () => void;
+    const job = ctx.jobs.start("local", () => new Promise<void>((r) => (go = r)), {
+      title: "Upgrading the metarepo",
+      for: { action: "upgrade" },
+    });
+    const entry = Api.ActivityList.parse((await get("/api/activity")).body).entries.find(
+      (e) => e.id === job.id,
+    )!;
+    expect(entry.stoppable).toBe(false);
+    expect(entry.stop).toBeUndefined();
+    const stop = await post(`/api/jobs/${job.id}/cancel`);
+    expect(stop.status).toBe(409);
+    expect(Api.Problem.parse(stop.body).detail).toBe(
+      "Upgrading the metarepo can't be stopped: it runs to its end, so what it writes stays whole.",
+    );
+    expect(ctx.jobs.get(job.id)!.stopping).toBeUndefined();
+    go();
+    const end = await ctx.jobs.settle(job.id);
+    expect(end.state).toBe("done");
+    expect(ctx.jobs.linesOf(job.id)!.lines).not.toContain("Stopped.");
   });
 });

@@ -65,12 +65,14 @@ export function tracked<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[]; hearsStop?: boolean } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function") return work();
   const opts: JobStartOptions = {
     title,
+    // The review of ADR 0202: stoppable only where the caller says its work hears Stop.
+    ...(o.hearsStop ? { hearsStop: o.hearsStop } : {}),
     ...(o.meta ? { meta: o.meta } : {}),
     // Beta.27 re-review: the run log is titled by the ids it names, never by `title`.
     ...(o.ids ? { log: { ids: o.ids } } : {}),
@@ -90,10 +92,11 @@ export function answerAsJob(
   title: string,
   /** Beta.28.1: told the job's control, to print its steps and say its last as its progress. */
   work: (c?: JobControl) => Promise<Record<string, unknown>>,
-  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[] } = {},
+  o: { kind?: JobKind; meta?: Record<string, string>; ids?: string[]; hearsStop?: boolean } = {},
 ): { status: 202; body: { jobId: string } } {
   const opts: JobStartOptions = {
     title,
+    ...(o.hearsStop ? { hearsStop: o.hearsStop } : {}),
     ...(o.meta ? { meta: o.meta } : {}),
     ...(o.ids ? { log: { ids: o.ids } } : {}),
   };
@@ -129,7 +132,12 @@ export async function trackedLocal<T>(
   ctx: Pick<ServerContext, "jobs">,
   title: string,
   work: (c?: JobControl) => Promise<T>,
-  o: { meta?: Record<string, string>; ids?: string[]; wait?: (ms: number) => Promise<void> } = {},
+  o: {
+    meta?: Record<string, string>;
+    ids?: string[];
+    wait?: (ms: number) => Promise<void>;
+    hearsStop?: boolean;
+  } = {},
 ): Promise<T> {
   const jobs = ctx.jobs as { track?: unknown; runningOf?: unknown } | undefined;
   if (!jobs || typeof jobs.track !== "function" || typeof jobs.runningOf !== "function")
@@ -150,7 +158,12 @@ export async function trackedLocal<T>(
       c?.progress(0, 1, title);
       return work(c);
     },
-    { kind: "local", ...(o.meta ? { meta: o.meta } : {}), ...(o.ids ? { ids: o.ids } : {}) },
+    {
+      kind: "local",
+      ...(o.meta ? { meta: o.meta } : {}),
+      ...(o.ids ? { ids: o.ids } : {}),
+      ...(o.hearsStop ? { hearsStop: o.hearsStop } : {}),
+    },
   );
 }
 
@@ -319,7 +332,10 @@ export function uiActivityRoutes(
       jobId: j.id,
       lines: lines?.total ?? 0,
       from: lines?.from ?? 0,
-      ...(j.state === "running" ? { stop: `/api/jobs/${encodeURIComponent(j.id)}/cancel` } : {}),
+      // Only work that hears Stop has a route that stops it (the review of ADR 0202).
+      ...(j.state === "running" && ctx.jobs.hearsStop(j.id)
+        ? { stop: `/api/jobs/${encodeURIComponent(j.id)}/cancel` }
+        : {}),
       ...(j.state === "running" && j.stopping ? { stopping: true } : {}),
       // ADR 0202 point 2: whether Stop can still take effect, and where it would land.
       stoppable: j.stoppable,

@@ -6,6 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readTerminalRuns, runningDirOf } from "@maycombhq/core";
 import { appRunRecorder, JobManager } from "../src/index.js";
 
+/** A manager whose jobs hear Stop unless they say otherwise: these tests are of Stop itself. */
+class Hearing extends JobManager {
+  override start(...a: Parameters<JobManager["start"]>): ReturnType<JobManager["start"]> {
+    return super.start(a[0], a[1], { hearsStop: true, ...a[2] });
+  }
+}
+
 /**
  * Beta.27 re-review: the app's jobs were kept in the run log where a command run wouldn't be (a
  * bare folder, ATTICUS_RUN_LOG=off), and titled with the app's own words (a diagram's name, a
@@ -39,7 +46,7 @@ describe("an app job in the run log", () => {
 
   it("a metarepo: kept, titled by its kind and the ids it names, never the job's own title", async () => {
     const root = await folder(true);
-    const jobs = new JobManager(() => undefined, undefined, {
+    const jobs = new Hearing(() => undefined, undefined, {
       record: (job, _meta, log) => appRunRecorder(root, job, log, {}),
     });
     const secret = "sk-" + "Zx9Kq2Lm".repeat(5);

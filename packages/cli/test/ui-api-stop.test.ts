@@ -269,6 +269,81 @@ describe("Propose for review: its steps and Stop (ADR 0202 point 2)", () => {
   }, 120_000);
 });
 
+describe("a stopped Propose's branch here is never left stale (the review)", () => {
+  const OTHER = "propose/answers/2026-11-18-110000-pat";
+  /** Propose, stopped as its commit is being made (so: at the push), or run to its end. */
+  const propose = async (root: string, branch: string, stopped: boolean) => {
+    const stop = new AbortController();
+    const said: string[] = [];
+    const host = new MockGitHost([{ repo: "forge-meta" }]);
+    const code = await proposeForReview(
+      root,
+      {
+        scope: "answers",
+        by: "pat",
+        files: ["questions/q1.yaml"],
+        branch,
+        gitHost: host,
+        signal: stop.signal,
+      },
+      {
+        out: (l) => said.push(l),
+        err: (l) => said.push(l),
+        progress: (l) => {
+          if (stopped && l.startsWith("Committing")) stop.abort();
+        },
+      },
+    );
+    return { code, said };
+  };
+  const ref = (cwd: string, name: string) =>
+    tryG(cwd, "rev-parse", "--verify", "--quiet", `refs/heads/${name}`);
+
+  it("says what is true: the commit is on the branch here, and Propose again sends it", async () => {
+    const { root } = await metarepo();
+    const first = await propose(root, BRANCH, true);
+    expect(first.code).toBe(STOPPED_CODE);
+    expect(first.said).toEqual([
+      `Stopped before the push: nothing left this machine. The commit is on ${BRANCH} here; Propose again to send it.`,
+    ]);
+    expect(first.said).toEqual([PROPOSE_STOPPED(BRANCH)]);
+  }, 60_000);
+
+  it("proposed again from a new list (another branch name): the stopped branch here goes", async () => {
+    const { root, remote } = await metarepo();
+    expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);
+    expect(ref(root, BRANCH)).toBeDefined();
+    const again = await propose(root, OTHER, false);
+    expect(again.code, again.said.join("\n")).toBe(0);
+    expect(ref(root, BRANCH)).toBeUndefined();
+    expect(remoteBranches(remote)).toEqual(["refs/heads/main", `refs/heads/${OTHER}`]);
+    expect(ref(root, OTHER)).toBe(ref(remote, OTHER));
+  }, 60_000);
+
+  it("proposed again after the file changed: the branch here moves to what was pushed", async () => {
+    const { root, remote } = await metarepo();
+    expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);
+    const stale = ref(root, BRANCH);
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 2\n");
+    const again = await propose(root, BRANCH, false);
+    expect(again.code, again.said.join("\n")).toBe(0);
+    expect(ref(remote, BRANCH)).not.toBe(stale);
+    expect(ref(root, BRANCH)).toBe(ref(remote, BRANCH));
+    expect(g(remote, "show", `${BRANCH}:questions/q1.yaml`)).toBe("answer: 2\n");
+    // One commit on the remote's branch over main: the stale one never went.
+    expect(g(remote, "rev-list", "--count", `main..${BRANCH}`).trim()).toBe("1");
+  }, 60_000);
+
+  it("a branch here that a person moved meanwhile is left alone", async () => {
+    const { root } = await metarepo();
+    expect((await propose(root, BRANCH, true)).code).toBe(STOPPED_CODE);
+    g(root, "branch", "-f", BRANCH, "main");
+    const mine = ref(root, BRANCH);
+    expect((await propose(root, OTHER, false)).code).toBe(0);
+    expect(ref(root, BRANCH)).toBe(mine);
+  }, 60_000);
+});
+
 describe("Bring in what merged: its steps and Stop (ADR 0202 point 2)", () => {
   /** A teammate's merge lands on the remote: one commit the copy here hasn't. */
   async function merged() {

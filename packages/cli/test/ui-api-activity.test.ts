@@ -68,7 +68,7 @@ describe("the Console's list (ADR 0187)", () => {
         await new Promise<void>((r) => (release = r));
         c.line("12 records");
       },
-      { title: "Scan" },
+      { title: "Scan", hearsStop: true },
     );
     await until(async () => (await list()).running === 1);
     const [e] = (await list()).entries;

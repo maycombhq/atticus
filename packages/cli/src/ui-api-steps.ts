@@ -46,6 +46,8 @@ export type LocalJob = (
     severalWrites?: { heard: string; stopping: string };
     /** ADR 0202 point 5: the page action it is started by, so its panel finds it after a reload. */
     for?: Api.JobForT;
+    /** The work reads the job's signal: only then is the job ever stoppable (the server's). */
+    hearsStop?: boolean;
   },
 ) => { status: number; body: { jobId: string } };
 
@@ -122,6 +124,7 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
       const several = {
         ...((only ?? read).length > 1 ? { severalWrites: STOP_AFTER_REPO } : {}),
         for: { action: "apply-all" as const },
+        hearsStop: true,
       };
       return asJob(
         what,

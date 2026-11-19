@@ -297,7 +297,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
                 io,
               ),
             ),
-          { for: { action: "build" } },
+          { for: { action: "build" }, hearsStop: true },
         );
       })
       .add("POST", "/api/build/edits/curate", async ({ body }) => {
@@ -326,7 +326,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
               );
               return code === 0 ? catalogBuild(root, {}, io) : code;
             }),
-          { for: { action: "build" } },
+          { for: { action: "build" }, hearsStop: true },
         );
       })
       .add("GET", "/api/build/undo", async ({ query }) => {
@@ -503,7 +503,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
           );
         const { applyMapEdits } = await import("./catalog-build-commands.js");
         const n = b.edits.length;
-        const mapEdits = { for: { action: "map-edits" as const } };
+        const mapEdits = { for: { action: "map-edits" as const }, hearsStop: true };
         return asJob(
           `Apply ${n} change${n === 1 ? "" : "s"} to the map`,
           async () => {

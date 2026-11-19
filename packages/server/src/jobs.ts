@@ -166,6 +166,13 @@ export interface JobStartOptions {
   severalWrites?: { heard: string; stopping: string };
   /** ADR 0202 point 5: the page's action it is started by (`GET /api/jobs?action=&repo=`). */
   for?: JobFor;
+  /**
+   * The review of ADR 0202: the work hears Stop: it reads the job's signal or `cancelled` where
+   * it can stop cleanly. Only such a job is ever `stoppable`, takes a Stop, or ends "Stopped.".
+   * Left out, the job runs to its end whatever is asked: nothing claims it stopped when it wrote
+   * everything.
+   */
+  hearsStop?: boolean;
 }
 
 export type JobChange =
@@ -193,6 +200,13 @@ export class JobManager {
   private lateStops = new Set<string>();
   /** Beta.28.4: the jobs of several writes, with their words for a Stop during a write. */
   private several = new Map<string, { heard: string; stopping: string }>();
+  /** The jobs whose work hears Stop (`hearsStop`), while they run. */
+  private hears = new Set<string>();
+
+  /** Whether a running job's work hears Stop: only then is a Stop taken. */
+  hearsStop(id: string): boolean {
+    return this.hears.has(id);
+  }
   /** Beta.28.4: what a job stopping after its write says meanwhile, and what it last would have. */
   private stoppingSay = new Map<string, string>();
   private lastGiven = new Map<string, string>();
@@ -255,7 +269,10 @@ export class JobManager {
   private stopStands(job: Job): void {
     const inWrite = this.committedIds.has(job.id);
     job.stoppable =
-      job.state === "running" && !job.stopping && (!inWrite || this.several.has(job.id));
+      this.hears.has(job.id) &&
+      job.state === "running" &&
+      !job.stopping &&
+      (!inWrite || this.several.has(job.id));
     if (job.stoppable) job.stopLands = inWrite ? "after-write" : "now";
     else delete job.stopLands;
   }
@@ -361,10 +378,11 @@ export class JobManager {
       ...(o.title ? { title: o.title } : {}),
       startedAt: this.now().toISOString(),
       errors: [],
-      stoppable: true,
-      stopLands: "now",
+      stoppable: !!o.hearsStop,
+      ...(o.hearsStop ? { stopLands: "now" as const } : {}),
       ...(o.for ? { for: { ...o.for } } : {}),
     };
+    if (o.hearsStop) this.hears.add(id);
     this.jobs.set(id, job);
     this.printed.set(id, { from: 0, lines: [] });
     if (o.meta) this.metas.set(id, { ...o.meta });
@@ -471,6 +489,7 @@ export class JobManager {
       if (job.state !== "cancelled" && job.stopping && this.stoppingSay.has(id))
         job.progress = { ...job.progress, message: lastSaid ?? this.beforeStop.get(id) ?? "" };
       this.aborts.delete(id);
+      this.hears.delete(id);
       this.committedIds.delete(id);
       this.lateStops.delete(id);
       this.several.delete(id);
@@ -544,6 +563,8 @@ export class JobManager {
   cancel(id: string): boolean {
     const j = this.jobs.get(id);
     if (!j || j.state !== "running") return false;
+    // Work that doesn't hear Stop takes none: it runs to its end, and never says it stopped.
+    if (!this.hears.has(id)) return false;
     if (j.stopping) return true;
     // Beta.28.1: past the work's commit point, Stop is too late: said, and the work goes on.
     if (this.committedIds.has(id)) {

@@ -206,34 +206,40 @@ async function asJob(
   stopAt: (line: string) => boolean,
 ): Promise<{ job: Job; lines: string[]; out: string[]; err: string[] }> {
   const jobs = new JobManager(() => undefined);
+  const HEARS = { hearsStop: true };
   const out: string[] = [];
   const err: string[] = [];
   let id = "";
-  const job = jobs.start("work", async () => {
-    const io = capturedIo(out, err);
-    const code = await main(
-      [
-        "verify",
-        "forge-ledger",
-        "--write",
-        "--commit",
-        "0123abc",
-        "--dir",
-        opts(root).dir,
-        "--root",
-        root,
-      ],
-      {
-        ...io,
-        progress: (l) => {
-          io.progress!(l);
-          if (stopAt(l)) jobs.cancel(id);
+  const job = jobs.start(
+    "work",
+    async () => {
+      const io = capturedIo(out, err);
+      const code = await main(
+        [
+          "verify",
+          "forge-ledger",
+          "--write",
+          "--commit",
+          "0123abc",
+          "--dir",
+          opts(root).dir,
+          "--root",
+          root,
+        ],
+        {
+          ...io,
+          progress: (l) => {
+            io.progress!(l);
+            if (stopAt(l)) jobs.cancel(id);
+          },
         },
-      },
-      { quiet: true },
-    );
-    return { result: { code } };
-  });
+        { quiet: true },
+      );
+      return { result: { code } };
+      // As the app's Apply starts it: verify --write reads the job's signal.
+    },
+    HEARS,
+  );
   id = job.id;
   const done = await jobs.settle(job.id, T);
   return { job: done, lines: jobs.linesOf(job.id)?.lines ?? [], out, err };
