@@ -58,6 +58,7 @@ import { uiContractsRoutes } from "./ui-api-contracts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
 import { asTheApp, servingTheApp } from "./model-address.js";
 import { uiActivityRoutes } from "./ui-api-activity.js";
+import { uiSupportRoutes } from "./ui-api-support.js";
 import { uiThreadRoutes } from "./ui-api-thread.js";
 import { uiSetupRoutes } from "./ui-api-setup.js";
 import { uiRolesRoutes } from "./ui-api-roles.js";
@@ -190,7 +191,8 @@ export function extendUiRoutes(
   // section in place, Ask from knowledge).
   return uiRolesRoutes(
     uiSetupRoutes(
-      uiThreadRoutes(uiActivityRoutes(uiDecisionRoutes(all, ctx), ctx), ctx),
+      // ADR 0202 point 1: Save a support bundle, on this machine (nothing is sent anywhere).
+      uiThreadRoutes(uiActivityRoutes(uiSupportRoutes(uiDecisionRoutes(all, ctx), ctx), ctx), ctx),
       ctx,
       deps.openFolder ? { openFolder: deps.openFolder } : {},
     ),
