@@ -27,8 +27,8 @@ export interface ParsedRequirements {
   planned: string[];
   /** Each `## <Role>` section that holds a six-column table, in the file's order. */
   roles: RequirementsRole[];
-  /** Tables that can't be read as a role's questions, each with its line and why. */
-  problems: { line: number; role: string; why: string }[];
+  /** What can't be read for sure, so is refused: its line, its role if any, and the words. */
+  problems: { line: number; role: string; words: string }[];
 }
 
 export type RequirementsReasonCode =
@@ -80,29 +80,72 @@ interface Table {
   rows: { line: number; cells: string[] }[];
 }
 
+/**
+ * A requirements file's bytes as text: UTF-16 by its byte-order mark (what Windows PowerShell 5
+ * writes), else UTF-8, its mark dropped. Text that still holds a NUL is refused by the parser.
+ */
+export function decodeRequirements(bytes: Uint8Array): string {
+  const utf16 =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : undefined;
+  return new TextDecoder(utf16 ?? "utf-8").decode(bytes);
+}
+
+/** A `# ` or `## ` heading's level and words, read without a regex that backtracks. */
+function headingOf(raw: string): { level: 1 | 2; words: string } | undefined {
+  const level = raw.startsWith("## ") ? 2 : raw.startsWith("# ") ? 1 : undefined;
+  if (!level) return undefined;
+  const text = raw.trimEnd();
+  // A closing run of #s after a space is not part of the words.
+  let end = text.length;
+  while (end > level && text[end - 1] === "#") end -= 1;
+  const words = text.slice(level, text[end - 1] === " " ? end : text.length).trim();
+  return words ? { level, words } : undefined;
+}
+
+/** The number of bars in a line that aren't escaped. */
+const bars = (line: string) => line.match(/(?<!\\)\|/g)?.length ?? 0;
+
 export function parseRequirements(text: string): ParsedRequirements {
   const out: ParsedRequirements = { planned: [], roles: [], problems: [] };
+  if (text.includes("\0")) {
+    out.problems.push({ line: 1, role: "", words: "the file isn't text: save it as UTF-8." });
+    return out;
+  }
   const planned = new Set<string>();
   const lines = text.split(/\r?\n/);
-  // A quoted table is read as the table it is.
-  const body = lines.map((l) => l.trim().replace(/^(>\s*)+/, ""));
   let section: { kind: "none" | "planned" | "role"; heading: string; tables: Table[] } = {
     kind: "none",
     heading: "",
     tables: [],
   };
+  const role = () => (section.kind === "role" ? section.heading : "");
+  // The lines taken as a question row, or as part of a table that is refused.
+  const taken = new Set<number>();
+  // The net under the parser: every line that is a question row on its face.
+  const crude: number[] = [];
   // A section's tables are judged together: one questions table makes it a role's section.
   const close = () => {
     const isQuestions = (t: Table) =>
       t.header.length === HEADER.length && t.header.every((c, n) => plain(c) === HEADER[n]);
     const looksLike = (t: Table) =>
       t.header.length === HEADER.length || t.header.some((c) => HEADER.includes(plain(c)));
-    const role = section.kind === "role" ? section.heading : "";
     const mine = section.tables.filter(isQuestions);
     const rows: RequirementsRole["rows"] = [];
     for (const t of section.tables) {
-      const refuse = (why: string) => out.problems.push({ line: t.line, role, why });
-      if (isQuestions(t) && role) rows.push(...t.rows);
+      const refuse = (why: string) => {
+        taken.add(t.line);
+        for (const r of t.rows) taken.add(r.line);
+        out.problems.push({
+          line: t.line,
+          role: role(),
+          words: `this table${role() ? ` of ${role()}'s questions` : ""} doesn't read: ${why}.`,
+        });
+      };
+      if (isQuestions(t) && role()) rows.push(...t.rows);
       else if (isQuestions(t))
         refuse(
           section.kind === "planned"
@@ -114,28 +157,78 @@ export function parseRequirements(text: string): ParsedRequirements {
           `its header is ${t.header.map((c) => `"${c}"`).join(", ")}, not the six columns Question, Evidence, Asked by, Answered by, Answer, State`,
         );
     }
-    if (role && mine.length) out.roles.push({ role, rows });
+    for (const r of rows) taken.add(r.line);
+    if (role() && mine.length) out.roles.push({ role: role(), rows });
   };
   let fence: { char: string; length: number } | undefined;
+  // The line an HTML comment opened on, while it is open.
+  let comment: number | undefined;
   let table: Table | undefined;
   let afterBlank = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = body[i]!;
+  // Each line outside fences, without what HTML comments hold; a quoted table is read as a table.
+  const body: (string | undefined)[] = lines.map((raw, i) => {
+    const f = /^(`{3,}|~{3,})(.*)$/.exec(raw.trim());
     // Fences as CommonMark has them: three or more of one character, no backtick after a
     // backtick fence's opener; closed by at least as many of the same, and nothing else.
-    const f = /^(`{3,}|~{3,})(.*)$/.exec(lines[i]!.trim());
     if (fence) {
       if (f && f[1]![0] === fence.char && f[1]!.length >= fence.length && !f[2]!.trim())
         fence = undefined;
-      continue;
+      return undefined;
     }
-    if (f && !(f[1]![0] === "`" && f[2]!.includes("`"))) {
+    if (comment === undefined && f && !(f[1]![0] === "`" && f[2]!.includes("`"))) {
       fence = { char: f[1]![0]!, length: f[1]!.length };
+      return undefined;
+    }
+    const kept: string[] = [];
+    let at = 0;
+    while (at < raw.length) {
+      if (comment !== undefined) {
+        const end = raw.indexOf("-->", at);
+        if (end < 0) break;
+        comment = undefined;
+        at = end + 3;
+      }
+      const start = raw.indexOf("<!--", at);
+      kept.push(raw.slice(at, start < 0 ? raw.length : start));
+      if (start < 0) break;
+      comment = i + 1;
+      at = start + 4;
+    }
+    return kept.join("");
+  });
+  if (comment !== undefined)
+    out.problems.push({
+      line: comment,
+      role: "",
+      words:
+        "an HTML comment opens here and is never closed, so the rest of the file isn't read: close it (-->).",
+    });
+  const rowOf = (i: number) => (body[i] ?? "").trim().replace(/^(>\s*)+/, "");
+  for (let i = 0; i < lines.length; i++) {
+    if (body[i] === undefined) {
       table = undefined;
       continue;
     }
+    const line = rowOf(i);
+    if (bars(line) >= 5) {
+      const last = cellsOf(line).findLast((c) => c !== "") ?? "";
+      if (STATES.includes(plain(last).replace(/\s/g, ""))) crude.push(i + 1);
+    }
+    if (/&(#124|#x7c|vert|verbar);/i.test(line) && (role() || line.includes("|")))
+      out.problems.push({
+        line: i + 1,
+        role: role(),
+        words:
+          "this line writes a bar as &#124;, which isn't read: write the row as a Markdown table's, with \\| for a bar inside a cell.",
+      });
+    if (role() && /<table[\s>]/i.test(line))
+      out.problems.push({
+        line: i + 1,
+        role: role(),
+        words: `${role()} has an HTML table, which isn't read: write its questions as a Markdown table.`,
+      });
     // A row over a delimiter row is a header, and always starts a table of its own.
-    const header = line.includes("|") && isDelimiter(body[i + 1] ?? "");
+    const header = line.includes("|") && isDelimiter(rowOf(i + 1));
     if (table && !header) {
       if (line === "") {
         afterBlank = true;
@@ -151,12 +244,12 @@ export function parseRequirements(text: string): ParsedRequirements {
     }
     table = undefined;
     afterBlank = false;
-    const h = /^(#{1,2})\s+(.+?)\s*#*$/.exec(lines[i]!.trim());
+    const h = headingOf(body[i]!.trim());
     if (h) {
       close();
-      if (h[1] === "#") out.title ??= h[2]!;
-      const kind = h[1] === "#" ? "none" : /^planned$/i.test(h[2]!) ? "planned" : "role";
-      section = { kind, heading: h[2]!, tables: [] };
+      if (h.level === 1) out.title ??= h.words;
+      const kind = h.level === 1 ? "none" : /^planned$/i.test(h.words) ? "planned" : "role";
+      section = { kind, heading: h.words, tables: [] };
       continue;
     }
     if (header || rowLike(line)) {
@@ -171,6 +264,13 @@ export function parseRequirements(text: string): ParsedRequirements {
     }
   }
   close();
+  const missed = crude.find((l) => !taken.has(l));
+  if (missed !== undefined)
+    out.problems.push({
+      line: missed,
+      role: "",
+      words: "this looks like a question row that isn't in a questions table.",
+    });
   out.planned = [...planned];
   return out;
 }
@@ -179,19 +279,16 @@ export function parseRequirements(text: string): ParsedRequirements {
 const FILE_ENDINGS =
   /\.(java|kts?|scala|groovy|gradle|xml|ya?ml|json|properties|toml|ini|conf|cfg|env|sql|[cm]?[jt]sx?|py|rb|go|rs|cs|cshtml|php|html?|s?css|md|txt|sh|ps1|proto|avsc|graphql|tf)$/i;
 
-/** A word that names a file, not an id: a path with a slash or a file's ending, with or without `:line`. */
-const isFile = (w: string) => {
-  const path = w.replace(/:\d+$/, "");
-  return path !== w || /[\\/]/.test(path) || FILE_ENDINGS.test(path);
-};
+/** A later word in backticks that names a file, not an id: by its `:line` or its ending. */
+const isFile = (w: string) => /:\d+$/.test(w) || FILE_ENDINGS.test(w);
 
 /**
- * The map ids a row's Evidence names. Items are split by `;` or `,`; `-` is none. An item's
- * first word, in backticks or bare, is its id, whatever it looks like. Every other word in
- * backticks is checked too unless it is a file (`src/a.java:41`, `pom.xml`).
+ * The map ids a row's Evidence names. Items are split by `;`, `,` or `<br>`; `-` is none. An
+ * item's first word, in backticks or bare, is its id, whatever it looks like. Every other word
+ * in backticks is checked too unless it is a file (`src/a.java:41`, `pom.xml`).
  */
 function evidenceIds(cell: string): string[] {
-  const ids = cell.split(/[;,]/).flatMap((raw) => {
+  const ids = cell.split(/[;,]|<br\s*\/?>/i).flatMap((raw) => {
     const item = raw.trim();
     if (item === "" || item === "-") return [];
     const first = /^`([^`]+)`/.exec(item);
@@ -218,11 +315,11 @@ export function checkRequirements(
   const planned = new Set(parsed.planned);
   const inMap = new Set<string>();
   const count = { questions: 0, answered: 0, accepted: 0 };
-  const reasons: RequirementsCheck["reasons"] = parsed.problems.map(({ line, role, why }) => ({
+  const reasons: RequirementsCheck["reasons"] = parsed.problems.map(({ line, role, words }) => ({
     code: "requirements.unreadable",
     line,
     role,
-    message: `${file}:${line}: this table${role ? ` of ${role}'s questions` : ""} doesn't read: ${why}.`,
+    message: `${file}:${line}: ${words}`,
   }));
   for (const { role, rows } of parsed.roles)
     for (const { line, cells } of rows) {

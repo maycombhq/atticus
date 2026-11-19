@@ -31,6 +31,7 @@ import {
   changeReport,
   changeStore,
   checkRequirements,
+  decodeRequirements,
   parseRequirements,
   unadoptedChanges,
   detectConflicts,
@@ -275,9 +276,6 @@ const QUICK = {
     `Next: hand the cleared requirements to the spec writer: /define-change ${id}. Then a person runs atticus change handoff ${id} --approve.`,
 };
 
-/** The first `# ` heading of a Markdown file's text. */
-const firstHeading = (text: string) => /^#\s+(.+?)\s*#*\s*$/m.exec(text)?.[1];
-
 type NewOptions = Parameters<typeof changeNew>[1];
 
 /**
@@ -381,7 +379,7 @@ async function changeFromRequirements(
     json(false, [{ code: "requirements.unreadable", line: 0, role: "", message }]);
     return 1;
   }
-  const parsed = parseRequirements(bytes.toString("utf8"));
+  const parsed = parseRequirements(decodeRequirements(bytes));
   const r = checkRequirements(parsed, await mapLookup(root), file);
   if (!r.ok) {
     json(false, r.reasons);
@@ -442,7 +440,7 @@ async function adoptChange(
     root,
     o,
     {
-      title: o.title ?? firstHeading(proposal) ?? o.id,
+      title: o.title ?? parseRequirements(proposal).title ?? o.id,
       reason: "Adopted from its OpenSpec folder",
       adopt: true,
     },

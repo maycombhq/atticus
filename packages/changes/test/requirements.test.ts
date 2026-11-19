@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkRequirements, parseRequirements } from "../src/index.js";
+import { checkRequirements, decodeRequirements, parseRequirements } from "../src/index.js";
 
 /** ADR 0201: the requirements file a quick change starts from, and the check at its door. */
 
@@ -320,6 +320,123 @@ describe("a table the parser can't be sure of is refused, never passed over", ()
     const r = checkRequirements(parseRequirements(text), has);
     expect(r.reasons.map((x) => x.code)).toEqual(["requirements.open-question"]);
     expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("decodes UTF-16 by its mark, and refuses a file that isn't text (the third review)", () => {
+    const text = `## QA\n\n${HEADER}\n| Who owns it? | nope | qa-naysayer | | | open |\n`;
+    const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+    const be = Buffer.from(le);
+    be.swap16();
+    for (const bytes of [
+      le,
+      be,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]),
+      Buffer.from(text, "utf8"),
+    ]) {
+      expect(decodeRequirements(bytes)).toBe(text);
+      expect(codes(decodeRequirements(bytes))).toEqual([
+        ["requirements.open-question", 5],
+        ["requirements.unknown-id", 5],
+      ]);
+    }
+    // UTF-16 with no mark, read as UTF-8, is full of NULs: not text.
+    const unmarked = decodeRequirements(Buffer.from(text, "utf16le"));
+    expect(reasons(unmarked)).toEqual([
+      ["requirements.unreadable", 1, "r.md:1: the file isn't text: save it as UTF-8."],
+    ]);
+  });
+
+  it("refuses a question row the parser didn't take as one: the crude count is the net", () => {
+    // The reviewer's case: a six-column header with no delimiter row, directly under another table.
+    const swallowed = [
+      "## Arch",
+      "",
+      "| Repo | Owner |",
+      "|---|---|",
+      "| forge-ledger | pat |",
+      "| Question | Evidence | Asked by | Answered by | Answer | State |",
+      "| Who owns it? | nope | arch-naysayer | | | open |",
+    ].join("\n");
+    expect(reasons(swallowed)).toEqual([
+      [
+        "requirements.unreadable",
+        7,
+        "r.md:7: this looks like a question row that isn't in a questions table.",
+      ],
+    ]);
+    // A row in a list item or indented prose, its state in emphasis.
+    expect(codes("## QA\n\n- Who owns it? | nope | qa | | | **Open**\n")).toEqual([
+      ["requirements.unreadable", 3],
+    ]);
+    // Only the first is named; rows the parser read, and rows in a fence or a comment, don't count.
+    const fine = `## QA\n\n${HEADER}\n${answered}\n\n\`\`\`\n${OPEN}\n\`\`\`\n\n<!--\n${OPEN}\n-->\n`;
+    expect(codes(fine)).toEqual([]);
+    // A table already refused is said once, not once more for each of its rows.
+    expect(codes(`# Title\n\n${HEADER}\n${OPEN}\n`)).toEqual([["requirements.unreadable", 3]]);
+  });
+
+  it("refuses an HTML table and an escaped bar, and says to use a Markdown table", () => {
+    expect(
+      reasons("## QA\n\n<table>\n<tr><td>Who owns it?</td><td>open</td></tr>\n</table>\n"),
+    ).toEqual([
+      [
+        "requirements.unreadable",
+        3,
+        "r.md:3: QA has an HTML table, which isn't read: write its questions as a Markdown table.",
+      ],
+    ]);
+    expect(reasons(`## QA\n\n${HEADER}\n| a &#124; b? | - | qa | pat | A | answered |\n`)).toEqual([
+      [
+        "requirements.unreadable",
+        5,
+        "r.md:5: this line writes a bar as &#124;, which isn't read: write the row as a Markdown table's, with \\| for a bar inside a cell.",
+      ],
+    ]);
+    // In a fence, both are only text.
+    expect(codes("## QA\n\n```html\n<table>&#124;</table>\n```\n")).toEqual([]);
+  });
+
+  it("splits evidence on <br> too, and takes a later word in backticks as a file only by its ending or line", () => {
+    const row = (evidence: string) =>
+      `## QA\n\n${HEADER}\n| Q? | ${evidence} | nay | pat | a | answered |\n`;
+    const unknown = (evidence: string) =>
+      checkRequirements(parseRequirements(row(evidence)), has)
+        .reasons.map((x) => /names (\S+),/.exec(x.message)?.[1])
+        .sort();
+    expect(unknown("forge-ledger<br>nope-one<br/>`nope-two`<BR />forge-billing")).toEqual([
+      "nope-one",
+      "nope-two",
+    ]);
+    expect(unknown("`forge-ledger` `team/nope`")).toEqual(["team/nope"]);
+    expect(unknown("`forge-ledger` `src/a.java` `deploy/values.yaml:3` `Makefile:9`")).toEqual([]);
+  });
+
+  it("leaves out what an HTML comment holds, in Planned and everywhere, and refuses one never closed", () => {
+    const text = [
+      "## Planned",
+      "",
+      "- `forge-portal`: new <!-- - `nope`: not yet -->",
+      "<!--",
+      "- `nope-two`: an example",
+      "-->",
+      "- forge.orders.shipped",
+    ].join("\n");
+    expect(parseRequirements(text).planned).toEqual(["forge-portal", "forge.orders.shipped"]);
+    expect(reasons(`## QA\n\n<!-- to do\n\n${HEADER}\n${OPEN}\n`)).toEqual([
+      [
+        "requirements.unreadable",
+        3,
+        "r.md:3: an HTML comment opens here and is never closed, so the rest of the file isn't read: close it (-->).",
+      ],
+    ]);
+  });
+
+  it("reads a very long heading in time that grows with its length", () => {
+    const long = `## ${"a ".repeat(40000)}${"#".repeat(40000)} x ${" #".repeat(20000)}`;
+    const started = Date.now();
+    parseRequirements(`${long}\n# ${"# ".repeat(60000)}\n`);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(parseRequirements("# Title ##  \n## QA #\n").title).toBe("Title");
   });
 
   it("reads a long Planned list once each, in order", () => {

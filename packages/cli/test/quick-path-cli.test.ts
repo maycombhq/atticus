@@ -353,6 +353,37 @@ describe("the door check: what counts as in the map, and what it leaves on disk"
   );
 
   it(
+    "reads a UTF-16 file as what it says: its open row is refused, never passed as an empty file",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "requirements.md");
+      const text = cites("`forge-nowhere`").replace("| answered |", "| open |");
+      // As Windows PowerShell 5's `>` writes it: UTF-16LE with its mark.
+      await writeFile(
+        file,
+        Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]),
+      );
+      const c = capture();
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, c.io)).toBe(1);
+      expect(c.err.map((l) => l.split(":")[0])).toEqual([
+        "Refused",
+        "requirements.open-question",
+        "requirements.unknown-id",
+      ]);
+      // With no mark it is not text UTF-8 reads: refused, and nothing is created.
+      await writeFile(file, Buffer.from(text, "utf16le"));
+      const u = capture();
+      expect(await changeNew(root, { from: file, by: "pat" }, u.io)).toBe(1);
+      expect(u.err).toEqual([
+        `Refused: 1 problem in ${file}.`,
+        `requirements.unreadable: ${file}:1: the file isn't text: save it as UTF-8.`,
+      ]);
+      expect(await readdir(join(root, "openspec/changes"))).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     "says in JSON too when the file can't be read",
     async () => {
       const root = await forgeRoot();
