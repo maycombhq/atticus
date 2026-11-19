@@ -2837,7 +2837,12 @@ export async function architectureStage(
         placement,
         plannedRepos(a.flows, estate),
       ),
-      ...operationDeployIssues(a.operations ?? [], a.waves, a.deploy),
+      ...operationDeployIssues(
+        a.operations ?? [],
+        a.waves,
+        a.deploy,
+        suggestedDeploy(a.flows, estate),
+      ),
       // B-places: an added step's place is a file of its repo, a line it has, a function in it.
       ...(await placeIssues(a.flows, estate, root)),
       // W5: an endpoint the brief names whose flow the design leaves alone (a note, not blocking).

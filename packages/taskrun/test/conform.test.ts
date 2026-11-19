@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -233,4 +233,24 @@ describe("conformance findings and scans, one at a time (L4, M9)", () => {
     expect(one).not.toBe(two);
     expect(one.replace(/\\/g, "/")).toContain("/.index/conform/forge-ledger-0123456789ab-");
   });
+
+  it(
+    "says how many operations a change has, which the check doesn't look at (ADR 0203)",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const view = async () => Api.ChangeConformance.parse(await conformanceOf(root, CHANGE));
+      // No operations file: the view is as it was, with no count.
+      expect((await view()).operations).toBeUndefined();
+      const dir = join(root, "openspec/changes", CHANGE, "target-flows");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, "_operations.yaml"),
+        `schemaVersion: 1\nchange: ${CHANGE}\noperations:\n  - id: deploy-new\n    kind: deployment\n    repos: [forge-ledger]\n    what: Deploy the ledger on the new platform.\n  - id: switch\n    kind: cut-over\n    repos: [forge-ledger]\n    what: Point the route at it.\n    undo: Point the route back at the old deployment.\n`,
+      );
+      expect(await view()).toMatchObject({ flows: 0, operations: 2, problems: [] });
+      await withDesign(root);
+      expect(await view()).toMatchObject({ flows: 2, operations: 2 });
+    },
+    T,
+  );
 });

@@ -724,6 +724,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   may carry that line as `standing`, and a `newer-atticus` refusal's `newer[]` entry for
  *   build.json may name the Atticus that wrote it (`atticus`, point 7), in which case `command`
  *   installs exactly that version. Additive only.
+ *   Also in 3.19.0 (ADR 0203): a change's conformance says how many operations it has, which
+ *   the check doesn't look at (`operations`), so the app says they aren't checked. Additive only.
  */
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
@@ -4083,6 +4085,11 @@ export const ChangeConformance = z.object({
   title: z.string(),
   /** How many target flows the change has; 0: nothing to compare yet. */
   flows: z.number().int(),
+  /**
+   * 3.19.0 (ADR 0203): how many operations the change has (target-flows/_operations.yaml), which
+   * this check doesn't look at; absent when it has none. Additive only.
+   */
+  operations: z.number().int().positive().optional(),
   results: z.array(ConformRepoResult),
   /** The built-in gate the findings are on, and its newest round. */
   gate: z.literal("conform"),

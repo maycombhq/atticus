@@ -64,6 +64,17 @@ function touchedStores(ctx: CriticContext): { stores: string[]; evidence: Eviden
 const onStagePath = (ctx: CriticContext) =>
   ctx.footprint.from.some((f) => f.startsWith("target-flows/"));
 
+/**
+ * ADR 0203: the schema change is an operation's alone (one that says it moves data), which no
+ * target flow carries, so the stage can't write data.md from it.
+ */
+const byOperations = (ctx: CriticContext) => {
+  const schema = ctx.footprint.signals.filter((s) => s.factor === "schema");
+  return (
+    schema.length > 0 && schema.every((s) => s.cite.startsWith("target-flows/_operations.yaml"))
+  );
+};
+
 /** Whether its target flows change the schema: a new table, a migration, or a column with a type. */
 const changesSchema = (ctx: CriticContext) =>
   ctx.footprint.signals.some((s) => s.factor === "schema");
@@ -76,7 +87,10 @@ export const dataDocPresent: DeterministicCheckDef = {
   params: z.strictObject({}),
   run(ctx) {
     const { stores, evidence } = touchedStores(ctx);
-    if (stores.length === 0) return { hits: [], subjects: [] };
+    // ADR 0203: an operation that says it changes the database is asked for data.md though it
+    // names no store the catalog has ("Drop the old orders table", "Run the Flyway migrations").
+    if (stores.length === 0)
+      return byOperations(ctx) ? operationHit(ctx) : { hits: [], subjects: [] };
     // ADR 0006 addendum (2026-10-26): on the stage path the architecture stage writes data.md
     // from the target flows, and only when a step changes the schema. A change that reads or
     // writes columns the catalog already has never gets one, so it is never asked for one: the
@@ -96,9 +110,11 @@ export const dataDocPresent: DeterministicCheckDef = {
       // The stage writes data.md from the target flows, so on that path the fix is to run it,
       // not to write the document by hand (ADR 0006 addendum 2026-10-26).
       fix: {
-        text: onStagePath(ctx)
-          ? `Run atticus change architecture ${ctx.change.id}: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.`
-          : "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
+        text: byOperations(ctx)
+          ? operationFix(ctx.change.id)
+          : onStagePath(ctx)
+            ? `Run atticus change architecture ${ctx.change.id}: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.`
+            : "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
       },
       evidence: [...stores.filter((s) => ctx.byId.has(s)).map(recordEvidence), ...evidence],
       key: "data-doc",
@@ -107,6 +123,35 @@ export const dataDocPresent: DeterministicCheckDef = {
     return { hits: [hit], subjects: stores };
   },
 };
+
+/** The words of data-doc-present's fix when the data change is an operation's (ADR 0203). */
+const operationFix = (change: string) =>
+  `An operation of ${change} moves data, and the stages write data.md only from target flows: give the migration as a step of a target flow (store.migration) and run atticus change architecture ${change}, or write data.md yourself (the Changes table, backfill, classification and retention); the stage keeps a data.md a person wrote.`;
+
+/** data-doc-present's hit for an operation that changes the database and names no store. */
+function operationHit(ctx: CriticContext) {
+  const doc = docOf(ctx.files, DATA);
+  if (doc && isFilledDoc(doc)) return { hits: [], subjects: [] };
+  const evidence: Evidence[] = ctx.footprint.signals
+    .filter((s) => s.factor === "schema")
+    .map((s) => {
+      const [path, line] = s.cite.split(":");
+      return { source: "artifact" as const, path: path!, ...(line ? { line: Number(line) } : {}) };
+    });
+  const hit: Hit = {
+    kind: "issue",
+    artifact: DATA,
+    locator: { record: ctx.change.id },
+    summary: sentence(
+      `An operation of ${ctx.change.id} changes the database but data.md is ${doc ? "still the template" : "missing"}.`,
+    ),
+    why: "Every data change is described against the current database design: tables, columns, migrations, classification and retention.",
+    fix: { text: operationFix(ctx.change.id) },
+    evidence,
+    key: "data-doc",
+  };
+  return { hits: [hit], subjects: [] };
+}
 
 const NO_MIGRATION = /^(|-|—|none|n\/a|tbd|todo)$/i;
 

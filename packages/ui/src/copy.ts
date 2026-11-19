@@ -1868,6 +1868,11 @@ export const COPY = {
     counts: (c: { found: number; missing: number; stillThere: number; unexpected: number }) =>
       `${c.found} found, ${c.missing} missing, ${c.stillThere} still there, ${c.unexpected} not in the design`,
     allGood: "Everything its target flows add is there, and nothing they don't name.",
+    /** ADR 0203: operations aren't checked against the code in this release, said as the CLI says it. */
+    onlyOperations: (n: number) =>
+      `This change's work is operations (${n}): Atticus doesn't check operations against the code in this release.`,
+    operationsNotChecked: (n: number) =>
+      `${n} operation${n === 1 ? " is" : "s are"} not checked: Atticus doesn't check operations against the code in this release.`,
     itemsCaption: (repo: string) => `What the check looked for in ${repo}, and what it found`,
     status: {
       found: "Found",

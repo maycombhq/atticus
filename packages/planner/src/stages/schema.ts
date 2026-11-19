@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft, redactSecrets } from "@maycombhq/core";
+import {
+  credentialLike,
+  FLOW_STEP_KINDS,
+  FLOW_TRIGGER_KINDS,
+  hasSecretShape,
+  looksLikeSecret,
+  maskSecretShapes,
+  QuestionDraft,
+  redactSecrets,
+} from "@maycombhq/core";
 
 /**
  * The files the three stages of a change write into its folder (ADR 0087, revamp plan 4.4):
@@ -17,11 +26,55 @@ const text = () => z.string().trim().min(1);
  * word of it (a `key=value` in the middle of a sentence), on every read, so a secret a model or
  * a person writes there never reaches design.md, a story, a task or a prompt.
  */
-export const redactWords = (s: string): string =>
-  redactSecrets(s)
-    .split(/(\s+)/)
-    .map((w) => redactSecrets(w))
-    .join("");
+const REDACTED = "<redacted>";
+/** A value that only refers to a secret: `${X}`, `{{ x }}`, `env:X`, `vault:...`, `<...>`. */
+const refersOnly = (v: string) => /^(\$|\{|<|env:|vault:|secret:|ref:)/i.test(v);
+/** A word's own text, without the quotes and stops around it, and where it sits in the word. */
+const core = (w: string) => /^([("'`]*)(.*?)([)"'`.,;:!?]*)$/.exec(w)!;
+/** Filler between a secret's name and its value in prose: "password to x", "key is x". */
+const FILLER = /^(?::|=|is|are|to|as|of|be)$/i;
+
+/**
+ * An operation's words, redacted by the facts' rules (core's): `redactSecrets` on each word, the
+ * shapes a log masks (a URL's
+ * password, a bearer or Basic token, the well-known token shapes); a credential with no scheme
+ * (`user:pass@host`); and, after a word that names a secret (`password`, `pay-api-key`, as a
+ * fact's key is judged), the value that follows, in `key=value`, `key: value` or prose, when it
+ * reads as a credential. Only the value goes: the word that names it, a record id and a key stay,
+ * so a model can still cite them. A private key's block goes whole.
+ */
+export function redactWords(text: string): string {
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) return REDACTED;
+  let out = maskSecretShapes(text, REDACTED).replace(
+    /(^|[\s(])([\w.+-]+):([^\s:@/]{3,})@(?=[\w-]+\.[\w.-]+)/g,
+    (all: string, head: string, user: string, pass: string) =>
+      refersOnly(pass) ? all : `${head}${user}:${REDACTED}@`,
+  );
+  const words = out.split(/(\s+)/);
+  for (let i = 0; i < words.length; i += 2) {
+    // Core's own rules, a word at a time (a URL's `password=` or `token=`, a key's literal), so
+    // what they catch stays caught and a name before a colon is never taken for a key's value.
+    words[i] = redactSecrets(words[i]!);
+    const [, pre, w, post] = core(words[i]!);
+    // key=value in one word.
+    const eq = /^([\w.-]+)=(.+)$/.exec(w!);
+    if (eq && looksLikeSecret(eq[1]!, "x") && !refersOnly(eq[2]!) && eq[2] !== REDACTED) {
+      words[i] = `${pre}${eq[1]}=${REDACTED}${post}`;
+      continue;
+    }
+    if (!w || w.includes(".") || !looksLikeSecret(w, "x")) continue;
+    // The next word that isn't filler, within two: the value, when it reads as a credential.
+    for (let j = i + 2, n = 0; j < words.length && n < 3; j += 2, n++) {
+      const [, p2, v, s2] = core(words[j]!);
+      if (FILLER.test(v!) || v === "") continue;
+      if (v !== REDACTED && !refersOnly(v!) && (credentialLike(v!) || hasSecretShape(v!)))
+        words[j] = `${p2}${REDACTED}${s2}`;
+      break;
+    }
+  }
+  out = words.join("");
+  return out;
+}
 const safeText = () => text().transform(redactWords);
 const Id = z
   .string()

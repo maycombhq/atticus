@@ -109,4 +109,59 @@ describe("data.md and the architecture stage's own artifact (ADR 0006 addendum)"
     ]);
     expect(await design("It reads forge-orders-db.orders.status as today.")).toHaveLength(1);
   });
+
+  it("doesn't ask an operations-only design for data.md unless an operation moves data, and then says what to do on the stages (ADR 0203)", async () => {
+    const run = async (
+      what: string,
+      design = "| move | deployment | forge-orders | orders.status stays as it is |",
+    ) => {
+      const root = await estate();
+      const dir = join(root, "openspec/changes", CHANGE);
+      await rm(join(dir, "target-flows"), { recursive: true, force: true });
+      await mkdir(join(dir, "target-flows"), { recursive: true });
+      await writeFile(
+        join(dir, "target-flows/_operations.yaml"),
+        `schemaVersion: 1\nchange: ${CHANGE}\noperations:\n  - id: move\n    kind: deployment\n    repos: [forge-orders]\n    what: ${what}\n`,
+      );
+      await writeFile(join(dir, "design.md"), `# Design\n\n## Operations\n\n${design}\n`);
+      return (await runCritic(root, CHANGE, { now: NOW, gate: "design" })).findings
+        .filter((f) => f.finding.rule === "constitution.data-doc-present")
+        .map((f) => f.finding);
+    };
+    expect(await run("Deploy the order service on the new platform.")).toEqual([]);
+    const asked = await run("Backfill orders.status on the new database.");
+    expect(asked.map((f) => f.summary)).toEqual([
+      "The change touches forge-orders-db but data.md is missing.",
+    ]);
+    // In other words, and with no table.column the design names: still asked, citing the operation.
+    for (const other of [
+      "Drop the old orders table once nothing reads it.",
+      "Run the Flyway migrations on the new database.",
+      "Migrate the existing data to the new database.",
+    ]) {
+      const found = await run(
+        other,
+        "| move | deployment | forge-orders | as the operation says |",
+      );
+      expect(
+        found.map((f) => f.summary),
+        other,
+      ).toEqual([
+        "An operation of screen-order-consent changes the database but data.md is missing.",
+      ]);
+      expect(found[0]!.evidence).toEqual([
+        { source: "artifact", path: "target-flows/_operations.yaml", line: 7 },
+      ]);
+      expect(found[0]!.fix.text).toContain("store.migration");
+    }
+    expect(
+      await run(
+        "Migrate the services to the new platform.",
+        "| move | deployment | forge-orders | forge-orders.deployment.prod |",
+      ),
+    ).toEqual([]);
+    expect(asked[0]!.fix.text).toBe(
+      "An operation of screen-order-consent moves data, and the stages write data.md only from target flows: give the migration as a step of a target flow (store.migration) and run atticus change architecture screen-order-consent, or write data.md yourself (the Changes table, backfill, classification and retention); the stage keeps a data.md a person wrote.",
+    );
+  });
 });
