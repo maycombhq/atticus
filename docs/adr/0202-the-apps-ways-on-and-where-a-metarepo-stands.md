@@ -1,6 +1,6 @@
 # 0202. The app can do what the command line can when something goes wrong, and Atticus says where a metarepo stands
 
-- Status: proposed
+- Status: accepted (2026-11-18, by the owner, with the recommended answers: the build.json field is read and not written in beta.30; the status line follows every refusal; one prompt also covers --discard-edits (an unreadable build.json keeps the typed count))
 - Date: 2026-11-18
 - Release: 2.0.0-beta.30, slices 2 and 7 of [the plan](../plan/v30.md); Group 4 of [the field plan](../plan/field-reliability-and-ease.md)
 - Extends: ADR 0050 (the support bundle), ADR 0187 (jobs and the Console), ADR 0195 (the build's guards, undo), ADR 0197 (`build.json`, the newer-Atticus refusal)
