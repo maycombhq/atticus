@@ -1,6 +1,6 @@
 {
   "invariant": "large-removals-confirmed",
-  "note": "large-removals-confirmed: discard-edits removed 2 of forge-ledger's 19 records without the removals being confirmed. The guard counted a repo's records from the files on disk, a record file a person added by hand among them (20), so 2 removals stayed under 10%; the share is now of the records the last build wrote (build.json lists), not a hand-added file (beta.28.1).",
+  "note": "large-removals-confirmed: discard-edits removed 2 of forge-ledger's 19 records without the removals being confirmed. The guard counted a repo's records from the files on disk, a record file a person added by hand among them (20), so 2 removals stayed under 10%; the share is now of the records the last build wrote (build.json lists), not a hand-added file (beta.28.1). Beta.30 (ADR 0195's addendum of 2026-11-19): it is also a move drawn in a discard of hand edits. The ledger's GET /orders, paired with payments' first admin route, is drawn once payments is read from its facts; the discard's build removes the arrow to orders, matched one to one with the moved arrow, which counts toward neither limit, so its one other removal (1 of 19) is under them.",
   "seed": 1567472602,
   "estate": {
     "repos": [
