@@ -61,7 +61,12 @@ export async function askCommand(
       ? impactCommand(
           root,
           asked.id,
-          { json: o.json === true, ...(asked.receivers ? { receivers: true } : {}) },
+          {
+            json: o.json === true,
+            ...(asked.receivers ? { receivers: true } : {}),
+            // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
+            ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
+          },
           to,
         )
       : queryCommand(root, asked.query, { json: o.json === true }, to);
@@ -200,6 +205,43 @@ const impactRows = (affected: Affected[]) =>
   );
 
 /**
+ * Who receives any of several roots (beta.30: a topic read from facts is one Endpoint per
+ * consumer): each root's receivers and what lies past them, each record once, the first root's
+ * first. One root is `receiversOf` as it is; several add `roots`.
+ */
+function receiversOfAll(
+  ix: Parameters<typeof receiversOf>[0],
+  roots: string[],
+  depth: number,
+  owners: Parameters<typeof receiversOf>[3],
+) {
+  const each = roots.flatMap((x) => receiversOf(ix, x, depth, owners) ?? []);
+  if (each.length === 1 || roots.length === 1) return each[0]!;
+  const once = <T extends { kind: string; id: string }>(xs: T[], skip = new Set<string>()) => {
+    const seen = new Set(skip);
+    return xs.filter((a) => !seen.has(`${a.kind}|${a.id}`) && seen.add(`${a.kind}|${a.id}`));
+  };
+  const receivers = once(each.flatMap((r) => r.receivers));
+  const not = new Set([
+    ...receivers.map((a) => `${a.kind}|${a.id}`),
+    ...roots.map((x) => `Endpoint|${x}`),
+  ]);
+  return {
+    root: each[0]!.root,
+    roots,
+    receivers,
+    affected: once(each.flatMap((r) => r.affected)),
+    further: once(
+      each.flatMap((r) => r.further),
+      not,
+    ),
+    gaps: [
+      ...new Map(each.flatMap((r) => r.gaps).map((g) => [`${g.record}|${g.question}`, g])).values(),
+    ],
+  };
+}
+
+/**
  * atticus impact <id>: what a change to the record reaches. Exit 1 when the id isn't in the
  * catalog. A name exactly one entry or topic has stands for that record, said first (ADR 0201
  * addendum, 2026-11-19). `receivers` is `ask`'s "who receives it": the receivers first, and what
@@ -208,7 +250,14 @@ const impactRows = (affected: Affected[]) =>
 export async function impactCommand(
   root: string,
   id: string,
-  o: { json?: boolean; depth?: number; receivers?: boolean },
+  o: {
+    json?: boolean;
+    depth?: number;
+    receivers?: boolean;
+    /** With `receivers`: more roots (a topic's other consumers' Endpoints), and its name. */
+    also?: string[];
+    label?: string;
+  },
   io: Output,
 ): Promise<number> {
   const sides = await mapSides(root);
@@ -228,7 +277,8 @@ export async function impactCommand(
     };
     const owners = { owner: sides.owner };
     if (o.receivers) {
-      const r = receiversOf(ix, rootId, o.depth ?? 4, owners)!;
+      const r = receiversOfAll(ix, [rootId, ...(o.also ?? [])], o.depth ?? 4, owners);
+      const label = o.also?.length ? (o.label ?? rootId) : rootId;
       if (o.json) {
         io.out(JSON.stringify({ ...named, ...r }, null, 2));
         return 0;
@@ -236,13 +286,13 @@ export async function impactCommand(
       said(io);
       io.out(
         r.receivers.length
-          ? `${rootId} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
-          : `Nothing in the map receives ${rootId}.`,
+          ? `${label} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
+          : `Nothing in the map receives ${label}.`,
       );
       for (const l of r.receivers.length ? impactRows(r.receivers) : []) io.out(`  ${l}`);
       if (r.further.length) {
         io.out(
-          `Further, through a receiver (${r.further.length} record${r.further.length === 1 ? "" : "s"} that ${r.further.length === 1 ? "doesn't" : "don't"} receive ${rootId}):`,
+          `Further, through a receiver (${r.further.length} record${r.further.length === 1 ? "" : "s"} that ${r.further.length === 1 ? "doesn't" : "don't"} receive ${label}):`,
         );
         for (const l of impactRows(r.further)) io.out(`  ${l}`);
       }

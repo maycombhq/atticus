@@ -327,12 +327,12 @@ describe("atticus ask on the field-shaped estate", () => {
   });
 
   /**
-   * KNOWN BUG, found by this estate (reported, not fixed here): a topic read from facts is one
-   * Endpoint per consumer (`<consumer>.on-<topic>`), and `askLookup` takes the first, so a topic
-   * with consumers in two repos is said to be received by one. When the receivers of every such
-   * Endpoint are named this passes, and `it.fails` says so: make it `it`.
+   * Found by this estate (product bug, fixed here): a topic read from facts is one Endpoint per
+   * consumer (`<consumer>.on-<topic>`), and `askLookup` took the first, so a topic with consumers
+   * in two repos was said to be received by one. The question covers every Endpoint of the
+   * topic's name now (packages/index/src/ask.ts, packages/cli/src/index-commands.ts).
    */
-  it.fails("names both consumers of a topic with consumers in two repos", async () => {
+  it("names both consumers of a topic with consumers in two repos", async () => {
     const r = await ask(`who consumes the topic ${e.topic!.name}?`);
     expect(r.code).toBe(0);
     // The receivers block only: a listener named in the Further rows doesn't count.
@@ -349,4 +349,39 @@ describe("atticus ask on the field-shaped estate", () => {
         ),
       );
   });
+
+  it("answers the map tools' ask (--json) with both receivers, apart from what lies past them, and the publisher", async () => {
+    const t = e.topic!;
+    const out: string[] = [];
+    const code = await main(
+      ["ask", `who consumes the topic ${t.name}?`, "--json", "--root", e.root],
+      {
+        out: (l) => out.push(l),
+        err: (l) => out.push(l),
+      },
+    );
+    expect(code).toBe(0);
+    type Walk = { kind: string; id: string }[];
+    const j = JSON.parse(out.join("\n")) as {
+      readAs: string;
+      roots: string[];
+      receivers: Walk;
+      further: Walk;
+    };
+    expect(j.readAs).toContain(`who receives ${t.name}, at each of its 2 consumers`);
+    expect(j.roots).toHaveLength(2);
+    expect(
+      j.receivers
+        .filter((x) => x.kind === "Component")
+        .map((x) => x.id)
+        .sort(),
+    ).toEqual([...t.listeners].sort());
+    for (const l of t.listeners)
+      expect(
+        j.further.some((x) => x.kind === "Component" && x.id === l),
+        l,
+      ).toBe(false);
+    const pub = await ask(`who publishes to the topic ${t.name}?`);
+    expect(pub.out).toContain(`${t.publisher} →`);
+  }, 120_000);
 });
