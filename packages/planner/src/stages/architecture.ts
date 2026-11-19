@@ -33,6 +33,7 @@ import {
   outsideSystems,
   scopeRepos,
   type Estate,
+  unreadRepos,
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { openspecInstructionSource } from "./openspec-files.js";
@@ -1368,6 +1369,9 @@ export function checkDeltas(
   };
 
   const planned = plannedComponents(deltas, e);
+  // ADR 0201 (amending ADR 0189 point 9): a manifest repo nobody read is known as a planned
+  // component is. A repo that was read is known by the component the map found in it.
+  const unread = unreadRepos(e);
   const seen = new Set<string>();
   for (const d of deltas) {
     const t = d.flow;
@@ -1469,8 +1473,7 @@ export function checkDeltas(
         !s.to.new &&
         !outside &&
         !planned.has(s.to.component) &&
-        // ADR 0201 (amending ADR 0189 point 9): a repo a manifest lists, read or not, is known.
-        !e.manifestRepos.has(s.to.component) &&
+        !unread.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(

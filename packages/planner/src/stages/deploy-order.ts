@@ -1,4 +1,4 @@
-import { endpointKey, type Estate } from "./estate.js";
+import { endpointKey, notEstateWhy, type Estate } from "./estate.js";
 import { endpointName } from "./contracts.js";
 import type { StageIssue } from "./loop.js";
 import type { DeployStep, FlowDelta } from "./schema.js";
@@ -199,7 +199,7 @@ export function deployIssues(
       out.push({
         rule: "delta.deploy-unknown-repo",
         target: `deploy#${n}`,
-        message: `Step ${n} of the deploy order deploys ${s.repo}, which isn't a repo the estate has or a component this change plans: name a repo from the index, or draw ${s.repo} as a new component.`,
+        message: `Step ${n} of the deploy order deploys ${s.repo}, which isn't a repo the estate has or a component this change plans: name a repo from the index, or draw ${s.repo} as a new component.${notEstateWhy(e, s.repo)}`,
         blocking: true,
       });
       return undefined;

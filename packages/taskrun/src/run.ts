@@ -39,12 +39,14 @@ import {
   handDown,
   loadTask,
   openTaskWorktree,
+  readChangeTasks,
   setTaskDone,
   taskBranchOwnCommits,
   type TaskContext,
 } from "@maycombhq/speckit";
 import { baseClonePath, createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
+import { afterHold } from "./waves.js";
 import {
   holdSignals,
   shellCommandRunner,
@@ -802,6 +804,19 @@ export interface TaskRunPreview {
 }
 
 /**
+ * ADR 0201 (waves): a task its `(after …)` holds isn't run by itself either. There is no flag
+ * that overrides it: the person ticks the tasks it names, or fixes tasks.md. The order of its own
+ * repo's tasks doesn't refuse a task a person chose to run, as before.
+ */
+function refuseIfAfterHolds(t: TaskContext): void {
+  const tasks = readChangeTasks(t.files);
+  const me = tasks.find((x) => x.id === t.task.id && x.line === t.task.line);
+  const hold = me && afterHold(tasks, me);
+  if (hold)
+    throw new TaskRunError("refused", `Task ${t.task.id} isn't ready: ${hold.why}. ${hold.fix}`);
+}
+
+/**
  * `atticus task run --dry-run`: the task, its level (runtime.yaml's default when none is asked), the
  * cap. `skipGitHost` leaves out whether a Git host is there to push to (the app never pushes); a
  * task whose PR is open still asks the host whether it is (review round 43: read-only).
@@ -813,6 +828,7 @@ export async function previewTaskRun(
   o: { level?: RunLevel; gitHost?: GitHost; skipGitHost?: boolean } = {},
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
+  refuseIfAfterHolds(t);
   const level = levelOf(t, o.level);
   await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t), createGit());
   return {
@@ -919,6 +935,7 @@ async function runTaskHeld(
   const now = o.now ?? (() => new Date());
   const git = o.git ?? createGit();
   let t = await loadTask(root, changeId, taskId);
+  refuseIfAfterHolds(t);
   const rt = t.ctx.orgPack.runtime;
   const level = levelOf(t, o.level);
   // A run of this task still waits on the person's assistant: a second one would write over

@@ -1,5 +1,8 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { planReadyTasks, type ReadyInput } from "../src/index.js";
+import { planReadyTasks, previewTaskRun, runTask, type ReadyInput } from "../src/index.js";
+import { CHANGE, git, speckitRoot } from "./helpers.js";
 
 /**
  * ADR 0201 decision 3, waves: a task that says `(after <task id>)` in tasks.md is held, across
@@ -134,4 +137,106 @@ describe("waves: (after …) across repos", () => {
       "it waits for task t2 (after) to be done first",
     );
   });
+});
+
+describe("waves: what holds a task for ever is named", () => {
+  it("names a ring made of (after …) and the order of a repo's tasks", () => {
+    // t1 names t2, and t2 comes after t1 in their repo: neither can go first.
+    const p = planReadyTasks({
+      tasks: [task("t1", "forge-orders", { after: ["t2"] }), task("t2", "forge-orders")],
+      stories: [],
+    });
+    expect(p.ready).toEqual([]);
+    expect(p.tasks.map((t) => [t.id, t.why])).toEqual([
+      ["t1", "it and task t2 each wait for the other, by (after …) and by their order in tasks.md"],
+      ["t2", "it and task t1 each wait for the other, by (after …) and by their order in tasks.md"],
+    ]);
+    // Across repos too: t3 (after t2), t2 after t1 in its repo, t1 (after t3).
+    const three = planReadyTasks({
+      tasks: [
+        task("t1", "forge-orders", { after: ["t3"] }),
+        task("t2", "forge-orders"),
+        task("t3", "forge-ledger", { after: ["t2"] }),
+      ],
+      stories: [],
+    });
+    expect(three.ready).toEqual([]);
+    expect(three.tasks.find((t) => t.id === "t2")?.why).toBe(
+      "it and tasks t1, t3 each wait for the other, by (after …) and by their order in tasks.md",
+    );
+    // [P] tasks of a repo don't wait for each other, so naming one of them is no ring.
+    const together = planReadyTasks({
+      tasks: [
+        task("t1", "forge-orders", { parallel: true, after: ["t2"] }),
+        task("t2", "forge-orders", { parallel: true }),
+      ],
+      stories: [],
+    });
+    expect(together.ready).toEqual(["t2"]);
+  });
+
+  it("says a task id used twice, rather than the last one winning", () => {
+    const p = planReadyTasks({
+      tasks: [
+        task("t1", "forge-orders"),
+        task("t1", "forge-ledger"),
+        task("t2", "forge-infra", { after: ["t1"] }),
+      ],
+      stories: [],
+    });
+    expect(p.ready).toEqual([]);
+    expect(p.tasks.map((t) => [t.id, t.repo, t.why])).toEqual([
+      ["t1", "forge-orders", "its id t1 is used twice in tasks.md: give each task its own id"],
+      ["t1", "forge-ledger", "its id t1 is used twice in tasks.md: give each task its own id"],
+      ["t2", "forge-infra", "it waits for task t1 (after) to be done first"],
+    ]);
+  });
+});
+
+describe("atticus task run of a task held by (after …)", () => {
+  it("is refused, naming what must be ticked first; a task that only comes later in its repo runs as before", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const file = join(root, "openspec/changes", CHANGE, "tasks.md");
+    const text = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      text
+        .replace(
+          "- [ ] 1.1 Add V3__add_daily_limit.sql (story s1-refuse-over-limit)",
+          "- [ ] 1.1 Add V3__add_daily_limit.sql (story s1-refuse-over-limit) (after 1.3)",
+        )
+        .replace(
+          "with tests (story s4-velocity-check)",
+          "with tests (story s4-velocity-check) (after 7.7)",
+        ),
+    );
+    const held =
+      "Task 1.1 isn't ready: it and tasks 1.2, 1.3 each wait for the other, by (after …) and by their order in tasks.md. Fix tasks.md, then run it again.";
+    await expect(previewTaskRun(root, CHANGE, "1.1")).rejects.toMatchObject({
+      code: "refused",
+      message: held,
+    });
+    await expect(runTask(root, CHANGE, "1.1", { by: "ari", git })).rejects.toMatchObject({
+      code: "refused",
+      message: held,
+    });
+    await expect(previewTaskRun(root, CHANGE, "1.3")).rejects.toMatchObject({
+      message:
+        "Task 1.3 isn't ready: it names task 7.7 in (after …), which tasks.md doesn't have. Fix tasks.md, then run it again.",
+    });
+    // Held by a named task that isn't ticked: the words say which to tick.
+    await writeFile(
+      file,
+      text.replace(
+        "- [ ] 2.1 Expose the remaining limit, with tests (story s2-show-remaining)",
+        "- [ ] 2.1 Expose the remaining limit, with tests (story s2-show-remaining) (after 1.1)",
+      ),
+    );
+    await expect(previewTaskRun(root, CHANGE, "2.1")).rejects.toMatchObject({
+      message:
+        "Task 2.1 isn't ready: it waits for task 1.1 (after) to be done first. It runs once that is ticked in tasks.md.",
+    });
+    // 1.2 comes after 1.1 in its repo and names nothing: a person may still run it by itself.
+    expect((await previewTaskRun(root, CHANGE, "1.2")).task).toBe("1.2");
+  }, 180_000);
 });

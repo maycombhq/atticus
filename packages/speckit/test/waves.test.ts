@@ -80,6 +80,54 @@ describe("readChangeTasks reads (after …)", () => {
   });
 });
 
+describe("where (after …) may sit, and what is only a task's words", () => {
+  const read = async (lines: string[]) => {
+    dir = await mkdtemp(join(tmpdir(), "atticus-waves-"));
+    await writeFile(join(dir, "tasks.md"), ["## forge-orders", ...lines, ""].join("\n"));
+    return readChangeTasks(await readChangeFiles(dir)).map((t) => ({
+      id: t.id,
+      title: t.title,
+      stories: t.stories,
+      ...(t.after ? { after: t.after } : {}),
+    }));
+  };
+
+  it("is read wherever it sits among the line's last brackets", async () => {
+    expect(
+      await read([
+        "- [ ] t1 Publish the event",
+        "- [ ] t2 Name the topic",
+        "- [ ] t3 Read the event (after t1) (story s1-ship)",
+        "- [ ] t4 Show the date (story s1-ship) (after t1 and t2).",
+        "- [ ] t5 Keep the date (after t1, t2, and t3)",
+      ]),
+    ).toEqual([
+      { id: "t1", title: "Publish the event", stories: [] },
+      { id: "t2", title: "Name the topic", stories: [] },
+      { id: "t3", title: "Read the event", stories: ["s1-ship"], after: ["t1"] },
+      { id: "t4", title: "Show the date", stories: ["s1-ship"], after: ["t1", "t2"] },
+      { id: "t5", title: "Keep the date", stories: [], after: ["t1", "t2", "t3"] },
+    ]);
+  });
+
+  it("leaves a title that only ends in (after <words>) alone; an id tasks.md lacks is still a wave", async () => {
+    expect(
+      await read([
+        "- [ ] t1 Publish the event",
+        "- [ ] t2 Tell the depot (after lunch)",
+        "- [ ] t3 Tell the carrier (after t1 and lunch)",
+        // Shaped like a task id (it has a digit), so run-ready says tasks.md doesn't have it.
+        "- [ ] t4 Read the event (after t9)",
+      ]),
+    ).toEqual([
+      { id: "t1", title: "Publish the event", stories: [] },
+      { id: "t2", title: "Tell the depot (after lunch)", stories: [] },
+      { id: "t3", title: "Tell the carrier (after t1 and lunch)", stories: [] },
+      { id: "t4", title: "Read the event", stories: [], after: ["t9"] },
+    ]);
+  });
+});
+
 describe("a task under a repo no manifest lists", () => {
   it("is refused with the command that adds the repo, or the heading to fix", async () => {
     const { root } = await speckitRoot({ repos: ["forge-ledger"] });

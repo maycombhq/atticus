@@ -84,6 +84,7 @@ import {
   triggerEntry,
   type Estate,
   type SpecFlow,
+  unreadRepos,
 } from "./estate.js";
 import { mergeDelta } from "./merge.js";
 import {
@@ -2121,8 +2122,8 @@ export function checkSections(
     ...stories.map((s) => s.repo),
     // ADR 0189: the repos of the components the change plans, before they exist.
     ...(e ? plannedRepos(deltas, e) : []),
-    // ADR 0201: a repo a manifest lists, read or not, is known where a planned one is.
-    ...(e?.manifestRepos ?? []),
+    // ADR 0201: a manifest repo nobody read is known where a planned one is.
+    ...(e ? unreadRepos(e) : []),
     ...(e?.flows.map((f) => f.repo) ?? []),
     ...((e?.records ?? []) as (CatalogRecord & Record<string, unknown>)[]).flatMap((r) =>
       r.kind === "Component" && typeof r.repo === "string" ? [r.repo] : [],

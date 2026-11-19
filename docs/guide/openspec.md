@@ -16,6 +16,36 @@ OpenSpec ships inside the installed Atticus package rather than on your PATH, so
 
 `atticus openspec status` shows the same progress `atticus next` reads. Edit `feature.yaml`, the target flows or the stories' answer and run the stage again; never edit the generated files. An organisation changes what each stage is told through `openspec/config.yaml` (`context`, and `rules` per artifact), which every stage reads first through `openspec instructions`.
 
+## The order of tasks in `tasks.md`
+
+A task is a line `- [ ] <id> <what>` under a `## <repo>` heading, and may end with `(story <story id>)`. `atticus task run-ready <change>` (**Run all ready tasks** on the Task board) runs the tasks that are ready, in cross-repo order, and says why each other one waits:
+
+- **Its stories.** A task waits for the tasks of the stories its story depends on (`stories.md`, "Depends on").
+- **Its repo.** A task waits for the earlier tasks of its own repo, so each is drafted from a base with the code before it. Mark tasks `[P]` (`- [ ] 1.2 [P] Add the column`) to let the `[P]` tasks next to each other in a repo go together.
+- **Waves across repos.** End a task's line with `(after <task id>)`, or several ids as `(after t1, t2)` or `(after t1 and t2)`, to hold it until each task it names is ticked, in whichever repo that task is ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)). It sits among the brackets that end the line, before or after `(story …)`. A title that only ends in words, such as "(after lunch)", is left alone.
+
+```markdown
+## forge-orders
+
+- [ ] t1 Publish the shipped event
+
+## forge-ledger
+
+- [ ] t2 Read the shipped event (after t1)
+```
+
+`run-ready` then prints `Not ready: task t2: it waits for task t1 (after) to be done first.` A task that can never run as the file stands is named with its reason: it names a task `tasks.md` doesn't have, its id is used twice, or it and another task each wait for the other (by `(after …)` alone, or by `(after …)` against the order of a repo's tasks). `atticus task run <change> <task>` refuses a task its `(after …)` holds in the same words; nothing overrides it, so tick the tasks it names or fix `tasks.md`. A task under a heading no `repos.manifest.yaml` lists is refused with what to do: add the new repo (`atticus repo add <its clone URL> --id <repo>`) or fix the heading.
+
+## Where the stages point elsewhere
+
+Every repo a manifest lists is part of the estate for the stages, read or not; an archived one is not, and the finding says so. A manifest that doesn't read lists no repo, and the finding about a repo "the estate doesn't have" names the manifest and what is wrong with it. Three notes never block a stage (ADR 0201):
+
+- A new flow in a repo the feature answer marks `newRepo: true` passes with a note that names `atticus repo add`.
+- A consumer that is a manifest repo nobody read, or a component the change plans, is noted as one whose use can't be checked, with `atticus map <repo>`.
+- A new file's folder in an empty repo (no folder at its root but hidden ones) is noted, since the change gives the repo its layout.
+
+A feature draft that touches nothing, a fast-path draft that changes no step, and `atticus plan stories` on a change with nothing to plan stop at once and name the quick path: write the change's requirements file and run `atticus change new --from <requirements.md>`.
+
 ## Drawing a change on the canvas
 
 A change's target flows can start as a drawing ([ADR 0179](../adr/0179-drawing-a-change-on-the-canvas.md)). Under the change's diagram (**Design › Change diagram**), **Draw the change** takes a stroke at a time: a call one component makes to another's API (ticking _the API doesn't exist yet_ when it is new), a topic it publishes and a component that listens, a table it reads or writes, a step of today's flow taken out or sent elsewhere, or a new flow of a component the catalog doesn't have yet, with what starts it. **Preview** shows the lines the stroke adds to `target-flows/<flow>.yaml`; **Draw it** writes exactly those lines, the picture redraws with the stroke marked, and **Undo** takes any stroke back. When a component has several flows, the panel asks which one the stroke is on.

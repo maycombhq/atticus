@@ -220,6 +220,8 @@ describe("the components a change plans", () => {
       byId: new Map(),
       flowById: new Map(),
       manifestRepos: new Set(),
+      archivedRepos: new Set(),
+      manifestProblems: [],
     } as never;
     const issues = deployIssues(
       [scheduler, calls],

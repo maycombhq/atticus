@@ -20,7 +20,14 @@ import { itemLine } from "./knowledge-lines.js";
 import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
-import { estateIndex, estateRepos, loadEstate, systemOf, type Estate } from "./estate.js";
+import {
+  estateIndex,
+  estateRepos,
+  loadEstate,
+  notEstateWhy,
+  systemOf,
+  type Estate,
+} from "./estate.js";
 import { designText, readFigma, type DesignRead } from "./figma.js";
 import {
   runStageLoop,
@@ -244,7 +251,7 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   const repos = estateRepos(e);
   for (const n of p.newFlows)
     if (repos.has(n.repo)) continue;
-    else if (n.newRepo)
+    else if (n.newRepo && !e.archivedRepos.has(n.repo))
       out.push({
         rule: "feature.planned-repo",
         target: `${n.name}:${n.repo}`,
@@ -255,7 +262,7 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
       issue(
         "feature.unknown-repo",
         `${n.name}:${n.repo}`,
-        `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.`,
+        `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.${notEstateWhy(e, n.repo)}`,
       );
   if (p.features.length + p.flows.length + p.newFlows.length === 0)
     issue(

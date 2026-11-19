@@ -9,6 +9,8 @@ import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { loadChangeContext } from "@maycombhq/changes";
 import {
+  checkDeltas,
+  checkStageDraft,
   checkStories,
   consumerIssues,
   deployIssues,
@@ -26,6 +28,7 @@ import {
   stageRuleKind,
   StoriesAnswerSchema,
   storiesFromDeltas,
+  unreadRepos,
   type DeployStep,
   type Estate,
 } from "../src/index.js";
@@ -43,6 +46,11 @@ const FIX = join(HERE, "../../../fixtures");
 const HOLD = join(FIX, "stages/hold-stock");
 const NOW = new Date("2026-11-18T09:00:00Z");
 const CHANGE = "add-fraud-check";
+const LEVELS = ["public", "internal", "confidential", "restricted"];
+const placement = (root: string) =>
+  readFile(join(root, "openspec/changes/hold-stock/feature.yaml"), "utf8").then(
+    (t) => parse(t) as Parameters<typeof checkDeltas>[2],
+  );
 const HINT =
   "If this change alters no runtime step in a repo the map holds (a new product, a move to another platform, pipeline or configuration work), it belongs on the quick path: write its requirements file and run atticus change new --from <requirements.md>.";
 
@@ -87,6 +95,10 @@ async function estateRoot(o: { hold?: boolean; small?: boolean } = {}): Promise<
   }
   await cp(join(FIX, "stages/specs"), join(root, "specs"), { recursive: true });
   await cp(join(FIX, "stages/changes"), join(root, "openspec/changes"), { recursive: true });
+  if (o.hold)
+    await cp(join(HOLD, "hold-stock"), join(root, "openspec/changes/hold-stock"), {
+      recursive: true,
+    });
   if (o.small)
     await cp(
       join(FIX, "stages/small/return-order-time"),
@@ -145,6 +157,138 @@ describe("the estate is every repo with a flow or a record, and every manifest's
   });
 });
 
+describe("the manifests the estate reads agree with the workspace's reader", () => {
+  const profile = async (root: string, platform: string, text: string) => {
+    await mkdir(join(root, "org-pack/profiles", platform), { recursive: true });
+    await writeFile(join(root, "org-pack/profiles", platform, "repos.manifest.yaml"), text);
+  };
+  const repo = (id: string, more = "") =>
+    `  - id: ${id}\n    url: https://git.example.com/forge/${id}.git\n    type: infra\n    owner: team-platform\n${more}`;
+
+  it("an archived repo doesn't count, and the finding says it is archived", async () => {
+    const root = await estateRoot();
+    await profile(
+      root,
+      "forge-old",
+      `schemaVersion: 1\nplatform: forge-old\nrepos:\n${repo("forge-batch", "    archived: true\n")}`,
+    );
+    const e = await estate(root);
+    expect(e.manifestRepos.has("forge-batch")).toBe(false);
+    expect([...e.archivedRepos]).toEqual(["forge-batch"]);
+    expect(e.problems).toEqual([]);
+    const issues = await checkStageDraft(
+      root,
+      CHANGE,
+      "feature",
+      placed("{ name: Nightly screen, repo: forge-batch, why: The batch screens orders. }"),
+    );
+    expect(issues.map((i) => [i.rule, i.message])).toEqual([
+      [
+        "feature.unknown-repo",
+        'New flow "Nightly screen" is put in repo forge-batch, which the estate doesn\'t have. The manifest marks forge-batch archived.',
+      ],
+    ]);
+  });
+
+  it("a manifest that doesn't read lists no repo, and is said: in the estate's problems and in the finding", async () => {
+    const root = await estateRoot();
+    // A repo with no owner (the schema refuses it), YAML that doesn't parse, and an id used twice.
+    await profile(
+      root,
+      "forge-b",
+      "schemaVersion: 1\nplatform: forge-b\nrepos:\n  - id: forge-billing\n    url: https://git.example.com/forge/forge-billing.git\n    type: infra\n",
+    );
+    await profile(root, "forge-c", "schemaVersion: 1\nrepos: [ {id: forge-search\n");
+    await profile(
+      root,
+      "forge-d",
+      `schemaVersion: 1\nplatform: forge-d\nrepos:\n${repo("forge-infra")}`,
+    );
+    const e = await estate(root);
+    expect([...e.manifestRepos].sort()).toEqual(["forge-infra", "forge-mobile", "forge-orders"]);
+    expect(e.problems.map((p) => p.replace(/: .*$/s, ""))).toEqual([
+      "org-pack/profiles/forge-b/repos.manifest.yaml",
+      "org-pack/profiles/forge-c/repos.manifest.yaml",
+      "org-pack/profiles/forge-d/repos.manifest.yaml",
+    ]);
+    expect(e.problems[2]).toBe(
+      "org-pack/profiles/forge-d/repos.manifest.yaml: repo id forge-infra is in both forge and forge-d",
+    );
+    const issues = await checkStageDraft(
+      root,
+      CHANGE,
+      "feature",
+      placed("{ name: Invoice run, repo: forge-billing, why: Orders are invoiced. }"),
+    );
+    expect(issues.map((i) => i.rule)).toEqual(["feature.unknown-repo"]);
+    expect(issues[0]!.message).toMatch(
+      /^New flow "Invoice run" is put in repo forge-billing, which the estate doesn't have\. 3 manifests didn't read, so their repos aren't counted: org-pack\/profiles\/forge-b\/repos\.manifest\.yaml: /,
+    );
+  });
+});
+
+describe("a manifest repo that was read is known by its component, not by its repo id", () => {
+  it("only a manifest repo with no Component record is 'not read'", async () => {
+    const root = await estateRoot({ hold: true });
+    const base = await estate(root);
+    const orders = base.records.find((r) => r.kind === "Component" && r.id === "forge-orders")!;
+    // forge-storefront-ui was read: its component is storefront-ui.
+    const e = estateOf(
+      [...base.records, { ...orders, id: "storefront-ui", repo: "forge-storefront-ui" } as never],
+      base.flows,
+      [],
+      { repos: ["forge-storefront-ui", "forge-mobile"], archived: [], problems: [] },
+    );
+    expect([...unreadRepos(e)]).toEqual(["forge-mobile"]);
+    const d = (
+      parse(readFileSync(join(HOLD, "drafts/clean.yaml"), "utf8")) as { flows: object[] }
+    ).flows.map((f) => FlowDelta.parse({ schemaVersion: 2, ...f }));
+    d[0]!.consumers = ["forge-orders", "forge-storefront-ui", "forge-mobile"];
+    expect(
+      consumerIssues(d, e)
+        .filter((i) => i.rule === "delta.unknown-consumer")
+        .map((i) => [i.target, i.blocking, i.message]),
+    ).toEqual([
+      [
+        "forge-stock.reserve-stock:forge-storefront-ui",
+        true,
+        "Flow forge-stock.reserve-stock lists consumer forge-storefront-ui, which isn't in the catalog. List components from the index.",
+      ],
+      [
+        "forge-stock.reserve-stock:forge-mobile",
+        false,
+        "Flow forge-stock.reserve-stock lists consumer forge-mobile, which is in the manifest and hasn't been read, so its use can't be checked: atticus map forge-mobile",
+      ],
+    ]);
+    // A call's target: the repo nobody read is known; the read repo's id is not its component.
+    const call = (component: string) =>
+      FlowDelta.parse({
+        schemaVersion: 2,
+        flow: "forge-stock.reserve-stock",
+        repo: "forge-stock",
+        change: "modify",
+        why: "The hold is told on.",
+        steps: [
+          {
+            op: "add",
+            after: 1,
+            kind: "call-out",
+            what: "The hold is told on",
+            to: { component, entry: "POST /holds" },
+          },
+        ],
+      });
+    const unknown = async (component: string) =>
+      checkDeltas([call(component)], e, await placement(root), [], { levels: LEVELS })
+        .filter((i) => i.rule === "delta.unknown-component")
+        .map((i) => i.message);
+    expect(await unknown("forge-mobile")).toEqual([]);
+    expect(await unknown("forge-storefront-ui")).toEqual([
+      "Change 1 to forge-stock.reserve-stock goes to forge-storefront-ui, which the catalog doesn't have; use an id from the index, or new: true.",
+    ]);
+  });
+});
+
 describe("the feature stage and a repo nobody read, or that isn't there yet", () => {
   it("passes a new flow put in a manifest repo with nothing read in it", async () => {
     const root = await estateRoot();
@@ -199,20 +343,19 @@ describe("the feature stage and a repo nobody read, or that isn't there yet", ()
   });
 
   it("refuses any other repo the estate doesn't have, as before", async () => {
-    const root = await estateRoot();
-    const r = await featureStage(root, CHANGE, {
-      runtime: assistant([
-        placed("{ name: Storefront checkout, repo: forge-storefront, why: The new product. }"),
-      ]),
-      now: NOW,
-    }).catch((e: Error) => e);
-    const words =
-      'New flow "Storefront checkout" is put in repo forge-storefront, which the estate doesn\'t have.';
-    if (r instanceof Error) expect(r.message).toContain(words);
-    else
-      expect(JSON.stringify([r.findings, r.questions])).toContain(
-        JSON.stringify(words).slice(1, -1),
-      );
+    const issues = await checkStageDraft(
+      await estateRoot(),
+      CHANGE,
+      "feature",
+      placed("{ name: Storefront checkout, repo: forge-storefront, why: The new product. }"),
+    );
+    expect(issues.map((i) => [i.rule, i.blocking, i.message])).toEqual([
+      [
+        "feature.unknown-repo",
+        true,
+        'New flow "Storefront checkout" is put in repo forge-storefront, which the estate doesn\'t have.',
+      ],
+    ]);
   });
 
   it("stops on the first draft that places nothing, with the hint and no question (amends ADR 0087)", async () => {

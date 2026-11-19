@@ -52,8 +52,34 @@ export interface ChangeTask {
   after?: string[];
 }
 
-/** ADR 0201: the last bracket on a task line, `(after t1)` or `(after t1, t2)`. */
-const AFTER = /\s*\(after\s+([^()]*)\)\s*$/i;
+/** A bracket that ends a task line (a full stop may follow it); brackets don't nest. */
+const LAST_BRACKET = /\s*\(([^()]*)\)\s*\.?\s*$/;
+
+/**
+ * ADR 0201 (waves): the `(after t1)`, `(after t1, t2)` or `(after t1 and t2)` among the brackets
+ * that end a task line, wherever it sits among them, and the line without it. It is a wave only
+ * when every name in it is a task id of this tasks.md, or is shaped like one the file lacks (an
+ * id with a digit in it, which the ready list then says tasks.md doesn't have). A title that only
+ * ends in words, "(after lunch)", is left as it is.
+ */
+function waveOf(rest: string, ids: ReadonlySet<string>): { rest: string; after: string[] } {
+  let end = rest.length;
+  for (;;) {
+    const m = LAST_BRACKET.exec(rest.slice(0, end));
+    if (!m) return { rest, after: [] };
+    const named = /^after\s+(.+)$/i.exec(m[1]!.trim());
+    const names = (named?.[1] ?? "")
+      .split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean);
+    if (
+      names.length &&
+      names.every((n) => ids.has(n) || (/\d/.test(n) && RecordId.safeParse(n).success))
+    )
+      return { rest: rest.slice(0, m.index) + rest.slice(end), after: [...new Set(names)] };
+    end = m.index;
+  }
+}
 
 const TASK_LINE = /^(\s*[-*]\s+\[)([ xX]?)(\]\s+)(\S+)\s+(.*)$/;
 
@@ -63,6 +89,12 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
   if (!doc) return [];
   const out: ChangeTask[] = [];
   let repo = "";
+  // Every task id of the file, so a line's `(after …)` is told from a title's own words.
+  const ids = new Set<string>();
+  for (const l of doc.lines) {
+    const id = TASK_LINE.exec(l)?.[4]?.toLowerCase();
+    if (id && RecordId.safeParse(id).success) ids.add(id);
+  }
   doc.lines.forEach((l, i) => {
     const h = /^##\s+(.+?)\s*$/.exec(l);
     if (h) {
@@ -71,12 +103,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
     }
     const m = TASK_LINE.exec(l);
     if (!m || !repo || !RecordId.safeParse(m[4]!.toLowerCase()).success) return;
-    const named = AFTER.exec(m[5]!);
-    const rest = named ? m[5]!.slice(0, named.index) : m[5]!;
-    const after = (named?.[1] ?? "")
-      .split(",")
-      .map((x) => x.trim().toLowerCase())
-      .filter(Boolean);
+    const { rest, after } = waveOf(m[5]!, ids);
     const stories = [...rest.matchAll(/\bstor(?:y|ies)\s+([a-z0-9][a-z0-9._-]*)/gi)].map((s) =>
       s[1]!.toLowerCase().replace(/[.,)]+$/, ""),
     );
@@ -88,7 +115,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
       line: i + 1,
       done: m[2]!.toLowerCase() === "x",
       ...(/(^|\s)\[P\](\s|$)/.test(rest) ? { parallel: true } : {}),
-      ...(after.length ? { after: [...new Set(after)] } : {}),
+      ...(after.length ? { after } : {}),
     });
   });
   return out;

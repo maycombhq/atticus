@@ -1,4 +1,4 @@
-import type { Estate } from "./estate.js";
+import { unreadRepos, type Estate } from "./estate.js";
 import type { FlowDelta } from "./schema.js";
 
 /**
@@ -57,9 +57,10 @@ export function plannedComponents(
 export function unreadConsumer(
   id: string,
   deltas: readonly FlowDelta[],
-  e: Pick<Estate, "ids" | "flows" | "manifestRepos">,
+  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos">,
 ): string | undefined {
-  if (e.manifestRepos.has(id))
+  // A repo that was read is known by its component: only one nobody read is named by its repo.
+  if (unreadRepos(e).has(id))
     return `is in the manifest and hasn't been read, so its use can't be checked: atticus map ${id}`;
   if (plannedComponents(deltas, e).get(id)?.action === "new")
     return "is planned in this change and hasn't been read, so its use can't be checked.";

@@ -3,6 +3,7 @@ import { readChangeFiles, readStoryIndex } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { previewTaskRun, runTask, type RunTaskOptions, type TaskRunPreview } from "./run.js";
 import { readTaskRun, type RunLevel, type TaskRunRecord, type TaskRunState } from "./store.js";
+import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
 
 /**
  * ADR 0181 part 4: Run all ready tasks. The tech lead or architect runs every task of a change
@@ -72,51 +73,10 @@ const PAST: Partial<Record<TaskRunState, string>> = {
 };
 
 /**
- * Ninth UX walk: the not-done tasks before `t` in its own repo, in tasks.md order. A [P] task
- * doesn't wait for the [P] tasks right before it in its repo (they go together), only for what is
- * before them.
+ * The tasks in run order, each moved after every not-done task it names in `(after …)`. A task
+ * that is never ready (`stuck`) stays where it was: its names put nothing in order.
  */
-function sameRepoBefore(tasks: readonly ReadyInput[], t: ReadyInput): string[] {
-  const mine = tasks.slice(0, tasks.indexOf(t)).filter((x) => x.repo === t.repo);
-  let cut = mine.length;
-  if (t.parallel) while (cut > 0 && mine[cut - 1]!.parallel) cut--;
-  return mine
-    .slice(0, cut)
-    .filter((x) => !x.done)
-    .map((x) => x.id);
-}
-
-/**
- * ADR 0201 (waves): the not-done tasks that name each other in `(after …)`, each with the others
- * of its ring (a task that names itself is a ring of one). A ticked task waits for nothing, so it
- * breaks a ring.
- */
-function afterRings(tasks: readonly ReadyInput[]): Map<string, string[]> {
-  const open = new Map(tasks.filter((t) => !t.done).map((t) => [t.id, t]));
-  const reach = (from: string): Set<string> => {
-    const seen = new Set<string>();
-    const todo = [...(open.get(from)?.after ?? [])];
-    while (todo.length) {
-      const id = todo.pop()!;
-      if (seen.has(id) || !open.has(id)) continue;
-      seen.add(id);
-      todo.push(...(open.get(id)!.after ?? []));
-    }
-    return seen;
-  };
-  const reached = new Map([...open.keys()].map((id) => [id, reach(id)]));
-  const out = new Map<string, string[]>();
-  for (const [id, r] of reached)
-    if (r.has(id))
-      out.set(
-        id,
-        [...open.keys()].filter((x) => x !== id && r.has(x) && reached.get(x)!.has(id)),
-      );
-  return out;
-}
-
-/** The tasks in run order, each moved after every not-done task it names in `(after …)`. */
-function afterOrder(order: readonly ReadyInput[]): ReadyInput[] {
+function afterOrder(order: readonly ReadyInput[], stuck: ReadonlyMap<ReadyInput, string>) {
   const open = new Set(order.filter((t) => !t.done).map((t) => t.id));
   const out: ReadyInput[] = [];
   const placed = new Set<string>();
@@ -124,11 +84,14 @@ function afterOrder(order: readonly ReadyInput[]): ReadyInput[] {
   while (left.length) {
     const held: ReadyInput[] = [];
     for (const t of left)
-      if ((t.after ?? []).every((id) => id === t.id || !open.has(id) || placed.has(id))) {
+      if (
+        stuck.has(t) ||
+        (t.after ?? []).every((id) => id === t.id || !open.has(id) || placed.has(id))
+      ) {
         out.push(t);
         placed.add(t.id);
       } else held.push(t);
-    // Nothing moved: what is left names each other (never ready), kept in the order it had.
+    // Nothing moved: what is left waits on a task that is stuck, kept in the order it had.
     if (held.length === left.length) return [...out, ...held];
     left = held;
   }
@@ -151,6 +114,8 @@ export function planReadyTasks(o: {
   o.tasks.forEach((t, i) => {
     if (!firstOfRepo.has(t.repo)) firstOfRepo.set(t.repo, i);
   });
+  // ADR 0201 (waves): what holds a task for ever, said in place of what it waits for.
+  const never = neverReady(o.tasks);
   const order = afterOrder(
     o.tasks
       .map((t, i) => ({ t, i }))
@@ -161,9 +126,8 @@ export function planReadyTasks(o: {
           a.i - b.i,
       )
       .map((x) => x.t),
+    never,
   );
-  const byId = new Map(o.tasks.map((t) => [t.id, t]));
-  const rings = afterRings(o.tasks);
   const out: ReadyTask[] = [];
   for (const t of order) {
     if (t.done) continue;
@@ -173,16 +137,11 @@ export function planReadyTasks(o: {
       .map((x) => x.id);
     const sameRepo = sameRepoBefore(o.tasks, t).filter((id) => !byStory.includes(id));
     // ADR 0201 (waves): the not-ticked tasks its line names, in any repo.
-    const named = [...new Set(t.after ?? [])];
-    const after = named.filter(
-      (id) => id !== t.id && byId.has(id) && !byId.get(id)!.done && !byStory.includes(id),
-    );
+    const after = afterWaits(o.tasks, t).filter((id) => !byStory.includes(id));
     const afterOnly = after.filter((id) => !sameRepo.includes(id));
-    const unknown = named.filter((id) => !byId.has(id));
-    const ring = rings.get(t.id);
-    const waitsFor = o.tasks
-      .map((x) => x.id)
-      .filter((id) => byStory.includes(id) || sameRepo.includes(id) || after.includes(id));
+    const waitsFor = [...new Set(o.tasks.map((x) => x.id))].filter(
+      (id) => byStory.includes(id) || sameRepo.includes(id) || after.includes(id),
+    );
     const past = t.state && !(t.state === "pr-open" && t.prSettled) ? PAST[t.state] : undefined;
     const waits = [
       ...byStory,
@@ -190,15 +149,9 @@ export function planReadyTasks(o: {
       ...(afterOnly.length ? [`${afterOnly.join(", ")} (after)`] : []),
     ].join(", ");
     const tasksWord = (ids: readonly string[]) => (ids.length === 1 ? "task" : "tasks");
-    const why = unknown.length
-      ? `it names ${tasksWord(unknown)} ${unknown.join(", ")} in (after …), which tasks.md doesn't have`
-      : ring
-        ? ring.length
-          ? `it and ${tasksWord(ring)} ${ring.join(", ")} each wait for the other in (after …)`
-          : "it names itself in (after …)"
-        : waitsFor.length
-          ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first`
-          : past;
+    const why =
+      never.get(t) ??
+      (waitsFor.length ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first` : past);
     out.push({
       id: t.id,
       repo: t.repo,
