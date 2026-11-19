@@ -716,7 +716,11 @@ export interface TerminalRunRecorder {
   /** Print a line (or several, split at newlines) to the run's log. */
   line(text: string): void;
   /** Record how it ended: 0 done, 130 or 143 (Ctrl+C, a stop) cancelled, else failed. */
-  end(code: number, how?: "crash" | "app-closed"): void;
+  end(code: number, how?: "crash" | "app-closed"): void; /**
+   * ADR 0202 points 9 and 10: the command waits on a person's answer (`true`), or has it
+   * (`false`). The time between the two is the person's, never the command's silence.
+   */
+  waits(on: boolean): void;
 }
 
 export interface StartRunOptions {
@@ -933,6 +937,12 @@ export function startTerminalRun(
   rec.longestQuietMs = 0;
   const recorder: TerminalRunRecorder = {
     runId,
+    waits(on) {
+      if (ended) return;
+      // Asked: the silence up to the question counts. Answered: the clock starts again.
+      if (on) quiet();
+      else saidAt = now().getTime();
+    },
     line(text) {
       if (ended || broken) return;
       quiet();

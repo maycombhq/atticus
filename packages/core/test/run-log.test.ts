@@ -1300,3 +1300,29 @@ describe("a run's record says how long it went without a line", () => {
     expect(readTerminalRuns(root)[0]).not.toHaveProperty("longestQuietMs");
   });
 });
+
+/** The review of ADR 0202: a question that waits 33 seconds for its answer is no silence. */
+describe("time spent waiting on a person's answer is not the command's silence", () => {
+  it("the clock stops at the question and starts again at the answer", async () => {
+    const root = await fresh();
+    const t0 = Date.UTC(2026, 10, 19, 9, 0, 0);
+    let at = t0;
+    const rec = startTerminalRun(root, {
+      positionals: ["catalog", "build"],
+      flags: [],
+      pid: 9,
+      now: () => new Date(at),
+    })!;
+    at = t0 + 2_000;
+    rec.line("This would remove 7 records…");
+    at = t0 + 3_000;
+    rec.waits(true);
+    // The person reads the list for 33 seconds, then answers.
+    at = t0 + 36_000;
+    rec.waits(false);
+    at = t0 + 37_500;
+    rec.line("Done.");
+    rec.end(0);
+    expect(readTerminalRuns(root)[0]!.longestQuietMs).toBe(2_000);
+  });
+});
