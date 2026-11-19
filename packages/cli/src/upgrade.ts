@@ -82,7 +82,14 @@ export interface Migration {
    * `o.allowRemovals`: a step that builds the catalog (ADR 0195 point 4: any command that builds
    * takes `--allow-removals <count>`) confirms the removals its refusal listed.
    */
-  apply(root: string, o?: { allowRemovals?: number }): Promise<string[]>;
+  apply(
+    root: string,
+    o?: {
+      allowRemovals?: number;
+      /** The files the upgrade listed and backed up for the step: it writes no other. */
+      listed?: readonly string[];
+    },
+  ): Promise<string[]>;
   /**
    * Round 49: the step can list a file that isn't there yet (it makes it), so a backup finds
    * nothing to keep. For any other step, a listed file that isn't there stops the upgrade.
@@ -446,6 +453,8 @@ export const MIGRATIONS: Migration[] = [
     // ADR 0124 addendum E-ids (the owner, 2026-11-19): last, so it builds once every other step
     // has written. One build, through the guards, in the build's one write (undo takes it back).
     id: UNRESOLVED_IDS_STEP,
+    // It may write a file that isn't there yet (a knowledge gap's owner question, re-keyed).
+    creates: true,
     summary:
       "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; every decision, change, question, spec flow and dismissal that cites one carried to the new id (ADR 0124 addendum E-ids)",
     pending: (root) => unresolvedIdsPending(root),
@@ -1031,10 +1040,10 @@ export async function upgradeCommand(
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       try {
         changed.push(
-          ...(await m.apply(
-            root,
-            o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {},
-          )),
+          ...(await m.apply(root, {
+            ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+            listed: p.files,
+          })),
         );
       } catch (e) {
         // A step's build its guards refused wrote nothing: said, with how to go on, no stack.

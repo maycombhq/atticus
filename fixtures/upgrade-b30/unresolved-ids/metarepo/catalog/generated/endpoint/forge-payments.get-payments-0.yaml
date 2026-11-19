@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: GET
-normalizedPath: /v1/entrys/{}/payments-0
-pathOrTopic: /v1/entrys/{id}/payments-0
+normalizedPath: /v1/balances/{}/payments-0
+pathOrTopic: /v1/balances/{id}/payments-0
 schemaRefs: []

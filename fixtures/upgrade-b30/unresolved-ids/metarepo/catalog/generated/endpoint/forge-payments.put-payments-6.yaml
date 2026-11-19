@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: PUT
-normalizedPath: /v1/fees/{}/payments-6
-pathOrTopic: /v1/fees/{id}/payments-6
+normalizedPath: /v1/accounts/{}/payments-6
+pathOrTopic: /v1/accounts/{id}/payments-6
 schemaRefs: []

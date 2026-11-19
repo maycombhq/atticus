@@ -1,0 +1,9 @@
+# This machine's own files: never committed.
+me.yaml
+logs/
+locks/
+backups/
+history/
+probe/
+cache/
+map-all/

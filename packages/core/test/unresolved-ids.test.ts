@@ -102,6 +102,14 @@ describe("an Unresolved record's id carries its repo (ADR 0124 addendum E-ids)",
     expect(unresolvedIdsNow(sub("unresolved.forge-notify.forge-notify.on-settled"))).toEqual([
       "unresolved.forge-notify.forge-notify.on-settled",
     ]);
+    // A listener of a component whose id has a dot (a manifest module's): told by its owner.
+    const dotted = (id: string) => rec(id, ["forge-notify"], "event-subscribe", "notify.api");
+    expect(unresolvedIdsNow(dotted("unresolved.notify.api.on-settled"))).toEqual([
+      "unresolved.forge-notify.notify.api.on-settled",
+    ]);
+    expect(unresolvedIdsNow(dotted("unresolved.forge-notify.notify.api.on-settled"))).toEqual([
+      "unresolved.forge-notify.notify.api.on-settled",
+    ]);
     // Not a loose end the facts projection makes (a built-in reader's), or no repo: none.
     expect(unresolvedIdsNow(rec("ledger-api.http-call.abc123", ["forge-ledger"]))).toEqual([]);
     expect(unresolvedIdsNow(rec("unresolved.c-1", []))).toEqual([]);

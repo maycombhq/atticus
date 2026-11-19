@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: DELETE
-normalizedPath: /v1/limits/{}/notify-3
-pathOrTopic: /v1/limits/{id}/notify-3
+normalizedPath: /v1/holds/{}/notify-3
+pathOrTopic: /v1/holds/{id}/notify-3
 schemaRefs: []

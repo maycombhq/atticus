@@ -3,7 +3,7 @@ kind: GlossaryTerm
 id: term.limit
 status: current
 confidence: inferred
-definition: "Not defined yet. Found in code: forge-ledger.post-ledger-5, forge-notify.delete-notify-3, forge-payments.get-payments-4."
+definition: "Not defined yet. Found in code: forge-ledger.post-ledger-5, forge-notify.get-notify-4, forge-payments.delete-payments-3."
 evidence:
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
@@ -14,14 +14,14 @@ evidence:
     source: code
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 4
+    line: 5
     path: src/main/java/forge/web/Controller.java
     repo: forge-notify
     side: callee
     source: code
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 5
+    line: 4
     path: src/main/java/forge/web/Controller.java
     repo: forge-payments
     side: callee

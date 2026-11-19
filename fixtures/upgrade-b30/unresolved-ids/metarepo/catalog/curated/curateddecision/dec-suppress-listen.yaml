@@ -1,0 +1,12 @@
+schemaVersion: 5
+kind: CuratedDecision
+id: dec-suppress-listen
+status: current
+confidence: asserted
+action: suppress
+at: 2026-11-12T00:00:00Z
+by: pat
+evidence: []
+reason: refunds are read from the ledger's report
+target: unresolved.forge-payments.on-forge-ledger-refunded
+value: null

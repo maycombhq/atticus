@@ -1,0 +1,23 @@
+# A question from atticus finding rates-from-ledger gap-rates-target ask (ADR 0078). Answer it with atticus questions answer q-b47c626d92cc, or in the app.
+schemaVersion: 6
+id: q-b47c626d92cc
+askedBy:
+  step: critic-ask
+  command: atticus finding rates-from-ledger gap-rates-target ask
+  at: 2026-11-12T11:00:00Z
+repo: rates-from-ledger
+question: Which service serves GET /v1/rates for forge-ledger?
+options: []
+evidence:
+  - openspec/changes/rates-from-ledger/change.yaml:1
+scope:
+  level: repo
+  id: rates-from-ledger
+askedOf: team-forge
+finding:
+  change: rates-from-ledger
+  gate: design
+  round: 1
+  id: gap-rates-target
+state: open
+rerun: atticus critic rates-from-ledger --gate design

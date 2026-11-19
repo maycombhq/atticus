@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinFacts, type Fact, type JoinRepo } from "../src/index.js";
+import { joinFacts, placeholderIn, unsetHostOf, type Fact, type JoinRepo } from "../src/index.js";
 
 /**
  * ADR 0195 addendum (a deploy token's host is asked, build 2.0.0-beta.28.1), its sub-addendum of
@@ -108,5 +108,106 @@ describe("a host written as ${NAME} that nothing sets is asked about, as @name@ 
     const part = join1([put({ host: "ledger-${ENV}.apps.forge.internal" })]);
     expect(part.asks).toEqual([]);
     expect(part.joins.map((j) => j.entry.fact)).toEqual(["e-put-statement"]);
+  });
+});
+
+/**
+ * The owner, 2026-11-19 (the review of 93ddfc5e): a code variable written as the whole host is
+ * asked about by the same rule, worded as one: "a variable Atticus couldn't find the value of".
+ * Camel Simple's names (the route's message) are no variable of the code's and stay out.
+ */
+describe("a code variable as the whole host is asked about too, in its own words", () => {
+  it("tells a deploy token from a code variable by how it is written", () => {
+    for (const host of [
+      "@forgeLedgerUrl@",
+      "${FORGE_LEDGER_URL}",
+      "${forge.ledger.url}",
+      "$FORGE_LEDGER_URL",
+      "%FORGE_LEDGER_URL%",
+      "https://${FORGE_LEDGER_URL}/v1",
+      "${FORGE_LEDGER_URL:?set it}",
+    ])
+      expect(unsetHostOf(host)?.form, host).toBe("token");
+    for (const host of [
+      "${baseUrl}",
+      "${this.cfg.url}",
+      "${process.env.LEDGER_URL}",
+      "$baseUrl",
+      "$env:LEDGER_URL",
+      "https://${baseUrl}/v1",
+    ])
+      expect(unsetHostOf(host)?.form, host).toBe("variable");
+    // Camel Simple's names, a host a placeholder is only part of, a plain host: none.
+    for (const host of [
+      "${header.target}",
+      "${body}",
+      "${exchangeProperty.url}",
+      "ledger-${ENV}.forge.internal",
+      "ledger.apps.forge.internal",
+    ])
+      expect(unsetHostOf(host), host).toBeUndefined();
+    // Read inside a loose end's raw, after its method.
+    expect(unsetHostOf("PUT http://${FORGE_LEDGER_URL}/v1/balances/{id}")).toEqual({
+      host: "${FORGE_LEDGER_URL}",
+      form: "token",
+    });
+    expect(unsetHostOf("GET http://${this.cfg.url}/v1/x")).toEqual({
+      host: "${this.cfg.url}",
+      form: "variable",
+    });
+  });
+
+  it("asks about each code variable form, worded as a variable, never joins it by its path", () => {
+    for (const extra of [
+      { host: "${baseUrl}" },
+      { base: "${this.cfg.url}/v1" },
+      { base: "${process.env.LEDGER_URL}" },
+      { host: "$baseUrl" },
+      { host: "$env:LEDGER_URL" },
+    ]) {
+      const out = join1([put(extra)]);
+      const what = JSON.stringify(extra);
+      expect(out.joins, what).toEqual([]);
+      expect(
+        out.asks.map((a) => a.reason),
+        what,
+      ).toEqual(["unknown-host"]);
+      expect(out.asks[0]!.question, what).toMatch(
+        /^Which repo answers on \S+\? It is a variable Atticus couldn't find the value of, in the code of forge-payments\./,
+      );
+    }
+    // A deploy token keeps its words.
+    expect(join1([put({ host: "%FORGE_LEDGER_URL%" })]).asks[0]!.question).toMatch(
+      /a deploy token nothing sets/,
+    );
+  });
+
+  it("keeps Camel Simple's names out: the route's message, not a host to ask about", () => {
+    const out = join1([put({ host: "${header.target}" })]);
+    expect(out.asks).toEqual([]);
+  });
+
+  it("reads the shell's operators: a default after :- or :=, none after :?", () => {
+    expect(placeholderIn("${N:-ledger.internal}")).toMatchObject({
+      name: "N",
+      fallback: "ledger.internal",
+    });
+    expect(placeholderIn("${N:=https://ledger.internal}")).toMatchObject({
+      fallback: "https://ledger.internal",
+    });
+    expect(placeholderIn("${N:?set N}")?.fallback).toBeUndefined();
+    expect(placeholderIn("${N:-}")?.fallback).toBeUndefined();
+    const listed = ledger(["ledger.apps.forge.internal"]);
+    for (const base of [
+      "${N:-ledger.apps.forge.internal}",
+      "${N:=https://ledger.apps.forge.internal}",
+    ])
+      expect(
+        join1([put({ base })], listed).joins.map((j) => j.how),
+        base,
+      ).toEqual(["host"]);
+    const required = join1([put({ base: "${N:?set N}" })], listed);
+    expect(required.joins).toEqual([]);
+    expect(required.asks.map((a) => a.reason)).toEqual(["unknown-host"]);
   });
 });

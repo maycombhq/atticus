@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: POST
-normalizedPath: /v1/balances/{}/payments-1
-pathOrTopic: /v1/balances/{id}/payments-1
+normalizedPath: /v1/statements/{}/payments-1
+pathOrTopic: /v1/statements/{id}/payments-1
 schemaRefs: []

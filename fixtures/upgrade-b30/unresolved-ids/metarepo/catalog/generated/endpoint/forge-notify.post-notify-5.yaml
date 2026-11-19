@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: POST
-normalizedPath: /v1/fees/{}/notify-5
-pathOrTopic: /v1/fees/{id}/notify-5
+normalizedPath: /v1/rates/{}/notify-5
+pathOrTopic: /v1/rates/{id}/notify-5
 schemaRefs: []

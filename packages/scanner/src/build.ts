@@ -53,6 +53,8 @@ import {
   sharedJoinAbout,
   type TermsResult,
   unresolvedIdsNow,
+  unsetHostOf,
+  oldLooseEndId,
 } from "@maycombhq/core";
 import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -643,6 +645,8 @@ export interface Build {
   };
   /** Curated decisions whose target isn't in the build: kept in catalog/curated, applied when it returns. */
   orphanedDecisions: string[];
+  /** Each of them, by its id, with its target (ADR 0124 addendum E-ids: an old loose end's id). */
+  orphanedTargets?: Record<string, string>;
   linkEvidence?: LinkEvidenceResult;
   shared?: SharedJoinResult;
   terms?: TermsResult;
@@ -1569,14 +1573,14 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const sorted = [...records].sort(byKindId);
   const applied = applyCurated(sorted, i.curated.records);
   const present = new Set(sorted.map((r) => r.id));
-  const orphanedDecisions = i.curated.records
+  const orphanedOf = i.curated.records
     .filter(
       (d): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
         d.kind === "CuratedDecision" && d.status === "current",
     )
-    .filter((d) => d.action !== "alias" && !present.has(d.target))
-    .map((d) => d.id)
-    .sort(cmpText);
+    .filter((d) => d.action !== "alias" && !present.has(d.target));
+  const orphanedDecisions = orphanedOf.map((d) => d.id).sort(cmpText);
+  const orphanedTargets = Object.fromEntries(orphanedOf.map((d) => [d.id, d.target]));
   for (const p of applied.problems)
     if (!orphanedDecisions.includes(p.decision))
       problems.push({ source: "curated", message: JSON.stringify(p) });
@@ -1683,6 +1687,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       problems: applied.problems,
     },
     orphanedDecisions,
+    orphanedTargets,
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(shared ? { shared } : {}),
     ...(projection ? { terms: projection.terms } : {}),
@@ -2139,7 +2144,6 @@ export function movedArrows(
   return out;
 }
 
-/** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
 /**
  * ADR 0124 addendum E-ids (the owner, 2026-11-19): the loose ends this build removes that come
  * back under their repo's id (`unresolved.<repo>.<fact id>`), each with the ids it is now, by
@@ -2167,10 +2171,11 @@ export const renamedWords = (ids: readonly string[]): string =>
 
 /**
  * ADR 0195, the beta.28.1 addendum and its sub-addendum (the owner, 2026-11-19): an arrow this
- * build removes because its call's host is a deploy token nothing sets (`@name@`, `${NAME}`,
- * `$NAME`, `%NAME%`), asked about now where an earlier build guessed the arrow by its path: the
- * loose end the build adds for the same call (its caller, a line both cite, its raw naming the
- * token), as `Unresolved/<id>`. Only one such loose end, or none is said.
+ * build removes because its call's whole host is one nothing gives a value (a deploy token,
+ * `@name@`, `${NAME}`, `$NAME`, `%NAME%`; or a variable of the code's, `${baseUrl}`, `$env:X`),
+ * asked about now where an earlier build guessed the arrow by its path: the words, by the host's
+ * form, with the loose end the build adds for the same call (its caller, a line both cite, its raw
+ * naming such a host). Only one such loose end, or none is said.
  */
 export function askedTokenOf(
   r: CatalogRecord,
@@ -2181,20 +2186,17 @@ export function askedTokenOf(
   const caller = (r.evidence as { side?: string; repo?: string; path?: string; line?: number }[])
     .filter((e) => e.side !== "callee" && e.repo && e.path && e.line !== undefined)
     .map((e) => `${e.repo}\u0000${e.path}\u0000${e.line}`);
-  const ids = new Set<string>();
+  const found = new Map<string, "token" | "variable">();
   for (const k of new Set(caller))
-    for (const u of addedLooseAt.get(k) ?? [])
-      if (
-        (u as unknown as { owner?: string }).owner === from &&
-        TOKEN_HOST.test(String((u as unknown as { raw?: string }).raw ?? ""))
-      )
-        ids.add(u.id);
-  return ids.size === 1 ? `Unresolved/${[...ids][0]}` : undefined;
+    for (const u of addedLooseAt.get(k) ?? []) {
+      if ((u as unknown as { owner?: string }).owner !== from) continue;
+      const host = unsetHostOf(String((u as unknown as { raw?: string }).raw ?? ""));
+      if (host) found.set(u.id, host.form);
+    }
+  if (found.size !== 1) return undefined;
+  const [[id, form]] = [...found] as [[string, "token" | "variable"]];
+  return `${form === "variable" ? "the host is a variable Atticus couldn't find the value of" : "the host is a deploy token nothing sets"}: asked now (Unresolved/${id})`;
 }
-
-/** A loose end's raw whose host is a deploy token: `@name@`, `${NAME}`, `$NAME` or `%NAME%`. */
-const TOKEN_HOST =
-  /(?:^|\s|:\/\/)(?:@[A-Za-z_][A-Za-z0-9_.-]*@|\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::-?)?\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?:[/:?#\s]|$)/;
 
 /** The loose ends among records, by each line they cite (`<repo>\u0000<path>\u0000<line>`). */
 function looseByLine(records: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
@@ -2209,6 +2211,7 @@ function looseByLine(records: readonly CatalogRecord[]): Map<string, CatalogReco
   return out;
 }
 
+/** How many loose ends (Unresolved) each owner has on each line, as `<owner>\u0000<line>`. */
 export function looseEndsAt(records: Iterable<CatalogRecord>): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of records) {
@@ -2499,6 +2502,21 @@ async function interruptedManifest(
   const p = parseBuildManifest(next);
   if (!p.ok && p.newer !== undefined) throw new NewerBuildManifestError(at, p.newer);
   return p.ok ? p.slot : undefined;
+}
+
+/**
+ * ADR 0124 addendum E-ids: the command the upgrade step that names loose ends with their repo
+ * builds as, so an undo of it says its own words (`unresolvedIdsUndoneWords`), not the slots'.
+ */
+export const UNRESOLVED_IDS_COMMAND = "atticus upgrade (loose ends named with their repo)";
+
+/**
+ * What an undo of that step leaves (ADR 0195 point 7: undo puts the catalog back, not inputs):
+ * the inputs it carried, still naming the new ids, and the upgrade's backup holding them as they
+ * were, for going back to an Atticus older than 2.0.0-beta.30.
+ */
+export function unresolvedIdsUndoneWords(inputs: readonly string[], backup?: string): string {
+  return `The catalog has the loose ends' old ids again (unresolved.<fact id>); the inputs it carried still name the loose ends' new ids: ${[...inputs].sort().join(", ")}. This Atticus names the loose ends with their repo again at its next build, so leave them. Only to go back to an Atticus older than 2.0.0-beta.30, put them back as they were${backup ? ` from ${backup}` : " from the upgrade's backup (.atticus/backups/<time>/)"} (and remove those the step made), or an older Atticus shows the loose ends a person took off the map again.`;
 }
 
 /** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
@@ -3034,7 +3052,7 @@ export async function guardBuild(
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
         const asked = askedTokenOf(r, addedLooseAt);
         if (renamedNow) own.push(renamedWords(renamedNow));
-        else if (asked) own.push(`the host is a deploy token nothing sets: asked now (${asked})`);
+        else if (asked) own.push(asked);
         else if (back) own.push(back);
         // The same words as an arrow that comes back under another callee (`rekeyedWords`).
         else if (movedNow)
@@ -4226,9 +4244,15 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     out.push(
       `${x.repo}: ${x.why === "archived" ? "archived" : "no longer in the manifests"}, so its slots aren't built from; they are kept (${x.files.join(", ")}). atticus catalog prune lists them to remove.`,
     );
-  for (const d of r.build.orphanedDecisions)
+  for (const d of r.build.orphanedDecisions) {
+    // ADR 0124 addendum E-ids: a decision of a loose end's id from before beta.30 waits for the
+    // upgrade that carries it, never for its target to return (it doesn't, under that id).
+    const target = r.build.orphanedTargets?.[d];
     out.push(
-      `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
+      target && oldLooseEndId(target)
+        ? `The curated decision ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.`
+        : `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
+  }
   return out;
 }

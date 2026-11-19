@@ -1,31 +1,31 @@
 schemaVersion: 5
 kind: Interface
-id: if-7664e3607d36785f
+id: if-a50462d66b7e1957
 status: current
 confidence: verified
 conflicts: []
 direction: outbound
-endpoint: forge-payments.post-payments-1
+endpoint: forge-notify.put-notify-2
 evidence:
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 2
+    line: 3
     path: src/main/java/forge/client/Client.java
-    repo: forge-ledger
+    repo: forge-payments
     side: caller
     source: code
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 2
+    line: 3
     path: src/main/java/forge/web/Controller.java
-    repo: forge-payments
+    repo: forge-notify
     side: callee
     source: code
 flags:
   - joined-by-host
-from: forge-ledger
-method: POST
-normalizedPath: /v1/balances/{}/payments-1
+from: forge-payments
+method: PUT
+normalizedPath: /v1/statements/{}/notify-2
 sync: sync
-to: forge-payments
+to: forge-notify
 via: direct

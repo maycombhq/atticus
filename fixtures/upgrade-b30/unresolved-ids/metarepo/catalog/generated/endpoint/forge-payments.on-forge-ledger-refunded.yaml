@@ -1,0 +1,17 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-payments.on-forge-ledger-refunded
+status: current
+confidence: verified
+component: forge-payments
+endpointType: event-topic
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-payments
+    side: callee
+    source: code
+pathOrTopic: forge.ledger.refunded
+schemaRefs: []

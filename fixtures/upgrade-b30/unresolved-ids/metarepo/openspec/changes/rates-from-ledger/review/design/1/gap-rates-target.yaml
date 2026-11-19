@@ -1,0 +1,31 @@
+schemaVersion: 1
+id: gap-rates-target
+kind: knowledge-gap
+change: rates-from-ledger
+gate: design
+round: 1
+rule: constitution.touched-components-known
+layer: constitution
+lens: complete
+severity: gap
+artifact: catalog
+locator:
+  record: unresolved.c-1
+summary: Where the rates call goes is unknown.
+why: The change reads the rates, and the call that fetches them names no target.
+fix:
+  text: Ask the ledger team which service serves the rates.
+evidence:
+  - source: catalog
+    record: unresolved.c-1
+question:
+  text: Which service serves GET /v1/rates for forge-ledger?
+  owner: team-forge
+waivable: false
+state: asked
+resolution:
+  action: ask
+  by: pat
+  at: 2026-11-12T11:00:00Z
+  askedOf: team-forge
+createdAt: 2026-11-12T10:00:00Z

@@ -1023,7 +1023,55 @@ const WHOLE_HOST_TOKEN = /^(?:[a-z][a-z0-9+.-]*:\/\/)?@[A-Za-z_][A-Za-z0-9_.-]*@
  * Nothing resolves `$NAME` or `%NAME%`, so either is always unset to the join.
  */
 const WHOLE_HOST_PLACEHOLDER =
-  /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::-?)?\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?:[/:?#]|$)/i;
+  /^(?:[a-z][a-z0-9+.-]*:\/\/)?(\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::[^}]*)?\}|\$env:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?=[/:?#]|$)/i;
+
+/** A `${…}` that names code, not a setting: `this.x`, `process.env.X`, a camelCase name. */
+const CODE_VARIABLE = /^(?:this\.|process\.env\.|import\.meta\.env\.)|^[a-z][a-zA-Z0-9]*$/;
+
+/**
+ * The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): a host nothing the
+ * join reads gives a value, by how it is written. `token`: a build, deploy or config token
+ * (`@name@`, `${NAME}`, `${forge.ledger.url}`, `$NAME`, `%NAME%`), asked about as "a deploy token
+ * nothing sets". `variable`: a variable of the code's (`${baseUrl}`, `${this.cfg.url}`,
+ * `${process.env.X}`, Kotlin's and Groovy's `$baseUrl`, PowerShell's `$env:X`), asked about as "a
+ * variable Atticus couldn't find the value of". Only as the whole host (the scheme aside), read at
+ * the start of the value or after a scheme or a space (a loose end's raw names its method first).
+ * Camel Simple's names (`${header.x}`, `${body}`) are the route's message, and none.
+ */
+export function unsetHostOf(
+  value: string | undefined,
+): { host: string; form: "token" | "variable" } | undefined {
+  const v = (value ?? "").trim();
+  for (const start of [0, ...[...v.matchAll(/\s/g)].map((m) => m.index! + 1)]) {
+    const rest = v.slice(start);
+    const at = WHOLE_HOST_TOKEN.exec(rest);
+    if (at) {
+      const host = /@[A-Za-z_][A-Za-z0-9_.-]*@/.exec(rest)![0];
+      return { host, form: "token" };
+    }
+    const m = WHOLE_HOST_PLACEHOLDER.exec(rest);
+    if (!m) continue;
+    const host = m[1]!;
+    if (host.startsWith("${")) {
+      const inner = host.slice(2, -1);
+      const name = inner.split(":")[0]!.trim();
+      if (CAMEL_SIMPLE.test(name)) return undefined;
+      return { host, form: CODE_VARIABLE.test(name) ? "variable" : "token" };
+    }
+    if (/^\$env:/i.test(host)) return { host, form: "variable" };
+    if (host.startsWith("$"))
+      return { host, form: /^\$[A-Z_][A-Z0-9_]*$/.test(host) ? "token" : "variable" };
+    return { host, form: "token" };
+  }
+  return undefined;
+}
+
+/** The question for a call whose whole host nothing gives a value, worded by its form. */
+export function unsetHostQuestion(host: string, form: "token" | "variable", repo: string): string {
+  return form === "variable"
+    ? `${hostQuestionText(host)} It is a variable Atticus couldn't find the value of, in the code of ${repo}. Name the repo or the outside system that answers, or read ${repo} again with your assistant if a setting gives its value.`
+    : `${hostQuestionText(host)} It is a deploy token nothing sets, in a call of ${repo}. Name the repo or the outside system that answers, or read the repo that sets it with your assistant.`;
+}
 
 const TOKEN_FORMS: readonly RegExp[] = [
   /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
@@ -1062,11 +1110,13 @@ export function placeholderIn(
     const colon = inner.indexOf(":");
     const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name) || CAMEL_SIMPLE.test(name)) continue;
-    // The owner, 2026-11-19: the shell's `${NAME:-default}` defaults to what follows `:-` where
-    // that is a URL (a Spring default never starts `-https://`); `${NAME:-}` has none.
+    // The owner, 2026-11-19: the shell's operators. `${NAME:-default}` and `${NAME:=default}`
+    // default to what follows the operator; `${NAME:?message}` has no default (it fails when
+    // unset), nor has an empty one. Spring's `${name:default}` is as it was.
     const given = colon < 0 ? undefined : inner.slice(colon + 1).trim();
-    const fallback =
-      given === "-" ? undefined : given?.replace(/^-(?=[a-z][a-z0-9+.-]*:\/\/)/i, "");
+    const fallback = given?.startsWith("?")
+      ? undefined
+      : given?.replace(/^[-=]/, "").trim() || undefined;
     dollar = { at: i, end: j + 1, name, ...(fallback ? { fallback } : {}) };
   }
   // The token forms, each set by the same config facts by its name: the first in the value.
@@ -2789,16 +2839,15 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
       // as `${NAME}`, `$NAME` or `%NAME%` that nothing sets is asked about as `@name@` is, never
       // joined by its path alone (`WHOLE_HOST_PLACEHOLDER`). A gateway's BasePath that starts the
       // whole path it sends still joins it, as beta.25 decided (above): that is a cited line.
-      const unsetHost = [f.host, f.base, ...keyed.map((t) => t.fact.value ?? t.fact.source)].find(
-        (v): v is string => !!v && WHOLE_HOST_PLACEHOLDER.test(v.trim()),
-      );
+      const unsetHost = [f.host, f.base, ...keyed.map((t) => t.fact.value ?? t.fact.source)]
+        .map((v) => unsetHostOf(v))
+        .find((x) => !!x);
       if (namesHost && unsetHost) {
-        const named = f.host ?? unsetHost;
         asks.push({
           call: end(call),
           reason: "unknown-host",
-          host: named,
-          question: forwardHostQuestion(named, call.repo),
+          host: f.host ?? unsetHost.host,
+          question: unsetHostQuestion(f.host ?? unsetHost.host, unsetHost.form, call.repo),
           candidates: [],
         });
         continue;

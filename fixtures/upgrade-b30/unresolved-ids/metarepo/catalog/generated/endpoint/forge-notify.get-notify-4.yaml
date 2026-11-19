@@ -14,6 +14,6 @@ evidence:
     side: callee
     source: code
 method: GET
-normalizedPath: /v1/rates/{}/notify-4
-pathOrTopic: /v1/rates/{id}/notify-4
+normalizedPath: /v1/limits/{}/notify-4
+pathOrTopic: /v1/limits/{id}/notify-4
 schemaRefs: []

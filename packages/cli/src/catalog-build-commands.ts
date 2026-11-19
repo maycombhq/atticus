@@ -41,6 +41,8 @@ import {
   undoDirOf,
   undoHandEdits,
   UPGRADE_UNDONE,
+  UNRESOLVED_IDS_COMMAND,
+  unresolvedIdsUndoneWords,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -278,6 +280,23 @@ export function netRenames(commandsNewestFirst: readonly string[]): { from: stri
 export const renameUndone = (from: string, to: string): string =>
   `This undoes the rename's build, not the rename: the manifest still names ${to}. Rename back with atticus repo rename ${to} ${from} to read the old slot again.`;
 
+/**
+ * The newest of the upgrade's backups (`.atticus/backups/<time>/`) holding the inputs a step
+ * carried as they were, relative to the root and ending in `/`; undefined when none does.
+ */
+async function backupHolding(
+  root: string,
+  inputs: readonly { path: string; before: string }[],
+): Promise<string | undefined> {
+  const dir = join(root, ".atticus", "backups");
+  const had = inputs.filter((x) => x.before === "file").map((x) => x.path);
+  if (!had.length) return undefined;
+  for (const n of (await readdir(dir).catch(() => [] as string[])).sort().reverse())
+    if (had.every((p) => existsSync(join(dir, n, ...p.split("/")))))
+      return `.atticus/backups/${n}/`;
+  return undefined;
+}
+
 /** atticus catalog undo [<n>] [--yes]: list the copies kept, and take back the latest (or back to before n). */
 export async function catalogUndo(
   root: string,
@@ -433,7 +452,20 @@ export async function catalogUndo(
       );
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
-      if (plan.copies.some((c) => c.command.startsWith("atticus upgrade"))) io.out(UPGRADE_UNDONE);
+      // ADR 0124 addendum E-ids: the upgrade step that named loose ends with their repo says what
+      // it leaves (its inputs name the new ids); the slots' adoption says its own words.
+      for (const c of plan.copies.filter((x) => x.command === UNRESOLVED_IDS_COMMAND)) {
+        const now = (c.inputs ?? [])
+          .map((x) => x.path)
+          .filter((x) => existsSync(join(root, ...x.split("/"))));
+        io.out(unresolvedIdsUndoneWords(now, await backupHolding(root, c.inputs ?? [])));
+      }
+      if (
+        plan.copies.some(
+          (c) => c.command.startsWith("atticus upgrade") && c.command !== UNRESOLVED_IDS_COMMAND,
+        )
+      )
+        io.out(UPGRADE_UNDONE);
       for (const x of renames) io.out(x.message);
       if (bad.length)
         io.out(

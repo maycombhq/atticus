@@ -1,0 +1,25 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.forge
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: forge-notify.on-forge-payments-settled, forge-payments.on-forge-ledger-refunded."
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-payments
+    side: callee
+    source: code
+fields: []
+flags:
+  - undefined
+term: Forge

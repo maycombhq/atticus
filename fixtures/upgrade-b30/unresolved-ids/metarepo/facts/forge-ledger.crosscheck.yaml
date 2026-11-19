@@ -1,0 +1,4 @@
+version: 1
+dismissed:
+  - key: Unresolved|unresolved.c-solo
+    readers: null

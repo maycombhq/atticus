@@ -3,7 +3,7 @@ kind: GlossaryTerm
 id: term.rate
 status: current
 confidence: inferred
-definition: "Not defined yet. Found in code: forge-ledger.put-ledger-6, forge-notify.get-notify-4, forge-payments.post-payments-5."
+definition: "Not defined yet. Found in code: forge-ledger.put-ledger-6, forge-notify.post-notify-5, forge-payments.get-payments-4."
 evidence:
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
@@ -14,14 +14,14 @@ evidence:
     source: code
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 5
+    line: 6
     path: src/main/java/forge/web/Controller.java
     repo: forge-notify
     side: callee
     source: code
   - by: assistant
     commit: 0123456789abcdef0123456789abcdef01234567
-    line: 6
+    line: 5
     path: src/main/java/forge/web/Controller.java
     repo: forge-payments
     side: callee

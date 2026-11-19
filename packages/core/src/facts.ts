@@ -500,17 +500,38 @@ export function unresolvedIdsNow(r: {
   kind: string;
   id: string;
   unresolvedKind?: unknown;
+  owner?: unknown;
   evidence?: readonly { repo?: string | undefined }[];
 }): string[] {
   if (r.kind !== "Unresolved" || !r.id.startsWith("unresolved.")) return [];
   const rest = r.id.slice("unresolved.".length);
-  const dots = rest.split(".").length - 1;
-  const oldDots = r.unresolvedKind === SUBSCRIBE ? 1 : 0;
   const repos = [...new Set((r.evidence ?? []).flatMap((e) => (e.repo ? [e.repo] : [])))].sort();
   if (!repos.length) return [];
-  if (dots === oldDots + 1 && repos.some((x) => rest.startsWith(`${idPart(x)}.`))) return [r.id];
-  if (dots !== oldDots) return [];
-  return [...new Set(repos.map((x) => unresolvedIdOf(x, rest)))].sort();
+  const renamed = () => [...new Set(repos.map((x) => unresolvedIdOf(x, rest)))].sort();
+  if (r.unresolvedKind === SUBSCRIBE) {
+    // A listener's rest is its Endpoint's id, `<owner>.<name>`; the owner (its component) may
+    // have dots of its own (a manifest module's), so it is told by the owner, not by its dots.
+    const owner = typeof r.owner === "string" ? r.owner : undefined;
+    if (!owner) return [];
+    if (repos.some((x) => rest.startsWith(`${idPart(x)}.${owner}.`))) return [r.id];
+    return rest.startsWith(`${owner}.`) ? renamed() : [];
+  }
+  // A call's rest is its fact id's part, which has no dot (`factIdPart`).
+  const dots = rest.split(".").length - 1;
+  if (dots === 1 && repos.some((x) => rest.startsWith(`${idPart(x)}.`))) return [r.id];
+  return dots === 0 ? renamed() : [];
+}
+
+/**
+ * ADR 0124 addendum E-ids: whether an id, with no record to tell by, is a loose end's id of the
+ * form before beta.30: a call's `unresolved.<fact id>` (no dot after it), or a listener's
+ * `unresolved.<component>.on-<topic>` (one dot, then an event Endpoint's name). For words only;
+ * `unresolvedIdsNow` tells a record's for sure.
+ */
+export function oldLooseEndId(id: string): boolean {
+  if (!id.startsWith("unresolved.")) return false;
+  const parts = id.slice("unresolved.".length).split(".");
+  return parts.length === 1 || (parts.length === 2 && parts[1]!.startsWith("on-"));
 }
 
 /** The Endpoint id an entry fact projects to in its component (`projectFacts`). */

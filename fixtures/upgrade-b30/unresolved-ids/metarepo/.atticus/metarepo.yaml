@@ -1,6 +1,6 @@
 schemaVersion: 3
 atticus: 2.0.0-beta.28.5
-upgradedAt: 2026-11-19T15:52:56Z
+upgradedAt: 2026-11-19T18:17:36Z
 upgradedBy: pat
 migrations:
   - catalog-schema-v2

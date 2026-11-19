@@ -37,6 +37,7 @@ async function looseCalls(root: string, host: RegExp) {
   const paired = new Set<string>();
   const calls: { repo: string; id: string; at: string }[] = [];
   for (const n of (await readdir(join(root, "facts"))).sort()) {
+    if (!n.endsWith(".jsonl")) continue;
     const lines = (await readFile(join(root, "facts", n), "utf8"))
       .split("\n")
       .filter(Boolean)
@@ -164,15 +165,18 @@ describe("every repo's loose call has a record of its own, and impact names it",
         q.err.join("\n"),
       ).toBe(0);
       const loose = await looseCalls(root, /^(@[A-Za-z]+@|\$\{[A-Z_]+\})$/);
-      const suppressed = new Set(["c-7", "c-risk"]);
+      // Taken off the map: forge-ledger's c-risk, and forge-notify's c-7, the record beta.28.5
+      // showed for c-7 (forge-payments' c-7 is a loose end of its own now, nobody's decision).
+      const suppressed = new Set(["forge-ledger c-risk", "forge-notify c-7"]);
       const want = loose
-        .filter((c) => !suppressed.has(c.id))
+        .filter((c) => !suppressed.has(`${c.repo} ${c.id}`))
         .map((c) => `unresolved.${c.repo}.${c.id}`)
         .sort();
       expect(want).toEqual([
         "unresolved.forge-ledger.c-1",
         "unresolved.forge-ledger.c-solo",
         "unresolved.forge-payments.c-1",
+        "unresolved.forge-payments.c-7",
         "unresolved.forge-payments.c-token",
       ]);
       const gaps = await impactGaps(root, ["forge-ledger", "forge-notify", "forge-payments"]);
