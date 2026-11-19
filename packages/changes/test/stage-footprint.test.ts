@@ -179,14 +179,15 @@ describe("a change's footprint from the stages' files (B-change)", () => {
     // From a trial run: a new flow's entry step, with the fields it requires, added
     // "breaks who uses it today … +3" to the risk score.
     const NEW = "target-flows/forge-orders.pin-note.yaml";
-    const pin = (change: string, entry: string[]) =>
+    const PIN_AT = { flow: "forge-orders.pin-note", entry: "PUT /orders/{orderId}/pin" };
+    const pin = (change: string, entry: string[], at = PIN_AT) =>
       [
         "schemaVersion: 2",
-        "flow: forge-orders.pin-note",
+        `flow: ${at.flow}`,
         "repo: forge-orders",
         `change: ${change}`,
         "name: Pin a note",
-        'trigger: { kind: endpoint, what: A shopper pins a note of an order, entry: "PUT /orders/{orderId}/pin" }',
+        `trigger: { kind: endpoint, what: A shopper pins a note of an order, entry: "${at.entry}" }`,
         "why: A shopper pins one note to the top of the order's notes.",
         "steps:",
         "  - op: add",
@@ -196,9 +197,9 @@ describe("a change's footprint from the stages' files (B-change)", () => {
         ...entry,
         "",
       ].join("\n");
-    const breakingOf = async (change: string, entry: string[]) => {
+    const breakingOf = async (change: string, entry: string[], at = PIN_AT) => {
       const root = await estate();
-      await writeFile(join(root, "openspec/changes", CHANGE, NEW), pin(change, entry));
+      await writeFile(join(root, "openspec/changes", CHANGE, NEW), pin(change, entry, at));
       const ctx = await loadChangeContext(root);
       const fp = await changeFootprint(ctx, await changeStore(root).read(CHANGE));
       const risk = scoreRisk({ type: "feature", footprint: fp }, ctx.policy);
@@ -216,12 +217,28 @@ describe("a change's footprint from the stages' files (B-change)", () => {
     expect(required.signals).toEqual([]);
     expect(required.factor).toBeUndefined();
     expect(required.score).toBe(plain.score);
-    // Marked breaking by the draft, it still has no one to break.
+    // What the draft says outright always counts: marked breaking, or the callers it breaks.
     const marked = await breakingOf("new", [...REQUIRED, "    breaking: true"]);
-    expect(marked.factor).toBeUndefined();
-    // Nor do the callers a new flow is made for: they are who will use it, not who it breaks.
-    const wanted = await breakingOf("new", [...REQUIRED, "consumers: [forge-shop-bff]"]);
-    expect(wanted.factor).toBeUndefined();
+    expect(marked.factor).toMatchObject({ points: 3 });
+    expect(marked.factor!.detail).toContain("is marked breaking");
+    const listed = await breakingOf("new", [...REQUIRED, "consumers: [forge-shop-bff]"]);
+    expect(listed.factor).toMatchObject({
+      detail: "breaks who uses it today: flow forge-orders.pin-note breaks forge-shop-bff",
+      points: 3,
+    });
+
+    // Review of beta.30: a flow called new whose entry is one people call today (a second
+    // version of place-order on POST /orders) breaks them as a changed flow does.
+    const V2 = { flow: "forge-orders.place-order-v2", entry: "POST /orders" };
+    const CHANNEL = ["    fields: { reads: [sku, channel], required: [channel] }"];
+    const v2 = await breakingOf("new", CHANNEL, V2);
+    expect(v2.newEntries).toEqual([]);
+    expect(v2.factor).toMatchObject({
+      detail: "breaks who uses it today: entry step now requires channel",
+      points: 3,
+    });
+    const v2Plain = await breakingOf("new", ["    fields: { reads: [sku, channel] }"], V2);
+    expect(v2.score).toBe(v2Plain.score + 3);
 
     // A flow people use today is another matter: a field it now requires breaks them.
     const root = await estate();
