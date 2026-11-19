@@ -1,6 +1,6 @@
 # 0201. The quick path, and personas that ask the map
 
-- Status: proposed (2026-11-18)
+- Status: accepted (2026-11-18, by the owner, with: the quick path recognised by a type's shape; a new repo marked `newRepo: true` at the feature stage; the staged path's hint starts a new change; a manifest or planned consumer is a note on the staged path in this slice)
 - Date: 2026-11-18
 - Release: 2.0.0-beta.30, slice 1 (steps 0 to 5 of [the plan](../plan/v30.md))
 - Amends: ADR 0087 (the stage loop's end rule), ADR 0189 (point 9, planned components)
