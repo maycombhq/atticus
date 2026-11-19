@@ -630,3 +630,158 @@ describe("JobManager closeAll during a job of several writes (beta.28.4)", () =>
     expect(recorded.at(-1)).toBe(CLOSED);
   });
 });
+
+/**
+ * ADR 0202 point 2: a job says whether a Stop can still take effect (`stoppable`), and where it
+ * would land (`stopLands`): now, or after the write a job of several is inside.
+ */
+describe("JobManager: stoppable and stopLands (ADR 0202)", () => {
+  const gate = () => {
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    return { held, go };
+  };
+
+  it("before its write a Stop lands now; after the commit it is not stoppable; nor once done", async () => {
+    const jobs = new JobManager(() => undefined);
+    const a = gate();
+    const b = gate();
+    const job = jobs.start("local", async (c) => {
+      await a.held;
+      c.commit();
+      await b.held;
+      return {};
+    });
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    a.go();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    expect(jobs.get(job.id)!.stopLands).toBeUndefined();
+    b.go();
+    const end = await jobs.settle(job.id);
+    expect(end.state).toBe("done");
+    expect(end.stoppable).toBe(false);
+    expect(end.stopLands).toBeUndefined();
+  });
+
+  it("a job of several: now between writes, after-write inside one, and not while it stops", async () => {
+    const jobs = new JobManager(() => undefined);
+    const steps = [gate(), gate(), gate()];
+    const job = jobs.start(
+      "local",
+      async (c) => {
+        await steps[0]!.held;
+        c.commit();
+        await steps[1]!.held;
+        c.release();
+        await steps[2]!.held;
+        c.commit();
+        await new Promise((r) => setTimeout(r, 30));
+        c.release();
+        throwIfCancelled();
+        return {};
+      },
+      { severalWrites: { heard: "Stop heard.", stopping: "Stopping after this repo…" } },
+    );
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    steps[0]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "after-write" });
+    steps[1]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "now" });
+    steps[2]!.go();
+    await tick();
+    expect(jobs.get(job.id)).toMatchObject({ stoppable: true, stopLands: "after-write" });
+    jobs.cancel(job.id);
+    // Stopping: a second Stop would change nothing.
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    expect(jobs.get(job.id)!.stopLands).toBeUndefined();
+    const end = await jobs.settle(job.id);
+    expect(end.state).toBe("cancelled");
+    expect(end.stoppable).toBe(false);
+  });
+
+  it("a Stop heard before the write: stopping, so not stoppable, and those who listen are told", async () => {
+    const jobs = new JobManager(() => undefined);
+    const seen: (boolean | undefined)[] = [];
+    jobs.subscribe((c) => {
+      if (c.type === "state") seen.push(c.job.stoppable);
+    });
+    const a = gate();
+    const job = jobs.start("local", async () => {
+      await a.held;
+      throwIfCancelled();
+    });
+    jobs.cancel(job.id);
+    expect(jobs.get(job.id)).toMatchObject({ stopping: true, stoppable: false });
+    a.go();
+    await jobs.settle(job.id);
+    expect(seen[0]).toBe(true);
+    expect(seen.at(-1)).toBe(false);
+  });
+
+  it("the commit itself is told to those who listen (the panel hides Stop then)", async () => {
+    const jobs = new JobManager(() => undefined);
+    const seen: (boolean | undefined)[] = [];
+    const a = gate();
+    const job = jobs.start("local", async (c) => {
+      c.commit();
+      await a.held;
+    });
+    jobs.subscribe((c) => {
+      if (c.type === "state") seen.push(c.job.stoppable);
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs.get(job.id)!.stoppable).toBe(false);
+    a.go();
+    await jobs.settle(job.id);
+  });
+});
+
+/** ADR 0202 point 5: a job says what it is for, and is found again by it. */
+describe("JobManager: jobs found by what they are for (ADR 0202)", () => {
+  it("carries `for`, and lists the running match first, then the finished ones, newest first", async () => {
+    const jobs = new JobManager(() => undefined);
+    const first = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    await jobs.settle(first.id);
+    const second = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    await jobs.settle(second.id);
+    let go!: () => void;
+    const running = jobs.start("local", () => new Promise<void>((r) => (go = r)), {
+      for: { action: "apply", repo: "forge-ledger" },
+    });
+    const other = jobs.start("local", async () => ({}), {
+      for: { action: "apply", repo: "forge-payments" },
+    });
+    const build = jobs.start("local", async () => ({}), { for: { action: "build" } });
+    const plain = jobs.start("scan", async () => ({}));
+    await Promise.all([other, build, plain].map((j) => jobs.settle(j.id)));
+    expect(running.for).toEqual({ action: "apply", repo: "forge-ledger" });
+    expect(plain.for).toBeUndefined();
+    expect(jobs.find({ action: "apply", repo: "forge-ledger" }).map((j) => j.id)).toEqual([
+      running.id,
+      second.id,
+      first.id,
+    ]);
+    expect(jobs.find({ action: "apply" }).map((j) => j.id)).toEqual([
+      running.id,
+      other.id,
+      second.id,
+      first.id,
+    ]);
+    expect(jobs.find({ action: "build" }).map((j) => j.id)).toEqual([build.id]);
+    expect(jobs.find({ action: "undo" })).toEqual([]);
+    expect(jobs.find({ repo: "forge-payments" }).map((j) => j.id)).toEqual([other.id]);
+    // With nothing asked: every job kept.
+    expect(jobs.find({})).toHaveLength(6);
+    expect(jobs.find({})[0]!.id).toBe(running.id);
+    go();
+    await jobs.settle(running.id);
+  });
+});
