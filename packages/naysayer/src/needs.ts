@@ -133,7 +133,7 @@ export function evaluateNeeds(ctx: CriticContext, rule: EffectiveRule, examined?
         summary: sentence(`${problem}.`),
         why: `Rule ${rule.id} (${rule.title}) depends on ${label} for ${need.scope.replace("touched-", "touched ")}; it is ${staleIds.length ? "stale" : "missing"}, so the critic asks instead of passing.`,
         fix: {
-          text: "Answer the owner question; the answer counts once the fact is in the catalog (a scan, or an owner's curated decision).",
+          text: "Answer the owner question; the answer counts once the fact is in the catalog (a scan, or the owner's decision).",
         },
         evidence: ev,
         question: {

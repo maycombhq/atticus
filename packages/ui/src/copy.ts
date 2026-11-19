@@ -311,7 +311,7 @@ export const COPY = {
         "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites and shows each proposal on its question; nothing is answered until you accept it or answer otherwise.",
       /** Ninth UX walk: when runtime.yaml's decide.questions is auto, say what happens instead. */
       askWhyAuto:
-        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites. Each proposal for an option question that meets the bar (the code's shapes rank that option first, or a person's rule says the same) is applied as the AI's answer, marked Detected by AI, never as yours: correct any that is wrong. The rest wait on their questions for you to accept or answer otherwise.",
+        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites. Each proposal for an option question that meets the bar (the code's shapes rank that option first, or a person's rule says the same) is written as the AI's answer, marked Detected by AI, never as yours: correct any that is wrong. The rest wait on their questions for you to accept or answer otherwise.",
       askWhyPaused: (why: string) =>
         `AI deciding is paused (${why}), so each proposal waits on its question for you to accept or answer otherwise.`,
       askHandoff: "Hand it to my assistant",
@@ -574,9 +574,9 @@ export const COPY = {
     // ADR 0153 (Q5): an answer accepted from the assistant's proposal says so.
     fromProposal: (by: string, day: string) =>
       `It was ${by}'s proposal (${day}), confirmed by the person who answered. It cited:`,
-    /** Ninth UX walk: an AI answer's proposal was applied by Atticus as the AI's, never confirmed by a person. */
+    /** Ninth UX walk: an AI answer's proposal was written by Atticus as the AI's, never confirmed by a person. */
     fromAiProposal: (by: string, day: string, run: string) =>
-      `${by} proposed it (${day}) and Atticus applied it as the AI's from run ${run}, because it met the bar. No person has confirmed it. It cited:`,
+      `${by} proposed it (${day}) and Atticus wrote it as the AI's from run ${run}, because it met the bar. No person has confirmed it. It cited:`,
     changeAiAnswer:
       "To change the AI's answer, Correct it above: your answer is recorded as yours, and Write to similar spreads it to the questions like it.",
   },
@@ -994,7 +994,7 @@ export const COPY = {
       canvas: "Map",
       trust: "Read status",
       explore: "Search the catalog",
-      impact: "Impact explorer",
+      impact: "Impact",
       features: "Features",
       orgpack: "Org pack",
       intake: "Intake",
@@ -1047,6 +1047,7 @@ export const COPY = {
     formerly: {
       canvas: "Estate canvas",
       map: "Ecosystem map",
+      impact: "Impact explorer",
       trust: "Trust",
       crosscheck: "Readers found / facts say",
     },
@@ -1069,9 +1070,10 @@ export const COPY = {
       crosscheck:
         "For each repo, check the cited line, then keep what the readers got right as your own fact, or dismiss it.",
       mismatches:
-        "Open a mismatch's arrow on the Map to see both sides; fix the code, or say on the arrow that the mismatch is known.",
+        "Each mismatch cites both sides' lines: fix the side that is wrong in its repo, then read that repo again and Apply it.",
       systems: "Pick a system to read its guide; a cell marked unknown is a repo to read next.",
-      outside: "Say who owns each outside system, and connect the repos that call it from the Map.",
+      outside:
+        "Pick an outside system to see who calls it and how each call compares with its spec; a call that reaches it by mistake is corrected on its arrow on the Map (Why is this linked?).",
       activity:
         "Open a run to see what was asked and what came back; a failed scan or build says its next command.",
       features: "Pick a feature to see the repos and flows it spans.",
@@ -1091,8 +1093,8 @@ export const COPY = {
   /** v30 slice 8: a box's panel opens the Map's pages about that box (they were Map's tabs). */
   boxPages: {
     contracts: "Its contracts",
-    impact: "What breaks if it changes",
-    decisions: "What the AI decided here",
+    impact: "Its impact",
+    decisions: "Decided by AI here",
   },
   /**
    * ADR 0195 (ticket CS3): the readers' cross-check (Map › Read status › Cross-check) and
@@ -1250,7 +1252,7 @@ export const COPY = {
   catalogBuild: {
     title: "Catalog builds",
     intro:
-      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and your kept edits. Nothing is removed or overwritten without being shown first, and every build can be undone.",
+      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and your decisions. Nothing is removed or overwritten without being shown first, and every build can be undone.",
     openFromScans: "Catalog builds: confirm, undo, prune",
     sourcesTitle: "Where each repo's records come from",
     sourcesCaption: "Each repo's source in the build",
@@ -1315,7 +1317,7 @@ export const COPY = {
     cancel: "Cancel",
     editsTitle: "Hand edits",
     editsIntro:
-      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits makes each your kept edit, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
+      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits keeps each as your decision, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
     /** Beta.30: what happened and the way on, for the refusals no confirm goes on from. */
     way: {
       unexplained:
@@ -1330,13 +1332,13 @@ export const COPY = {
     unreadableManifest: (n: number) =>
       `catalog/sources/build.json doesn't read: it was edited or merged by hand. Without it none of the ${n} record files under catalog/generated can be told from a hand edit, so nothing is overwritten.`,
     unreadableIntro:
-      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
+      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your decisions isn't the way here.",
     buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
     curate: (n: number) => (n === 1 ? "Keep my edit" : `Keep my ${n} edits`),
     curating: "Keeping your edits…",
     curateHint:
-      "Writes your kept edit for each into catalog/curated/, to propose for review, then builds.",
+      "Writes your decision for each into catalog/curated/, to propose for review, then builds.",
     // The count is in the dialog it opens, which lists each file and is confirmed with it.
     discard: (_n: number) => "Use Atticus's version…",
     discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
@@ -1378,7 +1380,7 @@ export const COPY = {
       answers: (path: string) => `An answer changed (${path}): your own action`,
       pairings: (path: string) => `A pairing changed (${path})`,
       "org-pack": (path: string) => `The org pack changed (${path})`,
-      curated: (path: string) => `One of your kept edits changed (${path})`,
+      curated: (path: string) => `One of your decisions changed (${path})`,
       traffic: (path: string) => `The traffic evidence changed (${path})`,
       shared: (path: string) => `A shared map changed (${path})`,
       inputs: (path: string) => `inputs/ changed (${path})`,
@@ -1889,16 +1891,16 @@ export const COPY = {
       return `task${all.length === 1 ? "" : "s"} ${all.join(", ")}`;
     },
   },
-  /** B-task-knowledge (C4 2.25.0): pages that disagree, and who decided which applies. */
+  /** B-task-knowledge (C4 2.25.0): pages that disagree, and who decided which holds. */
   knowledgeConflicts: {
     title: "Pages that disagree",
     intro:
-      "Two pages say different things about the same item. A person decides which applies (or both, in different cases); nothing is picked for them. A signal may suggest a page (it replaces the other, its owner handles the item, its source is tagged for the kind, it is in the team's space, or it was edited last), but only suggests. When code verified in a repo holds one page's value, the code settles it: a document never overrides a fact verified from code.",
+      "Two pages say different things about the same item. A person decides which holds (or both, in different cases); nothing is picked for them. A signal may suggest a page (it replaces the other, its owner handles the item, its source is tagged for the kind, it is in the team's space, or it was edited last), but only suggests. When code verified in a repo holds one page's value, the code settles it: a document never overrides a fact verified from code.",
     says: (page: string, words: string) => `${page} says "${words}"`,
     open: (id: string) =>
       `Waiting for a person: question ${id} (atticus questions answer ${id} --option <n>, or on the Questions page).`,
-    notAsked: "No one has been asked yet; a change that relies on it asks a person which applies.",
-    applies: (pages: string, by: string) => `${pages} applies (${by}).`,
+    notAsked: "No one has been asked yet; a change that relies on it asks a person which holds.",
+    applies: (pages: string, by: string) => `${pages} holds (${by}).`,
     both: (by: string, words?: string) =>
       `Both hold, in different cases (${by}${words ? `: "${words}"` : ""}).`,
     byPerson: (who: string) => `answered by ${who}`,
@@ -2785,7 +2787,7 @@ export const COPY = {
   glossary: {
     title: "What the words mean",
     intro:
-      "Atticus's own words, each in one plain sentence, one name each. The guide's words page (docs/guide/words.md) has the same list.",
+      "Atticus's own words, each in one plain sentence, one name each. The guide's words page (docs/guide/words.md) has these and the words of the files and the build.",
     link: "Words",
     linkTitle: "What Atticus's words mean",
     /** v30 slice 8: the names a word replaces, said under it. */
@@ -2825,8 +2827,8 @@ export const COPY = {
         says: "Your corrections, declarations and answers together, waiting to be applied and proposed.",
       },
       {
-        term: "your kept edit",
-        says: "A file of the catalog you changed by hand, kept as yours so every later build keeps it.",
+        term: "your decision",
+        says: "Something a person decided that every later build keeps, in your name: an answer to a triage item, a tag, a hand edit to the catalog you kept (Keep my edits).",
         was: "curated decision",
       },
       {
@@ -3273,7 +3275,7 @@ export const COPY = {
     optional: " · optional",
     acceptTheCatalogAs: "Accept the catalog as the baseline",
     afterWalkingTheEcosystem:
-      "After walking the ecosystem map with the architect. Every later scan, document and change is compared with it. It is a file in the metarepo, so it reaches main through a pull request.",
+      "After walking the Map with the architect. Every later scan, document and change is compared with it. It is a file in the metarepo, so it reaches main through a pull request.",
     setUpAtticus: "Set up Atticus",
     // Seventh UX walk: the org pack's owner, set here instead of in pack.yaml.
     ownerLabel: "Who looks after the org pack",
@@ -3681,6 +3683,10 @@ export const COPY = {
     factsVerifiedFromCode: (system: string | number) => `${system}: facts verified from code`,
     noSystemsYet: "No systems yet.",
     systems: "Systems",
+    /** v30 slice 8: Impact asked of a repo (a repo box's panel): its components to pick from. */
+    impactOfRepo: (repo: string) => `Impact of ${repo}: pick one of its components`,
+    noComponentsIn: (repo: string) =>
+      `No component of ${repo} is in the catalog yet: read the repo, then Apply it.`,
     /** v30 slice 8: the coverage's list on Systems, beside the system picker (named apart). */
     verifiedBySystem: "Verified, by system",
     coverageBySystemAnd: "Coverage by system and area",
@@ -3783,7 +3789,7 @@ export const COPY = {
     intake: "Intake",
     inputs: "inputs/",
     eachChoiceIsSaved:
-      "Each choice is saved as your kept edit, in your name. Code always wins over a document until a person decides.",
+      "Each choice is saved as your decision, in your name. Code always wins over a document until a person decides.",
     nothingToTriage: "Nothing to triage.",
     needsYou: "Needs you",
     ofReposCloned: (present: string | number, total: string | number) =>
@@ -4201,7 +4207,7 @@ export const COPY = {
     columnsTaggedWithA:
       "Columns tagged with a data classification, and so where tagged fields live.",
     noColumnsAreTagged:
-      "No columns are tagged yet. Tag sensitive fields as your kept edits so their flows show here.",
+      "No columns are tagged yet. Tag sensitive fields as your decisions so their flows show here.",
     authenticationGaps: "Authentication gaps",
     callsWithNoOauth2: "Calls with no OAuth2, mTLS or API key declared in code or config.",
     everyCallDeclaresHow: "Every call declares how it authenticates.",
@@ -4898,7 +4904,7 @@ export const COPY = {
     /** Ninth UX walk (ADR 0181): whether the AI decides first, set here. */
     decideLabel: "AI decides first",
     decideHint:
-      "Auto: after a Copilot session Atticus runs, or a hand-off to your assistant you mark done, Atticus applies each AI decision that passes the citation check and the bar, shown as Detected by AI and never as anyone's word; a person corrects what is wrong. Propose: the AI only proposes, and a person accepts each one. The safety rules are not affected.",
+      "Auto: after a Copilot session Atticus runs, or a hand-off to your assistant you mark done, Atticus writes each AI decision that passes the citation check and the bar, shown as Detected by AI and never as anyone's word; a person corrects what is wrong. Propose: the AI only proposes, and a person accepts each one. The safety rules are not affected.",
     decideLinks: "Pairings of calls to APIs",
     decideQuestions: "Answers to option questions",
     decideMode: { propose: "Propose for a person", auto: "Decide (auto)" } as Record<
@@ -5224,7 +5230,7 @@ export const COPY = {
     searchPlaceholder: "Find a repo, system or topic",
     found: (label: string) => `${label}: centred and picked.`,
     notFound: (q: string) => `Nothing here is called ${q}.`,
-    minimap: "Map of the whole picture",
+    minimap: "Overview of the whole drawing",
     /** What each key does, said once beside the picture. */
     keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
     region: (title: string) => `${title}: picture`,
@@ -5321,7 +5327,7 @@ export const COPY = {
     editsChanged:
       "The hand edits aren't the ones listed here any more. Nothing was kept: Apply again to list them.",
     curatedApplyAgain: (repo: string) =>
-      `The hand edits are your kept edits now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
+      `The hand edits are your decisions now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
     toHome: "Propose it from Home",
     applyFirst: "Apply your changes first, so the map in the pull request matches them:",
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
@@ -5441,7 +5447,7 @@ export const COPY = {
     setupRead:
       "Read each repo with your assistant on Map › Read status; Done checks every fact against the line it cites and puts it on the map.",
     setupBaseline:
-      "Walk the ecosystem map with the architect, then accept it with Accept the catalog below and propose it for review.",
+      "Walk the Map with the architect, then accept it with Accept the catalog below and propose it for review.",
   },
   /** UX review: starting a change in the app. */
   newChange: {
@@ -5631,24 +5637,24 @@ export const COPY = {
     title: "Detected by AI",
     hint: "Links the AI paired as itself, from a run Atticus started, that no person has confirmed. Drawn dotted, with ◆ and the words. Pick one to see its run and correct it.",
     only: "Only links detected by AI",
-    listed: (n: number) => `${n} link${n === 1 ? "" : "s"} on this picture detected by AI:`,
+    listed: (n: number) => `${n} link${n === 1 ? "" : "s"} on this map detected by AI:`,
     pick: (from: string, to: string) => `Show the link ${from} → ${to}`,
-    none: "No link on this picture was detected by AI.",
+    none: "No link on this map was detected by AI.",
     noneOnly:
-      "Only links detected by AI are shown, and this picture has none. Press the button again to show every link.",
+      "Only links detected by AI are shown, and this map has none. Press the button again to show every link.",
     legend: "How links are drawn",
     legendCode: "Solid line: read from code",
     legendPerson: "Dashed line: a person's word (declared or paired)",
     legendAi: "Dotted line with ◆: detected by AI",
     // ADR 0192: a build dependency on a library of the estate's own, never a call.
     legendDependency: (n: number) =>
-      `Dash-dot line, "depends on": a build dependency on a library of the estate's own, not a call (${n} on this picture)`,
+      `Dash-dot line, "depends on": a build dependency on a library of the estate's own, not a call (${n} on this map)`,
     linkTitle: (from: string, to: string, type: string) => `${from} → ${to} (${type})`,
     link: "Link",
     close: "Close the link",
     gone: "This link isn't on the map any more: a correction or a new read moved it.",
     corrected:
-      "Correction saved as your word. The canvas was read again; the link moves once atticus verify --write has joined the caller's repo again.",
+      "Correction saved as your word. The map was read again; the link moves once atticus verify --write has joined the caller's repo again.",
   },
   /**
    * Beta.28 (the owner's decision of 2026-11-12): Delete this link, on every link's panel, as
@@ -5681,7 +5687,7 @@ export const COPY = {
       title: "Deleted links",
       loading: "Reading the deleted links…",
       failed: (why: string) => `The deleted links couldn't be read: ${why}`,
-      none: "No link was deleted on the canvas.",
+      none: "No link was deleted on the map.",
       item: (from: string, to: string, n: number) =>
         `${from} → ${to}, ${n} call${n === 1 ? "" : "s"}`,
       by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
@@ -6155,7 +6161,7 @@ export const COPY = {
     /** Ninth UX walk: reading the hand-off answer in is its run's Done. */
     readingAnswer: "Reading the answer in…",
     handoff: (brief: string) =>
-      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer. Atticus checks it; where runtime.yaml's decide.links is auto, it applies each pairing that passes the citation check and the bar as the AI's (Detected by AI), and the rest wait here for you.`,
+      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer. Atticus checks it; where runtime.yaml's decide.links is auto, it writes each pairing that passes the citation check and the bar as the AI's (Detected by AI), and the rest wait here for you.`,
     answerAt: (file: string) => `It writes its answer to ${file}.`,
     copy: "Copy",
     done: (p: number, n: number, r: number) =>
@@ -6832,7 +6838,7 @@ export const COPY = {
     gaps: {
       unverified: "No fact verified from code cites this",
       question: "A question is open on this",
-      corrected: "A person corrected this; atticus verify applies it",
+      corrected: "A person corrected this; atticus verify uses it",
     } as Record<string, string>,
     short: {
       unverified: "unproven",
@@ -6847,7 +6853,7 @@ export const COPY = {
     close: "Close",
     correctTitle: (label: string) => `Correct ${label}`,
     correctIntro:
-      "Say the fact is wrong, or put the claim right. Atticus writes your correction to the repo's corrections file; atticus verify applies it every time it runs, so the next read keeps it. A corrected claim is still checked on its line: the code must say it.",
+      "Say the fact is wrong, or put the claim right. Atticus writes your correction to the repo's corrections file; atticus verify uses it every time it runs, so the next read keeps it. A corrected claim is still checked on its line: the code must say it.",
     wrong: "It is wrong",
     edit: "Put the claim right",
     reason: "Why (required to mark it wrong)",
@@ -6932,7 +6938,7 @@ export const COPY = {
       `Apply will wait for you to confirm: its build removes ${n} ${n === 1 ? "record" : "records"}, more than the removal guard lets through unasked. Apply lists ${n === 1 ? "it" : "them"}, each with why; confirm there with ${button}.`,
     // The re-review of G1: files under catalog/generated changed by hand stop the Apply first.
     confirmEdits: (n: number, button: string) =>
-      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it your kept edit" : "them your kept edits"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
+      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; keep ${n === 1 ? "it as your decision" : "them as your decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
     confirmRefused: (
       reasons: readonly ("nothing-read" | "empty" | "unexplained-removals" | "newer-atticus")[],
@@ -6955,7 +6961,7 @@ export const COPY = {
     confirmUpgradeCommand: "Upgrade the catalog",
     confirmCommand: "Or confirm from a terminal",
     stale: (ids: string) =>
-      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,
+      `Corrections on file that meet no fact in this read (kept, used when it is read again): ${ids}.`,
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
@@ -6975,7 +6981,7 @@ export const COPY = {
     copyOf: (what: string) => `Copy ${what}`,
     how: {
       person:
-        "A person paired this call with this entry on the canvas (Connect to…): their word, written as a link in the caller's corrections, the call's own fact left as read.",
+        "A person paired this call with this entry on the map (Connect to…): their word, written as a link in the caller's corrections, the call's own fact left as read.",
       answer: "A person answered which repo or system it calls.",
       named: "The call names the component it goes to.",
       repo: "The call names the repo it goes to.",
@@ -7088,7 +7094,7 @@ export const COPY = {
     wrongOf: (call: string) => `Say the call ${call} is wrong`,
     wrongTitle: (call: string) => `What is wrong with ${call}?`,
     wrongIntro:
-      "Your word outranks every join rule. Atticus writes it to the caller's repo's corrections file through the local API; atticus verify applies it every time it runs. Nothing changes until you run the command below and the change is reviewed in a pull request.",
+      "Your word outranks every join rule. Atticus writes it to the caller's repo's corrections file through the local API; atticus verify uses it every time it runs. Nothing changes until you run the command below and the change is reviewed in a pull request.",
     pickCall: "The call on that line",
     choice: {
       estate: "It calls another repo or component of the estate",
@@ -7183,7 +7189,7 @@ export const COPY = {
       sayNoFile:
         "A person declared this link in the profile: no call in code makes it, so there is no call to correct. Withdraw the declaration and the link goes at the next join.",
       byHand: (file: string) =>
-        `It wasn't declared from the canvas, so there is no Undo for it here: remove it from ${file} and propose that for review.`,
+        `It wasn't declared on the map, so there is no Undo for it here: remove it from ${file} and propose that for review.`,
     },
     routingLink:
       "No line of a caller's cites this call: the link comes from a gateway proxy's routing, so there is no call here to correct. Where the proxy forwards it is set on the proxy, for every caller of the route, not this link alone: answer where it goes, or correct the proxy's forwarding at its line.",
@@ -7541,7 +7547,7 @@ export const COPY = {
     state: {
       waiting: "Waiting for the next run",
       read: "Read, but the item didn't change",
-      applied: "Applied",
+      applied: "Used in the run",
     } as Record<string, string>,
     scope: {
       one: "This item",
@@ -7624,7 +7630,7 @@ export const COPY = {
     allKinds: "Pairings and answers",
     kinds: { link: "Pairings", question: "Answers" } as Record<string, string>,
     itemsTitle: "What the AI decided",
-    itemsCaption: "Each decision the AI applied that still stands",
+    itemsCaption: "Each decision the AI made that still stands",
     itemsEmpty:
       "The AI has decided nothing that still stands. When runtime.yaml's decide says auto, Match with Copilot and Ask AI to propose keep what passes the bar here.",
     itemsFiltered: "Nothing the AI decided matches the filter.",
@@ -7683,7 +7689,7 @@ export const COPY = {
     spreadTitle: (n: number) => `${n} other item${n === 1 ? "" : "s"} the rule re-checks`,
     spreadCaption: "What the rule does to each item like it",
     change: {
-      applied: "Applied",
+      applied: "Answered",
       confirmed: "Confirmed",
       replaced: "Replaced",
       reverted: "Reverted to open",
@@ -7696,7 +7702,7 @@ export const COPY = {
     } as Record<string, string>,
     col: { item: "Item", change: "What happens", was: "Was", now: "Now" },
     spreadCounts: (c: { applied: number; confirmed: number; replaced: number; reverted: number }) =>
-      `${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+      `${c.applied} answered, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
     nothing: "—",
     saved: (answer: string) => `Saved as your word: ${answer}.`,
     savedBatch: (batch: string) =>
@@ -7706,7 +7712,7 @@ export const COPY = {
       answer: string,
       c: { applied: number; confirmed: number; replaced: number; reverted: number },
     ) =>
-      `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+      `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} answered, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
     verify: "Bring the map up to it:",
     commit: "Commit it for review:",
     /** Ninth UX walk: the next steps as the app's own buttons; the commands under Or in a terminal. */
@@ -7722,9 +7728,9 @@ export const COPY = {
     /** Batches and Undo. */
     batchesTitle: "Batches",
     batchesIntro:
-      "Every batch the AI or a person's rule applied, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
-    batchesEmpty: "No batch yet: nothing has been applied by AI or by a correction's rule.",
-    batchesCaption: "Batches applied, newest first, each with Undo",
+      "Every batch the AI or a person's rule wrote, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
+    batchesEmpty: "No batch yet: nothing has been written by AI or by a correction's rule.",
+    batchesCaption: "Batches written, newest first, each with Undo",
     batchKind: {
       ai: "By AI",
       rule: "By a person's rule",
@@ -7733,14 +7739,14 @@ export const COPY = {
     batchCol: { batch: "Batch", by: "Who and when", what: "What it did", undo: "Undo" },
     batchBy: (by: string, day: string) => `${by}, ${day}`,
     batchApplied: (applied: number, reverted: number) =>
-      `${applied} applied${reverted ? `, ${reverted} reverted to open` : ""}`,
+      `${applied} written${reverted ? `, ${reverted} reverted to open` : ""}`,
     batchFrom: (item: string, answer: string) => `From the correction of ${item}: ${answer}`,
     batchRule: (kind: string, match: string) => `Rule (${kind}): ${match}`,
     undone: (by: string, day: string) => `Undone by ${by} on ${day}`,
     undo: "Undo",
     undoOf: (id: string) => `Undo batch ${id}`,
     confirmUndo: (id: string, applied: number) =>
-      `Undo batch ${id}? It removes the ${applied} line${applied === 1 ? "" : "s"} and answer${applied === 1 ? "" : "s"} it applied and puts back what it took away. Anything changed since is left as it is now.`,
+      `Undo batch ${id}? It removes the ${applied} line${applied === 1 ? "" : "s"} and answer${applied === 1 ? "" : "s"} it wrote and puts back what it took away. Anything changed since is left as it is now.`,
     confirmYes: "Yes, undo it",
     confirmNo: "Keep it",
     undoing: "Undoing…",
@@ -7775,11 +7781,11 @@ export const COPY = {
     impactCaller: "every link of this caller was decided by AI",
     /** The AI's answer on a question, beside who answered. */
     answeredByAi: (day: string) => `Answered by AI on ${day}`,
-    /** Match with Copilot: what Atticus applied as the AI's. */
+    /** Match with Copilot: what Atticus wrote as the AI's. */
     matchApplied: (n: number) =>
-      `Atticus applied ${n} pairing${n === 1 ? "" : "s"} as the AI's (they met the bar):`,
+      `Atticus wrote ${n} pairing${n === 1 ? "" : "s"} as the AI's (they met the bar):`,
     matchKept: (n: number) => `${n} kept as proposals for you:`,
-    matchPaused: (why: string) => `Not applied: AI deciding is paused. ${why}`,
+    matchPaused: (why: string) => `Not written: AI deciding is paused. ${why}`,
     matchUndo: "Undo or correct them on Decided by AI",
     /** The Connect panel: what the AI already paired between the two boxes. */
     betweenTitle: (n: number) => `Paired by AI between these boxes (${n})`,

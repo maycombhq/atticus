@@ -723,7 +723,7 @@ describe("atticus upgrade of a beta.26 metarepo: every record adopted, shown fir
       const said = dry.out.join("\n");
       expect(said).toMatch(
         new RegExp(
-          `Move the catalog into source slots \\(ADR 0195\\): ${Object.keys(old).length} records, nothing lost`,
+          `Move the catalog into stored reads \\(ADR 0195\\): ${Object.keys(old).length} records, nothing lost`,
         ),
       );
       expect(said).toMatch(

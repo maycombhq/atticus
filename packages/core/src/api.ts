@@ -7324,7 +7324,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/triage/{itemId}/decide": {
     post: {
       id: "decideTriage",
-      summary: "Choose a triage item's option as the signed-in person; writes a curated decision",
+      summary: "Choose a triage item's option as the signed-in person; writes your decision",
       tag: "views",
       params: [p("itemId")],
       body: TriageDecideRequest,

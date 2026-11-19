@@ -109,9 +109,9 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
       const before = generated(root);
       const r = await run(["scan", "--root", root, "--no-drift"]);
       expect(r.code).toBe(1);
-      // v30 slice 8: what happened, nothing changed, then the command.
+      // v30 slice 8: the catalog unchanged said once, then the command first, then what happened.
       expect(r.err).toMatch(
-        /was written before beta\.27[^\n]*\nNothing was changed\.\nMove its \d+ record files[^\n]*: atticus upgrade/,
+        /The catalog wasn't changed: catalog\/generated is as it was\.\n(?:[^\n]*\n)*Move its \d+ record files[^\n]*: atticus upgrade[^\n]*\n[^\n]*was written before beta\.27/,
       );
       expect(generated(root)).toEqual(before);
       expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
@@ -195,7 +195,7 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
       const everything = metarepo();
       const dry = await run(["upgrade", "--root", root]);
       expect(dry.code, dry.err).toBe(0);
-      expect(dry.out).toMatch(/Move the catalog into source slots/);
+      expect(dry.out).toMatch(/Move the catalog into stored reads/);
       expect(dry.out).toMatch(/The first build changes nothing/);
       expect(dry.out).toMatch(/atticus upgrade --yes applies this step/);
       expect(dry.out).not.toMatch(/Recorded Atticus/);
@@ -447,7 +447,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const curatedBefore = files(join(root, "catalog", "curated"));
       const curate = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
       expect(curate.code).toBe(1);
-      expect(curate.err).toMatch(/an added record can't be your kept edit/);
+      expect(curate.err).toMatch(/An added record can't be kept as your decision/);
       expect(curate.err).toMatch(/a fact in facts\/<repo>\.jsonl/);
       expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
       const build = await run(["catalog", "build", "--root", root]);
@@ -476,7 +476,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         stringify({ ...doc, auth: "mtls", evidence: [{ source: "manual", by: "pat" }] }),
       );
       const list = await run(["catalog", "edits", "--root", root]);
-      expect(list.out).toMatch(/changes evidence, which your kept edit can't set/);
+      expect(list.out).toMatch(/changes evidence, which your decision can't set/);
       expect(list.out).toMatch(/atticus catalog edits --curate --drop-fields 1/);
       const curatedBefore = files(join(root, "catalog", "curated"));
       const plain = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
@@ -510,7 +510,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         "pat",
       ]);
       expect(ok.code, ok.err).toBe(0);
-      expect(ok.out).toMatch(/made curated without evidence/);
+      expect(ok.out).toMatch(/kept as your decision without evidence/);
       expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
       const now = readFileSync(path, "utf8");
       expect(now).toMatch(/^auth: mtls$/m);

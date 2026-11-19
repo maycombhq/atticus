@@ -55,19 +55,22 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - Readers found / facts say → **Cross-check**
   - "Apply" means only "update the map from what was read": Apply fix → **Write the fix**, Apply to similar → **Write to similar**; "applies", "the commands still apply" and the like say what they mean
   - loose call → **call with no arrow**
-  - curated decision, "make them curated" → **your kept edit**, "keep them as your edits"
+  - curated decision, "make them curated" → **your decision**, "keep them as your decisions" (every decision a person made that the build keeps: a triage answer, a tag, a hand edit kept)
   - the answers and corrections (shown together) → **your changes**
   - system (for a box outside the estate) → **outside system**: "Repo, outside system or team", "Outside systems of the profile", "Rename to a real repo or outside system"
   - readers slot, source slot, facts slot, "a slot behind it" → said without the slot word in everyday text (Scans, Cross-check, the scan's and the upgrade's lines); kept on Catalog builds, the page for diagnosing a build
-  - adopt, adopted (the upgrade) → **move**, moved
+  - adopt, adopted (the upgrade only; `atticus adopt` and OpenSpec adoption keep their names) → **move**, moved
+  - Impact explorer → **Impact**; a box's panel says **Its contracts**, **Its impact** and **Decided by AI here**
+  - the AI's decisions and a rule's batches "applied" → **written** ("Atticus wrote it as the AI's", "Batches written"); a page that "applies" (of two that disagree) → **holds**
+  - VS Code: "Open a repo on the Architecture canvas" → **Open a repo on the Map**; its baseline dialog's Open the map opens the Map
   - Set up › Scans, Model runs, Prompt history, Catalog builds → **Set up › Activity › …**
 - **Fewer pages (v30 slice 8).** 58 pages and 28 default tabs before; 54 pages and 23 default tabs now. Every capability stays reachable and every old address opens the new place, its query kept (`#/runs?run=…` opens `#/activity?tab=runs&run=…`), in both layouts, in an IDE tab and from VS Code's and IntelliJ's links. Moved:
-  - The Map keeps **Map**, **Flows** and **Read status**. **Contracts**, **Impact** and **Decided by AI** left its tabs: a repo's or a component's panel opens each for that box (**Its contracts**, **What breaks if it changes**, **What the AI decided here**), and the estate-wide page is under More pages.
+  - The Map keeps **Map**, **Flows** and **Read status**. **Contracts**, **Impact** and **Decided by AI** left its tabs: a repo's or a component's panel opens each for that box (**Its contracts**, **Its impact**, **Decided by AI here**), and the estate-wide page is under More pages.
   - **Model runs**, **Prompt history**, **Scans** and **Catalog builds** are the tabs of one **Activity** page in Set up (`#/runs`, `#/history`, `#/scans`, `#/catalog-builds` open its tabs). Ctrl+K finds each tab by its name.
-  - The **Ecosystem map**, a second drawing of the Map, is gone: its coverage by system and area, and the questions for owners, are on **Systems** (`#/map` opens Systems).
+  - The **Ecosystem map**, a second drawing of the Map, is gone (`#/map` and Ctrl+K's "Ecosystem map" open the Map): its coverage by system and area, and the questions for owners, are on **Systems**.
   - Pages that had no next step say one under their tabs ("Next: …"): Map, Flows, Read status, Contracts, Impact, Decided by AI, Cross-check, Mismatches, Systems, Outside systems, Activity, Features, Diagrams, Reconcile, Search the catalog, AI quality, Learning and Words.
   - The surface census counts 54 pages and records the five retired ones with where each went; it fails if a retired page's address no longer opens its new place.
-- **Messages lead with what to do (v30 slice 8).** The ten longest refusals and build messages are three lines: what happened, that nothing was changed (when true), then the command, with "Words: docs/guide/words.md." where a house word is left: a host no repo lists (`atticus estate join`, a scan), an entry's auth with no cited line (verify), a metarepo stamp this Atticus can't read, a change with no knowledge list, a build with no record from code, a catalog from before beta.27, copilot-acp not allowed (`atticus map --all`), a wiki address with a token in it, a model address not confirmed, and an added record `catalog edits --curate` can't keep.
+- **Messages lead with what to do (v30 slice 8).** The ten longest refusals and build messages are three lines: what to do first, then what happened, then what wasn't changed (when true: "The catalog wasn't changed" where only the catalog is untouched, as after `verify --write` on a catalog from before beta.27), with "Words: docs/guide/words.md." where a house word is left: a host no repo lists (`atticus estate join`, a scan), an entry's auth with no cited line (verify), a metarepo stamp this Atticus can't read, a change with no knowledge list, a build with no record from code, a catalog from before beta.27, copilot-acp not allowed (`atticus map --all`), a wiki address with a token in it, a model address not confirmed, and an added record `catalog edits --curate` can't keep. A refused build says "The catalog wasn't changed: catalog/generated is as it was." once, first (it said "Nothing written: catalog/generated and every slot are as they were." first).
 
 ### Fixed
 

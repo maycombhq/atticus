@@ -489,7 +489,7 @@ Usage:
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
-  atticus scan [--no-drift]            Scan every repo's base clone: write the readers slot of each repo read in full (catalog/sources/readers/<repo>.json), keep every other repo's last good read and say why, then build catalog/generated from every slot (ADR 0195); a scan that read no repo in full writes nothing
+  atticus scan [--no-drift]            Scan every repo's base clone: store the built-in readers' read of each repo read in full (catalog/sources/readers/<repo>.json), keep every other repo's last good read and say why, then build catalog/generated from every stored read (ADR 0195); a scan that read no repo in full writes nothing
           [--repos a,b]                Only these repos: the others keep their last good read
           [--allow-removals <n>]       Confirm the removals a refused build listed, with the count it named (more than 10% of a repo's records, or 200)
           [--discard-edits <n>]        Discard the hand edits to catalog/generated a refused build listed, with their count (a copy is kept for atticus catalog undo)
@@ -584,7 +584,7 @@ Usage:
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
-          [--yes]                      Apply the step that adopts a catalog from before beta.27 into source slots (ADR 0195); without it the step only shows what it would write
+          [--yes]                      Apply the step that moves a catalog from before beta.27 into stored reads (ADR 0195); without it the step only shows what it would write
           [--accept-changes <n>]       With --yes: accept the record files the first build would change, with the count the step listed
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
@@ -639,7 +639,7 @@ Usage:
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
   atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; the next verify write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
-  atticus triage decide <item> <n>     Choose option n for a triage item; writes your kept edit
+  atticus triage decide <item> <n>     Choose option n for a triage item; writes your decision
           [--reason text]
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
@@ -716,8 +716,8 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
-  atticus catalog build                Build catalog/generated from the source slots and inputs (ADR 0195): after a curated file is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
-          [--check]                    Write nothing; exit 1 when catalog/generated isn't what the slots build (for a metarepo's CI)
+  atticus catalog build                Build catalog/generated from the stored reads and inputs (ADR 0195): after a file of your decisions is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
+          [--check]                    Write nothing; exit 1 when catalog/generated isn't what the stored reads build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
           [--curate]                   Keep each as your edit, to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
           [--drop-fields <n>]          With --curate: also keep as yours the files that change fields no decision can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back

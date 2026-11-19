@@ -1378,7 +1378,7 @@
         "decide"
       ],
       "usage": "atticus triage decide <item> <n>",
-      "summary": "Choose option n for a triage item; writes a curated decision",
+      "summary": "Choose option n for a triage item; writes your decision",
       "args": [
         {
           "name": "item",

@@ -140,7 +140,7 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   if (r.unreadableManifest)
     return `catalog/sources/build.json doesn't read (edited or merged by hand): build again, replacing every record file with this build: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("hand-edits"))
-    return `Files under catalog/generated were changed by hand. Keep them as your edits: atticus catalog edits --curate, or discard them: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
+    return `Files under catalog/generated were changed by hand. Keep them as your decisions: atticus catalog edits --curate, or discard them: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("unexplained-removals"))
     return "The build would remove records nothing explains (a bug): nothing was written. The list is in the command's output.";
   if (r.reasons.includes("large-removals"))
@@ -345,7 +345,7 @@ export async function catalogUndo(
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
     if (g.refused?.reasons.includes("hand-edits")) {
       io.err(
-        "Nothing undone: files under catalog/generated were changed by hand since the last build. Keep them as your edits (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
+        "Nothing undone: files under catalog/generated were changed by hand since the last build. Keep them as your decisions (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
       const refused = { reasons: ["hand-edits"], edits: g.refused.edits };
       await refusalEnds(root, refused);
@@ -548,7 +548,7 @@ function cantSay(p: Pick<EditPlan, "fields" | "removed">): string {
   ].join(" and ");
   const verb =
     changed.length && removed.length ? "set or remove" : removed.length ? "remove" : "set";
-  return `${what}, which your kept edit can't ${verb}`;
+  return `${what}, which your decision can't ${verb}`;
 }
 
 /**
@@ -762,9 +762,9 @@ async function planEdits(
       plan({
         why: derivedNow
           ? "the build makes a record of its id: change that record instead"
-          : // v30 slice 8: what happened, then what to do (nothing is written for it: said above).
-            "an added record can't be your kept edit (a kept edit changes or suppresses a record the build makes); nothing was written for it.\n" +
-            `Discard it, or say it where the build reads it: a fact in facts/<repo>.jsonl that atticus verify <repo> --write checks, or a rule in the org pack. ${WORDS_LINK}`,
+          : // v30 slice 8: what to do first, then what happened and that nothing was written.
+            `discard it, or say it where the build reads it: a fact in facts/<repo>.jsonl that atticus verify <repo> --write checks, or a rule in the org pack. ${WORDS_LINK}\n` +
+            "An added record can't be kept as your decision (a decision changes or suppresses a record the build makes), so nothing was written for it",
       });
       continue;
     }
@@ -864,7 +864,7 @@ export async function catalogEdits(
   // Property seed 1562698156: every writer refuses until `atticus upgrade --yes`, and so does
   // this one; it never says no file was changed by hand over a catalog it can't tell that of.
   if (listed.notUpgraded) {
-    const why = `Nothing to curate: catalog/generated was written before beta.27 (there is no catalog/sources/build.json${(await latestUndoIsUpgrade(undoDir)) ? ": an undo took the upgrade back" : ""}), so no file in it is a hand edit yet. Run atticus upgrade: it adopts every record file there, yours with them, into legacy slots (it shows what it would do first; atticus upgrade --yes applies it).`;
+    const why = `Nothing to curate: catalog/generated was written before beta.27 (there is no catalog/sources/build.json${(await latestUndoIsUpgrade(undoDir)) ? ": an undo took the upgrade back" : ""}), so no file in it is a hand edit yet. Run atticus upgrade: it moves every record file there, yours with them, into stored reads (it shows what it would do first; atticus upgrade --yes does it).`;
     io.err(why);
     const refused = { reasons: ["not-upgraded"], message: why };
     await refusalEnds(root, refused);
@@ -923,7 +923,7 @@ export async function catalogEdits(
       for (const e of listed)
         io.out(`  ${e.how}: ${e.path}${e.fields?.length ? ` (${cantSay(e)})` : ""}`);
       io.out(
-        `Keep them as your edits: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
+        `Keep them as your decisions: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
       );
     }
     return 1;
@@ -958,13 +958,13 @@ export async function catalogEdits(
     const confirmed = o.dropFields === dropping.length;
     for (const p of plans) {
       if (!p.decision) {
-        left.push({ path: p.path, why: p.why ?? "it can't be made curated" });
+        left.push({ path: p.path, why: p.why ?? "it can't be kept as your decision" });
         continue;
       }
       if (p.fields?.length && !confirmed) {
         left.push({
           path: p.path,
-          why: `it also ${cantSay(p)} (the next build would put ${p.fields.length === 1 ? "it" : "them"} back): make it curated without ${p.fields.length === 1 ? "it" : "them"} with atticus catalog edits --curate --drop-fields ${dropping.length}`,
+          why: `it also ${cantSay(p)} (the next build would put ${p.fields.length === 1 ? "it" : "them"} back): keep it as your decision without ${p.fields.length === 1 ? "it" : "them"} with atticus catalog edits --curate --drop-fields ${dropping.length}`,
           fields: p.fields,
         });
         continue;
@@ -973,7 +973,7 @@ export async function catalogEdits(
       // untouched, and this edit is a decision of its own that applies after it.
       const w = await writeDecision(root, curatedDir, p.decision, {
         idBase: `cd-edit-${String(p.decision.action)}-${String(p.decision.target)}`,
-        reason: `A hand edit to ${p.path}, made curated (atticus catalog edits --curate).`,
+        reason: `A hand edit to ${p.path}, kept as a decision (atticus catalog edits --curate).`,
         by,
         at,
       });
@@ -1020,16 +1020,16 @@ export async function catalogEdits(
       if (confirmed)
         for (const d of dropping)
           io.out(
-            `${d.path}: made curated without ${d.fields!.join(", ")}, which the next build puts back as it makes ${d.fields!.length === 1 ? "it" : "them"}.`,
+            `${d.path}: kept as your decision without ${d.fields!.join(", ")}, which the next build puts back as it makes ${d.fields!.length === 1 ? "it" : "them"}.`,
           );
-      for (const l of left) io.err(`${l.path}: not made curated: ${l.why}.`);
+      for (const l of left) io.err(`${l.path}: not kept as your decision: ${l.why}.`);
       if (written.length)
         io.out(
           "atticus catalog build (or the next scan) builds with them, and replaces the edited files; their bytes are kept for atticus catalog undo.",
         );
       if (left.length)
         io.err(
-          `What isn't curated stays a hand edit: discard it with atticus catalog build --discard-edits <count> (a copy is kept for undo).`,
+          `What isn't kept as your decision stays a hand edit: discard it with atticus catalog build --discard-edits <count> (a copy is kept for undo).`,
         );
     }
     return left.length ? 1 : 0;

@@ -34,21 +34,21 @@ Breakdown shows the stories, how ready each is and what no story covers yet. _Wr
 
 ## Architect
 
-**Screens you use most:** Home, Architecture review, Diagrams, Reconcile, Contracts, Impact explorer, Map, Org pack.
+**Screens you use most:** Home, Architecture review, Diagrams, Reconcile, Contracts, Impact, Map, Org pack.
 **Watch for:** changes in Design, findings on design, interfaces and mappings, and diagram names and conflicts to decide in Intake.
 
 Architecture review puts the design next to the integration patterns and what the code does; code wins over a diagram until a person decides. Reconcile compares each drawn edge with the code (`atticus reconcile`). At setup you walk the ecosystem map with the platform lead and accept the catalog.
 
 ## Team lead
 
-**Screens you use most:** Home, Breakdown, Task board, Changes, Initiatives, Release plan, Impact explorer.
+**Screens you use most:** Home, Breakdown, Task board, Changes, Initiatives, Release plan, Impact.
 **Watch for:** changes in Plan, and findings on tasks and service-desk drafts.
 
 Breakdown and the Task board show tasks by repo in cross-repo order. The tech lead or architect runs the tasks: **Run all ready tasks** on the Task board runs every task whose dependencies are done, in cross-repo order, one task run each, and stops on the first that needs a person (`atticus task run-ready <change>`; `--level pr --approve` raises each PR into the change branch). Each task ends on its own `task/<change>/<task>` branch; nothing is merged, and a person reviews and merges each PR on the Git host (ADR 0181). _Changes > Across all changes > Tasks_ lists every open change's tasks in one place, with a filter. Initiatives shows who owes what against the target release (`atticus initiative status <id>`). When a team or vendor tells you where their part stands, choose _Update_ on the commitment, set it to open, at risk, done or slipped with a note of what they said, and _Propose for review_ (or `atticus initiative commit <commitment> <state> --note "<what changed>"`).
 
 ## Developer
 
-**Screens you use most:** Home, Task board, Changes, Contracts, API mappings, Impact explorer, Search the catalog, Manual steps.
+**Screens you use most:** Home, Task board, Changes, Contracts, API mappings, Impact, Search the catalog, Manual steps.
 **Watch for:** changes in Build.
 
 `atticus workspace open <change> --repos <repos>` makes the change's worktrees and editor workspaces. The tech lead or architect runs the tasks: _Run with AI_ on the Task board hands one task to the assistant with the context it needs (`atticus task run <change> <task>`), and _Run all ready tasks_ runs every ready one; you review each PR's diff, and Atticus never pushes to a protected branch. API mappings shows each hop's fields beside what the catalog maps today.
@@ -91,19 +91,19 @@ The org pack holds your procedures and request templates; changes go in by pull 
 
 ## DBA or data architect
 
-**Screens you use most:** Home, Contracts, API mappings, Impact explorer, Architecture review, Governance, Map.
+**Screens you use most:** Home, Contracts, API mappings, Impact, Architecture review, Governance, Map.
 
-Contracts lists the data stores from DDL and migrations; pick a table to see its readers, writers and evidence. The Impact explorer follows a table or column to everything that depends on it (`atticus impact <id>`).
+Contracts lists the data stores from DDL and migrations; pick a table to see its readers, writers and evidence. The Impact follows a table or column to everything that depends on it (`atticus impact <id>`).
 
 ## SRE or operations
 
-**Screens you use most:** Home, Release plan, Impact explorer, Governance, Map, Manual steps, Search the catalog.
+**Screens you use most:** Home, Release plan, Impact, Governance, Map, Manual steps, Search the catalog.
 
-Incident mode in the Impact explorer shows a failing system's blast radius, the owners to call and recent nearby changes, from the last scan. Atticus never connects to live systems. Governance compares callers' timeouts with what they call and shows what has no alert.
+Incident mode in the Impact shows a failing system's blast radius, the owners to call and recent nearby changes, from the last scan. Atticus never connects to live systems. Governance compares callers' timeouts with what they call and shows what has no alert.
 
 ## Security reviewer
 
-**Screens you use most:** Home, Governance, Release plan, Contracts, Impact explorer, Architecture review, Map.
+**Screens you use most:** Home, Governance, Release plan, Contracts, Impact, Architecture review, Map.
 
 Governance lists calls with no authentication declared and sensitive data by classification. Each change's Release plan carries a security review draft (`atticus release security <change>`).
 

@@ -416,8 +416,8 @@ function participant(
       await vscode.commands.executeCommand("atticus.diagram", t);
       stream.markdown(
         t
-          ? `Opened ${inline(t)} in the Atticus tab. On the Architecture canvas, drag boxes to rearrange them; Keep saves the arrangement.`
-          : "Opened the estate on the Architecture canvas, in the Atticus tab.",
+          ? `Opened ${inline(t)} in the Atticus tab. On the Map, drag boxes to rearrange them; Keep saves the arrangement.`
+          : "Opened the estate on the Map, in the Atticus tab.",
       );
       stream.button({ command: "atticus.diagram", arguments: [t], title: "Open it again" });
       return;

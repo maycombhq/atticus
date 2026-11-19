@@ -31,7 +31,8 @@ describe("one name per thing", () => {
     expect(term("Read status")).toMatchObject({ was: "Trust" });
     expect(term("Cross-check")).toMatchObject({ was: "Readers found / facts say" });
     expect(term("call with no arrow")).toMatchObject({ was: "loose call" });
-    expect(term("your kept edit")).toMatchObject({ was: "curated decision" });
+    expect(term("your decision")).toMatchObject({ was: "curated decision" });
+    expect(term("your kept edit")).toBeUndefined();
     for (const t of ["Apply", "Write", "Propose", "your changes", "outside system", "Activity"])
       expect(term(t), t).toBeDefined();
     expect(term("Apply")!.says).toMatch(/Apply means only this/);
@@ -49,6 +50,7 @@ describe("one name per thing", () => {
     expect(Object.values(COPY.nav.formerly)).toEqual([
       "Estate canvas",
       "Ecosystem map",
+      "Impact explorer",
       "Trust",
       "Readers found / facts say",
     ]);

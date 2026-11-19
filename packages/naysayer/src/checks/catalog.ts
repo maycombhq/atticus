@@ -245,7 +245,7 @@ export const factKnown: DeterministicCheckDef = {
         summary: sentence(`The catalog has no ${label} for ${id}.`),
         why: `Rule ${rule.id} (${rule.title}) depends on this fact for every touched record in scope; it is missing, so the critic asks instead of passing.`,
         fix: {
-          text: "Answer the owner question; the answer counts once it is in the catalog (a scan, or an owner's curated decision).",
+          text: "Answer the owner question; the answer counts once it is in the catalog (a scan, or the owner's decision).",
         },
         evidence: subjectEvidence(ctx, id),
         question: {

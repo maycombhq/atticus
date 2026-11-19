@@ -1332,7 +1332,7 @@
     "/api/triage/{itemId}/decide": {
       "post": {
         "operationId": "decideTriage",
-        "summary": "Choose a triage item's option as the signed-in person; writes a curated decision",
+        "summary": "Choose a triage item's option as the signed-in person; writes your decision",
         "tags": [
           "views"
         ],
