@@ -335,6 +335,116 @@ export function forgeStudioJourney(): () => App {
   };
 }
 
+/** The commit each repo's facts of the reconnect fixture claim, until the clone's own. */
+const RECONNECT_COMMITS: Record<string, string> = {
+  "forge-orders": "a11ce01",
+  "forge-billing": "b111ab1",
+  "forge-ledger": "1ed9e42",
+  "forge_billing_1-0": "9a7e0a1",
+};
+
+/**
+ * Beta.30 ("it's connected to the wrong box", fixtures/reconnect): a metarepo whose repos are
+ * read from facts, where forge-orders' calls are joined to forge-billing (by an address, by the
+ * assistant's fact, through a gateway, and by a pairing sam made) and really go to forge-ledger.
+ * `atticus init`, the fixture's profile and manifest, each repo cloned at one commit, its facts
+ * with that commit, and `atticus verify <repo> --write` for each. Everything is invented
+ * (CLAUDE.md rule 3).
+ */
+export async function reconnectMetarepo(): Promise<string> {
+  const FIX = join(FIXTURES, "reconnect");
+  const parent = await mkdtemp(join(tmpdir(), "atticus-journey-"));
+  const init = spawnSync(
+    process.execPath,
+    [BIN, "init", "forge-estate", "--platform", "forge", "--owner", "priya"],
+    { cwd: parent, encoding: "utf8", env: { ...process.env, ATTICUS_RUNTIME: "hand-off" } },
+  );
+  if (init.status !== 0) throw new Error(`atticus init failed: ${init.stdout}${init.stderr}`);
+  const root = join(parent, "forge-estate");
+  const git = (cwd: string, ...a: string[]) =>
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Forge",
+        "-c",
+        "user.email=forge@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        ...a,
+      ],
+      { cwd, encoding: "utf8" },
+    );
+  await cp(join(FIX, "org-pack/profiles/forge"), join(root, "org-pack/profiles/forge"), {
+    recursive: true,
+  });
+  await mkdir(join(root, "facts"), { recursive: true });
+  const text: Record<string, string> = {};
+  for (const [repo, claimed] of Object.entries(RECONNECT_COMMITS)) {
+    const clone = join(root, "workspace", repo);
+    await cp(join(FIX, "repos", repo), clone, { recursive: true });
+    git(clone, "init", "-q", "-b", "main");
+    git(clone, "add", "-A");
+    git(clone, "commit", "-qm", "Forge fixture");
+    const head = git(clone, "rev-parse", "HEAD").stdout.trim();
+    text[repo] = readFileSync(join(FIX, "facts", `${repo}.jsonl`), "utf8").replaceAll(
+      `"commit":"${claimed}"`,
+      `"commit":"${head}"`,
+    );
+    await writeFile(join(root, "facts", `${repo}.jsonl`), text[repo]);
+  }
+  // A call sam paired with the wrong box, as Connect to… wrote it.
+  const fact = (repo: string, id: string) =>
+    text[repo]!.split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, any>) // eslint-disable-line @typescript-eslint/no-explicit-any -- a fact, read loosely
+      .find((f) => f.id === id)!;
+  const c = fact("forge-orders", "call.get.entries-id");
+  const e = fact("forge-billing", "entry.get.entries-id");
+  await writeFile(
+    join(root, "facts/forge-orders.corrections.jsonl"),
+    JSON.stringify({
+      schemaVersion: 1,
+      fact: c.id,
+      target: { kind: "call", file: c.cite.file, line: c.cite.line, value: c.cite.value },
+      action: "link",
+      link: { repo: "forge-billing", entry: e.id, method: e.method, path: e.path },
+      by: "sam",
+      at: "2026-11-10T09:00:00.000Z",
+    }) + "\n",
+  );
+  for (const repo of ["forge-billing", "forge-ledger", "forge_billing_1-0", "forge-orders"]) {
+    const said = atticus(root, "verify", repo, "--write");
+    if (!/Wrote the catalog/.test(said))
+      throw new Error(`atticus verify ${repo} --write failed: ${said}`);
+  }
+  await rm(join(root, ".atticus", "logs"), { recursive: true, force: true });
+  await writeFile(join(root, ".gitignore"), "workspace/\n.index/\n");
+  git(root, "config", "user.name", "Priya Nair");
+  git(root, "config", "user.email", "priya@forge.example");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "Forge estate, read from facts");
+  return root;
+}
+
+/** A reconnect metarepo and its own server for one journey (see forgeJourney). */
+export function reconnectJourney(): () => App {
+  let app: App | undefined;
+  test.describe.configure({ mode: "serial" });
+  test.beforeAll(async () => {
+    app = await startApp(await reconnectMetarepo());
+  });
+  test.afterAll(async () => {
+    if (!app) return;
+    await stopApp(app);
+    await rm(dirname(app.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  return () => {
+    if (!app) throw new Error("The journey's app hasn't started.");
+    return app;
+  };
+}
+
 export interface App {
   url: string;
   root: string;

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { joinedArrowOf, looseEndsAt, overRemovalLimits, pairedArrowsAt } from "../src/build.js";
+import {
+  joinedArrowOf,
+  looseEndsAt,
+  movedArrows,
+  overRemovalLimits,
+  pairedArrowsAt,
+} from "../src/build.js";
 
 /**
  * Beta.28.1 (field hunt G1, its re-reviews): the large-removal limits, one rule for the guard and
@@ -78,5 +84,150 @@ describe("the removal limits (ADR 0195 point 4)", () => {
     ).toMatchObject({ over: true, big: [["forge-proxy", 2]] });
     const many = Array.from({ length: 201 }, () => ({ repos: [] as string[] }));
     expect(overRemovalLimits(new Map(), many)).toMatchObject({ over: true, counted: 201 });
+  });
+
+  // Beta.30 (the owner's field report: a call joined to the wrong box, moved by a pairing).
+  // The review: a moved arrow is matched one to one with the arrow of the same call, never by
+  // its line alone, so a pairing excuses exactly its own call's old arrow.
+  describe("an arrow a person's pairing moves to another box", () => {
+    const FILE = "src/OrdersClient.java";
+    const arrow = (
+      id: string,
+      to: string,
+      line: number,
+      path: string,
+      o: Record<string, unknown> = {},
+      also: number[] = [],
+    ) =>
+      ({
+        kind: "Interface",
+        id,
+        from: "orders",
+        to,
+        method: "GET",
+        normalizedPath: path,
+        evidence: [
+          ...[line, ...also].map((l) => ({
+            repo: "forge-orders",
+            path: FILE,
+            line: l,
+            side: "caller",
+          })),
+          { repo: `forge-${to}`, path: "src/Controller.java", line: 9, side: "callee" },
+        ],
+        ...o,
+      }) as never;
+    const person = { flags: ["joined-by-person"] };
+    const loose = (line: number) =>
+      ({
+        kind: "Unresolved",
+        id: `u-${line}`,
+        owner: "orders",
+        evidence: [{ repo: "forge-orders", path: FILE, line }],
+      }) as never;
+    const moved = (removed: never[], added: never[], old: never[] = removed) =>
+      Object.fromEntries(movedArrows(removed, added, old));
+
+    it("is the pairing's own result: its removal names the new arrow and counts toward no limit", () => {
+      const old = arrow("if-old", "billing", 8, "/holds/{}", { flags: ["joined-by-host"] });
+      const m = movedArrows([old], [arrow("if-new", "ledger", 8, "/holds/{}", person)], [old]);
+      expect(Object.fromEntries(m)).toEqual({ "Interface/if-old": { id: "if-new", to: "ledger" } });
+      const had = new Map([["forge-orders", 5]]);
+      expect(
+        overRemovalLimits(had, [{ repos: ["forge-orders"], joined: m.has("Interface/if-old") }]),
+      ).toMatchObject({ over: false, counted: 0 });
+      // Not moved, the same removal is over the share (1 of 5).
+      expect(overRemovalLimits(had, [{ repos: ["forge-orders"] }])).toMatchObject({ over: true });
+    });
+
+    it("excuses only the moved call's arrow where three calls cite one line and two are lost (the review's case)", () => {
+      const a = arrow("if-a", "billing", 8, "/holds/{}");
+      const b = arrow("if-b", "billing", 8, "/fees/{}");
+      const c = arrow("if-c", "billing", 8, "/entries/{}");
+      const added = [arrow("if-new", "ledger", 8, "/holds/{}", person)];
+      expect(moved([a, b, c], added)).toEqual({ "Interface/if-a": { id: "if-new", to: "ledger" } });
+      // And none where the new arrow's call can't be told from the lost ones (another path).
+      expect(moved([a, b, c], [arrow("if-new", "ledger", 8, "/other", person)])).toEqual({});
+    });
+
+    it("excuses one arrow per pairing in a proxy bundle whose calls all cite one target line", () => {
+      // Each call cites its own flow's line and the bundle's one target line (3).
+      const olds = [4, 7, 10].map((l) => arrow(`if-${l}`, "billing", l, `/r${l}`, {}, [3]));
+      const added = [arrow("if-new", "ledger", 4, "/r4", person, [3])];
+      // One moved, the two others lost in the same build: only the moved one is excused.
+      expect(moved(olds, added)).toEqual({ "Interface/if-4": { id: "if-new", to: "ledger" } });
+      // All three moved: each by its own pairing.
+      const all = [4, 7, 10].map((l) => arrow(`if-n${l}`, "ledger", l, `/r${l}`, person, [3]));
+      expect(Object.keys(moved(olds, all)).sort()).toEqual([
+        "Interface/if-10",
+        "Interface/if-4",
+        "Interface/if-7",
+      ]);
+    });
+
+    it("takes a new arrow of another path only where the removed arrow is the caller's one call on the line", () => {
+      const old = arrow("if-old", "billing", 8, "/billing/v1/holds/{}");
+      const added = [arrow("if-new", "ledger", 8, "/holds/{}", person)];
+      expect(moved([old], added)).toEqual({ "Interface/if-old": { id: "if-new", to: "ledger" } });
+      // Another arrow of the caller stays on the line: the pairing may be that call's.
+      const stays = arrow("if-stays", "billing", 8, "/fees/{}");
+      expect(moved([old], added, [old, stays])).toEqual({});
+      // A loose end was on the line: the pairing may have joined it, and the arrow is a loss.
+      expect(moved([old], added, [old, loose(8)])).toEqual({});
+    });
+
+    it("is told by the caller's line only: never by the callee's, another caller's, or an arrow no person paired", () => {
+      const old = arrow("if-old", "billing", 8, "/holds/{}");
+      const callee = {
+        kind: "Interface",
+        id: "if-x",
+        from: "orders",
+        to: "ledger",
+        method: "GET",
+        normalizedPath: "/holds/{}",
+        flags: ["joined-by-person"],
+        evidence: [{ repo: "forge-billing", path: "src/Controller.java", line: 9, side: "caller" }],
+      } as never;
+      expect(moved([old], [callee])).toEqual({});
+      expect(
+        moved([old], [arrow("if-new", "ledger", 8, "/holds/{}", { ...person, from: "x" })]),
+      ).toEqual({});
+      expect(moved([old], [arrow("if-new", "ledger", 8, "/holds/{}")])).toEqual({});
+      expect(moved([old], [arrow("if-new", "ledger", 9, "/holds/{}", person)])).toEqual({});
+    });
+
+    it("excuses nothing for a pairing taken back: Undo, a hand edit and a bad merge look the same (the re-review)", () => {
+      const mine = arrow("if-mine", "ledger", 8, "/holds/{}", person);
+      const back = arrow("if-back", "billing", 8, "/holds/{}", { flags: ["joined-by-host"] });
+      // The person's arrow goes and the code's comes back: a removal like any other.
+      expect(moved([mine], [back])).toEqual({});
+    });
+
+    it("doesn't excuse an arrow two call sites make when only one of them moved (the re-review)", () => {
+      // One arrow for the same call made on lines 8 and 30; the call on line 8 is moved.
+      const both = arrow("if-both", "billing", 8, "/holds/{}", {}, [30]);
+      const added = [arrow("if-new", "ledger", 8, "/holds/{}", person)];
+      expect(moved([both], added)).toEqual({});
+      // Both sites moved (one pairing each, merged into one arrow): the whole arrow is.
+      const whole = [arrow("if-new", "ledger", 8, "/holds/{}", person, [30])];
+      expect(moved([both], whole)).toEqual({ "Interface/if-both": { id: "if-new", to: "ledger" } });
+    });
+
+    it("excuses nothing where the pairing's entry is gone in the same build: no arrow was added for it", () => {
+      const old = arrow("if-old", "billing", 8, "/holds/{}");
+      expect(moved([old], [])).toEqual({});
+      // A paired arrow of another call on another line is no arrow of this call.
+      expect(moved([old], [arrow("if-other", "ledger", 12, "/fees/{}", person)])).toEqual({});
+    });
+
+    it("says nothing where two paired arrows could be the removed arrow's, and never of a loose end", () => {
+      const old = arrow("if-old", "billing", 8, "/holds/{}");
+      const two = [
+        arrow("if-a", "ledger", 8, "/holds/{}", person),
+        arrow("if-b", "risk", 8, "/holds/{}", person),
+      ];
+      expect(moved([old], two)).toEqual({});
+      expect(moved([loose(8)], [two[0]!], [loose(8)])).toEqual({});
+    });
   });
 });

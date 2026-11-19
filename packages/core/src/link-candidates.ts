@@ -102,11 +102,47 @@ export interface CandidateCall {
    * ADR 0199: also who paired a `paired` call with this box.
    */
   pairedBy?: string;
+  /**
+   * Beta.30 (the owner's field report, "it's connected to the wrong box"): for a call that goes
+   * somewhere already, how that was decided, as the estate's join says: `code`, the call's own
+   * fact names the box; `address`, its host or base path is the box's; `path`, only its path
+   * matched (a guess); `gateway`, a gateway's route forwards it there (`through` the gateway's
+   * repo); `answer`, a person's answer to a question; `paired`, a person's pairing; `ai`, the
+   * AI's pairing or answer; `kept`, the map draws an arrow from the call's line that this read's
+   * join doesn't place (kept from an earlier read, as an upgrade adopts them). `who` is who
+   * answered or paired. The caller that reads the files adds when, the question and a
+   * pairing's reason.
+   */
+  how?: CandidateHow;
   suggestion?: { api: string; score: number; why: SuggestWhy };
   /** The APIs it most likely is, best first (at most three); the first is `suggestion`. */
   suggestions?: { api: string; score: number; why: SuggestWhy }[];
   /** The best is well ahead of the rest and scores high: safe to pair without a look. */
   confident?: boolean;
+}
+
+export interface CandidateHow {
+  by: "code" | "address" | "path" | "gateway" | "answer" | "paired" | "ai" | "kept";
+  who?: string;
+  /** For gateway: the repo of the gateway whose route forwards the call. */
+  through?: string;
+  /** When it was answered or paired, the question answered, a pairing's reason (the caller's). */
+  at?: string;
+  question?: string;
+  reason?: string;
+}
+
+/** How a join was decided, in the kinds Connect says (the join's own words, never a guess). */
+export function howOfJoin(j: FactsJoinResult["joins"][number]): CandidateHow {
+  const hop = j.gateway?.[j.gateway.length - 1]?.entry.repo;
+  const through = hop ? { through: hop } : {};
+  if (j.paired) return { by: j.paired.ai ? "ai" : "paired", who: j.paired.by, ...through };
+  if (j.aiHop) return { by: "ai", ...through };
+  if (j.how === "answer") return { by: j.aiAnswer ? "ai" : "answer", ...through };
+  if (hop) return { by: "gateway", through: hop };
+  if (j.how === "named" || j.how === "repo") return { by: "code" };
+  if (j.inferred || j.byLabel) return { by: "path" };
+  return { by: "address" };
 }
 
 export type SuggestWhy =
@@ -325,6 +361,7 @@ export function linkCandidates(o: {
       inside?: string;
       /** The repos of the gateway routes the call goes through to reach `to`. */
       hops: readonly string[];
+      how: CandidateHow;
     }
   >();
   for (const j of o.join.joins) {
@@ -340,6 +377,7 @@ export function linkCandidates(o: {
         exact: !own && !!o.drawnExact?.(j),
         ...(own ? { inside: own } : {}),
         hops: (j.gateway ?? []).map((h) => h.entry.repo),
+        how: howOfJoin(j),
       });
     }
   }
@@ -458,6 +496,7 @@ export function linkCandidates(o: {
         ...(onward ? { onward } : {}),
         pairedBy: p.by,
         ...(p.ai ? { pairedAi: true } : {}),
+        how: { by: p.ai ? "ai" : "paired", who: p.by },
       });
       continue;
     }
@@ -497,6 +536,17 @@ export function linkCandidates(o: {
     const pairedBy = inEffect ? by!.by : undefined;
     const now = j?.to ?? (outDrawn ? (drawnBox ?? out) : out) ?? elsewhere;
     const movable = s?.status === "joined" || s?.status === "here";
+    // How it was decided, for a call that goes somewhere: the join's own account; for a call
+    // placed outside, the person who paired it with that system, else its fact's target or host.
+    const how: CandidateHow | undefined = j
+      ? j.how
+      : out !== undefined
+        ? by?.system === out && !by.none
+          ? { by: by.ai ? "ai" : "paired", who: by.by }
+          : { by: f.to ? "code" : "address" }
+        : elsewhere !== undefined
+          ? { by: "kept" }
+          : undefined;
     const scored = o.apis
       .map((a) => ({ a, s: pairScore(f, a, o.settings) }))
       .filter(
@@ -530,12 +580,22 @@ export function linkCandidates(o: {
       ...(pairedBy ? { pairedBy } : {}),
       ...(pairedBy && by?.ai ? { pairedAi: true } : {}),
       ...(pairedBy && forwards ? { pairedWith: byBox!, onward: "forwarded" as const } : {}),
+      ...(how && now !== undefined ? { how } : {}),
       ...(best ? { suggestion: top[0]! } : {}),
       ...(top.length ? { suggestions: top } : {}),
       ...(confident ? { confident: true } : {}),
     });
   }
-  calls.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : 0));
+  // By file, then by line as a number (the review: line 8 before line 20).
+  const place = (at: string) => {
+    const i = at.lastIndexOf(":");
+    return { file: at.slice(0, i), line: Number(at.slice(i + 1)) || 0 };
+  };
+  calls.sort((x, y) => {
+    const a = place(x.at);
+    const b = place(y.at);
+    return a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line;
+  });
   return {
     calls,
     apis: [...o.apis].sort((x, y) =>

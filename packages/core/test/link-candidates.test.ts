@@ -507,3 +507,80 @@ describe("the candidates of two boxes", () => {
     });
   });
 });
+
+// Beta.30 (the owner's field report: "it's connected to the wrong box"): a call that goes
+// somewhere says how that was decided, in the join's own kinds.
+describe("how a joined call's box was decided", () => {
+  const end = (repo: string, fact: string) => ({ repo, component: repo, fact, at: "x:1" });
+  const j = (o: Record<string, unknown>) =>
+    ({
+      call: end("forge-orders", "c1"),
+      entry: end("forge-billing", "e1"),
+      how: "host",
+      callType: "rest",
+      path: "/holds/{id}",
+      interface: "if-1",
+      ...o,
+    }) as never;
+  const hop = { entry: end("forge_billing_1-0", "r1") };
+
+  it("says each way: the code, its address, a guess, a gateway, an answer, a pairing, the AI", async () => {
+    const { howOfJoin } = await import("../src/index.js");
+    expect(howOfJoin(j({ how: "repo" }))).toEqual({ by: "code" });
+    expect(howOfJoin(j({ how: "named" }))).toEqual({ by: "code" });
+    expect(howOfJoin(j({ how: "host" }))).toEqual({ by: "address" });
+    expect(howOfJoin(j({ how: "base-path" }))).toEqual({ by: "address" });
+    expect(howOfJoin(j({ how: "path", inferred: { within: "estate" } }))).toEqual({ by: "path" });
+    expect(howOfJoin(j({ how: "host", byLabel: true }))).toEqual({ by: "path" });
+    expect(howOfJoin(j({ how: "host", gateway: [hop] }))).toEqual({
+      by: "gateway",
+      through: "forge_billing_1-0",
+    });
+    expect(howOfJoin(j({ how: "answer" }))).toEqual({ by: "answer" });
+    expect(
+      howOfJoin(j({ how: "answer", aiAnswer: { runtime: "copilot-acp", run: "r7" } })),
+    ).toEqual({ by: "ai" });
+    expect(howOfJoin(j({ how: "answer", paired: { by: "sam" } }))).toEqual({
+      by: "paired",
+      who: "sam",
+    });
+    // A pairing with a gateway's route says both: who paired it, and the gateway it goes through.
+    expect(howOfJoin(j({ how: "answer", paired: { by: "sam" }, gateway: [hop] }))).toEqual({
+      by: "paired",
+      who: "sam",
+      through: "forge_billing_1-0",
+    });
+    expect(
+      howOfJoin(j({ how: "answer", paired: { by: "atticus", ai: { runtime: "x", run: "r7" } } })),
+    ).toEqual({ by: "ai", who: "atticus" });
+  });
+
+  it("is on a call with an arrow, and never on one that joins nothing", () => {
+    const join = joinFacts({
+      repos: [
+        { repo: "forge-refunds", facts: refunds.facts },
+        { repo: "forge-gw", facts: gw.facts },
+      ],
+      explain: true,
+    });
+    const paired = linkCandidates({
+      from: "forge-refunds",
+      facts: refunds.facts,
+      join: {
+        ...join,
+        joins: [
+          j({
+            call: end("forge-refunds", "c-status"),
+            entry: end("forge-gw", "e-payments-status"),
+            how: "repo",
+          }),
+        ],
+      },
+      apis: [],
+      to: { repo: "forge-ledger" },
+    });
+    const by = Object.fromEntries(paired.calls.map((c) => [c.fact, c.how]));
+    expect(by["c-status"]).toEqual({ by: "code" });
+    expect(by["c-request-refund"]).toBeUndefined();
+  });
+});
