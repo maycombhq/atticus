@@ -257,6 +257,59 @@ describe("a change's footprint from the stages' files (B-change)", () => {
     });
   });
 
+  it("knows an entry people call today however the draft writes its path (review of beta.30)", async () => {
+    // A trailing slash, a query string, a fragment or a whole URL is still POST /orders: a new
+    // flow on it that requires a field breaks who calls it. Case is kept: /Orders may be another route.
+    const entryOf = async (entry: string) => {
+      const root = await estate();
+      await writeFile(
+        join(root, "openspec/changes", CHANGE, "target-flows/forge-orders.place-order-v2.yaml"),
+        [
+          "schemaVersion: 2",
+          "flow: forge-orders.place-order-v2",
+          "repo: forge-orders",
+          "change: new",
+          "name: Place an order, second version",
+          `trigger: { kind: endpoint, what: A shopper places an order, entry: "${entry}" }`,
+          "why: The order names its channel.",
+          "steps:",
+          "  - op: add",
+          "    after: 0",
+          "    kind: entry",
+          "    what: OrderController receives the order",
+          "    fields: { reads: [sku, channel], required: [channel] }",
+          "",
+        ].join("\n"),
+      );
+      const ctx = await loadChangeContext(root);
+      const fp = await changeFootprint(ctx, await changeStore(root).read(CHANGE));
+      return {
+        entries: fp.entries,
+        newEntries: fp.newEntries,
+        breaking: fp.signals.filter((x) => x.factor === "breaking").map((x) => x.detail),
+      };
+    };
+    for (const entry of [
+      "POST /orders",
+      "POST /orders/",
+      "POST /orders?channel=web",
+      "POST /orders#new",
+      "POST https://shop.forge.example/orders",
+      "POST https://shop.forge.example:8443/orders/?channel=web",
+      "post //orders",
+    ]) {
+      const r = await entryOf(entry);
+      expect(r.newEntries, entry).toEqual([]);
+      expect(r.entries, entry).toEqual(["forge-orders.post-orders"]);
+      expect(r.breaking, entry).toEqual(["entry step now requires channel"]);
+    }
+    for (const entry of ["POST /Orders", "POST /orders/bulk-import", "DELETE /orders"]) {
+      const r = await entryOf(entry);
+      expect(r.newEntries, entry).toEqual([`forge-orders ${entry}`]);
+      expect(r.breaking, entry).toEqual([]);
+    }
+  });
+
   it("finds the conflict with another open change on the same flow", async () => {
     const root = await estate();
     const pairs = await detectConflicts(root);
