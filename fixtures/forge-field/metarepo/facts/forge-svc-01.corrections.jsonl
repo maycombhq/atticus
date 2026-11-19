@@ -1,0 +1,1 @@
+{"schemaVersion":1,"fact":"c-20","target":{"kind":"call","file":"src/main/java/forge/client/Client0.java","line":21,"value":"/v1/accounts/{id}"},"action":"link","link":{"repo":"forge-svc-02","entry":"e-0","method":"GET","path":"/v1/payments/{id}/ledger-0"},"by":"pat","at":"2026-11-10T09:00:00Z"}

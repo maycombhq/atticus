@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import { Api, DiagramLayout, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiGraphRoutes, vscodeFileLink } from "../src/ui-api-graph.js";
+import { seedForgeField, type ForgeField } from "./forge-field.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 
@@ -271,4 +272,83 @@ describe("canvas views kept in the metarepo, and a cited line to open (ADR 0175,
       "vscode://file/C:/work/forge/A.java:3",
     );
   });
+});
+
+// Beta.30 (slice 9): the same graph on the field-shaped estate (fixtures/forge-field): gateway
+// proxies, a repo with no System, an id with dots, a topic with two consumers, a legacy slot.
+describe("the field-shaped estate", () => {
+  let fsrv: RunningServer;
+  let dir: string;
+  let e: ForgeField & { root: string };
+  const fget = (path: string) => call(fsrv, path);
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "b30-fd-graph-"));
+    e = await seedForgeField(dir);
+    fsrv = await startServer({
+      root: e.root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiGraphRoutes(r, ctx),
+    });
+  }, 300_000);
+  afterAll(async () => {
+    await fsrv?.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("opens on its systems, and every repo read from facts is a box at depth 2, its dots and missing System too", async () => {
+    const top = Api.GraphNodeView.parse((await fget("/api/graph/node/estate")).body);
+    expect(top.children.map((c) => c.id)).toContain(`system:${e.topic!.publisher}`);
+    const deep = Api.GraphNodeView.parse((await fget("/api/graph/node/estate?depth=2&all=1")).body);
+    const ids = deep.children.map((c) => c.id);
+    // A repo's box keeps its id as it is, dots and all; a repo with no System is a system's box
+    // of its own, as a legacy repo's is.
+    for (const c of [
+      ...e.repos,
+      ...e.legacy,
+      "forge-nosystem-svc",
+      "forge-nested-svc",
+      "forge.instruments.svc",
+    ])
+      expect(ids, c).toContain(`repo:${c}`);
+    expect(ids).toContain("system:forge-nosystem-svc");
+    // The topic is a box inside each of its two consumers, both named for it, each published to.
+    const topics = deep.children.filter((c) => c.kind === "topic");
+    expect(topics.map((t) => [t.label, t.parent]).sort()).toEqual(
+      e.topic!.listeners.map((l) => [e.topic!.name, `component:${l}`]).sort(),
+    );
+    for (const t of topics)
+      expect(
+        deep.edges.some(
+          (x) => x.type === "publishes" && x.from === `repo:${e.topic!.publisher}` && x.to === t.id,
+        ),
+        t.id,
+      ).toBe(true);
+    // The topic's publisher calls both of its consumers.
+    for (const to of e.topic!.listeners)
+      expect(
+        top.edges.some((x) => x.from === `system:${e.topic!.publisher}` && x.to === `system:${to}`),
+        to,
+      ).toBe(true);
+  });
+
+  it("gives every edge's calls, each edge's count, at both depths", async () => {
+    for (const depth of [1, 2]) {
+      const v = Api.GraphNodeView.parse((await fget(`/api/graph/node/estate?depth=${depth}`)).body);
+      expect(v.edges.length).toBeGreaterThan(0);
+      for (const x of v.edges.filter((y) => y.type === "calls")) {
+        const r = await fget(
+          `/api/graph/edge-calls?node=estate&edge=${encodeURIComponent(x.id)}${depth === 2 ? "&depth=2" : ""}`,
+        );
+        expect(r.status, x.id).toBe(200);
+        expect(Api.GraphEdgeCallsView.parse(r.body).count, x.id).toBe(x.count);
+      }
+    }
+    // The call joined to the wrong box is on the edge to the box it names.
+    const w = e.wrongBox!;
+    const v = Api.GraphNodeView.parse((await fget("/api/graph/node/estate")).body);
+    expect(v.edges.some((x) => x.from === `system:${w.from}` && x.to === `system:${w.joins}`)).toBe(
+      true,
+    );
+  }, 120_000);
 });

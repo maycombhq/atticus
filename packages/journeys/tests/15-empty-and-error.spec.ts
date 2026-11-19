@@ -7,7 +7,8 @@ import { accessible, expect, startApp, stopApp, test, type App } from "../suppor
 
 /**
  * Every screen on a brand-new metarepo (nothing scanned, no change) says what to do, never an
- * error; and when the local server can't be reached, every screen says so in words.
+ * error; and when the local server can't be reached, every screen says so in words. (On the
+ * field-shaped estate, 14-every-screen checks that no screen says "Couldn't load this".)
  */
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../cli/dist/bin.js");

@@ -10,6 +10,7 @@ import { main } from "../src/main.js";
 import { EXTENSION_NEEDS, standing, STANDING_WORDS } from "../src/standing.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { VERSION } from "../src/version.js";
+import { seedForgeField, stampWith } from "./forge-field.js";
 
 /**
  * ADR 0202 point 8: `atticus status` says where a metarepo stands in one line, with the one
@@ -469,4 +470,41 @@ describe("when the command line may ask (ADR 0202 point 9)", () => {
     expect(canAsk({ ...tty, env: { ATTICUS_STARTED_BY: "terminal" } })).toBe(true);
     expect(canAsk({ ...tty, env: { TERM_PROGRAM: "vscode", CURSOR_AGENT: "0" } })).toBe(true);
   });
+});
+
+// Beta.30 (slice 9): the field-shaped estate (fixtures/forge-field), as a person seeds it: its
+// stamp, its slots, a legacy slot, repos nobody cloned. Its status is one line, nothing to do.
+describe("atticus status on the field-shaped estate", () => {
+  it(
+    "says it is up to date and reads its catalog, in one line, and serves the same as JSON",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "b30-fd-standing-"));
+      made.push(dir);
+      // Seeded as this Atticus upgrades it: the stamp is this Atticus's, whatever wrote the fixture.
+      const e = await seedForgeField(dir);
+      const r = await run(["status", "--root", e.root], NO_EXT);
+      expect(r).toEqual({
+        code: 0,
+        err: [],
+        out: [
+          `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Nothing to do.`,
+        ],
+      });
+      const j = await run(["status", "--json", "--root", e.root], NO_EXT);
+      expect(JSON.parse(j.out.join("\n"))).toMatchObject({
+        atticus: VERSION,
+        state: "up-to-date",
+        stamp: VERSION,
+        line: r.out[0],
+      });
+      // An older stamp (a fixture written by an Atticus before a release): one line, upgrade.
+      await stampWith(e.root, "2.0.0-beta.9");
+      const older = await run(["status", "--root", e.root], NO_EXT);
+      expect(older.code).toBe(1);
+      expect(older.out).toEqual([
+        `You are on Atticus ${VERSION}. This metarepo is at 2.0.0-beta.9 (.atticus/metarepo.yaml), and this Atticus reads its catalog. Do: atticus upgrade`,
+      ]);
+    },
+    T,
+  );
 });

@@ -1,0 +1,23 @@
+# A question from atticus scan survey forge-svc-01 (ADR 0078). Answer it with atticus questions answer q-d954e650d37b, or in the app.
+schemaVersion: 6
+id: q-d954e650d37b
+askedBy:
+  step: scan-survey
+  command: atticus scan survey forge-svc-01
+  at: 2026-11-06T12:00:00.000Z
+repo: forge-svc-01
+question: Which system serves GET /v1/items-0/{id} for forge-svc-01?
+options:
+  - label: forge-svc-00
+    means: the service serves it
+    changes: the call joins it
+  - label: Outside
+    means: a vendor
+    changes: the call is drawn outside
+evidence:
+  - src/main/java/forge/client/Client0.java:10
+scope:
+  level: repo
+  id: forge-svc-01
+state: open
+rerun: atticus scan survey forge-svc-01 --force

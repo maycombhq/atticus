@@ -1,0 +1,58 @@
+# Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.
+schemaVersion: 2
+gates:
+  - id: define
+    phase: define
+    approvers:
+      - product-owner
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: openspec-validate
+        params: {}
+  - id: design
+    phase: design
+    approvers:
+      - architect
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: openspec-validate
+        params: {}
+  - id: plan
+    phase: plan
+    approvers:
+      - team-lead
+      - business-analyst
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: openspec-validate
+        params: {}
+  - id: build
+    phase: build
+    approvers:
+      - developer
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: tests-pass
+        params: {}
+  - id: qa
+    phase: qa
+    approvers:
+      - qa
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: tests-pass
+        params: {}
+  - id: release
+    phase: release
+    approvers:
+      - delivery-lead
+    minApprovals: 1
+    checklists: []
+    checks:
+      - check: snow-requests-closed
+        params: {}

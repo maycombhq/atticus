@@ -8,6 +8,8 @@ import type { Page } from "@playwright/test";
 import {
   accessible,
   expect,
+  fieldInfo,
+  forgeJourney,
   forgeMetarepo,
   forgeStudioMetarepo,
   open,
@@ -24,6 +26,12 @@ import {
  * and sees the arrow move; and drafts a change's stories again over stories a person wrote. Each
  * command stays folded under "In a terminal". The assistant's answer is written to the run's
  * folder by the test, as the person's assistant would. Everything is invented (CLAUDE.md rule 3).
+ *
+ * Beta.30 (slice 9): on the field-shaped estate (fixtures/forge-field), Map › Trust offers a way on
+ * for the repo nobody read and the empty one, and a correction is applied from the map's bar among
+ * the legacy slot, the hand pairings and the gateway proxies (at the end). Drafting the stories
+ * again stays on the tidy estate: the field estate's change is on the quick path, which has no
+ * stories stage (ADR 0201), so there is no stage to draft again.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -343,5 +351,57 @@ test.describe("drafting the stories again over a person's stories", () => {
     await expect(thread.getByRole("link", { name: "Open the prompt and Done" })).toBeVisible({
       timeout: 60_000,
     });
+  });
+});
+
+test.describe("the field-shaped estate: reading and correcting from the app", () => {
+  const field = forgeJourney({ estate: "field" });
+
+  test("Map › Trust names the repo nobody read and the empty one, each with a way on", async ({
+    page,
+  }) => {
+    const info = fieldInfo();
+    await open(page, field(), "trust");
+    await expect(page.getByText(/Couldn't load this/)).toHaveCount(0);
+    for (const repo of [info.unreadRepo!, info.emptyRepo!]) {
+      const row = page.getByRole("article", { name: repo });
+      await expect(row, repo).toBeVisible();
+      // A button forward, the command folded under In a terminal.
+      await expect(row.getByRole("button").first(), repo).toBeVisible();
+    }
+    // A repo read from facts at its clone's commit isn't "not read".
+    await expect(page.getByRole("article", { name: info.clones[0]! })).not.toContainText(
+      "isn't read yet",
+    );
+    await accessible(page, "Map › Trust on the field-shaped estate");
+  });
+
+  test("a correction is applied from the map's bar, and the map has it", async ({ page }) => {
+    test.setTimeout(240_000);
+    const a = field();
+    const repo = fieldInfo().clones[0]!;
+    await open(page, a, "home");
+    const token = await page.locator('meta[name="atticus-token"]').getAttribute("content");
+    // The person says one of the service's settings is wrong (as Map › Facts does).
+    const said = await page.request.post(`${a.url}/api/facts/${repo}/corrections`, {
+      headers: { "X-Atticus-Token": token ?? "" },
+      data: { fact: "k-0", action: "wrong", reason: "the service reads it from the platform" },
+    });
+    expect(said.status(), await said.text()).toBeLessThan(300);
+    await open(page, a, "canvas");
+    const bar = page.getByRole("region", { name: "Corrections waiting to be applied" });
+    await expect(bar).toContainText(`Your corrections aren't in the map yet: ${repo}.`);
+    await bar.getByRole("button", { name: `Apply to ${repo}'s map` }).click();
+    // One setting of a service of a hundred records: under the limits, written with no confirm.
+    await expect(page.getByText(`Applied the correction to ${repo}'s map.`)).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(bar).toHaveCount(0);
+    await open(page, a, "catalog-builds");
+    const report = page.getByRole("region", { name: "The last build here" });
+    await expect(report).toContainText(`Written atticus verify ${repo} --write`);
+    await expect(report).toContainText("1 removed");
+    await accessible(page, "Catalog builds after a correction on the field-shaped estate");
   });
 });

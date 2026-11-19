@@ -1,0 +1,64 @@
+{
+  "repos": [
+    "forge-svc-00",
+    "forge-svc-01",
+    "forge-svc-02",
+    "forge-svc-03",
+    "forge-gw-00",
+    "forge-gw-01",
+    "forge-gw-02"
+  ],
+  "legacy": [
+    "forge-svc-04"
+  ],
+  "links": 4,
+  "suppressed": [
+    "if-00dfead938a71908",
+    "if-12d59361ef4a33e1",
+    "if-213f9d783158db77",
+    "if-37790a709fd79d8a"
+  ],
+  "emptyRepo": "forge-deploy",
+  "unreadRepo": "forge-audit",
+  "topic": {
+    "name": "forge.items.settled",
+    "publisher": "forge-svc-02",
+    "listener": "forge-svc-03",
+    "listeners": [
+      "forge-svc-03",
+      "forge-svc-00"
+    ]
+  },
+  "wrongBox": {
+    "from": "forge-svc-00",
+    "call": "c-3",
+    "method": "POST",
+    "path": "/v1/customers/{id}/invoice-5",
+    "joins": "forge-svc-03",
+    "goes": "forge-svc-01"
+  },
+  "change": "publish-settled-refunds",
+  "commits": {
+    "forge-svc-00": "9aa433e35611e448f8efea376fcf2b3af8319717",
+    "forge-svc-01": "5be8400078cbf62ea1d3a400d4e6dc783acff573"
+  },
+  "clones": [
+    "forge-svc-00",
+    "forge-svc-01"
+  ],
+  "manifest": [
+    "forge-svc-00",
+    "forge-svc-01",
+    "forge-svc-02",
+    "forge-svc-03",
+    "forge-svc-04",
+    "forge-gw-00",
+    "forge-gw-01",
+    "forge-gw-02",
+    "forge-deploy",
+    "forge-audit",
+    "forge-nosystem-svc",
+    "forge.instruments.svc",
+    "forge-nested-svc"
+  ]
+}
