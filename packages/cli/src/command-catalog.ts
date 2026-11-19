@@ -88,6 +88,7 @@ const AREA_BY_WORD: Record<string, string> = {
   setup: "start",
   doctor: "start",
   status: "start",
+  selfcheck: "start",
   probe: "start",
   secret: "start",
   upgrade: "start",

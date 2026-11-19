@@ -280,8 +280,29 @@ export async function doctorCounts(
   };
 }
 
+/**
+ * What `atticus selfcheck` reads off the same tally (ADR 0202 point 10): the calls nothing
+ * answers that the join gave no reason for, each by its repo and cited line (shown on screen
+ * only, with --names), and whether a call it didn't place is written to a deploy token's host.
+ */
+export interface LinkDetail {
+  unaccounted: string[];
+  tokenHost: boolean;
+}
+
+/** A host written as a build or deploy token (`@name@`, `${NAME}`), the whole host. */
+const TOKEN_HOST = /^(https?:\/\/)?(@[^@\s/]+@|\$\{[^}\s]+\})/;
+
 async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["links"]> {
-  const estate = await estateFacts(root, op, "");
+  return linkCountsOf(await estateFacts(root, op, ""), op);
+}
+
+/** The tally over an estate's facts already read (the join is made here, and nothing is written). */
+export function linkCountsOf(
+  estate: Awaited<ReturnType<typeof estateFacts>>,
+  op: OrgPack,
+  detail?: LinkDetail,
+): DoctorCounts["links"] {
   const repos = estate.repos.filter((x) => !isPrototypeRepo(op, x.repo));
   const join = joinFacts({
     repos: joinReposOf(op, repos, componentRenames(repos, op)),
@@ -321,9 +342,14 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
       else bump(out.inferredBy, "one-end-inferred");
     }
   }
+  const tokenAt = (e: { repo: string; fact: string }) => {
+    const f = factOf.get(key(e));
+    if (detail && f?.kind === "call" && TOKEN_HOST.test(f.host ?? "")) detail.tokenHost = true;
+  };
   for (const a of join.asks) {
     if (answered.has(key(a.call))) continue;
     answered.add(key(a.call));
+    tokenAt(a.call);
     out.asked++;
     bump(out.askedBy, a.reason);
   }
@@ -339,6 +365,9 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
       if (answered.has(k)) continue;
       out.unresolved++;
       bump(out.unresolvedBy, why.get(k) ?? "other");
+      tokenAt({ repo: r.repo, fact: f.id });
+      if (detail && !why.has(k))
+        detail.unaccounted.push(`${r.repo}: ${f.cite.file}:${f.cite.line}`);
     }
   out.inferredBy = sorted(out.inferredBy);
   out.askedBy = sorted(out.askedBy);
