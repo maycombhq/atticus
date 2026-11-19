@@ -40782,7 +40782,8 @@
                         "gateway",
                         "answer",
                         "paired",
-                        "ai"
+                        "ai",
+                        "kept"
                       ]
                     },
                     "who": {

@@ -94,6 +94,8 @@ export function howWords(c: Api.CandidateCallViewT, me?: string): string | undef
       return C.how.paired(h.who, date, mine, h.reason);
     case "ai":
       return C.how.ai(h.who);
+    case "kept":
+      return C.how.kept;
   }
 }
 
@@ -456,8 +458,12 @@ export function Pairing(p: {
   // Beta.28.1: the preview's job, while it runs: its last line, and Stop.
   const [wait, setWait] = useState<{ job?: string; line?: string; stopping?: boolean }>();
   const [stoppedPreview, setStoppedPreview] = useState(false);
+  // Beta.30: Move to… previews and writes the ticked moves alone, never a loose call that
+  // started ticked; Preview takes every ticked pair. The last preview's scope is the write's.
+  const [movesOnly, setMovesOnly] = useState(false);
+  const scoped = (only: boolean) => ({ pairs: only ? moving : pairs, rule: only ? false : !!rule });
   // What the person picked now: Confirm writes only what was previewed, nothing changed since.
-  const asked = JSON.stringify({ pairs, rule: !!rule });
+  const asked = JSON.stringify(scoped(movesOnly));
   const [previewed, setPreviewed] = useState<string | undefined>();
   const [undoing, setUndoing] = useState(false);
   // The hunt of beta.28.1 (S5): the preview under way, stopped when nobody waits on it any more
@@ -479,15 +485,18 @@ export function Pairing(p: {
     },
     [],
   );
-  const send = async (mode: "preview" | "write") => {
-    if (!pairs.length && !rule) {
+  const send = async (mode: "preview" | "write", moves = false) => {
+    const only = mode === "preview" ? moves : movesOnly;
+    const sending = scoped(only);
+    if (!sending.pairs.length && !sending.rule) {
       setError(C.nothingPicked);
       return;
     }
+    if (mode === "preview") setMovesOnly(only);
     setBusy(mode);
     setError(undefined);
     setStoppedPreview(false);
-    const sentAsked = asked;
+    const sentAsked = JSON.stringify(sending);
     let ctl: AbortController | undefined;
     if (mode === "preview") {
       previewCtl.current?.abort();
@@ -509,8 +518,8 @@ export function Pairing(p: {
         {
           from: p.from,
           to: p.box,
-          pairs,
-          ...(rule ? { rule: true } : {}),
+          pairs: sending.pairs,
+          ...(sending.rule ? { rule: true } : {}),
           ...(mode === "preview" ? { preview: true } : {}),
         },
         {
@@ -535,6 +544,7 @@ export function Pairing(p: {
         setWritten(r);
         setUndone(undefined);
         setPreview(undefined);
+        setMovesOnly(false);
         p.cands.reload?.();
       }
     } catch (e) {
@@ -844,7 +854,7 @@ export function Pairing(p: {
             <button
               type="button"
               className="btn primary"
-              onClick={() => void send("preview")}
+              onClick={() => void send("preview", true)}
               disabled={!!busy || !moving.length || held}
               aria-busy={busy === "preview"}
               {...(!moving.length || held ? { "aria-describedby": `${callsId}-mwhy` } : {})}
@@ -983,8 +993,8 @@ export function Pairing(p: {
           >
             {busy === "write"
               ? C.writing
-              : onlyMoves
-                ? C.moveConfirm(pairs.length, d.toName)
+              : (movesOnly && moving.length > 0) || onlyMoves
+                ? C.moveConfirm(moving.length, d.toName)
                 : C.confirm(pairs.length, rule)}
           </button>
         </div>

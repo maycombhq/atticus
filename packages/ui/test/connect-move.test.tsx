@@ -111,6 +111,9 @@ describe("how a call's box was decided, in plain words", () => {
     expect(howWords(call(1, "/x", { how: { by: "ai", who: "run-7" } }), "pat")).toBe(
       "decided by AI (run-7), not confirmed by a person",
     );
+    expect(howWords(call(1, "/x", { how: { by: "kept" } }), "pat")).toBe(
+      "an arrow kept from an earlier read (this read doesn't say where the call goes)",
+    );
     // An older server says only where it goes: nothing is made up.
     expect(howWords(call(1, "/x"), "pat")).toBeUndefined();
   });
@@ -255,6 +258,27 @@ describe("Move to forge-ledger", () => {
     expect(
       t.els().some((x) => x.props.said === C.written(1, "facts/forge-orders.corrections.jsonl")),
     ).toBe(true);
+  });
+
+  it("moves only the ticked moves: a loose call that started ticked is left for Preview", async () => {
+    const t = start([byAnswer, loose]);
+    t.tick(pick(byAnswer));
+    await t.click(C.moveTo("forge-ledger"));
+    expect(t.sent[0]!.pairs).toEqual([{ call: "call.12", api: "e12" }]);
+    await t.click(C.moveConfirm(1, "forge-ledger"));
+    expect(t.sent[1]).toEqual({
+      from: "forge-orders",
+      to: box,
+      pairs: [{ call: "call.12", api: "e12" }],
+    });
+    // Written: the button is the loose call's again, never a count of none.
+    expect(t.button(C.moveConfirm(0, "forge-ledger"))).toBeUndefined();
+    // Preview takes every ticked pair, and its write says so.
+    const u = start([byAnswer, loose]);
+    u.tick(pick(byAnswer));
+    await u.click(C.preview);
+    expect(u.sent[0]!.pairs.map((x) => x.call)).toEqual(["call.12", "call.22"]);
+    expect(u.button(C.confirm(2, false))!.props.disabled).toBe(false);
   });
 
   it("asks why before overriding what the code names, and sends the reason with the pair", async () => {

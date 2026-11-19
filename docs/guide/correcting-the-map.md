@@ -16,7 +16,33 @@ When the paths aren't enough (a client builds its paths from constants, a gatewa
 
 **Preview** shows the lines that will be written and what the next `atticus verify <repo> --write` adds, moves and removes. **Write** appends one `link` line per pair to `facts/<repo>.corrections.jsonl`. The call's own fact stays exactly as read. The join reads the link and draws the line, flagged as paired by a person; when a later read renames the API, it is found again by its method and path, and when it is gone, the box says so.
 
-No call is hidden. A call the read ties to something that has no arrow drawn (its own component, or a link deleted on the canvas), or one left outside the estate to a target no box draws, is listed with the loose calls, saying where the read ties it. A call that has an arrow already is listed under **Move a call here**, saying where it goes now: pick an API of this box for it and Write, and its old arrow goes once the pairing is read (`atticus verify <repo> --write`). Those calls are never picked for you. When every call has an arrow, the panel says where they go and opens that list. Whether a call has an arrow is what the built catalog draws (a link deleted on the canvas has none). A call a person paired with another box says who, and picking an API for it warns that pairing it here replaces their word. A call with an arrow to this very box is listed under **Going to <box> already**, with the API it goes to, and can't be paired with that API again; to change which API it goes to, pick its arrow and use **This link is wrong**. **Edit the map**'s **Add a link** from a repo's box offers the same list.
+No call is hidden. A call the read ties to something that has no arrow drawn (its own component, or a link deleted on the canvas), or one left outside the estate to a target no box draws, is listed with the loose calls, saying where the read ties it. A call that has an arrow to another box is listed first, to move here (see **It's connected to the wrong box**, below). Whether a call has an arrow is what the built catalog draws (a link deleted on the canvas has none). A call with an arrow to this very box is listed under **Going to <box> already**, with the API it goes to, and can't be paired with that API again; to change which API it goes to, pick its arrow and use **This link is wrong**. **Edit the map**'s **Add a link** from a repo's box offers the same calls, folded under **Move a call here**.
+
+## It's connected to the wrong box
+
+The map draws an arrow from a repo to the wrong box: a question was answered wrongly, the read named the wrong target, the two services serve the same path, or somebody paired it wrongly. Connect the repo to the right box (**Connect to…** on its box, or a line drawn to the right box).
+
+The panel lists the repo's calls that go to another box first, each with where it goes today and how that was decided:
+
+- **read from code**: the call's fact names that box;
+- **matched by its address**: its host or base path is that box's, with the host its line writes;
+- **matched by its path alone**: nothing names the box, a guess;
+- **it goes through a gateway**, whose route forwards it there;
+- **an answer to a question**, with who answered and when;
+- **paired by** a person, with when and the reason they gave, or **decided by AI**;
+- **an arrow kept from an earlier read**: the map still draws it (from before the upgrade, say) and this read doesn't say where the call goes.
+
+The likeliest API of the right box is picked for each call and none is ticked. Tick the calls that really go to the right box, check each API, and choose **Move to <box>**. The preview shows the lines it writes and each arrow that moves; **Move N calls to <box>** writes them, one `link` line per call in `facts/<repo>.corrections.jsonl`, and **Apply** redraws the map: the old arrow goes (or keeps the calls you didn't move) and the new one is drawn, marked as paired by a person. The build says of each arrow it removes that "its call goes to <box> now", and a moved arrow needs no removal confirm.
+
+Your pairing wins over how the call was joined before. Three cases ask something first:
+
+- **The line names the other box** (its host is that box's, or the fact read there names it). The panel says so and asks why; your reason is kept on the pairing's line. The fact stays in the repo's facts as read, verified on its line: a pairing never changes or removes a fact read from code. The right box's panel then says how many pairings go against what the code names. If the code itself is what changed, read the repo again instead.
+- **Somebody else paired it**, or the AI did. The panel says who, and you tick **Replace** for it. Your own pairing is replaced without asking.
+- **An answer placed it.** The move pairs the calls you tick. The answer still stands for the other calls it covers and for calls read later; if the answer itself is wrong, change it on the Questions page.
+
+A call that goes through a gateway can be moved the same way, which says this call doesn't go through that gateway. When it is the gateway that forwards to the wrong service, correct the gateway instead: connect the gateway's box to the right service.
+
+When the right box has no API on record (a repo not read yet, an outside system with no spec), there is nothing to move a call to yet: the panel says so and gives the command that reads it.
 
 When the repo has an open target question, **All loose calls go there** answers it with `/**`, so calls read later follow it too.
 

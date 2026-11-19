@@ -5453,11 +5453,12 @@ export const CandidateCallView = z.object({
    * `address`, its host or base path is the box's; `path`, only its path matched (a guess);
    * `gateway`, a gateway's route forwards it there (`through`: the gateway's repo); `answer`, a
    * person's answer to `question`; `paired`, a person's pairing (with its `reason`, if they gave
-   * one); `ai`, the AI's. `who` answered or paired, and `at` when.
+   * one); `ai`, the AI's; `kept`, an arrow the map keeps from an earlier read, which this
+   * read's join doesn't place. `who` answered or paired, and `at` when.
    */
   how: z
     .object({
-      by: z.enum(["code", "address", "path", "gateway", "answer", "paired", "ai"]),
+      by: z.enum(["code", "address", "path", "gateway", "answer", "paired", "ai", "kept"]),
       who: z.string().optional(),
       at: z.string().optional(),
       question: z.string().optional(),

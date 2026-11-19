@@ -108,8 +108,10 @@ export interface CandidateCall {
    * fact names the box; `address`, its host or base path is the box's; `path`, only its path
    * matched (a guess); `gateway`, a gateway's route forwards it there (`through` the gateway's
    * repo); `answer`, a person's answer to a question; `paired`, a person's pairing; `ai`, the
-   * AI's pairing or answer. `who` is who answered or paired. The caller that reads the files
-   * adds when, the question and a pairing's reason.
+   * AI's pairing or answer; `kept`, the map draws an arrow from the call's line that this read's
+   * join doesn't place (kept from an earlier read, as an upgrade adopts them). `who` is who
+   * answered or paired. The caller that reads the files adds when, the question and a
+   * pairing's reason.
    */
   how?: CandidateHow;
   suggestion?: { api: string; score: number; why: SuggestWhy };
@@ -120,7 +122,7 @@ export interface CandidateCall {
 }
 
 export interface CandidateHow {
-  by: "code" | "address" | "path" | "gateway" | "answer" | "paired" | "ai";
+  by: "code" | "address" | "path" | "gateway" | "answer" | "paired" | "ai" | "kept";
   who?: string;
   /** For gateway: the repo of the gateway whose route forwards the call. */
   through?: string;
@@ -542,7 +544,9 @@ export function linkCandidates(o: {
         ? by?.system === out && !by.none
           ? { by: by.ai ? "ai" : "paired", who: by.by }
           : { by: f.to ? "code" : "address" }
-        : undefined;
+        : elsewhere !== undefined
+          ? { by: "kept" }
+          : undefined;
     const scored = o.apis
       .map((a) => ({ a, s: pairScore(f, a, o.settings) }))
       .filter(

@@ -6183,6 +6183,7 @@ export const COPY = {
       paired: (who: string | undefined, date: string | undefined, mine: boolean, reason?: string) =>
         `paired by ${mine ? "you" : (who ?? "a person")}${date ? ` on ${date}` : ""}${reason ? `: "${reason}"` : ""}`,
       ai: (run?: string) => `decided by AI${run ? ` (${run})` : ""}, not confirmed by a person`,
+      kept: "an arrow kept from an earlier read (this read doesn't say where the call goes)",
     },
     /** The tick of one call to move, as a screen reader says it. */
     movePick: (call: string, to: string) => `Move ${call} to ${to}`,
