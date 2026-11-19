@@ -1,0 +1,490 @@
+import { useId, useState } from "react";
+import type { Api } from "@maycombhq/core";
+import { api, ApiError, useJobRead, type JobWaitParts, type Loaded } from "../../api/client.js";
+import { followJob, JobFailed } from "../../app/job.js";
+import { JobWait } from "../../app/job-wait.js";
+import { Propose } from "../../app/propose.js";
+import { ReadRepo } from "../../app/app-step.js";
+import { Command } from "../work/RunNext.js";
+import { useMe } from "../../app/me.js";
+import { COPY } from "../../copy.js";
+import { usePopupFocus } from "./popup.js";
+import { Pairing, type BoxChoice } from "./Connect.js";
+import { DeclarePanel } from "./Declare.js";
+
+/**
+ * ADR 0204: "Connect <A> to <B>", one panel for every box and for a line drawn. The direction is
+ * the person's (two radios; a line's start is the caller), Atticus says which way it connects
+ * (GET /api/connect), and the one button writes and applies in one job (POST /api/map/edits):
+ * the calls the code shows are paired (today's Pairing), else the arrow is declared, the
+ * person's word, drawn dashed "declared by <name>". Undo takes back exactly what it wrote.
+ */
+
+const W = COPY.connectAB;
+
+/** The panel's requests: the local API in the app; tests pass their own. */
+export interface ConnectIo {
+  read: (path: string | undefined) => Loaded<Api.ConnectViewT> & JobWaitParts;
+  post: <T>(path: string, body: unknown) => Promise<T>;
+  follow: (path: string, body: unknown) => ReturnType<typeof followJob>;
+}
+const APP: Omit<ConnectIo, "read"> = {
+  post: <T,>(path: string, body: unknown) => api<T>(path, { method: "POST", body }),
+  follow: (path, body) => followJob(path, body),
+};
+const say = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
+const name = (b: Api.LinkBoxT) => b.repo ?? b.system ?? "";
+const errorOf = (e: unknown) =>
+  e instanceof ApiError
+    ? (e.problem.detail ?? e.message)
+    : e instanceof Error
+      ? e.message
+      : String(e);
+const day = (at: string) => at.slice(0, 10);
+
+export function ConnectAB(p: {
+  a: BoxChoice;
+  /** The other box: given by a line drawn, else picked here from `boxes`. */
+  b?: BoxChoice;
+  boxes: readonly BoxChoice[];
+  onClose(): void;
+  /** The arrow is on the map: the canvas is read again. */
+  onShown?(): void;
+  io?: Partial<ConnectIo>;
+}) {
+  const io = { ...APP, ...p.io };
+  const id = useId();
+  const head = usePopupFocus<HTMLHeadingElement>();
+  const [other, setOther] = useState<string>(p.b ? say(p.b.box) : "");
+  const [aCalls, setACalls] = useState(true);
+  // A need's answer: the repo picked for a system of several.
+  const [picked, setPicked] = useState<Record<"from" | "to", Api.LinkBoxT | undefined>>({
+    from: undefined,
+    to: undefined,
+  });
+  const b = p.b ?? p.boxes.find((x) => say(x.box) === other);
+  const [caller0, callee0] = b ? (aCalls ? [p.a, b] : [b, p.a]) : [p.a, undefined];
+  const caller = picked.from ?? caller0.box;
+  const callee = picked.to ?? callee0?.box;
+  const path = callee
+    ? `/api/connect?from=${encodeURIComponent(say(caller))}&to=${encodeURIComponent(say(callee))}`
+    : undefined;
+  const live = useJobRead<Api.ConnectViewT>(p.io?.read ? undefined : path);
+  const view = p.io?.read ? p.io.read(path) : live;
+  const v = view.state === "ready" ? view.data : undefined;
+  return (
+    <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
+      <div className="box-pop-head">
+        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
+          {W.title(name(caller), callee ? name(callee) : W.pickOtherNone)}
+        </h4>
+        <button type="button" className="btn" onClick={p.onClose}>
+          {COPY.connect.close}
+        </button>
+      </div>
+      {!p.b && (
+        <>
+          <label htmlFor={`${id}-to`} className="hud">
+            {W.pickOther}
+          </label>
+          <select
+            id={`${id}-to`}
+            className="field"
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+          >
+            <option value="">{W.pickOtherNone}</option>
+            {p.boxes
+              .filter((x) => say(x.box) !== say(p.a.box))
+              .map((x) => (
+                <option key={say(x.box)} value={say(x.box)}>
+                  {x.label}
+                </option>
+              ))}
+          </select>
+        </>
+      )}
+      {b && (
+        <fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
+          <legend className="hud">{W.direction}</legend>
+          {[true, false].map((ab) => (
+            <label key={String(ab)} className="row" style={{ gap: 6 }}>
+              <input
+                type="radio"
+                name={`${id}-dir`}
+                checked={aCalls === ab}
+                onChange={() => {
+                  setACalls(ab);
+                  setPicked({ from: undefined, to: undefined });
+                }}
+              />
+              {ab ? W.calls(name(p.a.box), name(b.box)) : W.calls(name(b.box), name(p.a.box))}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {callee && view.state === "loading" && (
+        <JobWait what={W.loading} line={view.line} onStop={view.stop} stopping={!!view.stopping} />
+      )}
+      {view.state === "error" && (
+        <p role="alert" className="state error">
+          {view.error}
+        </p>
+      )}
+      {v && (
+        <Mechanism
+          key={`${say(v.from)}>${say(v.to)}`}
+          v={v}
+          reload={() => view.reload?.()}
+          pick={(end, box) => setPicked((x) => ({ ...x, [end]: box }))}
+          io={io}
+          {...(p.onShown ? { onShown: p.onShown } : {})}
+        />
+      )}
+    </section>
+  );
+}
+
+function Mechanism(p: {
+  io: Omit<ConnectIo, "read">;
+  v: Api.ConnectViewT;
+  reload(): void;
+  pick(end: "from" | "to", box: Api.LinkBoxT): void;
+  onShown?(): void;
+}) {
+  const { v } = p;
+  const me = useMe().me?.user ?? "you";
+  const [declaring, setDeclaring] = useState(false);
+  const [a, b] = [v.fromName, v.toName];
+  const could = (v.candidates?.calls ?? []).filter(
+    (c) => c.status !== "here" && c.status !== "paired" && !c.inside,
+  );
+  const sure = could.filter((c) => c.confident && c.status !== "joined").length;
+  const said =
+    v.mechanism === "calls"
+      ? W.mechanism.calls(could.length, a, b, sure)
+      : v.mechanism === "connected"
+        ? W.mechanism.connected(a, b, v.existing)
+        : v.mechanism === "declared" && v.declared
+          ? W.mechanism.declared(v.declared.by, day(v.declared.at), v.declared.why)
+          : v.mechanism === "declare"
+            ? W.mechanism.declare(a, b, me)
+            : W.mechanism.needs;
+  return (
+    <div className="stack">
+      <p className="ev-say">{said}</p>
+      {v.needs.map((n) => (
+        <Need key={`${n.need}:${n.end}`} n={n} v={v} pick={p.pick} reload={p.reload} io={p.io} />
+      ))}
+      {v.mechanism === "calls" && v.candidates && (
+        <>
+          <Pairing
+            from={v.candidates.from}
+            box={v.to}
+            cands={{ state: "ready", data: v.candidates, reload: p.reload }}
+          />
+          {!declaring && (
+            <button type="button" className="btn" onClick={() => setDeclaring(true)}>
+              {W.noneOfThese}
+            </button>
+          )}
+        </>
+      )}
+      {v.mechanism === "connected" && p.onShown && (
+        <button type="button" className="btn" onClick={p.onShown}>
+          {W.show}
+        </button>
+      )}
+      {v.mechanism === "declared" && v.declared && <Declared v={v} d={v.declared} io={p.io} />}
+      {(v.mechanism === "declare" ||
+        declaring ||
+        v.needs.some((n) => ["read", "verify", "no-repo"].includes(n.need))) &&
+        v.mechanism !== "declared" &&
+        v.mechanism !== "connected" && (
+          <DeclareArrow v={v} {...(p.onShown ? { onShown: p.onShown } : {})} io={p.io} />
+        )}
+      {v.from.system && (
+        <details className="stack">
+          <summary className="hud">{W.details}</summary>
+          {/* What Declare a link… did for an outside system: its topics and gateway routes. */}
+          <DeclarePanel
+            system={v.from.system}
+            label={a}
+            {...(v.to.repo ? { target: v.to.repo } : {})}
+            onClose={() => undefined}
+          />
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** ADR 0204 3.1: what is missing, with the control that fixes it, then on with the same boxes. */
+function Need(p: {
+  io: Omit<ConnectIo, "read">;
+  n: Api.ConnectNeedT;
+  v: Api.ConnectViewT;
+  pick(end: "from" | "to", box: Api.LinkBoxT): void;
+  reload(): void;
+}) {
+  const { n } = p;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const words =
+    n.need === "pick-repo"
+      ? W.need["pick-repo"](n.label, n.repos?.length ?? 0)
+      : W.need[n.need](n.label);
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="ev-say">{words}</p>
+      {n.need === "pick-repo" && (
+        <fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
+          <legend className="sr">{words}</legend>
+          {(n.repos ?? []).map((r) => (
+            <label key={r} className="row" style={{ gap: 6 }}>
+              <input
+                type="radio"
+                name={`pick-${n.end}`}
+                onChange={() => p.pick(n.end, { repo: r })}
+              />
+              <span className="mono">{r}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {n.need === "no-repo" && (
+        <a className="btn" href="#/setup/repos">
+          {W.addRepo}
+        </a>
+      )}
+      {n.need === "read" && n.repos?.[0] && <ReadRepo repo={n.repos[0]} />}
+      {n.need === "verify" && n.command && (
+        <Command text={n.command} label={W.checkNow(n.label)} scope="corrections" />
+      )}
+      {n.need === "add-system" && (
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          aria-busy={busy}
+          onClick={() => {
+            setBusy(true);
+            setError(undefined);
+            const box = n.end === "from" ? p.v.from : p.v.to;
+            p.io
+              .post("/api/boxes", { id: box.system, name: n.label, boundary: "internal" })
+              .then(
+                () => p.reload(),
+                (e: unknown) => setError(errorOf(e)),
+              )
+              .finally(() => setBusy(false));
+          }}
+        >
+          {W.addAndGo(n.label)}
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** ADR 0204 1.6, 1.7: a declared arrow's panel: who, when and why; Retire once the code shows it. */
+function Declared(p: {
+  v: Api.ConnectViewT;
+  d: Api.DeclaredArrowViewT;
+  io: Omit<ConnectIo, "read">;
+}) {
+  const { v, d } = p;
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  const [error, setError] = useState<string | undefined>();
+  const remove = () => {
+    setState("busy");
+    setError(undefined);
+    p.io.post("/api/declared-links/undo", { kind: "link", from: d.from, to: d.to }).then(
+      () => setState("done"),
+      (e: unknown) => {
+        setError(errorOf(e));
+        setState("idle");
+      },
+    );
+  };
+  if (state === "done")
+    return (
+      <div className="stack" role="status">
+        <p className="ev-say">{W.retired}</p>
+        <Propose scope="org-pack" />
+      </div>
+    );
+  return (
+    <div className="stack">
+      <p className="ev-say">{W.declaredPanel(d.by, day(d.at), v.fromName, v.toName, d.why)}</p>
+      {v.superseded && (
+        <p className="ev-say">
+          {W.superseded(v.fromName, v.toName, v.superseded.calls, d.by, day(d.at))}
+        </p>
+      )}
+      <div className="box-btns">
+        <button
+          type="button"
+          className="btn"
+          onClick={remove}
+          disabled={state === "busy"}
+          aria-busy={state === "busy"}
+        >
+          {v.superseded ? W.retire : W.remove}
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+type Done = { wrote: Api.MapEditWroteT[]; lines: string[]; built: boolean };
+
+/**
+ * ADR 0204 1.4 and decision 2: the declare form. The button previews, writes and applies in one
+ * go (nothing is removed or replaced by a declared arrow), says each, and offers Show the arrow,
+ * Undo and Propose for review.
+ */
+export function DeclareArrow(p: {
+  v: Api.ConnectViewT;
+  io: Omit<ConnectIo, "read">;
+  onShown?(): void;
+}) {
+  const id = useId();
+  const { v } = p;
+  const [why, setWhy] = useState("");
+  const [planned, setPlanned] = useState(v.needs.some((n) => n.need === "no-repo"));
+  const [busy, setBusy] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const [done, setDone] = useState<Done | undefined>();
+  const [undone, setUndone] = useState(false);
+  const ok = why.trim().length >= 3 && why.trim().length <= 500;
+  const link = {
+    kind: "link",
+    from: v.from,
+    to: v.to,
+    why: why.trim(),
+    ...(planned ? { planned } : {}),
+  };
+  const go = async () => {
+    setError(undefined);
+    try {
+      setBusy(COPY.connect.previewing);
+      const pre = await p.io.post<Api.FileChangeResultT>("/api/declared-links", {
+        ...link,
+        preview: true,
+      });
+      setBusy(W.declaring);
+      const r = await p.io.follow("/api/map/edits", { edits: [{ kind: "add", add: link }] });
+      const res = (r.result ?? {}) as Partial<Api.MapEditsResultT>;
+      setDone({
+        wrote: (res.wrote ?? []) as Api.MapEditWroteT[],
+        lines: pre.files.flatMap((f) => f.changes.flatMap((c) => (c.now ? [c.now] : []))),
+        built: res.built === true,
+      });
+    } catch (e) {
+      const res = e instanceof JobFailed ? e.result : undefined;
+      if (res?.built === false && Array.isArray(res.wrote) && res.wrote.length)
+        setDone({ wrote: res.wrote as Api.MapEditWroteT[], lines: [], built: false });
+      else setError(errorOf(e));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  const undo = async () => {
+    if (!done) return;
+    setBusy(W.undoing);
+    setError(undefined);
+    try {
+      await p.io.follow("/api/map/edits/undo", { wrote: done.wrote });
+      setUndone(true);
+      setDone(undefined);
+    } catch (e) {
+      setError(errorOf(e));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  if (undone)
+    return (
+      <p role="status" className="ev-say">
+        {W.undone}
+      </p>
+    );
+  if (done)
+    return (
+      <div className="stack" role="status">
+        <p className="ev-say">{done.built ? W.connected(v.fromName, v.toName) : W.savedNotBuilt}</p>
+        {done.lines.length > 0 && (
+          <details>
+            <summary className="hud">{W.wrote}</summary>
+            <pre className="mono">{done.lines.join("\n")}</pre>
+          </details>
+        )}
+        <p className="hud">{W.notProposed}</p>
+        <div className="box-btns">
+          {p.onShown && done.built && (
+            <button type="button" className="btn" onClick={p.onShown}>
+              {W.show}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void undo()}
+            disabled={!!busy}
+            aria-busy={!!busy}
+          >
+            {busy ?? W.undo}
+          </button>
+        </div>
+        <Propose scope="org-pack" />
+      </div>
+    );
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <label htmlFor={`${id}-why`} className="hud">
+        {W.why}
+      </label>
+      <textarea
+        id={`${id}-why`}
+        className="field"
+        rows={2}
+        maxLength={500}
+        value={why}
+        aria-describedby={`${id}-hint`}
+        onChange={(e) => setWhy(e.target.value)}
+      />
+      <span id={`${id}-hint`} className="hud">
+        {W.whyShort}
+      </span>
+      <label className="row" style={{ gap: 6 }}>
+        <input type="checkbox" checked={planned} onChange={(e) => setPlanned(e.target.checked)} />
+        {W.planned}
+      </label>
+      <button
+        type="button"
+        className="btn primary"
+        disabled={!ok || !!busy}
+        aria-busy={!!busy}
+        onClick={() => void go()}
+      >
+        {busy ?? W.declare}
+      </button>
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}

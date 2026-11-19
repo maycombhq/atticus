@@ -8146,4 +8146,77 @@ export const COPY = {
       returned: "returned",
     } as Record<string, string>,
   },
+  // ---------------------------------------------------------------- ADR 0204: Connect A to B
+  // (a block of its own: the wording branch edits the rest of this file broadly).
+  connectAB: {
+    title: (caller: string, callee: string) => `Connect ${caller} to ${callee}`,
+    calls: (a: string, b: string) => `${a} calls ${b}`,
+    direction: "Which way the calls go",
+    pickOther: "The other box",
+    pickOtherNone: "Pick a box",
+    loading: "Reading what connects the two boxes…",
+    mechanism: {
+      calls: (n: number, a: string, b: string, k: number) =>
+        `Atticus found ${n} call${n === 1 ? "" : "s"} in ${a}'s code that look${n === 1 ? "s" : ""} like ${n === 1 ? "it goes" : "they go"} to ${b}. The ${k} it is sure of ${k === 1 ? "is" : "are"} ticked.`,
+      connected: (a: string, b: string, n: number) =>
+        `${a} already calls ${b}: ${n} call${n === 1 ? "" : "s"} read from code. There is nothing to add.`,
+      declared: (name: string, date: string, why: string) =>
+        `${name} declared this arrow on ${date}: "${why}".`,
+      declare: (a: string, b: string, name: string) =>
+        `Atticus found no call in ${a}'s code that goes to ${b}. You can still draw the arrow: it will be your word, drawn dashed and marked "declared by ${name}".`,
+      needs: "Something is missing before these two boxes can be connected:",
+    },
+    noneOfThese: "None of these: declare the arrow instead",
+    why: "Why is it so? (your words, kept with the arrow)",
+    whyShort: "Say why in a few words (3 to 500 characters).",
+    planned: "Not built yet",
+    declare: "Connect: declare the arrow",
+    declaring: "Connecting…",
+    connected: (a: string, b: string) => `Connected: ${a} → ${b} is on the map.`,
+    savedNotBuilt:
+      "Saved, not built: the build waits for you to confirm what it removes. Review it on Set up › Scans › Catalog builds.",
+    wrote: "What was written",
+    notProposed: "Not proposed yet: only this machine has it.",
+    show: "Show the arrow",
+    undo: "Undo",
+    undoing: "Undoing…",
+    undone: "Undone: what this wrote is taken back, and the map built again.",
+    remove: "Remove it",
+    superseded: (a: string, b: string, n: number, name: string, date: string) =>
+      `The code now shows ${a} calling ${b} (${n} call${n === 1 ? "" : "s"}). The arrow ${name} declared on ${date} is no longer needed.`,
+    retire: "Retire the declared arrow",
+    retired: "Retired: the declared arrow is out of the profile.",
+    declaredPanel: (name: string, date: string, a: string, b: string, why: string) =>
+      `${name} declared on ${date} that ${a} calls ${b}: "${why}". No code was read for this arrow.`,
+    declaredBy: (name: string) => `declared by ${name}`,
+    need: {
+      "pick-repo": (system: string, n: number) => `${system} holds ${n} repos. Which one?`,
+      "no-repo": (system: string) => `${system} has no repo on the map yet.`,
+      read: (box: string) => `${box} hasn't been read yet.`,
+      verify: (box: string) => `${box}'s facts are read but not checked yet.`,
+      "add-system": (label: string) => `${label} is on the map because code names it.`,
+    },
+    toItself: (system: string) => `Connect to ${system} itself`,
+    addRepo: "Add its repo…",
+    readNow: (box: string) => `Read ${box} now`,
+    checkNow: (box: string) => `Check ${box}'s facts now`,
+    addAndGo: (label: string) => `Add ${label} and continue`,
+    declareNow: "Declare the arrow now",
+    details: "Details",
+    // ADR 0204 5.2 and 5.3: nine statuses shown as four, ten reasons as four; the exact one kept.
+    shown: {
+      loose: "no arrow yet",
+      goes: (box: string) => `goes to ${box}`,
+      here: "goes here already",
+      by: (name: string) => `connected by ${name}`,
+      ai: "connected by AI, not confirmed",
+    },
+    reason: {
+      address: "its address isn't known",
+      nothing: "nothing on the map serves it",
+      kind: "Atticus can't match this kind",
+      none: "you said it calls nothing here",
+    },
+    exact: (word: string) => `exactly: ${word}`,
+  },
 } as const;

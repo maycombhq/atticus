@@ -1,15 +1,7 @@
-import { join } from "node:path";
-import {
-  Api,
-  factIdPart,
-  factsDirOf,
-  loadOrgPack,
-  orgPackDirOf,
-  type OrgPack,
-} from "@maycombhq/core";
+import { Api, factIdPart, loadOrgPack, orgPackDirOf, type OrgPack } from "@maycombhq/core";
 import { estateFacts, estateRepos } from "@maycombhq/scanner";
 import { badRequest, notFound, type Router, type ServerContext } from "@maycombhq/server";
-import { arrowOf, boxWords, knownEnd, parseBox, realCalls } from "./connect-arrows.js";
+import { arrowOf, boxWords, knownEnd, parseBox } from "./connect-arrows.js";
 import { lastBuildOf } from "./build-report.js";
 import { candidatesOf, linksJob, type LinkSteps } from "./ui-api-links.js";
 
@@ -62,8 +54,6 @@ export async function connectView(
   const base = { from, to, fromName: a.name, toName: b.name, existing: 0 };
   const needs = [a.need, b.need].filter((x): x is Api.ConnectNeedT => !!x);
   const declared = arrowOf(root, op, from, to);
-  const find = from.repo ? await findEntryOf(root, from.repo, to) : undefined;
-  const extra = { ...(find ? { find } : {}) };
   if (declared) {
     const shown = (await lastBuildOf(root))?.declaredSuperseded?.find(
       (x) =>
@@ -76,11 +66,10 @@ export async function connectView(
       needs,
       declared,
       ...(shown ? { superseded: { calls: shown.calls }, existing: shown.calls } : {}),
-      ...extra,
     };
   }
   if (needs.some((n) => n.need !== "read" && n.need !== "verify"))
-    return { ...base, mechanism: "needs", needs, ...extra };
+    return { ...base, mechanism: "needs", needs };
   // An outside system calling a gateway: its routes can be declared too (ADR 0200's list).
   const routes =
     !!from.system && /^gateway(-|$)/.test(estateRepos(op).find((r) => r.id === to.repo)?.type ?? "")
@@ -110,7 +99,7 @@ export async function connectView(
             : `atticus map --all --repos ${x.repo}`,
       });
   if (!from.repo || state(from.repo) || (to.system && !knownOutside(op, to.system)))
-    return { ...base, mechanism: "declare", needs, ...routes, ...extra };
+    return { ...base, mechanism: "declare", needs, ...routes };
   const { view } = await candidatesOf(root, from.repo, to, s);
   // B.1: any call of A's not inside A that doesn't go to B already could be B's.
   const here = view.calls.filter((c) => c.status === "here" || c.status === "paired");
@@ -123,7 +112,6 @@ export async function connectView(
     needs,
     candidates: view,
     ...routes,
-    ...extra,
   };
 }
 
@@ -132,17 +120,6 @@ const knownOutside = (op: OrgPack, id: string) =>
   op.profiles.some((p) =>
     (p.profile?.systems ?? []).some((s) => s.id === id && s.boundary !== "product"),
   );
-
-/** The last find's entry for this callee (A.6), from `facts/<A>.find.yaml`. */
-export async function findEntryOf(
-  root: string,
-  repo: string,
-  to: Api.LinkBoxT,
-): Promise<Api.FindEntryViewT | undefined> {
-  const { readFindReport } = await import("./connect-find.js");
-  const entries = await readFindReport(join(factsDirOf(root), `${repo}.find.yaml`));
-  return entries.find((e) => boxWords(e.to) === boxWords(to) && !!e.to.repo === !!to.repo);
-}
 
 export function uiConnectRoutes(r: Router, ctx: ServerContext): Router {
   return r.add("GET", "/api/connect", async ({ query }) => {

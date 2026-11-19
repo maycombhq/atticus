@@ -18,9 +18,10 @@ import { CatalogEmpty } from "../../app/app-step.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
-import { ConnectPanel, type BoxChoice } from "./Connect.js";
+import { type BoxChoice } from "./Connect.js";
+import { ConnectAB } from "./ConnectAB.js";
 import { OwnerPanel } from "./Owner.js";
-import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
+import { AddBoxPanel, BoxCorrections } from "./Declare.js";
 import { CanvasTools, type ToolsState } from "./Tools.js";
 import { CanvasLegend, IconButton, MapBar } from "./MapBar.js";
 import { OpenCode } from "./OpenCode.js";
@@ -225,14 +226,14 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     setPickedBox(id);
   };
   // G1 (ADR 0174): connecting a repo's box to another, call by call.
-  const [connecting, setConnecting] = useState<{ from: string; initial?: BoxChoice } | undefined>();
+  // ADR 0204: "Connect to…" on every box; `initial`, the box a line drawn ended on.
+  const [connecting, setConnecting] = useState<
+    { from: string; a: BoxChoice; initial?: BoxChoice } | undefined
+  >();
   // G2 (ADR 0174): setting a repo's owner and system.
   const [owning, setOwning] = useState<string | undefined>();
   // G3 (ADR 0174): declaring a system's link, and adding to the picture.
   // ADR 0200: `target`, the repo a line drawn from the system ended on.
-  const [declaring, setDeclaring] = useState<
-    { system: string; label: string; target?: string } | undefined
-  >();
   const [adding, setAdding] = useState(false);
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
@@ -706,8 +707,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     arrangement.key === key;
   const reveal = revealOf({
     adding,
-    connecting,
-    declaring,
+    connecting: connecting
+      ? { from: `${connecting.from}>${connecting.initial ? say(connecting.initial.box) : ""}` }
+      : undefined,
+    declaring: undefined,
     owning,
     pickedLink,
     pickedBox,
@@ -1002,15 +1005,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     const c = connectDrawn(find(a), find(b));
                     // Said, not silently dropped: why a line connects nothing.
                     if ("say" in c) return flash({ text: c.say });
-                    // ADR 0200: from an outside system, Declare a link, the ends as drawn. One
-                    // panel for the line: the other kind, open for another line, closes.
-                    if ("declare" in c) {
-                      setConnecting(undefined);
-                      setDeclaring(c.declare);
-                    } else {
-                      setDeclaring(undefined);
-                      setConnecting(c);
-                    }
+                    // ADR 0204: one panel for every line, the ends as drawn (ADR 0200).
+                    setConnecting(c);
                   }}
                   aside={
                     // Beta.28: results here are one line and one button; the rest full width.
@@ -1125,20 +1121,17 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                             under={under}
                             above={above}
                             contracts={findings}
-                            {...(boxOf(sel)?.repo
-                              ? {
-                                  onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
-                                  onOwner: () => setOwning(boxOf(sel)!.repo!),
-                                }
-                              : boxOf(sel)?.system
+                            {...((b) =>
+                              b
                                 ? {
-                                    onDeclare: () =>
-                                      setDeclaring({
-                                        system: boxOf(sel)!.system!,
-                                        label: sel.label,
-                                      }),
+                                    // ADR 0204 1.1: one Connect to… on every box.
+                                    onConnect: () =>
+                                      setConnecting({ from: say(b), a: choiceOf(sel, b) }),
                                   }
-                                : {})}
+                                : {})(drawnBoxOf(sel) ?? boxOf(sel))}
+                            {...(boxOf(sel)?.repo
+                              ? { onOwner: () => setOwning(boxOf(sel)!.repo!) }
+                              : {})}
                             {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                               ? {
                                   here: {
@@ -1152,21 +1145,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                           <p>{WORDS.pick}</p>
                         )}
                         {connecting && (
-                          <ConnectPanel
-                            key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
-                            from={connecting.from}
-                            boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
-                            {...(connecting.initial ? { initial: connecting.initial } : {})}
+                          <ConnectAB
+                            key={`${connecting.from}>${connecting.initial ? say(connecting.initial.box) : ""}`}
+                            a={connecting.a}
+                            {...(connecting.initial ? { b: connecting.initial } : {})}
+                            boxes={boxes}
                             onClose={() => setConnecting(undefined)}
-                          />
-                        )}
-                        {declaring && (
-                          <DeclarePanel
-                            key={`${declaring.system}>${declaring.target ?? ""}`}
-                            system={declaring.system}
-                            label={declaring.label}
-                            {...(declaring.target ? { target: declaring.target } : {})}
-                            onClose={() => setDeclaring(undefined)}
+                            onShown={() => {
+                              setConnecting(undefined);
+                              reloadViews();
+                            }}
                           />
                         )}
                         {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
@@ -1278,46 +1266,28 @@ const choiceOf = (n: Api.HierNodeT, b: Api.LinkBoxT): BoxChoice =>
     ? { label: `${WORDS.kindWord.repo}: ${b.repo}`, box: b }
     : { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b };
 
-/** What a line drawn on the canvas opens: Connect, Declare a link, or words for why neither. */
-export type DrawnLine =
-  | { from: string; initial: BoxChoice }
-  | { declare: { system: string; label: string; target: string } }
-  | { say: string };
+/** What a line drawn on the canvas opens: Connect, or words for why not. */
+export type DrawnLine = { from: string; a: BoxChoice; initial: BoxChoice } | { say: string };
+
+/** A box as GET /api/connect names it. */
+export const say = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
 
 /**
- * G1 (ADR 0174), ADR 0200: what a line drawn on the canvas from box `a` to box `b` opens. The
- * box the line starts on is the caller, always: what a person drew is never turned round.
- *
- * - From a repo (or its component, or a system holding one repo) to another box: Connect, the
- *   repo's calls paired with the other box's APIs.
- * - From an outside system (no code in the estate, so no call to pair) to a repo: Declare a
- *   link, the system as the caller and the repo's gateway routes to pick from.
- * - A system with several repos or none at either end, two outside systems, one repo to itself,
- *   or a box that is none of these: said, by name, with what to do.
+ * ADR 0204 1.1 (and ADR 0200): what a line drawn on the canvas from box `a` to box `b` opens:
+ * Connect <A> to <B>, the box it starts on the caller, never turned round. A system of the estate
+ * with one repo is that repo; one with several, or none, is asked about in the panel (`needs`).
+ * Said, not opened, only for a box drawn to itself and for a node that is no box.
  */
 export function connectDrawn(
   a: Api.HierNodeT | undefined,
   b: Api.HierNodeT | undefined,
 ): DrawnLine {
   const C = COPY.connect;
-  const from = drawnBoxOf(a);
-  const to = drawnBoxOf(b);
-  // An end that is no one box: a system of the estate with several repos, or with none.
-  for (const n of [a, b]) {
-    if (!n || drawnBoxOf(n) || !boxOf(n)?.system) continue;
-    const repos = n.properties.repos;
-    return {
-      say:
-        Array.isArray(repos) && repos.length > 1 ? C.dropSeveral(n.label) : C.dropNoRepo(n.label),
-    };
-  }
+  const from = drawnBoxOf(a) ?? boxOf(a);
+  const to = drawnBoxOf(b) ?? boxOf(b);
   if (!a || !b || !from || !to) return { say: C.dropNeedsRepo };
-  if (from.system)
-    return to.repo
-      ? { declare: { system: from.system, label: a.label, target: to.repo } }
-      : { say: C.dropTwoOutside(a.label, b.label) };
-  if (to.repo === from.repo) return { say: C.dropSameRepo };
-  return { from: from.repo!, initial: choiceOf(b, to) };
+  if (say(from) === say(to)) return { say: C.dropSameRepo };
+  return { from: say(from), a: choiceOf(a, from), initial: choiceOf(b, to) };
 }
 
 export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {

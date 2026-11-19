@@ -39,7 +39,7 @@ export interface StagedDelete {
  * a repo's calls with the other box's APIs, from a repo's box (`pair`, ADR 0174).
  */
 export type AddLink =
-  | { by: "declare"; add: Api.MapEditAddT }
+  | { by: "declare"; add: Exclude<Api.MapEditAddT, { kind: "link" }> }
   | { by: "pair"; pair: Api.MapEditPairT; from: string; to: string };
 
 /** Where an add is drawn until the map is built: its two boxes, when the person said them. */

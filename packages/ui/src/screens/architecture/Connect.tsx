@@ -99,6 +99,27 @@ export function howWords(c: Api.CandidateCallViewT, me?: string): string | undef
   }
 }
 
+/** ADR 0204 5.2: the status a row shows, of four; the exact one is its detail. */
+export function shownStatus(c: Api.CandidateCallViewT): string {
+  if (c.status === "here") return COPY.connectAB.shown.here;
+  if (c.status === "paired")
+    return c.pairedAi ? COPY.connectAB.shown.ai : COPY.connectAB.shown.by(c.pairedBy ?? "");
+  if (c.status === "joined" && c.joins) return COPY.connectAB.shown.goes(c.joins);
+  return COPY.connectAB.shown.loose;
+}
+
+/** ADR 0204 5.3: the reason a call was left, of four; undefined for one not in the table. */
+export function shownReason(why: string | undefined): string | undefined {
+  if (!why) return undefined;
+  if (["no-host", "unresolved-placeholder", "topic-unresolved"].includes(why))
+    return COPY.connectAB.reason.address;
+  if (["host-no-route", "label-no-route", "target-no-route", "topic-unheard"].includes(why))
+    return COPY.connectAB.reason.nothing;
+  if (["generic-path", "type-not-joined"].includes(why)) return COPY.connectAB.reason.kind;
+  if (why === "answered-none") return COPY.connectAB.reason.none;
+  return undefined;
+}
+
 /** The shortest reason that says something. */
 const REASON_MIN = 3;
 
@@ -633,7 +654,11 @@ export function Pairing(p: {
           </span>
           <span className="chip dim box-now">
             <span className="sr">{C.col.status}: </span>
-            {C.status[c.status]}
+            {/* ADR 0204 5.2: one of four words; the exact status is the row's detail. */}
+            <span title={COPY.connectAB.exact(C.status[c.status] ?? c.status)}>
+              {shownStatus(c)}
+            </span>
+            <span className="sr"> ({COPY.connectAB.exact(C.status[c.status] ?? c.status)})</span>
           </span>
         </label>
         {c.status === "undrawn" && c.joins ? (
@@ -665,7 +690,14 @@ export function Pairing(p: {
               : C.joinsNow(c.joins)}
           </span>
         ) : (
-          c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>
+          c.why && (
+            // ADR 0204 5.3: one of four reasons, today's exact words beside it.
+            <span className="box-why">
+              {shownReason(c.why)
+                ? `${shownReason(c.why)} (${C.leftWhy[c.why] ?? c.why})`
+                : (C.leftWhy[c.why] ?? c.why)}
+            </span>
+          )
         )}
         <select
           className="field"

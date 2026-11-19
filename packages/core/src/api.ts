@@ -732,11 +732,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `kind: link` (a declared arrow into the profile's `links`, C6 version 3; 409 over a real call
  *   or the same pair), and its undo takes `kind: link`. POST /api/map/edits takes an `add` of
  *   `kind: link`, and its result says what each change wrote (`wrote`), which POST
- *   /api/map/edits/undo takes back, then builds once. POST /api/setup/repos/run adds, syncs,
- *   reads and applies new repos as one job (`ReposRunResult`, its `parts`). POST
- *   /api/connect/find reads a declared arrow's caller for the call (a job; `FindResult`), and
- *   GET /api/connect carries the last find's entry (`find`). GET /api/boxes/corrections lists a
- *   box's declared arrows (`kind: arrow`). An Interface's join says who declared it
+ *   /api/map/edits/undo takes back, then builds once. GET /api/boxes/corrections lists a box's
+ *   declared arrows (`kind: arrow`). An Interface's join says who declared it
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
  */
@@ -6601,26 +6598,6 @@ export const DeclaredArrowView = z.object({
   planned: z.boolean().optional(),
   file: z.string(),
 });
-/**
- * 3.19.0 (ADR 0204 A.6): what the last "Find it in the code" said of one declared arrow, from
- * `facts/<A>.find.yaml`: told from the catalog after the build, never from the session. `facts`
- * are the call facts it rests on; `other` the box the code shows instead (`elsewhere`); `shape`
- * the first found call's type, its exact reason (5.3) and line, for Make this a reading rule.
- */
-export const FindOutcome = z.enum(["found", "found-loose", "elsewhere", "not-found"]);
-export const FindEntryView = z.object({
-  to: LinkBox,
-  at: z.string(),
-  commit: z.string().optional(),
-  outcome: FindOutcome,
-  facts: z.array(z.string()),
-  looked: z.array(z.string()),
-  other: z.string().optional(),
-  rejected: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
-  shape: z
-    .object({ type: z.string(), why: z.string().optional(), at: z.string(), value: z.string() })
-    .optional(),
-});
 /** 3.19.0 (ADR 0204 3.1): what is missing before two boxes can be connected, each with its fix. */
 export const ConnectNeed = z.object({
   need: z.enum(["pick-repo", "no-repo", "read", "verify", "add-system"]),
@@ -6655,7 +6632,6 @@ export const ConnectView = z.object({
   superseded: z.object({ calls: z.number().int().positive() }).optional(),
   /** The callee is a gateway and the caller an outside system: its routes can be declared. */
   routes: z.boolean().optional(),
-  find: FindEntryView.optional(),
 });
 /** 3.19.0: a declared arrow asked for (POST /api/declared-links `kind: link`, Edit the map). */
 export const ArrowRequestFields = {
@@ -6686,62 +6662,12 @@ export const MapEditWrote = z.union([
 ]);
 /** 3.19.0: POST /api/map/edits/undo, exactly what an Apply wrote, then one build. */
 export const MapEditsUndoRequest = z.strictObject({ wrote: z.array(MapEditWrote).min(1).max(100) });
-/** 3.19.0 (ADR 0204 decision 4): POST /api/setup/repos/run, add, sync, read and apply in one job. */
-export const ReposRunRequest = z.strictObject({
-  platform: RecordId.optional(),
-  /** The repos to add (as POST /api/setup/repos), or only their ids to continue with. */
-  repos: AddReposRequest.shape.repos,
-  /** Hand-off: the person says they read them with their assistant, so the job goes on to Apply. */
-  read: z.boolean().optional(),
-});
-export const ReposRunPart = z.object({
-  part: z.enum(["add", "sync", "read", "apply"]),
-  state: z.enum(["done", "waiting", "stopped", "failed"]),
-  repos: z.array(
-    z.object({
-      repo: z.string(),
-      state: z.enum(["done", "waiting", "stopped", "failed"]),
-      why: z.string().optional(),
-    }),
-  ),
-});
-export const ReposRunResult = z.object({
-  parts: z.array(ReposRunPart),
-  /** The read waits for the person's assistant: the command to paste (hard rule 4). */
-  handoff: z.object({ command: z.string() }).optional(),
-  /** How many of the repos are on the map, of how many. */
-  done: z.number().int().nonnegative(),
-  of: z.number().int().nonnegative(),
-});
-/** 3.19.0 (ADR 0204 A.9): POST /api/connect/find, a job; its result is FindResult. */
-export const ConnectFindRequest = z.strictObject({
-  from: z.string().min(1).max(200),
-  to: LinkBox,
-  mode: z.enum(["copilot-acp", "hand-off"]).optional(),
-  /** Hand-off: the person's assistant wrote the answer; read it and go on. */
-  read: z.boolean().optional(),
-});
-export const FindResult = z.object({
-  /** The read waits for the person's assistant: the brief and where its answer goes. */
-  handoff: z.object({ brief: z.string(), answer: z.string(), command: z.string() }).optional(),
-  entry: FindEntryView.optional(),
-  brief: z.string(),
-  report: z.string().optional(),
-  /** Lines of the answer left out (an id that is no fact of A, a file A doesn't have). */
-  leftOut: z.array(z.string()).default([]),
-});
 export type DeclaredArrowViewT = z.infer<typeof DeclaredArrowView>;
-export type FindEntryViewT = z.infer<typeof FindEntryView>;
 export type ConnectNeedT = z.infer<typeof ConnectNeed>;
 export type ConnectViewT = z.infer<typeof ConnectView>;
 export type DeclareArrowRequestT = z.infer<typeof DeclareArrowRequest>;
 export type UndeclareArrowRequestT = z.infer<typeof UndeclareArrowRequest>;
 export type MapEditWroteT = z.infer<typeof MapEditWrote>;
-export type ReposRunRequestT = z.infer<typeof ReposRunRequest>;
-export type ReposRunPartT = z.infer<typeof ReposRunPart>;
-export type ReposRunResultT = z.infer<typeof ReposRunResult>;
-export type ConnectFindRequestT = z.infer<typeof ConnectFindRequest>;
-export type FindResultT = z.infer<typeof FindResult>;
 
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
@@ -9519,17 +9445,6 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
-  "/api/connect/find": {
-    post: {
-      id: "findDeclaredArrow",
-      summary:
-        "3.19.0 (ADR 0204 A): find a declared arrow in the caller's code, as a local job: the brief from the profile's item (a hint, never evidence), the assistant's session or the hand-off, verify --write, and the outcome told from the catalog after the build. Its job's result is FindResult",
-      tag: "scans",
-      body: ConnectFindRequest,
-      ok: { status: 202, schema: "JobAccepted", description: "Started: its result is FindResult" },
-      errors: [400, 404, 409],
-    },
-  },
   "/api/map/edits/undo": {
     post: {
       id: "undoMapEdits",
@@ -9541,21 +9456,6 @@ const OPS: Record<string, Record<string, Op>> = {
         status: 202,
         schema: "JobAccepted",
         description: "Started: its result is MapEditsResult",
-      },
-      errors: [400, 409],
-    },
-  },
-  "/api/setup/repos/run": {
-    post: {
-      id: "runNewRepos",
-      summary:
-        "3.19.0 (ADR 0204 decision 4): add, sync, read and apply new repos as one local job of four parts, worked out from disk so it continues where it stopped; the read pauses with the command to paste where the app can't start the assistant. Its job's result is ReposRunResult",
-      tag: "workspace",
-      body: ReposRunRequest,
-      ok: {
-        status: 202,
-        schema: "JobAccepted",
-        description: "Started: its result is ReposRunResult",
       },
       errors: [400, 409],
     },
@@ -10707,8 +10607,6 @@ export function openApiDocument(): Record<string, unknown> {
     FileChangeResult,
     DeclarableRoutesView,
     ConnectView,
-    FindResult,
-    ReposRunResult,
     SketchStrokeRequest,
     SketchResult,
     AddableView,

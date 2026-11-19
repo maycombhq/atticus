@@ -91,17 +91,17 @@ const PAYMENTS: StagedDelete = {
   to: "payments-api",
   interfaces: ["if-post-payments", "if-get-payment"],
 };
-const GET: Api.MapEditAddT = {
+const GET: Exclude<Api.MapEditAddT, { kind: "link" }> = {
   kind: "call",
   system: "northwind-pay",
   route: "GET /northwind-pay/1.0/payments/{id}",
 };
-const POST: Api.MapEditAddT = {
+const POST: Exclude<Api.MapEditAddT, { kind: "link" }> = {
   kind: "call",
   system: "northwind-pay",
   route: "POST /northwind-pay/1.0/payments",
 };
-const TOPIC: Api.MapEditAddT = {
+const TOPIC: Exclude<Api.MapEditAddT, { kind: "link" }> = {
   kind: "topic",
   system: "harbor-ledger",
   topic: "forge.refunds",
@@ -109,7 +109,7 @@ const TOPIC: Api.MapEditAddT = {
 };
 
 /** Declare a link…'s add. */
-const D = (add: Api.MapEditAddT): AddLink => ({ by: "declare", add });
+const D = (add: Exclude<Api.MapEditAddT, { kind: "link" }>): AddLink => ({ by: "declare", add });
 
 /** Three deletes, two adds and a redirect, as the owner's example counts them. */
 function six(): Staged[] {
