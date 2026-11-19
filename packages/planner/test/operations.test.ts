@@ -26,6 +26,7 @@ import {
   smallStage,
   storiesStage,
   suggestedOperationOrder,
+  withOperationStories,
   type Estate,
   type Operation,
 } from "../src/index.js";
@@ -511,6 +512,44 @@ describe("stories and tasks from operations", () => {
           "o3.3 forge-infra after o3.1,o1.3",
         ],
       ],
+    ]);
+  });
+
+  it("adds its rows and lines to what the flows' stories wrote, a person's ticks kept", () => {
+    const o = ops();
+    const flowTasks =
+      "<!-- mark -->\n# Tasks\n\n## forge-orders\n\n- [x] 1.1 Screen the order (story s1-place-order)\n\n## forge-web\n\n- [ ] 2.1 Show the verdict (story s2-show)\n";
+    const out = withOperationStories(
+      operationStories(o.operations, o.waves),
+      undefined,
+      {
+        index:
+          "# Stories\n\n| Story | Title | Repos | Depends on |\n| --- | --- | --- | --- |\n| s1-place-order | Screen | forge-orders |  |\n",
+        tasks: flowTasks,
+      },
+      new Set(["o1.1 Deploy the service on Forge Cloud beside the old one (story o1-deploy-new)"]),
+    );
+    expect(out.tasks.split("\n").slice(3, 13)).toEqual([
+      "## forge-orders",
+      "",
+      "- [x] 1.1 Screen the order (story s1-place-order)",
+      "- [x] o1.1 Deploy the service on Forge Cloud beside the old one (story o1-deploy-new)",
+      "- [ ] o2.1 Carry the stock timeout over to the new platform's settings (story o2-stock-timeout) (after o1.1)",
+      "- [ ] o3.1 Point the gateway route at the new deployment (story o3-switch) (after o1.1)",
+      "",
+      "## forge-web",
+      "",
+      "- [ ] 2.1 Show the verdict (story s2-show)",
+    ]);
+    expect(out.tasks).toContain("\n\n## forge-stock\n\n- [ ] o1.2 ");
+    expect(out.index.split("\n").slice(4, 6)).toEqual([
+      "| s1-place-order | Screen | forge-orders |  |",
+      "| o1-deploy-new | Deploy the service on Forge Cloud beside the old one | forge-orders, forge-stock, forge-infra |  |",
+    ]);
+    expect(Object.keys(out.files)).toEqual([
+      "stories/o1-deploy-new.md",
+      "stories/o2-stock-timeout.md",
+      "stories/o3-switch.md",
     ]);
   });
 
