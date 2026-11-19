@@ -96,3 +96,41 @@ Out of scope, and not to be built: any upload, telemetry, or bundle that holds a
 hash, record, fact, code line or log line from a real estate. `atticus support bundle` (ADR 0050)
 stays as it is: local, read by a person before it goes anywhere, and only where its owner's rules
 allow that.
+
+## Group 5: the change flow as flexible as personas with OpenSpec (design notes first)
+
+Found by walking three kinds of change through the stages by reading the code (nothing was run):
+a new portal no repo holds yet, a move of existing services to another platform, and a new event
+to an existing hub. Other teams reach an OpenSpec change from a free-form requirements file and a
+few personas with their naysayers; Atticus's stages block where its map or its change model has no
+word for the work. The map is the advantage (cited impact, consumers, owners, conflicts, the
+built code checked against the design); the stages are the cost.
+
+| Kind of change               | Today               | First blocker                                                 |
+| ---------------------------- | ------------------- | ------------------------------------------------------------- |
+| New portal, new repos        | Works with friction | `feature.unknown-repo` has no planned-repo exemption          |
+| Move services to a platform  | Blocked             | No step change gives `delta.empty`, then no stories           |
+| New event to an existing hub | Works with friction | `delta.unknown-consumer` for a consumer in a repo nobody read |
+
+21. **The map your personas ask.** `atticus mcp` already serves about 35 read-only tools (ask,
+    impact, search, walk, similar). Ship it as an entry point of its own with a persona
+    instruction, and add `owners`, `consumers_of`, `conflicts` and `similar_changes`. No stage.
+    (Additive C4: small ADR for the new tools.)
+22. **`atticus review <requirements.md>` (ADR).** The deterministic checks that apply and the
+    critic's questions, run over a free-form file with the map as evidence. Every finding is a
+    question with its cited line; nothing blocks. Answers are written back into the file.
+23. **Two speeds per change (ADR, C6).** Quick: requirements, questions, then a plain OpenSpec
+    change (proposal, specs, design, tasks) any team can pick up. Full: the stages, task runs and
+    conformance, for the changes that carry the risk. A change can move from quick to full.
+24. **Accept with a reason (ADR, C3).** A blocking stage finding (`feature.*`, `delta.*`,
+    `stories.*`) can be accepted by a named person with a reason, as critic findings can today.
+    Constitution rules stay as they are (hard rule 6).
+25. **Work that is no runtime step (ADR, C1 and C6).** A work item for deployment, pipeline,
+    config, secret and route, so a migration has stories and tasks with no step change; a change
+    fanned out over N repos with waves, cut-over and rollback.
+26. **Planned and outside parties (ADR).** A planned repo passes the feature stage; a new folder
+    in an empty repo is a note; a consumer in a repo nobody read can be declared; a planned topic
+    carries its schema and settings.
+
+Until these are built, the path that works for all three kinds: write the requirement free-form,
+let the personas ask the map through `atticus mcp`, and create the change with OpenSpec itself.
