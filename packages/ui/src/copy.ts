@@ -8181,6 +8181,8 @@ export const COPY = {
     undo: "Undo",
     undoing: "Undoing…",
     undone: "Undone: what this wrote is taken back, and the map built again.",
+    undoneWaits:
+      "Undone: what this wrote is taken back. The build waits for you: it would also remove records this Undo didn't change.",
     remove: "Remove it",
     superseded: (a: string, b: string, n: number, name: string, date: string) =>
       `The code now shows ${a} calling ${b} (${n} call${n === 1 ? "" : "s"}). The arrow ${name} declared on ${date} is no longer needed.`,

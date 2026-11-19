@@ -14,7 +14,7 @@ vi.mock("react", async () => {
   const { shim } = await import("./support/hooks.js");
   return { ...R, ...shim, default: { ...R, ...shim } };
 });
-vi.mock("../src/app/propose.js", () => ({ Propose: () => null }));
+vi.mock("../src/app/propose.js", () => ({ Propose: () => null, RefusalLink: () => null }));
 const { RunNewRepos } = await import("../src/screens/setup/RunNewRepos.js");
 
 const W = COPY.connectAB;

@@ -12,7 +12,7 @@ import {
   type Loaded,
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
-import { ApplyAndPropose, onWorkChanged, Propose } from "../../app/propose.js";
+import { ApplyAndPropose, onWorkChanged, Propose, RefusalLink } from "../../app/propose.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { onwardGroups, pairedStanding, pairedWho } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
@@ -398,7 +398,7 @@ export function Pairing(p: {
   const [undone, setUndone] = useState<Api.ConnectLinksResultT | undefined>();
   // ADR 0204 decision 2: what the one job wrote and whether it built, for Undo.
   const [applied, setApplied] = useState<{ wrote: Api.MapEditWroteT[]; built: boolean }>();
-  const [appliedUndone, setAppliedUndone] = useState(false);
+  const [appliedUndone, setAppliedUndone] = useState<boolean | Api.BuildRefusalViewT>(false);
   const applyIo = p.apply ?? (p.post ? undefined : APP_APPLY);
   // The review (S2): the Apply offered under a waiting pairing is this panel's own. Once work
   // changed (that Apply ended) the calls are read again, so "not on the map yet" doesn't stay
@@ -638,7 +638,16 @@ export function Pairing(p: {
         setAppliedUndone(true);
         p.cands.reload?.();
       } catch (e) {
-        setError(errorOf(e));
+        // Taken back, the build waiting for a confirm of removals it didn't make (ADR 2.3).
+        const refused =
+          e instanceof JobFailed
+            ? (e.result?.refused as Api.BuildRefusalViewT | undefined)
+            : undefined;
+        if (refused) {
+          setApplied(undefined);
+          setWritten(undefined);
+          setAppliedUndone(refused);
+        } else setError(errorOf(e));
       } finally {
         setUndoing(false);
       }
@@ -1137,9 +1146,12 @@ export function Pairing(p: {
         </div>
       )}
       {appliedUndone && (
-        <p role="status" className="ev-say">
-          {COPY.connectAB.undone}
-        </p>
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {appliedUndone === true ? COPY.connectAB.undone : COPY.connectAB.undoneWaits}
+          </p>
+          {appliedUndone !== true && <RefusalLink refused={appliedUndone} />}
+        </div>
       )}
       {written && !applied && (
         <div className="stack">

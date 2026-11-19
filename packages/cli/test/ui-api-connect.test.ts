@@ -156,7 +156,8 @@ describe("a declared arrow (ADR 0204 1.4 to 1.7, 2.2, 2.4)", () => {
     const u = await job("/api/map/edits/undo", { wrote: written });
     expect(u.state, JSON.stringify(u)).toBe("done");
     expect(u.result.built).toBe(true);
-    expect(parse(profile())).not.toHaveProperty("links");
+    // Byte for byte as before: the version the arrow raised is put back too (the review).
+    expect(profile()).toBe(before);
     expect(await declared()).toHaveLength(0);
   }, 300_000);
 
@@ -275,9 +276,7 @@ describe("what is missing, fixed in the same write (ADR 0204 3.1, 1.3)", () => {
     const u = await job("/api/map/edits/undo", { wrote });
     expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(true);
     expect(profile()).not.toContain("harbor-unknown");
-    expect(profile().replace(/schemaVersion: \d/, "")).toBe(
-      before.replace(/schemaVersion: \d/, ""),
-    );
+    expect(profile()).toBe(before);
   }, 300_000);
 
   it("declares the gateway routes an outside system calls, written and undone in one go", async () => {
@@ -314,4 +313,43 @@ describe("what is missing, fixed in the same write (ADR 0204 3.1, 1.3)", () => {
     expect(u.state, JSON.stringify(u)).toBe("done");
     expect(calls()).not.toContain(say);
   }, 300_000);
+});
+
+describe("Undo keeps to its own (the review of ADR 0204)", () => {
+  const link = { from: { system: OUTSIDE }, to: { repo: B }, why: WHY };
+  it("leaves a removal it didn't make for a person to confirm, and says so", async () => {
+    const j = await job("/api/map/edits", {
+      edits: [{ kind: "add", add: { kind: "link", ...link } }],
+    });
+    expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
+    const wrote = Api.MapEditsResult.parse(j.result).wrote!;
+    // A teammate's change pulled meanwhile drops two systems: the build would remove their records.
+    const kept = profile();
+    writeFileSync(
+      join(g.root, ...PROFILE),
+      kept
+        .split("\n")
+        .filter((l) => !/id: (platform|northwind-pay),/.test(l))
+        .join("\n"),
+    );
+    const records = (await g.interfaces()).length;
+    const u = await job("/api/map/edits/undo", { wrote });
+    expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(false);
+    expect(u.result.refused).toBeDefined();
+    // Nothing of the teammate's removals was written unconfirmed.
+    expect((await g.interfaces()).length).toBe(records);
+    writeFileSync(join(g.root, ...PROFILE), kept.replace(/\nlinks:[\s\S]*$/, "\n"));
+  }, 300_000);
+
+  it("takes back only a repo's corrections or a platform's profile", async () => {
+    const outside = join(g.root, "..", "b30-cn-not-ours.jsonl");
+    writeFileSync(outside, "keep me\n");
+    for (const file of ["../b30-cn-not-ours.jsonl", `facts/${A}.jsonl`, "org-pack/runtime.yaml"]) {
+      const r = await g.call("/api/map/edits/undo", "POST", {
+        wrote: [{ edit: 0, file, lines: ["keep me"] }],
+      });
+      expect(r.status, file).toBe(400);
+    }
+    expect(readFileSync(outside, "utf8")).toBe("keep me\n");
+  }, 120_000);
 });

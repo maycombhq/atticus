@@ -2515,6 +2515,7 @@ export const MapEditsResult = z.object({
           file: z.string(),
           link: z.record(z.string(), z.unknown()),
           addedSystem: z.string().optional(),
+          raisedFrom: z.number().int().optional(),
         }),
         z.object({
           edit: z.number().int(),
@@ -6714,6 +6715,8 @@ export const MapEditWrote = z.union([
     link: DeclaredArrowView,
     /** The system the same write added (3.1), taken away with it while still as added. */
     addedSystem: z.string().optional(),
+    /** The profile's version before the write raised it to 3: Undo puts it back. */
+    raisedFrom: z.number().int().optional(),
   }),
   /** A gateway route a system was declared to call (1.3's "Say which routes"). */
   z.strictObject({

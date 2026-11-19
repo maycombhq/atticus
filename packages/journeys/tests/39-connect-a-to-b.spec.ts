@@ -43,6 +43,7 @@ test("an outside system is connected to a repo by declaring the arrow, in one go
     ).toBeVisible({ timeout: 60_000 });
     return panel;
   };
+  const before = profile();
   const panel = await start();
   const go = panel.getByRole("button", { name: "Connect: declare the arrow" });
   // Why is required.
@@ -65,7 +66,8 @@ test("an outside system is connected to a repo by declaring the arrow, in one go
   await expect(
     panel.getByText("Undone: what this wrote is taken back, and the map built again."),
   ).toBeVisible({ timeout: 120_000 });
-  expect(profile()).not.toContain(WHY);
+  // Byte for byte as it was, its version too.
+  expect(profile()).toBe(before);
 
   // Again, and Show the arrow: dashed, declared by the person.
   await panel.getByRole("button", { name: "Close" }).first().click();

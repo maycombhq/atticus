@@ -8,6 +8,7 @@ import {
   commitCurrent,
   currentSignal,
   declareLink,
+  factsDirOf,
   deserializeRecord,
   loadOrgPack,
   LockHeldError,
@@ -1405,7 +1406,7 @@ export async function applyMapEdits(
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
     const stamp = at.replace(/\D/g, "").slice(0, 14);
-    const { correctionLine, factsDirOf } = await import("@maycombhq/core");
+    const { correctionLine } = await import("@maycombhq/core");
     const records = (
       await (
         await import("@maycombhq/scanner")
@@ -1595,6 +1596,7 @@ export async function applyMapEdits(
             edit: i,
             file: res.rel,
             ...(res.addedSystem ? { addedSystem: res.addedSystem } : {}),
+            ...(res.raisedFrom !== undefined ? { raisedFrom: res.raisedFrom } : {}),
             link: {
               from: a.from,
               to: a.to,
@@ -1701,6 +1703,21 @@ export async function applyMapEdits(
 }
 
 /**
+ * ADR 0204 2.4 (the review): an Undo takes back only what an Apply writes: lines of a repo's
+ * corrections file, or an item of a platform's profile. Any other path is refused whole.
+ */
+export function undoFileOk(root: string, w: Api.MapEditWroteT): boolean {
+  const facts = posix(relative(root, factsDirOf(root)));
+  const pack = posix(relative(root, orgPackDirOf(root)));
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return "lines" in w
+    ? new RegExp(`^${esc(facts)}/[A-Za-z0-9._-]+\\.corrections\\.jsonl$`).test(w.file) &&
+        !w.file.includes("..")
+    : new RegExp(`^${esc(pack)}/profiles/[A-Za-z0-9._-]+/profile\\.yaml$`).test(w.file) &&
+        !w.file.includes("..");
+}
+
+/**
  * ADR 0204 2.4: Undo of an Apply, one local job: exactly what it wrote (its `wrote`), each only
  * while it is still as written (every line on file, the arrow with the same why, who and when),
  * else nothing is removed and what changed is said; then one build. No commit, no push.
@@ -1711,11 +1728,25 @@ export async function undoMapEdits(
   io: Output,
 ): Promise<{ code: number; built: boolean }> {
   let built = false;
+  const bad = wrote.filter((w) => !undoFileOk(root, w));
+  if (bad.length) {
+    io.err(
+      `Nothing was undone: ${bad.map((w) => w.file).join(", ")} ${bad.length === 1 ? "isn't a file" : "aren't files"} an Apply writes (a repo's corrections, or a platform's profile).`,
+    );
+    return { code: 2, built };
+  }
   const code = await locked(root, "Undo", io, async () => {
     const { loadOrgPack, orgPackDirOf, retireArrow } = await import("@maycombhq/core");
     const { arrowOf, endOf } = await import("./connect-arrows.js");
     const { removeCorrectionLines } = await import("./ui-api-links.js");
     const op = await loadOrgPack(orgPackDirOf(root));
+    // What the build would remove before this Undo takes anything back (a teammate's change
+    // pulled meanwhile): never confirmed as the Undo's own (ADR 0195).
+    const pending = new Set(
+      (
+        await buildAndWrite(root, { command: "atticus catalog build", check: true })
+      ).guard.removals.map((x) => x.id),
+    );
     const changed: string[] = [];
     const { declaredOf, undeclareLink } = await import("@maycombhq/core");
     for (const w of wrote) {
@@ -1750,7 +1781,11 @@ export async function undoMapEdits(
         );
       } else {
         const platform = w.file.split("/").slice(-2)[0]!;
-        await retireArrow(root, { from: endOf(w.link.from), to: endOf(w.link.to) }, { platform });
+        await retireArrow(
+          root,
+          { from: endOf(w.link.from), to: endOf(w.link.to) },
+          { platform, ...(w.raisedFrom !== undefined ? { lowerTo: w.raisedFrom } : {}) },
+        );
         io.out(`Took the declared arrow out of ${w.file}.`);
         if (w.addedSystem) {
           const { removeAddedSystem } = await import("@maycombhq/core");
@@ -1766,7 +1801,7 @@ export async function undoMapEdits(
     // What the Undo took back is the build's changed input: the removals it explains are this
     // Undo's own (a declared arrow's profile, a pairing's corrections file).
     const inputs = new Set(wrote.map((w) => ("lines" in w ? w.file : "org-pack")));
-    const c = await buildAfterDecisions(root, new Set(), io, { inputs });
+    const c = await buildAfterDecisions(root, new Set(), io, { inputs, pending });
     built = c === 0;
     return c;
   });

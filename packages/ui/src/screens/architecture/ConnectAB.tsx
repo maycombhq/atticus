@@ -11,7 +11,7 @@ import {
 } from "../../api/client.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobWait } from "../../app/job-wait.js";
-import { Propose } from "../../app/propose.js";
+import { Propose, RefusalLink } from "../../app/propose.js";
 import { ReadRepo } from "../../app/app-step.js";
 import { Command } from "../work/RunNext.js";
 import { useMe } from "../../app/me.js";
@@ -553,6 +553,7 @@ export function DeclareArrow(p: {
   const [error, setError] = useState<string | undefined>();
   const [done, setDone] = useState<Done | undefined>();
   const [undone, setUndone] = useState(false);
+  const [waits, setWaits] = useState<Api.BuildRefusalViewT | undefined>();
   // ADR 0204 1.3: an outside system calling a gateway may say which routes; none, the arrow.
   const [routes, setRoutes] = useState<Set<string>>(new Set());
   const ok =
@@ -609,13 +610,29 @@ export function DeclareArrow(p: {
       setUndone(true);
       setDone(undefined);
     } catch (e) {
-      setError(errorOf(e));
+      // Taken back, the build waiting for a confirm of removals it didn't make (ADR 2.3).
+      const refused =
+        e instanceof JobFailed
+          ? (e.result?.refused as Api.BuildRefusalViewT | undefined)
+          : undefined;
+      if (refused) {
+        setWaits(refused);
+        setUndone(true);
+        setDone(undefined);
+      } else setError(errorOf(e));
     } finally {
       setBusy(undefined);
     }
   };
   if (undone)
-    return (
+    return waits ? (
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {W.undoneWaits}
+        </p>
+        <RefusalLink refused={waits} />
+      </div>
+    ) : (
       <p role="status" className="ev-say">
         {W.undone}
       </p>

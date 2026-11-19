@@ -661,9 +661,14 @@ export async function declareArrow(
   written: boolean;
   before: string;
   wrote?: string;
+  /** The version the profile was at, when this write raised it (Undo puts it back). */
+  raisedFrom?: number;
 }> {
   const f = await profileOf(root, o.platform);
-  const doc = parseDocument(migrateProfileText(f.text, PROFILE_SCHEMA_VERSION).text);
+  const was = (parseDocument(f.text).toJS() as { schemaVersion?: unknown } | null)?.schemaVersion;
+  const migrated = migrateProfileText(f.text, PROFILE_SCHEMA_VERSION);
+  const raised = migrated.changed && typeof was === "number" ? { raisedFrom: was } : {};
+  const doc = parseDocument(migrated.text);
   if (o.addSystem) {
     let seq = doc.get("systems");
     if (!isSeq(seq)) {
@@ -709,10 +714,10 @@ export async function declareArrow(
   list.add(item);
   const after = checkedProfile(f.rel, f.text, doc);
   const changes = changedLines(f.text, after);
-  if (o.preview) return { rel: f.rel, changes, written: false, before: f.raw };
+  if (o.preview) return { rel: f.rel, changes, written: false, before: f.raw, ...raised };
   const wrote = inEol(after, f.eol);
   await writeFileIfUnchanged(f.path, f.raw, wrote);
-  return { rel: f.rel, changes, written: true, before: f.raw, wrote };
+  return { rel: f.rel, changes, written: true, before: f.raw, wrote, ...raised };
 }
 
 /**
@@ -723,7 +728,15 @@ export async function declareArrow(
 export async function retireArrow(
   root: string,
   a: { from: ArrowEnd; to: ArrowEnd },
-  o: { platform: string; preview?: boolean },
+  o: {
+    platform: string;
+    preview?: boolean;
+    /**
+     * Undo (ADR 0204 2.4): the version the arrow's write raised the profile from, put back on
+     * its own line when no arrow is left, so the file is again exactly as it was.
+     */
+    lowerTo?: number;
+  },
 ): Promise<{
   rel: string;
   changes: LineChange[];
@@ -740,11 +753,16 @@ export async function retireArrow(
       "not-found",
       `${f.rel} declares no arrow ${arrowEndKey(a.from)} → ${arrowEndKey(a.to)} (retired already?).`,
     );
-  const after = withoutItem(
+  let after = withoutItem(
     f.text,
     list.items[i] as { range?: [number, number, number] | null },
     list.items.length === 1,
   );
+  if (after !== undefined && o.lowerTo !== undefined && isSeq(list) && list.items.length === 1)
+    after = after.replace(
+      new RegExp(`^schemaVersion:[ \\t]*${PROFILE_SCHEMA_VERSION}([ \\t]*(#.*)?)$`, "m"),
+      `schemaVersion: ${o.lowerTo}$1`,
+    );
   if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
     throw new DeclareError(
       "invalid",
