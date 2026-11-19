@@ -188,6 +188,8 @@ describe("atticus skills write: a persona's tools and hand-offs (ADR 0201)", () 
 describe("atticus skills write: the metarepo's .vscode/mcp.json and .mcp.json (ADR 0201)", () => {
   // Through node and a launcher, so one committed file starts it on Windows too (atticus.cmd).
   const SERVER = { type: "stdio", command: "node", args: ["-e", ATTICUS_MCP_LAUNCHER] };
+  const unreadNote = (path: string, key: string) =>
+    `${path} doesn't read as JSON, so it is left as it is. Add the atticus server to its ${key} yourself: copy the "atticus" entry from plugins/copilot/.vscode/mcp.json in Atticus's repository (the guide's troubleshooting page has it too).`;
 
   it("writes Claude Code's project .mcp.json too, so the server is named atticus with or without the plugin", async () => {
     const root = metarepo();
@@ -233,9 +235,9 @@ describe("atticus skills write: the metarepo's .vscode/mcp.json and .mcp.json (A
     const o = io();
     expect(await skillsWriteCommand(odd, {}, o.io)).toBe(0);
     expect(read(odd, ".mcp.json")).toBe("{ not json");
-    expect(o.out.join("\n")).toContain(
-      ".mcp.json doesn't read as JSON, so it is left as it is. Add the atticus server to its mcpServers yourself:",
-    );
+    expect(o.out).toContain(unreadNote(".mcp.json", "mcpServers"));
+    // The entry is pointed to, never printed: the launcher is some 800 characters of code.
+    expect(o.out.join("\n")).not.toContain(ATTICUS_MCP_LAUNCHER);
   });
 
   it("writes it when there is none, and --check says it is behind until then", async () => {
@@ -270,6 +272,52 @@ describe("atticus skills write: the metarepo's .vscode/mcp.json and .mcp.json (A
     expect(await skillsWriteCommand(root, { check: true }, io().io)).toBe(0);
   });
 
+  it.each([
+    [".vscode/mcp.json", "servers"],
+    [".mcp.json", "mcpServers"],
+  ] as const)(
+    "%s with an atticus server that starts a bare atticus is left as it is, with one note",
+    async (path, key) => {
+      const root = metarepo();
+      // As Atticus wrote it before beta.30, and as a person writes it by hand.
+      const old = JSON.stringify(
+        { [key]: { atticus: { type: "stdio", command: "atticus", args: ["mcp"] } } },
+        null,
+        2,
+      );
+      write(root, path, old);
+      const note = `${path} has an atticus server that starts a bare "atticus", which VS Code can start on Windows and some editors can't. To start it the same way everywhere, take that entry out and run atticus skills write again: it adds the entry that does (the one in plugins/copilot/.vscode/mcp.json in Atticus's repository).`;
+      const w = io();
+      expect(await skillsWriteCommand(root, {}, w.io)).toBe(0);
+      expect(read(root, path)).toBe(old);
+      expect(w.out.filter((l) => l.startsWith(`${path} has an atticus server`))).toEqual([note]);
+      // It is not behind: the file is the person's, and --check keeps to what is behind.
+      expect(await skillsWriteCommand(root, { check: true }, io().io)).toBe(0);
+      // As the note says: taken out, the next write adds the entry that starts everywhere.
+      write(root, path, JSON.stringify({ [key]: {} }));
+      const again = io();
+      expect(await skillsWriteCommand(root, {}, again.io)).toBe(0);
+      expect(JSON.parse(read(root, path))).toEqual({ [key]: { atticus: SERVER } });
+      expect(again.out.join("\n")).not.toContain("has an atticus server");
+    },
+  );
+
+  it("says nothing of an atticus server that starts anything else: a path, cmd /c, or the launcher", async () => {
+    for (const server of [
+      { command: "/opt/forge/bin/atticus", args: ["mcp"] },
+      { command: "cmd", args: ["/c", "atticus", "mcp"] },
+      { command: "atticus.cmd", args: ["mcp"] },
+      SERVER,
+      "atticus",
+    ]) {
+      const root = metarepo();
+      write(root, ".vscode/mcp.json", JSON.stringify({ servers: { atticus: server } }));
+      const w = io();
+      expect(await skillsWriteCommand(root, {}, w.io)).toBe(0);
+      expect(w.out.join("\n")).not.toContain(".vscode/mcp.json");
+    }
+  });
+
   it("leaves a file that has an atticus server, or doesn't read as JSON, exactly as it is", async () => {
     const own = metarepo();
     const mine =
@@ -286,9 +334,8 @@ describe("atticus skills write: the metarepo's .vscode/mcp.json and .mcp.json (A
     const o = io();
     expect(await skillsWriteCommand(odd, {}, o.io)).toBe(0);
     expect(read(odd, ".vscode/mcp.json")).toBe(jsonc);
-    expect(o.out.join("\n")).toContain(
-      ".vscode/mcp.json doesn't read as JSON, so it is left as it is. Add the atticus server to its servers yourself:",
-    );
+    expect(o.out).toContain(unreadNote(".vscode/mcp.json", "servers"));
+    expect(o.out.join("\n")).not.toContain(ATTICUS_MCP_LAUNCHER);
     // Nothing Atticus can write, so nothing is behind.
     expect(await skillsWriteCommand(odd, { check: true }, io().io)).toBe(0);
   });

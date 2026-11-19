@@ -29,6 +29,12 @@ const WIN = process.platform === "win32";
 type Entry = { command: string; args: readonly string[] };
 type Reply = { id?: number; result?: Record<string, unknown>; error?: unknown };
 
+/**
+ * Each start is three processes one after another (node with the launcher, the shell or the
+ * shim, then the command line's own Node), which a loaded machine takes its time over.
+ */
+const START = 30_000;
+
 let env: NodeJS.ProcessEnv;
 let cwd: string;
 
@@ -153,42 +159,122 @@ const expectTools = async (entry: Entry) => {
 };
 
 describe("an editor starts atticus mcp from the files Atticus writes (beta.30)", () => {
-  it("the entry .vscode/mcp.json and .mcp.json get: started as written, it lists the tools", async () => {
-    await expectTools(atticusMcpServer());
-  }, 15_000);
+  it(
+    "the entry .vscode/mcp.json and .mcp.json get: started as written, it lists the tools",
+    async () => {
+      await expectTools(atticusMcpServer());
+    },
+    START,
+  );
 
-  it("the committed plugins/copilot/.vscode/mcp.json: started as written, it lists the tools", async () => {
-    const file = JSON.parse(
-      await readFile(join(REPO, "plugins/copilot/.vscode/mcp.json"), "utf8"),
-    ) as { servers: { atticus: Entry & { type: string } } };
-    expect(file.servers.atticus.type).toBe("stdio");
-    await expectTools(file.servers.atticus);
-  }, 15_000);
+  it(
+    "the committed plugins/copilot/.vscode/mcp.json: started as written, it lists the tools",
+    async () => {
+      const file = JSON.parse(
+        await readFile(join(REPO, "plugins/copilot/.vscode/mcp.json"), "utf8"),
+      ) as { servers: { atticus: Entry & { type: string } } };
+      expect(file.servers.atticus.type).toBe("stdio");
+      await expectTools(file.servers.atticus);
+    },
+    START,
+  );
 
-  it("the Claude Code plugin's .mcp.json: started as written, it lists the tools", async () => {
-    const plugin = join(REPO, "plugins/atticus");
-    const file = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8")) as {
-      mcpServers: { atticus: Entry };
-    };
-    // Claude Code puts the plugin's folder where the file says ${CLAUDE_PLUGIN_ROOT}.
-    const { command, args } = file.mcpServers.atticus;
-    const r = await listTools({
-      command,
-      args: args.map((a) => a.replace("${CLAUDE_PLUGIN_ROOT}", plugin)),
-    });
-    expect(r.tools).toEqual(MCP_TOOLS.map((t) => t.name));
-    expect(r.code).toBe(0);
-  }, 15_000);
+  it(
+    "the Claude Code plugin's .mcp.json: started as written, it lists the tools",
+    async () => {
+      const plugin = join(REPO, "plugins/atticus");
+      const file = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8")) as {
+        mcpServers: { atticus: Entry };
+      };
+      // Claude Code puts the plugin's folder where the file says ${CLAUDE_PLUGIN_ROOT}.
+      const { command, args } = file.mcpServers.atticus;
+      const r = await listTools({
+        command,
+        args: args.map((a) => a.replace("${CLAUDE_PLUGIN_ROOT}", plugin)),
+      });
+      expect(r.tools).toEqual(MCP_TOOLS.map((t) => t.name));
+      expect(r.code).toBe(0);
+    },
+    START,
+  );
 
-  it("why not a bare atticus: without a shell Windows can't start it, the others can", async () => {
-    const bare = { command: "atticus", args: ["mcp"] };
-    if (!WIN) {
-      await expectTools(bare);
-      return;
-    }
-    // Windows looks for atticus.com and atticus.exe, never atticus.cmd: nothing to start.
-    expect(await spawnError(bare.command)).toBe("ENOENT");
-    // And named in full, Node refuses a .cmd without a shell (CVE-2024-27980's fix).
-    expect(await spawnError("atticus.cmd")).toBe("EINVAL");
-  }, 15_000);
+  // On Windows an editor ends a process with TerminateProcess, which no program is told of, so
+  // there is nothing to test there; what the launcher does when it is told is unit-tested with
+  // the platform passed in (assistant-files/test/mcp-server.test.ts).
+  it.skipIf(WIN)(
+    "told to end, the launcher ends the server too, though the server's stdin is still open",
+    async () => {
+      // A shim that says which process the server is before it becomes it.
+      const shims = await mkdtemp(join(tmpdir(), "atticus-mcp-shim-"));
+      const pidFile = join(shims, "server.pid");
+      await writeFile(
+        join(shims, "atticus"),
+        `#!/bin/sh\necho $$ > "${pidFile}"\nexec "${process.execPath}" "${BIN}" "$@"\n`,
+      );
+      await chmod(join(shims, "atticus"), 0o755);
+      const entry = atticusMcpServer();
+      const child = spawn(entry.command, entry.args, {
+        shell: false,
+        env: { ...env, PATH: [shims, env.PATH].join(delimiter) },
+        cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      try {
+        // The server answers, so it is up; its stdin stays open, as an editor that only ends the
+        // process leaves it.
+        await new Promise<void>((resolve, reject) => {
+          child.on("error", reject);
+          child.stdout.once("data", () => resolve());
+          child.stdin.write(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "initialize",
+              params: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "an-editor", version: "1" },
+              },
+            }) + "\n",
+          );
+        });
+        const server = Number((await readFile(pidFile, "utf8")).trim());
+        expect(server).toBeGreaterThan(0);
+        expect(server).not.toBe(child.pid);
+        const alive = () => {
+          try {
+            process.kill(server, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        expect(alive()).toBe(true);
+        const ended = new Promise<number | null>((resolve) => child.on("exit", resolve));
+        child.kill("SIGTERM");
+        expect(await ended).toBe(1);
+        for (let i = 0; i < 100 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
+        expect(alive()).toBe(false);
+      } finally {
+        child.kill("SIGKILL");
+      }
+    },
+    START,
+  );
+
+  it(
+    "why not a bare atticus: without a shell Windows can't start it, the others can",
+    async () => {
+      const bare = { command: "atticus", args: ["mcp"] };
+      if (!WIN) {
+        await expectTools(bare);
+        return;
+      }
+      // Windows looks for atticus.com and atticus.exe, never atticus.cmd: nothing to start.
+      expect(await spawnError(bare.command)).toBe("ENOENT");
+      // And named in full, Node refuses a .cmd without a shell (CVE-2024-27980's fix).
+      expect(await spawnError("atticus.cmd")).toBe("EINVAL");
+    },
+    START,
+  );
 });

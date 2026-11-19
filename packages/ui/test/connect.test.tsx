@@ -225,8 +225,12 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
     apis: [{ id: "e-ping", kind: "route", method: "GET", path: "/instruments/ping" }],
   };
 
-  it("never picks a call that has an arrow: moving it is the person's choice", () => {
-    expect(initialPicks(joined)).toEqual({ picked: {}, ticked: new Set() });
+  it("never ticks a call that has an arrow: moving it is the person's choice", () => {
+    // Beta.30: its likeliest API is picked, so one tick moves it; it is never ticked for them.
+    expect(initialPicks(joined)).toEqual({
+      picked: { "call.get.instruments-ping": "e-ping" },
+      ticked: new Set(),
+    });
   });
 
   it("says where the calls go, and lists each to move here, never a dead end", () => {
@@ -235,8 +239,10 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
         <Pairing from="forge_instruments_1-0" box={box} cands={{ state: "ready", data: joined }} />,
       ),
     );
-    expect(out).toContain(C.noLoose("forge-ledger (2)"));
-    expect(out).toContain(C.moveTitle(2));
+    expect(out).toContain(
+      C.moveFirst(2, "forge_instruments_1-0", "forge-ledger (2)", "forge-instruments"),
+    );
+    expect(out).toContain(C.moveTo("forge-instruments"));
     expect(out).toContain(C.joinsNow("forge-ledger"));
     expect(out).toContain(`aria-label="${C.col.api}: GET /instruments/ping"`);
     expect(out).toContain(C.preview);
@@ -259,7 +265,7 @@ describe("a repo whose calls all have an arrow (beta.28.1, field report 4)", () 
     );
     expect(out).toContain(C.caption("forge_instruments_1-0", "forge-instruments"));
     expect(out).toContain(C.undrawnWhy("forge-ledger"));
-    expect(out).not.toContain(C.moveTitle(1));
+    expect(out).not.toContain(C.moveTo("forge-instruments"));
     expect(initialPicks(undrawn).picked).toEqual({ "call.get.instruments-ping": "e-ping" });
   });
 

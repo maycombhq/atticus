@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: forge
+name: Forge's orders service, joined to the wrong box seven ways (invented)
+systems:
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, aliases: [] }
+  - { id: northwind-cards, name: Northwind Cards, boundary: vendor, aliases: [] }
+environments: [dv, qa, prod]
