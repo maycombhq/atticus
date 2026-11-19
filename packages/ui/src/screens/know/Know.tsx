@@ -1564,9 +1564,9 @@ export function Scans() {
                       scanConfirmBody(lastBody, buildRefused, { allowRemovals: n }),
                     ).then(() => undefined)
                   }
-                  onCurate={async (n) => {
+                  onCurate={async (n, on) => {
                     // The hand edits as the build lists them now, confirmed by their plan.
-                    await curateListedEdits(buildRefused, n);
+                    await curateListedEdits(buildRefused, n, undefined, on);
                     setCuratedAfter(job.id);
                   }}
                   onDiscard={(n) =>

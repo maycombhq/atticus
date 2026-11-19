@@ -17,6 +17,7 @@ import { focusIfLost } from "./ui.js";
 import { message, Note, useAction } from "../screens/know/common.js";
 import { ShowInConsole } from "./activity.js";
 import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
+import { JobProgress, useJobRun, type JobHears } from "./job-progress.js";
 import { SyncFirst } from "./sync-first.js";
 import { curateListedEdits, RefusalView } from "../screens/setup/CatalogBuild.js";
 
@@ -171,6 +172,8 @@ export function ApplyAndPropose(p: {
   const [next, setNext] = useState<NextStep | undefined>();
   // Every run the app starts shows in the Console: this one's entry, linked while it runs.
   const [jobId, setJobId] = useState<string | undefined>();
+  // Beta.30: the job's step, its time so far and Stop, in this panel; its Done line stays.
+  const job = useJobRun();
   // ADR 0195 point 4: the build Apply ran refused (a large removal, a hand edit): its listing,
   // confirmed here with its counts, as a scan's is on Scans.
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
@@ -188,12 +191,9 @@ export function ApplyAndPropose(p: {
     setNext(undefined);
     p.onStart?.();
     try {
-      const r = await followJob(
-        `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
-        counts,
-        undefined,
-        setJobId,
-      );
+      const r = await job.follow(`/api/facts/${encodeURIComponent(p.repo!)}/apply`, counts, {
+        onJob: setJobId,
+      });
       setRefused(undefined);
       setApplied(r.lines);
       const leftOut = leftOutOf(r.result);
@@ -213,6 +213,13 @@ export function ApplyAndPropose(p: {
         const said = P.notStarted(e.problem.detail ?? e.problem.title);
         if (p.scope === "corrections") flash({ text: said.slice(0, 400) });
         throw new Error(said, { cause: e });
+      }
+      // Beta.30: a person's Stop is no problem verify found: it ended before the catalog's write.
+      if (e instanceof JobFailed && e.stopped) {
+        setRefused(undefined);
+        setApplied(undefined);
+        if (p.scope === "corrections") flash({ text: P.applyStopped(p.repo!) });
+        throw new Error(P.applyStopped(p.repo!), { cause: e });
       }
       const waits = buildRefusalOf(e);
       setRefused(waits);
@@ -249,6 +256,8 @@ export function ApplyAndPropose(p: {
             </button>
             {(apply.busy || (inPanel && applied)) && <ShowInConsole id={jobId} />}
           </div>
+          {/* Apply hears Stop until the catalog's write starts; after that it says it is too late. */}
+          <JobProgress what={P.applyingTo(p.repo)} run={job.run} onStop={job.stop} />
           <Note note={apply.note} />
           {applied && applied.length > 0 && stepLines(applied, inPanel)}
           {next && <SyncFirst repos={next.repos} />}
@@ -260,8 +269,8 @@ export function ApplyAndPropose(p: {
                   () => applyWith({ allowRemovals: n, ...planOf(refused) }),
                   appliedNote(p.repo!),
                 ),
-              onCurate: async (n) => {
-                await curateListedEdits(refused, n, P.editsChanged);
+              onCurate: async (n, on) => {
+                await curateListedEdits(refused, n, P.editsChanged, on);
                 setRefused(undefined);
                 setApplied([P.curatedApplyAgain(p.repo!)]);
                 workChanged();
@@ -288,7 +297,7 @@ export function ApplyAndPropose(p: {
 export function applyRefused(p: {
   refused: Api.BuildRefusalViewT;
   onAllowRemovals: (n: number) => Promise<void>;
-  onCurate: (n: number) => Promise<void>;
+  onCurate: (n: number, on?: JobHears) => Promise<void>;
   onDiscard: (n: number) => Promise<void>;
 }) {
   return (
@@ -308,6 +317,8 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
   const [done, setDone] = useState<string[]>();
   const look = useAction();
   const send = useAction();
+  // Beta.30: the push's time so far in the panel. No Stop: a push under way isn't stopped.
+  const job = useJobRun();
   const id = useId();
   // Eighth UX walk: Push and open the PR goes once it is done; its lines take the keyboard.
   const pushed = useRef<HTMLDivElement>(null);
@@ -387,7 +398,7 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
               onClick={() =>
                 void send.run(async () => {
                   // ADR 0186: this Yes is the person's confirmation to push and open the PR.
-                  const r = await followJob("/api/propose", {
+                  const r = await job.follow("/api/propose", {
                     scope,
                     files: files.map((f) => f.path),
                     branch: plan.branch,
@@ -404,6 +415,7 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
               {P.cancel}
             </button>
           </div>
+          <JobProgress what={P.proposingSay} run={job.run} />
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {P.whoMerges}
           </p>

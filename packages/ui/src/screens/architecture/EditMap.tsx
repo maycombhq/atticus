@@ -5,6 +5,7 @@ import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { RunWithCopilot, useCopilotRuns, type StartAsk } from "../../app/copilot-runs.js";
 import { followJob, JobFailed } from "../../app/job.js";
+import { JobProgress, useJobRun, type JobRun } from "../../app/job-progress.js";
 import { RefusalLink } from "../../app/propose.js";
 import { COPY } from "../../copy.js";
 import { linkJoins, whyNot } from "./DeleteLink.js";
@@ -920,6 +921,10 @@ export function EditMapView(p: {
   onConfirm(): void;
   onBack(): void;
   job?: string | undefined;
+  /** Beta.30: the job's step and time while it saves and builds, and how it ended. */
+  run?: JobRun | undefined;
+  /** Stop, heard until the first change is written (after that it is too late). */
+  onStop?: (() => void) | undefined;
   /** Add a link (or the redirect's form), under the list. */
   add?: ReactNode;
 }) {
@@ -1041,11 +1046,16 @@ export function EditMapView(p: {
               <ShowInConsole id={p.job} />
             </div>
           )}
-          {busy && (
-            <p className="ev-say" role="status" aria-busy="true" style={{ margin: 0 }}>
-              {E.working}
-            </p>
-          )}
+          {busy &&
+            (p.run?.state === "running" ? (
+              <JobProgress what={E.working} run={p.run} onStop={p.onStop} />
+            ) : (
+              <p className="ev-say" role="status" aria-busy="true" style={{ margin: 0 }}>
+                {E.working}
+              </p>
+            ))}
+          {/* How the last Apply ended, and how long it took: it stays until the next. */}
+          {!busy && a.state !== "confirm" && <JobProgress what={E.working} run={p.run} />}
           {a.state === "saved" &&
             (a.refused ? (
               <RefusalLink refused={a.refused} />
@@ -1084,6 +1094,7 @@ export function EditMap(p: {
 }) {
   const [apply, setApply] = useState<ApplyState>({ state: "idle" });
   const [job, setJob] = useState<string | undefined>();
+  const held = useJobRun();
   // A change staged after an Apply starts the next list: the list shows again.
   const count = p.staged.length;
   useEffect(() => {
@@ -1095,6 +1106,8 @@ export function EditMap(p: {
       staged={p.staged}
       apply={apply}
       job={job}
+      run={held.run}
+      onStop={held.stop}
       {...(p.add ? { add: p.add } : {})}
       onRemove={(k) => {
         p.onRemove(k);
@@ -1105,7 +1118,9 @@ export function EditMap(p: {
       onConfirm={() => {
         setApply({ state: "working" });
         const keys = new Set(p.staged.map((x) => x.key));
-        void applyStaged(p.staged, followJob, setJob).then((s) => {
+        const follow: typeof followJob = (path, body, _wait, onJob) =>
+          held.follow(path, body, onJob ? { onJob } : {});
+        void applyStaged(p.staged, follow, setJob).then((s) => {
           setApply(s);
           if (s.state === "done" || s.state === "saved") p.onApplied(keys);
         });

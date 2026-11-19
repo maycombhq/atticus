@@ -105,6 +105,23 @@ export const COPY = {
       stopped: "Stopped before it finished: nothing was changed.",
       again: "Start it again",
     },
+    /**
+     * Beta.30 (slice 2): a step the app runs as a job, in the panel that started it: the time so
+     * far, that it is still running, and a line that stays once it ended.
+     */
+    jobRun: {
+      /** A time in words: 12 s, 1 min 35 s. */
+      time: (ms: number): string => {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        const m = Math.floor(s / 60);
+        return m === 0 ? `${s} s` : s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
+      },
+      soFar: (time: string) => `${time} so far`,
+      still: (time: string) => `Still running after ${time}.`,
+      done: (time: string) => `Done in ${time}.`,
+      ended: (time: string) => `It ended after ${time} without finishing.`,
+      stopped: (time: string) => `Stopped after ${time}.`,
+    },
     ccReading: "Reading your metarepo…",
     ccCantRead: "Couldn't read what needs attention: each panel below says why.",
     notLoaded: "not loaded",
@@ -5025,6 +5042,11 @@ export const COPY = {
   propose: {
     apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
     applying: "Applying…",
+    /** Beta.30: what the panel says over the job's step while one repo's Apply runs. */
+    applyingTo: (repo: string) => `Applying to ${repo}'s map…`,
+    /** Beta.30: Stop ended the Apply before its write (after it, Stop is too late). */
+    applyStopped: (repo: string) =>
+      `Stopped before the catalog was written: nothing was applied to ${repo}'s map. Apply again when you are ready.`,
     applied: (repo: string) => `Applied: ${repo}'s facts are checked again and in the catalog.`,
     /** Beta.28.1: Apply wrote the kept facts and left the rejected ones out (listed below it). */
     appliedLeftOut: (repo: string, n: number) =>
@@ -5044,6 +5066,8 @@ export const COPY = {
     >,
     yes: (n: number) => `Push ${n} file${n === 1 ? "" : "s"} and open the PR`,
     proposing: "Proposing…",
+    /** Beta.30: said over the time so far while the push and the pull request run. */
+    proposingSay: "Pushing the branch and opening the pull request…",
     proposed: "Proposed for review.",
     cancel: "Not now",
     appliedFlash: (repo: string) =>

@@ -4,6 +4,7 @@ import { api, ApiError, useApi, useReloadOnFiles, type Loaded } from "../../api/
 import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
 import { followJob, JobFailed } from "../../app/job.js";
+import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command } from "../work/RunNext.js";
@@ -256,12 +257,20 @@ export async function curateListedEdits(
   n: number,
   /** What to say when the edits changed (a scan's: scan again; an Apply's: Apply again). */
   changed: string = B.editsChanged,
+  /** Beta.30: hears the job's id and each step, for the panel that started it. */
+  on?: JobHears,
 ): Promise<void> {
   const now = await api<Api.CatalogBuildViewT>("/api/build");
   const listed = (r: Refusal | undefined) =>
     (r?.edits ?? []).map((e) => `${e.how} ${e.path}`).join("\n");
   if (listed(now.pending.refused) !== listed(refused)) throw new Error(changed);
-  await followJob("/api/build/edits/curate", { count: n, plan: now.pending.plan });
+  await followJob(
+    "/api/build/edits/curate",
+    { count: n, plan: now.pending.plan },
+    undefined,
+    on?.onJob,
+    on?.onProgress,
+  );
 }
 
 /**
@@ -272,7 +281,8 @@ export async function curateListedEdits(
 export function RefusalView(p: {
   refused: Refusal;
   onAllowRemovals: (n: number) => Promise<void>;
-  onCurate?: (n: number) => Promise<void>;
+  /** `on` (beta.30): tell it the job's id and steps, and the wait shows them here. */
+  onCurate?: (n: number, on?: JobHears) => Promise<void>;
   onDiscard?: (n: number) => Promise<void>;
   /** The words of a step's button that confirms the removals (a scan's: Scan again…). */
   confirmLabel?: (n: number) => string;
@@ -283,6 +293,8 @@ export function RefusalView(p: {
   const [dialog, setDialog] = useState<"removals" | "discard" | undefined>();
   const [curating, setCurating] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Beta.30: the curate's job (the decisions written, then the build), step by step.
+  const job = useJobRun();
   const removals = r.removals ?? [];
   const edits = r.edits ?? [];
   const nEdits = r.discardEdits ?? edits.length;
@@ -361,7 +373,8 @@ export function RefusalView(p: {
                 onClick={() => {
                   setCurating(true);
                   setError(undefined);
-                  p.onCurate!(edits.length)
+                  job
+                    .watch((on) => p.onCurate!(edits.length, on))
                     .catch((e: unknown) => setError(B.failed(whyStopped(e))))
                     .finally(() => setCurating(false));
                 }}
@@ -378,6 +391,7 @@ export function RefusalView(p: {
           <p id="cb-curate-hint" className="work-say" style={{ margin: 0 }}>
             {B.curateHint}
           </p>
+          <JobProgress what={B.curating} run={job.run} onStop={job.stop} />
         </section>
       )}
       {r.reasons.includes("not-upgraded") && (
@@ -925,13 +939,15 @@ export function CatalogBuildsPage(p: {
   undo: Loaded<Api.CatalogUndoViewT> & { reload?: () => void };
   prune: Loaded<Api.CatalogPruneViewT> & { reload?: () => void };
   /** Runs a step's route as a local job, to its end. */
-  run: (path: string, body: Record<string, unknown>) => Promise<void>;
+  run: (path: string, body: Record<string, unknown>, on?: JobHears) => Promise<void>;
   plan: (n: number) => Promise<Api.CatalogUndoViewT>;
   job?: string | undefined;
   note?: string | undefined;
 }) {
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Beta.30: Build now's job, step by step, and how it ended.
+  const job = useJobRun();
   return (
     <div className="bento cb">
       <Panel title={B.title} span="1 / -1">
@@ -957,8 +973,8 @@ export function CatalogBuildsPage(p: {
                   onAllowRemovals={(n) =>
                     p.run("/api/build", { allowRemovals: n, plan: v.pending.plan })
                   }
-                  onCurate={(n) =>
-                    p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan })
+                  onCurate={(n, on) =>
+                    p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan }, on)
                   }
                   onDiscard={(n) => p.run("/api/build", { discardEdits: n, plan: v.pending.plan })}
                 />
@@ -983,7 +999,8 @@ export function CatalogBuildsPage(p: {
                       onClick={() => {
                         setBuilding(true);
                         setError(undefined);
-                        p.run("/api/build", { plan: v.pending.plan })
+                        job
+                          .watch((on) => p.run("/api/build", { plan: v.pending.plan }, on))
                           .catch((e: unknown) => setError(B.failed(whyStopped(e))))
                           .finally(() => setBuilding(false));
                       }}
@@ -993,6 +1010,8 @@ export function CatalogBuildsPage(p: {
                   </div>
                 </div>
               )}
+              {/* Build now's step, time and Stop (heard until the write), then how it ended. */}
+              <JobProgress what={B.building} run={job.run} onStop={job.stop} />
               {error && (
                 <p className="state error" role="alert" style={{ margin: 0 }}>
                   {error}
@@ -1107,10 +1126,19 @@ export function CatalogBuilds() {
     prune.reload();
     if (waits) upgrade.reload();
   };
-  const run = async (path: string, body: Record<string, unknown>) => {
+  const run = async (path: string, body: Record<string, unknown>, on?: JobHears) => {
     setNote(undefined);
     try {
-      await followJob(path, body, undefined, setJob);
+      await followJob(
+        path,
+        body,
+        undefined,
+        (id) => {
+          setJob(id);
+          on?.onJob(id);
+        },
+        on?.onProgress,
+      );
       setNote(B.done);
     } finally {
       reload();

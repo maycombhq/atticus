@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.30 (unreleased)
+
+### Changed
+
+- **One repo's Apply shows what it is doing, in the panel that started it.** Where the app said "Applying…" and linked the Console, the panel now shows the step the job is on (the server's own line, such as "Writing the catalog (1,204 record files)… (41 s in)"), the time so far, a "Still running" line every half minute, Stop (heard until the catalog's write starts) and a Done line with the time it took, which stays. An Apply a person stopped says the catalog was not written, and no longer that verify found problems. The same for Edit the map's Apply my changes, Catalog builds' Build now and making hand edits curated. Propose for review shows its time so far and that it is running; it has no step and no Stop, because the server sends none for a push. No change to the local API.
+
 ## 2.0.0-beta.28.5 (2026-11-17)
 
 beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
