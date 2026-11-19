@@ -11,12 +11,12 @@ import { panelId } from "./ui.js";
 const W = COPY.waysOn;
 
 /** Where a refused build is reviewed and confirmed, full width. */
-export const CATALOG_BUILDS_HREF = "#/catalog-builds";
+export const CATALOG_BUILDS_HREF = "#/activity?tab=catalog-builds";
 
 /** Set up › Catalog builds, opened at its Undo (the files it puts back are listed first). */
-export const UNDO_HREF = "#/catalog-builds?at=undo";
+export const UNDO_HREF = "#/activity?tab=catalog-builds&at=undo";
 /** The same page at its upgrade to source slots. */
-export const UPGRADE_HREF = "#/catalog-builds?at=upgrade";
+export const UPGRADE_HREF = "#/activity?tab=catalog-builds&at=upgrade";
 
 /** The panel of Catalog builds an address names (`?at=undo`, `?at=upgrade`), by its heading. */
 export const panelAsked = (hash: string): string | undefined => {

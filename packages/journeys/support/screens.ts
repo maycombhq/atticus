@@ -10,7 +10,7 @@ export const SCREENS = [
   "home",
   "questions",
   // The Surfaces design: the Map and its Read status tab (v30 slice 8: the Map keeps Map, Flows
-  // and Read status; the Ecosystem map's address opens Systems, see MOVED below).
+  // and Read status; the Ecosystem map's address opens the Map, see MOVED below).
   "canvas",
   "trust",
   "explore",
@@ -97,5 +97,5 @@ export const MOVED: readonly (readonly [string, RegExp])[] = [
   ["history", /#\/activity\?tab=history$/],
   ["scans", /#\/activity\?tab=scans$/],
   ["catalog-builds", /#\/activity\?tab=catalog-builds$/],
-  ["map", /#\/systems$/],
+  ["map", /#\/canvas$/],
 ];

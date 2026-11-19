@@ -1,3 +1,4 @@
+import { activityHref } from "../../app/screens.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, callAsJob, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
@@ -48,8 +49,8 @@ export function runsHref(o: { change?: string; q?: string; run?: string }): stri
   if (o.change) q.set("change", o.change);
   if (o.q) q.set("q", o.q);
   if (o.run) q.set("run", o.run);
-  const s = q.toString();
-  return `#/runs${s ? `?${s}` : ""}`;
+  // v30 slice 8: Model runs is a tab of Activity.
+  return activityHref("runs", Object.fromEntries(q));
 }
 
 export const stateText = (s: string) => R.states[s] ?? s;
@@ -94,7 +95,7 @@ export function RunsTable(p: {
     <div className="stack" style={{ gap: 8 }}>
       {p.change && (
         <p className="work-say" style={{ margin: 0 }}>
-          {R.onlyFor(p.change)} <a href="#/runs">{R.showAll}</a>
+          {R.onlyFor(p.change)} <a href={runsHref({})}>{R.showAll}</a>
         </p>
       )}
       <View

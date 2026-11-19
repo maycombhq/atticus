@@ -156,7 +156,7 @@ describe("a finished chain of runs goes on to its change", () => {
   it("to the run that waits next, while one does", () => {
     const waiting = run("run-20261108190014-0003", { state: "waiting", answered: false });
     expect(afterRun(transcript(last), [last, waiting], changes)).toEqual({
-      href: "#/runs?run=run-20261108190014-0003",
+      href: "#/activity?tab=runs&run=run-20261108190014-0003",
       label: RU.toNextRun,
     });
   });

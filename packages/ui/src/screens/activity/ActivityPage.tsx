@@ -15,8 +15,9 @@ const N = COPY.nav;
 /**
  * v30 slice 8: Activity, one page for what ran. Model runs, Prompt history, Scans and Catalog
  * builds are its tabs (each the page it was, unchanged, with its own query in the address:
- * `#/activity?tab=runs&run=…`). The tabs are links, so each tab has an address, Back works, and a
- * screen reader hears "current page" on the one shown.
+ * `#/activity?tab=runs&run=…`). The tabs are links, so each tab has an address and Back works;
+ * the one shown is marked current (the section's own tab is the page), and the window's title,
+ * the heading and where-you-are name it (pageTitle).
  */
 export function ActivityPage({ hash, tabs }: { hash: string; tabs: Record<ActivityTab, Screen> }) {
   const shown = activityTabOf(hash);
@@ -28,7 +29,8 @@ export function ActivityPage({ hash, tabs }: { hash: string; tabs: Record<Activi
       </p>
       <nav aria-label={N.activityTabs} className="tabs">
         {ACTIVITY_TABS.map((t) => (
-          <a key={t} href={activityHref(t)} aria-current={t === shown ? "page" : undefined}>
+          // The section's tab is the page ("page"); this one is the tab shown within it ("true").
+          <a key={t} href={activityHref(t)} aria-current={t === shown ? "true" : undefined}>
             {ACTIVITY_LABELS[t]}
           </a>
         ))}

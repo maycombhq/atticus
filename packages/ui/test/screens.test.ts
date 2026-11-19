@@ -275,14 +275,15 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     );
     expect(movedHash("#/scans")).toBe("#/activity?tab=scans");
     expect(movedHash("#/catalog-builds?at=undo")).toBe("#/activity?tab=catalog-builds&at=undo");
-    // The duplicate Ecosystem map: its coverage and guides are on Systems; the drawing is Map.
-    expect(movedHash("#/map")).toBe("#/systems");
+    // The duplicate Ecosystem map opens the Map, as Ctrl+K's "Ecosystem map" does; its coverage
+    // and guides are on Systems.
+    expect(movedHash("#/map")).toBe("#/canvas");
     // A page that stays is not moved.
     expect(movedHash("#/canvas")).toBeUndefined();
     expect(movedHash("#/activity?tab=runs")).toBeUndefined();
     expect(movedHash("")).toBeUndefined();
     expect(screenOf("#/runs?run=x").id).toBe("activity");
-    expect(screenOf("#/map").id).toBe("systems");
+    expect(screenOf("#/map").id).toBe("canvas");
   });
 
   it("v30 slice 8: the Map's pages are named Map, Flows and Read status", () => {

@@ -601,7 +601,7 @@ describe("a refused build: its list and its ways on, nothing written until confi
     );
     expect(out).toContain("atticus upgrade --yes");
     // Away from Catalog builds, a link to its upgrade step.
-    expect(out).toContain('href="#/catalog-builds?at=upgrade"');
+    expect(out).toContain('href="#/activity?tab=catalog-builds&amp;at=upgrade"');
     expect(out).toContain(esc(B.upgradeOn));
   });
 
@@ -700,7 +700,7 @@ describe("a refused build: its list and its ways on, nothing written until confi
       />,
     );
     expect(out).toContain(esc(B.upgradeTodo));
-    expect(out).not.toContain('href="#/catalog-builds"');
+    expect(out).not.toContain('href="#/activity?tab=catalog-builds"');
   });
 
   it("a build.json edited or merged by hand offers only Build again, never Make them curated", () => {

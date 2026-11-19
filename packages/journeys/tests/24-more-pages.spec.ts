@@ -43,15 +43,7 @@ test("More pages is in the menu on first load, closed, and lists every page the 
     // v30 slice 8: the Map's pages about one box leave its tabs; the Ecosystem map is gone.
     [
       "Map",
-      [
-        "Contracts",
-        "Impact explorer",
-        "Decided by AI",
-        "Features",
-        "API mappings",
-        "Diagrams",
-        "Reconcile",
-      ],
+      ["Contracts", "Impact", "Decided by AI", "Features", "API mappings", "Diagrams", "Reconcile"],
     ],
     ["Define", ["Prototypes and UX"]],
     ["Plan", ["Breakdown", "Estimate"]],
@@ -103,10 +95,12 @@ test("Estimate opens from More pages; Prompt history and Model runs are tabs of 
   ]);
   await activity.getByRole("link", { name: "Prompt history" }).click();
   await expect(page).toHaveURL(/#\/activity\?tab=history$/);
+  // The section's tab is the page; Activity's own tab shown is current within it.
   await expect(activity.getByRole("link", { name: "Prompt history" })).toHaveAttribute(
     "aria-current",
-    "page",
+    "true",
   );
+  await expect(page).toHaveTitle("Activity › Prompt history · Atticus");
   await activity.getByRole("link", { name: "Model runs" }).click();
   await expect(page).toHaveURL(/#\/activity\?tab=runs$/);
   await expect(nav.getByRole("link", { name: "Set up" })).toHaveAttribute("aria-current", "page");

@@ -1,3 +1,4 @@
+import { CATALOG_BUILDS_HREF } from "../../app/ways-on.js";
 import { useEffect, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useJobPoll, useLiveEvents, type Loaded } from "../../api/client.js";
@@ -427,8 +428,48 @@ interface Impact {
   gaps: { record: string; field: string; question: string }[];
 }
 
+/** v30 slice 8: a repo's components, by id, for Impact asked of a repo (a repo box's panel). */
+export function componentsOfRepo<C extends { id: string; repo?: string }>(
+  items: readonly C[],
+  repo: string,
+): C[] {
+  return items.filter((c) => c.repo === repo).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * Impact asked of a repo (`?repo=`, from a repo box's panel): a repo has no record of its own,
+ * so its components are listed, each opening its impact.
+ */
+function RepoComponents({ repo }: { repo: string }) {
+  const list = useApi<{ items: { id: string; repo?: string; name?: string }[] }>(
+    `/api/catalog/Component?limit=500&q=${encodeURIComponent(repo)}`,
+  );
+  return (
+    <Panel title={T.impactOfRepo(repo)} span="1 / -1">
+      <View
+        of={list}
+        empty={(d) => componentsOfRepo(d.items, repo).length === 0}
+        emptyText={T.noComponentsIn(repo)}
+      >
+        {(d) => (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {componentsOfRepo(d.items, repo).map((c) => (
+              <li key={c.id}>
+                <a href={`#/impact?q=${encodeURIComponent(c.id)}`}>
+                  {c.name && c.name !== c.id ? `${c.id} · ${c.name}` : c.id}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 export function ImpactExplorer({ hash }: { hash: string }) {
   const q = queryParam(hash, "q") ?? "";
+  const repo = q ? undefined : queryParam(hash, "repo");
   const [text, setText] = useState(q);
   // A link to another id while on this page: the box follows the hash.
   useEffect(() => setText(q), [q]);
@@ -455,6 +496,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
   const blast: Graph | undefined = imp.state === "ready" ? blastGraph(imp.data) : undefined;
   return (
     <div className="bento">
+      {repo && <RepoComponents repo={repo} />}
       <Panel title={T.whatBreaksIfThis} span="1 / -1">
         <form onSubmit={submit} className="row" style={{ flexWrap: "wrap" }}>
           <label htmlFor="impact-id" className="sr">
@@ -1510,7 +1552,7 @@ export function Scans() {
           {/* ADR 0195 (CS3): the readers' cross-check, and the build's confirm, undo and prune. */}
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {SS.links} <a href="#/crosscheck">{COPY.crossCheck.title}</a> ·{" "}
-            <a href="#/catalog-builds">{COPY.catalogBuild.openFromScans}</a>
+            <a href={CATALOG_BUILDS_HREF}>{COPY.catalogBuild.openFromScans}</a>
           </p>
           {job && (
             <div className="stack" role="status" aria-live="polite">

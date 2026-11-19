@@ -24,7 +24,7 @@ import { AiChip, Person, ThemeSwitch, useAskExample, type Health } from "./chrom
 import { CommandPalette, type PaletteCommand } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
 import { Nav } from "./nav.js";
-import { movedHash, screenOf, type ScreenDef } from "./screens.js";
+import { movedHash, pageTitle, screenOf, type ScreenDef } from "./screens.js";
 import { PageNext, SectionTabs } from "./tabs.js";
 import { inEditor } from "./theme.js";
 import { focusAfterLayoutSwitch, useLayout, type Layout } from "./shell/layout.js";
@@ -324,8 +324,8 @@ export function App() {
     if (server.epoch) reloadHealth();
   }, [server.epoch, reloadHealth]);
   useEffect(() => {
-    document.title = `${current.label} · Atticus`;
-  }, [current]);
+    document.title = `${pageTitle(current, hash)} · Atticus`;
+  }, [current, hash]);
   // WP5.6: on moving to another screen, focus goes to its content (not on the first load), so a
   // keyboard or screen reader user starts there rather than back in the menu. A tab picked in
   // the IDE layout's tab strip keeps the focus on the tab, as a tab list does.
@@ -398,7 +398,7 @@ export function App() {
                   <FlashLine />
                   <TopBar health={health.state === "ready" ? health.data : undefined} />
                   <ActivityStrip />
-                  <h1 className="sr">{bare ? COPY.setup.title : current.label}</h1>
+                  <h1 className="sr">{bare ? COPY.setup.title : pageTitle(current, hash)}</h1>
                   {!bare && <SectionTabs current={current} hash={hash} full={full} />}
                   {!bare && <PageNext current={current} />}
                   {page}
@@ -416,7 +416,7 @@ export function App() {
                   current={current}
                   {...(health.state === "ready" ? { health: health.data } : {})}
                   embedded={inEditorPanel()}
-                  heading={bare ? COPY.setup.title : current.label}
+                  heading={bare ? COPY.setup.title : pageTitle(current, hash)}
                   top={
                     <>
                       {/* Beta.27 review: the connection's one note, first above the page. */}

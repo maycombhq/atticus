@@ -345,14 +345,14 @@ describe("Undo from an error, in one click (point 3)", () => {
   it("the error offers the button where the server says which build; none where it says there is none; the link where it can't say", () => {
     const withWay = html(<ErrorWaysOn short undo={WAY} undoKnown />);
     expect(withWay).toContain(`>${esc(undoWords(WAY))}</button>`);
-    expect(withWay).not.toContain(`href="${UNDO_HREF}"`);
+    expect(withWay).not.toContain(`href="${UNDO_HREF.replace(/&/g, "&amp;")}"`);
     const none = html(<ErrorWaysOn short undoKnown />);
     expect(none).not.toContain(esc(W.undoLast));
-    expect(none).not.toContain(`href="${UNDO_HREF}"`);
+    expect(none).not.toContain(`href="${UNDO_HREF.replace(/&/g, "&amp;")}"`);
     expect(none).toContain(`>${esc(W.saveBundle)}<`);
     // An older server, or an error that is no job's (a screen that couldn't be shown).
     const link = html(<ErrorWaysOn short />);
-    expect(link).toContain(`href="${UNDO_HREF}"`);
+    expect(link).toContain(`href="${UNDO_HREF.replace(/&/g, "&amp;")}"`);
     expect(link).toContain(`>${esc(W.undoLast)}<`);
   });
 
@@ -730,7 +730,7 @@ describe("a running job found again (point 5)", () => {
       />,
     );
     expect(out).toContain(esc(J.refused(J.time(8_000))));
-    expect(out).toContain(`href="#/catalog-builds">${esc(J.seeRefusal)}</a>`);
+    expect(out).toContain(`href="#/activity?tab=catalog-builds">${esc(J.seeRefusal)}</a>`);
     expect(endedRun({ ...job({}), state: "cancelled" } as never, T0 + 1).state).toBe("stopped");
   });
 

@@ -55,7 +55,7 @@ const CENSUS = {
     {
       id: "map",
       decided: "v30 slice 8",
-      instead: "Map (the drawing) and Systems (its coverage and guides, #/systems)",
+      instead: "Map (#/canvas, the drawing it duplicated) and Systems (its coverage and guides)",
     },
   ],
 };

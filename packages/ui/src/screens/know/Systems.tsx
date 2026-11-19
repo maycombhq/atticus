@@ -9,7 +9,7 @@ import { CatalogCoverage, SystemGuide } from "./Know.js";
  * system. Its guide, generated from the catalog with every fact citing code and what it doesn't
  * know yet; the open questions about it; and the changes in flight in its repos. Below them, what
  * the catalog knows by system and area (v30 slice 8: it was the Ecosystem map's, whose address
- * opens this page now). It reads; it changes nothing.
+ * opens the Map now). It reads; it changes nothing.
  */
 
 const Y = COPY.systems;

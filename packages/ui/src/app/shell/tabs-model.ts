@@ -1,5 +1,5 @@
 import { COPY } from "../../copy.js";
-import { changeOf, movedHash, screenOf } from "../screens.js";
+import { changeOf, MOVED, movedHash, screenOf } from "../screens.js";
 
 /**
  * ADR 0194: the IDE layout's tabs, as data. The address (#/...) stays the page shown, so deep
@@ -132,14 +132,17 @@ export function readTabs(store: Store | undefined = browserStore()): TabsState |
   if (!o || !Array.isArray(o.tabs)) return undefined;
   const tabs: Tab[] = [homeTab()];
   let used = 0;
+  // v30 slice 8: a tab kept at a page's old address (#/runs) comes back at its new place.
+  const keyOf = (k: string): string => (MOVED[k] ? MOVED[k]!.to : k);
   for (const t of o.tabs as { hash?: unknown }[]) {
-    const hash = typeof t?.hash === "string" ? t.hash : "";
+    const kept = typeof t?.hash === "string" ? t.hash : "";
+    const hash = movedHash(kept) ?? kept;
     if (!PAGE_HASH.test(hash)) continue;
     const key = tabKeyOf(hash);
     if (key === HOME_KEY || tabs.some((x) => x.key === key)) continue;
     tabs.push({ key, hash, used: ++used });
   }
-  const savedActive = typeof o.active === "string" ? o.active : HOME_KEY;
+  const savedActive = typeof o.active === "string" ? keyOf(o.active) : HOME_KEY;
   const active = tabs.some((t) => t.key === savedActive) ? savedActive : HOME_KEY;
   // The one shown is the most recent.
   const s = { tabs: tabs.map((t) => (t.key === active ? { ...t, used: used + 1 } : t)), active };

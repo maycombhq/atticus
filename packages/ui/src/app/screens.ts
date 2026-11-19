@@ -16,7 +16,7 @@ import { COPY } from "../copy.js";
  * v30 slice 8 (fewer pages): the Map keeps Map, Flows and Read status; Contracts, Impact and
  * Decided by AI open from a box's panel, for that box. Model runs, Prompt history, Scans and
  * Catalog builds are the tabs of one Activity page. The Ecosystem map, a second drawing of the
- * Map, is gone: its coverage and guides are on Systems. A page folded away keeps its address
+ * Map, is gone: its address opens the Map, and its coverage and guides are on Systems. A page folded away keeps its address
  * (MOVED), which opens its new place, so every bookmark and editor link still works.
  */
 
@@ -78,7 +78,7 @@ export const SCREENS: ScreenDef[] = [
   // v30 slice 8: about one box, so opened from its panel (for that box); the estate-wide page is
   // under More pages, and Ctrl+K finds it.
   { id: "contracts", label: S.contracts, section: "Map", full: true },
-  { id: "impact", label: S.impact, section: "Map", full: true },
+  { id: "impact", label: S.impact, section: "Map", full: true, also: [F.impact] },
   // ADR 0181: what the AI decided (Read status audits it): Correct, and each batch's Undo.
   {
     id: "decisions",
@@ -231,8 +231,9 @@ export const MOVED: Readonly<Record<string, { to: string; tab?: ActivityTab }>> 
   history: { to: "activity", tab: "history" },
   scans: { to: "activity", tab: "scans" },
   "catalog-builds": { to: "activity", tab: "catalog-builds" },
-  // The Ecosystem map drew the Map a second time; its coverage and system guides are on Systems.
-  map: { to: "systems" },
+  // The Ecosystem map drew the Map a second time: its address opens the Map (Ctrl+K finds the
+  // Map by its old name too); its coverage and system guides are on Systems.
+  map: { to: "canvas" },
 };
 
 /**
@@ -260,6 +261,14 @@ export function activityHref(tab: ActivityTab, query: Record<string, string | un
   const q = new URLSearchParams({ tab });
   for (const [k, v] of Object.entries(query)) if (v) q.set(k, v);
   return `#/activity?${q.toString()}`;
+}
+
+/**
+ * A page's title, for the window, its heading and where-you-are: its name, and on Activity the
+ * tab shown too ("Activity › Scans", WCAG 2.4.2).
+ */
+export function pageTitle(s: ScreenDef, hash: string): string {
+  return s.id === "activity" ? `${s.label} › ${ACTIVITY_LABELS[activityTabOf(hash)]}` : s.label;
 }
 
 /** The Activity tab an address shows: its `?tab=`, else the old page's own address, else runs. */

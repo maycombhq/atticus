@@ -6,7 +6,7 @@ const B = COPY.boxPages;
 
 /**
  * v30 slice 8: the Map's pages that are about one box, opened from its panel for that box: its
- * contracts, what breaks if it changes (Impact) and what the AI decided in it (Decided by AI).
+ * contracts, its impact (Impact) and what the AI decided in it (Decided by AI).
  * They were tabs of the Map; each is still a page of its own, found by Ctrl+K.
  */
 export function boxPages(node: Api.HierNodeT): ReactNode[] {
@@ -19,9 +19,15 @@ export function boxPages(node: Api.HierNodeT): ReactNode[] {
         {B.contracts}
       </a>,
     );
-  if (node.record)
+  // A repo box has no record of its own (diagrams' hierarchy): Impact lists its components.
+  const impact = node.record
+    ? `#/impact?q=${encodeURIComponent(node.record.id)}`
+    : node.kind === "repo"
+      ? `#/impact?repo=${name}`
+      : undefined;
+  if (impact)
     links.push(
-      <a key="impact" className="btn" href={`#/impact?q=${encodeURIComponent(node.record.id)}`}>
+      <a key="impact" className="btn" href={impact}>
         {B.impact}
       </a>,
     );

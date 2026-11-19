@@ -152,9 +152,8 @@ test("the Map draws the manifest's system and the outside system the facts call"
   await expect(page.locator("main")).not.toContainText(STALE_SCAN);
   await accessible(page, "estate canvas on an Atticus 2 metarepo");
 
-  // v30 slice 8: the Ecosystem map's address opens Systems, with its coverage.
-  await open(page, app(), "map");
-  await expect(page).toHaveURL(/#\/systems$/);
+  // v30 slice 8: the Ecosystem map's coverage is on Systems (its address opens the Map).
+  await open(page, app(), "systems");
   const systems = page.getByRole("region", { name: "Verified, by system" });
   await expect(systems).toContainText("studio");
   await expect(systems).toContainText("llm");

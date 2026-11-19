@@ -281,7 +281,7 @@ test("a step's page links to its runs; without a model a step stays a command to
   await open(page, a(), "stories?change=add-transfer-limit");
   await expect(
     page.getByRole("link", { name: "Model runs for add-transfer-limit" }).first(),
-  ).toHaveAttribute("href", "#/runs?change=add-transfer-limit");
+  ).toHaveAttribute("href", "#/activity?tab=runs&change=add-transfer-limit");
   const next = page.locator("section[aria-labelledby=run-next]");
   // Seventh UX walk: the command is under "Or in a terminal", after the in-app action.
   await next.getByText("Or in a terminal").first().click();
@@ -309,7 +309,7 @@ test("a step's page links to its runs; without a model a step stays a command to
   await open(page, a(), "knowledge");
   await expect(
     page.getByRole("link", { name: "Model runs of the knowledge steps" }).first(),
-  ).toHaveAttribute("href", "#/runs?q=knowledge");
+  ).toHaveAttribute("href", "#/activity?tab=runs&q=knowledge");
   await page.getByRole("link", { name: "Model runs of the knowledge steps" }).first().click();
   await expect(page.getByLabel("Filter")).toHaveValue("knowledge");
   await expect(

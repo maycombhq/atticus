@@ -1,3 +1,4 @@
+import { activityHref } from "../../app/screens.js";
 import { useEffect, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
@@ -37,8 +38,8 @@ export function historyHref(o: { change?: string; session?: string; q?: string }
   if (o.change) q.set("change", o.change);
   if (o.session) q.set("session", o.session);
   if (o.q) q.set("q", o.q);
-  const s = q.toString();
-  return `#/history${s ? `?${s}` : ""}`;
+  // v30 slice 8: Prompt history is a tab of Activity.
+  return activityHref("history", Object.fromEntries(q));
 }
 
 /** The turns of the change and session asked for, with every word of the filter. */

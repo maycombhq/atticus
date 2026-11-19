@@ -3,6 +3,7 @@ import {
   changeOf,
   groupLabel,
   PHASES,
+  pageTitle,
   sectionLabel,
   tabHref,
   tabsOf,
@@ -51,8 +52,13 @@ export function SectionTabs({
             <span>{change}</span>
           </>
         )}
-        <span aria-hidden="true"> › </span>
-        <span aria-current="location">{current.label}</span>
+        {/* v30 slice 8: "Map", not "Map › Map"; Activity names its tab. */}
+        {pageTitle(current, hash) !== section && (
+          <>
+            <span aria-hidden="true"> › </span>
+            <span aria-current="location">{pageTitle(current, hash)}</span>
+          </>
+        )}
       </nav>
       {tabs.length > 1 && (
         <nav aria-label={T.tabs(section)} className="tabs">
