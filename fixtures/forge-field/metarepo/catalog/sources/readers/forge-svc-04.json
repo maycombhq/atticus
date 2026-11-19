@@ -1907,7 +1907,49 @@
     {
       "schemaVersion": 5,
       "kind": "Unresolved",
-      "id": "unresolved.c-24",
+      "id": "unresolved.forge-svc-04.c-0",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/accounts/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-16",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 17,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/mandates/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-24",
       "status": "current",
       "confidence": "verified",
       "evidence": [
@@ -1928,7 +1970,49 @@
     {
       "schemaVersion": 5,
       "kind": "Unresolved",
-      "id": "unresolved.c-31",
+      "id": "unresolved.forge-svc-04.c-25",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/statements/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-3",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/transfers/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-31",
       "status": "current",
       "confidence": "verified",
       "evidence": [
@@ -1949,7 +2033,28 @@
     {
       "schemaVersion": 5,
       "kind": "Unresolved",
-      "id": "unresolved.c-35",
+      "id": "unresolved.forge-svc-04.c-32",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 8,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/rates/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-35",
       "status": "current",
       "confidence": "verified",
       "evidence": [
@@ -1965,6 +2070,27 @@
       ],
       "owner": "forge-svc-04",
       "raw": "POST http://api.northwind-pay.example/v2/notices/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.forge-svc-04.c-38",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 14,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/disputes/{id}",
       "unresolvedKind": "http-call"
     }
   ]

@@ -607,12 +607,8 @@ export async function writeManifest(root: string, repos: readonly ManifestRepo[]
  * repo the manifest gives no System, a gateway proxy fronting a service (its target URL a token
  * its deploy file sets per environment), and nested payload fields. Each repo is read from facts
  * (the assistant's, with their snapshots, as `verify --write` leaves them); no clone, no network.
- * Fact ids carry their repo's short name: two repos' loose calls of one id make one catalog record
- * today (the known bug forge-field.test.ts holds as `it.fails`).
- *
- * TODO(beta.30, Unresolved ids with their repo): when "has a record for every repo's loose call,
- * when two repos have a call of the same id" (packages/cli/test/forge-field.test.ts) passes, give
- * every repo the same call ids (`c-0`, `c-1`, …), as assistants name them in the field.
+ * Every repo's calls share ids (`c-0`, `c-1`, …), as assistants name them in the field; each loose
+ * end is still a record of its own, its id carrying its repo (ADR 0124 addendum E-ids).
  */
 export interface ShapeSketch {
   /** How many services, 2 to 4, from the pool. */
@@ -806,7 +802,9 @@ export async function writeShapeEstate(
       const path =
         via === "proxy" ? basePath + ep.path : via === "outside" ? "/v2/charges" : ep.path;
       const method = via === "outside" ? "POST" : ep.method;
-      const id = `c-${b.short}-${c++}`;
+      // Every repo's calls are `c-0`, `c-1`, … as assistants name them in the field: a loose
+      // end's id carries its repo (ADR 0124 addendum E-ids), so they stay a record each.
+      const id = `c-${c++}`;
       const url = `https://${host}${path}`;
       const at = { file: client, line: ++line };
       facts.push({

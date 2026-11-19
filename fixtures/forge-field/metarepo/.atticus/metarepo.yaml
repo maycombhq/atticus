@@ -28,3 +28,4 @@ migrations:
   - catalog-schema-v5
   - runtime-v4
   - corrections-v2
+  - unresolved-ids-repo
