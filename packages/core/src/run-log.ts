@@ -100,6 +100,12 @@ export interface TerminalRunRecord {
   job?: { id: string; kind: string; ids?: string[] };
   /** A job the app started that was still running when the app closed. */
   appClosed?: true;
+  /**
+   * Beta.30 (ADR 0202 point 10): the longest time, in milliseconds, the command printed
+   * nothing: between two of its lines (progress lines included), before its first and after its
+   * last. A run from before beta.30 has none.
+   */
+  longestQuietMs?: number;
 }
 
 /** A record as read: `stale` when its process is gone though it never said it ended. */
@@ -917,10 +923,19 @@ export function startTerminalRun(
     beat.unref?.();
     unhook.push(() => clearInterval(beat));
   }
+  // ADR 0202 point 10: how long the command went without a line, kept with the record.
+  let saidAt = started.getTime();
+  const quiet = () => {
+    const at = now().getTime();
+    if (at - saidAt > (rec.longestQuietMs ?? 0)) rec.longestQuietMs = at - saidAt;
+    saidAt = at;
+  };
+  rec.longestQuietMs = 0;
   const recorder: TerminalRunRecorder = {
     runId,
     line(text) {
       if (ended || broken) return;
+      quiet();
       try {
         for (const l of runLogLines(text, o.redact)) {
           const s = `${l}\n`;
@@ -937,6 +952,7 @@ export function startTerminalRun(
     end(code, how) {
       if (ended) return;
       ended = true;
+      quiet();
       for (const u of unhook) u();
       rec.state =
         how === "crash"
@@ -1075,7 +1091,7 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
       !["running", "done", "failed", "cancelled"].includes(r.state as string)
     )
       return undefined;
-    const { job, appClosed, ...rest } = r as TerminalRunRecord;
+    const { job, appClosed, longestQuietMs, ...rest } = r as TerminalRunRecord;
     const jobOk =
       !!job &&
       typeof job === "object" &&
@@ -1091,6 +1107,7 @@ function readRecord(root: string, runId: string): TerminalRunRecord | undefined 
       ...(typeof r.beatAt === "string" ? { beatAt: r.beatAt } : {}),
       ...(jobOk ? { job: { id: job.id, kind: job.kind } } : {}),
       ...(appClosed === true ? { appClosed: true as const } : {}),
+      ...(typeof longestQuietMs === "number" && longestQuietMs >= 0 ? { longestQuietMs } : {}),
     };
   } catch {
     return undefined;

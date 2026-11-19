@@ -1262,3 +1262,41 @@ describe("runLogKept", () => {
     expect(runLogKept(adopted, {})).toBe(true);
   });
 });
+
+/** ADR 0202 point 10: the run's longest silence is kept, so selfcheck's 30-second check has data. */
+describe("a run's record says how long it went without a line", () => {
+  it("keeps the longest gap: before the first line, between two, and after the last", async () => {
+    const root = await fresh();
+    const times = [0, 2_000, 2_500, 42_500, 43_000].map((ms) =>
+      Date.UTC(2026, 10, 18, 9, 0, 0, ms),
+    );
+    let k = 0;
+    const rec = startTerminalRun(root, {
+      positionals: ["verify", "forge-ledger"],
+      flags: ["write"],
+      pid: 7,
+      now: () => new Date(times[Math.min(k++, times.length - 1)]!),
+    })!;
+    rec.line("Reading forge-ledger…");
+    rec.line("Building the catalog: pass 1 of 8…");
+    rec.line("Done.");
+    rec.end(0);
+    const [run] = readTerminalRuns(root);
+    expect(run!.state).toBe("done");
+    expect(run!.longestQuietMs).toBe(40_000);
+  });
+
+  it("a record from before beta.30 has none, and a value that is no number is not read", async () => {
+    const root = await fresh();
+    const rec = startTerminalRun(root, { positionals: ["scan"], flags: [], pid: 8 })!;
+    rec.end(0);
+    const file = join(runningDirOf(root), `${rec.runId}.json`);
+    const json = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(typeof json.longestQuietMs).toBe("number");
+    delete json.longestQuietMs;
+    writeFileSync(file, JSON.stringify(json));
+    expect(readTerminalRuns(root)[0]).not.toHaveProperty("longestQuietMs");
+    writeFileSync(file, JSON.stringify({ ...json, longestQuietMs: "forge" }));
+    expect(readTerminalRuns(root)[0]).not.toHaveProperty("longestQuietMs");
+  });
+});
