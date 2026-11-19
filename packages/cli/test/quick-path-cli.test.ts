@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
@@ -254,12 +254,18 @@ describe("atticus change new --from", () => {
   );
 });
 
-/** Every file under a folder with its bytes' hash, so "nothing was written" is checked whole. */
+/**
+ * Every file under a folder with its bytes' hash, so "nothing was written" is checked whole, but
+ * for exactly Atticus's own log, which every command keeps: `.atticus/logs/**` and the
+ * `.atticus/.gitignore` that keeps it out of Git.
+ */
 async function tree(root: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const e of await readdir(root, { recursive: true, withFileTypes: true }))
     if (e.isFile()) {
       const f = join(e.parentPath, e.name);
+      const rel = relative(root, f).split(sep).join("/");
+      if (rel === ".atticus/.gitignore" || rel.startsWith(".atticus/logs/")) continue;
       out[f] = createHash("sha256")
         .update(await readFile(f))
         .digest("hex");
@@ -280,15 +286,23 @@ describe("the door check: what counts as in the map, and what it leaves on disk"
     ].join("\n");
 
   it(
-    "--check writes nothing: the whole tree is byte for byte what it was, pass or refuse",
+    "--check creates and changes nothing in the metarepo but Atticus's own log, pass or refuse",
     async () => {
       const { root, file } = await withFile(requirements());
+      // Through the CLI's own entry, as the binary runs it (its log on), so any other write shows.
+      const check = (...more: string[]) =>
+        main(["change", "new", "--from", file, "--check", ...more, "--root", root], capture().io);
       const before = await tree(root);
-      expect(await changeNew(root, { from: file, check: true, by: "pat" }, capture().io)).toBe(0);
+      expect(Object.keys(before).length).toBeGreaterThan(10);
+      expect(await check()).toBe(0);
       expect(await tree(root)).toEqual(before);
+      expect(await check("--json")).toBe(0);
+      expect(await tree(root)).toEqual(before);
+      // The log is the one thing it keeps.
+      expect(existsSync(join(root, ".atticus/logs/atticus.log"))).toBe(true);
       await writeFile(file, cites("forge-nowhere"));
       const again = await tree(root);
-      expect(await changeNew(root, { from: file, check: true, by: "pat" }, capture().io)).toBe(1);
+      expect(await check()).toBe(1);
       expect(await tree(root)).toEqual(again);
     },
     T,

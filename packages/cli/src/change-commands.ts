@@ -358,8 +358,8 @@ async function mapLookup(root: string): Promise<(id: string) => boolean | string
 /**
  * atticus change new ["<title>"] --from <requirements.md> [--type quick] [--id <id>] [--check]
  * [--json] (ADR 0201): the door check, then the change with the file copied into its folder. The
- * check calls no model and writes nothing: every question closed, every evidence id in the map
- * or planned.
+ * check calls no model, and creates and changes nothing in the metarepo but Atticus's own log
+ * under .atticus: every question closed, every evidence id in the map or planned.
  */
 async function changeFromRequirements(
   root: string,

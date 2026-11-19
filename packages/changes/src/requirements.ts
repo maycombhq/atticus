@@ -160,7 +160,8 @@ export function parseRequirements(text: string): ParsedRequirements {
     for (const r of rows) taken.add(r.line);
     if (role() && mine.length) out.roles.push({ role: role(), rows });
   };
-  let fence: { char: string; length: number } | undefined;
+  // The fence that is open, with the line it opened on.
+  let fence: { char: string; length: number; line: number } | undefined;
   // The line an HTML comment opened on, while it is open.
   let comment: number | undefined;
   let table: Table | undefined;
@@ -176,7 +177,7 @@ export function parseRequirements(text: string): ParsedRequirements {
       return undefined;
     }
     if (comment === undefined && f && !(f[1]![0] === "`" && f[2]!.includes("`"))) {
-      fence = { char: f[1]![0]!, length: f[1]!.length };
+      fence = { char: f[1]![0]!, length: f[1]!.length, line: i + 1 };
       return undefined;
     }
     const kept: string[] = [];
@@ -196,6 +197,13 @@ export function parseRequirements(text: string): ParsedRequirements {
     }
     return kept.join("");
   });
+  // A fence never closed would hide every table after it, so it is refused where it opens.
+  if (fence)
+    out.problems.push({
+      line: fence.line,
+      role: "",
+      words: `a code fence opens here and is never closed, so the rest of the file isn't read: close it (${fence.char.repeat(fence.length)}).`,
+    });
   if (comment !== undefined)
     out.problems.push({
       line: comment,

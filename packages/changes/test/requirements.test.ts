@@ -431,6 +431,28 @@ describe("a table the parser can't be sure of is refused, never passed over", ()
     ]);
   });
 
+  it("refuses a code fence never closed, at the line it opens on: it would hide every table after it", () => {
+    const words = (fence: string) =>
+      `a code fence opens here and is never closed, so the rest of the file isn't read: close it (${fence}).`;
+    expect(reasons(`# T\n## Arch\n\`\`\`\nx\n\n${HEADER}\n${OPEN}\n`)).toEqual([
+      ["requirements.unreadable", 3, `r.md:3: ${words("```")}`],
+    ]);
+    // A tilde fence isn't closed by a line with words after the tildes, nor by a shorter run.
+    expect(reasons(`# T\n## Arch\n\n~~~~ text\nx\n~~~~ end\n~~~\n\n${HEADER}\n${OPEN}\n`)).toEqual([
+      ["requirements.unreadable", 4, `r.md:4: ${words("~~~~")}`],
+    ]);
+    // At the file's end with nothing after it, it is still refused: the next edit would be hidden.
+    expect(reasons("# T\n\nWhat is wanted.\n\n```sh\nmake\n")).toEqual([
+      ["requirements.unreadable", 5, `r.md:5: ${words("```")}`],
+    ]);
+    // Closed, the fence hides only what it holds, and the open row after it is read.
+    expect(
+      reasons(`# T\n## Arch\n\`\`\`\n${HEADER}\n${OPEN}\n\`\`\`\n\n${HEADER}\n${OPEN}\n`).map(
+        (r) => [r[0], r[1]],
+      ),
+    ).toEqual([["requirements.open-question", 11]]);
+  });
+
   it("reads a very long heading in time that grows with its length", () => {
     const long = `## ${"a ".repeat(40000)}${"#".repeat(40000)} x ${" #".repeat(20000)}`;
     const started = Date.now();
