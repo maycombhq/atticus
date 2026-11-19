@@ -469,6 +469,16 @@ test.describe("the field-shaped estate", () => {
     page,
   }) => {
     const root = field().root;
+    // On its own, whatever the test before left: the legacy slot as the fixture has it, built.
+    const legacy = fieldInfo().legacy[0]!;
+    writeFileSync(
+      join(root, "catalog/sources/readers", `${legacy}.json`),
+      readFileSync(
+        join(FIXTURES, "forge-field/metarepo/catalog/sources/readers", `${legacy}.json`),
+        "utf8",
+      ),
+    );
+    expect(atticus(root, "catalog", "build")).not.toMatch(/--allow-removals \d+/);
     const before = catalogFiles(root);
     await open(page, field(), "scans");
     const panel = page.getByRole("region", { name: "Panel" });

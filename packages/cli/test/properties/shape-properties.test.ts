@@ -167,8 +167,17 @@ async function check(k: ShapeSketch): Promise<void> {
         );
       if ((c.via === "host" || c.via === "forward") && !flags.has("joined-by-host"))
         route("names a host the manifest lists, and no arrow joined by its host cites it");
-      if (c.via === "proxy" && !drawn) route("goes through the proxy, and no arrow cites it");
-      // An unset `${NAME}` host is drawn by its path today: held apart, as it.fails below.
+      const tos = arrows.map((r) => (r as { to?: string }).to);
+      if ((c.via === "host" || c.via === "forward") && c.to && !tos.includes(c.to))
+        route(`names ${c.to}'s host, and its arrows go to ${tos.join(", ") || "nothing"}`);
+      // An arrow's flags are every call's on it: an unset `${NAME}` call guessed to the same API
+      // (the held bug below) flags it joined-by-path. Until that is fixed, this part holds only
+      // where no such call is.
+      const guessed = e.calls.some((x) => x.via === "token" && !x.host.startsWith("@"));
+      if (c.via === "proxy" && (!drawn || (!guessed && flags.has("joined-by-path"))))
+        route("goes through the proxy, and no arrow cites it but one guessed by its path");
+      // An unset `${NAME}` host is drawn by its path today: held apart, as it.fails below. When
+      // that is fixed, the `c.host.startsWith("@")` exemption here goes too.
       if (c.via === "token" && c.host.startsWith("@") && drawn && !flags.has("joined-by-person"))
         route("names a deploy token nothing sets, and is drawn though no person joined it");
       if (c.via === "outside" && l.status !== "outside" && l.status !== "asked")
@@ -240,7 +249,8 @@ describe("the estate's shape: every call accounted for, every refusal with a nex
    * about, since a path guess would be an arrow no line cites). `WHOLE_HOST_TOKEN` matches only
    * `@name@`, so a call to `${FORGE_LEDGER_URL}` that nothing sets is drawn by its path, an
    * inferred arrow flagged joined-by-path, where `@forgeLedgerUrl@` is asked. When the join asks
-   * about it too, this passes and `it.fails` says so: make it `it`.
+   * about it too, this passes and `it.fails` says so: make it `it`, and drop the
+   * `c.host.startsWith("@")` exemption from the token route of `check` above.
    */
   it.fails(
     "a host written as ${NAME} that nothing sets is asked about, never drawn by its path",

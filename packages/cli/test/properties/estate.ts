@@ -662,6 +662,8 @@ export interface ShapedCall {
   via: ShapeSketch["calls"][number]["via"] | "forward";
   /** The host the call is written to. */
   host: string;
+  /** The component its arrow goes to, for a call by a listed host or a gateway's forward. */
+  to?: string;
 }
 
 export interface ShapedEstate {
@@ -820,7 +822,14 @@ export async function writeShapeEstate(
         cite: { ...at, value: path, quote: `rest.exchange("${url}"` },
         ...tail,
       });
-      calls.push({ repo, fact: id, ...at, via, host });
+      calls.push({
+        repo,
+        fact: id,
+        ...at,
+        via,
+        host,
+        ...(via === "host" ? { to: bases[to]!.component } : {}),
+      });
     }
     await snapshot(root, repo, facts, SHAPE_COMMIT);
   }
@@ -865,6 +874,7 @@ export async function writeShapeEstate(
         line: 2 + n,
         via: "forward",
         host: token,
+        to: bases[0]!.component,
       });
     }
     for (const [n, env] of ["dev", "prod"].entries()) {

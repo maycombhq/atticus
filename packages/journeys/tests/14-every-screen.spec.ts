@@ -1,4 +1,13 @@
-import { accessible, ESTATES, expect, forgeJourney, open, routeOf, test } from "../support/app.js";
+import {
+  accessible,
+  ESTATES,
+  expect,
+  fieldInfo,
+  forgeJourney,
+  open,
+  routeOf,
+  test,
+} from "../support/app.js";
 import { SCREENS } from "../support/screens.js";
 
 /**
@@ -7,11 +16,37 @@ import { SCREENS } from "../support/screens.js";
  * Forge estate and on the field-shaped one (fixtures/forge-field), each screen with the estate's
  * own change and component; on the field estate no screen says "Couldn't load this".
  */
+
+/**
+ * The change pages with no change picked, on the field estate (as 15-empty-and-error opens them on
+ * a new metarepo): each says to pick one, never "Couldn't load this".
+ */
+const BARE = [
+  "feature-design",
+  "stories",
+  "task-list",
+  "impact",
+  "wiki-search",
+  "brief",
+  "ux",
+  "arch-review",
+  "change-diagram",
+  "estimate",
+  "conformance",
+  "mappings",
+  "breakdown",
+  "tasks",
+  "trace",
+];
+
 for (const estate of ESTATES)
   test.describe(`the ${estate} estate`, () => {
     const app = forgeJourney({ estate });
 
-    for (const s of SCREENS.map((x) => routeOf(estate, x)))
+    for (const s of [
+      ...SCREENS.map((x) => routeOf(estate, x)),
+      ...(estate === "field" ? BARE.filter((b) => !SCREENS.includes(b)) : []),
+    ])
       test(`#/${s} is accessible`, async ({ page }) => {
         const errors: string[] = [];
         page.on("pageerror", (e) => errors.push(String(e)));
@@ -21,6 +56,27 @@ for (const estate of ESTATES)
         if (estate === "field") await expect(page.getByText(/Couldn't load this/)).toHaveCount(0);
         await accessible(page, s);
         expect(errors, `script errors on ${s}`).toEqual([]);
+      });
+
+    // Beta.30: the app's Ask names both consumers of a topic with consumers in two repos, on its
+    // own panel, the list named by its Read as line.
+    if (estate === "field")
+      test("Ask: who consumes a topic with consumers in two repos, accessibly", async ({
+        page,
+      }) => {
+        const t = fieldInfo().topic!;
+        await open(
+          page,
+          app(),
+          `explore?ask=${encodeURIComponent(`who consumes the topic ${t.name}?`)}`,
+        );
+        const list = page.getByRole("list", { name: new RegExp(`who receives ${t.name}`) });
+        await expect(list).toBeVisible();
+        for (const l of t.listeners) await expect(list).toContainText(l);
+        await expect(
+          page.getByRole("link", { name: /^What breaks if this changes: / }),
+        ).toHaveCount(t.listeners.length);
+        await accessible(page, "Ask: who receives a topic with two consumers");
       });
 
     // The palette doesn't depend on the estate's shape: the tidy estate's only.
