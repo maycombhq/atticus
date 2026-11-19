@@ -1,0 +1,8 @@
+    @Query("select * from account_0 where id = ?")
+    @Query("select * from balance_1 where id = ?")
+    @Query("select * from payment_2 where id = ?")
+    @Query("select * from transfer_3 where id = ?")
+    @Query("select * from invoice_4 where id = ?")
+    @Query("select * from statement_5 where id = ?")
+    @Query("select * from ledger_6 where id = ?")
+    @Query("select * from entry_7 where id = ?")

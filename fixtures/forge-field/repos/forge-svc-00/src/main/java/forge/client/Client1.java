@@ -1,0 +1,15 @@
+        rest.exchange("https://forge-svc-04.forge.example/v1/fees/{id}/balance-7", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://gw.forge.example/svc-01/1.0/v1/customers/{id}/rate-7", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://gw.forge.example/svc-01/1.0/v1/balances/{id}/transfer-0", HttpMethod.GET, null, Item.class);
+        rest.exchange("https://forge-svc-01.forge.example/v1/payments/{id}/limit-1", HttpMethod.POST, null, Item.class);
+        rest.exchange("https://@forgeTargetUrl2@/v1/entrys/{id}", HttpMethod.GET, null, Item.class);
+        rest.exchange("https://api.northwind-pay.example/v2/limits/{id}", HttpMethod.POST, null, Item.class);
+        rest.exchange("https://forge-svc-03.forge.example/v1/limits/{id}/dispute-7", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://forge-svc-02.forge.example/v1/transfers/{id}/report-1", HttpMethod.POST, null, Item.class);
+        rest.exchange("https://forge-svc-04.forge.example/v1/entrys/{id}/report-3", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://forge-svc-02.forge.example/v1/cards/{id}/notice-7", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://forge-svc-04.forge.example/v1/invoices/{id}/rate-0", HttpMethod.GET, null, Item.class);
+        rest.exchange("https://forge-svc-04.forge.example/v1/entrys/{id}/report-3", HttpMethod.DELETE, null, Item.class);
+        rest.exchange("https://gw.forge.example/svc-02/1.0/v1/invoices/{id}/account-2", HttpMethod.PUT, null, Item.class);
+        rest.exchange("https://api.northwind-pay.example/v2/disputes/{id}", HttpMethod.POST, null, Item.class);
+        rest.exchange("https://@forgeTargetUrl0@/v1/refunds/{id}", HttpMethod.GET, null, Item.class);

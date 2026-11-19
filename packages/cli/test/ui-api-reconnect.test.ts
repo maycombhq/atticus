@@ -1,8 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Api } from "@maycombhq/core";
+import { Api, type CatalogRecord } from "@maycombhq/core";
+import { keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
+import { startServer, type RunningServer } from "@maycombhq/server";
+import { extendUiRoutes } from "../src/ui-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
+import { seedForgeField, type ForgeField } from "./forge-field.js";
 import {
   A,
   AT,
@@ -508,4 +514,94 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
     expect(ok.said).toContain(`pat paired ${A}'s call with GET /holds/{id} on ${B}`);
     writeFileSync(manifest, text);
   }, 120_000);
+});
+
+// Beta.30 (slice 9): the same move on the field-shaped estate (fixtures/forge-field), among
+// forty calls, gateway proxies, hand pairings and a legacy slot: its call joined to the wrong box.
+describe("it's connected to the wrong box, on the field-shaped estate", () => {
+  let dir: string;
+  let f: ForgeField & { root: string };
+  let srv: RunningServer;
+  const fcall = async (path: string, method = "GET", body?: unknown) => {
+    const r = await fetch(srv.url + path, {
+      method,
+      headers: {
+        "X-Atticus-Token": srv.token,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    const text = await r.text();
+    return { status: r.status, body: (text ? JSON.parse(text) : {}) as Record<string, unknown> };
+  };
+  const interfaces = async () =>
+    (await readCatalog(join(f.root, "catalog", "generated"))).records.filter(
+      (r) => r.kind === "Interface",
+    ) as (CatalogRecord & { from: string; to: string })[];
+  const citing = (rs: Awaited<ReturnType<typeof interfaces>>, file: string, line: number) =>
+    rs.filter((r) =>
+      (r.evidence as { repo?: string; path?: string; line?: number }[]).some(
+        (x) => x.repo === f.wrongBox!.from && x.path === file && x.line === line,
+      ),
+    );
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "b30-fd-rc-"));
+    f = await seedForgeField(dir);
+    keepCatalogsInMemory(true);
+    srv = await startServer({
+      root: f.root,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) => extendUiRoutes(r, ctx),
+    });
+  }, 300_000);
+  afterAll(async () => {
+    keepCatalogsInMemory(false);
+    await srv?.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("lists the call as joined to the box its address names, moves it with a reason, and Apply draws it to the right box", async () => {
+    const w = f.wrongBox!;
+    const r = await fcall(`/api/links/candidates?from=${w.from}&to=${w.goes}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const v = Api.LinkCandidatesView.parse(r.body);
+    const c = v.calls.find((x) => x.fact === w.call)!;
+    expect(c).toMatchObject({ status: "joined", joins: w.joins, how: { by: "address" } });
+    // The box it really goes to serves the same API.
+    const api = v.apis.find((a) => a.method === w.method && a.path === w.path)!;
+    expect(api, JSON.stringify(v.apis.map((a) => `${a.method} ${a.path}`))).toBeDefined();
+    const pair = { call: w.call, api: api.id, reason: "It moved in the split." };
+    const p = await fcall("/api/links/connect", "POST", {
+      from: w.from,
+      to: { repo: w.goes },
+      pairs: [pair],
+      preview: true,
+    });
+    expect(p.status, JSON.stringify(p.body)).toBe(200);
+    const pv = Api.VerifyPreviewView.parse(Api.ConnectLinksResult.parse(p.body).preview).preview!;
+    expect(pv.confirm, JSON.stringify(pv.confirm)).toBeUndefined();
+    const written = await fcall("/api/links/connect", "POST", {
+      from: w.from,
+      to: { repo: w.goes },
+      pairs: [pair],
+    });
+    expect(written.status, JSON.stringify(written.body)).toBe(200);
+    expect(Api.ConnectLinksResult.parse(written.body).lines).toHaveLength(1);
+    const at = c.at.split(":");
+    const [file, line] = [at.slice(0, -1).join(":"), Number(at.at(-1))];
+    expect(citing(await interfaces(), file, line).map((i) => i.to)).toEqual([w.joins]);
+    // Apply, as a person's Apply runs it: nothing to confirm, the arrow moved.
+    const out: string[] = [];
+    const code = await verifyCommand(
+      f.root,
+      w.from,
+      { commit: f.commits[w.from]!, dir: join(f.root, "workspace", w.from), write: true },
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+    );
+    expect(code, out.join("\n")).toBe(0);
+    expect(out.join("\n")).not.toContain("--allow-removals");
+    expect(citing(await interfaces(), file, line).map((i) => i.to)).toEqual([w.goes]);
+  }, 300_000);
 });

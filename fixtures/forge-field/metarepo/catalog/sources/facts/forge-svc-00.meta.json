@@ -1,0 +1,9 @@
+{
+  "slotVersion": 1,
+  "kind": "facts",
+  "repo": "forge-svc-00",
+  "commit": "9aa433e35611e448f8efea376fcf2b3af8319717",
+  "factsSchemaVersion": 5,
+  "factsHash": "bbc461dd33efb95cac603d1bf1d8174dc817cf931280c45d5b9e2d1ea775834f",
+  "contracts": null
+}

@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { startServer } from "@maycombhq/server";
 import { main } from "../src/main.js";
+import { seedForgeField, type ForgeField } from "./forge-field.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 let root: string;
@@ -282,4 +284,145 @@ describe("atticus guide and atticus site build", () => {
     expect(r.out).toMatch(/5 systems/);
     expect(await readFile(join(dir, "index.html"), "utf8")).toContain("Forge catalog");
   });
+});
+
+// Beta.30 (slice 9): the map tools on the field-shaped estate (fixtures/forge-field).
+describe("atticus ask on the field-shaped estate", () => {
+  let e: ForgeField & { root: string };
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "b30-fd-ask-"));
+    e = await seedForgeField(dir);
+  }, 300_000);
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const ask = async (q: string) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await main(["ask", q, "--root", e.root], {
+      out: (l) => out.push(l),
+      err: (l) => err.push(l),
+    });
+    return { code, out: out.join("\n"), err: err.join("\n") };
+  };
+
+  it("names who calls a service, its gateway proxy (whose target is ${TARGET_URL}) among them", async () => {
+    const r = await ask("who calls forge-svc-02?");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Query: kind:interface to:forge-svc-02");
+    expect(r.out).toContain("forge-gw-02 → forge-svc-02");
+  }, 120_000);
+
+  /**
+   * Found by this estate (product bug, fixed here): a repo whose id has dots is the component
+   * `forge-instruments-svc`, so the question found no record of `forge.instruments.svc` and said
+   * it "is in the manifests and hasn't been read", though it is read and on the map. A repo's id
+   * is looked up as its component now (packages/index/src/ask.ts, `askLookup`).
+   */
+  it("reads a repo whose id has dots as its component, never as not read", async () => {
+    const r = await ask("who calls forge.instruments.svc?");
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain("hasn't been read");
+    expect(r.out).toContain("Query: kind:interface to:forge-instruments-svc");
+  });
+
+  /**
+   * Found by this estate (product bug, fixed here): a topic read from facts is one Endpoint per
+   * consumer (`<consumer>.on-<topic>`), and `askLookup` took the first, so a topic with consumers
+   * in two repos was said to be received by one. The question covers every Endpoint of the
+   * topic's name now (packages/index/src/ask.ts, packages/cli/src/index-commands.ts).
+   */
+  it("names both consumers of a topic with consumers in two repos", async () => {
+    const r = await ask(`who consumes the topic ${e.topic!.name}?`);
+    expect(r.code).toBe(0);
+    // The receivers block only: a listener named in the Further rows doesn't count.
+    const at = r.out.indexOf(" is received by ");
+    expect(at, r.out).toBeGreaterThanOrEqual(0);
+    const end = r.out.indexOf("\nFurther, through a receiver");
+    const block = r.out.slice(at, end < 0 ? undefined : end);
+    expect(block).toMatch(/ is received by 2 components:/);
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const l of e.topic!.listeners)
+      expect(block).toMatch(
+        new RegExp(
+          `Component +${esc(l)} .* receives ${esc(e.topic!.name)} from ${esc(e.topic!.publisher)}`,
+        ),
+      );
+  });
+
+  it("answers the map tools' ask (--json) with both receivers, apart from what lies past them, and the publisher", async () => {
+    const t = e.topic!;
+    const out: string[] = [];
+    const code = await main(
+      ["ask", `who consumes the topic ${t.name}?`, "--json", "--root", e.root],
+      {
+        out: (l) => out.push(l),
+        err: (l) => out.push(l),
+      },
+    );
+    expect(code).toBe(0);
+    type Walk = { kind: string; id: string }[];
+    const j = JSON.parse(out.join("\n")) as {
+      readAs: string;
+      roots: string[];
+      receivers: Walk;
+      further: Walk;
+    };
+    expect(j.readAs).toContain(`who receives ${t.name}, at each of its 2 consumers`);
+    expect(j.roots).toHaveLength(2);
+    expect(
+      j.receivers
+        .filter((x) => x.kind === "Component")
+        .map((x) => x.id)
+        .sort(),
+    ).toEqual([...t.listeners].sort());
+    for (const l of t.listeners)
+      expect(
+        j.further.some((x) => x.kind === "Component" && x.id === l),
+        l,
+      ).toBe(false);
+    const pub = await ask(`who publishes to the topic ${t.name}?`);
+    expect(pub.out).toContain(`${t.publisher} →`);
+  }, 120_000);
+
+  it("the app's Ask (GET /api/ask) answers the same: both receivers, apart from what lies past them, and the publisher", async () => {
+    const t = e.topic!;
+    const srv = await startServer({ root: e.root, port: 0 });
+    try {
+      const get = async (q: string) => {
+        const r = await fetch(`${srv.url}/api/ask?q=${encodeURIComponent(q)}`, {
+          headers: { "X-Atticus-Token": srv.token },
+        });
+        expect(r.status).toBe(200);
+        return (await r.json()) as Record<string, unknown>;
+      };
+      type Walk = { kind: string; id: string }[];
+      const a = (await get(`who consumes the topic ${t.name}?`)) as {
+        action: string;
+        also: string[];
+        receivers: { roots: string[]; receivers: Walk; further: Walk };
+      };
+      expect(a.action).toBe("impact");
+      expect(a.also).toHaveLength(1);
+      expect(a.receivers.roots).toHaveLength(2);
+      expect(
+        a.receivers.receivers
+          .filter((x) => x.kind === "Component")
+          .map((x) => x.id)
+          .sort(),
+      ).toEqual([...t.listeners].sort());
+      for (const l of t.listeners)
+        expect(
+          a.receivers.further.some((x) => x.kind === "Component" && x.id === l),
+          l,
+        ).toBe(false);
+      const p = (await get(`who publishes to the topic ${t.name}?`)) as {
+        result: { rows: { name: string }[] };
+      };
+      expect(p.result.rows.some((r) => r.name.startsWith(`${t.publisher} →`))).toBe(true);
+    } finally {
+      await srv.close();
+    }
+  }, 120_000);
 });
