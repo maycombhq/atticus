@@ -81,6 +81,10 @@ describe("atticus init", () => {
     expect(t.out.at(-2)).toMatch(
       /^Your assistant reads a repo at: agentic \(tier 1\), from runtime\.yaml: .*atticus probe measures it with your assistant\. atticus map <repo> --estimate/,
     );
+    // ADR 0201: the starter personas aren't written for the assistants yet; init says how.
+    expect(t.out).toContain(
+      "The org pack has starter personas and the define-change skill (org-pack/agents/, org-pack/skills/). Write them for Claude and Copilot, with the map tools: atticus skills write.",
+    );
     // Atticus 2 reads a repo with the assistant (/atticus-map), not a scan.
     expect(t.out.at(-1)).toBe(
       "Next: atticus repos discover <folder of clones> and atticus workspace sync, then read each repo: /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",

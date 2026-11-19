@@ -307,7 +307,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "conflicts",
     description:
-      "Open changes that touch the same systems, records or repos; with an id, only those that touch it (atticus change conflicts).",
+      "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, only the pairs that overlap on it. It lists overlaps between open changes, not every change that touches the id; changes lists them all (atticus change conflicts).",
     args: [
       s(
         "id",

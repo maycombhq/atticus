@@ -420,6 +420,14 @@ const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 export const VSCODE_MCP_PATH = ".vscode/mcp.json";
 /** The read-only map tools as an MCP server entry: `atticus mcp` over stdio. */
 export const ATTICUS_MCP_SERVER = { type: "stdio", command: "atticus", args: ["mcp"] } as const;
+/**
+ * Where Claude Code reads a project's MCP servers. A server here is named `atticus` whether or
+ * not the Atticus plugin is installed (a plugin's server has a longer name), so an agent's
+ * `mcp__atticus__<tool>` is right either way.
+ */
+export const CLAUDE_MCP_PATH = ".mcp.json";
+/** `.mcp.json` with the `atticus` server alone. */
+export const claudeMcpJson = (): string => json({ mcpServers: { atticus: ATTICUS_MCP_SERVER } });
 /** `.vscode/mcp.json` with the `atticus` server alone: what is written where there is no file. */
 export const vscodeMcpJson = (): string => json({ servers: { atticus: ATTICUS_MCP_SERVER } });
 

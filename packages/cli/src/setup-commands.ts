@@ -123,6 +123,10 @@ export async function initCommand(
     for (const p of r.problems)
       io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
     for (const q of r.questions) io.out(`Question: ${q}`);
+    // ADR 0201: the org pack starts with personas; they reach the assistants by skills write.
+    io.out(
+      "The org pack has starter personas and the define-change skill (org-pack/agents/, org-pack/skills/). Write them for Claude and Copilot, with the map tools: atticus skills write.",
+    );
     await tierAt(dir, io);
     // Atticus 2 reads a repo with the assistant (/atticus-map) and writes it with verify --write.
     io.out(

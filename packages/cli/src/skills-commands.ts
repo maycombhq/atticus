@@ -6,7 +6,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { parse, stringify } from "yaml";
-import { ATTICUS_MCP_SERVER, VSCODE_MCP_PATH, vscodeMcpJson } from "@maycombhq/assistant-files";
+import {
+  ATTICUS_MCP_SERVER,
+  CLAUDE_MCP_PATH,
+  claudeMcpJson,
+  VSCODE_MCP_PATH,
+  vscodeMcpJson,
+} from "@maycombhq/assistant-files";
 import { isAdopted, orgPackDirOf, writeFileAtomic } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { MCP_TOOLS } from "./mcp.js";
@@ -197,6 +203,9 @@ const COPILOT_TOOLS: Record<string, string> = {
 };
 /** The frontmatter that is the define-change loop's, never an assistant's (ADR 0201). */
 const PERSONA_ONLY = new Set(["role", "owns", "handoffs"]);
+/** What a hand-off with no prompt of its own pre-fills. */
+const NO_PROMPT = "Take over from here.";
+const COPILOT_MAP_TOOLS = "atticus/*";
 const MAP_TOOL = /^atticus\/([a-z][a-z0-9_]*)$/;
 const uniq = (xs: string[]) => [...new Set(xs)];
 
@@ -213,7 +222,7 @@ export function personaOutputs(
 ): {
   claudeTools?: string[];
   copilotTools?: string[];
-  handoffs: { label: string; agent: string; prompt?: string; send: false }[];
+  handoffs: { label: string; agent: string; prompt: string; send: false }[];
   notes: string[];
 } {
   const notes: string[] = [];
@@ -232,7 +241,9 @@ export function personaOutputs(
           continue;
         }
         claudeTools.push(`mcp__atticus__${map[1]}`);
-        copilotTools.push(t);
+        // Copilot's agent file reference documents a server's tools as `<server>/*` only, so its
+        // file takes the whole (read-only) server; the per-tool list is the Claude file's.
+        copilotTools.push(COPILOT_MAP_TOOLS);
         continue;
       }
       claudeTools.push(...(CLAUDE_TOOLS[t] ?? [t]));
@@ -243,10 +254,10 @@ export function personaOutputs(
     copilotTools = uniq(copilotTools);
     if (notCopilot.length)
       notes.push(
-        `left out of the Copilot file: ${notCopilot.join(", ")} (Copilot's agent file takes read, search, edit and atticus/<tool>)`,
+        `left out of the Copilot file: ${notCopilot.join(", ")} (Copilot's agent file takes read, search, edit and the atticus server's tools)`,
       );
   }
-  const handoffs: { label: string; agent: string; prompt?: string; send: false }[] = [];
+  const handoffs: { label: string; agent: string; prompt: string; send: false }[] = [];
   for (const h of Array.isArray(fm.handoffs) ? (fm.handoffs as unknown[]) : namesOf(fm.handoffs)) {
     const o = (h && typeof h === "object" ? h : { to: h }) as Record<string, unknown>;
     const to = typeof o.to === "string" ? o.to.trim() : "";
@@ -258,7 +269,8 @@ export function personaOutputs(
     handoffs.push({
       label: typeof o.label === "string" && o.label.trim() ? o.label.trim() : `Hand to ${to}`,
       agent: to,
-      ...(typeof o.prompt === "string" && o.prompt.trim() ? { prompt: o.prompt.trim() } : {}),
+      // Copilot's reference asks for label, agent and prompt on every hand-off.
+      prompt: typeof o.prompt === "string" && o.prompt.trim() ? o.prompt.trim() : NO_PROMPT,
       // A person presses the hand-off: one agent never starts the next by itself.
       send: false,
     });
@@ -390,8 +402,8 @@ export async function planWrite(root: string): Promise<{
   /** Two sources with one name: which was written, which not. */
   clashes: string[];
   claude?: string;
-  /** `.vscode/mcp.json` with the atticus server, when it is to be written; `added` into a file that was there. */
-  mcp?: { text: string; added: boolean };
+  /** The MCP files to write so the map tools are there: VS Code's and Claude Code's; `added` into a file that was there. */
+  mcp: { path: string; text: string; added: boolean }[];
   /** What was left out of a written file, and why, for the person (ADR 0201). */
   notes: string[];
 }> {
@@ -463,33 +475,44 @@ export async function planWrite(root: string): Promise<{
     : re.test(claude)
       ? claude.replace(re, "").trimEnd() + (claude.replace(re, "").trim() ? eol : "")
       : claude;
-  const mcp = await mcpPlan(root);
-  if (mcp.note) notes.push(mcp.note);
+  const mcp: { path: string; text: string; added: boolean }[] = [];
+  for (const f of MCP_FILES) {
+    const m = await mcpPlan(root, f);
+    if (m.note) notes.push(m.note);
+    if (m.text !== undefined) mcp.push({ path: f.path, text: m.text, added: m.added });
+  }
   return {
     write,
     kept,
     current,
     clashes,
     ...(next !== claude ? { claude: next } : {}),
-    ...(mcp.text !== undefined ? { mcp: { text: mcp.text, added: mcp.added } } : {}),
+    mcp,
     notes,
   };
 }
 
+/** The files that tell each assistant where the map tools are, and the key its servers are under. */
+const MCP_FILES = [
+  { path: VSCODE_MCP_PATH, key: "servers", fresh: vscodeMcpJson },
+  { path: CLAUDE_MCP_PATH, key: "mcpServers", fresh: claudeMcpJson },
+] as const;
+
 /**
- * The metarepo's `.vscode/mcp.json` (ADR 0201): the file `assistant-files` writes where there is
- * none; the `atticus` server added where the file reads as JSON and has none; nothing where it
- * has one, or doesn't read as JSON (said: VS Code takes comments there, and Atticus won't lose
- * them).
+ * One of the metarepo's MCP files (ADR 0201): `.vscode/mcp.json` for VS Code and `.mcp.json` for
+ * Claude Code. A new file where there is none; the `atticus` server added where the file reads as
+ * JSON and has none; nothing where it has one, or doesn't read as JSON (said: VS Code takes
+ * comments there, and Atticus won't lose them).
  */
-async function mcpPlan(root: string): Promise<{ text?: string; added: boolean; note?: string }> {
-  const raw = await readFile(join(root, ...VSCODE_MCP_PATH.split("/")), "utf8").catch(
-    () => undefined,
-  );
-  if (raw === undefined) return { text: vscodeMcpJson(), added: false };
+async function mcpPlan(
+  root: string,
+  f: (typeof MCP_FILES)[number],
+): Promise<{ text?: string; added: boolean; note?: string }> {
+  const raw = await readFile(join(root, ...f.path.split("/")), "utf8").catch(() => undefined);
+  if (raw === undefined) return { text: f.fresh(), added: false };
   const unread = {
     added: false,
-    note: `${VSCODE_MCP_PATH} doesn't read as JSON, so it is left as it is. Add the atticus server to its servers yourself: "atticus": ${JSON.stringify(ATTICUS_MCP_SERVER)}`,
+    note: `${f.path} doesn't read as JSON, so it is left as it is. Add the atticus server to its ${f.key} yourself: "atticus": ${JSON.stringify(ATTICUS_MCP_SERVER)}`,
   };
   let doc: unknown;
   try {
@@ -498,14 +521,14 @@ async function mcpPlan(root: string): Promise<{ text?: string; added: boolean; n
     return unread;
   }
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return unread;
-  const servers = (doc as { servers?: unknown }).servers;
+  const servers = (doc as Record<string, unknown>)[f.key];
   if (servers !== undefined && (!servers || typeof servers !== "object" || Array.isArray(servers)))
     return unread;
   if (servers && "atticus" in servers) return { added: false };
   const indent = /^([ \t]+)\S/m.exec(raw)?.[1] ?? "  ";
   const eol = raw.includes("\r\n") ? "\r\n" : "\n";
   const text = JSON.stringify(
-    { ...doc, servers: { ...(servers as object | undefined), atticus: ATTICUS_MCP_SERVER } },
+    { ...doc, [f.key]: { ...(servers as object | undefined), atticus: ATTICUS_MCP_SERVER } },
     null,
     indent,
   );
@@ -523,9 +546,9 @@ export async function skillsWriteCommand(
   if (o.check) {
     for (const f of p.write) io.out(`behind: ${f.path}`);
     if (p.claude) io.out("behind: CLAUDE.md (team instructions)");
-    if (p.mcp) io.out(`behind: ${VSCODE_MCP_PATH} (the atticus map tools)`);
+    for (const m of p.mcp) io.out(`behind: ${m.path} (the atticus map tools)`);
     for (const k of p.kept) io.out(`edited here, kept: ${k}`);
-    const behind = p.write.length + (p.claude ? 1 : 0) + (p.mcp ? 1 : 0);
+    const behind = p.write.length + (p.claude ? 1 : 0) + p.mcp.length;
     io.out(
       behind
         ? `${behind} files are behind the org pack: atticus skills write`
@@ -549,13 +572,11 @@ export async function skillsWriteCommand(
     await writeFileAtomic(join(root, "CLAUDE.md"), p.claude);
     io.out("wrote CLAUDE.md (team instructions)");
   }
-  if (p.mcp) {
-    const f = join(root, ...VSCODE_MCP_PATH.split("/"));
+  for (const m of p.mcp) {
+    const f = join(root, ...m.path.split("/"));
     await mkdir(dirname(f), { recursive: true });
-    await writeFileAtomic(f, p.mcp.text);
-    io.out(
-      p.mcp.added ? `added the atticus server to ${VSCODE_MCP_PATH}` : `wrote ${VSCODE_MCP_PATH}`,
-    );
+    await writeFileAtomic(f, m.text);
+    io.out(m.added ? `added the atticus server to ${m.path}` : `wrote ${m.path}`);
   }
   for (const k of p.kept)
     io.out(`kept ${k}: it was edited here; remove it to have it written again`);
