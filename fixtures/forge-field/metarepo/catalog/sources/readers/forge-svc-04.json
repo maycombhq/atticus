@@ -1,0 +1,1971 @@
+{
+  "slotVersion": 1,
+  "kind": "readers",
+  "repo": "forge-svc-04",
+  "commit": "1111aaa",
+  "status": "legacy",
+  "extractors": [],
+  "settings": null,
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Component",
+      "id": "forge-svc-04",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "repo": "forge-svc-04",
+      "system": "forge-svc-04",
+      "type": "service"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "DataStore",
+      "id": "forge-svc-04-db",
+      "status": "current",
+      "confidence": "verified",
+      "entitiesHeld": [
+        "account_0",
+        "balance_1",
+        "entry_7",
+        "invoice_4",
+        "ledger_6",
+        "payment_2",
+        "statement_5",
+        "transfer_3"
+      ],
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "ownerComponent": "forge-svc-04",
+      "storeType": "postgres"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.delete-balance-7",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "DELETE",
+      "normalizedPath": "/v1/fees/{}/balance-7",
+      "pathOrTopic": "/v1/fees/{id}/balance-7",
+      "schemaRefs": [
+        "forge-svc-04.delete-balance-7.request",
+        "forge-svc-04.delete-balance-7.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.delete-report-3",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "DELETE",
+      "normalizedPath": "/v1/entrys/{}/report-3",
+      "pathOrTopic": "/v1/entrys/{id}/report-3",
+      "schemaRefs": [
+        "forge-svc-04.delete-report-3.request",
+        "forge-svc-04.delete-report-3.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.get-account-4",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "GET",
+      "normalizedPath": "/v1/customers/{}/account-4",
+      "pathOrTopic": "/v1/customers/{id}/account-4",
+      "schemaRefs": [
+        "forge-svc-04.get-account-4.request",
+        "forge-svc-04.get-account-4.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.get-rate-0",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "GET",
+      "normalizedPath": "/v1/invoices/{}/rate-0",
+      "pathOrTopic": "/v1/invoices/{id}/rate-0",
+      "schemaRefs": [
+        "forge-svc-04.get-rate-0.request",
+        "forge-svc-04.get-rate-0.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.post-branch-1",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "POST",
+      "normalizedPath": "/v1/statements/{}/branch-1",
+      "pathOrTopic": "/v1/statements/{id}/branch-1",
+      "schemaRefs": [
+        "forge-svc-04.post-branch-1.request",
+        "forge-svc-04.post-branch-1.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.post-entry-5",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "POST",
+      "normalizedPath": "/v1/cards/{}/entry-5",
+      "pathOrTopic": "/v1/cards/{id}/entry-5",
+      "schemaRefs": [
+        "forge-svc-04.post-entry-5.request",
+        "forge-svc-04.post-entry-5.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.put-audit-6",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "PUT",
+      "normalizedPath": "/v1/limits/{}/audit-6",
+      "pathOrTopic": "/v1/limits/{id}/audit-6",
+      "schemaRefs": [
+        "forge-svc-04.put-audit-6.request",
+        "forge-svc-04.put-audit-6.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Endpoint",
+      "id": "forge-svc-04.put-ledger-2",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "endpointType": "rest",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "method": "PUT",
+      "normalizedPath": "/v1/ledgers/{}/ledger-2",
+      "pathOrTopic": "/v1/ledgers/{id}/ledger-2",
+      "schemaRefs": [
+        "forge-svc-04.put-ledger-2.request",
+        "forge-svc-04.put-ledger-2.response"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.delete-balance-7.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.delete-balance-7"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.delete-balance-7.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.delete-balance-7"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.delete-report-3.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.delete-report-3"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.delete-report-3.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.delete-report-3"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.get-account-4.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.get-account-4"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.get-account-4.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.get-account-4"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.get-rate-0.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.get-rate-0"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.get-rate-0.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.get-rate-0"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.post-branch-1.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.post-branch-1"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.post-branch-1.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.post-branch-1"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.post-entry-5.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.post-entry-5"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.post-entry-5.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.post-entry-5"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.put-audit-6.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.put-audit-6"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.put-audit-6.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.put-audit-6"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.put-ledger-2.request",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.put-ledger-2"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Schema",
+      "id": "forge-svc-04.put-ledger-2.response",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "fields": [
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ],
+      "format": "other",
+      "ref": "forge-svc-04.put-ledger-2"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.account.setting-0",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.account.setting-0",
+      "settingKind": "config",
+      "valueOrRef": "1004"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.account.setting-20",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 21,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.account.setting-20",
+      "settingKind": "config",
+      "valueOrRef": "1744"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.audit.setting-14",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.audit.setting-14",
+      "settingKind": "config",
+      "valueOrRef": "1522"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.audit.setting-34",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 35,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.audit.setting-34",
+      "settingKind": "config",
+      "valueOrRef": "2262"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.balance.setting-1",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.balance.setting-1",
+      "settingKind": "config",
+      "valueOrRef": "1041"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.balance.setting-21",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 22,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.balance.setting-21",
+      "settingKind": "config",
+      "valueOrRef": "1781"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.branch.setting-19",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 20,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.branch.setting-19",
+      "settingKind": "config",
+      "valueOrRef": "1707"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.branch.setting-39",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 40,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.branch.setting-39",
+      "settingKind": "config",
+      "valueOrRef": "2447"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.card.setting-29",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 30,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.card.setting-29",
+      "settingKind": "config",
+      "valueOrRef": "2077"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.card.setting-9",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 10,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.card.setting-9",
+      "settingKind": "config",
+      "valueOrRef": "1337"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.customer.setting-28",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 29,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.customer.setting-28",
+      "settingKind": "config",
+      "valueOrRef": "2040"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.customer.setting-8",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.customer.setting-8",
+      "settingKind": "config",
+      "valueOrRef": "1300"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.dispute.setting-18",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 19,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.dispute.setting-18",
+      "settingKind": "config",
+      "valueOrRef": "1670"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.dispute.setting-38",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 39,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.dispute.setting-38",
+      "settingKind": "config",
+      "valueOrRef": "2410"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.entry.setting-27",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 28,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.entry.setting-27",
+      "settingKind": "config",
+      "valueOrRef": "2003"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.entry.setting-7",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 8,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.entry.setting-7",
+      "settingKind": "config",
+      "valueOrRef": "1263"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.fee.setting-11",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.fee.setting-11",
+      "settingKind": "config",
+      "valueOrRef": "1411"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.fee.setting-31",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 32,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.fee.setting-31",
+      "settingKind": "config",
+      "valueOrRef": "2151"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.invoice.setting-24",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 25,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.invoice.setting-24",
+      "settingKind": "config",
+      "valueOrRef": "1892"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.invoice.setting-4",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.invoice.setting-4",
+      "settingKind": "config",
+      "valueOrRef": "1152"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.ledger.setting-26",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 27,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.ledger.setting-26",
+      "settingKind": "config",
+      "valueOrRef": "1966"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.ledger.setting-6",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.ledger.setting-6",
+      "settingKind": "config",
+      "valueOrRef": "1226"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.limit.setting-10",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.limit.setting-10",
+      "settingKind": "config",
+      "valueOrRef": "1374"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.limit.setting-30",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 31,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.limit.setting-30",
+      "settingKind": "config",
+      "valueOrRef": "2114"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.mandate.setting-16",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 17,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.mandate.setting-16",
+      "settingKind": "config",
+      "valueOrRef": "1596"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.mandate.setting-36",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 37,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.mandate.setting-36",
+      "settingKind": "config",
+      "valueOrRef": "2336"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.notice.setting-15",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 16,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.notice.setting-15",
+      "settingKind": "config",
+      "valueOrRef": "1559"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.notice.setting-35",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 36,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.notice.setting-35",
+      "settingKind": "config",
+      "valueOrRef": "2299"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.payment.setting-2",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.payment.setting-2",
+      "settingKind": "config",
+      "valueOrRef": "1078"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.payment.setting-22",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 23,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.payment.setting-22",
+      "settingKind": "config",
+      "valueOrRef": "1818"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.rate.setting-12",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 13,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.rate.setting-12",
+      "settingKind": "config",
+      "valueOrRef": "1448"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.rate.setting-32",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 33,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.rate.setting-32",
+      "settingKind": "config",
+      "valueOrRef": "2188"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.refund.setting-17",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 18,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.refund.setting-17",
+      "settingKind": "config",
+      "valueOrRef": "1633"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.refund.setting-37",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 38,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.refund.setting-37",
+      "settingKind": "config",
+      "valueOrRef": "2373"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.report.setting-13",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 14,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.report.setting-13",
+      "settingKind": "config",
+      "valueOrRef": "1485"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.report.setting-33",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 34,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.report.setting-33",
+      "settingKind": "config",
+      "valueOrRef": "2225"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.statement.setting-25",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 26,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.statement.setting-25",
+      "settingKind": "config",
+      "valueOrRef": "1929"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.statement.setting-5",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 6,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.statement.setting-5",
+      "settingKind": "config",
+      "valueOrRef": "1189"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.transfer.setting-23",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 24,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.transfer.setting-23",
+      "settingKind": "config",
+      "valueOrRef": "1855"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Setting",
+      "id": "forge-svc-04.forge.transfer.setting-3",
+      "status": "current",
+      "confidence": "verified",
+      "component": "forge-svc-04",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/resources/application.yml",
+          "repo": "forge-svc-04",
+          "source": "config"
+        }
+      ],
+      "key": "forge.transfer.setting-3",
+      "settingKind": "config",
+      "valueOrRef": "1115"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.account_0",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "account_0",
+      "ownerComponent": "forge-svc-04",
+      "readers": [],
+      "tableKind": "table",
+      "writers": [
+        "forge-svc-04"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.balance_1",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "balance_1",
+      "ownerComponent": "forge-svc-04",
+      "readers": [
+        "forge-svc-04"
+      ],
+      "tableKind": "table",
+      "writers": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.entry_7",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 8,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "entry_7",
+      "ownerComponent": "forge-svc-04",
+      "readers": [
+        "forge-svc-04"
+      ],
+      "tableKind": "table",
+      "writers": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.invoice_4",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "invoice_4",
+      "ownerComponent": "forge-svc-04",
+      "readers": [
+        "forge-svc-04"
+      ],
+      "tableKind": "table",
+      "writers": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.ledger_6",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "ledger_6",
+      "ownerComponent": "forge-svc-04",
+      "readers": [],
+      "tableKind": "table",
+      "writers": [
+        "forge-svc-04"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.payment_2",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "payment_2",
+      "ownerComponent": "forge-svc-04",
+      "readers": [
+        "forge-svc-04"
+      ],
+      "tableKind": "table",
+      "writers": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.statement_5",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 6,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "statement_5",
+      "ownerComponent": "forge-svc-04",
+      "readers": [
+        "forge-svc-04"
+      ],
+      "tableKind": "table",
+      "writers": []
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Table",
+      "id": "forge-svc-04-db.transfer_3",
+      "status": "current",
+      "confidence": "verified",
+      "dataStore": "forge-svc-04-db",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/data/Repo0.java",
+          "repo": "forge-svc-04",
+          "source": "code"
+        }
+      ],
+      "name": "transfer_3",
+      "ownerComponent": "forge-svc-04",
+      "readers": [],
+      "tableKind": "table",
+      "writers": [
+        "forge-svc-04"
+      ]
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.c-24",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 25,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/invoices/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.c-31",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "GET http://@forgeTargetUrl1@/v1/reports/{id}",
+      "unresolvedKind": "http-call"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Unresolved",
+      "id": "unresolved.c-35",
+      "status": "current",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "owner": "forge-svc-04",
+      "raw": "POST http://api.northwind-pay.example/v2/notices/{id}",
+      "unresolvedKind": "http-call"
+    }
+  ]
+}

@@ -3289,6 +3289,8 @@ export const COPY = {
     evidence: "Evidence",
     noEvidenceRecordedTreat: "No evidence recorded: treat this fact as unconfirmed.",
     whatBreaksIfThis: "What breaks if this changes",
+    // Beta.30: the Ask panel's receivers of a topic, when the map has none yet.
+    noReceivers: "Nothing in the map receives it yet: read the repos that listen to it.",
     isOwnedBy: " is owned by ",
     theCatalogDoesntKnow: "The catalog doesn't know who owns ",
     yet: " yet.",

@@ -26,6 +26,21 @@ By contributing you agree your contribution is licensed under the Apache License
 - **`pnpm check` runs 100 sequences of up to 10 commands**; the nightly workflow (`.github/workflows/properties-nightly.yml`, `pnpm --filter @maycombhq/cli test:properties:nightly`) runs 2,000 of up to 20. A run of 100 or more fails when a command never acted in it.
 - **Every run prints its seed.** A failure prints the `Replay:` line that runs it again (`ATTICUS_PROPERTIES_SEED`, `_PATH`, `_COMMANDS`, `_RUNS`, `_MAX_COMMANDS`, `_INVARIANTS` and a `-t` filter), and the shrunk commands and estate. `ATTICUS_PROPERTIES_INVARIANTS=all` (or a comma list) checks the known failures too, `ATTICUS_PROPERTIES_RUNS=<n>` and `_MAX_COMMANDS=<n>` set the count and the length, `ATTICUS_PROPERTIES_RECORD=1` writes a failure's counterexample under `regressions/`, and `ATTICUS_PROPERTIES_VERBOSE=1` prints how often each command ran and acted and its time.
 
+## Adding a field report's shape
+
+**The rule: a field report adds its shape to the estate, as an invented Forge shape, before its fix.** The shape goes in first, the test that fails on it next, the fix last (the way a property seed adds a file under `properties/regressions`). Never a real name, host or path from the report (CLAUDE.md rule 3): only its shape.
+
+The journeys and the CLI suites run on two estates: the tidy Forge fixture (`fixtures/forge/metarepo`, seven repos) and the field-shaped one ([`fixtures/forge-field/`](fixtures/forge-field/README.md)), which holds every shape a field report has named so far (gateway proxies whose targets are deploy tokens, `@name@` and `${NAME}`; a repo with no System; ids with dots; nested payload fields; ssh and https origins; a non-gateway callee; an empty repo and a repo nobody read; a topic with consumers in two repos; hand pairings; a legacy slot from before the upgrade; a call joined to the wrong box; a change on the quick path). A journey takes it with `forgeJourney({ estate: "field" })` (or `metarepoOf`, `routeOf` and `ESTATES` in `packages/journeys/support/app.ts`); a CLI test with `seedForgeField(dir)` (`packages/cli/test/forge-field.ts`), which copies it, makes each clone a git repo at the commit its facts cite and builds the catalog in a few seconds.
+
+To add a shape:
+
+1. Give `packages/cli/test/field-estate.ts` an option that makes it, off by default, so every estate made without it stays as it was. If the shape card has a word for it (`packages/cli/src/shape-words.ts`), make the word set it too.
+2. Turn it on in `FORGE_FIELD_OPTIONS` (`packages/cli/test/forge-field.ts`) and regenerate the fixture: `node scripts/write-field-fixture.mjs` (`pnpm fixtures:field`). It is deterministic: the same code writes the same bytes. Review the diff, and add the shape to the fixture's README.
+3. Say in `packages/cli/test/forge-field.test.ts` that the map has the shape, then write the failing test of the report's behaviour on the field estate, beside the tidy case where there is one. Keep a tidy test's numbers on the tidy fixture; give the field case its own.
+4. Where the shape varies (a token's form, how many, where), add it to the shape generator too (`shapeArb` in `packages/cli/test/properties/estate.ts`), so `shape-properties.test.ts` checks every call is drawn, listed loose or asked, and every refusal names a next step, over every mix of it.
+
+`packages/cli/test/forge-field-fixture.test.ts` fails when the fixture is out of date with the code (it leaves out only the stamp's Atticus version, so a release doesn't make it stale). A bug the field estate finds that isn't fixed in the same change is held as `it.fails`, with a comment saying what it is: when it is fixed, that test fails and says to make it `it`.
+
 ## Build-tool telemetry
 
 Turborepo, the build tool, sends anonymous usage data unless told not to. Set `TURBO_TELEMETRY_DISABLED=1` in your environment (or run `pnpm exec turbo telemetry disable` once). Atticus itself, and the offline bundle, make no such call.

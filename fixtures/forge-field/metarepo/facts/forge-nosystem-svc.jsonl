@@ -1,0 +1,1 @@
+{"repo":"forge-nosystem-svc","commit":"1111aaa","verified":"line","by":"assistant","conf":"declared","kind":"entry","id":"e-shape","entryType":"rest","method":"GET","path":"/v1/shapes/{id}","handler":"ShapeController.get","cite":{"file":"src/main/java/forge/api/ShapeController.java","line":1,"value":"/v1/shapes/{id}","quote":"@GetMapping(\"/v1/shapes/{id}\")"}}

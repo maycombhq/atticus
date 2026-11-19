@@ -1,0 +1,80 @@
+schemaVersion: 3
+platform: github
+repos:
+  - id: forge-svc-00
+    url: https://git.example.test/forge/forge-svc-00.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-svc-00
+    hosts: [forge-svc-00.forge.example]
+  - id: forge-svc-01
+    url: git@git.example.test:forge/forge-svc-01.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-svc-01
+    hosts: [forge-svc-01.forge.example]
+  - id: forge-svc-02
+    url: https://git.example.test/forge/forge-svc-02.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-svc-02
+    hosts: [forge-svc-02.forge.example]
+  - id: forge-svc-03
+    url: git@git.example.test:forge/forge-svc-03.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-svc-03
+    hosts: [forge-svc-03.forge.example]
+  - id: forge-svc-04
+    url: https://git.example.test/forge/forge-svc-04.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-svc-04
+    hosts: [forge-svc-04.forge.example]
+  - id: forge-gw-00
+    url: git@git.example.test:forge/forge-gw-00.git
+    type: gateway
+    owner: team-platform
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-gw-01
+    url: https://git.example.test/forge/forge-gw-01.git
+    type: gateway
+    owner: team-platform
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-gw-02
+    url: git@git.example.test:forge/forge-gw-02.git
+    type: gateway
+    owner: team-platform
+    system: platform
+    hosts: [gw.forge.example]
+  - id: forge-deploy
+    url: https://git.example.test/forge/forge-deploy.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-deploy
+    hosts: [forge-deploy.forge.example]
+  - id: forge-audit
+    url: git@git.example.test:forge/forge-audit.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-audit
+    hosts: [forge-audit.forge.example]
+  - id: forge-nosystem-svc
+    url: https://git.example.test/forge/forge-nosystem-svc.git
+    type: spring-boot
+    owner: team-forge
+    hosts: [forge-nosystem-svc.forge.example]
+  - id: forge.instruments.svc
+    url: git@git.example.test:forge/forge.instruments.svc.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-instruments-svc
+    hosts: [forge-instruments-svc.forge.example]
+  - id: forge-nested-svc
+    url: https://git.example.test/forge/forge-nested-svc.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-nested-svc
+    hosts: [forge-nested-svc.forge.example]

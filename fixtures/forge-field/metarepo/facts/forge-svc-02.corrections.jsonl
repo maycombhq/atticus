@@ -1,0 +1,1 @@
+{"schemaVersion":1,"fact":"c-2","target":{"kind":"call","file":"src/main/java/forge/client/Client0.java","line":3,"value":"/v1/ledgers/{id}"},"action":"link","link":{"repo":"forge-svc-03","entry":"e-0","method":"GET","path":"/v1/transfers/{id}/card-0"},"by":"pat","at":"2026-11-10T09:00:00Z"}
