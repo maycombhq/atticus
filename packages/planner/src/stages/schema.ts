@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft } from "@maycombhq/core";
+import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft, redactSecrets } from "@maycombhq/core";
 
 /**
  * The files the three stages of a change write into its folder (ADR 0087, revamp plan 4.4):
@@ -12,6 +12,17 @@ import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft } from "@maycombhq/c
 export const STAGE_SCHEMA_VERSION = 1 as const;
 const V = z.literal(STAGE_SCHEMA_VERSION);
 const text = () => z.string().trim().min(1);
+/**
+ * An operation's words (ADR 0203 review): redacted as a fact's quote is, the line and then each
+ * word of it (a `key=value` in the middle of a sentence), on every read, so a secret a model or
+ * a person writes there never reaches design.md, a story, a task or a prompt.
+ */
+export const redactWords = (s: string): string =>
+  redactSecrets(s)
+    .split(/(\s+)/)
+    .map((w) => redactSecrets(w))
+    .join("");
+const safeText = () => text().transform(redactWords);
 const Id = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
@@ -74,6 +85,17 @@ export const DesignScreen = z.strictObject({
 });
 export type DesignScreen = z.infer<typeof DesignScreen>;
 
+/** ADR 0203 B: the kinds of work that is no runtime step. Rollback is no kind: it is an `undo`. */
+export const OPERATION_KINDS = [
+  "deployment",
+  "pipeline",
+  "config",
+  "secret",
+  "route",
+  "cut-over",
+] as const;
+export const OperationKind = z.enum(OPERATION_KINDS);
+
 export const FeaturePlacement = z.strictObject({
   schemaVersion: V,
   change: Id,
@@ -116,6 +138,22 @@ export const FeaturePlacement = z.strictObject({
       }),
     )
     .default([]),
+  /**
+   * ADR 0203 B: work that is no runtime step (a deployment, a pipeline, configuration, a secret,
+   * a route, a cut-over), and the parties outside the map the change names. Optional and additive.
+   */
+  operations: z
+    .array(
+      z.strictObject({
+        kind: OperationKind,
+        repos: z.array(Id).min(1),
+        what: safeText(),
+        why: safeText(),
+        newRepo: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  outside: z.array(z.strictObject({ id: Id, what: text(), why: text() })).optional(),
   /** Other open changes that touch the same flows or systems; Atticus fills these. */
   conflicts: z
     .array(
@@ -363,10 +401,58 @@ export type FlowDelta = z.infer<typeof FlowDelta>;
 export const DeployStep = z.strictObject({
   repo: Id,
   migration: z.string().trim().min(1).optional(),
+  /** ADR 0203 B: the step is an operation of `_operations.yaml` done in the repo. Optional. */
+  operation: Id.optional(),
   /** Why it sits where it does, in one plain sentence. */
   why: z.string().optional(),
 });
 export type DeployStep = z.infer<typeof DeployStep>;
+
+// ------------------------------------------------------------------ target-flows/_operations.yaml
+
+/**
+ * One piece of work that is no runtime step (ADR 0203 B), done in one or several repos. `today`
+ * cites the catalog's records of what is there now; `sets` is what a rescan can find afterwards
+ * (a Deployment's platform, env and ingress host, a Setting's key); a secret names its key and
+ * where its value is kept, never the value. Every cut-over gives `undo`; any operation may.
+ */
+export const Operation = z.strictObject({
+  id: Id,
+  kind: OperationKind,
+  repos: z.array(Id).min(1),
+  what: safeText(),
+  today: z.array(Id).optional(),
+  sets: z
+    .strictObject({
+      platform: safeText().optional(),
+      env: safeText().optional(),
+      host: safeText().optional(),
+      key: safeText().optional(),
+    })
+    .optional(),
+  after: z.array(Id).optional(),
+  undo: safeText().optional(),
+});
+export type Operation = z.infer<typeof Operation>;
+
+export const Wave = z.strictObject({ repos: z.array(Id).min(1), why: z.string().optional() });
+export type Wave = z.infer<typeof Wave>;
+
+export const Operations = z
+  .array(Operation)
+  .refine(
+    (ops) => new Set(ops.map((o) => o.id)).size === ops.length,
+    "an operation's id is used twice",
+  );
+
+/** `target-flows/_operations.yaml`, version 1 (no flow id can start with `_`). Atticus writes it. */
+export const OperationsFile = z.strictObject({
+  schemaVersion: V,
+  change: Id,
+  waves: z.array(Wave).optional(),
+  operations: Operations,
+});
+export type OperationsFile = z.infer<typeof OperationsFile>;
 
 // ------------------------------------------------------------------ stage/<stage>.yaml
 

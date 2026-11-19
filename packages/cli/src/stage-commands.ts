@@ -15,7 +15,9 @@ import {
   smallStage,
   stageEnd,
   storiesStage,
+  OPERATIONS_FILE,
   TARGET_DIR,
+  type OperationStory,
   type Stage,
   type StageResult,
 } from "@maycombhq/planner";
@@ -197,6 +199,17 @@ function printStage(
   return 0;
 }
 
+/** ADR 0203 B: what the stories stage made of the change's operations, in one line. */
+const operationLines = (ops: readonly OperationStory[] = []): string[] =>
+  ops.length
+    ? [
+        `${ops.length} ${ops.length === 1 ? "story" : "stories"} and ${plural(
+          ops.reduce((n, s) => n + s.tasks.length, 0),
+          "task",
+        )} from the operations, one story an operation and one task a repo; tasks.md holds a wave's tasks with (after …) until the wave before is ticked.`,
+      ]
+    : [];
+
 /** The stage commands; undefined when the arguments aren't one of them. */
 export async function stageCli(
   root: string,
@@ -265,6 +278,12 @@ export async function stageCli(
             r.answer.flows.length
               ? `Target flows: ${r.answer.flows.map((d) => `${d.flow} (${d.change}, ${plural(d.steps.length, "step")})`).join(", ")}, in ${changesRelOf(root)}/${arg}/${TARGET_DIR}/.`
               : "Target flows: none (the design changes no flow).",
+            // ADR 0203 B: the change's work that is no runtime step.
+            ...(r.answer.operations?.length
+              ? [
+                  `Operations: ${r.answer.operations.map((x) => `${x.id} (${x.kind}, ${plural(x.repos.length, "repo")})`).join(", ")}, in ${changesRelOf(root)}/${arg}/${OPERATIONS_FILE}.`,
+                ]
+              : []),
             `Next: atticus plan stories ${arg} (or /atticus-stories ${arg}) once the architecture PR is merged.`,
           ]
         : [];
@@ -284,6 +303,7 @@ export async function stageCli(
       const extra = r.answer
         ? [
             `Placed on ${plural(r.answer.flows.length, "flow")}; ${plural(r.answer.targetFlows.length, "target flow")}; ${r.stories.length} ${r.stories.length === 1 ? "story" : "stories"} and ${plural(tasks, "task")}, from the target flows; ${r.requests.length} ${r.requests.length === 1 ? "request or process" : "requests and processes"} suggested in requests.md. A person raises each one.`,
+            ...operationLines(r.operations),
             `Next: once the pull request is merged, the tasks (atticus task context ${arg} <task>, or /atticus-task ${arg} <task>).`,
           ]
         : [];
@@ -298,6 +318,7 @@ export async function stageCli(
       io,
       [
         `${r.stories.length} ${r.stories.length === 1 ? "story" : "stories"} and ${plural(tasks, "task")} in ${plural(new Set(r.stories.map((s) => s.repo)).size, "repo")}, from the target flows; ${r.requests.length} ${r.requests.length === 1 ? "request or process" : "requests and processes"} suggested from the knowledge items, in requests.md. A person raises each one.`,
+        ...operationLines(r.operations),
       ],
       await ownerLine(root, r),
     );

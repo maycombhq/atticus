@@ -51,14 +51,18 @@ export function plannedComponents(
 
 /**
  * ADR 0201: a consumer the catalog doesn't have that is still known, and why its use can't be
- * checked: a repo a manifest lists that nobody read, or a component this change plans (ADR 0189).
+ * checked: a repo a manifest lists that nobody read, a component this change plans (ADR 0189), or
+ * a party its feature.yaml declares as outside the map (ADR 0203 B.7).
  * The words that end the note; undefined for an id nothing knows, which is refused as before.
  */
 export function unreadConsumer(
   id: string,
   deltas: readonly FlowDelta[],
-  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos">,
+  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos" | "outside">,
 ): string | undefined {
+  // ADR 0203 B.7: a party the feature declares as outside the map.
+  if (e.outside?.has(id))
+    return "is declared outside the map in feature.yaml, so its use can't be checked.";
   // A repo that was read is known by its component: only one nobody read is named by its repo.
   if (unreadRepos(e).has(id))
     return `is in the manifest and hasn't been read, so its use can't be checked: atticus map ${id}`;

@@ -1,6 +1,6 @@
 import { briefEndpointNotes } from "./brief-endpoints.js";
 import { readdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { isMap, isSeq, LineCounter, parse, parseDocument, stringify } from "yaml";
 import {
   changesRelOf,
@@ -58,6 +58,9 @@ import {
 } from "./loop.js";
 import {
   DeployStep,
+  Operations,
+  Wave,
+  type Operation,
   fieldNames,
   FLOW_DELTA_SCHEMA_VERSION,
   FlowDelta,
@@ -78,7 +81,18 @@ import {
   tableConsumers,
   type Retyped,
 } from "./contracts.js";
-import { deployIssues, renderDeploy } from "./deploy-order.js";
+import { deployIssues, renderDeploy, suggestedDeploy } from "./deploy-order.js";
+import {
+  checkOperations,
+  operationDeployIssues,
+  OPERATIONS_FILE,
+  readOperations,
+  renderOperations,
+  runsTodaySource,
+  suggestedOperationOrder,
+  withOperationRollback,
+  writeOperations,
+} from "./operations.js";
 import { plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
@@ -130,9 +144,21 @@ flows:
 reads:
   - flow: <the flow id (from the specs, never an endpoint id) of a flow the change reads or relies on but doesn't change>
     why: <one sentence: what the change relies on in it, e.g. its membership check at step 2>
+operations:   # work that changes no runtime step, as the feature lists it; leave out when there is none
+  - id: <a short id, lower case>
+    kind: deployment | pipeline | config | secret | route | cut-over
+    repos: [<each repo it is done in>]
+    what: <one sentence: what is done>
+    today: [<ids from the runs-today block of what is there now, in those repos>]
+    sets: <what a rescan of the repo will find afterwards> { platform: <a deployment's platform>, env: <its environment>, host: <its ingress host>, key: <a setting's key> }
+    after: [<ids of the operations that go first>]
+    undo: <how it is taken back; every cut-over gives one>
+waves:        # only when the repos go in groups, one group after the other
+  - { repos: [<repo>], why: <one sentence> }
 deploy:   # the order the change deploys in, first first
   - repo: <a repo whose target flows change>
     migration: <only on a step that runs one: the file named under store.migration>
+    operation: <only on a step that does one: the operation's id, in that repo>
     why: <one sentence>
 
 Rules:
@@ -146,6 +172,7 @@ Rules:
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
 ${storeRules(levels).join("\n")}
 - A change breaks who uses it when a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, or a column gets another type: list who uses it under consumers, as the consumers block names them.
+- An operation is work the feature lists under operations: one entry for each, with every repo it is done in. A secret names its key and where its value is kept, never the value. With waves, every repo is in exactly one.
 - Under deploy, one step a repo's code or a migration: each migration before the code that reads or writes its table, each callee before the caller of an entry it adds or changes, and every repo and migration of the target flows.
 - Plain, short English.`;
 
@@ -161,6 +188,9 @@ const Answer = z.strictObject({
   reads: z.array(ReadFlow).default([]),
   /** The deploy order across the change's repos (ADR 0124 addendum B-arch). */
   deploy: z.array(DeployStep).optional(),
+  /** ADR 0203 B: the change's work that is no runtime step, and the waves its repos go in. */
+  operations: Operations.optional(),
+  waves: z.array(Wave).optional(),
 });
 export type ArchitectureAnswer = z.infer<typeof Answer>;
 /** The architecture answer's schema, for the fast path (ADR 0113). */
@@ -204,7 +234,8 @@ export async function readDeltas(
   const deltas: FlowDelta[] = [];
   const problems: string[] = [];
   for (const f of (await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[])).sort()) {
-    if (!f.endsWith(".yaml")) continue;
+    // ADR 0203 B: `_operations.yaml` is the operations' file (no flow id starts with `_`).
+    if (!f.endsWith(".yaml") || f.startsWith("_")) continue;
     try {
       const text = await readFile(join(dir, TARGET_DIR, f), "utf8");
       const r = FlowDelta.safeParse(parse(text));
@@ -1474,6 +1505,7 @@ export function checkDeltas(
         !outside &&
         !planned.has(s.to.component) &&
         !unread.has(s.to.component) &&
+        !e.outside?.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(
@@ -2248,6 +2280,7 @@ export function renderArchitecture(
   e: Estate,
   reads: ReadFlow[] = [],
   deploy?: DeployStep[],
+  ops: { operations: Operation[]; waves?: Wave[] } = { operations: [] },
 ): string {
   const lines = [
     `${MARK} from feature.yaml and the repos' specs. The target-flows/ files are the source; edit them and run the stage again. -->`,
@@ -2273,6 +2306,8 @@ export function renderArchitecture(
     }
     lines.push("");
   }
+  if (!deltas.length && ops.operations.length)
+    lines.push("None: the change alters no runtime step.", "");
   const readName = (id: string) => {
     const n = e.flowById.get(id)?.flow.name;
     return n ? ` (${n})` : "";
@@ -2308,8 +2343,17 @@ export function renderArchitecture(
   // B-arch: the breaking contract changes with who they break, and the deploy order drafted.
   lines.push(
     ...renderBreaking(deltas, e),
-    ...renderDeploy(deploy, plannedRepos(deltas, e)),
-    ...renderRollback(deltas, e),
+    // ADR 0203 B: the operations with today's records cited; with no deploy order given, one
+    // order holds both: the flows' migrations and code, then the operations as they are scheduled.
+    ...renderOperations(ops.operations, ops.waves, e),
+    ...renderDeploy(
+      deploy ??
+        (ops.operations.length
+          ? [...suggestedDeploy(deltas, e), ...suggestedOperationOrder(ops.operations, ops.waves)]
+          : []),
+      plannedRepos(deltas, e),
+    ),
+    ...withOperationRollback(renderRollback(deltas, e), ops.operations),
   );
   return lines.join("\n");
 }
@@ -2373,18 +2417,25 @@ export function renderRollback(deltas: FlowDelta[], e: Estate): string[] {
  */
 export async function writeTargetFlows(
   dir: string,
-  answer: { flows: FlowDelta[]; reads?: ReadFlow[]; deploy?: DeployStep[] },
+  answer: Pick<ArchitectureAnswer, "flows"> & Partial<ArchitectureAnswer>,
   estate: Estate,
   by = "atticus change architecture",
+  change = "",
 ): Promise<string[]> {
   const readsFile = join(dir, ...READS_FILE.split("/"));
   const deployFile = join(dir, ...DEPLOY_FILE.split("/"));
   const deploy = answer.deploy?.length ? answer.deploy : undefined;
   const a = splitAnswer(answer);
   const keep = new Set(a.deltas.map((d) => `${d.flow}.yaml`));
+  const operations = answer.operations ?? [];
+  if (operations.length) keep.add(basename(OPERATIONS_FILE));
   for (const f of await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[]))
     if (f.endsWith(".yaml") && !keep.has(f)) await rm(join(dir, TARGET_DIR, f), { force: true });
   const files: string[] = [];
+  if (operations.length) {
+    await writeOperations(dir, change, operations, answer.waves, by);
+    files.push(OPERATIONS_FILE);
+  }
   for (const d of a.deltas) {
     // ADR 0111: pinned to the version of today's flow it was written against.
     const today = d.change === "new" ? undefined : estate.flowById.get(d.flow)?.flow;
@@ -2404,7 +2455,10 @@ export async function writeTargetFlows(
   if (own === undefined || own.startsWith(MARK)) {
     await writeFileAtomic(
       join(dir, "design.md"),
-      renderArchitecture(a.deltas, estate, a.reads, deploy),
+      renderArchitecture(a.deltas, estate, a.reads, deploy, {
+        operations,
+        ...(answer.waves ? { waves: answer.waves } : {}),
+      }),
     );
     files.push("design.md");
   }
@@ -2484,7 +2538,8 @@ export async function locateInTargetFlows(
 /** The target flows and the flows only read, as they are in the change folder. */
 export async function readTargetFlows(dir: string): Promise<ArchitectureAnswer | undefined> {
   const r = await readDeltas(dir);
-  if (!r.deltas.length) return undefined;
+  const ops = (await readOperations(dir)).file;
+  if (!r.deltas.length && !ops) return undefined;
   const t = await readFile(join(dir, ...READS_FILE.split("/")), "utf8").catch(() => undefined);
   const reads = t === undefined ? undefined : z.array(ReadFlow).safeParse(parse(t)?.reads);
   const dt = await readFile(join(dir, ...DEPLOY_FILE.split("/")), "utf8").catch(() => undefined);
@@ -2493,6 +2548,7 @@ export async function readTargetFlows(dir: string): Promise<ArchitectureAnswer |
     flows: r.deltas,
     reads: reads?.success ? reads.data : [],
     ...(deploy?.success && deploy.data.length ? { deploy: deploy.data } : {}),
+    ...(ops ? { operations: ops.operations, ...(ops.waves ? { waves: ops.waves } : {}) } : {}),
   };
 }
 
@@ -2517,6 +2573,8 @@ export async function architectureStage(
     );
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
+  // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
+  estate.outside = new Set((placement.outside ?? []).map((x) => x.id));
   const knowledge = await readKnowledge(root, { cacheRoot: root });
   const patterns = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
 
@@ -2602,6 +2660,11 @@ export async function architectureStage(
     ...allowedValuesSource(estate, tablesFor(estate, placement)),
     // B-arch: who calls the entries and uses the tables of the flows the change touches.
     ...consumersSource(estate, placement),
+    // ADR 0203 B: what runs today in the repos of the feature's operations and flows.
+    ...runsTodaySource(estate, [
+      ...(placement.operations ?? []).flatMap((x) => x.repos),
+      ...touched.map((f) => f!.repo),
+    ]),
     // ADR 0113: the files attached to the change, each cited by file and line or page.
     ...newCalls,
     ...attached.map((s): SourceInput => ({
@@ -2743,6 +2806,8 @@ export async function architectureStage(
           }),
           ...(d.reads !== undefined && d.reads !== null ? { reads: d.reads } : {}),
           ...(d.deploy !== undefined && d.deploy !== null ? { deploy: d.deploy } : {}),
+          ...(d.operations ? { operations: d.operations } : {}),
+          ...(d.waves ? { waves: d.waves } : {}),
         }),
         "target-flows",
       );
@@ -2752,7 +2817,7 @@ export async function architectureStage(
       const issues = [...r.issues, ...emptyDeltaIssues(r.value.flows)];
       const { deltas, reads } = splitAnswer(r.value);
       return {
-        answer: { flows: deltas, reads, ...(r.value.deploy ? { deploy: r.value.deploy } : {}) },
+        answer: { ...r.value, flows: deltas, reads },
         issues,
       };
     },
@@ -2764,6 +2829,15 @@ export async function architectureStage(
       }),
       // B-arch, check 4: the deploy order puts a callee before its caller, a migration first.
       ...deployIssues(a.flows, a.deploy, estate),
+      // ADR 0203 B: the operations against the estate, the feature and what runs today.
+      ...checkOperations(
+        a.operations ?? [],
+        a.waves,
+        estate,
+        placement,
+        plannedRepos(a.flows, estate),
+      ),
+      ...operationDeployIssues(a.operations ?? [], a.waves, a.deploy),
       // B-places: an added step's place is a file of its repo, a line it has, a function in it.
       ...(await placeIssues(a.flows, estate, root)),
       // W5: an endpoint the brief names whose flow the design leaves alone (a note, not blocking).
@@ -2773,10 +2847,13 @@ export async function architectureStage(
         a.flows,
       ),
     ],
-    write: (answer) => writeTargetFlows(dir, answer, estate),
+    write: (answer) => writeTargetFlows(dir, answer, estate, undefined, change.id),
     reviewSources: (a) => [mergedFlowsSource(a.flows, estate, rel)],
     current: () => readTargetFlows(dir),
-    currentProblems: async () => (await readDeltas(dir)).problems,
+    currentProblems: async () => [
+      ...(await readDeltas(dir)).problems,
+      ...(await readOperations(dir)).problems,
+    ],
     locate: (i) => locateInTargetFlows(dir, rel, i.target),
   };
   const retrieved = selected && "sources" in selected ? selected : undefined;

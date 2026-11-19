@@ -1,0 +1,34 @@
+# Added to ../../specs/catalog.yaml for the operations tests (ADR 0203 part B): where the two
+# Forge services run today, as a scan of their deploy files would give it. Invented, by hand.
+- kind: Deployment
+  schemaVersion: 2
+  id: forge-orders.deployment.prod
+  status: current
+  confidence: verified
+  evidence: [{ source: infrastructure, repo: forge-orders, path: deploy/prod.yaml, line: 3 }]
+  component: forge-orders
+  env: prod
+  platform: forge-vm
+  networkPolicies: []
+  ingress: [{ host: orders.forge.example, path: /orders }]
+- kind: Deployment
+  schemaVersion: 2
+  id: forge-stock.deployment.prod
+  status: current
+  confidence: verified
+  evidence: [{ source: infrastructure, repo: forge-stock, path: deploy/prod.yaml, line: 3 }]
+  component: forge-stock
+  env: prod
+  platform: forge-vm
+  networkPolicies: []
+- kind: Setting
+  schemaVersion: 2
+  id: forge-orders.setting.stock-timeout
+  status: current
+  confidence: verified
+  evidence: [{ source: infrastructure, repo: forge-orders, path: deploy/prod.yaml, line: 11 }]
+  component: forge-orders
+  env: prod
+  settingKind: timeout
+  key: stock.timeout
+  valueOrRef: 2s

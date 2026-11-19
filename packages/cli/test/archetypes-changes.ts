@@ -609,25 +609,188 @@ flows:
 `,
 };
 
-/** The new product on the staged path: the feature stage's assistant can place it nowhere. */
+const given = (repo: string, then: string) =>
+  `      - repo: ${repo}\n        criteria:\n          - "Given ${repo} as it is today, when the operation is done, then ${then}"\n`;
+
+/**
+ * The new product on the staged path (ADR 0203 B): no flow yet, a pipeline and a deployment in
+ * two repos the change plans, and the desk system outside the map that will link to it.
+ */
+export const OUTSIDE_PARTY = "northwind-desk";
 export const STAGED_PRODUCT = {
   id: "approvals-portal-staged",
   title: "Approvals portal",
   brief:
-    "# Approvals portal\n\nBranch managers approve refunds over the desk limit on one page, in a service and pages of their own. No existing service changes.\n",
-  feature: "summary: A new approvals portal in repos of its own.\nfeatures: []\nflows: []\n",
+    "# Approvals portal\n\nBranch managers approve refunds over the desk limit on one page, in a service and pages of their own. No existing service changes. The branch desk system links to the page.\n",
+  feature: `summary: A new approvals portal in two repos of its own; this change gives them their pipelines and first deployment.
+features: []
+flows: []
+operations:
+  - kind: pipeline
+    repos: [${PORTAL_API}, ${PORTAL_WEB}]
+    newRepo: true
+    what: Give each new repo its build and release pipeline.
+    why: Nothing builds the portal yet.
+  - kind: deployment
+    repos: [${PORTAL_API}, ${PORTAL_WEB}]
+    newRepo: true
+    what: Deploy the portal's service and pages on Anvil.
+    why: The portal runs beside the services it will call.
+outside:
+  - { id: ${OUTSIDE_PARTY}, what: The branch desk system, why: Its menu links to the portal's host. }
+`,
+  architecture: `flows: []
+operations:
+  - id: pipelines
+    kind: pipeline
+    repos: [${PORTAL_API}, ${PORTAL_WEB}]
+    what: Give the repo its build and release pipeline.
+  - id: deploy-portal
+    kind: deployment
+    repos: [${PORTAL_API}, ${PORTAL_WEB}]
+    what: Deploy the portal on Anvil.
+    sets: { platform: anvil, env: prod }
+    after: [pipelines]
+`,
+  stories: `stories: []
+operations:
+  - id: pipelines
+    title: Build and release the portal
+    asA: portal developer
+    iWant: each portal repo built and released by a pipeline
+    soThat: a merge reaches Anvil without hand work
+    tasks:
+${given(PORTAL_API, "its pipeline file builds, tests and publishes the service")}${given(PORTAL_WEB, "its pipeline file builds, tests and publishes the pages")}  - id: deploy-portal
+    title: Run the portal on Anvil
+    asA: branch manager
+    iWant: the approvals portal running on Anvil
+    soThat: the page that lists what waits for me is there
+    tasks:
+${given(PORTAL_API, "a prod deployment on anvil is in its deploy files")}${given(PORTAL_WEB, "a prod deployment on anvil is in its deploy files")}`,
 };
 
-/** The migration on the staged path, as a small change: it reads a flow and changes no step. */
+/**
+ * The migration on the staged path (ADR 0203 B): three services in two waves, no flow delta at
+ * all, a deployment and a cut-over with its undo.
+ */
 export const STAGED_MIGRATION = {
   id: "move-to-anvil-staged",
   title: "Move three services to the Anvil platform",
   brief:
-    "# Move three services to the Anvil platform\n\nThree services move to the Anvil platform as they are. No entry, call or table changes.\n",
-  small: `summary: Three services move to the Anvil platform; no step changes.
+    "# Move three services to the Anvil platform\n\nThree services move to the Anvil platform as they are, two first and the one that calls them after. No entry, call or table changes.\n",
+  feature: `summary: Three services move to the Anvil platform in two waves; no runtime step changes.
+features: []
+flows: []
+operations:
+  - kind: deployment
+    repos: [${MOVED.join(", ")}]
+    what: Deploy each service on Anvil beside its hosts.
+    why: The hosts are retired at the end of the quarter.
+  - kind: cut-over
+    repos: [${MOVED.join(", ")}]
+    what: Move each service's traffic to Anvil.
+    why: The old hosts go once nothing calls them.
+`,
+  architecture: `flows: []
+waves:
+  - { repos: [${MOVED[0]}, ${MOVED[1]}], why: The third calls both. }
+  - { repos: [${MOVED[2]}] }
+operations:
+  - id: deploy-anvil
+    kind: deployment
+    repos: [${MOVED.join(", ")}]
+    what: Deploy the service on Anvil beside its hosts.
+    today: [${MOVED.join(", ")}]
+    sets: { platform: anvil, env: prod }
+  - id: switch
+    kind: cut-over
+    repos: [${MOVED.join(", ")}]
+    what: Move the service's traffic to Anvil.
+    after: [deploy-anvil]
+    undo: Point the traffic back at the hosts, which stay up for one release.
+`,
+  stories: `stories: []
+operations:
+  - id: deploy-anvil
+    title: Run each service on Anvil
+    asA: platform engineer
+    iWant: each service deployed on Anvil beside its hosts
+    soThat: traffic can move without a gap
+    tasks:
+${MOVED.map((r) => given(r, "a prod deployment on anvil is in its deploy files")).join("")}  - id: switch
+    title: Move the traffic to Anvil
+    asA: platform engineer
+    iWant: each service's traffic moved to Anvil
+    soThat: the old hosts can be retired
+    tasks:
+${MOVED.map((r) => given(r, "its traffic is answered from Anvil, and pointing it back was tried")).join("")}`,
+};
+
+/**
+ * A change of flows and operations (ADR 0203 review): the new event's publish step, the topic's
+ * name as a setting of the publisher, and the topic's retention in the deploy repo.
+ */
+export const STAGED_MIXED = {
+  id: "publish-settled-refunds-mixed",
+  title: "Publish settled refunds, with the topic's settings",
+  brief: `# Publish settled refunds, with the topic's settings\n\nRefunds settle in ${NEW_PUBLISHER} and nothing says so. Publish each settled refund to the topic ${TOPIC}; the publisher takes the topic's name from its settings, and the topic's retention is set in ${EMPTY_REPO}.\n`,
+  feature: `${STAGED_EVENT.feature}operations:
+  - kind: config
+    repos: [${NEW_PUBLISHER}]
+    what: Give the publisher the topic's name as a setting.
+    why: The topic's name differs by environment.
+  - kind: config
+    repos: [${EMPTY_REPO}]
+    what: Set the topic's retention.
+    why: Settled refunds are kept for a week.
+`,
+  architecture: `${STAGED_EVENT.architecture}operations:
+  - id: topic-setting
+    kind: config
+    repos: [${NEW_PUBLISHER}]
+    what: Give the publisher the topic's name as a setting.
+    sets: { key: refunds.topic }
+  - id: topic-retention
+    kind: config
+    repos: [${EMPTY_REPO}]
+    what: Set the topic's retention to seven days.
+    after: [topic-setting]
+`,
+  stories: `${STAGED_EVENT.stories}operations:
+  - id: topic-setting
+    title: Name the topic in the publisher's settings
+    asA: ledger operator
+    iWant: the topic's name read from the publisher's settings
+    soThat: each environment publishes to its own topic
+    tasks:
+${given(NEW_PUBLISHER, "refunds.topic is a key of its settings")}  - id: topic-retention
+    title: Keep settled refunds for a week
+    asA: ledger operator
+    iWant: the topic's retention set
+    soThat: a listener that was down can catch up
+    tasks:
+${given(EMPTY_REPO, "the topic's retention is seven days in its deploy files")}`,
+};
+
+/** A change with neither a flow nor an operation: the feature stage's assistant places nothing. */
+export const STAGED_NOTHING = {
+  id: "tidy-the-wiki-staged",
+  title: "Tidy the wiki",
+  brief:
+    "# Tidy the wiki\n\nThe team's wiki pages are put in order. No service, pipeline or setting changes.\n",
+  feature: "summary: The wiki's pages are put in order.\nfeatures: []\nflows: []\n",
+};
+
+/** The same on the fast path: it reads a flow, changes no step and has no operation. */
+export const STAGED_NO_STEP = {
+  id: "reword-the-runbook-staged",
+  title: "Reword the runbook",
+  brief:
+    "# Reword the runbook\n\nThe refund runbook is reworded. No entry, call, table, pipeline or setting changes.\n",
+  small: `summary: The refund runbook is reworded; no step changes.
 features: []
 flows:
-  - { id: ${SETTLE_FLOW.id}, how: read, why: It runs as before on the new platform. }
+  - { id: ${SETTLE_FLOW.id}, how: read, why: The runbook describes it. }
 targetFlows: []
 stories: []
 `,

@@ -41,6 +41,7 @@ import {
   stageRetrievalAi,
   withoutResume,
 } from "./loop.js";
+import { runsTodaySource } from "./operations.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
 import { openspecInstructionSource, renderProposal, writeProposal } from "./openspec-files.js";
@@ -107,6 +108,14 @@ newFlows:            # flows the change needs that don't exist yet
     repo: <the repo it would live in>
     newRepo: true    # only when that repo doesn't exist yet and this change plans it; else leave the line out
     why: <one sentence>
+operations:          # work that changes no runtime step; leave out when there is none
+  - kind: deployment | pipeline | config | secret | route | cut-over
+    repos: [<each repo it is done in>]
+    newRepo: true    # only when those repos don't exist yet and this change plans them
+    what: <one sentence: what is done>
+    why: <one sentence>
+outside:             # a party the change names that no repo of the estate holds, such as a partner's system
+  - { id: <a short id for it>, what: <what it is>, why: <why the change names it> }
 gaps:                # what the estate lacks for this change, at a high level
   - what: <what is missing>
     why: <why the change needs it>
@@ -122,6 +131,7 @@ questions:           # what only a person can answer; never answer them yourself
 Rules:
 - Pick features and flows by what they do, not by shared words. Name only ids that are in the index; a flow that doesn't exist yet goes under newFlows.
 - A flow the change only reads from is "read"; one whose steps change is "changed".
+- Work that changes no step of any flow (a service deployed elsewhere, a pipeline, a setting, a secret's key, a route, a cut-over) goes under operations, one entry a kind of work, with every repo it is done in. The runs-today block, when there is one, says where each repo runs now. Never write a secret's value.
 - Leave conflicts with other changes out: Atticus finds those from the files.
 - Say what each question asks: business (what the change must do for whom: a rule, a limit, what happens to the customer or the money) goes to the product owner; design (how the estate does it: a call, a timeout, a topic) to the architect; delivery (how it is built and shipped) to the tech lead.
 - Where the organisation's knowledge below bears on the change (a standard it must meet, a request or process it starts, a vendor's rule), name the item or section in the gap or question it bears on. Never take a rule from it that the brief or the estate contradicts.
@@ -264,11 +274,36 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
         `${n.name}:${n.repo}`,
         `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.${notEstateWhy(e, n.repo)}`,
       );
-  if (p.features.length + p.flows.length + p.newFlows.length === 0)
+  // ADR 0203 B: an operation's repo is checked as a new flow's is; an outside party is one the
+  // catalog doesn't have.
+  for (const o of p.operations ?? [])
+    for (const repo of o.repos.filter((r) => !repos.has(r) || e.archivedRepos.has(r)))
+      if (o.newRepo && !e.archivedRepos.has(repo))
+        out.push({
+          rule: "feature.planned-repo",
+          target: `${o.kind}:${repo}`,
+          message: `Operation "${o.what}" is put in ${repo}, a new repo this change plans. Once it is created on your Git host, add it: atticus repo add <its clone URL> --id ${repo}.`,
+          blocking: false,
+        });
+      else
+        issue(
+          "feature.unknown-repo",
+          `${o.kind}:${repo}`,
+          `Operation "${o.what}" is put in repo ${repo}, which the estate doesn't have.${notEstateWhy(e, repo)}`,
+        );
+  for (const o of p.outside ?? [])
+    if (e.byId.has(o.id) || repos.has(o.id))
+      issue(
+        "feature.outside-exists",
+        o.id,
+        `${o.id} is declared outside the map, and the catalog has it (${e.byId.get(o.id)?.kind ?? "a repo"}): take it out of outside and name it where the change uses it.`,
+      );
+  // After ADR 0203 B, raised only for a change with no flow and no operation.
+  if (p.features.length + p.flows.length + p.newFlows.length + (p.operations?.length ?? 0) === 0)
     issue(
       "feature.nothing-placed",
       p.change,
-      "The feature touches nothing: name the features and flows it touches, or the new flows it needs.",
+      "The feature touches nothing: name the features and flows it touches, the new flows it needs, or its operations.",
     );
   if (p.entry === "figma") {
     if (!p.design)
@@ -297,7 +332,13 @@ export function renderFeature(p: FeaturePlacement): string {
     ...p.features.map((f) => `- Feature ${f.id}: ${f.why}`),
     ...p.flows.map((f) => `- Flow ${f.id} (${f.how}): ${f.why}`),
     ...p.newFlows.map((f) => `- New flow in ${f.repo}: ${f.name}. ${f.why}`),
-    ...(p.features.length + p.flows.length + p.newFlows.length ? [] : ["- Nothing yet."]),
+    ...(p.operations ?? []).map(
+      (o) => `- Operation (${o.kind}) in ${o.repos.join(", ")}: ${o.what} ${o.why}`,
+    ),
+    ...(p.outside ?? []).map((o) => `- Outside the map: ${o.id} (${o.what}). ${o.why}`),
+    ...(p.features.length + p.flows.length + p.newFlows.length + (p.operations?.length ?? 0)
+      ? []
+      : ["- Nothing yet."]),
     "",
     "## Gaps",
     "",
@@ -432,6 +473,20 @@ export async function featureStage(
       classification: "internal",
       priority: 94,
     });
+
+  // ADR 0203 B: what runs today, as data: where each repo runs, its deployments and settings.
+  // Only for the repos in scope: those the brief, stories or attached files name, and those of
+  // the change's systems.
+  const said = [brief, ...stories.map((s) => s.text), ...attached.map((s) => s.text)].join("\n");
+  const ofSystems = change.systems.flatMap(
+    (s) => (estate.byId.get(s) as { repos?: string[] } | undefined)?.repos ?? [],
+  );
+  sources.push(
+    ...runsTodaySource(
+      estate,
+      [...estateRepos(estate)].filter((r) => ofSystems.includes(r) || said.includes(r)),
+    ),
+  );
 
   // H2: the closest past corrections of this stage, when there are any (else nothing changes).
   const past = await pastCorrectionsSource(root, {

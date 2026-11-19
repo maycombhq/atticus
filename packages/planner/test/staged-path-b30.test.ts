@@ -370,7 +370,7 @@ describe("the feature stage and a repo nobody read, or that isn't there yet", ()
     expect(e).toMatchObject({ name: "PlannerError", code: "stopped" });
     expect(e!.message.split("\n")).toEqual([
       "The feature stage stopped after 1 draft: it found nothing for the staged path to plan.",
-      "  - The feature touches nothing: name the features and flows it touches, or the new flows it needs. (rule feature.nothing-placed; in openspec/changes/add-fraud-check/feature.yaml)",
+      "  - The feature touches nothing: name the features and flows it touches, the new flows it needs, or its operations. (rule feature.nothing-placed; in openspec/changes/add-fraud-check/feature.yaml)",
       HINT,
     ]);
     expect(quickPathHint()).toBe(HINT);
@@ -404,7 +404,7 @@ describe("the fast path that changes no step", () => {
       "The small stage stopped after 1 draft: it found nothing for the staged path to plan.",
     );
     expect(lines).toContain(
-      "  - The answer changes no step of any flow: write the target flow of every flow the change changes, under targetFlows. (rule small.no-target-flow; in openspec/changes/return-order-time/stage/small-answer.yaml)",
+      "  - The answer changes no step of any flow: write the target flow of every flow the change changes, under targetFlows, or its work that is no runtime step under operations. (rule small.no-target-flow; in openspec/changes/return-order-time/stage/small-answer.yaml)",
     );
     expect(lines.at(-1)).toBe(HINT);
     expect(seen).toHaveLength(1);

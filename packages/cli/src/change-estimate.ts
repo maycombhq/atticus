@@ -1,7 +1,8 @@
 import { relative, sep } from "node:path";
-import { detectConflicts, outsideSystemsOf } from "@maycombhq/changes";
+import { changeFolder, detectConflicts, outsideSystemsOf } from "@maycombhq/changes";
 import { loadEstimates, loadOrgPack, orgPackDirOf, type Api } from "@maycombhq/core";
 import { gateStatus, reviewedGates } from "@maycombhq/naysayer";
+import { readOperations } from "@maycombhq/planner";
 import {
   estimateChange,
   loadRelease,
@@ -79,6 +80,14 @@ export async function estimateOf(
       ...(s.confirmedBy ? { confirmedBy: s.confirmedBy } : {}),
     })),
   }));
+  // ADR 0203 (review): the estimate sizes flow steps; a change's operation tasks are counted
+  // and said, never left out in silence.
+  const ops = (await readOperations(changeFolder(root, change))).file?.operations ?? [];
+  const opTasks = ops.reduce((n, x) => n + x.repos.length, 0);
+  if (opTasks)
+    problems.push(
+      `${opTasks} operation task${opTasks === 1 ? " is" : "s are"} not in this estimate (${ops.length} operation${ops.length === 1 ? "" : "s"}): estimates.yaml has no class for operations yet.`,
+    );
   const e = estimateChange({
     change,
     flows,
@@ -122,6 +131,12 @@ export async function changeEstimateCommand(
     return 0;
   }
   for (const p of e.problems) io.err(p);
+  // ADR 0203 (review): a change of operations only has nothing the estimate sizes, and said so.
+  if (
+    !e.units.length &&
+    e.problems.some((p) => / operation tasks? (is|are) not in this estimate/.test(p))
+  )
+    return 0;
   if (!e.units.length) {
     io.err(
       `${change} has no target flows yet, so there is nothing to size: the architecture stage writes them (atticus change architecture ${change}).`,

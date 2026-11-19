@@ -388,7 +388,17 @@ describe("org-flow schema", () => {
 
   it("knows the version a metarepo installed", async () => {
     expect(await orgFlowVersionOf(root)).toBe(ORG_FLOW_VERSION);
-    expect(ORG_FLOW_VERSION).toBe(2);
+    // ADR 0203 B: version 3 is the words of two artifacts (the design's Operations, a task's
+    // "(after …)"); the artifacts and their order are version 2's.
+    expect(ORG_FLOW_VERSION).toBe(3);
+    const dir = join(root, "openspec/schemas/org-flow");
+    const schema = await readFile(join(dir, "schema.yaml"), "utf8");
+    expect(schema).toContain("target-flows/_operations.yaml and under Operations");
+    expect(schema).toContain('ends with "(after <task>[, <task>])"');
+    expect(await readFile(join(dir, "templates/design.md"), "utf8")).toContain(
+      "## Operations\n\n| Operation | Kind | Repo | Wave | Today | Becomes |",
+    );
+    expect(await readFile(join(dir, "templates/tasks.md"), "utf8")).toContain("(after 1.1)");
     const old = await mkdtemp(join(tmpdir(), "atticus-orgflow-v1-"));
     expect(await orgFlowVersionOf(old)).toBeUndefined();
     await mkdir(join(old, "openspec/schemas/org-flow/templates"), { recursive: true });
@@ -399,7 +409,7 @@ describe("org-flow schema", () => {
     await writeFile(join(old, "openspec/schemas/org-flow/templates/snow.md"), "# snow\n");
     expect(await orgFlowVersionOf(old)).toBe(1);
     await writeOrgFlowSchema(old);
-    expect(await orgFlowVersionOf(old)).toBe(2);
+    expect(await orgFlowVersionOf(old)).toBe(ORG_FLOW_VERSION);
     expect(existsSync(join(old, "openspec/schemas/org-flow/templates/snow.md"))).toBe(false);
   });
 

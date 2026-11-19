@@ -1,4 +1,4 @@
-import { cp } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
@@ -166,6 +166,71 @@ describe("POST /api/changes/{id}/conformance: Check the code again from the app 
         expect(none.status).toBe(404);
       } finally {
         await s.close();
+      }
+    },
+    T,
+  );
+
+  // ADR 0203 review: the operations file is no target flow, and operations are not checked
+  // against the code in this release; both are said, never an error and never "found".
+  const OPS = (change: string) =>
+    `schemaVersion: 1\nchange: ${change}\noperations:\n  - id: deploy-new\n    kind: deployment\n    repos: [forge-ledger]\n    what: Deploy the service on the new platform.\n    sets: { platform: forge-cloud }\n  - id: switch\n    kind: cut-over\n    repos: [forge-ledger]\n    what: Point the route at it.\n    undo: Point the route back at the old deployment.\n`;
+
+  it(
+    "a change of flows and operations: the flows are checked, and the operations are said not to be",
+    async () => {
+      await writeFile(
+        join(root, "openspec/changes", CHANGE, "target-flows/_operations.yaml"),
+        OPS(CHANGE),
+      );
+      const r = await run(["change", "conform", CHANGE, "--root", root]);
+      expect(r.err).not.toContain("Unrecognized key");
+      expect(r.err).not.toContain("_operations.yaml");
+      expect(r.out).toMatch(/4 found, 0 missing, 1 still there, 2 not in the design\.$/m);
+      expect(r.out.split("\n").at(-1)).toBe(
+        "2 operations are not checked: Atticus doesn't check operations against the code in this release.",
+      );
+      const latest = await run(["change", "conform", CHANGE, "--latest", "--root", root]);
+      expect(latest.code).toBe(0);
+      expect(latest.err).toBe("");
+      expect(latest.out.split("\n").at(-1)).toBe(
+        "2 operations are not checked: Atticus doesn't check operations against the code in this release.",
+      );
+    },
+    T,
+  );
+
+  it(
+    "a change whose work is operations only: says so and exits 0, never 'no target flows yet'",
+    async () => {
+      const id = "move-ledger-platform";
+      expect(
+        (
+          await run([
+            "change",
+            "new",
+            "Move the ledger to the new platform",
+            "--type",
+            "feature",
+            "--id",
+            id,
+            "--by",
+            "pat",
+            "--root",
+            root,
+          ])
+        ).code,
+      ).toBe(0);
+      const dir = join(root, "openspec/changes", id, "target-flows");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "_operations.yaml"), OPS(id));
+      const said =
+        "This change's work is operations (2): Atticus doesn't check operations against the code in this release.";
+      for (const more of [[], ["--latest"]]) {
+        const r = await run(["change", "conform", id, ...more, "--root", root]);
+        expect(r.err).toBe("");
+        expect(r.out).toBe(said);
+        expect(r.code).toBe(0);
       }
     },
     T,
