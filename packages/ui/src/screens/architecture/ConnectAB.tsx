@@ -83,6 +83,9 @@ export function ConnectAB(p: {
     ? `/api/connect?from=${encodeURIComponent(say(caller))}&to=${encodeURIComponent(say(callee))}`
     : undefined;
   const live = useJobRead<Api.ConnectViewT>(p.io?.read ? undefined : path);
+  // What a write here said (Remove it's "Done"), kept for these two boxes through the reload it
+  // starts: the view it was said in may be gone from the one read after it (journey 39).
+  const [said, setSaid] = useState<{ path: string; words: string } | undefined>();
   const view = p.io?.read ? p.io.read(path) : live;
   const v = view.state === "ready" ? view.data : undefined;
   return (
@@ -151,10 +154,19 @@ export function ConnectAB(p: {
           key={`${say(v.from)}>${say(v.to)}`}
           v={v}
           reload={() => view.reload?.()}
+          onSaid={(words) => path && setSaid({ path, words })}
           pick={(end, box) => setPicked((x) => ({ ...x, [end]: box }))}
           io={io}
           {...(p.onShown ? { onShown: p.onShown } : {})}
         />
+      )}
+      {said && said.path === path && (
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {said.words}
+          </p>
+          <Propose scope="org-pack" />
+        </div>
       )}
     </section>
   );
@@ -164,6 +176,8 @@ function Mechanism(p: {
   io: Omit<ConnectIo, "read">;
   v: Api.ConnectViewT;
   reload(): void;
+  /** Words to keep through the reload (ConnectAB holds them for these two boxes). */
+  onSaid(words: string): void;
   pick(end: "from" | "to", box: Api.LinkBoxT): void;
   onShown?(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
 }) {
@@ -194,7 +208,9 @@ function Mechanism(p: {
         <Need key={`${n.need}:${n.end}`} n={n} v={v} pick={p.pick} reload={p.reload} io={p.io} />
       ))}
       {/* The review: a declared arrow is said beside the calls, never in their place (B.1). */}
-      {v.declared && <Declared v={v} d={v.declared} io={p.io} reload={p.reload} />}
+      {v.declared && (
+        <Declared v={v} d={v.declared} io={p.io} reload={p.reload} onSaid={p.onSaid} />
+      )}
       {v.mechanism === "calls" && v.candidates && (
         <>
           <Pairing
@@ -309,6 +325,7 @@ function Declared(p: {
   d: Api.DeclaredArrowViewT;
   io: Omit<ConnectIo, "read">;
   reload(): void;
+  onSaid(words: string): void;
 }) {
   const { v, d } = p;
   return (
@@ -325,7 +342,10 @@ function Declared(p: {
           d={d}
           io={p.io}
           retire={!!v.superseded || v.find?.outcome === "found"}
-          onDone={p.reload}
+          onDone={(words) => {
+            p.onSaid(words);
+            p.reload();
+          }}
         />
         {v.from.repo && v.find?.outcome !== "found" && (
           <FindButton v={v} io={p.io} reload={p.reload} />
@@ -344,7 +364,8 @@ export function RetireArrow(p: {
   d: Api.DeclaredArrowViewT;
   io: Omit<ConnectIo, "read">;
   retire: boolean;
-  onDone?: () => void;
+  /** Built: its words, said by the panel that outlives the reload (not here as well). */
+  onDone?: (words: string) => void;
 }) {
   const { d } = p;
   const [lines, setLines] = useState<string[] | undefined>();
@@ -376,7 +397,7 @@ export function RetireArrow(p: {
       .then(
         () => {
           setDone("built");
-          p.onDone?.();
+          p.onDone?.(W.retired);
         },
         (e: unknown) => {
           const refused =
@@ -389,6 +410,8 @@ export function RetireArrow(p: {
       )
       .finally(() => setBusy(false));
   };
+  // Its words are the panel's now: nothing more to offer here (no second Remove).
+  if (done === "built" && p.onDone) return null;
   if (done)
     return (
       <div className="stack">

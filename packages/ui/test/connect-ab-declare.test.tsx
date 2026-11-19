@@ -237,3 +237,68 @@ describe("Retire the declared arrow (ADR 0204 1.7, the review)", () => {
     expect(text(m.tree)).toContain(W.retired);
   });
 });
+
+describe("Remove it's words outlive the view it reloads (ADR 0204 1.7, journey 39)", () => {
+  it("hands its words up when the panel reloads, and says them only there", async () => {
+    const { RetireArrow } = await import("../src/screens/architecture/ConnectAB.js");
+    const d = { ...WROTE[0]!.link, file: "org-pack/profiles/forge/profile.yaml" };
+    const said: string[] = [];
+    const m = mount(
+      RetireArrow as never,
+      {
+        d,
+        retire: false,
+        onDone: (w: string) => said.push(w),
+        io: {
+          post: () =>
+            Promise.resolve({
+              written: false,
+              files: [{ file: d.file, changes: [{ was: `why: ${WHY}` }] }],
+              verify: "",
+              commit: "",
+            }),
+          follow: () => Promise.resolve({ code: 0, lines: [], result: { built: true } }),
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name)!;
+    (button(W.remove).props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    (button(W.retireConfirm(W.remove)).props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(said).toEqual([W.retired]);
+    // Said once, by the panel that outlives the reload, never twice while both are drawn.
+    expect(text(m.tree)).not.toContain(W.retired);
+    // Nothing left to press twice while the panel reads the boxes again.
+    expect(all(m.tree).some((e) => e.type === "button")).toBe(false);
+  });
+
+  it("keeps the words for these two boxes through the reload that drops the declared arrow", async () => {
+    const { ConnectAB } = await import("../src/screens/architecture/ConnectAB.js");
+    const a = { label: "repo: forge-edge-proxy", box: v.from };
+    const b = { label: "repo: forge-ledger-svc", box: v.to };
+    let view: Api.ConnectViewT = {
+      ...v,
+      mechanism: "declared",
+      declared: { ...WROTE[0]!.link, file: "org-pack/profiles/forge/profile.yaml" },
+    };
+    const m = mount(
+      ConnectAB as never,
+      {
+        a,
+        b,
+        boxes: [a, b],
+        onClose: () => undefined,
+        io: { read: () => ({ state: "ready", data: view, reload: () => undefined }) },
+      } as never,
+    );
+    const mech = () => all(m.tree).find((e) => typeof e.props.onSaid === "function")!;
+    (mech().props.onSaid as (w: string) => void)(W.retired);
+    view = { ...v, mechanism: "declare" };
+    m.render();
+    expect(text(m.tree)).toContain(W.retired);
+  });
+});
