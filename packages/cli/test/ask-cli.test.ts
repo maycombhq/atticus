@@ -54,18 +54,28 @@ describe("atticus ask", () => {
     const r = await run(["ask", "who consumes the topic transfers.completed?"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain(
-      "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+      "Read as: who receives topic.transfers-completed: the receivers first, then what a change reaches past them.",
     );
     expect(r.out).toContain("Query: impact topic.transfers-completed");
-    const components = (t: string) =>
-      (JSON.parse(t) as { affected: { kind: string; id: string }[] }).affected
-        .filter((a) => a.kind === "Component")
-        .map((a) => a.id)
+    expect(r.out).toContain("topic.transfers-completed is received by 1 component:");
+    type Walk = { kind: string; id: string }[];
+    const components = (a: Walk) =>
+      a
+        .filter((x) => x.kind === "Component")
+        .map((x) => x.id)
         .sort();
-    const asked = await run(["ask", "who consumes the topic transfers.completed?", "--json"]);
-    const walked = await run(["impact", "topic.transfers-completed", "--json"]);
-    expect(components(asked.out)).toEqual(components(walked.out));
-    expect(components(asked.out)).toContain("reports-job");
+    const asked = JSON.parse(
+      (await run(["ask", "who consumes the topic transfers.completed?", "--json"])).out,
+    ) as { receivers: Walk; affected: Walk; further: Walk };
+    const walked = JSON.parse(
+      (await run(["impact", "topic.transfers-completed", "--json"])).out,
+    ) as {
+      affected: Walk;
+    };
+    // Every component the walk names is in the answer (ADR 0201), the receivers apart from what
+    // lies past them (the b30 proof run: a receiver's own callers read as receivers).
+    expect(components([...asked.affected, ...asked.further])).toEqual(components(walked.affected));
+    expect(asked.receivers.map((x) => x.id)).toEqual(["reports-job"]);
   });
 
   it("keeps how it read the question in --json, as readAs and query", async () => {
@@ -80,7 +90,10 @@ describe("atticus ask", () => {
   it("says a name the map lacks is not in the map, and never lists every interface", async () => {
     const r = await run(["ask", "who calls forge-portal?"]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("forge-portal is not in the map: planned or not read.");
+    // Which of the three it is follows the sentence (ADR 0201 addendum, 2026-11-19).
+    expect(r.out).toContain(
+      "forge-portal is not in the map: planned or not read. Neither: no manifest lists forge-portal and no open change plans it. Did you mean forge-portal-ui?",
+    );
     expect(r.out).toContain("0 records");
     expect(r.out).not.toMatch(/portal-bff|ledger-api/);
     const j = JSON.parse((await run(["ask", "who calls forge-portal?", "--json"])).out) as {
@@ -88,7 +101,9 @@ describe("atticus ask", () => {
       total: number;
     };
     expect(j.total).toBe(0);
-    expect(j.readAs).toMatch(/forge-portal is not in the map: planned or not read\.$/);
+    expect(j.readAs).toMatch(
+      /forge-portal is not in the map: planned or not read\. Neither: .* Did you mean forge-portal-ui\?$/,
+    );
   });
 
   it('says what is wrong, never "planned or not read", where the map can\'t be read (review)', async () => {
@@ -168,7 +183,6 @@ describe("atticus ask: every reading the base had is kept (ADR 0201, review of b
     ["who consumes ledger-api", "kind:interface to:ledger-api"],
     ["what calls northwind-pay", "kind:interface to:northwind-pay"],
     ["who uses forge-portal", "uses forge-portal"],
-    ["who consumes the topic forge.orders.shipped?", "consumes topic forge.orders.shipped"],
     ["what breaks if transfers.completed changes", "breaks transfers.completed changes"],
     ["list interfaces for transfers.completed", "kind:interface"],
     ["who reads entry", "refby:ledger-db.entry kind:component"],
@@ -180,6 +194,29 @@ describe("atticus ask: every reading the base had is kept (ADR 0201, review of b
   /** The only readings that changed: the consumer and caller cases the ADR fixes, with the base's. */
   const FIXED: [string, string, string][] = [
     ["who calls forge-portal?", "kind:interface", "kind:interface to:forge-portal"],
+    // The b30 proof run: a name the map lacks was a word search that found nothing.
+    [
+      "who consumes the topic forge.orders.shipped?",
+      "consumes topic forge.orders.shipped",
+      "kind:endpoint pathOrTopic:forge.orders.shipped",
+    ],
+    [
+      "who publishes forge.orders.shipped?",
+      "publishes forge.orders.shipped",
+      "kind:endpoint pathOrTopic:forge.orders.shipped",
+    ],
+    ["what does forge-portal call?", "forge-portal call", "kind:interface from:forge-portal"],
+    // An entry's callers are the interfaces that name it; a topic's publishers the same.
+    [
+      "who calls ledger-api.post-transfer?",
+      "kind:interface to:ledger-api.post-transfer",
+      "kind:interface endpoint:ledger-api.post-transfer",
+    ],
+    [
+      "who publishes transfers.completed?",
+      "publishes transfers.completed",
+      "kind:interface endpoint:topic.transfers-completed",
+    ],
     [
       "who consumes topic.transfers-completed?",
       "kind:interface to:topic.transfers-completed",

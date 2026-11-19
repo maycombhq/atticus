@@ -158,6 +158,14 @@ export function impact(
   ix: CatalogIndex,
   rootId: string,
   depth = 4,
+  o: {
+    /**
+     * An owner the caller knows where the record's system has none in the catalog: the manifest's
+     * repo owner, a profile system's (b30 proof run: the OWNER column was empty on an estate
+     * whose manifests name every repo's owner).
+     */
+    owner?: (r: { kind: string; id: string; system?: string }) => string | undefined;
+  } = {},
 ): { root: string; affected: Affected[]; gaps: Gap[] } | undefined {
   const roots = ix.find(rootId);
   if (roots.length === 0) return undefined;
@@ -232,7 +240,7 @@ export function impact(
   const ownerOf = (kind: string, id: string): string | undefined => {
     const s = ix.systemOf(kind, id);
     const sys = s ? (recordOf("System", s) as { owner?: string } | undefined) : undefined;
-    return sys?.owner;
+    return sys?.owner ?? o.owner?.({ kind, id, ...(s ? { system: s } : {}) });
   };
 
   const seen = new Set<string>([`${root.kind}|${root.id}`]);
@@ -297,4 +305,107 @@ export function impact(
       }
   }
   return { root: root.id, affected, gaps };
+}
+
+/**
+ * Who receives a topic or an entry (b30 proof run: `ask "who consumes the topic …"` gave the whole
+ * impact walk, so callers of the consumer sat beside the real receiver). `receivers` are the
+ * components one interface away: an event's subscribers, a call's callers. `affected` is the
+ * walk as far as them, and `further` what a change reaches past a receiver, which receives
+ * nothing from the root.
+ */
+export function receiversOf(
+  ix: CatalogIndex,
+  rootId: string,
+  depth = 4,
+  o: Parameters<typeof impact>[3] = {},
+):
+  | { root: string; receivers: Affected[]; affected: Affected[]; further: Affected[]; gaps: Gap[] }
+  | undefined {
+  const r = impact(ix, rootId, depth, o);
+  if (!r) return undefined;
+  // root, the interface that names it, the component at its other end.
+  const affected = r.affected.filter((a) => a.path.length <= 3);
+  const via = new Set(
+    affected.filter((a) => a.path.length === 2 && a.kind === "Interface").map((a) => a.id),
+  );
+  const receivers = affected.filter(
+    (a) => a.path.length === 3 && a.kind !== "Interface" && via.has(a.path[1]!),
+  );
+  const further = r.affected.filter((a) => a.path.length > 3);
+  return { root: r.root, receivers, affected, further, gaps: r.gaps };
+}
+
+/**
+ * What a word names in the map when no record has it as its id: the one Endpoint whose path or
+ * topic is exactly it (the lookup the door check uses, ADR 0201 addendum), or the ids of the
+ * several that have it. Undefined when none has.
+ */
+export function namedRecord(
+  ix: CatalogIndex,
+  name: string,
+): { id: string } | { several: string[] } | undefined {
+  const ids = (
+    ix.db
+      .prepare(
+        "SELECT DISTINCT id FROM records WHERE kind = 'Endpoint' AND json_extract(json, '$.pathOrTopic') = ? ORDER BY id",
+      )
+      .all(name) as { id: string }[]
+  ).map((r) => r.id);
+  return ids.length === 0 ? undefined : ids.length === 1 ? { id: ids[0]! } : { several: ids };
+}
+
+/** What is said of a name several records have: which, and to name the one meant. */
+export function severalNamed(name: string, ids: string[]): string {
+  return `${name} is the name of several records of the map (${ids.join(", ")}). Name the id of the one meant.`;
+}
+
+/** What is said first when a name stood for its record's id. */
+export function namedAs(name: string, id: string): string {
+  return `${name} is the name of ${id}.`;
+}
+
+/** The edit distance between two words, given up on past `max`. */
+function distance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, n) => n);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let least = i;
+    for (let j = 1; j <= b.length; j++) {
+      const v = Math.min(
+        prev[j]! + 1,
+        row[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      row.push(v);
+      if (v < least) least = v;
+    }
+    if (least > max) return max + 1;
+    prev = row;
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * The ids nearest to one the map lacks, for "did you mean": the map's systems, components and
+ * repos (and `more`, the manifests' repos) within a few letters of it, nearest first.
+ */
+export function nearestIds(ix: CatalogIndex, id: string, more: string[] = [], limit = 3): string[] {
+  const word = id.toLowerCase();
+  const max = Math.max(1, Math.min(3, Math.floor(word.length / 4)));
+  const known = (
+    ix.db
+      .prepare(
+        "SELECT DISTINCT id FROM records WHERE kind IN ('System', 'Component', 'Endpoint', 'DataStore', 'Table') ORDER BY id",
+      )
+      .all() as { id: string }[]
+  ).map((r) => r.id);
+  return [...new Set([...known, ...more])]
+    .filter((k) => k !== id)
+    .map((k) => ({ k, d: distance(word, k.toLowerCase(), max) }))
+    .filter((x) => x.d <= max)
+    .sort((a, b) => a.d - b.d || (a.k < b.k ? -1 : 1))
+    .slice(0, limit)
+    .map((x) => x.k);
 }

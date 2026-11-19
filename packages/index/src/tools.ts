@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createContext, runInContext, Script } from "node:vm";
 import {
   decodeText,
@@ -17,9 +17,10 @@ import {
   type ToolDefinition,
 } from "@maycombhq/core";
 import { notInMap } from "./ask.js";
+import { namedAs, namedRecord, severalNamed } from "./graph.js";
 import type { CatalogIndex } from "./catalog-index.js";
 import { globMatcher } from "./glob.js";
-import { fuse, type GraphNodeRow } from "./select.js";
+import { fuse, idMatches, matchesWhole, queryWords, type GraphNodeRow } from "./select.js";
 
 /**
  * The context tools (ADR 0107 addendum, point 4): read-only tools a step's model may call
@@ -32,6 +33,8 @@ import { fuse, type GraphNodeRow } from "./select.js";
 
 /** Said to the model when a tool can't do what it was asked; the runtime marks the call an error. */
 export class ContextToolError extends Error {
+  /** The id the map lacks, when that is what the tool refuses (the caller may say why). */
+  lacking?: string;
   constructor(message: string) {
     super(message);
     this.name = "ToolError";
@@ -260,6 +263,12 @@ export interface ContextToolOptions {
    * add to it, and show_code may show what it holds (ADR 0118).
    */
   pointers?: Set<string>;
+  /**
+   * What is said of an id the map lacks, where the caller can tell which of the three it is (a
+   * manifest's repo nobody read, an id an open change plans, neither; ADR 0201 addendum).
+   * Without it: `notInMap(id)`.
+   */
+  lacks?: (id: string, ix: CatalogIndex) => string | Promise<string>;
 }
 
 const str = (v: unknown): string | undefined =>
@@ -288,6 +297,23 @@ export async function runContextTool(
   name: string,
   input: Record<string, unknown>,
   o: ContextToolOptions = {},
+): Promise<string> {
+  try {
+    return await runIndexTool(ix, root, name, input, o);
+  } catch (e) {
+    // An id the map lacks: the caller may know which of the three it is.
+    if (e instanceof ContextToolError && e.lacking !== undefined && o.lacks)
+      throw new ContextToolError(await o.lacks(e.lacking, ix));
+    throw e;
+  }
+}
+
+async function runIndexTool(
+  ix: CatalogIndex,
+  root: string,
+  name: string,
+  input: Record<string, unknown>,
+  o: ContextToolOptions,
 ): Promise<string> {
   switch (name) {
     case "search":
@@ -336,9 +362,9 @@ async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Pro
     if ("off" in s) off = s.off;
     else near = s.hits;
   }
-  if (by === "meaning" && off) return `Similar in meaning is off: ${off}. Search by words instead.`;
+  if (by === "meaning" && off) return `${meaningOff(off)}. Search by words instead.`;
   const cos = new Map(near.map((h) => [h.key, h.cos]));
-  const keys = near.length
+  const ranked = near.length
     ? [
         ...fuse([
           { name: "words", keys: words.map((h) => h.key) },
@@ -347,8 +373,10 @@ async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Pro
       ]
         .sort((a, b) => b[1].score - a[1].score || (a[0] < b[0] ? -1 : 1))
         .map(([key]) => key)
-        .slice(0, limit)
     : words.map((h) => h.key);
+  // An id that is the text, or starts with it, is what was asked for: it comes first.
+  const byId = by === "meaning" ? [] : idMatches(ix, text, k);
+  const keys = [...new Set([...byId, ...ranked])].slice(0, limit);
   const lines = keys
     .map((key) =>
       hitLine(
@@ -358,9 +386,17 @@ async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Pro
       ),
     )
     .filter((l): l is string => !!l);
-  const note = off && by === "both" ? [`(Similar in meaning is off: ${off}.)`] : [];
+  const note = off && by === "both" ? [`(${meaningOff(off)}.)`] : [];
   if (!lines.length) return [`Nothing in the index matches "${text}".`, ...note].join("\n");
+  // A search matches any word: said when nothing holds them all, so the hits aren't read as it.
+  const partial =
+    by !== "meaning" && !byId.length && !matchesWhole(ix, text, k)
+      ? [
+          `Nothing in the index matches "${text}" whole: no id starts with it and nothing holds all of its words (${queryWords(text, 200, { split: false }).join(", ")}). The hits below match some of them.`,
+        ]
+      : [];
   return [
+    ...partial,
     `${lines.length} hit${lines.length === 1 ? "" : "s"} for "${text}", best first:`,
     ...lines,
     ...note,
@@ -368,14 +404,21 @@ async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Pro
   ].join("\n");
 }
 
+/** "Similar in meaning is off: <why>", said once: the index's own note already starts so. */
+function meaningOff(why: string): string {
+  return /^similar in meaning is off/i.test(why)
+    ? `S${why.slice(1)}`
+    : `Similar in meaning is off: ${why}`;
+}
+
 function similarTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
   const id = str(input.id);
   if (!id) throw new ContextToolError("similar needs an id.");
   const kinds = strs(input.kinds);
   const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.searchLimit, 10);
-  const node = nodesOf(ix, id, root)[0]!;
+  const node = nodesOf(ix, id, root).nodes[0]!;
   const s = ix.similar({ key: node.key }, { limit, ...(kinds?.length ? { kinds } : {}) });
-  if ("off" in s) return `Similar in meaning is off: ${s.off}.`;
+  if ("off" in s) return `${meaningOff(s.off)}.`;
   if (!s.hits.length) return `Nothing reads like ${id}.`;
   return [
     `Nearest ${id} in meaning (a hint where to look, not a link or a fact):`,
@@ -406,18 +449,85 @@ export function mapFault(ix: CatalogIndex, root: string): string | undefined {
   return undefined;
 }
 
-function nodesOf(ix: CatalogIndex, id: string, root: string): GraphNodeRow[] {
+/**
+ * The nodes an id names. A name that exactly one entry or topic has stands for that record (ADR
+ * 0201 addendum, 2026-11-19: `ask` and the door check took a topic's name, show and walk did
+ * not); `named` then says so, as the answer's first line.
+ */
+function nodesOf(
+  ix: CatalogIndex,
+  id: string,
+  root: string,
+): { nodes: GraphNodeRow[]; named: string[] } {
   const nodes = ix.nodes(id);
-  if (!nodes.length) throw new ContextToolError(mapFault(ix, root) ?? notInMap(id));
-  return nodes;
+  if (nodes.length) return { nodes, named: [] };
+  const fault = mapFault(ix, root);
+  if (fault) throw new ContextToolError(fault);
+  const by = namedRecord(ix, id);
+  if (by && "several" in by) throw new ContextToolError(severalNamed(id, by.several));
+  const found = by ? ix.nodes(by.id) : [];
+  if (!by || !found.length) {
+    const e = new ContextToolError(notInMap(id));
+    e.lacking = id;
+    throw e;
+  }
+  return { nodes: found, named: [namedAs(id, by.id)] };
 }
 
-function showTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
+/**
+ * What a change's own files say beside change.yaml (b30 proof run: a quick change, which names no
+ * system, read "systems none named" and no more): its type, the repos its tasks.md groups its
+ * tasks under, and what its requirements file lists under `## Planned`.
+ */
+async function changeLines(root: string, file: string): Promise<string[]> {
+  const dir = resolve(root, dirname(file));
+  if (relative(resolve(root), dir).startsWith("..")) return [];
+  const read = (name: string) => readFile(join(dir, name), "utf8").catch(() => "");
+  const out: string[] = [];
+  const type = /^type:\s*["']?([A-Za-z0-9._-]+)["']?\s*$/m.exec(await read("change.yaml"))?.[1];
+  if (type) out.push(`Type: ${type}.`);
+  const repos = [
+    ...new Set(
+      [...(await read("tasks.md")).matchAll(/^##\s+`?([a-z0-9][a-z0-9._-]*)`?\s*$/gm)].map(
+        (m) => m[1]!,
+      ),
+    ),
+  ];
+  if (repos.length) out.push(`Repos its tasks.md names: ${repos.join(", ")}.`);
+  const planned: string[] = [];
+  let inPlanned = false;
+  for (const raw of (await read("requirements.md")).split(/\r?\n/)) {
+    if (/^##?\s/.test(raw)) inPlanned = /^##\s+planned\s*#*\s*$/i.test(raw);
+    else if (inPlanned) {
+      const item = /^\s*[-*+]\s+(.+)$/.exec(raw)?.[1]?.trim();
+      // The id without its backticks; what follows it as written, cut to one line's worth.
+      if (item)
+        planned.push(
+          item
+            .replace(/^`([^`]+)`/, "$1")
+            .replace(/[.\s]+$/, "")
+            .slice(0, 160),
+        );
+    }
+  }
+  if (planned.length) out.push(`Planned (requirements.md): ${planned.join("; ")}.`);
+  return out;
+}
+
+async function showTool(
+  ix: CatalogIndex,
+  root: string,
+  input: Record<string, unknown>,
+): Promise<string> {
   const id = str(input.id);
   if (!id) throw new ContextToolError("show needs an id.");
-  const nodes = nodesOf(ix, id, root).slice(0, 3);
-  return nodes
-    .map((n) => {
+  const { nodes, named } = nodesOf(ix, id, root);
+  const shown = nodes.slice(0, 3);
+  const more = new Map<string, string[]>();
+  for (const n of shown) if (n.kind === "Change") more.set(n.key, await changeLines(root, n.file));
+  return [
+    ...named,
+    ...shown.map((n) => {
       const state = n.review
         ? `a person ${n.review} it`
         : n.verified
@@ -427,10 +537,11 @@ function showTool(ix: CatalogIndex, root: string, input: Record<string, unknown>
       return [
         `${n.kind} ${n.id} (${state}), read from ${n.file}:`,
         n.detail.trimEnd(),
+        ...(more.get(n.key) ?? []),
         ...(links ? [`It has ${links} link${links === 1 ? "" : "s"}; walk shows them.`] : []),
       ].join("\n");
-    })
-    .join("\n\n");
+    }),
+  ].join("\n\n");
 }
 
 function walkTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
@@ -439,7 +550,7 @@ function walkTool(ix: CatalogIndex, root: string, input: Record<string, unknown>
   const hops = int(input.hops, 1, CONTEXT_TOOL_BOUNDS.walkHops, 1);
   const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.walkLimit, 25);
   const kinds = strs(input.kinds);
-  const starts = nodesOf(ix, id, root);
+  const { nodes: starts, named } = nodesOf(ix, id, root);
   const seen = new Set(starts.map((n) => n.key));
   const lines: string[] = [];
   let more = 0;
@@ -461,9 +572,16 @@ function walkTool(ix: CatalogIndex, root: string, input: Record<string, unknown>
       }
     frontier = next.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   }
-  if (!lines.length) return `${id} has no links${kinds?.length ? ` to ${kinds.join(", ")}` : ""}.`;
+  // A name stood for its record: the links are that record's.
+  const from = named.length ? starts[0]!.id : id;
+  if (!lines.length)
+    return [
+      ...named,
+      `${from} has no links${kinds?.length ? ` to ${kinds.join(", ")}` : ""}.`,
+    ].join("\n");
   return [
-    `Links from ${id}, ${hops} hop${hops === 1 ? "" : "s"}:`,
+    ...named,
+    `Links from ${from}, ${hops} hop${hops === 1 ? "" : "s"}:`,
     ...lines,
     ...(more ? [`… and ${more} more; ask for fewer kinds or one hop.`] : []),
   ].join("\n");
@@ -604,8 +722,9 @@ async function showCodeTool(
   let cites: Cite[];
   if (id) {
     if (!ix) throw new ContextToolError("show_code by id needs the index.");
-    nodesOf(ix, id.replace(/#\d+$/, ""), root);
-    cites = citesOf(ix, root, id);
+    const found = nodesOf(ix, id.replace(/#\d+$/, ""), root);
+    // A topic's name stands for its record here too.
+    cites = citesOf(ix, root, found.named.length ? found.nodes[0]!.id : id);
     if (!cites.length)
       return `${id} cites no line of code (it may cite a wiki page or a document: show it).`;
   } else {
