@@ -6,6 +6,7 @@ import {
   atticusHooks,
   BUILD_MANIFEST_READS,
   BUILD_MANIFEST_VERSION,
+  BUILD_VERSION,
   BuildManifest,
   NEWER_ATTICUS_COMMAND,
   newerAtticusCommand,
@@ -112,6 +113,18 @@ describe("a newer build.json that names the Atticus that wrote it (ADR 0202 poin
     expect((await newerFileAt(p, REL, "build.json"))[0]!.atticus).toBe("2.0.0-beta.31");
     // A release is above its own pre-releases.
     atticusHooks.version = "2.0.0";
+    expect((await newerFileAt(p, REL, "build.json"))[0]).not.toHaveProperty("atticus");
+  });
+
+  it("with nobody saying this Atticus's version, the build's own is the floor: an older one is never taken for newer", async () => {
+    // The scanner used alone (no command line told it): BUILD_VERSION stands for this Atticus.
+    for (const old of ["1.9.0", "2.0.0-beta.9", BUILD_VERSION]) {
+      const p = await fileOf(manifest({ version: N, atticus: old }));
+      expect((await newerFileAt(p, REL, "build.json"))[0], old).not.toHaveProperty("atticus");
+    }
+    // A value that isn't a version is no version of this Atticus either.
+    atticusHooks.version = "not a version";
+    const p = await fileOf(manifest({ version: N, atticus: "2.0.0-beta.9" }));
     expect((await newerFileAt(p, REL, "build.json"))[0]).not.toHaveProperty("atticus");
   });
 

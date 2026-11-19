@@ -9,7 +9,10 @@ import {
   cmpText,
   ContractsFile,
   factsDirOf,
+  ATTICUS_VERSION_SHAPE,
+  atticusVersionOf,
   FACTS_SCHEMA_VERSION,
+  newerThan,
   parseFacts,
   parseRecord,
   RecordId,
@@ -645,47 +648,27 @@ export async function newerFileAt(abs: string, rel: string, name = rel): Promise
   return found.map((x) => ({ path: rel, name, ...x, ...(atticus ? { atticus } : {}) }));
 }
 
-/** What the cli tells the scanner of itself: this Atticus's version (ADR 0202 point 7). */
+/**
+ * What the cli tells the scanner of itself: this Atticus's version (ADR 0202 point 7). Where
+ * nobody said (the scanner used alone), the build's own version stands for it: it is never
+ * newer than the Atticus that carries it, so an Atticus older than this build is never taken
+ * for a newer one.
+ */
 export const atticusHooks: { version?: string } = {};
-
-/** The shape of an Atticus version: the only value that may go into a command a person copies. */
-const ATTICUS_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
-
-/** Semver order of two values of that shape, pre-releases included: a is newer than b. */
-function versionNewer(a: string, b: string): boolean {
-  const split = (v: string) => {
-    const [core, pre] = v.split(/-(.*)/s, 2);
-    return { core: core!.split(".").map(Number), pre: pre ? pre.split(".") : [] };
-  };
-  const x = split(a);
-  const y = split(b);
-  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i]! > y.core[i]!;
-  if (!x.pre.length || !y.pre.length) return !x.pre.length && !!y.pre.length;
-  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
-    const p = x.pre[i];
-    const q = y.pre[i];
-    if (p === undefined || q === undefined) return q === undefined;
-    if (p === q) continue;
-    const pn = /^\d+$/.test(p);
-    const qn = /^\d+$/.test(q);
-    return pn && qn ? Number(p) > Number(q) : pn !== qn ? !pn : p > q;
-  }
-  return false;
-}
 
 /**
  * ADR 0202 point 7: the `atticus` a newer build.json names as its second key, after `version`,
- * so within the first bytes. Used only in the shape of a version and, where this Atticus is
- * known (`atticusHooks`), newer than it; anything else is ignored.
+ * so within the first bytes. Used only in the shape of a version and newer than this Atticus
+ * (`atticusHooks`, else the build's version); anything else is ignored.
  */
 function atticusIn(head: string): string | undefined {
   const t = head.charCodeAt(0) === 0xfeff ? head.slice(1) : head;
   const m = /^\s*\{\s*"version"\s*:\s*\d+\s*,\s*"atticus"\s*:\s*"([^"\\]*)"/.exec(t);
-  const v = m?.[1];
-  if (!v || !ATTICUS_VERSION.test(v)) return undefined;
-  const mine = atticusHooks.version;
-  if (mine && ATTICUS_VERSION.test(mine) && !versionNewer(v, mine)) return undefined;
-  return v;
+  // Exactly as written: a value with a space around it is not a version.
+  const v = m?.[1] !== undefined && ATTICUS_VERSION_SHAPE.test(m[1]) ? m[1] : undefined;
+  if (!v) return undefined;
+  const mine = atticusVersionOf(atticusHooks.version) ?? BUILD_VERSION;
+  return newerThan(v, mine) ? v : undefined;
 }
 
 /**
