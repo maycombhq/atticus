@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { catalogDirOf, type Api } from "@maycombhq/core";
+import { atticusVersionOf, catalogDirOf, newerThan, type Api } from "@maycombhq/core";
 import type { BuildRefusal } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { isMetarepo } from "./metarepo-guard.js";
@@ -30,7 +30,9 @@ export const STANDING_WORDS = {
   act: (command: string) => `Do: ${command}`,
   nothing: "Nothing to do.",
   steps: (n: number) => (n === 1 ? "1 upgrade step waits." : `${n} upgrade steps wait.`),
-  init: "atticus init <folder>",
+  /** Runnable as printed but for the platform, which only the person knows (github, ado…). */
+  initHere: "atticus init . --platform <platform>",
+  initElsewhere: "atticus init <folder> --platform <platform>, in a folder of your choice",
   sandbox: "cd metarepo",
   upgrade: "atticus upgrade",
 } as const;
@@ -38,16 +40,20 @@ export const STANDING_WORDS = {
 /** The environment variable the editor's extension sets: the Atticus it needs. */
 export const EXTENSION_NEEDS = "ATTICUS_EXTENSION_NEEDS";
 
-/** The shape of an Atticus version: the only value that goes into a command a person copies. */
-const A_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
-const versionOf = (v: string | undefined): string | undefined =>
-  v && A_VERSION.test(v.trim()) ? v.trim() : undefined;
+const versionOf = atticusVersionOf;
 
-async function hasFile(dir: string): Promise<boolean> {
+/** Whether a folder holds a file whose name ends so, at any depth. */
+async function hasFile(dir: string, ending = ""): Promise<boolean> {
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => []))
-    if (e.isFile() || (e.isDirectory() && (await hasFile(join(dir, e.name))))) return true;
+    if (
+      (e.isFile() && e.name.endsWith(ending)) ||
+      (e.isDirectory() && (await hasFile(join(dir, e.name), ending)))
+    )
+      return true;
   return false;
 }
+/** A catalog's records are its .yaml files: a new metarepo's README there is no catalog. */
+const hasRecords = (dir: string) => hasFile(dir, ".yaml");
 
 /**
  * Whether the catalog still waits to be adopted into source slots (`atticus upgrade`'s last
@@ -65,8 +71,21 @@ async function slotsStepWaits(root: string): Promise<boolean> {
     return false;
   for (const sub of ["readers", "facts", "legacy"])
     if (await hasFile(join(sources, sub))) return false;
-  return hasFile(join(catalogDirOf(root), "generated"));
+  return hasRecords(join(catalogDirOf(root), "generated"));
 }
+
+/**
+ * Where `atticus init` can be run as printed: an empty folder, or a plain one (no repository's
+ * .git, no .atticus). Anywhere else the person picks the folder.
+ */
+async function plainFolder(root: string): Promise<boolean> {
+  const names = await readdir(root).catch(() => undefined);
+  return !!names && !names.includes(".git") && !names.includes(".atticus");
+}
+
+/** The newest of the versions known, or undefined when none is. */
+const newest = (...vs: (string | undefined)[]): string | undefined =>
+  vs.reduce<string | undefined>((a, b) => (!b ? a : !a || newerThan(b, a) ? b : a), undefined);
 
 export interface StandingOptions {
   /** This Atticus (a test's). */
@@ -90,7 +109,11 @@ export async function standing(root: string, o: StandingOptions = {}): Promise<A
       .filter(Boolean)
       .join(" ");
   if (!isMetarepo(root)) {
-    const act = isMetarepo(join(root, "metarepo")) ? W.sandbox : W.init;
+    const act = isMetarepo(join(root, "metarepo"))
+      ? W.sandbox
+      : (await plainFolder(root))
+        ? W.initHere
+        : W.initElsewhere;
     return {
       atticus,
       state: "no-metarepo",
@@ -103,7 +126,7 @@ export async function standing(root: string, o: StandingOptions = {}): Promise<A
   }
   const up = await import("./upgrade.js");
   const [c, newerCatalog, slotsWait] = await Promise.all([
-    o.quick ? up.upgradeCheckQuick(root, atticus) : up.upgradeCheck(root, atticus),
+    up.upgradeCheck(root, atticus, o.quick ? { quick: true } : {}),
     up.newerCatalogOf(root),
     slotsStepWaits(root),
   ]);
@@ -111,8 +134,8 @@ export async function standing(root: string, o: StandingOptions = {}): Promise<A
   const builtBy = versionOf(newerCatalog?.files.find((f) => f.atticus)?.atticus);
   const catalog: Api.StandingViewT["catalog"] = newerCatalog
     ? "newer"
-    : (await hasFile(join(catalogDirOf(root), "generated"))) ||
-        (await hasFile(join(catalogDirOf(root), "sources")))
+    : (await hasRecords(join(catalogDirOf(root), "generated"))) ||
+        (await hasFile(join(catalogDirOf(root), "sources"), ".json"))
       ? "read"
       : "none";
   const stampPart = c.stamp ? W.stamp(c.stamp.atticus) : c.unreadStamp ? W.stampUnread : W.noStamp;
@@ -126,17 +149,23 @@ export async function standing(root: string, o: StandingOptions = {}): Promise<A
   // The first case that holds decides the state and the one command.
   let state: Api.StandingViewT["state"] = "up-to-date";
   let act: string | undefined;
-  const needsNewer = !!needs && up.newerThan(needs, atticus);
+  // Several versions may be behind at once (the catalog's, the stamp's, the extension's). The
+  // install command names the newest one needed, once, so nobody installs three times.
+  const needsNewer = !!needs && newerThan(needs, atticus);
+  const stampNeeds = c.newer ? versionOf(up.newerAtticusOf(c)) : undefined;
+  const install = (...known: (string | undefined)[]) =>
+    installCommand(newest(...known, stampNeeds, needsNewer ? needs : undefined) ?? "beta");
   if (newerCatalog) {
     state = "catalog-newer";
-    act = (await import("@maycombhq/scanner")).newerAtticusCommand(newerCatalog.files);
+    // A catalog that doesn't say which Atticus built it may need one newer than any named
+    // here, so its command stays the moving tag's.
+    act = builtBy
+      ? install(builtBy)
+      : (await import("@maycombhq/scanner")).newerAtticusCommand(newerCatalog.files);
   } else if (c.newer || needsNewer) {
     state = "atticus-behind";
-    // The newer of the stamp's Atticus and the extension's; `@beta` when neither is known.
-    const y = c.newer ? versionOf(up.newerAtticusOf(c)) : undefined;
-    const w = needsNewer ? needs : undefined;
-    act = installCommand((y && w ? (up.newerThan(w, y) ? w : y) : (y ?? w)) ?? "beta");
-  } else if (!c.stamp || up.newerThan(atticus, c.stamp.atticus) || pendingSteps > 0) {
+    act = install();
+  } else if (!c.stamp || newerThan(atticus, c.stamp.atticus) || pendingSteps > 0) {
     state = "metarepo-behind";
     act = W.upgrade;
   }
@@ -174,6 +203,8 @@ export async function statusCommand(
 
 /** One command's run: whether it refused, the line to end with, and the build's refusal. */
 interface RefusalRun {
+  /** Worked out already (once a command). */
+  said?: true;
   line?: string;
   build?: BuildRefusal;
 }
@@ -195,21 +226,24 @@ export async function refusalScope<T>(io: Pick<Output, "err">, run: () => Promis
  * an upgrade or a write for one of BuildRefusalView's reasons, or because a newer Atticus
  * upgraded the metarepo. The standing line, worked out without the upgrade steps' dry runs, is
  * printed last on standard error by the command's scope, and set on the refusal as `standing`
- * (so `--json`, a job's result and the 409 problem carry it). Outside a scope (a function called
- * on its own) nothing is added. It never fails the refusal it follows.
+ * (so `--json`, a job's result and the 409 problem carry it), unless everything is up to date:
+ * then the refusal's own words are the whole way on. Outside a scope (a function called on its
+ * own) nothing is added. It never fails the refusal it follows.
  */
 export async function refusalEnds(root: string, refused?: object): Promise<string | undefined> {
   const run = runs.getStore();
   if (!run) return undefined;
-  try {
-    run.line ??= (await standing(root, { quick: true })).line;
-  } catch {
-    return undefined;
-  }
-  if (refused) {
-    (refused as { standing?: string }).standing = run.line;
-    if ("reasons" in refused) run.build = refused as BuildRefusal;
-  }
+  if (refused && "reasons" in refused) run.build = refused as BuildRefusal;
+  if (run.said === undefined)
+    try {
+      const v = await standing(root, { quick: true });
+      // Up to date: the refusal's own words are all there is to do, and nothing is added.
+      run.said = true;
+      if (v.state !== "up-to-date") run.line = v.line;
+    } catch {
+      run.said = true;
+    }
+  if (refused && run.line) (refused as { standing?: string }).standing = run.line;
   return run.line;
 }
 
@@ -220,6 +254,7 @@ export const refusedBuild = (): BuildRefusal | undefined => runs.getStore()?.bui
 export function refusalTakenBack(): void {
   const run = runs.getStore();
   if (run) {
+    delete run.said;
     delete run.line;
     delete run.build;
   }

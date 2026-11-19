@@ -344,7 +344,6 @@ async function staleOf(root: string, repo: string): Promise<RepoState["stale"]> 
 /** Read everything the steps depend on. Files that don't read are problems, never a crash. */
 export async function readNextState(root: string): Promise<NextState> {
   const { newerAtticusCommand, refuseIfNewer } = await import("@maycombhq/scanner");
-  await import("./this-atticus.js");
   const newer = await refuseIfNewer(root);
   const view = await onboardingView(root);
   const problems = [...view.problems];

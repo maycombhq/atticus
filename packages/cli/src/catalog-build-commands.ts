@@ -50,7 +50,6 @@ import {
 import { gitUser } from "@maycombhq/workspace";
 import { buildPlanOf, pageChanged, prunePlanHash, undoPlanHash } from "./build-report.js";
 import type { Output } from "./commands.js";
-import "./this-atticus.js";
 import { refusalEnds } from "./standing.js";
 import { catalogBuildProgress } from "./write-progress.js";
 
@@ -146,7 +145,7 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   if (r.reasons.includes("large-removals"))
     return `The build would remove ${r.allowRemovals ?? 0} records, more than the limit: confirm exactly these with ${command} --allow-removals ${r.allowRemovals ?? 0}.`;
   if (r.reasons.includes("empty"))
-    return "The build has no record from any repo's code, so the catalog is left as it was.";
+    return "The build has no record from any repo's code, so the catalog is left as it was. atticus doctor --counts says how many repos are read.";
   return r.message.split("\n")[0] ?? "Nothing written.";
 }
 
@@ -348,7 +347,7 @@ export async function catalogUndo(
         "Nothing undone: files under catalog/generated were changed by hand since the last build. Make them curated (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
       const refused = { reasons: ["hand-edits"], edits: g.refused.edits };
-      await refusalEnds(root);
+      await refusalEnds(root, refused);
       if (o.json) io.out(JSON.stringify({ refused }, null, 2));
       return 1;
     }
@@ -361,14 +360,9 @@ export async function catalogUndo(
         io.err(
           `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
         );
-        if (o.json)
-          io.out(
-            JSON.stringify(
-              { refused: { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) } },
-              null,
-              2,
-            ),
-          );
+        const refused = { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) };
+        await refusalEnds(root, refused);
+        if (o.json) io.out(JSON.stringify({ refused }, null, 2));
         return 1;
       }
     }
@@ -869,14 +863,9 @@ export async function catalogEdits(
   if (listed.notUpgraded) {
     const why = `Nothing to curate: catalog/generated was written before beta.27 (there is no catalog/sources/build.json${(await latestUndoIsUpgrade(undoDir)) ? ": an undo took the upgrade back" : ""}), so no file in it is a hand edit yet. Run atticus upgrade: it adopts every record file there, yours with them, into legacy slots (it shows what it would do first; atticus upgrade --yes applies it).`;
     io.err(why);
-    if (o.json)
-      io.out(
-        JSON.stringify(
-          { edits: [], decisions: [], refused: { reasons: ["not-upgraded"], message: why } },
-          null,
-          2,
-        ),
-      );
+    const refused = { reasons: ["not-upgraded"], message: why };
+    await refusalEnds(root, refused);
+    if (o.json) io.out(JSON.stringify({ edits: [], decisions: [], refused }, null, 2));
     return 1;
   }
   if (listed.unreadableManifest) {

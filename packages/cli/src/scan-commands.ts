@@ -27,7 +27,6 @@ import {
   type UnreadRepo,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
-import "./this-atticus.js";
 import { refusalEnds } from "./standing.js";
 import { askHosts } from "./host-questions.js";
 import { buildPlanOf, pageChanged, refusalPlanOf } from "./build-report.js";

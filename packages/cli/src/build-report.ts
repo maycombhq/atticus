@@ -20,7 +20,6 @@ import {
   type BuildReport,
   type Removal,
 } from "@maycombhq/scanner";
-import "./this-atticus.js";
 
 /**
  * What the app shows of the catalog's build (ADR 0195 points 4, 6 and 7, ticket CS3), read from

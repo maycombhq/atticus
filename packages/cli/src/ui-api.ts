@@ -950,8 +950,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       // each load, so the answer is kept until a change is heard (watched-memo.ts).
       // ADR 0202 point 8: where the metarepo stands, as `atticus status --json` says it.
       .add("GET", "/api/status", async () => {
-        const { standing } = await import("./standing.js");
-        return { status: 200, body: await standing(root) };
+        // Kept until a change is heard, as GET /api/upgrade is: the steps' dry runs read every
+        // record and question, and Home asks on each load.
+        return keptAnswer(root, "status", async () => {
+          const { standing } = await import("./standing.js");
+          return { status: 200, body: await standing(root) };
+        });
       })
       .add("GET", "/api/upgrade", async () => {
         const r = await keptAnswer(root, "upgrade", async () => {

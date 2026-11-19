@@ -207,6 +207,16 @@ describe("atticus status: the five states, each with one command", () => {
       expect(named.line).toBe(
         `You are on Atticus ${VERSION}. This metarepo is at 9.1.0 (.atticus/metarepo.yaml), and its catalog was built by Atticus 9.4.0. Do: npm install -g @maycombhq/atticus@9.4.0`,
       );
+      // Three versions behind at once: the newest one needed is named, once, whichever it is.
+      await newerCatalog(root, "9.0.5");
+      const three = await standing(root, { env: { [EXTENSION_NEEDS]: "9.2.0" } });
+      expect(three.state).toBe("catalog-newer");
+      expect(three.do).toBe("npm install -g @maycombhq/atticus@9.2.0");
+      expect(three.line.match(/npm install/g)).toHaveLength(1);
+      await stampAt(root, "9.7.0");
+      expect((await standing(root, { env: { [EXTENSION_NEEDS]: "9.2.0" } })).do).toBe(
+        "npm install -g @maycombhq/atticus@9.7.0",
+      );
     },
     T,
   );
@@ -219,9 +229,16 @@ describe("atticus status: the five states, each with one command", () => {
       code: 1,
       err: [],
       out: [
-        `You are on Atticus ${VERSION}. This folder isn't an Atticus metarepo. Do: atticus init <folder>`,
+        `You are on Atticus ${VERSION}. This folder isn't an Atticus metarepo. Do: atticus init . --platform <platform>`,
       ],
     });
+    // Inside something else (a repository, say) the folder is the person's to choose.
+    const repo = await mkdtemp(join(tmpdir(), "b30-st-none-"));
+    made.push(repo);
+    await mkdir(join(repo, ".git"));
+    expect((await standing(repo, { env: {} })).do).toBe(
+      "atticus init <folder> --platform <platform>, in a folder of your choice",
+    );
     await mkdir(join(dir, "metarepo", "org-pack"), { recursive: true });
     const sandbox = await standing(dir, { env: {} });
     expect(sandbox.state).toBe("no-metarepo");
@@ -311,12 +328,74 @@ describe("every refusal ends with the same line, on standard error (ADR 0202 poi
       const r = await run(["catalog", "build", "--root", root], NO_EXT);
       expect(r.code).toBe(1);
       expect(r.err.join("\n")).toContain("--discard-edits 1");
-      expect(r.err.at(-1)).toBe(
-        `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Nothing to do.`,
+      // Everything is up to date: the refusal's own words are the way on, and nothing is
+      // added after them ("…Nothing to do." under "discard them" read as a contradiction).
+      expect(r.err.join("\n")).not.toContain("You are on Atticus");
+      expect(r.err.at(-1)).toMatch(/--discard-edits 1/);
+      const j = await run(["catalog", "build", "--json", "--root", root], NO_EXT);
+      expect(
+        (JSON.parse(j.out.join("\n")) as { refused: Record<string, unknown> }).refused,
+      ).not.toHaveProperty("standing");
+      // Behind, the same refusal does end with it.
+      await stampAt(root, "2.0.0-beta.9");
+      const behind = await run(["catalog", "build", "--root", root], NO_EXT);
+      expect(behind.err.at(-1)).toBe(
+        `You are on Atticus ${VERSION}. This metarepo is at 2.0.0-beta.9 (.atticus/metarepo.yaml), and this Atticus reads its catalog. Do: atticus upgrade`,
       );
     },
     T,
   );
+});
+
+describe("the refusals that had no line, and what the log keeps", () => {
+  it(
+    "catalog edits over a catalog not upgraded ends with it; the log names the command only",
+    async () => {
+      const root = await upToDate();
+      await cp(join(FORGE, "..", "slots", "readers"), join(root, "catalog/sources/readers"), {
+        recursive: true,
+      });
+      expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
+      // A catalog from before the slots: the build's files, with catalog/sources taken away.
+      await rm(join(root, "catalog", "sources"), { recursive: true });
+      await rm(join(root, ".index", "build-undo"), { recursive: true, force: true });
+      const line = `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Do: atticus upgrade`;
+      for (const argv of [
+        ["catalog", "edits"],
+        ["catalog", "edits", "--curate"],
+      ]) {
+        const r = await run([...argv, "--root", root], NO_EXT);
+        expect(r.code, argv.join(" ")).toBe(1);
+        expect(r.err.join("\n")).toContain("Nothing to curate");
+        expect(r.err.at(-1), argv.join(" ")).toBe(line);
+      }
+      const j = await run(["catalog", "edits", "--json", "--root", root], NO_EXT);
+      expect(
+        (JSON.parse(j.out.join("\n")) as { refused: { standing: string } }).refused.standing,
+      ).toBe(line);
+      // The log: the command's words, never the folder given after --root.
+      await run(["status", "--root", root], NO_EXT);
+      await run(["doctor", "--counts", "--root", root], NO_EXT);
+      const log = (await readFile(join(root, ".atticus", "logs", "atticus.log"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as { command?: string });
+      const commands = new Set(log.map((l) => l.command));
+      expect(commands.has("status")).toBe(true);
+      expect(commands.has("doctor")).toBe(true);
+      expect(commands.has("catalog edits")).toBe(true);
+      for (const c of commands) expect(c ?? "", c).not.toContain(root);
+    },
+    T,
+  );
+
+  it("a new metarepo's README under catalog/ is no catalog, and no step waits on it", async () => {
+    const root = await upToDate();
+    await mkdir(join(root, "catalog", "generated"), { recursive: true });
+    await writeFile(join(root, "catalog", "generated", "README.md"), "# The catalog\n");
+    const s = await standing(root, { env: {} });
+    expect(s).toMatchObject({ state: "up-to-date", catalog: "none", pendingSteps: 0 });
+  });
 });
 
 describe("GET /api/status is atticus status --json", () => {
@@ -360,5 +439,20 @@ describe("when the command line may ask (ADR 0202 point 9)", () => {
     expect(canAsk({ ...tty, argv: ["upgrade", "--json=true"] })).toBe(false);
     expect(canAsk({ ...tty, env: { CI: "true" } })).toBe(false);
     expect(canAsk({ ...tty, env: { CI: "" } })).toBe(true);
+  });
+  it("never in an assistant's session, nor when the app or an editor started the command", () => {
+    for (const env of [
+      { ATTICUS_ACP_SESSION: "1" },
+      { CURSOR_AGENT: "1" },
+      { CLAUDECODE: "1" },
+      { GEMINI_CLI: "1" },
+      { ATTICUS_ASSISTANT: "forge-bot" },
+      { ATTICUS_STARTED_BY: "vscode" },
+      { ATTICUS_STARTED_BY: "intellij" },
+    ])
+      expect(canAsk({ ...tty, env }), JSON.stringify(env)).toBe(false);
+    // A person's own terminal, also the one inside an editor, is asked.
+    expect(canAsk({ ...tty, env: { ATTICUS_STARTED_BY: "terminal" } })).toBe(true);
+    expect(canAsk({ ...tty, env: { TERM_PROGRAM: "vscode", CURSOR_AGENT: "0" } })).toBe(true);
   });
 });

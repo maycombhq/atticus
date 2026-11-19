@@ -24,7 +24,6 @@ import {
 } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import "./this-atticus.js";
 import { refusalEnds } from "./standing.js";
 import {
   carryOf,

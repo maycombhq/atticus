@@ -3039,7 +3039,7 @@ export async function guardBuild(
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
-      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again.`,
+      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again. atticus doctor --counts says how many repos are read.`,
     );
   }
 
@@ -4015,7 +4015,13 @@ export function refusalCommands(r: BuildRefusal, command: string): string[] {
       "atticus catalog edits --curate",
       `${command} --discard-edits ${r.discardEdits ?? 0}${allow}`,
     ];
-  return allow ? [`${command}${allow}`] : [];
+  if (allow) return [`${command}${allow}`];
+  // The review of ADR 0202: the two refusals nothing confirms name a next step too. A scan that
+  // read no repo in full: sync the clones. A build with no record from any repo's code: the
+  // counts say how many repos are read, unread and stale, with nothing named.
+  if (r.reasons.includes("nothing-read")) return ["atticus workspace sync"];
+  if (r.reasons.includes("empty")) return ["atticus doctor --counts"];
+  return [];
 }
 
 /** A build's report before it is written: what it adds, changes and removes against the disk. */

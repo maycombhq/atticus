@@ -168,7 +168,6 @@ export async function refuseNewerCommand(
   json: boolean,
 ): Promise<number | undefined> {
   const { refuseIfNewer } = await import("@maycombhq/scanner");
-  await import("./this-atticus.js");
   const r = await refuseIfNewer(root);
   if (!r) return undefined;
   io.err(r.message);
