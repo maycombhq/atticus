@@ -251,7 +251,7 @@ test("a hand edit is never overwritten: it is made curated", async ({ page }) =>
   await open(page, a(), "catalog-builds");
   await expect(page.getByText(`changed: catalog/generated/${files[0]}`)).toBeVisible();
   await accessible(page, "a hand edit listed");
-  await page.getByRole("button", { name: "Make it curated" }).click();
+  await page.getByRole("button", { name: "Keep my edit" }).click();
   await expect(page.getByText("Done. What it printed is in the Console.")).toBeVisible({
     timeout: 60_000,
   });

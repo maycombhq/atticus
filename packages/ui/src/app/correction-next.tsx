@@ -1,5 +1,6 @@
 import { useId } from "react";
-import { ApplyAndPropose } from "./propose.js";
+import { ApplyAndPropose, CATALOG_BUILDS_HREF, trustHref } from "./propose.js";
+import { InstallCopy, SupportBundle } from "../screens/setup/CatalogBuild.js";
 import type { Api } from "@maycombhq/core";
 import { useJobRead, type JobWaitParts, type Loaded } from "../api/client.js";
 import { JobStoppedNote, JobWait } from "./job-wait.js";
@@ -16,6 +17,7 @@ import { CodeFigure } from "./ui.js";
  */
 
 const N = COPY.correctionNext;
+const WY = COPY.waysOn;
 type Preview = Api.VerifyPreviewViewT;
 type Link = Api.PreviewLinkViewT;
 
@@ -57,11 +59,27 @@ function PreviewBody({ v }: { v: Preview }) {
   ];
   return (
     <div className="stack" style={{ gap: 4 }}>
-      {p.headMoved && <p className="ev-say">{N.headMoved(p.headMoved.head, p.headMoved.commit)}</p>}
+      {p.headMoved && (
+        <>
+          <p className="ev-say">{N.headMoved(p.headMoved.head, p.headMoved.commit)}</p>
+          <div>
+            <a className="btn" href={trustHref(v.repo)}>
+              {WY.readAgainOnTrust(v.repo)}
+            </a>
+          </div>
+        </>
+      )}
       {p.blocked && (
-        <p role="alert" className="state error" style={{ margin: 0 }}>
-          {N.blocked(p.blocked.rejected)}
-        </p>
+        <>
+          <p role="alert" className="state error" style={{ margin: 0 }}>
+            {N.blocked(p.blocked.rejected)}
+          </p>
+          <div>
+            <a className="btn primary" href={trustHref(v.repo)}>
+              {WY.rejectedOnTrust(p.blocked.rejected)}
+            </a>
+          </div>
+        </>
       )}
       <h5 className="hud">{N.facts}</h5>
       {factItems.length ? (
@@ -109,14 +127,42 @@ function PreviewBody({ v }: { v: Preview }) {
             </p>
           )}
           {p.confirm.refused?.length ? (
-            <p role="alert" className="state error" style={{ margin: 0 }}>
-              {N.confirmRefused(p.confirm.refused)}
-            </p>
+            <>
+              <p role="alert" className="state error" style={{ margin: 0 }}>
+                {N.confirmRefused(p.confirm.refused)}
+              </p>
+              {/* Beta.30: its one way on, the first of these it has. */}
+              {p.confirm.refused.includes("newer-atticus") ? (
+                <InstallCopy />
+              ) : p.confirm.refused.includes("unexplained-removals") ? (
+                <>
+                  <div>
+                    <a className="btn primary" href={CATALOG_BUILDS_HREF}>
+                      {WY.seeOnBuilds}
+                    </a>
+                  </div>
+                  <SupportBundle />
+                </>
+              ) : (
+                <div>
+                  <a className="btn primary" href="#/trust">
+                    {WY.readOnTrust}
+                  </a>
+                </div>
+              )}
+            </>
           ) : null}
           {p.confirm.upgrade && (
-            <p role="status" className="ev-say">
-              {N.confirmUpgrade}
-            </p>
+            <>
+              <p role="status" className="ev-say">
+                {N.confirmUpgrade}
+              </p>
+              <div>
+                <a className="btn primary" href={`${CATALOG_BUILDS_HREF}?at=upgrade`}>
+                  {WY.upgradeOnBuilds}
+                </a>
+              </div>
+            </>
           )}
           {p.confirm.command && (
             <Cmd

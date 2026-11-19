@@ -1591,6 +1591,12 @@ export function Scans() {
                   <span className="muted" style={{ fontSize: 12 }}>
                     {refusedScan.todo}
                   </span>
+                  {/* Beta.30: the refusal's one way on. */}
+                  <div>
+                    <a className="btn primary" href="#/trust">
+                      {COPY.waysOn.readOnTrust}
+                    </a>
+                  </div>
                 </div>
               )}
               {/* ADR 0187: what it printed, in the Console. */}

@@ -600,7 +600,7 @@ describe("a refused build: its list and its ways on, nothing written until confi
     );
     expect(out).toContain("atticus upgrade --yes");
     // Away from Catalog builds, a link to its upgrade step.
-    expect(out).toContain('href="#/catalog-builds"');
+    expect(out).toContain('href="#/catalog-builds?at=upgrade"');
     expect(out).toContain(esc(B.upgradeOn));
   });
 
@@ -644,7 +644,10 @@ describe("a refused build: its list and its ways on, nothing written until confi
       expect(out).not.toContain(esc(B.buildAgain(0)));
       // The one button is the command's Copy.
       expect(out.match(/<button[^>]*>[^<]*</g)).toEqual([
-        expect.stringMatching(/class="btn run-copy"[^>]*>Copy</),
+        // Beta.30: the refusal's one primary button, with its own words.
+        expect.stringMatching(
+          new RegExp(`class="btn primary run-copy"[^>]*>${COPY.waysOn.copyInstall}<`),
+        ),
       ]);
       expect(out).not.toMatch(/\d+ (record|file)s?\b/);
     }

@@ -19,7 +19,7 @@ import { ShowInConsole } from "./activity.js";
 import { followJob, JobFailed, nextAfter, type NextStep } from "./job.js";
 import { JobProgress, useJobRun, type JobHears } from "./job-progress.js";
 import { SyncFirst } from "./sync-first.js";
-import { curateListedEdits, RefusalView } from "../screens/setup/CatalogBuild.js";
+import { curateListedEdits, InstallCopy, RefusalView } from "../screens/setup/CatalogBuild.js";
 
 const P = COPY.propose;
 
@@ -74,9 +74,12 @@ export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
   // confirms it, and the way on is to upgrade Atticus.
   if (refused.reasons.includes("newer-atticus"))
     return (
-      <p className="ev-say" role="status" style={{ margin: 0 }}>
-        {R.newerAtticus}
-      </p>
+      <div className="stack" style={{ gap: 6 }}>
+        <p className="ev-say" role="status" style={{ margin: 0 }}>
+          {R.newerAtticus}
+        </p>
+        <InstallCopy />
+      </div>
     );
   // Only a large removal waits for a confirm (an empty catalog over a full one has none).
   const n = refused.reasons.includes("large-removals")
@@ -100,6 +103,32 @@ export function RefusalLink({ refused }: { refused: Api.BuildRefusalViewT }) {
  */
 export const applyWaitsWords = (repo: string, refused: Api.BuildRefusalViewT): string =>
   refused.reasons.includes("newer-atticus") ? P.applyNewer(repo) : P.applyWaits(repo);
+
+/**
+ * Beta.30: a build that refused for what no confirm goes on from (a newer Atticus's catalog, one
+ * from before beta.27, unexplained removals, no record read), as an Apply's job lists it: shown
+ * with its one way on, where before only the job's lines said it.
+ */
+export function otherRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
+  if (!(e instanceof JobFailed) || buildRefusalOf(e)) return undefined;
+  const r = e.result?.refused as Api.BuildRefusalViewT | undefined;
+  return r && Array.isArray(r.reasons) && r.reasons.length ? r : undefined;
+}
+
+/** Map › Trust with one repo's section shown (its rejected facts, Read it again). */
+export const trustHref = (repo: string) => `#/trust?repo=${encodeURIComponent(repo)}`;
+
+/** Beta.30: an Apply that left rejected facts out links straight to them. */
+export function LeftOutWay({ repo, n }: { repo: string; n: number }) {
+  if (!n) return null;
+  return (
+    <div>
+      <a className="btn primary" href={trustHref(repo)}>
+        {COPY.waysOn.rejectedOnTrust(n)}
+      </a>
+    </div>
+  );
+}
 
 /** The plan a refusal's confirm sends back with its count (the list it showed), when it has one. */
 const planOf = (r: Api.BuildRefusalViewT) => (r.plan ? { plan: r.plan } : {});
@@ -177,6 +206,8 @@ export function ApplyAndPropose(p: {
   // ADR 0195 point 4: the build Apply ran refused (a large removal, a hand edit): its listing,
   // confirmed here with its counts, as a scan's is on Scans.
   const [refused, setRefused] = useState<Api.BuildRefusalViewT | undefined>();
+  // Beta.30: how many rejected facts the last Apply left out, for the link to them.
+  const [leftOut, setLeftOut] = useState(0);
   const inPanel = useResultsInPanel();
   /**
    * Apply (`verify <repo> --write`), with the counts a confirm step gives; throws when it failed.
@@ -189,6 +220,7 @@ export function ApplyAndPropose(p: {
     plan?: string;
   }): Promise<number> => {
     setNext(undefined);
+    setLeftOut(0);
     p.onStart?.();
     try {
       const r = await job.follow(`/api/facts/${encodeURIComponent(p.repo!)}/apply`, counts, {
@@ -197,6 +229,7 @@ export function ApplyAndPropose(p: {
       setRefused(undefined);
       setApplied(r.lines);
       const leftOut = leftOutOf(r.result);
+      setLeftOut(leftOut);
       // A correction's Apply can take its panel away (the fact it was on goes):
       // what happened, and where to propose it, stays on the page.
       if (p.scope === "corrections")
@@ -222,7 +255,7 @@ export function ApplyAndPropose(p: {
         throw new Error(P.applyStopped(p.repo!), { cause: e });
       }
       const waits = buildRefusalOf(e);
-      setRefused(waits);
+      setRefused(waits ?? otherRefusalOf(e));
       setApplied([(e as Error).message]);
       setNext(nextAfter(e));
       // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
@@ -260,6 +293,7 @@ export function ApplyAndPropose(p: {
           <JobProgress what={P.applyingTo(p.repo)} run={job.run} onStop={job.stop} />
           <Note note={apply.note} />
           {applied && applied.length > 0 && stepLines(applied, inPanel)}
+          <LeftOutWay repo={p.repo} n={leftOut} />
           {next && <SyncFirst repos={next.repos} />}
           {refused &&
             applyRefused({
@@ -280,6 +314,7 @@ export function ApplyAndPropose(p: {
                   () => applyWith({ discardEdits: n, ...planOf(refused) }),
                   appliedNote(p.repo!),
                 ),
+              onAgain: () => apply.run(() => applyWith({}), appliedNote(p.repo!)),
             })}
         </div>
       )}
@@ -299,11 +334,14 @@ export function applyRefused(p: {
   onAllowRemovals: (n: number) => Promise<void>;
   onCurate: (n: number, on?: JobHears) => Promise<void>;
   onDiscard: (n: number) => Promise<void>;
+  /** Beta.30: Apply again, for a refusal nothing confirms. */
+  onAgain?: () => Promise<void>;
 }) {
   return (
     <RefusalView
       refused={p.refused}
       confirmLabel={P.confirmApply}
+      {...(p.onAgain ? { onAgain: p.onAgain } : {})}
       onAllowRemovals={p.onAllowRemovals}
       onCurate={p.onCurate}
       onDiscard={p.onDiscard}

@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
+import { InstallCopy } from "../screens/setup/CatalogBuild.js";
 import { followJob, Propose, workChanged } from "./propose.js";
 
 /**
@@ -45,7 +46,8 @@ export function UpgradeOfferView(p: {
   if (view.newerCatalog)
     return (
       <div className="state error" role="alert">
-        {U.newerCatalog}
+        <p style={{ margin: 0 }}>{U.newerCatalog}</p>
+        <InstallCopy />
       </div>
     );
   if (!view.pending.length && run.state !== "done") return null;

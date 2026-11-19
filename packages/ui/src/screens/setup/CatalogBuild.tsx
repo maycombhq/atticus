@@ -7,6 +7,7 @@ import { followJob, JobFailed } from "../../app/job.js";
 import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { CopyButton } from "../run/shared.js";
 import { Command } from "../work/RunNext.js";
 import "../map/crosscheck.css";
 
@@ -246,6 +247,60 @@ export function RemovalsTable({ removals }: { removals: readonly Removal[] }) {
   );
 }
 
+const W = COPY.waysOn;
+
+/** Beta.30: Copy the install command, the one way on from a catalog a newer Atticus built. */
+export function InstallCopy() {
+  return (
+    <div className="work-cmd">
+      <code className="mono">{W.installCommand}</code>
+      <CopyButton
+        primary
+        text={W.installCommand}
+        say={W.copyInstall}
+        label={W.copyInstallLabel(W.installCommand)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Beta.30: a support bundle is saved from a terminal today (`atticus support bundle`; no route
+ * of the local API runs it), so the app offers its command to copy.
+ */
+export function SupportBundle() {
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {W.supportWhy}
+      </p>
+      <div className="work-cmd">
+        <code className="mono">{W.supportCommand}</code>
+        <CopyButton
+          text={W.supportCommand}
+          say={W.copySupport}
+          label={W.copySupportLabel(W.supportCommand)}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The panels of Catalog builds a link elsewhere opens the page at (`?at=`), by their headings. */
+const panelId = (title: string) => `p-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+export const UPGRADE_PANEL = panelId(B.upgradeTitle);
+export const UNDO_PANEL = panelId(B.undoTitle);
+/** Catalog builds' address with the panel to show: `#/catalog-builds?at=undo`. */
+export const panelAsked = (hash: string): string | undefined => {
+  const at = new URLSearchParams(hash.split("?")[1] ?? "").get("at");
+  return at === "undo" ? UNDO_PANEL : at === "upgrade" ? UPGRADE_PANEL : undefined;
+};
+/** Bring a panel of this page into view. */
+function showOnPage(id: string): void {
+  if (typeof document === "undefined") return;
+  document.getElementById(id)?.scrollIntoView({ block: "start" });
+}
+
 /**
  * Make it curated (point 4, the supported way) from a refusal shown elsewhere (a scan's, an
  * Apply's): the hand edits as GET /api/build lists them now, confirmed by its plan, made curated
@@ -288,6 +343,11 @@ export function RefusalView(p: {
   confirmLabel?: (n: number) => string;
   /** On Catalog builds, where the upgrade's own step is below; elsewhere, a link to it. */
   upgradeHere?: boolean;
+  /**
+   * Beta.30: the step that refused, run again as it was (the build, the Apply), for a refusal
+   * nothing confirms. Without it, the way on is the page that builds.
+   */
+  onAgain?: () => Promise<void>;
 }) {
   const r = p.refused;
   const [dialog, setDialog] = useState<"removals" | "discard" | undefined>();
@@ -308,6 +368,24 @@ export function RefusalView(p: {
         : 0;
   // Beta.28.3: a newer Atticus's catalog under its own heading (nothing there to confirm).
   const title = B.refusalTitle(r.reasons);
+  // Beta.30: one primary button, the first of these the refusal has; any other is plain.
+  const has = (x: Refusal["reasons"][number]) => r.reasons.includes(x);
+  const unread = has("empty") || has("nothing-read");
+  const first = has("newer-atticus")
+    ? "newer"
+    : has("not-upgraded")
+      ? "upgrade"
+      : has("unexplained-removals")
+        ? "again"
+        : has("hand-edits")
+          ? "edits"
+          : has("large-removals")
+            ? "removals"
+            : unread
+              ? "read"
+              : undefined;
+  const btn = (way: typeof first) => (way === first ? "btn primary" : "btn");
+  const [again, setAgain] = useState(false);
   return (
     <div className="stack" style={{ gap: 10 }} role="group" aria-label={title}>
       <p className="state" role="note" style={{ margin: 0 }}>
@@ -323,9 +401,60 @@ export function RefusalView(p: {
         ))}
       </ul>
       {r.unexplained && r.unexplained.length > 0 && <RemovalsTable removals={r.unexplained} />}
+      {has("newer-atticus") && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.newer}
+          </p>
+          <InstallCopy />
+        </div>
+      )}
+      {has("unexplained-removals") && (
+        <div className="stack" style={{ gap: 6 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.unexplained}
+          </p>
+          <div>
+            {p.onAgain ? (
+              <button
+                type="button"
+                className={btn("again")}
+                disabled={again}
+                aria-busy={again}
+                onClick={() => {
+                  setAgain(true);
+                  setError(undefined);
+                  p.onAgain!()
+                    .catch((e: unknown) => setError(B.failed(whyStopped(e))))
+                    .finally(() => setAgain(false));
+                }}
+              >
+                {again ? B.building : W.buildAgain}
+              </button>
+            ) : (
+              <a className={btn("again")} href="#/catalog-builds">
+                {W.buildAgainOn}
+              </a>
+            )}
+          </div>
+          <SupportBundle />
+        </div>
+      )}
+      {unread && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="work-say" style={{ margin: 0 }}>
+            {B.way.read}
+          </p>
+          <div>
+            <a className={btn("read")} href="#/trust">
+              {W.readOnTrust}
+            </a>
+          </div>
+        </div>
+      )}
       {r.reasons.includes("large-removals") && (
         <div>
-          <button type="button" className="btn primary" onClick={() => setDialog("removals")}>
+          <button type="button" className={btn("removals")} onClick={() => setDialog("removals")}>
             {B.reviewRemovals(r.allowRemovals ?? removals.length)}
           </button>
         </div>
@@ -340,7 +469,7 @@ export function RefusalView(p: {
           </p>
           {p.onDiscard && (
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn primary" onClick={() => setDialog("discard")}>
+              <button type="button" className={btn("edits")} onClick={() => setDialog("discard")}>
                 {B.buildAgain(nEdits)}
               </button>
             </div>
@@ -366,7 +495,7 @@ export function RefusalView(p: {
             {p.onCurate && (
               <button
                 type="button"
-                className="btn primary"
+                className={btn("edits")}
                 disabled={curating}
                 aria-busy={curating}
                 aria-describedby="cb-curate-hint"
@@ -396,14 +525,28 @@ export function RefusalView(p: {
       )}
       {r.reasons.includes("not-upgraded") && (
         <div className="stack" style={{ gap: 4 }}>
-          <p className="work-say" style={{ margin: 0 }}>
+          {!p.upgradeHere && (
+            <p className="work-say" style={{ margin: 0 }}>
+              {B.way.upgrade}
+            </p>
+          )}
+          <div>
             {p.upgradeHere ? (
-              B.upgradeTodo
+              <button
+                type="button"
+                className={btn("upgrade")}
+                onClick={() => showOnPage(UPGRADE_PANEL)}
+              >
+                {W.upgradeBelow}
+              </button>
             ) : (
-              <>
-                {B.upgradeElsewhere} <a href="#/catalog-builds">{B.upgradeOn}</a>
-              </>
+              <a className={btn("upgrade")} href={`#/catalog-builds?at=upgrade`}>
+                {W.upgradeOnBuilds}
+              </a>
             )}
+          </div>
+          <p className="work-say" style={{ margin: 0 }}>
+            {p.upgradeHere ? B.upgradeTodo : B.inTerminalSay}
           </p>
           <Command text="atticus upgrade --yes" label={COPY.runNext.copy} noRun />
         </div>
@@ -413,10 +556,13 @@ export function RefusalView(p: {
           {error}
         </p>
       )}
-      <details className="work-terminal">
-        <summary>{B.inTerminal}</summary>
-        <Command text={r.command} label={COPY.runNext.copy} noRun />
-      </details>
+      {/* A newer Atticus's catalog: its command is the install above, shown once. */}
+      {!has("newer-atticus") && (
+        <details className="work-terminal">
+          <summary>{B.inTerminal}</summary>
+          <Command text={r.command} label={COPY.runNext.copy} noRun />
+        </details>
+      )}
       {dialog === "removals" && (
         <ConfirmDialog
           title={B.removalsTitle(r.allowRemovals ?? removals.length)}
@@ -977,6 +1123,7 @@ export function CatalogBuildsPage(p: {
                     p.run("/api/build/edits/curate", { count: n, plan: v.pending.plan }, on)
                   }
                   onDiscard={(n) => p.run("/api/build", { discardEdits: n, plan: v.pending.plan })}
+                  onAgain={() => p.run("/api/build", { plan: v.pending.plan })}
                 />
               ) : v.pending.upToDate ? (
                 <p className="state" style={{ margin: 0 }}>
@@ -1118,6 +1265,11 @@ export function CatalogBuilds() {
   const waits = build.state === "ready" && build.data.upgrade === true;
   const upgrade = useApi<Api.CatalogUpgradeViewT>(waits ? "/api/build/upgrade" : undefined);
   useReloadOnFiles(build, undo, prune, upgrade);
+  // Beta.30: a link from a refusal or an error names the panel it is about (`?at=undo`).
+  useEffect(() => {
+    const at = typeof location === "undefined" ? undefined : panelAsked(location.hash);
+    if (at) showOnPage(at);
+  }, [waits]);
   const [job, setJob] = useState<string | undefined>();
   const [note, setNote] = useState<string | undefined>();
   const reload = () => {
