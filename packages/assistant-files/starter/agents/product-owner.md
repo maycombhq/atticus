@@ -59,8 +59,9 @@ Ask the map before you write a sentence about what exists.
   it. A change that was tried before and dropped is worth one line.
 - `changes` and `conflicts <id>`: the open changes, and where they already overlap on a system
   you name. If one of them is about the same thing as yours, name it and say how the two relate.
-- `impact <id>` on the main system the request names: its answer lists owners. Those are the
-  teams under "Who is touched". Don't list a team from memory.
+- `impact <id>` on the main system the request names: its answer lists each record's owner, or
+  "no owner on record". Those are the teams under "Who is touched". Don't list a team from
+  memory; where none is on record, say so and who would know.
 - `knowledge_ask`: a standard, a process or a decision of the organisation that bears on the
   request (a vendor already chosen, a rule on who may see what).
 

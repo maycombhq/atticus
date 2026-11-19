@@ -94,7 +94,9 @@ describe("Ask: plain questions become catalog queries, and the query is always s
         id: "topic.transfers-completed",
         query: "impact topic.transfers-completed",
         explanation:
-          "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+          "Read as: who receives topic.transfers-completed: the receivers first, then what a change reaches past them.",
+        // The answer is the receivers, apart from what the walk reaches past them (b30 proof run).
+        receivers: true,
       });
     // A component's consumers are still its callers.
     expect(translate("who consumes ledger-api", withTopic).query).toBe(
@@ -170,9 +172,24 @@ describe("Ask: plain questions become catalog queries, and the query is always s
       ["which calls go through the gateway", "kind:interface via:gateway"],
       ["which interfaces use quillfeather", "kind:interface"],
       ["who uses forge-portal", "uses forge-portal"],
-      ["who consumes the topic forge.orders.shipped?", "consumes topic forge.orders.shipped"],
+      // A plain word is a word search, as it was: only a name shaped like an id or a topic (a dot,
+      // a dash or an underscore in it) is said to be missing (the review of b30/proof-fixes).
+      ["who sends notifications?", "sends notifications"],
+      ["what produces invoices", "produces invoices"],
+      ["what does billing use", "billing use"],
+      ["what does billing call?", "billing call"],
+      ["who receives payments?", "receives payments"],
+      ["who listens to alerts", "listens alerts"],
+      ["who publishes reports?", "publishes reports"],
     ] as const)
       expect(translate(q, lookup).query, q).toBe(query);
+    // One reading did change (b30 proof run): a topic the map lacks is said to be missing, where
+    // it was a word search that found nothing.
+    expect(translate("who consumes the topic forge.orders.shipped?", lookup)).toMatchObject({
+      query: "kind:endpoint pathOrTopic:forge.orders.shipped",
+      explanation:
+        "Read as: who receives forge.orders.shipped. forge.orders.shipped is not in the map: planned or not read.",
+    });
   });
 
   it("says what it couldn't place when a question names nothing in the catalog", () => {

@@ -1,15 +1,19 @@
 import {
   impact,
+  mapIdOf,
   openIndex,
   QueryError,
+  receiversOf,
   runContextTool,
   askLookup,
   mapFault,
-  notInMap,
+  severalNamed,
   translate,
+  type Affected,
   type CatalogIndex,
 } from "@maycombhq/index";
 import type { Output } from "./commands.js";
+import { mapSides, NO_OWNER } from "./map-lacks.js";
 import { table } from "./table.js";
 
 export { table };
@@ -37,8 +41,14 @@ export async function askCommand(
   o: { json?: boolean },
   io: Output,
 ): Promise<number> {
+  const sides = await mapSides(root);
   const asked = await withIndex(root, io, (ix) => {
-    return translate(question, askLookup(ix), () => mapFault(ix, root));
+    return translate(
+      question,
+      askLookup(ix),
+      () => mapFault(ix, root),
+      (id) => sides.lacks(id, ix),
+    );
   });
   // The question names something the map lacks, and the map couldn't be read: an error that
   // says what is wrong, never an empty answer read as "planned or not read".
@@ -48,7 +58,12 @@ export async function askCommand(
   }
   const answer = (to: Output) =>
     asked.action === "impact"
-      ? impactCommand(root, asked.id, { json: o.json === true }, to)
+      ? impactCommand(
+          root,
+          asked.id,
+          { json: o.json === true, ...(asked.receivers ? { receivers: true } : {}) },
+          to,
+        )
       : queryCommand(root, asked.query, { json: o.json === true }, to);
   if (!o.json) {
     io.out(asked.explanation);
@@ -177,33 +192,72 @@ export async function searchCommand(
   });
 }
 
-/** atticus impact <id>: what a change to the record reaches. Exit 1 when the id isn't in the catalog. */
+/** The rows of an impact table: who owns each record, or that nobody is on record for it. */
+const impactRows = (affected: Affected[]) =>
+  table(
+    ["KIND", "ID", "OWNER", "WHY"],
+    affected.map((a) => [a.kind, a.id, a.owner ?? NO_OWNER, a.reason]),
+  );
+
+/**
+ * atticus impact <id>: what a change to the record reaches. Exit 1 when the id isn't in the
+ * catalog. A name exactly one entry or topic has stands for that record, said first (ADR 0201
+ * addendum, 2026-11-19). `receivers` is `ask`'s "who receives it": the receivers first, and what
+ * the walk reaches past them apart.
+ */
 export async function impactCommand(
   root: string,
   id: string,
-  o: { json?: boolean; depth?: number },
+  o: { json?: boolean; depth?: number; receivers?: boolean },
   io: Output,
 ): Promise<number> {
+  const sides = await mapSides(root);
   return withIndex(root, io, (ix) => {
-    const r = impact(ix, id, o.depth ?? 4);
-    if (!r) {
+    // The one lookup show and walk make (mapIdOf): the id, or the record whose name it is.
+    const found = mapIdOf(ix, id, "records");
+    if (!found || "several" in found) {
       // "Not in the map" only when the map was read whole and has no such id (ADR 0201).
-      io.err(mapFault(ix, root) ?? notInMap(id));
+      const fault = mapFault(ix, root);
+      io.err(fault ?? (found ? severalNamed(id, found.several) : sides.lacks(id, ix)));
       return 1;
     }
-    if (o.json) {
-      io.out(JSON.stringify(r, null, 2));
+    const rootId = found.id;
+    const named = rootId === id ? {} : { named: id };
+    const said = (to: Output) => {
+      for (const l of found.said) to.out(l);
+    };
+    const owners = { owner: sides.owner };
+    if (o.receivers) {
+      const r = receiversOf(ix, rootId, o.depth ?? 4, owners)!;
+      if (o.json) {
+        io.out(JSON.stringify({ ...named, ...r }, null, 2));
+        return 0;
+      }
+      said(io);
+      io.out(
+        r.receivers.length
+          ? `${rootId} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
+          : `Nothing in the map receives ${rootId}.`,
+      );
+      for (const l of r.receivers.length ? impactRows(r.receivers) : []) io.out(`  ${l}`);
+      if (r.further.length) {
+        io.out(
+          `Further, through a receiver (${r.further.length} record${r.further.length === 1 ? "" : "s"} that ${r.further.length === 1 ? "doesn't" : "don't"} receive ${rootId}):`,
+        );
+        for (const l of impactRows(r.further)) io.out(`  ${l}`);
+      }
       return 0;
     }
+    const r = impact(ix, rootId, o.depth ?? 4, owners)!;
+    if (o.json) {
+      io.out(JSON.stringify({ ...named, ...r }, null, 2));
+      return 0;
+    }
+    said(io);
     io.out(
-      `Changing ${id} reaches ${r.affected.length} record${r.affected.length === 1 ? "" : "s"}:`,
+      `Changing ${rootId} reaches ${r.affected.length} record${r.affected.length === 1 ? "" : "s"}:`,
     );
-    if (r.affected.length > 0)
-      for (const l of table(
-        ["KIND", "ID", "OWNER", "WHY"],
-        r.affected.map((a) => [a.kind, a.id, a.owner ?? "", a.reason]),
-      ))
-        io.out(`  ${l}`);
+    if (r.affected.length > 0) for (const l of impactRows(r.affected)) io.out(`  ${l}`);
     if (r.gaps.length > 0) {
       io.out("Open questions:");
       for (const g of r.gaps) io.out(`  - ${g.question} (${g.record})`);

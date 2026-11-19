@@ -32,6 +32,8 @@ import {
   changeReport,
   changeStore,
   checkRequirements,
+  plannedByOpenChanges,
+  type RequirementsMap,
   decodeRequirements,
   parseRequirements,
   unadoptedChanges,
@@ -331,27 +333,70 @@ async function newWithoutBrief(
  * a topic or an entry by its name where one record has it. A name several records have answers
  * with their ids. Read from the files: nothing is built or written, not even the index.
  */
-export async function mapLookup(root: string): Promise<(id: string) => boolean | string[]> {
+export async function mapLookup(
+  root: string,
+): Promise<{ has: (id: string) => boolean | string[]; map: RequirementsMap }> {
   const { readCatalog } = await import("@maycombhq/scanner");
   const ids = new Set<string>();
+  // What the map itself has: a record or a manifest's repo. An open change's id and an owner are
+  // evidence too, and are not "in the map" for what may stand under Planned.
+  const own = new Set<string>();
   const names = new Map<string, string[]>();
+  const cites = new Map<string, { path: string; repo?: string; line?: number }[]>();
+  // What the map read in each repo: a record that is also its repo (a service named as its repo
+  // is) may be cited at any file and line the map cites there.
+  const inRepo = new Map<string, { path: string; repo?: string; line?: number }[]>();
   const pack = await loadOrgPack(orgPackDirOf(root));
   for (const p of pack.profiles) {
-    for (const r of p.repos?.repos ?? []) ids.add(r.id).add(r.owner);
+    for (const r of p.repos?.repos ?? []) {
+      ids.add(r.id).add(r.owner);
+      own.add(r.id);
+    }
     for (const s of p.profile?.systems ?? []) if (s.owner) ids.add(s.owner);
   }
-  for (const c of await changeStore(root).list()) ids.add(c.id);
+  const changes = await changeStore(root).list();
+  for (const c of changes) ids.add(c.id);
+  const open = new Set(changes.filter((c) => c.state !== "archived").map((c) => c.id));
+  const planned = await plannedByOpenChanges(root);
   for (const dir of ["generated", "curated"])
     for (const r of (await readCatalog(join(catalogDirOf(root), dir), { keep: false })).records) {
       ids.add(r.id);
+      own.add(r.id);
       if ("owner" in r && typeof r.owner === "string") ids.add(r.owner);
       if (r.kind === "Endpoint")
         names.set(r.pathOrTopic, [...(names.get(r.pathOrTopic) ?? []), r.id]);
+      // The files and lines a record was read from, for a row that cites one beside its id.
+      const at = (r.evidence ?? []).flatMap((e) =>
+        e.path
+          ? [
+              {
+                path: e.path,
+                ...(e.repo ? { repo: e.repo } : {}),
+                ...(typeof e.line === "number" ? { line: e.line } : {}),
+              },
+            ]
+          : [],
+      );
+      if (at.length) cites.set(r.id, [...(cites.get(r.id) ?? []), ...at]);
+      for (const e of at) if (e.repo) inRepo.set(e.repo, [...(inRepo.get(e.repo) ?? []), e]);
     }
-  return (id) => {
-    if (ids.has(id)) return true;
-    const named = [...new Set(names.get(id) ?? [])].sort();
-    return named.length > 1 ? named : named.length === 1;
+  const named = (id: string) => [...new Set(names.get(id) ?? [])].sort();
+  return {
+    has: (id) => {
+      if (ids.has(id)) return true;
+      const n = named(id);
+      return n.length > 1 ? n : n.length === 1;
+    },
+    map: {
+      exists: (id) => own.has(id) || named(id).length === 1,
+      plans: (change, id) =>
+        !open.has(change)
+          ? "not-open"
+          : planned.get(id)?.includes(change)
+            ? "plans"
+            : "not-planned",
+      cites: (id) => (cites.has(id) ? [...cites.get(id)!, ...(inRepo.get(id) ?? [])] : undefined),
+    },
   };
 }
 
@@ -381,7 +426,8 @@ async function changeFromRequirements(
     return 1;
   }
   const parsed = parseRequirements(decodeRequirements(bytes));
-  const r = checkRequirements(parsed, await mapLookup(root), file);
+  const looked = await mapLookup(root);
+  const r = checkRequirements(parsed, looked.has, file, looked.map);
   if (!r.ok) {
     json(false, r.reasons);
     io.err(`Refused: ${r.reasons.length} problem${r.reasons.length === 1 ? "" : "s"} in ${file}.`);
@@ -660,7 +706,7 @@ export async function changeStatus(
   io.out(`Next: ${said.nextStep}`);
   io.out(
     `Risk: ${r.risk.level} (${r.risk.score})${r.risk.factors.length ? ": " : ""}${r.risk.factors
-      .map((f) => `${f.detail} +${f.points}${f.cites?.length ? ` (${f.cites.join(", ")})` : ""}`)
+      .map((f) => `${f.detail} +${f.points}${bracketed(f.cites)}`)
       .join("; ")}`,
   );
   if (r.phase)
@@ -674,7 +720,7 @@ export async function changeStatus(
   io.out(`Tests: ${r.tests.required.length ? r.tests.required.join(", ") : "none listed"}`);
   if (r.tests.note) io.out(`  (${r.tests.note})`);
   for (const a of r.tests.added ?? [])
-    io.out(`  ${a.kinds.join(" and ")}, for ${a.factor}: tests ${a.why} (${a.cites.join(", ")})`);
+    io.out(`  ${a.kinds.join(" and ")}, for ${a.factor}: tests ${a.why}${bracketed(a.cites)}`);
   // R5: which classifications counted as personal, and from where, said on the line.
   const counted = `counted as personal: ${r.privacy.counted.levels.join(", ")}; from ${r.privacy.counted.from === "change-policy" ? "the change policy's privacy.classifications" : "the change policy's privacy.classifications and the org pack's levels above internal"}`;
   io.out(
@@ -1235,6 +1281,12 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
   for (const l of stores.lines) io.out(l);
   return 0;
 }
+
+/** What something cites, in brackets after it; nothing when it cites nothing (never "()"). */
+const bracketed = (cites: readonly string[] | undefined): string => {
+  const named = (cites ?? []).filter((c) => c.trim());
+  return named.length ? ` (${named.join(", ")})` : "";
+};
 
 /**
  * atticus change conflicts [--touching <id>]: open changes touching the same records or repos;

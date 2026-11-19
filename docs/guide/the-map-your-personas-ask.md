@@ -29,16 +29,28 @@ The tools a persona asks most:
 
 Two answers are worth teaching your personas:
 
-- **"`<id>` is not in the map: planned or not read."** `impact`, `show` and `walk` say this of an id the map lacks. It is an answer, not an error: the change plans the thing, or nobody has read that repo yet. A persona that gets it must not describe how the thing behaves.
+- **"`<id>` is not in the map: planned or not read."** `impact`, `show`, `walk` and `ask` say this of an id the map lacks, and then which it is: "`<id>` is in the manifests and hasn't been read", "`<id>` is planned by change `<change>`", or "Neither: no manifest lists `<id>` and no open change plans it", with the nearest ids when the name looks like a slip. It is an answer, not an error. A persona that gets it must not describe how the thing behaves.
 - **An overlap from `conflicts`** is an answer too. On the command line `atticus change conflicts` exits 1 when changes overlap; the tool just tells you.
 
-To hold a requirements file to the map without the starter personas, keep each role's questions in a table with the six columns Question, Evidence, Asked by, Answered by, Answer and State under that role's `## ` heading, and run `atticus change new --from requirements.md --check`. It refuses an open question and an evidence id that is neither in the map nor listed under `## Planned`.
+Three more things a persona should know of the tools:
+
+- **A topic's or an entry's name works** in `ask`, `impact`, `show` and `walk` where exactly one record has it. The answer's first line says which record it is.
+- **`impact` gives ids, owners and why, never a file and line.** `show <id>` gives the file and line a record was read from. Where neither the catalog nor the org pack names an owner, the column says "no owner on record".
+- **`ask "who consumes the topic …"` names the `receivers`** apart: `affected` is the whole walk as `impact` gives it, `receivers` the components that receive the topic, and `further` what a change reaches past a receiver, which receives nothing from the topic.
+
+To hold a requirements file to the map without the starter personas, keep each role's questions in a table with the six columns Question, Evidence, Asked by, Answered by, Answer and State under that role's `## ` heading, and run `atticus change new --from requirements.md --check`. It refuses:
+
+- an open question, and a row answered with nothing under Answer or accepted with no reason there;
+- an evidence id that is neither in the map nor listed under `## Planned`;
+- an id under `## Planned` that the map has (a manifest's repo nobody read is in the map: name it in the text and say "not read");
+- a Planned item that says "not created here, planned by `<change id>`" when that change is not open or doesn't plan it;
+- a file and line beside a catalog record that the record doesn't cite, or more than three lines from a line it cites.
 
 ## Start from the personas Atticus ships
 
 `atticus init` writes them into a new org pack, and `atticus upgrade` adds them once to an existing one, never over a file of yours:
 
-- `org-pack/agents/`: `product-owner`, `ux-analyst`, `application-architect`, `domain-architect`, `security`, `developer` and `qa`, and `<name>-naysayer` for each. `domain-architect` is a template: its first lines say how to copy it for your own domain, for example a payments architect.
+- `org-pack/agents/`: `product-owner`, `ux-analyst`, `application-architect`, `domain-architect`, `security`, `developer` and `qa`, and `<name>-naysayer` for each. `domain-architect` is a template: its first lines say how to copy it for your own domain, for example a payments architect. Until you have, the skill skips that step and tells you so: it reads the file, and while the template's note is still in it nobody has said what the domain is.
 - `org-pack/agents/spec-writer.md`: the agent that turns the cleared requirements into the change's files.
 - `org-pack/skills/define-change/SKILL.md`: the order they run in and the loop.
 
@@ -124,7 +136,8 @@ Each finding prints as `<file>:<line>: <who asks>: <question> [<evidence>]`, and
 
 ## Limits
 
-- The map grounds what is written. It doesn't prove an answer is right, and the door check doesn't open the file and line a row cites.
+- The map grounds what is written. It doesn't prove an answer is right. The door check holds a file and line beside a record to the lines that record cites; it doesn't open the file, so whether the line says what the row claims is a person's to read.
+- `atticus task run-ready <id>` runs the tasks that are ready. To look at the order only, add `--dry-run`.
 - Whether a persona asks good questions is read by a person. Change the words when it doesn't.
 - In Copilot a persona that lists any map tool has all of the `atticus` server's tools, since `<server>/*` is the form its reference documents. They all only read.
 - VS Code also reads `.claude/agents`, so each persona may be listed twice in its agent picker, once from each folder. Not tried here.

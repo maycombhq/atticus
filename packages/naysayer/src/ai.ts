@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import {
@@ -7,6 +9,7 @@ import {
   Lens,
   lensCovers,
   questionOfLens,
+  quickPathOf,
   toCanonicalYaml,
   type CatalogRecord,
   type CriticQuestion,
@@ -22,6 +25,7 @@ import {
   type Run,
   type SourceInput,
 } from "@maycombhq/ai";
+import { decodeRequirements } from "@maycombhq/changes";
 import { answersText, checkedAnswerLink } from "./answers.js";
 import { checkAbsences, codeRepos, codeSearchFor, type CodeRepo, type CodeSearch } from "./code.js";
 import { recordedText } from "./recorded.js";
@@ -367,12 +371,20 @@ export const numbered = (doc: Doc) => doc.rawLines.map((l, i) => `${i + 1}: ${l}
  * path (ADR 0124 addendum B-change) the footprint names the entries, calls and columns the target
  * flows touch, so the slice keeps those rather than every entry and setting of a component.
  */
-export function catalogSlice(ctx: CriticContext): string {
+export function catalogSlice(
+  ctx: CriticContext,
+  /**
+   * ADR 0201 (the b30 proof run): a quick change has no target flows to read a footprint from, so
+   * its slice was empty. These are the ids its own files name; a record with one of them is kept.
+   */
+  named?: ReadonlySet<string>,
+): string {
   const fp = ctx.footprint;
   const comps = new Set(fp.components);
   const staged = fp.from.some((f) => f.startsWith("target-flows/") || f === "feature.yaml");
   const routes = new Set(ctx.hops.flatMap((h) => hopRoutes(ctx.files, h)));
   const keep = (r: CatalogRecord): boolean => {
+    if (named?.has(r.id)) return true;
     switch (r.kind) {
       case "System":
         return fp.systems.includes(r.id) || fp.outside.some((o) => o.id === r.id);
@@ -422,6 +434,15 @@ export function catalogSlice(ctx: CriticContext): string {
     });
   return toCanonicalYaml(rows).trimEnd();
 }
+
+/** The file a quick change was made from (ADR 0201), in its folder. */
+const REQUIREMENTS = "requirements.md";
+/** The files a quick change is: what a lens reads of it, whatever its rules name. */
+const QUICK_ARTIFACTS: readonly string[] = ["proposal", "specs", "design", "tasks"];
+
+/** Every word in backticks that is shaped like an id, in a text. */
+const tickedIds = (text: string): string[] =>
+  [...text.matchAll(/`([a-z0-9][a-z0-9._-]*)`/g)].map((m) => m[1]!);
 
 function patternsText(ctx: CriticContext): string {
   const rows = [...ctx.patterns.values()]
@@ -818,6 +839,14 @@ export async function runLenses(
   const skipped: { rule: string; reason: string }[] = [];
   // The repos' clones a lens may search before it says something is missing (W1).
   const repos = codeRepos(ctx.root);
+  // ADR 0201: a quick change, and the requirements file it was made from when it has one.
+  const quick = quickPathOf(ctx.type);
+  const requirements = quick
+    ? // As the door check reads it (UTF-16 by its byte-order mark), so what is screened is the text.
+      await readFile(join(ctx.files.dir, REQUIREMENTS))
+        .then((b) => decodeRequirements(b))
+        .catch(() => undefined)
+    : undefined;
   // One lens per question, whatever lens its rules were written with (ADR 0124 addendum, Part 4),
   // then each persona's naysayer the gate runs (ADR 0203 C.2), through the same code: its agent
   // and its one rule were built in memory; it rides on the complete question's sizing.
@@ -868,6 +897,21 @@ export async function runLenses(
       sent.push(r);
       for (const d of passing) docs.set(d.path, d);
     }
+    // ADR 0201 (the b30 proof run: the true lens of a quick change got design.md alone): a quick
+    // change is its proposal, spec deltas, design and tasks, with no stage file behind them, so
+    // a lens with a rule to apply reads all of them that it may and that passed layer 1.
+    if (quick && sent.length)
+      for (const d of ctx.files.docs.values()) {
+        const a = artifactOf(d.path);
+        if (
+          a &&
+          QUICK_ARTIFACTS.includes(a) &&
+          ctx.isDue(a) &&
+          (agent.inputs as string[]).includes(a) &&
+          !o.failed.has(d.path)
+        )
+          docs.set(d.path, d);
+      }
     // A stage's draft goes with the artifacts it was drafted from, once they pass layer 1.
     const review = sent.length && o.review && o.failed.size === 0 ? o.review : undefined;
     for (const d of review?.docs ?? []) if (!docs.has(d.path)) docs.set(d.path, d);
@@ -999,12 +1043,34 @@ export async function runLenses(
     // What the lens reads of the estate: in a stage's review, what bears on the draft and the
     // lens's question (ADR 0115 addendum, 2026-10-25); the critic run on its own sends it as before.
     const estate: SourceInput[] = [];
+    // A quick change's requirements file: what the personas found and people answered, as data.
+    if (requirements !== undefined)
+      sources.push({
+        id: REQUIREMENTS,
+        kind: "document",
+        origin: `${changesRelOf(ctx.root)}/${ctx.change.id}/${REQUIREMENTS}`,
+        text: requirements
+          .split(/\r?\n/)
+          .map((l, i) => `${i + 1}: ${l}`)
+          .join("\n"),
+        classification: "internal",
+        priority: 9,
+      });
     if ((agent.inputs as string[]).includes("catalog-slice"))
       estate.push({
         id: "catalog-slice",
         kind: "catalog",
         origin: "catalog",
-        text: catalogSlice(ctx),
+        text: catalogSlice(
+          ctx,
+          quick
+            ? new Set([
+                ...ctx.footprint.records,
+                ...tickedIds(requirements ?? ""),
+                ...[...docs.values()].flatMap((d) => tickedIds(d.raw)),
+              ])
+            : undefined,
+        ),
         classification: "internal",
         priority: 5,
       });

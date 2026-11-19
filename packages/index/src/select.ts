@@ -99,6 +99,42 @@ export function searchIndex(ix: CatalogIndex, text: string, o: SearchOptions = {
   return rows.map(({ rank, ...r }) => ({ ...r, score: round(-rank) }));
 }
 
+/**
+ * The nodes whose id is the text, then those whose id starts with it, shortest first (b30 proof
+ * run: a search for an id's first words listed twenty settings before it). Only for one word:
+ * an id has no space.
+ */
+export function idMatches(ix: CatalogIndex, text: string, o: SearchOptions = {}): string[] {
+  const t = text.trim().toLowerCase();
+  if (t.length < 3 || /\s/.test(t)) return [];
+  const kinds = o.kinds?.length ? o.kinds : undefined;
+  const like = `${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return (
+    prep(
+      ix,
+      `SELECT key FROM nodes WHERE (lower(id) = ? OR lower(id) LIKE ? ESCAPE '\\')${
+        kinds ? ` AND kind IN (${kinds.map(() => "?").join(", ")})` : ""
+      } ORDER BY (lower(id) = ?) DESC, length(id), id, key LIMIT ?`,
+    ).all(t, like, ...(kinds ?? []), t, o.limit ?? 20) as { key: string }[]
+  ).map((r) => r.key);
+}
+
+/**
+ * Whether anything holds every word of the text. A search matches any of its words, so a term
+ * such as `forge-approvals` finds whatever says "forge"; the tool says when nothing has it whole.
+ */
+export function matchesWhole(ix: CatalogIndex, text: string, o: SearchOptions = {}): boolean {
+  const words = queryWords(text, 200, { split: false });
+  if (words.length < 2) return true;
+  const kinds = o.kinds?.length ? o.kinds : undefined;
+  const row = prep(
+    ix,
+    `SELECT 1 AS hit FROM fts f JOIN nodes n ON n.key = f.key
+       WHERE fts MATCH ?${kinds ? ` AND n.kind IN (${kinds.map(() => "?").join(", ")})` : ""} LIMIT 1`,
+  ).get(words.map((w) => `"${w}"`).join(" AND "), ...(kinds ?? []));
+  return row !== undefined;
+}
+
 /** Statements, prepared once per open index. */
 const statements = new WeakMap<object, Map<string, ReturnType<CatalogIndex["db"]["prepare"]>>>();
 function prep(ix: CatalogIndex, sql: string): ReturnType<CatalogIndex["db"]["prepare"]> {

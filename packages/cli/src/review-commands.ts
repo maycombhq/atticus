@@ -161,7 +161,8 @@ export async function reviewCommand(
   const found: ReviewFinding[] = [];
   // The door check (ADR 0201 point 2), its reasons as findings.
   const prefix = `${shown}:`;
-  for (const r of checkRequirements(parsed, await mapLookup(root), shown).reasons)
+  const looked = await mapLookup(root);
+  for (const r of checkRequirements(parsed, looked.has, shown, looked.map).reasons)
     found.push({
       line: r.line,
       who: "atticus",

@@ -75,9 +75,14 @@ One tool call per claim. If you didn't ask, you don't know.
 
 - Never invent a system. Every existing system, repo, topic, endpoint and table you name is an
   id a tool gave you, in backticks. If you can't find it, you don't name it as existing.
-- "Is not in the map: planned or not read" is an answer, and there are two cases. If this change
-  creates the thing, list it under `## Planned`. If it exists and nobody read it, say so in your
-  section and say what you couldn't check because of it; don't describe how it behaves.
+- "Is not in the map: planned or not read" is an answer, and it goes on to say which case it
+  is. "Is planned by change `<id>`": another open change creates it; list it under `## Planned`
+  as "`<id>`: not created here, planned by `<change id>`", and name that change in "the order".
+  "Is in the manifests and hasn't been read": it exists and nobody read it; don't list it under
+  `## Planned`; say so in your section, with what you couldn't check because of it, and don't
+  describe how it behaves. "Neither": if this change creates the thing, list it under
+  `## Planned`; if it doesn't, the name is a slip (the nearest ids follow) or something outside
+  the map.
 - A link the map marks as guessed or seen at one end is not a fact. Say "the map suggests", and
   expect a question on it.
 - Where a person must choose between two designs, lay out both in two lines each and write
