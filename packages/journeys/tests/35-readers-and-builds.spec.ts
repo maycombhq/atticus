@@ -34,7 +34,8 @@ import {
  *
  * Beta.30 (slice 9): on the field-shaped estate (fixtures/forge-field) a legacy slot from before
  * the upgrade that lost most of its records waits for its count in the same way, is confirmed and
- * undone, and Catalog builds fits VS Code's panel there too (at the end).
+ * undone, Catalog builds fits the IDE's panel there too, and the built-in readers' check (journey
+ * 36's) removes nothing from that estate (at the end, on one seeded metarepo and server).
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -443,7 +444,7 @@ test.describe("the field-shaped estate", () => {
     ).toBeVisible();
   });
 
-  test("Catalog builds fits VS Code's panel at 780 and 420 px without scrolling sideways", async ({
+  test("Catalog builds fits the IDE's panel (IntelliJ's tool window) at 780 and 420 px without scrolling sideways", async ({
     page,
   }) => {
     for (const width of [780, 420]) {
@@ -456,5 +457,44 @@ test.describe("the field-shaped estate", () => {
       expect(await sideways(page), `catalog-builds at ${width} px scrolls sideways`).toBe(false);
       await accessible(page, `Catalog builds at ${width} px on the field-shaped estate`);
     }
+  });
+
+  /**
+   * (Journey 36's check, on this estate.) The built-in readers are a cross-check of what the facts
+   * say: the check reads the clones, writes their readers' slots beside the facts and removes
+   * nothing (the facts, and the legacy slot from before the upgrade, win), so the catalog is byte
+   * for byte as it was. Each repo it can't read says what to do.
+   */
+  test("the built-in readers' check removes nothing, and each repo it can't read says what to do", async ({
+    page,
+  }) => {
+    const root = field().root;
+    const before = catalogFiles(root);
+    await open(page, field(), "scans");
+    const panel = page.getByRole("region", { name: "Panel" });
+    await panel.getByRole("button", { name: "Show the panel" }).click();
+    await page.getByRole("button", { name: "Check with the built-in readers" }).click();
+    await expect(panel.getByText(/: done$/).first()).toBeVisible({ timeout: 90_000 });
+    const log = panel.getByRole("log");
+    await expect(log).toContainText(/catalog\/generated: 0 written, \d+ unchanged, 0 removed/);
+    await expect(log).toContainText(
+      "The built-in readers added 0 records, changed 0 and removed 0",
+    );
+    await expect(page.getByText("The build waits for you: nothing has been written.")).toHaveCount(
+      0,
+    );
+    // A repo the manifest lists that isn't cloned here: named, with the command that clones it.
+    await expect(log).toContainText(
+      `${fieldInfo().unreadRepo!}: workspace: isn't cloned here yet; run atticus workspace sync`,
+    );
+    // The legacy service's records are kept: read it to replace them.
+    await expect(log).toContainText(
+      `${fieldInfo().legacy[0]!}: its records are kept from before the upgrade`,
+    );
+    expect(catalogFiles(root)).toEqual(before);
+    expect(
+      existsSync(join(root, "catalog/sources/readers", `${fieldInfo().clones[0]!}.json`)),
+    ).toBe(true);
+    await accessible(page, "Set up › Scans after the readers' check on the field-shaped estate");
   });
 });

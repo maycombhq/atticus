@@ -5,10 +5,13 @@ import { SCREENS } from "../support/screens.js";
 /**
  * The browser app's light theme: it follows a light system setting, every screen passes axe
  * (WCAG 2.1 AA) in it, and the theme switch (system, light or dark) is remembered across a
- * reload. 14-every-screen does the same pass in the dark theme. Beta.30 (slice 9): on the tidy
- * Forge estate and on the field-shaped one (fixtures/forge-field).
+ * reload. 14-every-screen does the same pass in the dark theme. Beta.30 (slice 9): every screen on
+ * the tidy Forge estate, and the map's screens on the field-shaped one (fixtures/forge-field).
  */
 test.use({ colorScheme: "light" });
+
+/** The field estate's screens in the light theme: the map's, where its shape shows. */
+const FIELD_LIGHT = ["canvas", "map", "trust", "flows", "impact?q=ledger-api"];
 
 const theme = (page: Page) =>
   page.evaluate<string | undefined>("document.documentElement.dataset.theme");
@@ -17,7 +20,9 @@ for (const estate of ESTATES)
   test.describe(`the ${estate} estate`, () => {
     const app = forgeJourney({ estate });
 
-    for (const s of SCREENS.map((x) => routeOf(estate, x)))
+    // The field estate's light pass is of the screens its shape changes most: the map's.
+    const screens = estate === "tidy" ? SCREENS : FIELD_LIGHT;
+    for (const s of screens.map((x) => routeOf(estate, x)))
       test(`#/${s} is accessible in the light theme`, async ({ page }) => {
         const errors: string[] = [];
         page.on("pageerror", (e) => errors.push(String(e)));
@@ -26,6 +31,9 @@ for (const estate of ESTATES)
         await accessible(page, `${s} (light)`);
         expect(errors, `script errors on ${s}`).toEqual([]);
       });
+
+    // The palette, the tour and the theme switch don't depend on the estate: the tidy one's only.
+    if (estate !== "tidy") return;
 
     test("the command palette and the tour are accessible in the light theme", async ({ page }) => {
       await open(page, app(), "home");

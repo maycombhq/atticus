@@ -47,4 +47,5 @@ const shapes = spawnSync(
     shell: process.platform === "win32",
   },
 );
-process.exit(r.status || shapes.status || 0);
+// A run killed by a signal has no status: that is a failure, never an exit 0.
+process.exit((r.status ?? 1) || (shapes.status ?? 1));

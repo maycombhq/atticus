@@ -2,10 +2,10 @@ import { spawnSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   accessible,
-  ESTATES,
   expect,
   metarepoOf,
   open,
@@ -13,7 +13,13 @@ import {
   stopApp,
   test,
   type App,
+  type Estate,
 } from "../support/app.js";
+
+const FIELD_METAREPO = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../fixtures/forge-field/metarepo",
+);
 
 /**
  * ADR 0202 point 2, the review's journey: Propose for review stopped before its push leaves
@@ -25,8 +31,8 @@ import {
  * The window between "Committing…" and the push is a few milliseconds on its own. A `git` on the
  * server's PATH holds the publisher's first `fetch` while a hold file exists, so the Stop lands
  * there every time; every other git call goes straight through. POSIX only (a shell script), as
- * the sync's Stop test is. Beta.30 (slice 9): on the tidy Forge estate and on the field-shaped one
- * (fixtures/forge-field), whose metarepo `atticus init` made (its Git host `manual` already).
+ * the sync's Stop test is. Beta.30 (slice 9): the field-shaped estate's runtime.yaml takes the same
+ * Git host (checked without the app); the journey itself runs on the tidy estate.
  */
 
 const posix = process.platform !== "win32";
@@ -48,7 +54,32 @@ async function prSteps(root: string): Promise<string[]> {
   return out;
 }
 
-for (const estate of ESTATES)
+/**
+ * The person sets the Git host (manual, the metarepo's repo named). The tidy estate's org pack
+ * names the mock host; the field estate's, as `atticus init` wrote it, `manual`.
+ */
+function manualGitHost(estate: Estate, text: string): string {
+  return estate === "tidy"
+    ? text.replace(
+        "gitHost: { type: mock }",
+        "gitHost: { type: manual, settings: { metarepo: forge-meta } }",
+      )
+    : text.replace(
+        /^( *)gitHost: manual$/m,
+        "$1gitHost: { type: manual, settings: { metarepo: forge-meta } }",
+      );
+}
+
+// The field estate's own case is its runtime.yaml (below): the Stop and the push don't depend on
+// the estate's shape, so the app runs on the tidy estate only (beta.30 slice 9, the review).
+test("the field estate's runtime.yaml takes the same Git host", async () => {
+  const text = await readFile(join(FIELD_METAREPO, "org-pack/runtime.yaml"), "utf8");
+  const set = manualGitHost("field", text);
+  expect(set).not.toBe(text);
+  expect(set).toMatch(/^ *gitHost: \{ type: manual, settings: \{ metarepo: forge-meta \} \}$/m);
+});
+
+for (const estate of ["tidy"] as const)
   test.describe(`the ${estate} estate`, () => {
     let app: App | undefined;
     let parent: string;
@@ -68,18 +99,10 @@ for (const estate of ESTATES)
       git(root, "push", "-q", "-u", "origin", "main");
       // The person set the Git host (manual, the metarepo's repo named): the file to propose.
       const rt = join(root, "org-pack/runtime.yaml");
-      await writeFile(
-        rt,
-        estate === "tidy"
-          ? (await readFile(rt, "utf8")).replace(
-              "gitHost: { type: mock }",
-              "gitHost: { type: manual, settings: { metarepo: forge-meta } }",
-            )
-          : (await readFile(rt, "utf8")).replace(
-              /^( *)gitHost: manual$/m,
-              "$1gitHost: { type: manual, settings: { metarepo: forge-meta } }",
-            ),
-      );
+      const was = await readFile(rt, "utf8");
+      const set = manualGitHost(estate, was);
+      expect(set, "runtime.yaml names the Git host as this journey expects").not.toBe(was);
+      await writeFile(rt, set);
       // A git that waits at `fetch` while the hold file is there.
       const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
       const bin = join(parent, "bin");
