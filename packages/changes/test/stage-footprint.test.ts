@@ -55,6 +55,22 @@ async function estate(): Promise<string> {
   return root;
 }
 
+describe("the operations file (ADR 0203 B)", () => {
+  it("is one of the stages' own files, and its repos are the change's", async () => {
+    const root = await estate();
+    await writeFile(
+      join(root, "openspec/changes", CHANGE, "target-flows/_operations.yaml"),
+      `schemaVersion: 1\nchange: ${CHANGE}\noperations:\n  - id: deploy-new\n    kind: deployment\n    repos: [forge-stock, forge-deploy]\n    what: Deploy the service on the new platform.\n`,
+    );
+    const ctx = await loadChangeContext(root);
+    const fp = await changeFootprint(ctx, await changeStore(root).read(CHANGE));
+    expect(fp.from).toContain("target-flows/_operations.yaml");
+    expect(fp.repos).toEqual(["forge-deploy", "forge-orders", "forge-stock"]);
+    // It is no target flow: the flows are as they were.
+    expect(fp.flows.map((f) => f.id)).not.toContain("_operations");
+  });
+});
+
 describe("the repos tasks.md names (ADR 0201)", () => {
   it("count when a manifest lists them, read or not; a heading nothing knows doesn't", async () => {
     const root = await estate();

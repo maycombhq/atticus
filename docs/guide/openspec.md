@@ -44,7 +44,21 @@ Every repo a manifest lists is part of the estate for the stages, read or not; a
 - A consumer that is a manifest repo nobody read, or a component the change plans, is noted as one whose use can't be checked, with `atticus map <repo>`.
 - A new file's folder in an empty repo (no folder at its root but hidden ones) is noted, since the change gives the repo its layout.
 
-A feature draft that touches nothing, a fast-path draft that changes no step, and `atticus plan stories` on a change with nothing to plan stop at once and name the quick path: write the change's requirements file and run `atticus change new --from <requirements.md>`.
+A feature draft that touches nothing (no flow and no operation), a fast-path draft that changes no step and has no operation, and `atticus plan stories` on a change with nothing to plan stop at once and name the quick path: write the change's requirements file and run `atticus change new --from <requirements.md>`.
+
+## A change that moves or deploys things
+
+Some work changes no runtime step: a service deployed on another platform, a pipeline for a new repo, a setting carried over, a secret's key, a route, a cut-over. The stages take it as **operations** (ADR 0203), so a platform migration and a product in new repos go through feature, architecture and stories like any other change.
+
+- **Feature.** `feature.yaml` may list `operations`, each with its `kind` (`deployment`, `pipeline`, `config`, `secret`, `route` or `cut-over`), the `repos` it is done in, `what` and `why`. A repo that doesn't exist yet is marked `newRepo: true`, as a new flow's is. It may also list `outside`: a party the change names that no repo of the estate holds, such as a partner's system; an id the catalog has is refused there.
+- **Architecture.** The operations are kept in one file, `target-flows/_operations.yaml`, beside the target flows. Each has an `id`, may cite under `today` the catalog's records of what is there now, may say under `sets` what a rescan will find afterwards (a deployment's `platform`, `env` or ingress `host`, a setting's `key`), and may come `after` other operations. Repos that go in groups are listed under `waves`. Every cut-over gives an `undo`: rollback is not a kind of its own. A secret names its key and where its value is kept, never the value.
+- **What runs today.** The feature and architecture prompts carry, as data, where each repo's component runs, its Deployment records and its Setting keys and kinds (never a value), each with its id. `design.md` gains "Operations": a row for each operation and repo, with what is there today, cited where the record was read, and what it becomes. An operation with an `undo` is a row of "Rollout and rollback".
+- **Stories and tasks.** One story for each operation and one task for each of its repos, numbered `o1.1`, `o1.2`, and so on. Your assistant words the story and writes each task's acceptance criteria; a task without one is refused. In `tasks.md` a task of the second wave ends with `(after …)` naming the last tasks of the first, so `atticus task run-ready` holds it until those are ticked. The spec deltas are one capability for each repo, `<repo>-operations`.
+- **The fast path** (`atticus change small`) takes `operations` in its one answer too.
+
+The architecture stage refuses, by rule: a repo the estate doesn't have and the change doesn't plan (`operation.unknown-repo`); an id under `today` that is no record of the operation's repos (`operation.unknown-today`); a cut-over without `undo` (`operation.no-undo`); an `after` that names no operation, or a circle (`operation.after`); a repo in no wave or in two (`operation.wave`); and an operation the feature lists that is missing (`operation.missing`). It notes, without blocking, a deployment or route operation that cites none of the Deployment records the catalog has (`operation.today-uncited`).
+
+What is not checked: Atticus never connects to a live system, so a cut-over is never verified by it, and the catalog has no record for a pipeline. In this release the conformance check (`atticus change conform`) compares target flows only; it does not yet read `sets`.
 
 ## Drawing a change on the canvas
 

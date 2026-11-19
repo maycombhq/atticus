@@ -409,7 +409,7 @@ describe("org-flow schema", () => {
     await writeFile(join(old, "openspec/schemas/org-flow/templates/snow.md"), "# snow\n");
     expect(await orgFlowVersionOf(old)).toBe(1);
     await writeOrgFlowSchema(old);
-    expect(await orgFlowVersionOf(old)).toBe(2);
+    expect(await orgFlowVersionOf(old)).toBe(ORG_FLOW_VERSION);
     expect(existsSync(join(old, "openspec/schemas/org-flow/templates/snow.md"))).toBe(false);
   });
 
