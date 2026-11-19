@@ -142,7 +142,10 @@ describe("journey 1: a gateway proxy to a service that is no gateway", () => {
     // The map draws it as declared, by its person.
     const graph = await call("/api/graph/node/estate?lens=architecture");
     expect(JSON.stringify(graph.body)).toContain('"declaredBy":"pat"');
-    expect((await connect(`repo:${gw}`, `repo:${svc}`)).mechanism).toBe("declared");
+    // The proxy's calls are still listed, the declared arrow beside them (B.1, the review).
+    const after = await connect(`repo:${gw}`, `repo:${svc}`);
+    expect(["calls", "declared"]).toContain(after.mechanism);
+    expect(after.declared?.by).toBe("pat");
     const undo = await job("/api/map/edits/undo", { wrote: once.result.wrote });
     expect(undo.result.built).toBe(true);
     expect(await declaredArrows()).toHaveLength(0);
@@ -150,16 +153,13 @@ describe("journey 1: a gateway proxy to a service that is no gateway", () => {
     const again = await job("/api/map/edits", { edits: [{ kind: "add", add: link }] });
     expect(again.result.built).toBe(true);
     expect(await declaredArrows()).toHaveLength(1);
-    // Retire it, for the next journey's count.
-    expect(
-      (
-        await call("/api/declared-links/undo", "POST", {
-          kind: "link",
-          from: link.from,
-          to: link.to,
-        })
-      ).status,
-    ).toBe(200);
+    // Remove it, through the guarded path (the map built again), for the next journey's count.
+    const arrow = (await connect(`repo:${gw}`, `repo:${svc}`)).declared!;
+    const removed = await job("/api/map/edits/undo", {
+      wrote: [{ edit: 0, file: arrow.file, link: arrow }],
+    });
+    expect(removed.result.built).toBe(true);
+    expect(await declaredArrows()).toHaveLength(0);
   }, 600_000);
 });
 
@@ -250,12 +250,17 @@ describe("journey 3: a later real call retires a declared arrow", () => {
     expect(after.mechanism).toBe("declared");
     expect(after.superseded?.calls).toBeGreaterThan(0);
     expect(await readFile(PROFILE(), "utf8")).toContain(why);
-    const r = await call("/api/declared-links/undo", "POST", {
+    // Retire: its lines previewed, then the item out and the map built.
+    const pre = await call("/api/declared-links/undo", "POST", {
       kind: "link",
       from: { repo: a },
       to: { repo: b },
+      preview: true,
     });
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(pre.status, JSON.stringify(pre.body)).toBe(200);
+    const d = after.declared!;
+    const r = await job("/api/map/edits/undo", { wrote: [{ edit: 0, file: d.file, link: d }] });
+    expect(r.result.built, (r.result.lines as string[]).join("\n")).toBe(true);
     expect(await readFile(PROFILE(), "utf8")).not.toContain(why);
   }, 600_000);
 });
