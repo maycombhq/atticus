@@ -480,6 +480,34 @@ describe("a table the parser can't be sure of is refused, never passed over", ()
     ]);
   });
 
+  it("ends a fence opened in a nested quote where the quote gets shallower, not only where it ends", () => {
+    const rows = (marks: string) => [
+      `${marks}| Question | Evidence | Asked by | Answered by | Answer | State |`,
+      `${marks}|---|---|---|---|---|---|`,
+      `${marks}| Q? | \`forge-ledger\` | arch | | | open |`,
+    ];
+    // The fence is in the inner quote; the table is in the outer one, so it is read.
+    const outer = ["# T", "## Arch", "> > ```", ...rows("> ")].join("\n");
+    expect(codes(outer)).toEqual([["requirements.open-question", 6]]);
+    expect(parseRequirements(outer).roles.map((r) => [r.role, r.rows.length])).toEqual([
+      ["Arch", 1],
+    ]);
+    // Three deep to two, and two to none, the same.
+    expect(codes(["# T", "## Arch", "> > > ~~~", ...rows("> > ")].join("\n"))).toEqual([
+      ["requirements.open-question", 6],
+    ]);
+    expect(codes(["# T", "## Arch", ">> ```", ...rows("")].join("\n"))).toEqual([
+      ["requirements.open-question", 6],
+    ]);
+    // The mirror: at the fence's own depth, or deeper, the rows are the fence's text. Never
+    // closed, the fence is refused where it opens; closed, the rows are hidden and nothing more.
+    for (const marks of ["> > ", ">> ", "> > > "]) {
+      const same = ["# T", "## Arch", "> > ```", ...rows(marks)];
+      expect(codes(same.join("\n")), marks).toEqual([["requirements.unreadable", 3]]);
+      expect(reasons([...same, "> > ```", "", "After the quote."].join("\n")), marks).toEqual([]);
+    }
+  });
+
   it("still refuses a fence in a list item that only the list's end closes", () => {
     const text = [
       "## QA",

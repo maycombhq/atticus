@@ -5,7 +5,7 @@
       "command": "node",
       "args": [
         "-e",
-        "var w=process.platform==='win32',p=require('node:child_process'),e=process.env,d=0;if(w)e=Object.assign({},e,{NoDefaultCurrentDirectoryInExePath:'1'});var c=p.spawn(w?'atticus mcp':'atticus',w?[]:['mcp'],{stdio:'inherit',shell:w,windowsHide:true,env:e});function k(){if(d)return;d=1;if(c.pid==null)return;try{if(w)p.spawnSync('taskkill',['/pid',String(c.pid),'/T','/F'],{stdio:'ignore',windowsHide:true});else c.kill()}catch(x){}}c.on('error',function(x){d=1;console.error('Could not start atticus mcp ('+x.message+'). Install the atticus command line and put it on PATH.');process.exit(1)});c.on('exit',function(x){d=1;process.exit(x==null?1:x)});['SIGTERM','SIGINT','SIGHUP'].forEach(function(s){process.on(s,function(){k();process.exit(1)})});process.on('exit',k)"
+        "var w=process.platform==='win32',p=require('node:child_process'),e=process.env,d=0;if(w)e=Object.assign({},e,{NoDefaultCurrentDirectoryInExePath:'1'});var c=p.spawn(w?'atticus mcp':'atticus',w?[]:['mcp'],{stdio:'inherit',shell:w,windowsHide:true,env:e});function k(){if(d)return;d=1;if(c.pid==null)return;try{if(w)p.spawnSync(e.SystemRoot?e.SystemRoot+'/System32/taskkill.exe':'taskkill',['/pid',String(c.pid),'/T','/F'],{stdio:'ignore',windowsHide:true,timeout:5000});else c.kill()}catch(x){}}c.on('error',function(x){d=1;console.error('Could not start atticus mcp ('+x.message+'). Install the atticus command line and put it on PATH.');process.exit(1)});c.on('exit',function(x){d=1;process.exit(x==null?1:x)});['SIGTERM','SIGINT','SIGHUP'].forEach(function(s){process.on(s,function(){k();process.exit(1)})});process.on('exit',k)"
       ]
     }
   }

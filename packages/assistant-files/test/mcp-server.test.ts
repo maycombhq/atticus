@@ -19,7 +19,10 @@ const ENV = { PATH: "/usr/bin", FORGE: "1" };
 const PID = 4321;
 
 /** Run the launcher as `node -e` would, on a platform, with nothing started. */
-function launch(platform: NodeJS.Platform, o: { pid?: number | undefined } = { pid: PID }) {
+function launch(
+  platform: NodeJS.Platform,
+  o: { pid?: number | undefined; env?: Record<string, string> } = { pid: PID },
+) {
   const spawned: Spawned[] = [];
   const sync: Spawned[] = [];
   const handlers = new Map<string, (v: unknown) => void>();
@@ -27,7 +30,7 @@ function launch(platform: NodeJS.Platform, o: { pid?: number | undefined } = { p
   const exits: number[] = [];
   const errors: string[] = [];
   let kills = 0;
-  const env = { ...ENV };
+  const env: Record<string, string> = { ...(o.env ?? ENV) };
   runInNewContext(ATTICUS_MCP_LAUNCHER, {
     process: {
       platform,
@@ -126,17 +129,26 @@ describe("the atticus MCP server entry (beta.30)", () => {
     },
   );
 
+  // Windows' own taskkill by its full path: a bare name is looked for in the current folder
+  // first, which is the workspace. Given five seconds, so a launcher that is ending never hangs.
+  const WINDOWS = { ...ENV, SystemRoot: "C:\\Windows" };
   const TASKKILL = {
-    command: "taskkill",
+    command: "C:\\Windows/System32/taskkill.exe",
     args: ["/pid", String(PID), "/T", "/F"],
-    options: { stdio: "ignore", windowsHide: true },
+    options: { stdio: "ignore", windowsHide: true, timeout: 5000 },
   };
+
+  it("calls taskkill by name only where Windows doesn't say where it is installed", () => {
+    const w = launch("win32");
+    w.own.get("exit")!();
+    expect(w.sync).toEqual([{ ...TASKKILL, command: "taskkill" }]);
+  });
 
   it.each(["SIGTERM", "SIGINT", "SIGHUP"])(
     "told to end (%s), it ends the server too: the shell's whole tree on Windows",
     (signal) => {
       // cmd.exe, atticus.cmd and the node it starts: ending the shell alone leaves the server.
-      const w = launch("win32");
+      const w = launch("win32", { pid: PID, env: WINDOWS });
       w.own.get(signal)!();
       expect(w.sync).toEqual([TASKKILL]);
       expect(w.kills()).toBe(0);
@@ -156,7 +168,7 @@ describe("the atticus MCP server entry (beta.30)", () => {
   );
 
   it("ends the server when it exits for any other reason, and never one that has ended", () => {
-    const w = launch("win32");
+    const w = launch("win32", { pid: PID, env: WINDOWS });
     w.own.get("exit")!();
     expect(w.sync).toEqual([TASKKILL]);
     const l = launch("darwin");
