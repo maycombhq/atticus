@@ -122,6 +122,11 @@ function CheckAgain({ change }: { change: string }) {
 
 /** A change's newest checks. */
 export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
+  // ADR 0203: a change whose work is operations has nothing this check looks at, and says so.
+  if (!c.flows && c.operations) return <p>{C.onlyOperations(c.operations)}</p>;
+  const notChecked = c.operations ? (
+    <p role="note">{C.operationsNotChecked(c.operations)}</p>
+  ) : null;
   if (!c.flows)
     return (
       <>
@@ -133,6 +138,7 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
     return (
       <>
         <p>{C.notChecked(c.change)}</p>
+        {notChecked}
         <CheckAgain change={c.change} />
       </>
     );
@@ -141,6 +147,7 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
       {c.results.map((r) => (
         <RepoResult key={r.repo} r={r} />
       ))}
+      {notChecked}
       <p>{C.gate(c.round)}</p>
       <CheckAgain change={c.change} />
       {c.problems.length > 0 && (

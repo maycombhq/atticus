@@ -22,6 +22,7 @@ import { readChangeFiles, readRound, roundsOf } from "@maycombhq/naysayer";
 import {
   conform,
   readConformDeltas,
+  readOperations,
   readTaskSteps,
   type ConformDelta,
   type ConformItem,
@@ -437,6 +438,8 @@ export async function conformanceOf(
     .catch(() => undefined);
   if (!c) return undefined;
   const { deltas, problems } = await readConformDeltas(changeFolder(root, change));
+  // ADR 0203: the operations, which this check doesn't look at, counted so the app says so.
+  const operations = (await readOperations(changeFolder(root, change))).file?.operations.length;
   const stored = await readConformResults(root, change);
   const rounds = await roundsOf(root, change, CONFORM_GATE).catch(() => [] as number[]);
   const round = rounds.at(-1);
@@ -448,6 +451,7 @@ export async function conformanceOf(
     change,
     title: c.title,
     flows: deltas.length,
+    ...(operations ? { operations } : {}),
     results: stored.results.map((r) => ({
       ...r,
       items: r.items.map((i) => {
