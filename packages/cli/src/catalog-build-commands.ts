@@ -1739,7 +1739,10 @@ export async function undoMapEdits(
         io.out(`Took the declared arrow out of ${w.file}.`);
       }
     }
-    const c = await buildAfterDecisions(root, new Set(), io, { inputs: new Set(["org-pack"]) });
+    // What the Undo took back is the build's changed input: the removals it explains are this
+    // Undo's own (a declared arrow's profile, a pairing's corrections file).
+    const inputs = new Set(wrote.map((w) => ("lines" in w ? w.file : "org-pack")));
+    const c = await buildAfterDecisions(root, new Set(), io, { inputs });
     built = c === 0;
     return c;
   });

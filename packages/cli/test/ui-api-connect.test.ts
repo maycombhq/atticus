@@ -223,3 +223,29 @@ describe("a declared arrow (ADR 0204 1.4 to 1.7, 2.2, 2.4)", () => {
     expect(profile()).not.toContain("Orders posts holds to the ledger.");
   }, 300_000);
 });
+
+describe("a pairing written and applied in one job (ADR 0204 decision 2)", () => {
+  it("writes the pair and builds once, and Undo takes back exactly its line and builds again", async () => {
+    const corrections = join(g.root, "facts", `${A}.corrections.jsonl`);
+    const before = readFileSync(corrections, "utf8");
+    const arrowsBefore = await g.arrows();
+    const j = await job("/api/map/edits", {
+      edits: [{ kind: "add", pair: { from: A, to: { repo: B }, pairs: [CALLS.theirs] } }],
+    });
+    expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
+    const wrote = Api.MapEditsResult.parse(j.result).wrote!;
+    expect(wrote).toEqual([
+      {
+        edit: 0,
+        file: `facts/${A}.corrections.jsonl`,
+        lines: [expect.stringContaining(CALLS.theirs.call)],
+      },
+    ]);
+    expect((await g.arrows())[B]).toBe((arrowsBefore[B] ?? 0) + 1);
+    // Undo: the line goes, and the arrow it drew with it, in one build with no confirm asked.
+    const u = await job("/api/map/edits/undo", { wrote });
+    expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(true);
+    expect(readFileSync(corrections, "utf8")).toBe(before);
+    expect(await g.arrows()).toEqual(arrowsBefore);
+  }, 300_000);
+});

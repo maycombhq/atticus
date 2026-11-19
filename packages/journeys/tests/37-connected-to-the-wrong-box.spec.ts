@@ -112,11 +112,14 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
   const file = join(root, "facts", "forge-orders.corrections.jsonl");
   expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
 
-  // Confirmed: four pairings, the person's word with their reason; the facts are as read.
+  // Confirmed: four pairings, the person's word with their reason, written and applied in one
+  // job (ADR 0204 decision 2); the facts are as read.
   await confirm.click();
   await expect(
-    panel.getByText("4 pairs written to facts/forge-orders.corrections.jsonl."),
-  ).toBeVisible({ timeout: 30_000 });
+    panel.getByText("Connected: forge-orders → forge-ledger is on the map."),
+  ).toBeVisible({
+    timeout: 120_000,
+  });
   const lines = readFileSync(file, "utf8")
     .trim()
     .split("\n")
@@ -128,9 +131,7 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
   expect(readFileSync(join(root, "facts", "forge-orders.jsonl"), "utf8")).toContain(
     '"to":"forge-billing"',
   );
-
-  // Apply redraws the map with no removal to confirm.
-  await panel.getByRole("button", { name: "Apply to forge-orders's map" }).first().click();
+  // The map is redrawn with no Apply to press and no removal to confirm.
   await expect(page.locator(RIGHT)).toHaveAttribute(
     "aria-label",
     /4 × calls · paired by a person/,
@@ -147,34 +148,16 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
   ).toBeVisible({ timeout: 60_000 });
   await accessible(page, "the map after the move");
 
-  // Undo takes the four lines back at once; the map is the last Apply's until the next, which
-  // the panel says and offers, with the confirm it may ask for.
+  // Undo takes the four lines back in one job and builds: the arrow is back where it was, and
+  // the removals are the Undo's own, so nothing waits for a confirm.
   await panel.getByRole("button", { name: "Undo" }).click();
   await expect(
-    panel.getByText(
-      "Undone: the 4 lines are removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairings; Atticus asks you to confirm when that removes many arrows:",
-    ),
-  ).toBeVisible({ timeout: 30_000 });
+    panel.getByText("Undone: what this wrote is taken back, and the map built again."),
+  ).toBeVisible({ timeout: 120_000 });
   expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
-  await expect(page.locator(RIGHT)).toHaveCount(1);
-  await panel.getByRole("button", { name: "Apply to forge-orders's map" }).last().click();
-  // Four arrows of a small repo go: over the removal limits, so the Apply waits for a confirm
-  // (the build can't tell an Undo from a file reverted by hand). Nothing is written yet.
-  await expect(panel.getByText("The build waits for you: nothing has been written.")).toBeVisible({
-    timeout: 90_000,
-  });
-  await expect(page.locator(RIGHT)).toHaveCount(1);
-  await page.getByRole("button", { name: "Review the 4 removals" }).click();
-  const dialog = page.getByRole("dialog", { name: "Confirm 4 removals" });
-  const listed = dialog.getByRole("table", { name: "The records the build would remove" });
-  await expect(listed).toContainText("A pairing changed (facts/*.corrections.jsonl)");
-  await expect(listed).toContainText("its call goes to forge-billing now");
-  await accessible(page, "the confirm of an undone move's removals");
-  await dialog.getByLabel("Type 4 to confirm exactly these").fill("4");
-  await dialog.getByRole("button", { name: "Apply, removing 4 records" }).click();
-  // Confirmed: the arrow is back where it was.
   await expect(page.locator(WRONG)).toHaveAttribute("aria-label", /4 × calls/, {
     timeout: 120_000,
   });
   await expect(page.locator(RIGHT)).toHaveCount(0);
+  await accessible(page, "Connect after Undo");
 });

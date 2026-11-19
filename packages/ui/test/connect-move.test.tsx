@@ -22,6 +22,11 @@ vi.mock("react", async () => {
 const { Pairing, howWords, initialPicks, pairsOf, undoneWords } =
   await import("../src/screens/architecture/Connect.js");
 
+type PairApply = import("../src/screens/architecture/Connect.js").PairApply;
+vi.mock("../src/app/propose.js", async () => ({
+  ...(await vi.importActual<object>("../src/app/propose.js")),
+  Propose: () => null,
+}));
 const C = COPY.connect;
 const un = (h: string) =>
   h
@@ -188,7 +193,7 @@ describe("Connect forge-orders to forge-ledger, its calls joined to the wrong bo
 });
 
 describe("Move to forge-ledger", () => {
-  const start = (calls: Api.CandidateCallViewT[]) => {
+  const start = (calls: Api.CandidateCallViewT[], apply?: PairApply) => {
     const sent: Api.ConnectLinksRequestT[] = [];
     const post = (body: Api.ConnectLinksRequestT) => {
       sent.push(body);
@@ -208,6 +213,7 @@ describe("Move to forge-ledger", () => {
         box,
         me: "pat",
         post,
+        ...(apply ? { apply } : {}),
         undoLine: (line: string) => {
           undone.push(line);
           return Promise.resolve();
@@ -265,6 +271,46 @@ describe("Move to forge-ledger", () => {
     expect(
       t.els().some((x) => x.props.said === C.written(1, "facts/forge-orders.corrections.jsonl")),
     ).toBe(true);
+  });
+
+  // ADR 0204 decision 2: the confirm writes and applies in one job, and Undo takes it back.
+  it("writes and applies the move in one job, then Undo takes back exactly what it wrote", async () => {
+    const applied: Api.MapEditT[][] = [];
+    const undone: unknown[] = [];
+    const wrote = [
+      { edit: 0, file: "facts/forge-orders.corrections.jsonl", lines: ['{"fact":"call.12"}'] },
+    ];
+    const t = start([byAnswer, byMe], {
+      apply: (edits) => {
+        applied.push(edits);
+        return Promise.resolve({ wrote, built: true });
+      },
+      undo: (w) => {
+        undone.push(w);
+        return Promise.resolve();
+      },
+    });
+    t.tick(pick(byAnswer));
+    await t.click(C.moveTo("forge-ledger"));
+    await t.click(C.moveConfirm(1, "forge-ledger"));
+    // The preview went through the pairing's own route; the write is one Apply of the map.
+    expect(t.sent).toHaveLength(1);
+    expect(applied).toEqual([
+      [
+        {
+          kind: "add",
+          pair: { from: "forge-orders", to: box, pairs: [{ call: "call.12", api: "e12" }] },
+        },
+      ],
+    ]);
+    expect(t.said()).toContain(COPY.connectAB.connected("forge-orders", "forge-ledger"));
+    expect(t.said()).toContain(COPY.connectAB.notProposed);
+    expect(
+      t.els().some((x) => x.props.said === C.written(1, "facts/forge-orders.corrections.jsonl")),
+    ).toBe(false);
+    await t.click(C.undo);
+    expect(undone).toEqual([wrote]);
+    expect(t.said()).toContain(COPY.connectAB.undone);
   });
 
   it("moves only the ticked moves: a loose call that started ticked is left for Preview", async () => {

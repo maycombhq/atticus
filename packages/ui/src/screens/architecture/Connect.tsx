@@ -12,7 +12,8 @@ import {
   type Loaded,
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
-import { ApplyAndPropose, onWorkChanged } from "../../app/propose.js";
+import { ApplyAndPropose, onWorkChanged, Propose } from "../../app/propose.js";
+import { followJob, JobFailed } from "../../app/job.js";
 import { onwardGroups, pairedStanding, pairedWho } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
@@ -373,6 +374,12 @@ export function Pairing(p: {
   me?: string;
   /** Tests pass their own; the app removes the line through the local API. */
   undoLine?: (line: string) => Promise<unknown>;
+  /**
+   * ADR 0204 decision 2: write and apply in one job (POST /api/map/edits with one `pair`), and
+   * its Undo (POST /api/map/edits/undo). Tests pass their own; a test passing only `post` keeps
+   * the write alone, as before.
+   */
+  apply?: PairApply;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -389,6 +396,10 @@ export function Pairing(p: {
   const [preview, setPreview] = useState<Api.ConnectLinksResultT | undefined>();
   const [written, setWritten] = useState<Api.ConnectLinksResultT | undefined>();
   const [undone, setUndone] = useState<Api.ConnectLinksResultT | undefined>();
+  // ADR 0204 decision 2: what the one job wrote and whether it built, for Undo.
+  const [applied, setApplied] = useState<{ wrote: Api.MapEditWroteT[]; built: boolean }>();
+  const [appliedUndone, setAppliedUndone] = useState(false);
+  const applyIo = p.apply ?? (p.post ? undefined : APP_APPLY);
   // The review (S2): the Apply offered under a waiting pairing is this panel's own. Once work
   // changed (that Apply ended) the calls are read again, so "not on the map yet" doesn't stay
   // beside an arrow the map now draws. Only while a pairing waits: a person's picks are kept.
@@ -540,6 +551,28 @@ export function Pairing(p: {
       { once: true },
     );
     try {
+      // ADR 0204 decision 2: the confirmed pairs written and applied in one job. The rule for
+      // all answers a question, which Edit the map doesn't take: it stays its own write.
+      if (mode === "write" && applyIo && !sending.rule) {
+        const done = await applyIo.apply([
+          { kind: "add", pair: { from: p.from, to: p.box, pairs: sending.pairs } },
+        ]);
+        if (gone()) return;
+        setWritten({
+          written: true,
+          file: preview?.file ?? "",
+          lines: done.wrote.flatMap((w) => ("lines" in w ? w.lines : [])),
+          verify: "",
+          commit: "",
+        });
+        setApplied(done);
+        setAppliedUndone(false);
+        setUndone(undefined);
+        setPreview(undefined);
+        setMovesOnly(false);
+        p.cands.reload?.();
+        return;
+      }
       const r = await post(
         {
           from: p.from,
@@ -594,6 +627,23 @@ export function Pairing(p: {
   };
   const undo = async () => {
     if (!written || undoing) return;
+    if (applied && applyIo) {
+      // One job: exactly what the Apply wrote, while it is as written, then one build.
+      setUndoing(true);
+      setError(undefined);
+      try {
+        await applyIo.undo(applied.wrote);
+        setApplied(undefined);
+        setWritten(undefined);
+        setAppliedUndone(true);
+        p.cands.reload?.();
+      } catch (e) {
+        setError(errorOf(e));
+      } finally {
+        setUndoing(false);
+      }
+      return;
+    }
     setUndoing(true);
     setError(undefined);
     let left = written.lines;
@@ -1063,7 +1113,35 @@ export function Pairing(p: {
           }
         />
       )}
-      {written && (
+      {written && applied && (
+        <div className="stack" role="status">
+          <p className="ev-say">
+            {applied.built
+              ? COPY.connectAB.connected(d.from, d.toName)
+              : COPY.connectAB.savedNotBuilt}
+          </p>
+          <p className="hud">{COPY.connectAB.notProposed}</p>
+          <div className="box-btns">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void undo()}
+              disabled={undoing}
+              aria-busy={undoing}
+            >
+              {undoing ? COPY.connectAB.undoing : C.undo}
+            </button>
+            {written.lines[0] && <MakeRule repo={p.from} line={written.lines[0]} />}
+          </div>
+          <Propose scope="corrections" />
+        </div>
+      )}
+      {appliedUndone && (
+        <p role="status" className="ev-say">
+          {COPY.connectAB.undone}
+        </p>
+      )}
+      {written && !applied && (
         <div className="stack">
           {written.rule && <p className="ev-say">{C.ruleWritten(written.rule.question)}</p>}
           {/* ADR 0188: Apply moves the arrow, then Propose for review. */}
@@ -1102,6 +1180,28 @@ export function Pairing(p: {
     </div>
   );
 }
+
+/** ADR 0204 decision 2: write and apply a pairing in one job, and its Undo. */
+export interface PairApply {
+  apply(edits: Api.MapEditT[]): Promise<{ wrote: Api.MapEditWroteT[]; built: boolean }>;
+  undo(wrote: readonly Api.MapEditWroteT[]): Promise<unknown>;
+}
+const APP_APPLY: PairApply = {
+  apply: async (edits) => {
+    try {
+      const r = await followJob("/api/map/edits", { edits });
+      const res = (r.result ?? {}) as Partial<Api.MapEditsResultT>;
+      return { wrote: (res.wrote ?? []) as Api.MapEditWroteT[], built: res.built === true };
+    } catch (e) {
+      // Saved, the build waiting for a confirm: said, with Undo still possible.
+      const res = e instanceof JobFailed ? e.result : undefined;
+      if (res?.built === false && Array.isArray(res.wrote) && res.wrote.length)
+        return { wrote: res.wrote as Api.MapEditWroteT[], built: false };
+      throw e;
+    }
+  },
+  undo: (wrote) => followJob("/api/map/edits/undo", { wrote }),
+};
 
 /** G4 (ADR 0176): the pairing as a draft reading rule for every repo of this repo's type. */
 function MakeRule({ repo, line }: { repo: string; line: string }) {
