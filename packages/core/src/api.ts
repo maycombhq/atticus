@@ -695,8 +695,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   on a change, beside `fastPath`): its type's only phase before build is plan and it lists no
  *   stories, so no stage runs for it and its next step is its four files, then one hand-off.
  *   Additive only.
+ * 3.19.0 (ADR 0202 point 8, the command line's half): GET /api/status says where the metarepo
+ *   stands as `atticus status --json` does (`StandingView`): this Atticus, the metarepo's stamp,
+ *   whether this Atticus reads its catalog, what the extension needs when it said so, the one
+ *   state that holds and the one command to run, in one line. A refusal (`BuildRefusalView`)
+ *   may carry that line as `standing`, and a `newer-atticus` refusal's `newer[]` entry for
+ *   build.json may name the Atticus that wrote it (`atticus`, point 7), in which case `command`
+ *   installs exactly that version. Additive only.
  */
-export const API_VERSION = "3.18.0";
+export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2011,9 +2018,19 @@ export const BuildRefusalView = z.object({
         version: z.number().int(),
         /** The newest version of it this Atticus reads. */
         reads: z.number().int(),
+        /**
+         * 3.19.0 (ADR 0202 point 7): the Atticus that wrote it, when a newer build.json says so
+         * in the shape of a version; `command` then installs exactly that version.
+         */
+        atticus: z.string().optional(),
       }),
     )
     .optional(),
+  /**
+   * 3.19.0 (ADR 0202 point 8): where the metarepo stands, in the one line `atticus status`
+   * prints (worked out without the upgrade steps' dry runs), when a command refused.
+   */
+  standing: z.string().optional(),
   /** What goes on in a terminal (the build, the hand edits' curate, or the upgrade). */
   command: z.string(),
   /**
@@ -5778,6 +5795,40 @@ export const UpgradeView = z.object({
    */
   newerCatalog: z.string().optional(),
 });
+/**
+ * 3.19.0 (ADR 0202 point 8): GET /api/status and `atticus status --json`: where a metarepo
+ * stands against this Atticus, and the one thing to do about it.
+ */
+export const StandingView = z.object({
+  /** This Atticus. */
+  atticus: z.string(),
+  /** The first of these that holds, in this order. */
+  state: z.enum([
+    "no-metarepo",
+    "catalog-newer",
+    "atticus-behind",
+    "metarepo-behind",
+    "up-to-date",
+  ]),
+  /** The Atticus the metarepo's stamp names (.atticus/metarepo.yaml). */
+  stamp: z.string().optional(),
+  /** The stamp is there but isn't one this Atticus reads. */
+  stampUnread: z.literal(true).optional(),
+  /** `none`: no catalog yet; `read`: this Atticus reads it; `newer`: a newer Atticus built it. */
+  catalog: z.enum(["none", "read", "newer"]),
+  /** The Atticus that built the catalog, when a newer build.json says so (ADR 0202 point 7). */
+  catalogBuiltBy: z.string().optional(),
+  /** The Atticus the editor's extension needs, when it said so (ATTICUS_EXTENSION_NEEDS). */
+  extensionNeeds: z.string().optional(),
+  /** The upgrade steps that wait. */
+  pendingSteps: z.number().int(),
+  /** The one command to run; none when up to date. */
+  do: z.string().optional(),
+  /** All of it in one line, as `atticus status` prints it. */
+  line: z.string(),
+});
+export type StandingViewT = z.infer<typeof StandingView>;
+
 // ------------------------------------------------------------------ set up from the app (ADR 0190)
 
 /**
@@ -8767,6 +8818,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400],
     },
   },
+  "/api/status": {
+    get: {
+      id: "getStatus",
+      summary:
+        "3.19.0 (ADR 0202): where this metarepo stands (atticus status --json): this Atticus, the metarepo's stamp, whether this Atticus reads its catalog, what the extension needs, the state that holds (no-metarepo, catalog-newer, atticus-behind, metarepo-behind, up-to-date), the one command to run and all of it in one line. Reads only",
+      tag: "run",
+      ok: { status: 200, schema: "StandingView", description: "OK" },
+    },
+  },
   "/api/upgrade": {
     get: {
       id: "getUpgrade",
@@ -10144,6 +10204,7 @@ export function openApiDocument(): Record<string, unknown> {
     UndoBatchResult,
     QuestionsProposeView,
     UpgradeView,
+    StandingView,
     TaskContextView,
     HistoryRecordingView,
     FileEditView,
