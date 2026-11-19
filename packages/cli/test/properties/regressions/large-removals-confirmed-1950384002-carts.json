@@ -1,0 +1,66 @@
+{
+  "invariant": "large-removals-confirmed",
+  "note": "large-removals-confirmed: verify-write removed 1 of forge-ledger's 4 records without the removals being confirmed. As large-removals-confirmed-1950384002.json, with a second POST /carts of the ledger's to a host no repo answers on (a loose end): only the call to orders made the arrow, and it is moved, so the arrow counts toward neither limit; the loose end's call, unpaired, is no call of the arrow's.",
+  "seed": 1950384002,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "POST",
+              "path": "/carts",
+              "host": "legacy-orders.forge.example"
+            },
+            {
+              "method": "POST",
+              "path": "/carts",
+              "host": "orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 4,
+      "ok": false
+    }
+  ]
+}

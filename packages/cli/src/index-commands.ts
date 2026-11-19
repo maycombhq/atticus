@@ -3,7 +3,7 @@ import {
   mapIdOf,
   openIndex,
   QueryError,
-  receiversOf,
+  receiversOfAll,
   runContextTool,
   askLookup,
   mapFault,
@@ -61,7 +61,12 @@ export async function askCommand(
       ? impactCommand(
           root,
           asked.id,
-          { json: o.json === true, ...(asked.receivers ? { receivers: true } : {}) },
+          {
+            json: o.json === true,
+            ...(asked.receivers ? { receivers: true } : {}),
+            // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
+            ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
+          },
           to,
         )
       : queryCommand(root, asked.query, { json: o.json === true }, to);
@@ -208,7 +213,14 @@ const impactRows = (affected: Affected[]) =>
 export async function impactCommand(
   root: string,
   id: string,
-  o: { json?: boolean; depth?: number; receivers?: boolean },
+  o: {
+    json?: boolean;
+    depth?: number;
+    receivers?: boolean;
+    /** With `receivers`: more roots (a topic's other consumers' Endpoints), and its name. */
+    also?: string[];
+    label?: string;
+  },
   io: Output,
 ): Promise<number> {
   const sides = await mapSides(root);
@@ -228,7 +240,8 @@ export async function impactCommand(
     };
     const owners = { owner: sides.owner };
     if (o.receivers) {
-      const r = receiversOf(ix, rootId, o.depth ?? 4, owners)!;
+      const r = receiversOfAll(ix, [rootId, ...(o.also ?? [])], o.depth ?? 4, owners);
+      const label = o.also?.length ? (o.label ?? rootId) : rootId;
       if (o.json) {
         io.out(JSON.stringify({ ...named, ...r }, null, 2));
         return 0;
@@ -236,13 +249,13 @@ export async function impactCommand(
       said(io);
       io.out(
         r.receivers.length
-          ? `${rootId} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
-          : `Nothing in the map receives ${rootId}.`,
+          ? `${label} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
+          : `Nothing in the map receives ${label}.`,
       );
       for (const l of r.receivers.length ? impactRows(r.receivers) : []) io.out(`  ${l}`);
       if (r.further.length) {
         io.out(
-          `Further, through a receiver (${r.further.length} record${r.further.length === 1 ? "" : "s"} that ${r.further.length === 1 ? "doesn't" : "don't"} receive ${rootId}):`,
+          `Further, through a receiver (${r.further.length} record${r.further.length === 1 ? "" : "s"} that ${r.further.length === 1 ? "doesn't" : "don't"} receive ${label}):`,
         );
         for (const l of impactRows(r.further)) io.out(`  ${l}`);
       }

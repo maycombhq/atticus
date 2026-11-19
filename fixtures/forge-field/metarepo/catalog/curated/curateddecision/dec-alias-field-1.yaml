@@ -1,0 +1,13 @@
+schemaVersion: 5
+kind: CuratedDecision
+id: dec-alias-field-1
+status: current
+confidence: asserted
+action: alias
+at: 2026-11-12T00:00:00Z
+by: pat
+evidence: []
+reason: the same thing under two names
+target: term.bababa-keltokren
+value:
+  - renbaba keltokren

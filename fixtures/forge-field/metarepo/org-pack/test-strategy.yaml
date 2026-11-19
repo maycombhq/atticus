@@ -1,0 +1,46 @@
+# Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.
+schemaVersion: 1
+matrix:
+  - changeType: feature
+    risk: low
+    required:
+      - unit
+      - contract
+  - changeType: feature
+    risk: medium
+    required:
+      - unit
+      - contract
+      - integration
+      - regression
+  - changeType: feature
+    risk: high
+    required:
+      - unit
+      - contract
+      - integration
+      - e2e
+      - regression
+      - performance
+      - security
+  - changeType: integration
+    risk: medium
+    required:
+      - unit
+      - contract
+      - integration
+  - changeType: bug-fix
+    risk: low
+    required:
+      - unit
+      - regression
+  - changeType: emergency-fix
+    risk: high
+    required:
+      - unit
+      - regression
+definitionOfReady:
+  - Who it is for and the outcome, traced to the brief
+  - Acceptance criteria in Given/When/Then form
+  - Systems and repos it touches
+  - Dependencies named

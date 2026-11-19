@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
@@ -569,15 +569,179 @@ export async function accessible(page: Page, where: string): Promise<void> {
   expect(bad, `accessibility on ${where}`).toEqual([]);
 }
 
+// ------------------------------------------------------------------ the field-shaped estate
+
 /**
- * A fresh Forge metarepo and its own server for one journey (one test file): its steps run in
- * order and share the state they build, and no journey sees another's.
+ * Beta.30 (slice 9): the estates a journey runs on. `tidy` is the Forge fixture of seven tidy
+ * repos (fixtures/forge/metarepo); `field` is the field-shaped estate (fixtures/forge-field, made
+ * from packages/cli/test/field-estate.ts by scripts/write-field-fixture.mjs), which holds every
+ * shape a field report has named: gateway proxies whose targets are deploy tokens (`@name@`,
+ * `${NAME}`), a repo with no System, ids with dots, nested payload fields, ssh and https origins,
+ * a non-gateway callee, an empty repo and a repo nobody read, a topic with consumers in two repos,
+ * hand pairings, a legacy slot from before the upgrade and a call joined to the wrong box.
  */
-export function forgeJourney(): () => App {
+export type Estate = "tidy" | "field";
+export const ESTATES: readonly Estate[] = ["tidy", "field"];
+
+const FIELD = join(FIXTURES, "forge-field");
+
+/** What fixtures/forge-field/estate.json says of the field estate (packages/cli/test/forge-field.ts). */
+export interface FieldInfo {
+  /** The repos read from facts. */
+  repos: string[];
+  /** The services whose records are kept from before the upgrade. */
+  legacy: string[];
+  links: number;
+  suppressed: string[];
+  emptyRepo?: string;
+  unreadRepo?: string;
+  topic?: { name: string; publisher: string; listener: string; listeners: string[] };
+  wrongBox?: {
+    from: string;
+    call: string;
+    method: string;
+    path: string;
+    joins: string;
+    goes: string;
+  };
+  /** The change the metarepo holds: on the quick path, its four files written. */
+  change: string;
+  /** The commit of each clone, which its facts cite. */
+  commits: Record<string, string>;
+  /** The repos whose clones are under repos/. */
+  clones: string[];
+  /** Every repo the manifest lists. */
+  manifest: string[];
+}
+
+export function fieldInfo(): FieldInfo {
+  return JSON.parse(readFileSync(join(FIELD, "estate.json"), "utf8")) as FieldInfo;
+}
+
+/** The change each estate's metarepo holds, for the routes that name one. */
+export function changeOf(estate: Estate): string {
+  return estate === "tidy" ? "add-transfer-limit" : fieldInfo().change;
+}
+
+/**
+ * The field-shaped estate as a team has it after the upgrade: the fixture's metarepo, its clones
+ * in the workspace (and the empty repo's clone with nothing in it), the catalog built with
+ * `atticus catalog build`, and the metarepo committed. The Console starts with nothing run.
+ */
+export async function forgeFieldMetarepo(): Promise<string> {
+  const info = fieldInfo();
+  const root = await mkdtemp(join(tmpdir(), "atticus-journey-field-"));
+  await cp(join(FIELD, "metarepo"), root, { recursive: true });
+  // The stamp names the Atticus that wrote the fixture: the one under test upgraded it, so a
+  // release since doesn't make every page say to upgrade.
+  const version = /\d+\.\d+\.\d+\S*/.exec(
+    spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).stdout,
+  )?.[0];
+  if (!version) throw new Error("atticus --version named no version.");
+  const stamp = join(root, ".atticus", "metarepo.yaml");
+  writeFileSync(
+    stamp,
+    readFileSync(stamp, "utf8").replace(/^atticus: .*$/m, `atticus: ${version}`),
+  );
+  // Each clone at its one commit, made the same on every machine (packages/cli/test/forge-field.ts
+  // `commitClone`): its facts cite that commit. Hermetic: no user or system git config is read.
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "Forge",
+    GIT_AUTHOR_EMAIL: "forge@example.com",
+    GIT_COMMITTER_NAME: "Forge",
+    GIT_COMMITTER_EMAIL: "forge@example.com",
+    GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
+    GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  for (const id of info.clones) {
+    const clone = join(root, "workspace", id);
+    await cp(join(FIELD, "repos", id), clone, { recursive: true });
+    const g = (...a: string[]) => {
+      const r = spawnSync(
+        "git",
+        [
+          "-c",
+          "core.autocrlf=false",
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "core.filemode=false",
+          ...a,
+        ],
+        { cwd: clone, env, encoding: "utf8" },
+      );
+      if (r.status !== 0)
+        throw new Error(`git ${a.join(" ")} failed in ${id}'s clone: ${r.stderr || r.error}`);
+      return r.stdout.trim();
+    };
+    g("init", "-q", "-b", "main", "--object-format=sha1");
+    g("add", "-A");
+    g("commit", "-q", "--no-verify", "-m", "Forge fixture");
+    const head = g("rev-parse", "HEAD");
+    if (head !== info.commits[id])
+      throw new Error(
+        `${id}'s clone is at ${head}, not ${info.commits[id]} as its facts say: run node scripts/write-field-fixture.mjs.`,
+      );
+  }
+  if (info.emptyRepo)
+    await mkdir(join(root, "workspace", info.emptyRepo, ".git"), { recursive: true });
+  const built = atticus(root, "catalog", "build");
+  if (!existsSync(join(root, "catalog/sources/build.json")))
+    throw new Error(`atticus catalog build didn't build the field estate: ${built}`);
+  await rm(join(root, ".atticus", "logs"), { recursive: true, force: true });
+  // The metarepo's own .gitignore (atticus init's) keeps the workspace and local state out.
+  const git = (...a: string[]) =>
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Forge",
+        "-c",
+        "user.email=forge@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        ...a,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+  git("init", "-q", "-b", "main");
+  git("config", "user.name", "Priya Nair");
+  git("config", "user.email", "priya@forge.example");
+  git("add", "-A");
+  git("commit", "-qm", "Forge estate, field-shaped");
+  return root;
+}
+
+/**
+ * A route of the tidy estate as the estate given has it: its change, and the component an impact
+ * walk starts from (on the field estate, the topic's publisher, whose walk reaches both of the
+ * topic's consumers). The tidy estate's routes are as they are.
+ */
+export function routeOf(estate: Estate, route: string): string {
+  if (estate === "tidy") return route;
+  return route
+    .replaceAll("add-transfer-limit", fieldInfo().change)
+    .replace(/([?&]q=)ledger-api\b/, `$1${fieldInfo().topic!.publisher}`);
+}
+
+/** A metarepo of the estate given: the tidy Forge fixture, or the field-shaped one. */
+export function metarepoOf(estate: Estate): Promise<string> {
+  return estate === "tidy" ? forgeMetarepo() : forgeFieldMetarepo();
+}
+
+/**
+ * A fresh Forge metarepo and its own server for one journey (one test file, or one describe of
+ * it per estate): its steps run in order and share the state they build, and no journey sees
+ * another's. `estate: "field"` seeds the field-shaped estate instead of the tidy one.
+ */
+export function forgeJourney(o: { estate?: Estate } = {}): () => App {
   let app: App | undefined;
   test.describe.configure({ mode: "serial" });
   test.beforeAll(async () => {
-    app = await startApp(await forgeMetarepo());
+    app = await startApp(await metarepoOf(o.estate ?? "tidy"));
   });
   test.afterAll(async () => {
     if (app) await stopApp(app);
