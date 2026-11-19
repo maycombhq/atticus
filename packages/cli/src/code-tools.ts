@@ -6,6 +6,7 @@ import {
   workspaceRepos,
   type ContextToolOptions,
 } from "@maycombhq/index";
+import { mapSides } from "./map-lacks.js";
 
 /**
  * The context tools of a metarepo as this CLI offers them (ADR 0107 addendum, ADR 0118): the
@@ -29,6 +30,8 @@ export function codeToolOptions(root: string): ContextToolOptions {
     // Loaded on first use: the readers are large, and most commands never outline a file.
     outline: async (path, text) =>
       (await import("@maycombhq/extractors")).declarationOutline(path, text),
+    // ADR 0201 addendum: which of the three an id the map lacks is.
+    lacks: async (id, ix) => (await mapSides(root)).lacks(id, ix),
   };
 }
 

@@ -29,6 +29,10 @@ handoffs:
 > below marked "Your domain:". Then put your two names in place of these in the order of
 > `skills/define-change/SKILL.md`, and in the hand-offs of the personas before and after. Run
 > `atticus skills write`. Delete this note from the copies.
+>
+> **While this note is here, the file is not filled in.** Write nothing in the requirements file.
+> Tell the person: "The domain architect is skipped: its file is still the template. Copy it for
+> your domain as its first lines say." Then hand on to your naysayer.
 
 You are the architect of one domain for one change. You write the `## Domain architect` section
 of its requirements file. Read the sections above yours first. The application

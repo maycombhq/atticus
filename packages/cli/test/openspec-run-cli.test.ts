@@ -63,6 +63,80 @@ describe("atticus openspec <args...>", () => {
     expect(printed.cwd).toBe(root);
   });
 
+  it("passes on an option only OpenSpec knows: validate --strict, as the hand-off runs it (b30 proof run)", async () => {
+    const root = await metarepo(["add-transfer-limit"]);
+    // "Unknown option --strict… Nothing was run" (exit 2), against ADR 0201 and the guide.
+    for (const args of [
+      ["validate", "add-transfer-limit", "--strict"],
+      ["validate", "add-transfer-limit", "--type", "change", "--strict", "--no-interactive"],
+      ["validate", "--all", "--strict", "--concurrency", "2"],
+    ]) {
+      const r = await run(["openspec", ...args, "--root", root]);
+      expect(r.err, args.join(" ")).toEqual([]);
+      expect(r.code, args.join(" ")).toBe(0);
+      expect((JSON.parse(r.out.at(-1)!) as { args: string[] }).args).toEqual(args);
+    }
+    // Atticus's own commands under the same word still refuse a flag they don't know.
+    const setup = await run(["openspec", "check", "--strikt", "--root", root]);
+    expect(setup.code).toBe(2);
+    expect(setup.err.join("\n")).toMatch(/Unknown option --strikt/);
+  });
+
+  it("runs only what stays inside the metarepo and writes nothing: an allow list (review of b30/proof-fixes)", async () => {
+    const root = await metarepo(["add-transfer-limit", "bulk-orders"]);
+    // What Atticus's own messages and the hand-off name, and the read-only options of each.
+    for (const args of [
+      ["validate", "add-transfer-limit", "--type", "change", "--strict", "--no-interactive"],
+      ["validate", "--specs", "--json", "--report", "findings"],
+      ["list", "--specs", "--json"],
+      ["list", "--all", "--sort", "name"],
+      ["show", "add-transfer-limit", "--json", "--deltas-only"],
+      ["show", "add-transfer-limit", "-r", "2", "--json"],
+      ["status", "--change", "bulk-orders", "--json"],
+      ["instructions", "apply", "--change", "bulk-orders"],
+      ["instructions", "tasks", "--change", "bulk-orders", "--schema", "org-flow"],
+      ["templates", "--json"],
+      ["schemas", "--json"],
+      ["view"],
+      ["version"],
+      ["doctor", "--json"],
+      ["help", "validate"],
+      ["validate", "--help"],
+    ]) {
+      const r = await run(["openspec", ...args, "--root", root]);
+      expect(r.err, args.join(" ")).toEqual([]);
+      expect(r.code, args.join(" ")).toBe(0);
+      expect(r.out.at(-1), args.join(" ")).toMatch(/^\{"args":/);
+      expect((JSON.parse(r.out.at(-1)!) as { args: string[] }).args).toEqual(args);
+    }
+    // What would write outside the metarepo, change it behind Atticus's back, or reach the
+    // network: refused before OpenSpec runs, with what Atticus runs instead.
+    for (const [args, words] of [
+      [["validate", "--all", "--store", "team"], "--store runs OpenSpec on another root"],
+      [["list", "--store=team"], "--store runs OpenSpec on another root"],
+      [["archive", "add-transfer-limit", "--yes"], "atticus change archive <id>"],
+      [["archive", "add-transfer-limit", "--skip-specs"], "atticus change archive <id>"],
+      [["validate", "add-transfer-limit", "--yes"], "--yes isn't one atticus openspec passes on"],
+      [["validate", "add-transfer-limit", "--no-validate"], "--no-validate isn't one"],
+      [["init", "/tmp/elsewhere"], "atticus openspec setup"],
+      [["update", "."], "atticus upgrade"],
+      [["config", "set", "telemetry", "on"], "OpenSpec's own configuration"],
+      [["completion", "install"], "your shell's set-up"],
+      [["new", "change", "x"], "atticus change new"],
+      [["feedback", "hello"], "reaches the network"],
+      [["version", "--check"], "reaches the network"],
+      [["context", "--code-workspace", "/tmp/x.code-workspace"], "isn't one atticus openspec runs"],
+      [["store", "add", "x"], "isn't one atticus openspec runs"],
+      [["show", "a", "b"], "takes one name"],
+    ] as const) {
+      const r = await run(["openspec", ...args, "--root", root]);
+      expect(r.code, args.join(" ")).toBe(2);
+      expect(r.out, args.join(" ")).toEqual([]);
+      expect(r.err.join("\n"), args.join(" ")).toContain(words);
+      expect(r.err.at(-1), args.join(" ")).toBe("Nothing was run.");
+    }
+  });
+
   it("gives OpenSpec's own exit code and messages back", async () => {
     const root = await metarepo(["add-transfer-limit"]);
     const r = await run(["openspec", "validate", "boom", "--root", root]);
