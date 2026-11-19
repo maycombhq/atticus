@@ -7,6 +7,12 @@ import { changeFolder, changeStore } from "./store.js";
 /** A `## <repo>` heading of tasks.md: one word, shaped like an id. */
 const TASK_REPO = /^##\s+`?([a-z0-9][a-z0-9._-]*)`?\s*$/gm;
 
+/**
+ * Whether a heading is shaped like a repo id: lower case, with a dash, a dot or an underscore
+ * between its parts (`forge-approvals-api`), so a heading of notes (`## overview`) is no repo.
+ */
+export const looksLikeRepoId = (h: string): boolean => /^[a-z0-9]+([._-][a-z0-9]+)+$/.test(h);
+
 /** The repos a tasks.md groups its tasks under, in the file's order, each once. */
 export function taskRepoHeadings(tasks: string): string[] {
   return [...new Set([...tasks.matchAll(TASK_REPO)].map((m) => m[1]!))];
@@ -30,7 +36,9 @@ export async function plannedByChange(
   return [
     ...new Set([
       ...items.filter((x) => x.by === undefined).map((x) => x.id),
-      ...taskRepoHeadings(tasks).filter((r) => !known.has(r) && !elsewhere.has(r)),
+      ...taskRepoHeadings(tasks).filter(
+        (r) => !known.has(r) && !elsewhere.has(r) && looksLikeRepoId(r),
+      ),
     ]),
   ];
 }

@@ -478,7 +478,19 @@ export function checkRequirements(
       for (const c of map.cites ? evidenceCites(cells[1]!) : []) {
         const known = map.cites!(c.id);
         if (!known?.length) continue;
-        const same = known.filter((k) => c.path === k.path || c.path === `${k.repo}/${k.path}`);
+        // A Windows path reads as its forward-slash form; a bare file name is the record's file
+        // of that name when only one of its files has it (the review of b30/proof-fixes).
+        const path = c.path.replace(/\\/g, "/");
+        const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+        const byName = path.includes("/")
+          ? []
+          : [...new Set(known.filter((k) => base(k.path) === path).map((k) => k.path))];
+        const same = known.filter(
+          (k) =>
+            path === k.path ||
+            path === `${k.repo}/${k.path}` ||
+            (byName.length === 1 && k.path === byName[0]),
+        );
         if (same.some((k) => k.line === undefined || Math.abs(k.line - c.line) <= NEAR)) continue;
         const where = same.length
           ? `line${same.length === 1 ? "" : "s"} ${same.map((k) => k.line).join(", ")} of that file`

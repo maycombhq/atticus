@@ -1,7 +1,6 @@
 import {
   impact,
-  namedAs,
-  namedRecord,
+  mapIdOf,
   openIndex,
   QueryError,
   receiversOf,
@@ -214,22 +213,19 @@ export async function impactCommand(
 ): Promise<number> {
   const sides = await mapSides(root);
   return withIndex(root, io, (ix) => {
-    let rootId = id;
-    if (!ix.find(id).length) {
+    // The one lookup show and walk make (mapIdOf): the id, or the record whose name it is.
+    const found = mapIdOf(ix, id, "records");
+    if (!found || "several" in found) {
       // "Not in the map" only when the map was read whole and has no such id (ADR 0201).
       const fault = mapFault(ix, root);
-      const by = fault ? undefined : namedRecord(ix, id);
-      if (by && "several" in by) {
-        io.err(severalNamed(id, by.several));
-        return 1;
-      }
-      if (!by) {
-        io.err(fault ?? sides.lacks(id, ix));
-        return 1;
-      }
-      rootId = by.id;
+      io.err(fault ?? (found ? severalNamed(id, found.several) : sides.lacks(id, ix)));
+      return 1;
     }
+    const rootId = found.id;
     const named = rootId === id ? {} : { named: id };
+    const said = (to: Output) => {
+      for (const l of found.said) to.out(l);
+    };
     const owners = { owner: sides.owner };
     if (o.receivers) {
       const r = receiversOf(ix, rootId, o.depth ?? 4, owners)!;
@@ -237,7 +233,7 @@ export async function impactCommand(
         io.out(JSON.stringify({ ...named, ...r }, null, 2));
         return 0;
       }
-      if (rootId !== id) io.out(namedAs(id, rootId));
+      said(io);
       io.out(
         r.receivers.length
           ? `${rootId} is received by ${r.receivers.length} component${r.receivers.length === 1 ? "" : "s"}:`
@@ -257,7 +253,7 @@ export async function impactCommand(
       io.out(JSON.stringify({ ...named, ...r }, null, 2));
       return 0;
     }
-    if (rootId !== id) io.out(namedAs(id, rootId));
+    said(io);
     io.out(
       `Changing ${rootId} reaches ${r.affected.length} record${r.affected.length === 1 ? "" : "s"}:`,
     );

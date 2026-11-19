@@ -354,6 +354,39 @@ export function namedRecord(
   return ids.length === 0 ? undefined : ids.length === 1 ? { id: ids[0]! } : { several: ids };
 }
 
+/** What is said when an id the map has is also the name of another record: a topic or an entry. */
+export function alsoNamed(id: string, other: string, topic: boolean): string {
+  return `${id} is also the name of the ${topic ? "topic" : "entry"} ${other}.`;
+}
+
+/**
+ * The one lookup `impact`, `show`, `walk` and `show_code` make of what they are given (the review
+ * of b30/proof-fixes): the id itself when the map has it (`records`: a catalog record, for
+ * impact; `nodes`: anything the index holds, for the context tools), said to be also a topic's
+ * or an entry's name when another record has that name; else the one record whose name it is,
+ * said so; else the ids of the several records with that name. Undefined when none.
+ */
+export function mapIdOf(
+  ix: CatalogIndex,
+  id: string,
+  by: "records" | "nodes",
+): { id: string; said: string[] } | { several: string[] } | undefined {
+  const has = (x: string) => (by === "records" ? ix.find(x).length : ix.nodes(x).length) > 0;
+  const named = namedRecord(ix, id);
+  const topic = (x: string) =>
+    (ix.get("Endpoint", x) as { endpointType?: string } | undefined)?.endpointType ===
+    "event-topic";
+  if (has(id))
+    return {
+      id,
+      said:
+        named && "id" in named && named.id !== id ? [alsoNamed(id, named.id, topic(named.id))] : [],
+    };
+  if (!named) return undefined;
+  if ("several" in named) return named;
+  return has(named.id) ? { id: named.id, said: [namedAs(id, named.id)] } : undefined;
+}
+
 /** What is said of a name several records have: which, and to name the one meant. */
 export function severalNamed(name: string, ids: string[]): string {
   return `${name} is the name of several records of the map (${ids.join(", ")}). Name the id of the one meant.`;

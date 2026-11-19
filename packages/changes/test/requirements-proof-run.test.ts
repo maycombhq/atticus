@@ -164,6 +164,9 @@ describe("a file and line beside a record is one the record cites", () => {
       "`forge-svc-06.put-rate-2` `forge-svc-06/src/main/java/forge/web/RateController.java:38`",
       // A file the record cites with no line: any line of it.
       "`forge-svc-06.put-rate-2` api/openapi.yaml:212",
+      // A bare file name, when only one of the record's files has it, and a Windows path.
+      "`forge-svc-06.put-rate-2` RateController.java:41",
+      "`forge-svc-06.put-rate-2` src\\main\\java\\forge\\web\\RateController.java:40",
       // No file, and an id that is no record (a manifest repo, a planned id): nothing to check.
       "`forge-svc-06.put-rate-2`; `forge-audit` src/Audit.java:9",
     ])
@@ -207,6 +210,31 @@ describe("a file and line beside a record is one the record cites", () => {
         `req.md:${FIRST_ROW}: the evidence cites src/main/java/forge/web/RateController.java:90 for forge-svc-06.put-rate-2, which the map read from line 40 of that file. Cite a file and line the map cites for it (atticus context show forge-svc-06.put-rate-2), or name the id alone.`,
       ],
     ]);
+  });
+
+  it("refuses a bare file name that more than one of the record's files has", () => {
+    const twice: RequirementsMap = {
+      ...map,
+      cites: (id) =>
+        id === "forge-svc-06.put-rate-2"
+          ? [
+              { path: "src/main/java/forge/web/RateController.java", line: 40 },
+              { path: "src/test/java/forge/web/RateController.java", line: 40 },
+            ]
+          : map.cites!(id),
+    };
+    const r = checkRequirements(
+      parseRequirements(
+        file(
+          [],
+          [row("`forge-svc-06.put-rate-2` RateController.java:40", "noor", "Yes", "answered")],
+        ),
+      ),
+      has,
+      "req.md",
+      twice,
+    );
+    expect(r.reasons.map((x) => x.code)).toEqual(["requirements.wrong-line"]);
   });
 
   it("checks nothing of this when the caller gives no map to read the lines from", () => {

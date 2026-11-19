@@ -14,7 +14,7 @@ import { readChangeRepos } from "@maycombhq/workspace";
 import type { ChangeContext } from "./context.js";
 import { tableWith } from "./markdown.js";
 import type { SignalFactor } from "./policy.js";
-import { taskRepoHeadings } from "./planned.js";
+import { looksLikeRepoId, taskRepoHeadings } from "./planned.js";
 import { decodeRequirements, parseRequirements, REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder } from "./store.js";
 import { outsideKindOf, outsideSystemsOf, type OutsideKind } from "./outside.js";
@@ -303,8 +303,13 @@ export async function changeFootprint(
   // ADR 0201: a quick change has no target flows. What it touches is what its own files name.
   const type = ctx.orgPack.changeTypes.types.find((t) => t.id === change.type);
   const quick = !!type && quickPathOf(type);
-  const staged = await stageFootprint(ctx, dir, { get, isSystem, outsideKind, ref }, quick);
   const named = quick ? await requirementsIds(dir) : [];
+  const staged = await stageFootprint(
+    ctx,
+    dir,
+    { get, isSystem, outsideKind, ref },
+    quick ? { planned: new Set(named) } : undefined,
+  );
   if (named.length) from.add(REQUIREMENTS_FILE);
   for (const f of staged.from) from.add(f);
   for (const r of staged.repos) repos.add(r);
@@ -500,8 +505,11 @@ async function stageFootprint(
     outsideKind: (id: string) => OutsideKind | undefined;
     ref: (id: string) => void;
   },
-  /** ADR 0201: a quick change, whose tasks.md's repos count whether or not anything lists them. */
-  quick = false,
+  /**
+   * ADR 0201: a quick change, whose tasks.md's repos count whether or not a manifest lists them,
+   * with the ids its requirements file plans.
+   */
+  quick?: { planned: ReadonlySet<string> },
 ): Promise<Staged> {
   const out: Staged = {
     from: [],
@@ -815,8 +823,15 @@ async function stageFootprint(
   // A quick change's tasks.md is its only word on where the work is: a repo it plans (or another
   // open change plans) is under no manifest yet, and two changes under it still overlap (b30
   // proof run: `change conflicts` said nothing overlapped).
+  // A heading of notes (`## overview`) is none: a repo counts when a manifest lists it, the
+  // change plans it, or it is shaped like a repo id (the review of b30/proof-fixes).
   if (quick)
-    for (const r of taskRepoHeadings(tasksText)) if (!taskRepos.includes(r)) taskRepos.push(r);
+    for (const r of taskRepoHeadings(tasksText))
+      if (
+        !taskRepos.includes(r) &&
+        (manifestRepos.has(r) || quick.planned.has(r) || looksLikeRepoId(r))
+      )
+        taskRepos.push(r);
   if (taskRepos.length) {
     out.from.push("tasks.md");
     for (const r of taskRepos) out.repos.add(r);

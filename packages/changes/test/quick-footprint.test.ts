@@ -78,7 +78,7 @@ async function twoChanges() {
     root,
     "Rate-updated event",
     RATES,
-    "# Tasks\n\nNotes that are no repo.\n\n## forge-approvals-api\n\n- [ ] t1 Publish the event\n\n## forge-ledger\n\n- [ ] t2 Listen to it (after t1)\n",
+    "# Tasks\n\nNotes that are no repo.\n\n## overview\n\nWhat the waves are.\n\n## forge-approvals-api\n\n- [ ] t1 Publish the event\n\n## forge-ledger\n\n- [ ] t2 Listen to it (after t1)\n",
   );
   return { root, portal, rates };
 }
@@ -92,6 +92,7 @@ describe("a quick change's footprint", () => {
     // A record the requirements only cite as evidence is not one the change touches.
     expect(a.records).toEqual(["forge-approvals-api", "forge-approvals-web"]);
     const b = await changeFootprint(ctx, rates);
+    // `## overview` is a heading of notes: no manifest lists it, nothing plans it, no repo id has its shape.
     expect(b.repos).toEqual(["forge-approvals-api", "forge-ledger"]);
     expect(b.records).toEqual(["forge-approvals-api", "forge.rates.updated"]);
     expect(b.from).toEqual(expect.arrayContaining(["requirements.md", "tasks.md"]));

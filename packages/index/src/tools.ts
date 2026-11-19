@@ -17,7 +17,7 @@ import {
   type ToolDefinition,
 } from "@maycombhq/core";
 import { notInMap } from "./ask.js";
-import { namedAs, namedRecord, severalNamed } from "./graph.js";
+import { mapIdOf, severalNamed } from "./graph.js";
 import type { CatalogIndex } from "./catalog-index.js";
 import { globMatcher } from "./glob.js";
 import { fuse, idMatches, matchesWhole, queryWords, type GraphNodeRow } from "./select.js";
@@ -459,19 +459,15 @@ function nodesOf(
   id: string,
   root: string,
 ): { nodes: GraphNodeRow[]; named: string[] } {
-  const nodes = ix.nodes(id);
-  if (nodes.length) return { nodes, named: [] };
+  // The one lookup impact makes too (mapIdOf): the id, or the record whose name it is.
+  const found = mapIdOf(ix, id, "nodes");
+  if (found && "id" in found) return { nodes: ix.nodes(found.id), named: found.said };
   const fault = mapFault(ix, root);
   if (fault) throw new ContextToolError(fault);
-  const by = namedRecord(ix, id);
-  if (by && "several" in by) throw new ContextToolError(severalNamed(id, by.several));
-  const found = by ? ix.nodes(by.id) : [];
-  if (!by || !found.length) {
-    const e = new ContextToolError(notInMap(id));
-    e.lacking = id;
-    throw e;
-  }
-  return { nodes: found, named: [namedAs(id, by.id)] };
+  if (found) throw new ContextToolError(severalNamed(id, found.several));
+  const e = new ContextToolError(notInMap(id));
+  e.lacking = id;
+  throw e;
 }
 
 /**
@@ -726,11 +722,13 @@ async function showCodeTool(
   let cites: Cite[];
   if (id) {
     if (!ix) throw new ContextToolError("show_code by id needs the index.");
-    const found = nodesOf(ix, id.replace(/#\d+$/, ""), root);
-    // A topic's name stands for its record here too.
-    cites = citesOf(ix, root, found.named.length ? found.nodes[0]!.id : id);
+    const step = /#\d+$/.exec(id)?.[0] ?? "";
+    const found = nodesOf(ix, id.slice(0, id.length - step.length), root);
+    // A topic's name stands for its record here too, and a step's #n stays with it.
+    const at = `${found.nodes[0]!.id}${step}`;
+    cites = citesOf(ix, root, at);
     if (!cites.length)
-      return `${id} cites no line of code (it may cite a wiki page or a document: show it).`;
+      return `${at} cites no line of code (it may cite a wiki page or a document: show it).`;
   } else {
     const repo = str(input.repo);
     const path = str(input.path);

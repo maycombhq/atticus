@@ -1,8 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import {
   impact,
+  mapIdOf,
   namedRecord,
   nearestIds,
   notInMap,
@@ -336,6 +338,62 @@ describe('show on a change (b30 proof run: a quick change read "systems none nam
     const ix = await openIndex(root);
     const out = await runContextTool(ix, root, "show", { id: "add-rate-event" });
     expect(out).toContain("Planned (requirements.md): forge.rates.updated: the new topic.");
+    ix.close();
+  });
+});
+
+describe("one lookup for an id or a name (review of b30/proof-fixes)", () => {
+  /** A system whose id is also the name of the topic topic.transfers-completed. */
+  async function withTwin(): Promise<string> {
+    const root = await retrievalRoot();
+    const p = parseRecord({
+      schemaVersion: 1,
+      status: "current",
+      kind: "System",
+      id: "transfers.completed",
+      confidence: "verified",
+      name: "Transfers completed",
+      boundary: "internal",
+      evidence: [{ source: "config", repo: "forge-ledger", path: "forge.yaml", line: 2 }],
+    });
+    if (!p.ok) throw new Error(JSON.stringify(p.issues));
+    const f = join(root, "catalog/generated", recordPath(p.record));
+    await mkdir(join(f, ".."), { recursive: true });
+    await writeFile(f, serializeRecord(p.record));
+    return root;
+  }
+
+  it("says when an id is also a topic's name, in show, walk and impact alike", async () => {
+    const root = await withTwin();
+    const ix = await openIndex(root);
+    const also = "transfers.completed is also the name of the topic topic.transfers-completed.";
+    expect(mapIdOf(ix, "transfers.completed", "records")).toEqual({
+      id: "transfers.completed",
+      said: [also],
+    });
+    expect(mapIdOf(ix, "transfers.completed", "nodes")).toEqual({
+      id: "transfers.completed",
+      said: [also],
+    });
+    expect(mapIdOf(ix, "topic.transfers-completed", "records")).toEqual({
+      id: "topic.transfers-completed",
+      said: [],
+    });
+    expect(mapIdOf(ix, "nope-nope", "records")).toBeUndefined();
+    for (const tool of ["show", "walk"]) {
+      const out = await runContextTool(ix, root, tool, { id: "transfers.completed" });
+      expect(out.split("\n")[0], tool).toBe(also);
+    }
+    ix.close();
+  });
+
+  it("show_code keeps a step's #n when a name stands for its record", async () => {
+    const root = await retrievalRoot();
+    const ix = await openIndex(root);
+    // The topic has no steps: the #n is kept, so the answer names the step, not the record.
+    await expect(
+      runContextTool(ix, root, "show_code", { id: "transfers.completed#2" }),
+    ).resolves.toMatch(/^topic\.transfers-completed#2 cites no line of code/);
     ix.close();
   });
 });
