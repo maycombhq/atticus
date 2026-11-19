@@ -8244,5 +8244,24 @@ export const COPY = {
     makeRule: "Make this a reading rule",
     ruleDrafted: (file: string) =>
       `Drafted in ${file}. It is given to no read until a person sets it active:`,
+    // ADR 0204 decision 4: new repos in one go.
+    run: (n: number) => `Sync, read and apply these ${n}`,
+    continue: (n: number) => `Continue: ${n} left`,
+    noEstimate: "No estimate yet.",
+    readHandoff:
+      "Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code:",
+    readDone: "I've read them: continue",
+    onMap: (n: number, m: number) => `${n} of ${m} are on the map.`,
+    showThem: "Show them",
+    partWords: { add: "Add:", sync: "Sync:", read: "Read:", apply: "Apply:" } as Record<
+      string,
+      string
+    >,
+    repoState: {
+      done: "done",
+      waiting: "waiting",
+      stopped: "stopped",
+      failed: "failed",
+    } as Record<string, string>,
   },
 } as const;

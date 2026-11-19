@@ -736,7 +736,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   declared arrows (`kind: arrow`). POST /api/connect/find finds a declared arrow in the
  *   caller's code (a job, `FindResult`; addendum A), GET /api/connect carries the last find
  *   (`find`, `findAgain`), and POST /api/reading-rules/from-find drafts a reading rule from the
- *   call it confirmed. An Interface's join says who declared it
+ *   call it confirmed. POST /api/setup/repos/run adds, syncs, reads and applies new repos as one
+ *   local job (`ReposRunResult`: its `parts`, `handoff`, `done` of `of`). An Interface's join says who declared it
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
  */
@@ -1173,6 +1174,8 @@ export const JOB_ACTIONS = [
   "sync",
   "scan",
   "map-edits",
+  // 3.19.0 (ADR 0204 decision 4): Sync, read and apply these N.
+  "repos-run",
 ] as const;
 export const JobFor = z.object({ action: z.enum(JOB_ACTIONS), repo: z.string().optional() });
 export type JobForT = z.infer<typeof JobFor>;
@@ -6690,6 +6693,36 @@ export const MapEditWrote = z.union([
 ]);
 /** 3.19.0: POST /api/map/edits/undo, exactly what an Apply wrote, then one build. */
 export const MapEditsUndoRequest = z.strictObject({ wrote: z.array(MapEditWrote).min(1).max(100) });
+/** 3.19.0 (ADR 0204 decision 4): POST /api/setup/repos/run, add, sync, read and apply in one job. */
+export const ReposRunRequest = z.strictObject({
+  platform: RecordId.optional(),
+  /** The repos (as POST /api/setup/repos takes them); the same list again continues. */
+  repos: AddReposRequest.shape.repos,
+  /** After the hand-off pause: the person read them with their assistant; go on to Apply. */
+  read: z.boolean().optional(),
+});
+export const ReposRunPart = z.object({
+  part: z.enum(["add", "sync", "read", "apply"]),
+  state: z.enum(["done", "waiting", "stopped", "failed"]),
+  repos: z.array(
+    z.object({
+      repo: z.string(),
+      state: z.enum(["done", "waiting", "stopped", "failed"]),
+      why: z.string().optional(),
+    }),
+  ),
+});
+/** The job's result (its `parts`): `handoff` when the read waits for the person's assistant. */
+export const ReposRunResult = z.object({
+  parts: z.array(ReposRunPart),
+  handoff: z.object({ command: z.string() }).optional(),
+  /** How many of the repos are on the map (applied), of how many. */
+  done: z.number().int().nonnegative(),
+  of: z.number().int().nonnegative(),
+});
+export type ReposRunRequestT = z.infer<typeof ReposRunRequest>;
+export type ReposRunPartT = z.infer<typeof ReposRunPart>;
+export type ReposRunResultT = z.infer<typeof ReposRunResult>;
 /** 3.19.0 (ADR 0204 A.9): POST /api/connect/find, a job; its result `answer` is FindResult. */
 export const ConnectFindRequest = z.strictObject({
   from: z.string().min(1).max(200),
@@ -9525,6 +9558,21 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/setup/repos/run": {
+    post: {
+      id: "runNewRepos",
+      summary:
+        "3.19.0 (ADR 0204 decision 4): add, sync, read and apply new repos as one local job of four parts, worked out from disk so the same request continues where a Stop left it; Stop is heard between parts and repos; the read pauses with the command to paste where the app can't start the assistant. Its job's result carries ReposRunResult",
+      tag: "workspace",
+      body: ReposRunRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its result carries ReposRunResult",
+      },
+      errors: [400, 409],
+    },
+  },
   "/api/map/edits/undo": {
     post: {
       id: "undoMapEdits",
@@ -10688,6 +10736,7 @@ export function openApiDocument(): Record<string, unknown> {
     DeclarableRoutesView,
     ConnectView,
     FindResult,
+    ReposRunResult,
     SketchStrokeRequest,
     SketchResult,
     AddableView,
