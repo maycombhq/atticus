@@ -490,6 +490,77 @@ describe("atticus mcp (ADR 0104)", () => {
       expect(explain.result.isError).toBe(true);
     });
 
+    it('says a real fault as an error, never as "planned or not read" (review of b30/tools)', async () => {
+      const real =
+        (root: string): McpRun =>
+        async (argv) => {
+          const out: string[] = [];
+          const err: string[] = [];
+          const code = await main(
+            [...argv, "--root", root],
+            { out: (l) => out.push(l), err: (l) => err.push(l) },
+            { quiet: true },
+          );
+          return { code, out: out.join("\n"), err: err.join("\n") };
+        };
+      // A folder that is no metarepo: nothing was read, so nothing can be said to be missing.
+      const bare = await mkdtemp(join(tmpdir(), "atticus-mcp-bare-"));
+      for (const name of ["impact", "show", "walk"]) {
+        const r = await call(name, { id: "forge-portal" }, real(bare));
+        expect(r.result.isError, name).toBe(true);
+        expect(r.result.content[0]!.text, name).toMatch(/is not a metarepo/);
+        expect(r.result.content[0]!.text, name).not.toMatch(/planned or not read/);
+      }
+      const noChanges = await call("conflicts", {}, real(bare));
+      expect(noChanges.result.isError).toBe(true);
+      expect(noChanges.result.content[0]!.text).toMatch(/is not a metarepo/);
+      expect((await call("conflicts", { id: "forge-ledger" }, real(bare))).result.isError).toBe(
+        true,
+      );
+
+      // A metarepo with no catalog yet: the map is empty, which is not "this id is planned".
+      const empty = join(await mkdtemp(join(tmpdir(), "atticus-mcp-empty-")), "meta");
+      await cp(join(FORGE, "metarepo"), empty, { recursive: true });
+      for (const name of ["impact", "show", "walk"]) {
+        const r = await call(name, { id: "forge-portal" }, real(empty));
+        expect(r.result.isError, name).toBe(true);
+        expect(r.result.content[0]!.text, name).toMatch(/The map holds no records/);
+      }
+      // There, no open changes overlap, and that is an answer.
+      const none = await call("conflicts", {}, real(empty));
+      expect(none.result.isError).toBeUndefined();
+
+      // A record file that doesn't read: the id asked for may be the one in it.
+      const broken = join(await mkdtemp(join(tmpdir(), "atticus-mcp-broken-")), "meta");
+      await cp(join(FORGE, "metarepo"), broken, { recursive: true });
+      let compDir = "";
+      for (const r of parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<
+        string,
+        unknown
+      >[]) {
+        const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
+        if (!p.ok) continue;
+        const f = join(broken, "catalog/generated", recordPath(p.record));
+        if (p.record.kind === "Component") compDir = dirname(f);
+        await mkdir(dirname(f), { recursive: true });
+        await writeFile(f, serializeRecord(p.record));
+      }
+      await writeFile(join(compDir, "quillfeather.yaml"), "kind: Component\nid: [oops\n");
+      // Twice: the second time the index is already built, and the file is still unread.
+      for (const round of [1, 2])
+        for (const name of ["impact", "show", "walk"]) {
+          const r = await call(name, { id: "quillfeather" }, real(broken));
+          expect(r.result.isError, `${name} ${round}`).toBe(true);
+          expect(r.result.content[0]!.text, `${name} ${round}`).toMatch(
+            /couldn't be read whole[\s\S]*quillfeather\.yaml/,
+          );
+        }
+      // What was read is still answered.
+      const has = await call("show", { id: "ledger-api" }, real(broken));
+      expect(has.result.isError).toBeUndefined();
+      expect(has.result.content[0]!.text).toMatch(/^Component ledger-api/);
+    }, 180_000);
+
     it("on the Forge estate: the real commands' answers", async () => {
       const root = join(await mkdtemp(join(tmpdir(), "atticus-mcp-map-")), "meta");
       await cp(join(FORGE, "metarepo"), root, { recursive: true });

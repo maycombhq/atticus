@@ -4,6 +4,7 @@ import {
   QueryError,
   runContextTool,
   askLookup,
+  mapFault,
   notInMap,
   translate,
   type CatalogIndex,
@@ -180,7 +181,8 @@ export async function impactCommand(
   return withIndex(root, io, (ix) => {
     const r = impact(ix, id, o.depth ?? 4);
     if (!r) {
-      io.err(notInMap(id));
+      // "Not in the map" only when the map was read whole and has no such id (ADR 0201).
+      io.err(mapFault(ix, root) ?? notInMap(id));
       return 1;
     }
     if (o.json) {

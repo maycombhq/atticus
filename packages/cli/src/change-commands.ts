@@ -11,6 +11,7 @@ import {
   changeBranch,
   changesRelOf,
   handoffBranch,
+  isMetarepoRoot,
   loadOrgPack,
   orgPackDirOf,
   type ManualStep,
@@ -1014,6 +1015,13 @@ export async function changeConflicts(
   o: { json?: boolean; touching?: string },
   io: Output,
 ): Promise<number> {
+  // Nothing overlaps where there is nothing to read: said as a fault, never as "no overlap".
+  if (!isMetarepoRoot(root)) {
+    io.err(
+      "This folder is not a metarepo (it has no org-pack/), so it has no changes to compare. Run atticus in a metarepo, or pass --root <metarepo>.",
+    );
+    return 2;
+  }
   const all = await detectConflicts(root);
   const pairs = o.touching
     ? all.filter((p) => Object.values(p.overlap).some((v) => v.includes(o.touching!)))

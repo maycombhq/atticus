@@ -8,6 +8,7 @@ import {
   ignoreRules,
   isBinaryBytes,
   isBinaryPath,
+  isMetarepoRoot,
   RecordId,
   specsRelOf,
   stateDirOf,
@@ -292,13 +293,13 @@ export async function runContextTool(
     case "search":
       return searchTool(ix, input);
     case "show":
-      return showTool(ix, input);
+      return showTool(ix, root, input);
     case "walk":
-      return walkTool(ix, input);
+      return walkTool(ix, root, input);
     case "show_code":
       return showCodeTool(ix, root, input, o);
     case "similar":
-      return similarTool(ix, input);
+      return similarTool(ix, root, input);
     case "grep":
     case "files":
     case "outline":
@@ -367,12 +368,12 @@ async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Pro
   ].join("\n");
 }
 
-function similarTool(ix: CatalogIndex, input: Record<string, unknown>): string {
+function similarTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
   const id = str(input.id);
   if (!id) throw new ContextToolError("similar needs an id.");
   const kinds = strs(input.kinds);
   const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.searchLimit, 10);
-  const node = nodesOf(ix, id)[0]!;
+  const node = nodesOf(ix, id, root)[0]!;
   const s = ix.similar({ key: node.key }, { limit, ...(kinds?.length ? { kinds } : {}) });
   if ("off" in s) return `Similar in meaning is off: ${s.off}.`;
   if (!s.hits.length) return `Nothing reads like ${id}.`;
@@ -385,16 +386,36 @@ function similarTool(ix: CatalogIndex, input: Record<string, unknown>): string {
   ].join("\n");
 }
 
-function nodesOf(ix: CatalogIndex, id: string): GraphNodeRow[] {
+/**
+ * Why "not in the map" can't be said of any id (ADR 0201, review): the folder is no metarepo, the
+ * catalog holds no record, or a record file didn't read (the id asked for may be the one in it).
+ * Undefined when the catalog was read whole and holds records: only then is a missing id
+ * "planned or not read".
+ */
+export function mapFault(ix: CatalogIndex, root: string): string | undefined {
+  if (!ix.kinds().length)
+    return isMetarepoRoot(root)
+      ? "The map holds no records in this metarepo yet, so nothing can be said to be missing from it. Read a repo first (atticus map <repo>, then atticus verify <repo> --write)."
+      : "This folder is not a metarepo (it has no org-pack/ and no catalog), so there is no map to ask. Run atticus in a metarepo, or pass --root <metarepo>.";
+  const unread = ix.unreadRecords(3);
+  if (unread.total) {
+    const more = unread.total - unread.files.length;
+    const one = unread.total === 1;
+    return `The map couldn't be read whole, so what it lacks can't be said: ${unread.files.join(", ")}${more > 0 ? ` and ${more} more` : ""} ${one ? "doesn't" : "don't"} read as a record. Fix or remove ${one ? "it" : "them"}, then ask again.`;
+  }
+  return undefined;
+}
+
+function nodesOf(ix: CatalogIndex, id: string, root: string): GraphNodeRow[] {
   const nodes = ix.nodes(id);
-  if (!nodes.length) throw new ContextToolError(notInMap(id));
+  if (!nodes.length) throw new ContextToolError(mapFault(ix, root) ?? notInMap(id));
   return nodes;
 }
 
-function showTool(ix: CatalogIndex, input: Record<string, unknown>): string {
+function showTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
   const id = str(input.id);
   if (!id) throw new ContextToolError("show needs an id.");
-  const nodes = nodesOf(ix, id).slice(0, 3);
+  const nodes = nodesOf(ix, id, root).slice(0, 3);
   return nodes
     .map((n) => {
       const state = n.review
@@ -412,13 +433,13 @@ function showTool(ix: CatalogIndex, input: Record<string, unknown>): string {
     .join("\n\n");
 }
 
-function walkTool(ix: CatalogIndex, input: Record<string, unknown>): string {
+function walkTool(ix: CatalogIndex, root: string, input: Record<string, unknown>): string {
   const id = str(input.id);
   if (!id) throw new ContextToolError("walk needs an id.");
   const hops = int(input.hops, 1, CONTEXT_TOOL_BOUNDS.walkHops, 1);
   const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.walkLimit, 25);
   const kinds = strs(input.kinds);
-  const starts = nodesOf(ix, id);
+  const starts = nodesOf(ix, id, root);
   const seen = new Set(starts.map((n) => n.key));
   const lines: string[] = [];
   let more = 0;
@@ -583,7 +604,7 @@ async function showCodeTool(
   let cites: Cite[];
   if (id) {
     if (!ix) throw new ContextToolError("show_code by id needs the index.");
-    nodesOf(ix, id.replace(/#\d+$/, ""));
+    nodesOf(ix, id.replace(/#\d+$/, ""), root);
     cites = citesOf(ix, root, id);
     if (!cites.length)
       return `${id} cites no line of code (it may cite a wiki page or a document: show it).`;
