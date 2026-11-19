@@ -49,6 +49,25 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **"See the N rejected facts" opens them (ADR 0202).** The link goes to `#/trust?repo=<repo>&rejected=1`: that repo's rejected facts first on Map › Trust, under "<n> rejected facts in <repo>", each with its place, code, reason and Drop, every one of them. With none left: "No fact of <repo> is rejected now."
 - **A running Apply, build or Edit the map's Apply is found again after a reload (ADR 0202).** The panel that started it shows it again: its message, the time since the server started it, Stop (when the job hears one), and its last lines. If the page can't reach the job three times in a row it says "Lost touch with the job:" with **Check again**, and offers no Stop. With none running, one that ended in the last ten minutes shows how (Done, Refused, or that it ended without finishing) and its ways on. After `atticus ui` restarts the panel says nothing, as before.
 - **The Task board says why a task isn't ready (ADR 0202).** A card that waits for no task but can't run says "Not ready: <why>." in the ready plan's own sentence: it names an id `tasks.md` doesn't have, it names itself, it is in a ring, its id is used twice, or its run is past ready. A title whose last bracket was read as "(after …)" words has the plan's note on its card.
+- **Plain words, one name each (v30 slice 8).** User-facing words changed in the copy file, the command line's everyday messages and the guides; no command, flag, file name, API value or record kind changed. [The words Atticus uses](docs/guide/words.md) lists each word, what it means in one line and the names it replaces, linked from the guide index and the app's **Words** page (beside Help), which shows each renamed word with what it was. Renamed:
+  - Estate canvas, Estate map, Ecosystem map, "the picture" (of the map) → **Map**
+  - Trust, the Trust tab, Map › Trust → **Read status** (Map › Read status)
+  - Readers found / facts say → **Cross-check**
+  - "Apply" means only "update the map from what was read": Apply fix → **Write the fix**, Apply to similar → **Write to similar**; "applies", "the commands still apply" and the like say what they mean
+  - loose call → **call with no arrow**
+  - curated decision, "make them curated" → **your kept edit**, "keep them as your edits"
+  - the answers and corrections (shown together) → **your changes**
+  - system (for a box outside the estate) → **outside system**: "Repo, outside system or team", "Outside systems of the profile", "Rename to a real repo or outside system"
+  - readers slot, source slot, facts slot, "a slot behind it" → said without the slot word in everyday text (Scans, Cross-check, the scan's and the upgrade's lines); kept on Catalog builds, the page for diagnosing a build
+  - adopt, adopted (the upgrade) → **move**, moved
+  - Set up › Scans, Model runs, Prompt history, Catalog builds → **Set up › Activity › …**
+- **Fewer pages (v30 slice 8).** 58 pages and 28 default tabs before; 54 pages and 23 default tabs now. Every capability stays reachable and every old address opens the new place, its query kept (`#/runs?run=…` opens `#/activity?tab=runs&run=…`), in both layouts, in an IDE tab and from VS Code's and IntelliJ's links. Moved:
+  - The Map keeps **Map**, **Flows** and **Read status**. **Contracts**, **Impact** and **Decided by AI** left its tabs: a repo's or a component's panel opens each for that box (**Its contracts**, **What breaks if it changes**, **What the AI decided here**), and the estate-wide page is under More pages.
+  - **Model runs**, **Prompt history**, **Scans** and **Catalog builds** are the tabs of one **Activity** page in Set up (`#/runs`, `#/history`, `#/scans`, `#/catalog-builds` open its tabs). Ctrl+K finds each tab by its name.
+  - The **Ecosystem map**, a second drawing of the Map, is gone: its coverage by system and area, and the questions for owners, are on **Systems** (`#/map` opens Systems).
+  - Pages that had no next step say one under their tabs ("Next: …"): Map, Flows, Read status, Contracts, Impact, Decided by AI, Cross-check, Mismatches, Systems, Outside systems, Activity, Features, Diagrams, Reconcile, Search the catalog, AI quality, Learning and Words.
+  - The surface census counts 54 pages and records the five retired ones with where each went; it fails if a retired page's address no longer opens its new place.
+- **Messages lead with what to do (v30 slice 8).** The ten longest refusals and build messages are three lines: what happened, that nothing was changed (when true), then the command, with "Words: docs/guide/words.md." where a house word is left: a host no repo lists (`atticus estate join`, a scan), an entry's auth with no cited line (verify), a metarepo stamp this Atticus can't read, a change with no knowledge list, a build with no record from code, a catalog from before beta.27, copilot-acp not allowed (`atticus map --all`), a wiki address with a token in it, a model address not confirmed, and an added record `catalog edits --curate` can't keep.
 
 ### Fixed
 
