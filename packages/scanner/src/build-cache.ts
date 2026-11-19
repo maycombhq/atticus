@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmpText, writeFileAtomic } from "@maycombhq/core";
+import { cmpText, factsParseHooks, writeFileAtomic } from "@maycombhq/core";
 import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
 
 /**
@@ -415,17 +415,82 @@ export function keepReaders(key: string, slot: unknown): void {
   used.add(key);
 }
 
+/** The facts parses a build used, written to the folder it loaded them from; the others taken away. */
+async function keepFactsOnDisk(dir: string | undefined, keys: Set<string>): Promise<void> {
+  if (!dir) return;
+  for (const key of [...keys].sort(cmpText)) {
+    const bytes = freshFacts.get(key);
+    if (!bytes) continue;
+    await writeFileAtomic(join(dir, `${key}.v8`), bytes);
+    freshFacts.delete(key);
+    freshFactsBytes -= bytes.byteLength;
+  }
+  for (const n of await readdir(dir).catch(() => [] as string[]))
+    if (!keys.has(n.replace(/\.v8$/, "")) && /^[0-9a-f]{64}\.v8$/.test(n))
+      await rm(join(dir, n), { force: true });
+}
+
 /** Before a build reads its slots: the state folder whose cache it reads. */
 export async function loadReadersTrust(stateDir: string): Promise<void> {
   used.clear();
+  usedFacts.clear();
   readersDir = cacheOn() ? join(buildCacheDirOf(stateDir), "readers") : undefined;
+  factsDir = cacheOn() ? join(buildCacheDirOf(stateDir), "facts") : undefined;
   await Promise.resolve();
 }
+
+// ------------------------------------------------------------------ facts parses, by their bytes
+
+/**
+ * ADR 0205 step 3: each facts file's parse (core's `parseFacts`), kept by the hash of its text
+ * and the code, in `facts/<key>.v8` beside the readers slots: written with the build that used
+ * it, taken away when a build no longer does. The same bytes are the same parse.
+ */
+let factsDir: string | undefined;
+const freshFacts = new Map<string, Uint8Array>();
+let freshFactsBytes = 0;
+const usedFacts = new Set<string>();
+const FRESH_FACTS_MAX = 256 * 1024 * 1024;
+const factsKeyOf = (textSha: string) =>
+  sha(`${BUILD_CACHE_FORMAT}\u0000${codeStamp()}\u0000facts\u0000${textSha}`);
+
+export const factsParseStore = {
+  get(textSha: string): Uint8Array | undefined {
+    if (!cacheOn() || !factsDir) return undefined;
+    const key = factsKeyOf(textSha);
+    let bytes = freshFacts.get(key);
+    if (!bytes)
+      try {
+        bytes = readFileSync(join(factsDir, `${key}.v8`));
+      } catch {
+        return undefined;
+      }
+    usedFacts.add(key);
+    return bytes;
+  },
+  put(textSha: string, bytes: Uint8Array): void {
+    if (!cacheOn() || !factsDir) return;
+    const key = factsKeyOf(textSha);
+    if (freshFactsBytes + bytes.byteLength > FRESH_FACTS_MAX) {
+      freshFacts.clear();
+      freshFactsBytes = 0;
+    }
+    freshFacts.set(key, bytes);
+    freshFactsBytes += bytes.byteLength;
+    usedFacts.add(key);
+  },
+  used(textSha: string): void {
+    if (cacheOn() && factsDir) usedFacts.add(factsKeyOf(textSha));
+  },
+};
+factsParseHooks.store = factsParseStore;
 
 /** The checked reads a build used and the folder it loaded them from, as they are now. */
 export interface ReadersUsed {
   dir: string | undefined;
   used: Set<string>;
+  factsDir?: string | undefined;
+  usedFacts?: Set<string>;
 }
 
 /**
@@ -433,11 +498,14 @@ export interface ReadersUsed {
  * caller's result, so a build that loads its inputs meanwhile (a preview's) doesn't change them.
  */
 export function readersUsedNow(): ReadersUsed {
-  return { dir: readersDir, used: new Set(used) };
+  return { dir: readersDir, used: new Set(used), factsDir, usedFacts: new Set(usedFacts) };
 }
 
 /** Write the checked reads this build used (to the state folder it loaded them from) and take away those it didn't. */
-async function keepReadersOnDisk(r: ReadersUsed = { dir: readersDir, used }): Promise<void> {
+async function keepReadersOnDisk(
+  r: ReadersUsed = { dir: readersDir, used, factsDir, usedFacts },
+): Promise<void> {
+  await keepFactsOnDisk(r.factsDir, r.usedFacts ?? new Set()).catch(() => undefined);
   if (!r.dir) return;
   const dir = r.dir;
   const used = r.used;

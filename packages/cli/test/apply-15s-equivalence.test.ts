@@ -2,7 +2,13 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { afterResultPending, settleAfterResult } from "@maycombhq/core";
+import {
+  afterResultPending,
+  factsParseHooks,
+  factsParseStats,
+  forgetFactsParses,
+  settleAfterResult,
+} from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
 import type { CatalogDiff } from "@maycombhq/scanner";
 import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
@@ -77,8 +83,14 @@ const SHAPES: Record<string, (dir: string) => Promise<Made>> = {
 
 /** The hooks that give the way before each step (ADR 0205), all of them, or none. */
 function stepsOff(off: boolean): void {
-  if (off) writeFactsHooks.fullDiff = true;
-  else delete writeFactsHooks.fullDiff;
+  forgetFactsParses();
+  if (off) {
+    writeFactsHooks.fullDiff = true;
+    factsParseHooks.off = true;
+  } else {
+    delete writeFactsHooks.fullDiff;
+    delete factsParseHooks.off;
+  }
 }
 
 const quiet = { out: () => undefined, err: () => undefined };
@@ -86,6 +98,7 @@ const made: string[] = [];
 afterEach(async () => {
   stepsOff(false);
   delete writeFactsHooks.onDiffs;
+  delete factsParseHooks.check;
   await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -139,8 +152,13 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       // over the whole catalog, after every write.
       const both: [CatalogDiff, CatalogDiff][] = [];
       writeFactsHooks.onDiffs = (changed, whole) => both.push([changed, whole]);
+      // Step 3, both ways: every kept facts parse is checked against a parse of its text.
+      factsParseHooks.check = true;
+      const kept = factsParseStats.kept;
       const on = await applies(shape, false);
       delete writeFactsHooks.onDiffs;
+      delete factsParseHooks.check;
+      expect(factsParseStats.kept - kept, "facts parses kept and used").toBeGreaterThan(20);
       expect(both.length, "the comparison was made both ways").toBe(4);
       for (const [changed, whole] of both) expect(changed).toEqual(whole);
       // Something changed each time, so the comparison is of something.
