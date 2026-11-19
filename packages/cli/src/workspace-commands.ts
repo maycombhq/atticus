@@ -66,21 +66,32 @@ const lockWait = (o: { lockWaitMs?: number }) =>
 
 /**
  * Beta.30: what to do about a git that failed for a reason outside the repo, in a plain line:
- * a sign-in git couldn't make by itself, a proxy that asks for one (407), a certificate git
- * doesn't trust (a company proxy's own authority, most often). Anything else: undefined, and
- * git's own words stand alone. The proxy's 407 is asked first: its line can read as a sign-in.
+ * a proxy that asks for a sign-in (407), a certificate that isn't valid today or that git
+ * doesn't trust (a company proxy's own authority, most often), an SSH key the host doesn't
+ * accept, a sign-in git couldn't make by itself. Anything else: undefined, and git's own words
+ * stand alone. Each is known by the words git's transport uses for it, never by a number or a
+ * word alone (a repo may be named proxy/407). The proxy's 407 is asked first: its line can
+ * read as a sign-in.
  */
 export function gitFailureWords(reason: string): string | undefined {
-  if (/\b407\b.*proxy|proxy.*\b407\b|Proxy Authentication Required/i.test(reason))
+  if (
+    /Received HTTP code 407\b|response 407\b|returned error: 407\b|\bHTTP 407\b|Proxy Authentication Required/i.test(
+      reason,
+    )
+  )
     return "The proxy asked for a sign-in (407) and git had none to give: set the proxy with your sign-in, once (git config --global http.proxy http://<user>@<proxy-host>:<port>, or the HTTPS_PROXY environment variable), then sync again.";
+  if (/certificate has expired|certificate is not yet valid|SEC_E_CERT_EXPIRED/i.test(reason))
+    return "The server's certificate isn't valid today: it has expired (its owner renews it: tell whoever runs the Git host or the proxy), or this machine's clock is wrong (check the date and time). Then sync again. Leave certificate checking on.";
   if (
     /SSL certificate problem|unable to get local issuer certificate|self[- ]signed certificate|certificate verify failed|SEC_E_UNTRUSTED_ROOT|CERT_TRUST_|server certificate verification failed|certificate chain was issued by an authority that is not trusted/i.test(
       reason,
     )
   )
     return "Git doesn't trust the server's certificate (a company proxy signs with its own authority, most often): point git at your organisation's CA file (git config --global http.sslCAInfo <path to its .pem file>) and Node at the same file (the NODE_EXTRA_CA_CERTS environment variable), then sync again. Leave certificate checking on.";
+  if (/Permission denied \(publickey/i.test(reason))
+    return "The remote didn't accept your SSH key: check that the key this machine offers is one your Git host has for you (ssh -T git@<host> says who it takes you for; add the public key to your account there, or load the right one with ssh-add), then sync again.";
   if (
-    /Authentication failed|could not read (Username|Password)|terminal prompts disabled|Permission denied \(publickey|Invalid username or (password|token)|HTTP Basic: Access denied|Logon failed/i.test(
+    /Authentication failed|could not read (Username|Password)|terminal prompts disabled|Invalid username or (password|token)|HTTP Basic: Access denied|Logon failed/i.test(
       reason,
     )
   )

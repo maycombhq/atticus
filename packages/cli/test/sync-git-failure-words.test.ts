@@ -40,7 +40,7 @@ const TLS_SCHANNEL = [
 
 describe("what a failed git says to do", () => {
   it("names sign-in, the proxy and the certificate, each with its cure", () => {
-    for (const lines of [AUTH, NO_PROMPT, SSH]) {
+    for (const lines of [AUTH, NO_PROMPT]) {
       const w = gitFailureWords(lines.join("\n"))!;
       expect(w, lines[0]).toMatch(/^Git couldn't sign in to the remote/);
       expect(w).toContain("git fetch");
@@ -60,6 +60,42 @@ describe("what a failed git says to do", () => {
       // Never the unsafe way out.
       expect(w).not.toMatch(/sslVerify false|NODE_TLS_REJECT_UNAUTHORIZED/);
     }
+  });
+
+  it("says an SSH key the host doesn't accept is the key's, not the credential manager's (review of beta.30)", () => {
+    const w = gitFailureWords(SSH.join("\n"))!;
+    expect(w).toMatch(/^The remote didn't accept your SSH key/);
+    expect(w).toContain("ssh -T");
+    expect(w).not.toMatch(/credential manager|password/);
+  });
+
+  it("says an expired certificate has expired, not that a CA file is missing", () => {
+    for (const line of [
+      "fatal: unable to access 'https://git.example.com/forge/forge-ledger.git/': SSL certificate problem: certificate has expired",
+      "fatal: unable to access 'https://git.example.com/forge/forge-ledger.git/': schannel: SEC_E_CERT_EXPIRED (0x80090328) - The received certificate has expired.",
+      "fatal: unable to access 'https://git.example.com/forge/forge-ledger.git/': SSL certificate problem: certificate is not yet valid",
+    ]) {
+      const w = gitFailureWords(line)!;
+      expect(w, line).toMatch(/^The server's certificate isn't valid today/);
+      expect(w).toContain("clock");
+      expect(w).not.toMatch(/sslCAInfo|NODE_EXTRA_CA_CERTS|sslVerify/);
+    }
+  });
+
+  it("knows the proxy's 407 by its HTTP words, however git's transport says it", () => {
+    for (const line of [
+      "fatal: unable to access 'https://git.example.com/forge/forge-ledger.git/': CONNECT tunnel failed, response 407",
+      "error: RPC failed; HTTP 407 curl 22 The requested URL returned error: 407",
+      "fatal: unable to access 'https://git.example.com/x.git/': Proxy CONNECT aborted: 407 Proxy Authentication Required",
+    ])
+      expect(gitFailureWords(line), line).toMatch(/^The proxy asked for a sign-in \(407\)/);
+    // A repo that only has the words in its path is no proxy.
+    expect(
+      gitFailureWords("fatal: repository 'https://git.example.com/forge/proxy/407.git/' not found"),
+    ).toBe(undefined);
+    expect(
+      gitFailureWords("fatal: repository 'https://git.example.com/407/proxy-tools.git/' not found"),
+    ).toBe(undefined);
   });
 
   it("says a proxy's 407 is the proxy's, though the line also reads as a failed sign-in", () => {
