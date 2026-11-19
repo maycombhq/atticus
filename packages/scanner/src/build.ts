@@ -1565,7 +1565,22 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   records = overlaid.filter((r) => !(r.kind === "Capability" && away.has(r.id)));
   // ADR 0204: the profiles' declared arrows, made again from the profile on every build, each
   // left out while the code shows a call the same way (`superseded`).
-  const declared = declaredArrowRecords(op, records);
+  const declared = declaredArrowRecords(
+    op,
+    records,
+    undefined,
+    new Set(
+      i.curated.records.flatMap((d) =>
+        d.kind === "CuratedDecision" &&
+        d.status === "current" &&
+        d.action === "suppress" &&
+        (d.value ?? null) === null &&
+        typeof d.target === "string"
+          ? [d.target]
+          : [],
+      ),
+    ),
+  );
   if (declared.records.length) records = [...records, ...declared.records];
   for (const o of declared.orphaned)
     notes.push(

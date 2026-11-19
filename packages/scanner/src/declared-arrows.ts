@@ -68,13 +68,20 @@ export function declaredArrowRecords(
   records: readonly CatalogRecord[],
   /** The arrows to build (the profiles' by default; one asked about, to tell a real call). */
   items: readonly DeclaredArrow[] = declaredArrows(op),
+  /**
+   * The review: the Interfaces a person's current curated suppress takes away (Delete this
+   * link): applied after, so never a real call that hides a declared arrow.
+   */
+  suppressed: ReadonlySet<string> = new Set(),
 ): DeclaredArrowBuild {
   const out: DeclaredArrowBuild = { records: [], superseded: [], orphaned: [] };
   if (!items.length) return out;
   const box = boxesOf(op, records);
+  const taken = new Set(records.filter((r) => r.kind === "Interface").map((r) => r.id));
   const real = records.filter(
     (r): r is Extract<CatalogRecord, { kind: "Interface" }> =>
       r.kind === "Interface" &&
+      !suppressed.has(r.id) &&
       r.status !== "retired" &&
       r.status !== "planned-retire" &&
       !(r.flags ?? []).some((f) => DECLARED.has(f)),
@@ -93,7 +100,14 @@ export function declaredArrowRecords(
       out.superseded.push({ from, to, by: d.by, at: d.at, calls });
       continue;
     }
-    out.records.push(arrowInterface(d, a.main, b.main));
+    // The review: an id a record of the build has already (a planned or retired Interface of the
+    // same two boxes on /**) is never written over.
+    const r = arrowInterface(d, a.main, b.main);
+    out.records.push(
+      taken.has(r.id)
+        ? ({ ...r, id: interfaceId(a.main, b.main, "DECLARED", "/**") } as CatalogRecord)
+        : r,
+    );
   }
   out.records.sort((x, y) => cmpText(x.id, y.id));
   return out;

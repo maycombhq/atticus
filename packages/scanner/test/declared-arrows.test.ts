@@ -140,6 +140,10 @@ describe("declared arrows in the build (ADR 0204)", () => {
       call("portal-bff", "proxy-accounts-v1"),
     ])
       expect(declaredArrowRecords(op, [...BOXES, other]).records).toHaveLength(1);
+    // A call a person deleted (a curated suppress) is no real call: drawn (the review).
+    expect(
+      declaredArrowRecords(op, [...BOXES, real], undefined, new Set([real.id])).records,
+    ).toHaveLength(1);
     // The call goes away again: drawn again.
     expect(declaredArrowRecords(op, BOXES).records).toHaveLength(1);
   });
