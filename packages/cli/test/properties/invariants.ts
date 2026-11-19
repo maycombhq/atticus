@@ -284,6 +284,65 @@ function joinedNow(s: Step, gone: Map<string, Rec>): Set<string> {
 }
 
 /**
+ * Beta.30 (ADR 0195's addendum of 2026-11-19, a person's pairing and the removal limits; the
+ * fix on b30/reconnect, "it's connected to the wrong box"): the arrows the step removed whose
+ * call a person's pairing moved to another box, told from the model, not from the records'
+ * lines. An arrow is moved when every call that made it (its method and path, to its callee) is
+ * paired, in effect now (`effectivePair`), with an entry of one other live repo, and the step
+ * added exactly one arrow joined by a person from that caller to that repo for those calls (by
+ * the call's path or the entry's); and each added arrow takes the place of one removed arrow
+ * only. The guard counts none of them toward its limits, in whichever build draws the pairing
+ * (they are still listed with the removals); every other removal counts, a pairing taken back's
+ * included (property seeds 1950384002, 1567472602).
+ */
+function movedNow(s: Step, gone: Map<string, Rec>): Set<string> {
+  const m = s.m;
+  const before = new Set([...records(s.before.generated).values()].map(recId));
+  const added = [...records(s.after.generated).values()].filter(
+    (r) =>
+      r.kind === "Interface" &&
+      !before.has(recId(r)) &&
+      ((r as { flags?: string[] }).flags ?? []).includes("joined-by-person"),
+  );
+  /** Each added arrow's removed arrows, by the added arrow's id. */
+  const claims = new Map<string, string[]>();
+  for (const [id, r] of gone) {
+    if (r.kind !== "Interface" || !r.method) continue;
+    const from = m.slotOfEnd(String(r.from));
+    const to = m.slotOfEnd(String(r.to));
+    if (!from || !to || from.slot === to.slot) continue;
+    // The calls that made the arrow: of its method and path, to its callee by their host or by
+    // a pairing in effect before the step (another call of the same method and path, to a host
+    // no repo answers on, is a loose end of its own: seed 1950384002, its second shrink).
+    const was = s.modelBefore;
+    const calls = [...(m.source(from.slot)?.obs.code.calls ?? []).entries()].filter(
+      ([at, c]) =>
+        c.method === r.method &&
+        c.path === String(r.normalizedPath) &&
+        (m.calleeOf(c.host)?.slot === to.slot ||
+          was.calleeOf(c.host)?.slot === to.slot ||
+          was.effectivePair(from.slot, at)?.callee === to.slot),
+    );
+    const pairs = calls.map(([at]) => m.effectivePair(from.slot, at));
+    if (!pairs.length || pairs.some((x) => !x || x.callee === to.slot)) continue;
+    const callees = new Set(pairs.map((x) => x!.callee));
+    if (callees.size !== 1) continue;
+    const callee = [...callees][0]!;
+    const paths = new Set(pairs.flatMap((x) => [x!.path, x!.entry.path]));
+    const takes = added.filter(
+      (x) =>
+        m.slotOfEnd(String(x.from))?.slot === from.slot &&
+        m.slotOfEnd(String(x.to))?.slot === callee &&
+        paths.has(String(x.normalizedPath)),
+    );
+    if (takes.length !== 1) continue;
+    const n = recId(takes[0]!);
+    claims.set(n, [...(claims.get(n) ?? []), id]);
+  }
+  return new Set([...claims.values()].flatMap((ids) => (ids.length === 1 ? ids : [])));
+}
+
+/**
  * The record files a person added by hand, by path: not records the last build wrote, so not in
  * a repo's count for the share (as the guard counts, from build.json). A file changed by hand is
  * one the build wrote: it counts (property seed 1567472602).
@@ -740,7 +799,12 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
   "large-removals-confirmed"(s) {
     if (!builtOk(s)) return;
     const gone = removedBy(s);
-    const big = largeOf(s.before, gone, addedByHand(s), joinedNow(s, gone));
+    const big = largeOf(
+      s.before,
+      gone,
+      addedByHand(s),
+      new Set([...joinedNow(s, gone), ...movedNow(s, gone)]),
+    );
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
     if (n === undefined)
