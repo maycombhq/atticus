@@ -42,6 +42,9 @@ describe("@maycombhq/atticus as built (ADR 0124 addendum D-npm2)", () => {
       "dist/packages/ui/dist/index.html",
       "dist/packages/naysayer/constitution/constitution.yaml",
       "dist/packages/naysayer/starter/review.yaml",
+      // ADR 0201: the starter personas and the define-change skill, which init and upgrade copy.
+      "dist/packages/assistant-files/starter/agents/application-architect-naysayer.md",
+      "dist/packages/assistant-files/starter/skills/define-change/SKILL.md",
       "dist/packages/speckit/rules/drift.yaml",
       "dist/packages/taskrun/rules/conform.yaml",
       "dist/packages/testgen/rules/trace.yaml",

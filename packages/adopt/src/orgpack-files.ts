@@ -8,6 +8,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   type Sources,
 } from "@maycombhq/core";
+import { starterPersonaFiles } from "@maycombhq/assistant-files";
 import { STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import type { z } from "zod";
 import { writeNew } from "./files.js";
@@ -116,6 +117,8 @@ export async function writeStartingPack(dir: string, p: StartingPack): Promise<s
       ["gates.yaml", yaml(DEFAULT_GATES, DEFAULT_HEADER)],
       ["runtime.yaml", runtimeText(p.gitHost)],
       ["test-strategy.yaml", yaml(DEFAULT_TEST_STRATEGY, DEFAULT_HEADER)],
+      // ADR 0201: the starter personas, their naysayers and the define-change skill.
+      ...(await starterPersonaFiles()).map((f): [string, string] => [f.path, f.text]),
     );
   const written: string[] = [];
   for (const [rel, text] of files)

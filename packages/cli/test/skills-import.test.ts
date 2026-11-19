@@ -269,12 +269,19 @@ describe("atticus skills import, write and list", () => {
     expect(existsSync(join(root, "org-pack/agents/README.md"))).toBe(true);
     write(root, "org-pack/instructions/README.md", "# Instructions\n");
     expect((await sourcesOf(root)).map((s) => s.name)).not.toContain("README");
+    // ADR 0201: init writes the starter personas and the define-change skill; once they are
+    // written for the assistants (with .vscode/mcp.json), nothing is behind.
+    expect((await sourcesOf(root)).map((s) => `${s.kind} ${s.name}`)).toContain(
+      "skill define-change",
+    );
+    expect((await sourcesOf(root)).filter((s) => s.kind === "agent")).toHaveLength(14);
+    expect(await skillsWriteCommand(root, {}, io().io)).toBe(0);
     const c = io();
     expect(await skillsWriteCommand(root, { check: true }, c.io)).toBe(0);
     // A file named readme in another case is skipped the same way.
     write(root, "org-pack/agents/readme.md", "# Agents\n");
     expect((await sourcesOf(root)).map((s) => s.name.toLowerCase())).not.toContain("readme");
-  });
+  }, 60_000);
 
   it("doesn't take a Windows checkout (CRLF) of a written file as an edit", async () => {
     const root = metarepo();
