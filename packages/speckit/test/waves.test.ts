@@ -89,6 +89,7 @@ describe("where (after …) may sit, and what is only a task's words", () => {
       title: t.title,
       stories: t.stories,
       ...(t.after ? { after: t.after } : {}),
+      ...(t.afterWords ? { afterWords: t.afterWords } : {}),
     }));
   };
 
@@ -110,20 +111,66 @@ describe("where (after …) may sit, and what is only a task's words", () => {
     ]);
   });
 
-  it("leaves a title that only ends in (after <words>) alone; an id tasks.md lacks is still a wave", async () => {
+  it("is a wave when one name is a task id; the other names are then ids tasks.md lacks", async () => {
+    expect(
+      await read([
+        "- [ ] t1 Publish the event",
+        "- [ ] t2 Name the topic",
+        // A slip of one id doesn't lose the wave on the other: run-ready names the slip.
+        "- [ ] t3 Read the event (after t1, tl)",
+        "- [ ] t4 Tell the carrier (after t1 and lunch)",
+        "- [ ] t5 Show the date (after t1.)",
+        "- [ ] t6 Keep the date (after t1; t2).",
+        // Shaped like this file's ids (t and a number), so run-ready says tasks.md lacks it.
+        "- [ ] t7 Read the event again (after t9)",
+      ]),
+    ).toEqual([
+      { id: "t1", title: "Publish the event", stories: [] },
+      { id: "t2", title: "Name the topic", stories: [] },
+      { id: "t3", title: "Read the event", stories: [], after: ["t1", "tl"] },
+      { id: "t4", title: "Tell the carrier", stories: [], after: ["t1", "lunch"] },
+      { id: "t5", title: "Show the date", stories: [], after: ["t1"] },
+      { id: "t6", title: "Keep the date", stories: [], after: ["t1", "t2"] },
+      { id: "t7", title: "Read the event again", stories: [], after: ["t9"] },
+    ]);
+  });
+
+  it("leaves a title that only ends in (after <words>) alone, and keeps the words for a note", async () => {
     expect(
       await read([
         "- [ ] t1 Publish the event",
         "- [ ] t2 Tell the depot (after lunch)",
-        "- [ ] t3 Tell the carrier (after t1 and lunch)",
-        // Shaped like a task id (it has a digit), so run-ready says tasks.md doesn't have it.
-        "- [ ] t4 Read the event (after t9)",
+        // A digit doesn't make an id: nothing in this file is shaped like v2 or 2026.
+        "- [ ] t3 Move the clients (after v2)",
+        "- [ ] t4 Close the books (after 2026).",
+        "- [ ] t5 Name the topic (after setpu) (story s1-ship)",
       ]),
     ).toEqual([
       { id: "t1", title: "Publish the event", stories: [] },
-      { id: "t2", title: "Tell the depot (after lunch)", stories: [] },
-      { id: "t3", title: "Tell the carrier (after t1 and lunch)", stories: [] },
-      { id: "t4", title: "Read the event", stories: [], after: ["t9"] },
+      {
+        id: "t2",
+        title: "Tell the depot (after lunch)",
+        stories: [],
+        afterWords: "(after lunch)",
+      },
+      { id: "t3", title: "Move the clients (after v2)", stories: [], afterWords: "(after v2)" },
+      {
+        id: "t4",
+        title: "Close the books (after 2026).",
+        stories: [],
+        afterWords: "(after 2026)",
+      },
+      {
+        id: "t5",
+        title: "Name the topic (after setpu)",
+        stories: ["s1-ship"],
+        afterWords: "(after setpu)",
+      },
+    ]);
+    // In a file numbered 1.1, 1.2 a name of that shape is an id the file lacks.
+    expect(await read(["- [ ] 1.1 Publish the event", "- [ ] 1.2 Read it (after 7.7)"])).toEqual([
+      { id: "1.1", title: "Publish the event", stories: [] },
+      { id: "1.2", title: "Read it", stories: [], after: ["7.7"] },
     ]);
   });
 });

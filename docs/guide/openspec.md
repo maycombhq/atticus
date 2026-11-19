@@ -22,7 +22,7 @@ A task is a line `- [ ] <id> <what>` under a `## <repo>` heading, and may end wi
 
 - **Its stories.** A task waits for the tasks of the stories its story depends on (`stories.md`, "Depends on").
 - **Its repo.** A task waits for the earlier tasks of its own repo, so each is drafted from a base with the code before it. Mark tasks `[P]` (`- [ ] 1.2 [P] Add the column`) to let the `[P]` tasks next to each other in a repo go together.
-- **Waves across repos.** End a task's line with `(after <task id>)`, or several ids as `(after t1, t2)` or `(after t1 and t2)`, to hold it until each task it names is ticked, in whichever repo that task is ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)). It sits among the brackets that end the line, before or after `(story …)`. A title that only ends in words, such as "(after lunch)", is left alone.
+- **Waves across repos.** End a task's line with `(after <task id>)`, or several ids as `(after t1, t2)`, `(after t1; t2)` or `(after t1 and t2)`, to hold it until each task it names is ticked, in whichever repo that task is ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)). It sits among the brackets that end the line, before or after `(story …)`. It is read as a wave when at least one name is a task id of the file; any other name in it is then reported as an id `tasks.md` doesn't have. A bracket that names no task, such as "(after lunch)" or "(after v2)", stays part of the title, and `run-ready` prints a note saying so, in case it was a mistyped id.
 
 ```markdown
 ## forge-orders
@@ -34,7 +34,7 @@ A task is a line `- [ ] <id> <what>` under a `## <repo>` heading, and may end wi
 - [ ] t2 Read the shipped event (after t1)
 ```
 
-`run-ready` then prints `Not ready: task t2: it waits for task t1 (after) to be done first.` A task that can never run as the file stands is named with its reason: it names a task `tasks.md` doesn't have, its id is used twice, or it and another task each wait for the other (by `(after …)` alone, or by `(after …)` against the order of a repo's tasks). `atticus task run <change> <task>` refuses a task its `(after …)` holds in the same words; nothing overrides it, so tick the tasks it names or fix `tasks.md`. A task under a heading no `repos.manifest.yaml` lists is refused with what to do: add the new repo (`atticus repo add <its clone URL> --id <repo>`) or fix the heading.
+`run-ready` then prints `Not ready: task t2: it waits for task t1 (after) to be done first.` A task that can never run as the file stands is named with its reason: it names a task `tasks.md` doesn't have, its id is used twice, or it and another task each wait for the other (by `(after …)` alone, or by `(after …)` against the order of a repo's tasks). Tasks that each wait for the other are looked for in `(after …)` and the order of a repo's tasks only; a ring that runs through the stories' "Depends on" isn't named, and its tasks just show what they wait for. `atticus task run <change> <task>` refuses only a task its `(after …)` holds, in the same words; nothing overrides it, so tick the tasks it names or fix `tasks.md`. The order within a repo and the stories' dependencies are what `run-ready` follows: a person may still run one such task by itself. A task under a heading no `repos.manifest.yaml` lists is refused with what to do: add the new repo (`atticus repo add <its clone URL> --id <repo>`) or fix the heading.
 
 ## Where the stages point elsewhere
 

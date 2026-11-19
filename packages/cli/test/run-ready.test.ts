@@ -100,6 +100,8 @@ describe("waves in tasks.md (ADR 0201 decision 3)", () => {
           "- [ ] t4 Show the shipped date (after t5)",
           "## forge-portal-bff",
           "- [ ] t5 Serve the shipped date (after t4)",
+          "- [x] t6 Name the route (after setpu)",
+          "- [ ] t7 Tell the depot (after lunch and tea)",
           "",
         ].join("\n"),
       );
@@ -109,6 +111,9 @@ describe("waves in tasks.md (ADR 0201 decision 3)", () => {
         "  Not ready: task t3: it names task t9 in (after …), which tasks.md doesn't have.",
         "  Not ready: task t4: it and task t5 each wait for the other in (after …).",
         "  Not ready: task t5: it and task t4 each wait for the other in (after …).",
+        "  Not ready: task t7: it waits for task t5 (same repo) to be done first.",
+        // A lone mistyped all-letter id isn't silent: a note, never a hold (t6 is ticked: no note).
+        '  Task t7\'s title ends "(after lunch and tea)": no task has those ids, so it is read as part of the title.',
       ]);
     } finally {
       await rm(root, { recursive: true, force: true });

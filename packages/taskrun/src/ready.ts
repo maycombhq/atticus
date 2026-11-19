@@ -59,6 +59,11 @@ export interface ReadyPlan {
   tasks: ReadyTask[];
   /** The ids of the ready ones, in the order they run. */
   ready: string[];
+  /**
+   * ADR 0201 (waves): what the reader of tasks.md wants a person to know and holds nothing: a
+   * not-done task whose title ends in a bracket that starts with "after" and names no task.
+   */
+  notes?: string[];
 }
 
 /** The states in which a task has run and waits on its PR, the assistant or a person: not run again here. */
@@ -176,7 +181,8 @@ export async function readyTasksOf(
 ): Promise<ReadyPlan> {
   const files = await readChangeFiles(changeFolder(root, change));
   const tasks: ReadyInput[] = [];
-  for (const t of readChangeTasks(files)) {
+  const read = readChangeTasks(files);
+  for (const t of read) {
     const r = await readTaskRun(root, change, t.id).catch(() => undefined);
     const pr = o.prStates?.get(t.id);
     tasks.push({
@@ -190,11 +196,18 @@ export async function readyTasksOf(
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });
   }
-  return planReadyTasks({
+  const plan = planReadyTasks({
     tasks,
     stories: readStoryIndex(files),
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
   });
+  const notes = read
+    .filter((t) => !t.done && t.afterWords)
+    .map(
+      (t) =>
+        `Task ${t.id}'s title ends "${t.afterWords}": no task has ${/[,;]|\sand\s/i.test(t.afterWords!) ? "those ids" : "that id"}, so it is read as part of the title`,
+    );
+  return notes.length ? { ...plan, notes } : plan;
 }
 
 /** One task's outcome in a Run all ready tasks. */

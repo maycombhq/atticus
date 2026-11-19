@@ -50,33 +50,52 @@ export interface ChangeTask {
    * held, across repos, until each is ticked (taskrun's ready list). Absent when it names none.
    */
   after?: string[];
+  /**
+   * A bracket among those that end its line that starts with "after" and was read as the title's
+   * own words, as written: none of its names is a task id. The ready list notes it, so a
+   * mistyped id isn't silent. Absent when there is none, or when a wave was read.
+   */
+  afterWords?: string;
 }
 
 /** A bracket that ends a task line (a full stop may follow it); brackets don't nest. */
 const LAST_BRACKET = /\s*\(([^()]*)\)\s*\.?\s*$/;
 
+/** An id's shape: its letters and marks as they are, each run of digits as one (t12 and t3 alike). */
+const shapeOf = (id: string) => id.replace(/\d+/g, "9");
+
 /**
- * ADR 0201 (waves): the `(after t1)`, `(after t1, t2)` or `(after t1 and t2)` among the brackets
- * that end a task line, wherever it sits among them, and the line without it. It is a wave only
- * when every name in it is a task id of this tasks.md, or is shaped like one the file lacks (an
- * id with a digit in it, which the ready list then says tasks.md doesn't have). A title that only
- * ends in words, "(after lunch)", is left as it is.
+ * ADR 0201 (waves): the `(after t1)`, `(after t1, t2)`, `(after t1; t2)` or `(after t1 and t2)`
+ * among the brackets that end a task line, wherever it sits among them, and the line without it.
+ * It is a wave when at least one name in it is a task id of this tasks.md (the other names are
+ * then ids the file lacks, which the ready list says), or when a name has a digit and the shape
+ * of the file's own task ids (`t9` beside t1 and t2, `7.7` beside 1.1). Otherwise it is the
+ * title's own words, "(after lunch)", "(after v2)": the line is left as it is, and `words` keeps
+ * the bracket so the ready list can say how it was read.
  */
-function waveOf(rest: string, ids: ReadonlySet<string>): { rest: string; after: string[] } {
+function waveOf(
+  rest: string,
+  ids: ReadonlySet<string>,
+  shapes: ReadonlySet<string>,
+): { rest: string; after: string[]; words?: string } {
   let end = rest.length;
+  let words: string | undefined;
   for (;;) {
     const m = LAST_BRACKET.exec(rest.slice(0, end));
-    if (!m) return { rest, after: [] };
+    if (!m) return { rest, after: [], ...(words ? { words } : {}) };
     const named = /^after\s+(.+)$/i.exec(m[1]!.trim());
     const names = (named?.[1] ?? "")
-      .split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
-      .map((x) => x.trim().toLowerCase())
+      .split(/\s*[,;]\s*(?:and\s+)?|\s+and\s+/i)
+      .map((x) =>
+        x
+          .trim()
+          .toLowerCase()
+          .replace(/[.,;:!?]+$/, ""),
+      )
       .filter(Boolean);
-    if (
-      names.length &&
-      names.every((n) => ids.has(n) || (/\d/.test(n) && RecordId.safeParse(n).success))
-    )
+    if (names.some((n) => ids.has(n) || (/\d/.test(n) && shapes.has(shapeOf(n)))))
       return { rest: rest.slice(0, m.index) + rest.slice(end), after: [...new Set(names)] };
+    if (named) words ??= `(${m[1]!.trim()})`;
     end = m.index;
   }
 }
@@ -95,6 +114,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
     const id = TASK_LINE.exec(l)?.[4]?.toLowerCase();
     if (id && RecordId.safeParse(id).success) ids.add(id);
   }
+  const shapes = new Set([...ids].map(shapeOf));
   doc.lines.forEach((l, i) => {
     const h = /^##\s+(.+?)\s*$/.exec(l);
     if (h) {
@@ -103,7 +123,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
     }
     const m = TASK_LINE.exec(l);
     if (!m || !repo || !RecordId.safeParse(m[4]!.toLowerCase()).success) return;
-    const { rest, after } = waveOf(m[5]!, ids);
+    const { rest, after, words } = waveOf(m[5]!, ids, shapes);
     const stories = [...rest.matchAll(/\bstor(?:y|ies)\s+([a-z0-9][a-z0-9._-]*)/gi)].map((s) =>
       s[1]!.toLowerCase().replace(/[.,)]+$/, ""),
     );
@@ -116,6 +136,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
       done: m[2]!.toLowerCase() === "x",
       ...(/(^|\s)\[P\](\s|$)/.test(rest) ? { parallel: true } : {}),
       ...(after.length ? { after } : {}),
+      ...(words ? { afterWords: words } : {}),
     });
   });
   return out;

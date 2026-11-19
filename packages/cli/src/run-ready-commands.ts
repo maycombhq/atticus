@@ -47,6 +47,8 @@ export function readyLines(change: string, p: ReadyPlan): string[] {
       ]
     : [`No task of ${change} is ready to run.`];
   for (const t of p.tasks.filter((x) => !x.ready)) out.push(`  Not ready: task ${t.id}: ${t.why}.`);
+  // ADR 0201 (waves): a title that ends "(after <words>)" and names no task: said, never held.
+  for (const n of p.notes ?? []) out.push(`  ${n}.`);
   return out;
 }
 
