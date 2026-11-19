@@ -47,7 +47,14 @@ const gitWithOrigin =
     throw new Error(`unexpected git ${args.join(" ")}`);
   };
 
-describe("the stores openspec.yaml names (read-only)", () => {
+/**
+ * Each store is read through the real `openspec list`, twice (changes, then specs): two Node
+ * processes a store, about a second each on a quiet machine and several on a loaded one. So the
+ * tests that read a store carry their own time limit, whatever the command line gives.
+ */
+const SPAWNS = { timeout: 120_000 };
+
+describe("the stores openspec.yaml names (read-only)", SPAWNS, () => {
   it("reads none when the org pack has no openspec.yaml", async () => {
     const root = await metarepo();
     expect(await openspecStores(root)).toEqual({ stores: [], problems: [] });
