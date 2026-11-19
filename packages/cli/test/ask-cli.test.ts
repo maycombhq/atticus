@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
+import { seedForgeField, type ForgeField } from "./forge-field.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 let root: string;
@@ -281,5 +282,60 @@ describe("atticus guide and atticus site build", () => {
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/5 systems/);
     expect(await readFile(join(dir, "index.html"), "utf8")).toContain("Forge catalog");
+  });
+});
+
+// Beta.30 (slice 9): the map tools on the field-shaped estate (fixtures/forge-field).
+describe("atticus ask on the field-shaped estate", () => {
+  let e: ForgeField & { root: string };
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "b30-fd-ask-"));
+    e = await seedForgeField(dir);
+  }, 300_000);
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const ask = async (q: string) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await main(["ask", q, "--root", e.root], {
+      out: (l) => out.push(l),
+      err: (l) => err.push(l),
+    });
+    return { code, out: out.join("\n"), err: err.join("\n") };
+  };
+
+  it("names who calls a service, its gateway proxy (whose target is ${TARGET_URL}) among them", async () => {
+    const r = await ask("who calls forge-svc-02?");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Query: kind:interface to:forge-svc-02");
+    expect(r.out).toContain("forge-gw-02 → forge-svc-02");
+  }, 120_000);
+
+  /**
+   * Found by this estate (product bug, fixed here): a repo whose id has dots is the component
+   * `forge-instruments-svc`, so the question found no record of `forge.instruments.svc` and said
+   * it "is in the manifests and hasn't been read", though it is read and on the map. A repo's id
+   * is looked up as its component now (packages/index/src/ask.ts, `askLookup`).
+   */
+  it("reads a repo whose id has dots as its component, never as not read", async () => {
+    const r = await ask("who calls forge.instruments.svc?");
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain("hasn't been read");
+    expect(r.out).toContain("Query: kind:interface to:forge-instruments-svc");
+  });
+
+  /**
+   * KNOWN BUG, found by this estate (reported, not fixed here): a topic read from facts is one
+   * Endpoint per consumer (`<consumer>.on-<topic>`), and `askLookup` takes the first, so a topic
+   * with consumers in two repos is said to be received by one. When the receivers of every such
+   * Endpoint are named this passes, and `it.fails` says so: make it `it`.
+   */
+  it.fails("names both consumers of a topic with consumers in two repos", async () => {
+    const r = await ask(`who consumes the topic ${e.topic!.name}?`);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("is received by 2 components");
+    for (const l of e.topic!.listeners) expect(r.out).toMatch(new RegExp(`Component +${l} `));
   });
 });

@@ -5,6 +5,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { factsDirOf, type Fact } from "@maycombhq/core";
 import { buildAndWrite, factsSnapshotWrites } from "@maycombhq/scanner";
+import { main } from "../src/main.js";
 import { EMPTY_REPO, NEW_EVENT, TOPIC, UNREAD_REPO } from "./archetypes-changes.js";
 import {
   makeFieldEstate,
@@ -207,6 +208,13 @@ export async function writeForgeField(out: string): Promise<void> {
       "requirements.md": c.requirements,
       ...c.files,
     });
+    // After the upgrade, as a team has it: the curated decisions field-estate.ts writes at an
+    // older schema are migrated, so `atticus status` has nothing waiting on a fresh seed.
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    const code = await main(["upgrade", "--root", estate.root, "--by", "pat"], io, { quiet: true });
+    if (code !== 0)
+      throw new Error(`atticus upgrade of the field estate failed: ${said.join("\n")}`);
     for (const n of ["metarepo", "repos", "estate.json"])
       await rm(join(out, n), { recursive: true, force: true });
     await mkdir(out, { recursive: true });
@@ -242,8 +250,8 @@ export async function writeForgeField(out: string): Promise<void> {
       ).matchAll(/^ {2}- id: (\S+)$/gm),
     ].map((m) => m[1]!);
     const { root: _root, options: _options, ...rest } = estate;
-    const said: ForgeField = { ...rest, change: c.id, commits, clones, manifest };
-    await writeFile(join(out, "estate.json"), JSON.stringify(said, null, 2) + "\n");
+    const info: ForgeField = { ...rest, change: c.id, commits, clones, manifest };
+    await writeFile(join(out, "estate.json"), JSON.stringify(info, null, 2) + "\n");
   } finally {
     await rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }

@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CatalogRecord } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
+import { main } from "../src/main.js";
 import { selfcheck } from "../src/selfcheck.js";
 import { SHAPE_FLAGS } from "../src/shape-words.js";
 import { bigGatewayId, bigRepoId } from "./big-estate.js";
@@ -174,5 +175,25 @@ describe("fixtures/forge-field", () => {
     const s = await selfcheck(e.root, { platform: "linux", quick: true });
     expect(s.card.flags).toEqual([...SHAPE_FLAGS]);
     expect(s.checks.filter((c) => c.state === "failed")).toEqual([]);
+  }, 120_000);
+
+  it("the door check counts the ids its requirements cite: a topic's consumer, an unread repo, an id with dots", async () => {
+    const text = (
+      await readFile(join(e.root, "openspec/changes", e.change, "requirements.md"), "utf8")
+    ).replace(
+      "| Does anything else read the topic",
+      "| Does the instruments service read it? | `forge.instruments.svc` | application-architect-naysayer | ari | No | answered |\n| Does anything else read the topic",
+    );
+    const file = join(dir, "requirements.md");
+    await writeFile(file, text);
+    const out: string[] = [];
+    const code = await main(["change", "new", "--from", file, "--check", "--root", e.root], {
+      out: (l) => out.push(l),
+      err: (l) => out.push(l),
+    });
+    expect(code, out.join("\n")).toBe(0);
+    expect(out.join("\n")).toContain(
+      "passes: 5 questions (5 answered, 0 accepted), 4 ids in the map, 0 planned.",
+    );
   }, 120_000);
 });

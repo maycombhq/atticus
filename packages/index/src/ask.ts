@@ -112,6 +112,14 @@ export function askLookup(ix: AskIndex): Lookup {
         return false;
       }
     };
+    // A repo by its id, as its component (beta.30, the field-shaped estate: a repo id with dots
+    // is the component `forge-instruments-svc`, and was said not to be read).
+    try {
+      const c = ix.query(`kind:component repo:${w}`, { limit: 2 }).rows;
+      if (c.length === 1) return { id: c[0]!.id, kind: c[0]!.kind };
+    } catch {
+      // not a value the query language takes
+    }
     if (has(`kind:interface to:${w}`) || has(`kind:interface from:${w}`))
       return { id: w, kind: OUTSIDE };
     try {

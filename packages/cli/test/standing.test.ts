@@ -10,6 +10,7 @@ import { main } from "../src/main.js";
 import { EXTENSION_NEEDS, standing, STANDING_WORDS } from "../src/standing.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { VERSION } from "../src/version.js";
+import { seedForgeField } from "./forge-field.js";
 
 /**
  * ADR 0202 point 8: `atticus status` says where a metarepo stands in one line, with the one
@@ -469,4 +470,37 @@ describe("when the command line may ask (ADR 0202 point 9)", () => {
     expect(canAsk({ ...tty, env: { ATTICUS_STARTED_BY: "terminal" } })).toBe(true);
     expect(canAsk({ ...tty, env: { TERM_PROGRAM: "vscode", CURSOR_AGENT: "0" } })).toBe(true);
   });
+});
+
+// Beta.30 (slice 9): the field-shaped estate (fixtures/forge-field), as a person seeds it: its
+// stamp, its slots, a legacy slot, repos nobody cloned. Its status is one line, nothing to do.
+describe("atticus status on the field-shaped estate", () => {
+  it(
+    "says it is up to date and reads its catalog, in one line, and serves the same as JSON",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "b30-fd-standing-"));
+      made.push(dir);
+      const e = await seedForgeField(dir);
+      const r = await run(["status", "--root", e.root], NO_EXT);
+      const stamp = /^atticus: (.+)$/m.exec(
+        await readFile(join(e.root, ".atticus", "metarepo.yaml"), "utf8"),
+      )![1]!;
+      // The fixture's stamp names the Atticus that wrote it: a release since says to upgrade.
+      if (stamp === VERSION) {
+        expect(r).toEqual({
+          code: 0,
+          err: [],
+          out: [
+            `You are on Atticus ${VERSION}. This metarepo is at ${VERSION} (.atticus/metarepo.yaml), and this Atticus reads its catalog. Nothing to do.`,
+          ],
+        });
+      } else {
+        expect(r.code).toBe(1);
+        expect(r.out[0]).toMatch(/ Do: atticus upgrade$/);
+      }
+      const j = await run(["status", "--json", "--root", e.root], NO_EXT);
+      expect(JSON.parse(j.out.join("\n"))).toMatchObject({ atticus: VERSION, line: r.out[0] });
+    },
+    T,
+  );
 });
