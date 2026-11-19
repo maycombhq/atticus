@@ -597,3 +597,296 @@ export async function writeManifest(root: string, repos: readonly ManifestRepo[]
     }),
   );
 }
+
+// ------------------------------------------------------------------ estate shapes (beta.30)
+
+/**
+ * Beta.30 (slice 9, field-reliability-and-ease.md item 2): the shapes field reports named, as a
+ * generator. The estates above vary the catalog's states over tidy repos; these vary the estate's
+ * shape: hosts written as deploy tokens (`@name@`, `${NAME}`) nothing sets, a repo id with dots, a
+ * repo the manifest gives no System, a gateway proxy fronting a service (its target URL a token
+ * its deploy file sets per environment), and nested payload fields. Each repo is read from facts
+ * (the assistant's, with their snapshots, as `verify --write` leaves them); no clone, no network.
+ * Fact ids carry their repo's short name: two repos' loose calls of one id make one catalog record
+ * today (the known bug forge-field.test.ts holds as `it.fails`).
+ */
+export interface ShapeSketch {
+  /** How many services, 2 to 4, from the pool. */
+  services: number;
+  /** The first service's id has dots (`forge.ledger.svc`). */
+  dotted: boolean;
+  /** The last service's manifest entry names no System. */
+  noSystem: boolean;
+  /** A gateway proxy fronts the first service; its target URL as `@targetUrl@` or `${TARGET_URL}`. */
+  proxy: "none" | "at" | "dollar";
+  /** The second service's entries have nested payload fields. */
+  nested: boolean;
+  /**
+   * Each service's calls, by position: to which other service (an index into the others, modulo
+   * their count), which of its endpoints, and how: by its host, through the proxy (to the first
+   * service; by host when there is none), to a host token nothing sets, or to the outside vendor.
+   */
+  calls: { from: number; to: number; ep: number; via: "host" | "proxy" | "token" | "outside" }[];
+  /** How a host token nothing sets is written. */
+  token: "at" | "dollar";
+}
+
+export const shapeArb: fc.Arbitrary<ShapeSketch> = fc.record({
+  services: fc.integer({ min: 2, max: 4 }),
+  dotted: fc.boolean(),
+  noSystem: fc.boolean(),
+  proxy: fc.constantFrom("none", "at", "dollar"),
+  nested: fc.boolean(),
+  calls: fc.array(
+    fc.record({
+      from: fc.nat({ max: 3 }),
+      to: fc.nat({ max: 2 }),
+      ep: fc.nat({ max: 2 }),
+      via: fc.constantFrom("host", "proxy", "token", "outside"),
+    }),
+    { maxLength: 8 },
+  ),
+  token: fc.constantFrom("at", "dollar"),
+});
+
+/** A call fact of a shaped estate, as the oracle reads it back. */
+export interface ShapedCall {
+  repo: string;
+  fact: string;
+  file: string;
+  line: number;
+  via: ShapeSketch["calls"][number]["via"] | "forward";
+  /** The host the call is written to. */
+  host: string;
+}
+
+export interface ShapedEstate {
+  /** Every repo the manifest lists, read from facts. */
+  repos: string[];
+  calls: ShapedCall[];
+}
+
+const SHAPE_COMMIT = "5ba9e00";
+const GATEWAY_HOST = "gw.forge.example";
+
+/** A shaped estate under `root`: the org pack, every repo's facts and their snapshots. */
+export async function writeShapeEstate(
+  root: string,
+  k: ShapeSketch,
+  snapshot: (
+    root: string,
+    repo: string,
+    facts: Record<string, unknown>[],
+    commit: string,
+  ) => Promise<void>,
+): Promise<ShapedEstate> {
+  const bases = POOL.slice(0, k.services);
+  const idOf = (i: number) => (i === 0 && k.dotted ? `forge.${bases[0]!.short}.svc` : bases[i]!.id);
+  const gw = k.proxy === "none" ? undefined : `forge-${bases[0]!.short}-gw`;
+  const basePath = `/${bases[0]!.short}/1.0`;
+  const op = join(root, "org-pack");
+  await mkdir(join(op, "profiles", "forge"), { recursive: true });
+  await writeFile(
+    join(op, "pack.yaml"),
+    "schemaVersion: 1\nname: forge\nversion: 0.1.0\nowner: team-platform\n",
+  );
+  await writeFile(
+    join(op, "profiles", "forge", "profile.yaml"),
+    stringify({
+      schemaVersion: 1,
+      platform: "forge",
+      name: "Forge (invented, for the shape property tests of beta.30)",
+      systems: [
+        ...POOL.map((b) => ({
+          id: b.system,
+          name: b.cls,
+          boundary: "product",
+          owner: `team-${b.short}`,
+          aliases: [],
+        })),
+        {
+          id: "platform",
+          name: "Platform",
+          boundary: "product",
+          owner: "team-platform",
+          aliases: [],
+        },
+      ],
+      environments: ["dev", "prod"],
+    }),
+  );
+  await writeFile(
+    join(op, "profiles", "forge", "repos.manifest.yaml"),
+    stringify({
+      schemaVersion: 1,
+      platform: "forge",
+      repos: [
+        ...bases.map((b, i) => ({
+          id: idOf(i),
+          url: `https://git.forge.example/forge/${idOf(i)}.git`,
+          type: "spring-boot",
+          owner: `team-${b.short}`,
+          component: b.component,
+          ...(k.noSystem && i === bases.length - 1 && i > 0 ? {} : { system: b.system }),
+          hosts: [b.host],
+        })),
+        ...(gw
+          ? [
+              {
+                id: gw,
+                url: `git@git.forge.example:forge/${gw}.git`,
+                type: "gateway",
+                owner: "team-platform",
+                system: "platform",
+                hosts: [GATEWAY_HOST],
+              },
+            ]
+          : []),
+      ],
+    }),
+  );
+  const calls: ShapedCall[] = [];
+  const tail = { commit: SHAPE_COMMIT, verified: "line", by: "assistant", conf: "declared" };
+  for (const [i, b] of bases.entries()) {
+    const repo = idOf(i);
+    const file = `src/main/java/forge/${b.short}/${b.cls}Controller.java`;
+    const client = `src/main/java/forge/${b.short}/${b.cls}Client.java`;
+    const facts: Record<string, unknown>[] = [];
+    let line = 0;
+    for (const [n, e] of b.endpoints.entries()) {
+      const quote = `@${e.method === "GET" ? "Get" : "Post"}Mapping("${e.path}")`;
+      const id = `e-${b.short}-${n}`;
+      facts.push({
+        kind: "entry",
+        id,
+        repo,
+        component: b.component,
+        entryType: "rest",
+        method: e.method,
+        path: e.path,
+        cite: { file, line: ++line, value: e.path, quote },
+        ...tail,
+      });
+      const names = k.nested && i === 1 ? ["customer.address.city", "items[].sku"] : ["status"];
+      for (const [m, name] of names.entries())
+        facts.push({
+          kind: "field",
+          id: `${id}.response.f${m}`,
+          repo,
+          owner: id,
+          side: "response",
+          name,
+          type: "string",
+          cite: { file, line: ++line, value: name, quote: `// ${name}` },
+          ...tail,
+        });
+    }
+    let c = 0;
+    for (const x of k.calls.filter((y) => y.from % bases.length === i)) {
+      const others = bases.map((_, j) => j).filter((j) => j !== i);
+      const to = others[x.to % others.length]!;
+      const ep = bases[to]!.endpoints[x.ep % 3]!;
+      const via = x.via === "proxy" && (!gw || to !== 0) ? "host" : x.via;
+      const host =
+        via === "host"
+          ? bases[to]!.host
+          : via === "proxy"
+            ? GATEWAY_HOST
+            : via === "token"
+              ? k.token === "at"
+                ? `@forge${bases[to]!.cls}Url@`
+                : `\${FORGE_${bases[to]!.short.toUpperCase()}_URL}`
+              : "api.northwind-pay.example";
+      const path =
+        via === "proxy" ? basePath + ep.path : via === "outside" ? "/v2/charges" : ep.path;
+      const method = via === "outside" ? "POST" : ep.method;
+      const id = `c-${b.short}-${c++}`;
+      const url = `https://${host}${path}`;
+      const at = { file: client, line: ++line };
+      facts.push({
+        kind: "call",
+        id,
+        repo,
+        component: b.component,
+        callType: "rest",
+        method,
+        path,
+        host,
+        sync: "sync",
+        cite: { ...at, value: path, quote: `rest.exchange("${url}"` },
+        ...tail,
+      });
+      calls.push({ repo, fact: id, ...at, via, host });
+    }
+    await snapshot(root, repo, facts, SHAPE_COMMIT);
+  }
+  if (gw) {
+    // The proxy's routes, each forwarding to its target token, and the token per environment.
+    const token = k.proxy === "at" ? "@targetUrl@" : "${TARGET_URL}";
+    const name = k.proxy === "at" ? "@targetUrl@" : "TARGET_URL";
+    const facts: Record<string, unknown>[] = [];
+    const proxies = "apiproxy/proxies/default.xml";
+    const target = { file: "apiproxy/targets/TE-Service.xml", line: 1, value: token };
+    const bp = { file: proxies, line: 1, value: basePath };
+    for (const [n, e] of bases[0]!.endpoints.entries()) {
+      const cond = `<Condition>(proxy.pathsuffix MatchesPath "${e.path}") and (request.verb = "${e.method}")</Condition>`;
+      const cite = { file: proxies, line: 2 + n, value: e.path, quote: cond };
+      facts.push({
+        kind: "entry",
+        id: `r-${n}`,
+        repo: gw,
+        entryType: "rest",
+        method: e.method,
+        path: basePath + e.path,
+        handler: `${gw}/Route${n}`,
+        cite: { ...cite, with: [bp] },
+        ...tail,
+      });
+      facts.push({
+        kind: "call",
+        id: `f-${n}`,
+        repo: gw,
+        callType: "rest",
+        method: e.method,
+        path: e.path,
+        host: token,
+        from: `r-${n}`,
+        cite: { ...cite, with: [target] },
+        ...tail,
+      });
+      calls.push({
+        repo: gw,
+        fact: `f-${n}`,
+        file: proxies,
+        line: 2 + n,
+        via: "forward",
+        host: token,
+      });
+    }
+    for (const [n, env] of ["dev", "prod"].entries()) {
+      const url = `https://${env === "prod" ? "" : `${env}-`}${bases[0]!.host}`;
+      facts.push({
+        kind: "config",
+        id: `t-${env}`,
+        repo: gw,
+        settingKind: "config",
+        key: name,
+        value: url,
+        env,
+        cite: {
+          file: "config.json",
+          line: 3 + n * 3,
+          value: url,
+          quote: `"value": "${url}"`,
+          with: [
+            { file: "config.json", line: 2 + n * 3, value: name },
+            { file: "config.json", line: 1 + n * 3, value: env },
+          ],
+        },
+        ...tail,
+      });
+    }
+    await snapshot(root, gw, facts, SHAPE_COMMIT);
+  }
+  return { repos: [...bases.map((_, i) => idOf(i)), ...(gw ? [gw] : [])], calls };
+}
