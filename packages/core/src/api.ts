@@ -726,6 +726,19 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   installs exactly that version. Additive only.
  *   Also in 3.19.0 (ADR 0203): a change's conformance says how many operations it has, which
  *   the check doesn't look at (`operations`), so the app says they aren't checked. Additive only.
+ *   Also in 3.19.0 (ADR 0204, "Connect A to B" on every box): GET /api/connect says what
+ *   connecting two boxes is (`ConnectView`: `calls`, `connected`, `declared`, `declare` or
+ *   `needs`, the direction as asked), as a job with `job=1`. POST /api/declared-links takes
+ *   `kind: link` (a declared arrow into the profile's `links`, C6 version 3; 409 over a real call
+ *   or the same pair), and its undo takes `kind: link`. POST /api/map/edits takes an `add` of
+ *   `kind: link`, and its result says what each change wrote (`wrote`), which POST
+ *   /api/map/edits/undo takes back, then builds once. POST /api/setup/repos/run adds, syncs,
+ *   reads and applies new repos as one job (`ReposRunResult`, its `parts`). POST
+ *   /api/connect/find reads a declared arrow's caller for the call (a job; `FindResult`), and
+ *   GET /api/connect carries the last find's entry (`find`). GET /api/boxes/corrections lists a
+ *   box's declared arrows (`kind: arrow`). An Interface's join says who declared it
+ *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
+ *   shows (`declaredSuperseded`). Additive only.
  */
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
@@ -936,6 +949,8 @@ export const LINK_HOWS = [
   "unknown",
 ] as const;
 export const HierJoin = z.object({
+  /** 3.19.0 (ADR 0204): a declared arrow's (flag `declared-link`): who declared it. */
+  declaredBy: z.string().optional(),
   /** The catalog Interface the call is. */
   interface: z.string(),
   from: z.string(),
@@ -2177,6 +2192,18 @@ export const BuildReportView = z.object({
   /** The undo copy a written build took. */
   undo: z.number().int().optional(),
   discarded: z.array(BuildHandEdit).optional(),
+  /** 3.19.0 (ADR 0204 1.7): the declared arrows the code now shows, not drawn by this build. */
+  declaredSuperseded: z
+    .array(
+      z.object({
+        from: z.string(),
+        to: z.string(),
+        by: z.string(),
+        at: z.string(),
+        calls: z.number().int(),
+      }),
+    )
+    .optional(),
 });
 export type BuildReportViewT = z.infer<typeof BuildReportView>;
 /** 3.12.0: each repo's source in the build (point 5). */
@@ -2349,6 +2376,18 @@ export const MapEditAdd = z.discriminatedUnion("kind", [
     system: z.string().min(1).max(200),
     route: z.string().min(1).max(300),
   }),
+  /** 3.19.0 (ADR 0204): a declared arrow between two boxes, into the profile's `links`. */
+  z.strictObject({
+    kind: z.literal("link"),
+    from: z
+      .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
+      .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
+    to: z
+      .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
+      .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
+    why: z.string().trim().min(3).max(500),
+    planned: z.boolean().optional(),
+  }),
 ]);
 export type MapEditAddT = z.infer<typeof MapEditAdd>;
 /**
@@ -2453,6 +2492,22 @@ export const MapEditsResult = z.object({
    * listing, as Apply's job gives it, which Set up › Scans › Catalog builds confirms.
    */
   refused: BuildRefusalView.optional(),
+  /**
+   * 3.19.0 (ADR 0204 2.4): what each saved change wrote (corrections lines, or a declared arrow),
+   * as POST /api/map/edits/undo takes it.
+   */
+  wrote: z
+    .array(
+      z.union([
+        z.object({ edit: z.number().int(), file: z.string(), lines: z.array(z.string()) }),
+        z.object({
+          edit: z.number().int(),
+          file: z.string(),
+          link: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .optional(),
 });
 export type MapEditsResultT = z.infer<typeof MapEditsResult>;
 /**
@@ -6429,7 +6484,8 @@ export const BoxCorrections = z.object({
   items: z.array(
     z.object({
       /** 2.81.0 (ADR 0181): `unlink`, a person said the call reaches none of these. */
-      kind: z.enum(["edit", "wrong", "link", "topic", "call", "unlink"]),
+      /** 3.19.0 (ADR 0204): `arrow`, a declared arrow at either end of the box. */
+      kind: z.enum(["edit", "wrong", "link", "topic", "call", "unlink", "arrow"]),
       /** In words: what it says. */
       says: z.string(),
       by: z.string().optional(),
@@ -6443,6 +6499,7 @@ export const BoxCorrections = z.object({
       undo: z.union([
         z.object({ repo: z.string(), line: z.string() }),
         z.object({ kind: z.enum(["topic", "call"]), system: z.string(), value: z.string() }),
+        z.object({ kind: z.literal("link"), from: LinkBox, to: LinkBox }),
       ]),
       /** A correction the latest read didn't meet: kept, said. */
       stale: z.boolean().optional(),
@@ -6528,6 +6585,163 @@ export type CorrectDecisionResultT = z.infer<typeof CorrectDecisionResult>;
 export type UndoBatchResultT = z.infer<typeof UndoBatchResult>;
 export type QuestionsProposeViewT = z.infer<typeof QuestionsProposeView>;
 export type UpgradeViewT = z.infer<typeof UpgradeView>;
+
+// ------------------------------------------------------------------ Connect A to B (ADR 0204)
+
+/**
+ * 3.19.0 (ADR 0204): a declared arrow as the profile holds it (C6 version 3, `links`), with the
+ * profile's file relative to the metarepo.
+ */
+export const DeclaredArrowView = z.object({
+  from: LinkBox,
+  to: LinkBox,
+  why: z.string(),
+  by: z.string(),
+  at: z.string(),
+  planned: z.boolean().optional(),
+  file: z.string(),
+});
+/**
+ * 3.19.0 (ADR 0204 A.6): what the last "Find it in the code" said of one declared arrow, from
+ * `facts/<A>.find.yaml`: told from the catalog after the build, never from the session. `facts`
+ * are the call facts it rests on; `other` the box the code shows instead (`elsewhere`); `shape`
+ * the first found call's type, its exact reason (5.3) and line, for Make this a reading rule.
+ */
+export const FindOutcome = z.enum(["found", "found-loose", "elsewhere", "not-found"]);
+export const FindEntryView = z.object({
+  to: LinkBox,
+  at: z.string(),
+  commit: z.string().optional(),
+  outcome: FindOutcome,
+  facts: z.array(z.string()),
+  looked: z.array(z.string()),
+  other: z.string().optional(),
+  rejected: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
+  shape: z
+    .object({ type: z.string(), why: z.string().optional(), at: z.string(), value: z.string() })
+    .optional(),
+});
+/** 3.19.0 (ADR 0204 3.1): what is missing before two boxes can be connected, each with its fix. */
+export const ConnectNeed = z.object({
+  need: z.enum(["pick-repo", "no-repo", "read", "verify", "add-system"]),
+  /** Which end it is about. */
+  end: z.enum(["from", "to"]),
+  /** The box's name as the map draws it. */
+  label: z.string(),
+  /** `pick-repo`: the repos the system holds; `read`/`verify`: the repo. */
+  repos: z.array(z.string()).optional(),
+  /** The step the panel's button runs (the same as In a terminal). */
+  command: z.string().optional(),
+});
+/**
+ * 3.19.0 (ADR 0204 1.3, B.1, B.2): GET /api/connect, what connecting `from` to `to` is: `calls`
+ * (the caller's calls that could be the callee's, in `candidates`: those going elsewhere first),
+ * `connected` (code calls the callee already, `existing` of them, none loose), `declared` (the
+ * profile has the arrow, `declared`), `declare` (no call of the caller could be the callee's, or
+ * either end has no code) or `needs` (what is missing first). `superseded`: the arrow is declared
+ * and the code now shows `calls` real calls the same way (Retire it). The direction is the
+ * request's, never turned round.
+ */
+export const ConnectView = z.object({
+  from: LinkBox,
+  to: LinkBox,
+  fromName: z.string(),
+  toName: z.string(),
+  mechanism: z.enum(["calls", "connected", "declared", "declare", "needs"]),
+  needs: z.array(ConnectNeed),
+  candidates: LinkCandidatesView.optional(),
+  existing: z.number().int().nonnegative(),
+  declared: DeclaredArrowView.optional(),
+  superseded: z.object({ calls: z.number().int().positive() }).optional(),
+  /** The callee is a gateway and the caller an outside system: its routes can be declared. */
+  routes: z.boolean().optional(),
+  find: FindEntryView.optional(),
+});
+/** 3.19.0: a declared arrow asked for (POST /api/declared-links `kind: link`, Edit the map). */
+export const ArrowRequestFields = {
+  from: LinkBox,
+  to: LinkBox,
+  why: z.string().trim().min(3).max(500),
+  planned: z.boolean().optional(),
+};
+export const DeclareArrowRequest = z.strictObject({
+  kind: z.literal("link"),
+  ...ArrowRequestFields,
+  preview: z.boolean().optional(),
+});
+/** 3.19.0: POST /api/declared-links/undo of a declared arrow (Remove it, Retire). */
+export const UndeclareArrowRequest = z.strictObject({
+  kind: z.literal("link"),
+  from: LinkBox,
+  to: LinkBox,
+  preview: z.boolean().optional(),
+});
+/**
+ * 3.19.0 (ADR 0204 2.4): what one write of POST /api/map/edits wrote, for its Undo: lines
+ * appended to a corrections file, or one declared arrow in a profile.
+ */
+export const MapEditWrote = z.union([
+  z.strictObject({ edit: z.number().int(), file: z.string(), lines: z.array(z.string()).min(1) }),
+  z.strictObject({ edit: z.number().int(), file: z.string(), link: DeclaredArrowView }),
+]);
+/** 3.19.0: POST /api/map/edits/undo, exactly what an Apply wrote, then one build. */
+export const MapEditsUndoRequest = z.strictObject({ wrote: z.array(MapEditWrote).min(1).max(100) });
+/** 3.19.0 (ADR 0204 decision 4): POST /api/setup/repos/run, add, sync, read and apply in one job. */
+export const ReposRunRequest = z.strictObject({
+  platform: RecordId.optional(),
+  /** The repos to add (as POST /api/setup/repos), or only their ids to continue with. */
+  repos: AddReposRequest.shape.repos,
+  /** Hand-off: the person says they read them with their assistant, so the job goes on to Apply. */
+  read: z.boolean().optional(),
+});
+export const ReposRunPart = z.object({
+  part: z.enum(["add", "sync", "read", "apply"]),
+  state: z.enum(["done", "waiting", "stopped", "failed"]),
+  repos: z.array(
+    z.object({
+      repo: z.string(),
+      state: z.enum(["done", "waiting", "stopped", "failed"]),
+      why: z.string().optional(),
+    }),
+  ),
+});
+export const ReposRunResult = z.object({
+  parts: z.array(ReposRunPart),
+  /** The read waits for the person's assistant: the command to paste (hard rule 4). */
+  handoff: z.object({ command: z.string() }).optional(),
+  /** How many of the repos are on the map, of how many. */
+  done: z.number().int().nonnegative(),
+  of: z.number().int().nonnegative(),
+});
+/** 3.19.0 (ADR 0204 A.9): POST /api/connect/find, a job; its result is FindResult. */
+export const ConnectFindRequest = z.strictObject({
+  from: z.string().min(1).max(200),
+  to: LinkBox,
+  mode: z.enum(["copilot-acp", "hand-off"]).optional(),
+  /** Hand-off: the person's assistant wrote the answer; read it and go on. */
+  read: z.boolean().optional(),
+});
+export const FindResult = z.object({
+  /** The read waits for the person's assistant: the brief and where its answer goes. */
+  handoff: z.object({ brief: z.string(), answer: z.string(), command: z.string() }).optional(),
+  entry: FindEntryView.optional(),
+  brief: z.string(),
+  report: z.string().optional(),
+  /** Lines of the answer left out (an id that is no fact of A, a file A doesn't have). */
+  leftOut: z.array(z.string()).default([]),
+});
+export type DeclaredArrowViewT = z.infer<typeof DeclaredArrowView>;
+export type FindEntryViewT = z.infer<typeof FindEntryView>;
+export type ConnectNeedT = z.infer<typeof ConnectNeed>;
+export type ConnectViewT = z.infer<typeof ConnectView>;
+export type DeclareArrowRequestT = z.infer<typeof DeclareArrowRequest>;
+export type UndeclareArrowRequestT = z.infer<typeof UndeclareArrowRequest>;
+export type MapEditWroteT = z.infer<typeof MapEditWrote>;
+export type ReposRunRequestT = z.infer<typeof ReposRunRequest>;
+export type ReposRunPartT = z.infer<typeof ReposRunPart>;
+export type ReposRunResultT = z.infer<typeof ReposRunResult>;
+export type ConnectFindRequestT = z.infer<typeof ConnectFindRequest>;
+export type FindResultT = z.infer<typeof FindResult>;
 
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
@@ -9285,10 +9499,72 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/connect": {
+    get: {
+      id: "getConnect",
+      summary:
+        "3.19.0 (ADR 0204): what connecting box `from` to box `to` is, the direction as asked: the calls to connect (those going elsewhere first), connected already, declared already, declare the arrow, or what is needed first",
+      tag: "views",
+      params: [
+        q("from", str, "The caller: repo:<id> or system:<id>"),
+        q("to", str, "The callee: repo:<id> or system:<id>"),
+        q(
+          "job",
+          str,
+          "1 runs the read as a job (202 JobAccepted; its result `answer` is this view)",
+        ),
+      ],
+      ok: { status: 200, schema: "ConnectView", description: "OK" },
+      alsoOk: { status: 202, schema: "JobAccepted", description: "Started as a job (`job=1`)" },
+      errors: [400, 404],
+    },
+  },
+  "/api/connect/find": {
+    post: {
+      id: "findDeclaredArrow",
+      summary:
+        "3.19.0 (ADR 0204 A): find a declared arrow in the caller's code, as a local job: the brief from the profile's item (a hint, never evidence), the assistant's session or the hand-off, verify --write, and the outcome told from the catalog after the build. Its job's result is FindResult",
+      tag: "scans",
+      body: ConnectFindRequest,
+      ok: { status: 202, schema: "JobAccepted", description: "Started: its result is FindResult" },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/map/edits/undo": {
+    post: {
+      id: "undoMapEdits",
+      summary:
+        "3.19.0 (ADR 0204 2.4): take back exactly what an Apply of Edit the map or Connect wrote (its result's `wrote`), each only while it is as written, then build once, as a local job; its result is MapEditsResult",
+      tag: "scans",
+      body: MapEditsUndoRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its result is MapEditsResult",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/setup/repos/run": {
+    post: {
+      id: "runNewRepos",
+      summary:
+        "3.19.0 (ADR 0204 decision 4): add, sync, read and apply new repos as one local job of four parts, worked out from disk so it continues where it stopped; the read pauses with the command to paste where the app can't start the assistant. Its job's result is ReposRunResult",
+      tag: "workspace",
+      body: ReposRunRequest,
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its result is ReposRunResult",
+      },
+      errors: [400, 409],
+    },
+  },
   "/api/declared-links/undo": {
     post: {
       id: "undeclareLink",
-      summary: "Remove exactly one declared topic or call from a system in the profile (ADR 0174)",
+      summary:
+        "Remove exactly one declared topic or call from a system in the profile (ADR 0174), or (3.19.0, `kind: link`) one declared arrow from the profile's links",
       tag: "workspace",
       body: UndeclareLinkRequest,
       ok: { status: 200, schema: "FileChangeResult", description: "OK" },
@@ -10430,6 +10706,9 @@ export function openApiDocument(): Record<string, unknown> {
     SetRepoOwnerResult,
     FileChangeResult,
     DeclarableRoutesView,
+    ConnectView,
+    FindResult,
+    ReposRunResult,
     SketchStrokeRequest,
     SketchResult,
     AddableView,

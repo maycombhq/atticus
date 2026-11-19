@@ -531,10 +531,32 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
                 callers,
                 waitsOn,
                 ...(refused ? { refused } : {}),
+                // ADR 0204 2.4: what each saved change wrote, for Undo.
+                ...(ran?.wrote.length ? { wrote: ran.wrote } : {}),
               },
             };
           },
           mapEdits,
+        );
+      })
+      // ADR 0204 2.4: Undo of an Apply, exactly what it wrote while it is as written, one build.
+      .add("POST", "/api/map/edits/undo", async ({ body }) => {
+        const b = parse(Api.MapEditsUndoRequest, body);
+        const { undoMapEdits } = await import("./catalog-build-commands.js");
+        return asJob(
+          "Undo the change to the map",
+          async () => {
+            let ran: Awaited<ReturnType<typeof undoMapEdits>> | undefined;
+            const res = await captured(async (io) => {
+              ran = await undoMapEdits(root, b.wrote, io);
+              return ran.code;
+            });
+            return {
+              ...res,
+              extra: { edits: [], built: ran?.built ?? false, callers: [], waitsOn: [] },
+            };
+          },
+          { for: { action: "map-edits" as const }, hearsStop: true },
         );
       })
   );

@@ -1357,6 +1357,8 @@ const addWords = (e: Api.MapEditT) => {
   }
   if (!("add" in e)) return "";
   const a = e.add;
+  if (a.kind === "link")
+    return `${a.from.repo ?? a.from.system} → ${a.to.repo ?? a.to.system} (an arrow declared)`;
   return a.kind === "call" ? `${a.system} calls ${a.route}` : `${a.system} ${a.side} ${a.topic}`;
 };
 
@@ -1389,7 +1391,9 @@ export async function applyMapEdits(
   root: string,
   o: { edits: readonly Api.MapEditT[]; by?: string; now?: Date; what?: string },
   io: Output,
-): Promise<{ code: number; edits: MapEditOutcome[]; built: boolean }> {
+): Promise<{ code: number; edits: MapEditOutcome[]; built: boolean; wrote: Api.MapEditWroteT[] }> {
+  /** ADR 0204 2.4: what each saved change wrote, for its Undo. */
+  const wrote: Api.MapEditWroteT[] = [];
   const outcomes: MapEditOutcome[] = o.edits.map((e, edit) => ({
     edit,
     kind: e.kind,
@@ -1566,12 +1570,39 @@ export async function applyMapEdits(
               });
             inputs.add(p.rel);
           }
-          if (lines.length)
+          if (lines.length) {
+            wrote.push({ edit: i, file: p.rel, lines: [...lines] });
             io.out(
               `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
             );
-        } else if ("add" in e) {
+          }
+        } else if ("add" in e && e.add.kind === "link") {
+          // ADR 0204: a declared arrow, one item of the caller's profile's `links`.
           const a = e.add;
+          const { writeArrow } = await import("./ui-api-declared.js");
+          const res = await writeArrow(
+            root,
+            { from: a.from, to: a.to, why: a.why, planned: a.planned },
+            { by, at },
+          );
+          replaced(join(root, ...res.rel.split("/")), i, res);
+          inputs.add("org-pack");
+          wrote.push({
+            edit: i,
+            file: res.rel,
+            link: {
+              from: a.from,
+              to: a.to,
+              why: a.why.trim(),
+              by,
+              at,
+              ...(a.planned ? { planned: true } : {}),
+              file: res.rel,
+            },
+          });
+          io.out(`${said}: declared the arrow in ${res.rel}.`);
+        } else if ("add" in e) {
+          const a = e.add as Exclude<Api.MapEditAddT, { kind: "link" }>;
           const d =
             a.kind === "call"
               ? ({ kind: "call", system: a.system, route: a.route } as const)
@@ -1657,7 +1688,62 @@ export async function applyMapEdits(
   // The lock was held: nothing tried.
   if (outcomes.every((x) => x.state === "not-tried") && code !== 0)
     io.err("Nothing was saved and nothing was built.");
-  return { code, edits: outcomes, built };
+  // A change taken back wrote nothing that stands.
+  const kept = new Set(outcomes.filter((x) => x.state === "saved").map((x) => x.edit));
+  return { code, edits: outcomes, built, wrote: wrote.filter((w) => kept.has(w.edit)) };
+}
+
+/**
+ * ADR 0204 2.4: Undo of an Apply, one local job: exactly what it wrote (its `wrote`), each only
+ * while it is still as written (every line on file, the arrow with the same why, who and when),
+ * else nothing is removed and what changed is said; then one build. No commit, no push.
+ */
+export async function undoMapEdits(
+  root: string,
+  wrote: readonly Api.MapEditWroteT[],
+  io: Output,
+): Promise<{ code: number; built: boolean }> {
+  let built = false;
+  const code = await locked(root, "Undo", io, async () => {
+    const { loadOrgPack, orgPackDirOf, retireArrow } = await import("@maycombhq/core");
+    const { arrowOf, endOf } = await import("./connect-arrows.js");
+    const { removeCorrectionLines } = await import("./ui-api-links.js");
+    const op = await loadOrgPack(orgPackDirOf(root));
+    const changed: string[] = [];
+    for (const w of wrote) {
+      if ("lines" in w) {
+        const text = await readFile(join(root, ...w.file.split("/")), "utf8").catch(() => "");
+        const have = new Set(text.split(/\r?\n/));
+        if (w.lines.some((l) => !have.has(l))) changed.push(`${w.file} (a line it wrote is gone)`);
+      } else {
+        const d = arrowOf(root, op, w.link.from, w.link.to);
+        if (!d || d.why !== w.link.why || d.by !== w.link.by || d.at !== w.link.at)
+          changed.push(`${w.file} (the arrow isn't as written)`);
+      }
+    }
+    if (changed.length) {
+      io.err(
+        `Nothing was undone: ${changed.join(", ")} changed since. Look at ${changed.length === 1 ? "it" : "them"} under Corrections and declarations and undo there.`,
+      );
+      return 1;
+    }
+    for (const w of wrote) {
+      if ("lines" in w) {
+        await removeCorrectionLines(join(root, ...w.file.split("/")), w.lines);
+        io.out(
+          `Took back ${w.lines.length} line${w.lines.length === 1 ? "" : "s"} from ${w.file}.`,
+        );
+      } else {
+        const platform = w.file.split("/").slice(-2)[0]!;
+        await retireArrow(root, { from: endOf(w.link.from), to: endOf(w.link.to) }, { platform });
+        io.out(`Took the declared arrow out of ${w.file}.`);
+      }
+    }
+    const c = await buildAfterDecisions(root, new Set(), io, { inputs: new Set(["org-pack"]) });
+    built = c === 0;
+    return c;
+  });
+  return { code, built };
 }
 
 /**

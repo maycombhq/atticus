@@ -6,7 +6,9 @@ import {
   cmpText,
   declarableGateways,
   declarableRoutes,
+  declaredArrows,
   declaredOf,
+  declareArrow,
   declareLink,
   DeclareError,
   factIdPart,
@@ -19,6 +21,7 @@ import {
   orgPackDirOf,
   orgPackRelOf,
   parseCorrections,
+  retireArrow,
   undeclareLink,
   type Declared,
   type FactCorrection,
@@ -34,6 +37,17 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { safeMessage } from "./file-lock.js";
+import {
+  arrowOf,
+  arrowPlatform,
+  arrowView,
+  boxOfEnd,
+  boxWords,
+  connectedWords,
+  endOf,
+  knownEnd,
+  realCalls,
+} from "./connect-arrows.js";
 import { readRepos } from "./target-answer.js";
 import { looksLikeGatewayType } from "./ui-api-links.js";
 
@@ -243,6 +257,25 @@ export function uiDeclaredRoutes(
       }
     })
     .add("POST", "/api/declared-links", async ({ body }) => {
+      // ADR 0204: a declared arrow between two boxes, into the profile's `links`.
+      if ((body as { kind?: unknown } | null)?.kind === "link") {
+        const a = Api.DeclareArrowRequest.safeParse(body);
+        if (!a.success)
+          throw badRequest("Say both boxes and why: { kind: link, from, to, why }.", {
+            errors: a.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+          });
+        try {
+          const res = await writeArrow(ctx.root, a.data, {
+            by: ctx.user,
+            at: now().toISOString(),
+            ...(a.data.preview ? { preview: true } : {}),
+          });
+          if (res.written) ctx.events.publish({ type: "file.changed", path: res.rel });
+          return { status: 200, body: arrowChange(res, a.data) };
+        } catch (e) {
+          return fail(e);
+        }
+      }
       const b = Api.DeclareLinkRequest.safeParse(body ?? {});
       if (!b.success)
         throw badRequest(
@@ -366,6 +399,39 @@ export function uiDeclaredRoutes(
       };
     })
     .add("POST", "/api/declared-links/undo", async ({ body }) => {
+      // ADR 0204: Remove it, Retire the declared arrow: exactly that item of `links`.
+      if ((body as { kind?: unknown } | null)?.kind === "link") {
+        const a = Api.UndeclareArrowRequest.safeParse(body);
+        if (!a.success) throw badRequest("Say which arrow: { kind: link, from, to }.");
+        try {
+          const op = await loadOrgPack(orgPackDirOf(ctx.root));
+          const declared = arrowOf(ctx.root, op, a.data.from, a.data.to);
+          if (!declared)
+            throw notFound(
+              `No arrow ${boxWords(a.data.from)} → ${boxWords(a.data.to)} is declared (retired already?).`,
+            );
+          const res = await retireArrow(
+            ctx.root,
+            { from: endOf(a.data.from), to: endOf(a.data.to) },
+            {
+              platform: declared.file.split("/").slice(-2)[0]!,
+              ...(a.data.preview ? { preview: true } : {}),
+            },
+          );
+          if (res.written) ctx.events.publish({ type: "file.changed", path: res.rel });
+          return {
+            status: 200,
+            body: {
+              written: res.written,
+              files: [{ file: res.rel, changes: res.changes }],
+              verify: "atticus catalog build",
+              commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: the declared arrow ${boxWords(a.data.from)} → ${boxWords(a.data.to)} retired`)}"`,
+            } satisfies Api.FileChangeResultT,
+          };
+        } catch (e) {
+          return fail(e);
+        }
+      }
       const b = Api.UndeclareLinkRequest.safeParse(body ?? {});
       if (!b.success) throw badRequest("Say which declaration: { kind, system, value }.");
       try {
@@ -441,6 +507,58 @@ export function uiDeclaredRoutes(
             undo: { kind: x.kind, system: x.system, value: x.value },
           });
       }
+      // ADR 0204: the declared arrows at either end of the box, each with its Remove.
+      const box: Api.LinkBoxT = repo ? { repo } : { system: system! };
+      const op = await loadOrgPack(orgPackDirOf(ctx.root));
+      for (const d of declaredArrows(op)) {
+        const [f, t] = [boxOfEnd(d.from), boxOfEnd(d.to)];
+        if (![f, t].some((x) => x.repo === box.repo && x.system === box.system)) continue;
+        items.push({
+          kind: "arrow",
+          says: `${boxWords(f)} calls ${boxWords(t)}, declared: "${d.why}"${d.planned ? " (not built yet)" : ""}`,
+          by: d.by,
+          at: d.at,
+          file: arrowView(ctx.root, d).file,
+          undo: { kind: "link", from: f, to: t },
+        });
+      }
       return { status: 200, body: { items } satisfies Api.BoxCorrectionsT };
     });
 }
+
+/**
+ * ADR 0204 1.4 and 1.7: write (or preview) a declared arrow, checked first: both ends known, not
+ * the same box, and no real call the same way already (409 with the `connected` words). Edit the
+ * map's Apply writes through this too.
+ */
+export async function writeArrow(
+  root: string,
+  a: { from: Api.LinkBoxT; to: Api.LinkBoxT; why: string; planned?: boolean | undefined },
+  o: { by: string; at: string; preview?: boolean },
+) {
+  const op = await loadOrgPack(orgPackDirOf(root));
+  for (const b of [a.from, a.to])
+    if (!knownEnd(op, b))
+      throw notFound(
+        `No ${b.repo ? "repo of the manifests" : "system of the profiles"} is ${boxWords(b)}.`,
+      );
+  if (boxWords(a.from) === boxWords(a.to) && !!a.from.repo === !!a.to.repo)
+    throw badRequest("An arrow's two ends differ: pick another box.");
+  const n = await realCalls(root, op, a.from, a.to);
+  if (n) throw conflict(connectedWords(a.from, a.to, n));
+  return declareArrow(
+    root,
+    { from: endOf(a.from), to: endOf(a.to), why: a.why, ...(a.planned ? { planned: true } : {}) },
+    { ...o, platform: arrowPlatform(op, a.from, a.to) },
+  );
+}
+
+const arrowChange = (
+  res: Awaited<ReturnType<typeof writeArrow>>,
+  a: { from: Api.LinkBoxT; to: Api.LinkBoxT },
+): Api.FileChangeResultT => ({
+  written: res.written,
+  files: [{ file: res.rel, changes: res.changes }],
+  verify: "atticus catalog build",
+  commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${boxWords(a.from)} calls ${boxWords(a.to)}, declared on the canvas`)}"`,
+});

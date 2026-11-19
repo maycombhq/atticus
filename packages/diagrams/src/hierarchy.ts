@@ -246,6 +246,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   // beta.24: a call whose host nothing resolves, by the one proxy BasePath its path starts with.
   [JOINED_BY_BASE_PATH]: "base-path",
   "declared-caller": "declared",
+  // ADR 0204: an arrow a person declared in the profile's `links`.
+  "declared-link": "declared",
   // ADR 0162 §6 (F8): a topic or queue the profile names as an outside system's: a person's word.
   [DECLARED_TOPIC]: "declared",
   // ADR 0160 (O3): answered by an entry of another team's shared map.
@@ -342,6 +344,10 @@ function joinOf(i: RecordOf<"Interface">): Join {
     other: evidenceOf(i.evidence.filter((e) => !e.side || !sided.has(e.side))),
     ...sharedOf(i),
     ...aiRunOf(i),
+    // ADR 0204 1.6: who declared the arrow, for its "declared by <name>".
+    ...(i.flags?.includes("declared-link") && i.evidence[0]?.by
+      ? { declaredBy: i.evidence[0].by }
+      : {}),
   };
 }
 

@@ -36,7 +36,7 @@ export function withBoxSystems(
   edits: readonly Api.MapEditT[],
 ): Api.MapEditT[] {
   return edits.map((e) =>
-    "add" in e && e.add
+    "add" in e && e.add && e.add.kind !== "link"
       ? ({ ...e, add: { ...e.add, system: boxSystemOf(op, e.add.system) } } as Api.MapEditT)
       : e,
   );
@@ -134,8 +134,27 @@ export async function checkMapEdits(
       }
       callers.add(p.from);
       if (p.to.repo && unread(p.to.repo)) waits.add(p.to.repo);
-    } else if (e.kind !== "delete") {
+    } else if (e.kind !== "delete" && e.add.kind === "link") {
+      // ADR 0204: a declared arrow, tried as its own preview (both ends, no real call, once).
       const a = e.add;
+      const key = `link\u0000${JSON.stringify([a.from, a.to])}`;
+      if (staged.has(key)) said.push("The same arrow is staged twice: remove one of them.");
+      else
+        try {
+          const { writeArrow } = await import("./ui-api-declared.js");
+          await writeArrow(
+            root,
+            { from: a.from, to: a.to, why: a.why, planned: a.planned },
+            { by: "preview", at: new Date(0).toISOString(), preview: true },
+          );
+        } catch (err) {
+          if (!(err instanceof DeclareError) && !(err instanceof HttpError)) throw err;
+          said.push(err instanceof HttpError ? (err.detail ?? err.title) : err.message);
+        }
+      staged.add(key);
+      if (a.from.repo) callers.add(a.from.repo);
+    } else if (e.kind !== "delete") {
+      const a = e.add as Exclude<Api.MapEditAddT, { kind: "link" }>;
       const value = a.kind === "call" ? a.route.trim() : a.topic.trim();
       const key = `${a.system}\u0000${a.kind}\u0000${value}`;
       if (a.kind === "topic" && reposOf(a.system).length)
