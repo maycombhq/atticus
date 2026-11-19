@@ -25,8 +25,11 @@
  *
  * When the launcher is told to end (SIGTERM, SIGINT, SIGHUP) or exits for any reason, it ends the
  * server too. On Windows that is `taskkill /pid <pid> /T /F`: the child is cmd.exe, and ending it
- * alone leaves `atticus.cmd`'s Node running. A launcher ended with no notice (TerminateProcess,
- * SIGKILL) can do nothing; the server still ends when its stdin closes.
+ * alone leaves `atticus.cmd`'s Node running. taskkill is called by its path under `SystemRoot`
+ * (written with a forward slash, which Windows takes), since a bare name is looked for in the
+ * current folder first; by its name only where `SystemRoot` isn't set. It is given five seconds.
+ * A launcher ended with no notice (TerminateProcess, SIGKILL) can do nothing; the server still
+ * ends when its stdin closes.
  *
  * Written with single quotes and none of the characters cmd.exe reads (`"`, `%`, `^`, `&`, `|`,
  * `<`, `>`, `!`), so the text is the same after a shell has read it, should an editor start
@@ -36,7 +39,7 @@ export const ATTICUS_MCP_LAUNCHER = [
   "var w=process.platform==='win32',p=require('node:child_process'),e=process.env,d=0;",
   "if(w)e=Object.assign({},e,{NoDefaultCurrentDirectoryInExePath:'1'});",
   "var c=p.spawn(w?'atticus mcp':'atticus',w?[]:['mcp'],{stdio:'inherit',shell:w,windowsHide:true,env:e});",
-  "function k(){if(d)return;d=1;if(c.pid==null)return;try{if(w)p.spawnSync('taskkill',['/pid',String(c.pid),'/T','/F'],{stdio:'ignore',windowsHide:true});else c.kill()}catch(x){}}",
+  "function k(){if(d)return;d=1;if(c.pid==null)return;try{if(w)p.spawnSync(e.SystemRoot?e.SystemRoot+'/System32/taskkill.exe':'taskkill',['/pid',String(c.pid),'/T','/F'],{stdio:'ignore',windowsHide:true,timeout:5000});else c.kill()}catch(x){}}",
   "c.on('error',function(x){d=1;console.error('Could not start atticus mcp ('+x.message+'). Install the atticus command line and put it on PATH.');process.exit(1)});",
   "c.on('exit',function(x){d=1;process.exit(x==null?1:x)});",
   "['SIGTERM','SIGINT','SIGHUP'].forEach(function(s){process.on(s,function(){k();process.exit(1)})});",
