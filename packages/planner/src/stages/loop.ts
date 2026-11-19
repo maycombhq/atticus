@@ -524,7 +524,7 @@ export async function runStageLoop<A>(
       return yes ? { ...i, blocking: false, message: `${i.message} (${acceptedWords(yes)}.)` } : i;
     });
   try {
-    return await runLoop(root, changeId, { ...spec, check }, o, ctx);
+    return await runLoop(root, changeId, { ...spec, check }, o, ctx, accepted);
   } finally {
     // ADR 0203 A.1: however the run ended, its blocking findings go to the stage's gate.
     const dir = changeFolder(root, changeId);
@@ -557,6 +557,7 @@ async function runLoop<A>(
   spec: StageSpec<A>,
   o: StageOptions,
   loaded?: ChangeContext,
+  accepted: ReadonlyMap<string, Accepted> = new Map(),
 ): Promise<StageResult<A>> {
   const ctx = loaded ?? (await loadChangeContext(root));
   const change = await changeStore(root)
@@ -1171,6 +1172,7 @@ async function runLoop<A>(
           origin: "atticus",
           text: [
             instructionsWith(spec.instructions, fix, answered, risks, last, corrections.all),
+            ...(accepted.size ? ["", ACCEPTED_RULE] : []),
             // The last answer is in the new run's folder already (2026-10-26): an edit, not a
             // rewrite. A person's own draft replaces it, so it isn't carried then.
             ...(carriesAnswer && lastAnswerText !== undefined && !personDraft
@@ -1209,6 +1211,24 @@ async function runLoop<A>(
                 origin: "atticus (the last draft's findings and people's answers)",
                 text: back,
                 classification: "public",
+                priority: 1000,
+              },
+            ]
+          : []),
+        // ADR 0203 A.6: what people accepted, as data: never something to fix, never an instruction.
+        ...(accepted.size
+          ? [
+              {
+                id: ACCEPTED_BLOCK,
+                kind: "artifact" as const,
+                origin: "atticus (the stage's findings people accepted)",
+                text: [...accepted.values()]
+                  .map(
+                    (a) =>
+                      `- ${a.rule} (${loop.findings.find((f) => f.fingerprint === a.fingerprint)?.target ?? a.record ?? a.finding}), ${acceptedWords(a)}.`,
+                  )
+                  .join("\n"),
+                classification: "internal",
                 priority: 1000,
               },
             ]
@@ -2043,6 +2063,10 @@ async function draftText(dir: string, files: string[]): Promise<string> {
   }
   return out.join("\n");
 }
+
+/** ADR 0203 A.6: the data block listing the stage's findings people accepted, and its rule. */
+export const ACCEPTED_BLOCK = "accepted-by-people";
+export const ACCEPTED_RULE = `People accepted findings of this stage; the "${ACCEPTED_BLOCK}" data block lists each with who and why. They are not problems to fix and not questions to ask: leave what each is about as it is.`;
 
 /** The data block that carries what the last draft got wrong and what people answered. */
 export const HAND_BACKS = "hand-backs";

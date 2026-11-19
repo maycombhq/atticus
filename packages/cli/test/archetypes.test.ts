@@ -45,6 +45,7 @@ import {
   STAGED_EVENT,
   STAGED_MIGRATION,
   STAGED_MIXED,
+  given,
   STAGED_NO_STEP,
   STAGED_NOTHING,
   STAGED_PRODUCT,
@@ -52,7 +53,7 @@ import {
   UNREAD_REPO,
   type Archetype,
 } from "./archetypes-changes.js";
-import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
+import { FIELD_TOPIC_LISTENER, makeFieldEstate, writeChangeFiles } from "./field-estate.js";
 
 /**
  * ADR 0201 (2.0.0-beta.30, slice 1): the three kinds of change the stages refused or made hard at
@@ -70,6 +71,8 @@ import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
 const NOW = "2026-11-18T09:00:00Z";
 /** ADR 0203 A: a consumer nothing knows: no record, no manifest, not planned, not declared outside. */
 const GHOST = "forge-ghost";
+/** A repo and a component nothing knows either, for an operation and a call (ADR 0203 A). */
+const GHOST_SVC = "forge-ghost-svc";
 const T = 300_000;
 const META = "forge/forge";
 
@@ -1326,6 +1329,108 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       expect(body).toContain(
         `### Accepted by people\n\n- \`delta.unknown-consumer\` at the architecture stage, by \`pat\`: \`${why}\``,
       );
+    },
+    T,
+  );
+
+  /**
+   * A stage whose draft keeps a finding a person may accept: run once (it stops or asks), the
+   * finding accepted by pat as a waiver, then run again: done, with no new draft.
+   */
+  async function acceptedThenDone(args: string[], answer: string, id: string, rule: string) {
+    const first = assistant(answer);
+    await stageCli(m.root, args, {}, capture().io, { runtime: first.runtime, now: new Date(NOW) });
+    const gate = `stage-${args[0] === "plan" ? "stories" : args[1]}`;
+    const projected = (await Promise.all(await gateFindings(id, gate))).find(
+      (f) => f.rule === rule,
+    );
+    expect(projected, `no ${rule} on ${gate}`).toMatchObject({ waivable: true, state: "open" });
+    const w = await run([
+      "finding",
+      id,
+      String(projected!.id),
+      "waive",
+      "--reason",
+      "It is created in the same release",
+      "--by",
+      "pat",
+      "--root",
+      m.root,
+    ]);
+    expect(w.code, w.err.join("\n")).toBe(0);
+    const again = assistant(answer);
+    const c = capture();
+    await stageCli(m.root, args, { json: true }, c.io, {
+      runtime: again.runtime,
+      now: new Date(NOW),
+    });
+    expect((JSON.parse(c.out.join("\n")) as { state: string }).state).toBe("done");
+    expect(again.drafts).toEqual([]);
+    return projected!;
+  }
+
+  it(
+    "operation.unknown-repo accepted: the repo is known as a new repo, and its operation's task is under it",
+    async () => {
+      const x = { ...STAGED_MIXED, id: "publish-settled-refunds-ghost-repo" };
+      const architecture = x.architecture.replace(
+        `    repos: [${EMPTY_REPO}]\n    what: Set the topic's retention to seven days.`,
+        `    repos: [${EMPTY_REPO}, ${GHOST_SVC}]\n    what: Set the topic's retention to seven days.`,
+      );
+      expect(architecture).toContain(GHOST_SVC);
+      const stories = x.stories.replace(
+        given(EMPTY_REPO, "the topic's retention is seven days in its deploy files"),
+        given(EMPTY_REPO, "the topic's retention is seven days in its deploy files") +
+          given(GHOST_SVC, "the topic's retention is seven days in its deploy files"),
+      );
+      expect(stories).toContain(GHOST_SVC);
+      await change(x, "feature");
+      await stage(["change", "feature", x.id], x.feature);
+      const f = await acceptedThenDone(
+        ["change", "architecture", x.id],
+        architecture,
+        x.id,
+        "operation.unknown-repo",
+      );
+      expect(f).toMatchObject({ locator: { record: GHOST_SVC } });
+      const s = await stage(["plan", "stories", x.id], stories);
+      expect(s.result.findings.filter((i) => i.blocking).map((i) => i.message)).toEqual([]);
+      expect(s.result.state).toBe("done");
+      const ghost = (await tasksOf(m.root, x.id)).find((t) => t.repo === GHOST_SVC);
+      expect(ghost, "no task under the accepted repo").toBeDefined();
+      // tasks.md puts it under the repo's own heading. The task run's words for a repo no
+      // manifest lists are ADR 0201's, tested on the quick path above (this change is in define).
+      expect(await fileOf(x.id, "tasks.md")).toContain(`## ${GHOST_SVC}`);
+    },
+    T,
+  );
+
+  it(
+    "delta.unknown-component accepted: the call's target is known as accepted, and the stories name it",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-ghost-target" };
+      const architecture = e.architecture.replace(
+        `to: { component: ${FIELD_TOPIC_LISTENER}, entry: ${TOPIC} }`,
+        `to: { component: ${GHOST_SVC}, entry: ${TOPIC} }`,
+      );
+      expect(architecture).toContain(GHOST_SVC);
+      await change(e, "feature");
+      await stage(["change", "feature", e.id], e.feature);
+      const f = await acceptedThenDone(
+        ["change", "architecture", e.id],
+        architecture,
+        e.id,
+        "delta.unknown-component",
+      );
+      expect(f).toMatchObject({ locator: { record: GHOST_SVC } });
+      const s = await stage(["plan", "stories", e.id], e.stories);
+      expect(s.result.findings.filter((i) => i.blocking).map((i) => i.message)).toEqual([]);
+      expect(s.result.state).toBe("done");
+      const story = await readFile(
+        join(changeFolder(m.root, e.id), "stories", "s1-settle-refund.md"),
+        "utf8",
+      );
+      expect(story).toContain(`goes to ${GHOST_SVC} ${TOPIC}`);
     },
     T,
   );

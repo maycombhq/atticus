@@ -44,6 +44,7 @@ import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import { patternLine, type Level } from "./knowledge-lines.js";
 import {
+  issueFingerprint,
   runStageLoop,
   SELF_CHECK_RULE,
   stageBudget,
@@ -73,6 +74,7 @@ import {
 import { checkoutEmpty, checkoutHas, readCheckoutFile } from "./story-code.js";
 import { callsAt, declaresMethod, doneAt, flowCitesFile } from "./places.js";
 import {
+  breakingChanges,
   consumerIssues,
   endpointConsumers,
   endpointName,
@@ -93,7 +95,7 @@ import {
   withOperationRollback,
   writeOperations,
 } from "./operations.js";
-import { acceptedIds, acceptedWords, readAccepted } from "./accept.js";
+import { type Accepted, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
 import { knownToChange, plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
@@ -2340,6 +2342,16 @@ export function renderArchitecture(
       );
     lines.push("");
   }
+  // ADR 0203 A: a consumer the map knows and the draft leaves out, which a person accepted.
+  const unaffected = breakingChanges(deltas, e).flatMap((c) => {
+    const a = e.acceptedFindings?.get(issueFingerprint("delta.consumer-missing", c.target));
+    return a
+      ? c.consumers
+          .filter((x) => !c.listed.includes(x))
+          .map((x) => `- ${x} (of ${c.flow}): not affected, ${acceptedWords(a)}.`)
+      : [];
+  });
+  if (unaffected.length) lines.push("## Consumers not affected", "", ...unaffected, "");
   const ifs = interfaceChanges(deltas, e);
   lines.push("## Interface changes", "");
   if (ifs.length) {
@@ -2594,7 +2606,10 @@ export async function architectureStage(
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
   estate.outside = new Set((placement.outside ?? []).map((x) => x.id));
   // ADR 0203 A.4: the ids people accepted at a stage are known to every check, with who and why.
-  estate.accepted = acceptedIds(await readAccepted(root, change.id, ctx).catch(() => new Map()));
+  estate.acceptedFindings = await readAccepted(root, change.id, ctx).catch(
+    () => new Map<string, Accepted>(),
+  );
+  estate.accepted = acceptedIds(estate.acceptedFindings);
   const knowledge = await readKnowledge(root, { cacheRoot: root });
   const patterns = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
 

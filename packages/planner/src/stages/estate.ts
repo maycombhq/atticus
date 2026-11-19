@@ -11,6 +11,7 @@ import {
   type CatalogRecord,
   type FlowRecord,
 } from "@maycombhq/core";
+import type { Accepted } from "./accept.js";
 
 /**
  * The estate as the stages read it (ADR 0087): every repo's spec of flows (ADR 0079) and the
@@ -60,6 +61,8 @@ export interface Estate {
    * known to every check, with that standing. Absent: none accepted.
    */
   accepted?: ReadonlyMap<string, { by: string; why: string; rule: string }>;
+  /** ADR 0203 A: every acceptance of the change's stages, by fingerprint, for what they render. */
+  acceptedFindings?: ReadonlyMap<string, Accepted>;
 }
 
 /** What the manifests say, as the estate keeps it. */

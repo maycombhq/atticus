@@ -258,7 +258,8 @@ export async function act(
     if (f.layer === "constitution")
       throw new CriticError(
         "refused",
-        `${f.id} comes from a constitution rule (${f.rule}), which can never be waived. Fix it.`,
+        // Rule 6 (ADR 0203 A.3): said here, at any gate, not left to how a stage's finding is projected.
+        `${f.id} comes from a constitution rule (${f.rule}), which can never be waived or accepted (rule 6). Fix it.`,
       );
     // ADR 0203 A.4: a stage's finding not on the accept list says the way on its fix gives.
     if (!f.waivable && f.gate.startsWith(STAGE_GATE_PREFIX))

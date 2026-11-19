@@ -133,6 +133,8 @@ export interface Accepted {
   at: string;
   /** The id the rule is about, when it is about one. */
   record?: string;
+  /** The finding's words when it was accepted (its file's `why`): what the later stages read. */
+  message: string;
 }
 
 /** The words a stage file and a note use: "accepted by <who>: <why>". */
@@ -158,7 +160,9 @@ export async function readAccepted(
     if (round === undefined) continue;
     for (const { finding: f } of (await readRound(root, change, gate, round)).findings) {
       const r = f.resolution;
-      if (f.state !== "waived" || !r?.reason || (ctx && assistantOf(ctx, r.by))) continue;
+      // Rule 6: a constitution rule is never accepted, whatever its file says.
+      if (f.state !== "waived" || !r?.reason || f.layer === "constitution") continue;
+      if (ctx && assistantOf(ctx, r.by)) continue;
       const fp = f.id.replace(/^stage-/, "").slice(0, 12);
       out.set(fp, {
         finding: f.id,
@@ -169,6 +173,7 @@ export async function readAccepted(
         why: r.reason,
         at: r.at,
         ...(f.locator.record ? { record: f.locator.record } : {}),
+        message: f.why,
       });
     }
   }
