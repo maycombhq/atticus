@@ -114,7 +114,9 @@ describe("atticus impact", () => {
     const root = await forgeRoot();
     const c = capture();
     expect(await main(["impact", "nope", "--root", root], c.io)).toBe(1);
-    expect(c.err).toEqual(["nope is not in the map: planned or not read."]);
+    expect(c.err).toEqual([
+      "nope is not in the map: planned or not read. Neither: no manifest lists nope and no open change plans it.",
+    ]);
     expect(await main(["impact", "--root", root], capture().io)).toBe(2);
   });
 });

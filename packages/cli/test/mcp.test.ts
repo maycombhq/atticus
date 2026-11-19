@@ -605,8 +605,9 @@ describe("atticus mcp (ADR 0104)", () => {
       for (const name of ["impact", "show", "walk"]) {
         const r = await call(name, { id: "forge-portal" }, run);
         expect(r.result.isError, name).toBeUndefined();
+        // The sentence, then which of the three it is (ADR 0201 addendum, 2026-11-19).
         expect(r.result.content[0]!.text).toBe(
-          "forge-portal is not in the map: planned or not read.",
+          "forge-portal is not in the map: planned or not read. Neither: no manifest lists forge-portal and no open change plans it. Did you mean forge-portal-ui?",
         );
       }
       // The trial's question: ask got none where impact knew the consumer.
@@ -622,7 +623,7 @@ describe("atticus mcp (ADR 0104)", () => {
         affected: { id: string; kind: string }[];
       };
       expect(a.readAs).toBe(
-        "Read as: who receives topic.transfers-completed, from what a change to it reaches.",
+        "Read as: who receives topic.transfers-completed: the receivers first, then what a change reaches past them.",
       );
       expect(a.query).toBe("impact topic.transfers-completed");
       const impact = await call("impact", { id: "topic.transfers-completed" }, run);

@@ -25,6 +25,11 @@ export interface ParsedRequirements {
   title?: string;
   /** The ids under `## Planned`: what the change plans, or what nobody has read yet. */
   planned: string[];
+  /**
+   * Each item under `## Planned` with its line, and `by` when it says "not created here, planned
+   * by `<change id>`" (the change that plans it; empty when it names none).
+   */
+  plannedItems: { id: string; line: number; by?: string }[];
   /** Each `## <Role>` section that holds a six-column table, in the file's order. */
   roles: RequirementsRole[];
   /** What can't be read for sure, so is refused: its line, its role if any, and the words. */
@@ -32,7 +37,29 @@ export interface ParsedRequirements {
 }
 
 export type RequirementsReasonCode =
-  "requirements.open-question" | "requirements.unknown-id" | "requirements.unreadable";
+  | "requirements.open-question"
+  | "requirements.unknown-id"
+  | "requirements.unreadable"
+  // ADR 0201 addendum, 2026-11-19 (additive): an id under Planned that the map has, and a file
+  // and line beside a record that the record doesn't cite.
+  | "requirements.planned-exists"
+  | "requirements.wrong-line";
+
+/**
+ * What the door check reads of the map beyond `has` (ADR 0201 addendum, 2026-11-19). Each is left
+ * out by a caller that can't say, and its check then isn't made.
+ */
+export interface RequirementsMap {
+  /** The map itself has the id: a record, a manifest's repo, a name exactly one record has. */
+  exists?: (id: string) => boolean;
+  /** Whether a change is open and plans an id. */
+  plans?: (change: string, id: string) => "plans" | "not-open" | "not-planned";
+  /** The files and lines a catalog record cites; undefined when the id is no record. */
+  cites?: (id: string) => { path: string; repo?: string; line?: number }[] | undefined;
+}
+
+/** How far from a line the map cites a row's line may be. */
+const NEAR = 3;
 
 export interface RequirementsCheck {
   ok: boolean;
@@ -73,6 +100,22 @@ const bare = (w: string) => w.replace(/^`+|[`:,;]+$/g, "").trim();
 /** The id a list item starts with: its first word, without backticks. */
 const firstId = (item: string) => bare(/^`([^`]+)`/.exec(item)?.[1] ?? item.split(/\s+/)[0] ?? "");
 
+/**
+ * The change a Planned item says plans its id: "not created here, planned by `<change id>`".
+ * Undefined when the item doesn't say so; empty when it says so and names no change.
+ */
+function plannedBy(item: string): string | undefined {
+  const said = /\bnot created here\b.*?\bplanned by\b(.*)$/i.exec(item);
+  if (!said) return undefined;
+  const ticked = /`([^`]+)`/.exec(said[1]!);
+  if (ticked) return bare(ticked[1]!);
+  const word = said[1]!
+    .split(/\s+/)
+    .map((w) => w.replace(/[.,;:()]+$/g, ""))
+    .find((w) => w && !/^(the|an?|open|other|same|change|changes)$/i.test(w));
+  return word && /^[a-z0-9][a-z0-9._-]*$/.test(word) ? word : "";
+}
+
 interface Table {
   /** The header's line, from 1. */
   line: number;
@@ -110,7 +153,7 @@ function headingOf(raw: string): { level: 1 | 2; words: string } | undefined {
 const bars = (line: string) => line.match(/(?<!\\)\|/g)?.length ?? 0;
 
 export function parseRequirements(text: string): ParsedRequirements {
-  const out: ParsedRequirements = { planned: [], roles: [], problems: [] };
+  const out: ParsedRequirements = { planned: [], plannedItems: [], roles: [], problems: [] };
   if (text.includes("\0")) {
     out.problems.push({ line: 1, role: "", words: "the file isn't text: save it as UTF-8." });
     return out;
@@ -278,6 +321,10 @@ export function parseRequirements(text: string): ParsedRequirements {
     if (section.kind === "planned") {
       const item = /^[-*+]\s+(.+)$/.exec(line)?.[1];
       const id = item ? firstId(item) : "";
+      if (id && !planned.has(id)) {
+        const by = plannedBy(item!);
+        out.plannedItems.push({ id, line: i + 1, ...(by === undefined ? {} : { by }) });
+      }
       if (id) planned.add(id);
     }
   }
@@ -305,7 +352,7 @@ const isFile = (w: string) => /:\d+$/.test(w) || FILE_ENDINGS.test(w);
  * item's first word, in backticks or bare, is its id, whatever it looks like. Every other word
  * in backticks is checked too unless it is a file (`src/a.java:41`, `pom.xml`).
  */
-function evidenceIds(cell: string): string[] {
+export function evidenceIds(cell: string): string[] {
   const ids = cell.split(/[;,]|<br\s*\/?>/i).flatMap((raw) => {
     const item = raw.trim();
     if (item === "" || item === "-") return [];
@@ -320,6 +367,22 @@ function evidenceIds(cell: string): string[] {
   return [...new Set(ids.filter(Boolean))];
 }
 
+/** The `<file>:<line>` an evidence item gives after its id, when its first word is an id. */
+function evidenceCites(cell: string): { id: string; path: string; line: number }[] {
+  return cell.split(/[;,]|<br\s*\/?>/i).flatMap((raw) => {
+    const item = raw.trim();
+    if (item === "" || item === "-") return [];
+    const first = /^`([^`]+)`/.exec(item);
+    const id = first ? first[1]!.trim() : bare(item.split(/\s+/)[0]!);
+    const rest = item.slice(first ? first[0].length : (/^\S+/.exec(item)?.[0].length ?? 0));
+    return rest
+      .split(/\s+/)
+      .map((w) => /^`?([^`\s]+):(\d+)`?[.)]?$/.exec(w))
+      .filter((m): m is RegExpExecArray => !!m)
+      .map((m) => ({ id, path: m[1]!.replace(/^\.\//, ""), line: Number(m[2]) }));
+  });
+}
+
 /**
  * The check at the quick path's door: every question closed, every evidence id in the map
  * (`has`: true, or the ids of the several records a name matches, which is refused) or listed
@@ -329,6 +392,7 @@ export function checkRequirements(
   parsed: ParsedRequirements,
   has: (id: string) => boolean | readonly string[],
   file = "requirements.md",
+  map: RequirementsMap = {},
 ): RequirementsCheck {
   const planned = new Set(parsed.planned);
   const inMap = new Set<string>();
@@ -339,6 +403,39 @@ export function checkRequirements(
     role,
     message: `${file}:${line}: ${words}`,
   }));
+  // What is under Planned is planned: not something the map has, and by an open change that
+  // plans it when the item says another change does.
+  for (const { id, line, by } of parsed.plannedItems) {
+    const say = (code: RequirementsReasonCode, words: string) =>
+      reasons.push({ code, line, role: "", message: `${file}:${line}: ${words}` });
+    if (map.exists?.(id)) {
+      say(
+        "requirements.planned-exists",
+        `${id} is in the map: take it off Planned. "## Planned" lists only what the map doesn't have yet.`,
+      );
+      continue;
+    }
+    if (by === undefined) continue;
+    const says = `"## Planned" says ${id} is planned by`;
+    if (by === "")
+      say(
+        "requirements.unknown-id",
+        `${says} another change and names none. Write it as: \`${id}\`: not created here, planned by \`<change id>\`.`,
+      );
+    else {
+      const plans = map.plans?.(by, id) ?? "plans";
+      if (plans === "not-open")
+        say(
+          "requirements.unknown-id",
+          `${says} ${by}, which is not an open change (atticus change list). Name the open change that plans it, or plan it here.`,
+        );
+      else if (plans === "not-planned")
+        say(
+          "requirements.unknown-id",
+          `${says} ${by}, which doesn't plan it: its requirements file doesn't list it under "## Planned" and its tasks.md has no "## ${id}". Name the open change that plans it, or plan it here.`,
+        );
+    }
+  }
   for (const { role, rows } of parsed.roles)
     for (const { line, cells } of rows) {
       count.questions += 1;
@@ -359,12 +456,52 @@ export function checkRequirements(
         unreadable(`it is ${state} and names nobody under Answered by`);
         continue;
       }
+      const noAnswer = cells[4] === "" || cells[4] === "-";
       if (state === "open")
         say(
           "requirements.open-question",
           `${role} has an open question: "${cells[0]}". Answer it (State answered) or accept it (State accepted, with who and why), then run this again.`,
         );
+      // Closed in name only (b30 proof run): the State says so and nothing says how.
+      else if (state === "answered" && noAnswer)
+        say(
+          "requirements.open-question",
+          `${role} has a question answered with no answer: "${cells[0]}". Write the answer under Answer, then run this again.`,
+        );
+      else if (state === "accepted" && noAnswer)
+        say(
+          "requirements.open-question",
+          `${role} has a question accepted with no reason: "${cells[0]}". Under Answer, say why ${cells[3]} goes on without an answer, then run this again.`,
+        );
       else count[state as "answered" | "accepted"] += 1;
+      // A file and line beside a record is one the record cites, at or near a line it cites.
+      for (const c of map.cites ? evidenceCites(cells[1]!) : []) {
+        const known = map.cites!(c.id);
+        if (!known?.length) continue;
+        // A Windows path reads as its forward-slash form; a bare file name is the record's file
+        // of that name when only one of its files has it (the review of b30/proof-fixes).
+        const path = c.path.replace(/\\/g, "/");
+        const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+        const byName = path.includes("/")
+          ? []
+          : [...new Set(known.filter((k) => base(k.path) === path).map((k) => k.path))];
+        const same = known.filter(
+          (k) =>
+            path === k.path ||
+            path === `${k.repo}/${k.path}` ||
+            (byName.length === 1 && k.path === byName[0]),
+        );
+        if (same.some((k) => k.line === undefined || Math.abs(k.line - c.line) <= NEAR)) continue;
+        const where = same.length
+          ? `line${same.length === 1 ? "" : "s"} ${same.map((k) => k.line).join(", ")} of that file`
+          : [...new Set(known.map((k) => (k.line === undefined ? k.path : `${k.path}:${k.line}`)))]
+              .slice(0, 4)
+              .join(", ");
+        say(
+          "requirements.wrong-line",
+          `the evidence cites ${c.path}:${c.line} for ${c.id}, which the map read from ${where}. Cite a file and line the map cites for it (atticus context show ${c.id}), or name the id alone.`,
+        );
+      }
       for (const id of evidenceIds(cells[1]!)) {
         const found = has(id);
         if (found === true) inMap.add(id);

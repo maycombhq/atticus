@@ -343,7 +343,10 @@ export async function catalogUndo(
     // Undo refuses over hand edits, as a build does.
     const b = await buildCatalog(await loadBuildInputs(root));
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
-    if (g.refused?.reasons.includes("hand-edits")) {
+    // A build.json that doesn't read: the build's guard lists every record file as added, but
+    // the undo puts build.json back, so it is checked as below (the review of the undo test).
+    const unreadable = g.refused?.unreadableManifest === true;
+    if (g.refused?.reasons.includes("hand-edits") && !unreadable) {
       io.err(
         "Nothing undone: files under catalog/generated were changed by hand since the last build. Keep them as your decisions (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
@@ -352,20 +355,58 @@ export async function catalogUndo(
       if (o.json) io.out(JSON.stringify({ refused }, null, 2));
       return 1;
     }
-    // A catalog with no build.json (an undo took back the upgrade) has no hand-edit guard of the
-    // build's: each file it would put back is checked against what the command it takes back
-    // left there (the review), so a hand edit made since is never overwritten.
-    if (g.refused?.reasons.includes("not-upgraded")) {
-      const edited = await undoHandEdits(root, plan);
-      if (edited.length) {
-        io.err(
-          `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
-        );
-        const refused = { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) };
-        await refusalEnds(root, refused);
-        if (o.json) io.out(JSON.stringify({ refused }, null, 2));
-        return 1;
-      }
+    // Each file the undo would put back is checked against what the command it takes back left
+    // there, so a hand edit made since is never overwritten. The build's guard above covers
+    // catalog/generated while build.json reads; the rest (slot files, build.json) is checked here
+    // always, and everything when there is no build.json that reads (an undo took back the
+    // upgrade, or one written by hand).
+    const checkAll = g.refused?.reasons.includes("not-upgraded") === true || unreadable;
+    const edited = (await undoHandEdits(root, plan, undoDir)).filter(
+      (p) => checkAll || !p.startsWith("catalog/generated/"),
+    );
+    if (edited.length) {
+      const one = edited.length === 1;
+      // What the newest copy touching each file says it left there, and which command that was.
+      const left = new Map<string, { after: string | null; command: string; n: number }>();
+      for (const c of plan.copies)
+        for (const f of c.files)
+          if (f.after !== undefined && !left.has(f.path))
+            left.set(f.path, { after: f.after, command: c.command, n: c.n });
+      const commands = [...new Set(edited.map((p) => left.get(p)!.command))];
+      const who = commands.length === 1 ? commands[0]! : "the commands this undo takes back";
+      const how = (p: string): "added" | "changed" | "deleted" =>
+        left.get(p)!.after === null
+          ? "added"
+          : existsSync(join(root, ...p.split("/")))
+            ? "changed"
+            : "deleted";
+      const edits: { path: string; how: "added" | "changed" | "deleted" }[] = [];
+      for (const p of edited) edits.push({ path: p, how: how(p) });
+      const removed = edits.filter((e) => e.how === "added").length;
+      const shown = edits
+        .slice(0, 10)
+        .map((e) => (e.how === "added" && !one ? `${e.path} (removed by it)` : e.path));
+      // Keeping them and upgrading works only for record files: with any file under
+      // catalog/sources, atticus upgrade counts the slots as done and changes nothing.
+      const upgradeHelps =
+        checkAll && !unreadable && edited.every((p) => p.startsWith("catalog/generated/"));
+      // A build.json that command left is kept in its copy: say where, nobody rewrites it by hand.
+      const manifest = left.get("catalog/sources/build.json");
+      const kept =
+        edited.includes("catalog/sources/build.json") && manifest?.after
+          ? join(undoDir, String(manifest.n), "next-build.json")
+          : undefined;
+      const keptAt =
+        kept && existsSync(kept) ? relative(root, kept).split(sep).join("/") : undefined;
+      const way = upgradeHelps
+        ? `Put ${one ? "it" : "them"} back as ${one ? "it was" : "they were"}, or keep ${one ? "it" : "them"} and run atticus upgrade --yes.`
+        : `Put ${one ? "it" : "them"} back as ${who} left ${one ? "it" : "them"}${removed ? (one ? " (a file it removed: delete it)" : " (delete the ones it removed)") : ""}${keptAt ? `; the build.json it left is kept at ${keptAt}` : ""}, then run atticus catalog undo again (or Undo on Set up › Activity › Catalog builds).`;
+      const message = `Nothing undone: ${edited.length} ${one ? "file was" : "files were"} changed since ${who} wrote ${one ? "it" : "them"}: ${shown.join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. ${way}`;
+      io.err(message);
+      const refused = { reasons: ["hand-edits"], edits };
+      await refusalEnds(root, refused);
+      if (o.json) io.out(JSON.stringify({ refused: { ...refused, message } }, null, 2));
+      return 1;
     }
     const r = await applyUndo(
       root,

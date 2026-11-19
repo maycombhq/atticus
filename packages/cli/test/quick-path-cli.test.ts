@@ -77,7 +77,7 @@ const requirements = (rows: string[] = []) =>
     "## Application architect",
     "",
     ...HEADER,
-    "| Who reads the topic after day 1? | `ledger-api` src/events/Shipped.java:41; `topic.orders-shipped` | application-architect-naysayer | pat | Ledger only | answered |",
+    "| Who reads the topic after day 1? | `ledger-api` forge.yaml:2; `topic.orders-shipped` | application-architect-naysayer | pat | Ledger only | answered |",
     "| Do the reports need it? | forge-reports-job | application-architect-naysayer | sam | Not in this change | accepted |",
     ...rows,
     "",
@@ -272,6 +272,138 @@ async function tree(root: string): Promise<Record<string, string>> {
     }
   return out;
 }
+
+describe("the door check, after the real-model run (ADR 0201 addendum, 2026-11-19)", () => {
+  const closed = (planned: string[], rows: string[]) =>
+    [
+      "# Rate-updated event",
+      "",
+      "## Planned",
+      "",
+      ...planned,
+      "",
+      "## QA",
+      "",
+      ...HEADER,
+      ...rows,
+      "",
+    ].join("\n");
+  const refused = async (root: string, text: string) => {
+    const file = join(root, "requirements.md");
+    await writeFile(file, text);
+    const c = capture();
+    const code = await changeNew(root, { from: file, check: true, by: "pat" }, c.io);
+    return { code, file, lines: c.err.slice(1).map((l) => l.replace(`${file}:`, "")) };
+  };
+
+  it(
+    "refuses a row closed with nothing said, an id under Planned that the map has, and a line the record doesn't cite",
+    async () => {
+      const root = await forgeRoot();
+      const r = await refused(
+        root,
+        closed(
+          [
+            "- `ledger-api`: the ledger",
+            "- `forge-reports-job`: the reports",
+            "- `topic.rates-updated`: the new topic",
+          ],
+          [
+            "| Is it retried? | `topic.rates-updated` | qa-naysayer | noor | | answered |",
+            "| Who waits? | - | qa-naysayer | noor | - | accepted |",
+            "| Where is it read? | `ledger-api` src/main/java/forge/ledger/Nowhere.java:7 | qa-naysayer | noor | There | answered |",
+            "| And the entry? | `ledger-api.post-transfer` src/main/java/forge/ledger/LedgerEndpoints.java:90 | qa-naysayer | noor | There | answered |",
+            "| And near it? | `ledger-api.post-transfer` src/main/java/forge/ledger/LedgerEndpoints.java:12; `ledger-api` forge.yaml:2 | qa-naysayer | noor | There | answered |",
+          ],
+        ),
+      );
+      expect(r.code).toBe(1);
+      expect(r.lines).toEqual([
+        'requirements.planned-exists: 5: ledger-api is in the map: take it off Planned. "## Planned" lists only what the map doesn\'t have yet.',
+        'requirements.planned-exists: 6: forge-reports-job is in the map: take it off Planned. "## Planned" lists only what the map doesn\'t have yet.',
+        'requirements.open-question: 13: QA has a question answered with no answer: "Is it retried?". Write the answer under Answer, then run this again.',
+        'requirements.open-question: 14: QA has a question accepted with no reason: "Who waits?". Under Answer, say why noor goes on without an answer, then run this again.',
+        "requirements.wrong-line: 15: the evidence cites src/main/java/forge/ledger/Nowhere.java:7 for ledger-api, which the map read from forge.yaml:2. Cite a file and line the map cites for it (atticus context show ledger-api), or name the id alone.",
+        "requirements.wrong-line: 16: the evidence cites src/main/java/forge/ledger/LedgerEndpoints.java:90 for ledger-api.post-transfer, which the map read from line 11 of that file. Cite a file and line the map cites for it (atticus context show ledger-api.post-transfer), or name the id alone.",
+      ]);
+      // The check read the record files itself: nothing but Atticus's own log was written.
+      expect(existsSync(join(root, ".index"))).toBe(false);
+      expect(await readdir(join(root, "openspec/changes"))).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    "takes a thing another open change plans when the item names that change, and holds it to that",
+    async () => {
+      const root = await forgeRoot();
+      const portal = join(root, "portal.md");
+      await writeFile(
+        portal,
+        "# Approvals portal\n\n## Planned\n\n- `forge-approvals-api`: the backend, a new repo\n",
+      );
+      const made = capture();
+      expect(await changeNew(root, { from: portal, by: "pat" }, made.io, { now: NOW })).toBe(0);
+      const row =
+        "| Who publishes? | `forge-approvals-api` | qa-naysayer | noor | The backend | answered |";
+      const ok = await refused(
+        root,
+        closed(["- `forge-approvals-api`: not created here, planned by `approvals-portal`"], [row]),
+      );
+      expect(ok.lines).toEqual([]);
+      expect(ok.code).toBe(0);
+      for (const [item, words] of [
+        [
+          "- `forge-approvals-api`: not created here, planned by `old-portal`",
+          'requirements.unknown-id: 5: "## Planned" says forge-approvals-api is planned by old-portal, which is not an open change (atticus change list). Name the open change that plans it, or plan it here.',
+        ],
+        [
+          "- `forge-approvals-web`: not created here, planned by `approvals-portal`",
+          'requirements.unknown-id: 5: "## Planned" says forge-approvals-web is planned by approvals-portal, which doesn\'t plan it: its requirements file doesn\'t list it under "## Planned" and its tasks.md has no "## forge-approvals-web". Name the open change that plans it, or plan it here.',
+        ],
+      ] as const) {
+        const r = await refused(root, closed([item], []));
+        expect(r.code, item).toBe(1);
+        expect(r.lines, item).toEqual([words]);
+      }
+    },
+    T,
+  );
+});
+
+describe("atticus change status on a quick change (the real-model run)", () => {
+  it(
+    "says its files are written, and prints no empty brackets",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "requirements.md");
+      await writeFile(file, "# Move the ledger\n\nWhat is wanted.\n");
+      expect(await changeNew(root, { from: file, by: "pat" }, capture().io, { now: NOW })).toBe(0);
+      const dir = join(root, "openspec/changes/move-the-ledger");
+      for (const f of ["proposal.md", "design.md", "specs"])
+        await cp(join(FORGE_CHANGE, f), join(dir, f), { recursive: true });
+      await writeFile(
+        join(dir, "tasks.md"),
+        "# Tasks\n\n## forge-ledger\n\n- [ ] t1 Move it\n\n## forge-reports-job\n\n- [ ] t2 Follow (after t1)\n",
+      );
+      const c = capture();
+      expect(
+        await main(["change", "status", "move-the-ledger", "--root", root], c.io, { quiet: true }),
+      ).toBe(0);
+      const out = c.out.join("\n");
+      expect(out).toContain(
+        'Work: No stage runs on the quick path: tasks.md is written; waiting on "Plan ready" (the plan hand-off, not raised yet).',
+      );
+      expect(out).not.toMatch(/Stories/);
+      expect(out).not.toContain("()");
+      // The spread across its repos cites the file it was read from.
+      expect(out).toMatch(
+        /spans several repos: 2 repos \(forge-ledger, forge-reports-job\) \+\d+ \(tasks\.md\)/,
+      );
+    },
+    T,
+  );
+});
 
 describe("the door check: what counts as in the map, and what it leaves on disk", () => {
   const cites = (evidence: string) =>

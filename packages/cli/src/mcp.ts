@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { notInMap } from "@maycombhq/index";
+import { notInMap, severalNamed } from "@maycombhq/index";
 
 /**
  * `atticus mcp` (ADR 0104): an MCP server over stdio for an assistant (the Claude Code plugin
@@ -34,6 +34,11 @@ export interface McpTool {
   mapId?: string;
   /** Exit codes that are an answer when the command printed one (conflicts: 1 is "some overlap"). */
   answersOnExit?: number[];
+  /**
+   * What the command says, on a non-zero exit, that is an answer all the same (knowledge_items:
+   * no item yet is an empty list, not a failure; the b30 proof run).
+   */
+  answers?: RegExp;
 }
 
 const s = (name: string, description: string, required = true): Arg => ({
@@ -116,7 +121,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "ask",
     description:
-      'A plain question about the estate ("who calls ledger-api?", "who consumes the topic transfers.completed?"), read as a catalog query or an impact walk and run; the answer carries how it was read (readAs) and the query it ran, and every record cites its file and line (atticus ask).',
+      'A plain question about the estate ("who calls ledger-api?", "who calls ledger-api.post-transfer?", "who publishes transfers.completed?", "who consumes the topic transfers.completed?"), read as a catalog query or an impact walk and run; the answer carries how it was read (readAs) and the query it ran, and every record cites its file and line. Who consumes a topic answers its receivers (receivers), and what a change reaches past them apart (further). A name the map lacks is said so in readAs, with total 0 (atticus ask).',
     args: [s("question", "The question, in plain words.")],
     argv: (a) => ["ask", String(a.question), "--json"],
   },
@@ -145,7 +150,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "search",
     description:
-      "Search everything the index holds by words and meaning: catalog records, knowledge items, flows and their steps, changes, answered questions, wiki sections and documents; names and ids rank first, and with the local embedding model what is similar in meaning ranks too (atticus query --search). Each hit names the file it was read from.",
+      "Search everything the index holds by words and meaning: catalog records, knowledge items, flows and their steps, changes, answered questions, wiki sections and documents; an id that is the text or starts with it comes first, then names and ids, and with the local embedding model what is similar in meaning ranks too. A search matches any of its words: when nothing holds them all, the first line says so (atticus query --search). Each hit names the file it was read from.",
     args: [
       s("text", "The words to look for."),
       s("kind", "Only these kinds, comma-separated (System, Flow, ProcessDefinition...).", false),
@@ -182,7 +187,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "show",
     description:
-      "One record, flow, flow step (flow-id#n), knowledge item, change, answered question or wiki section in full, by its id, with the file it was read from and whether it was verified (atticus context show).",
+      "One record, flow, flow step (flow-id#n), knowledge item, change, answered question or wiki section in full, by its id, with the file it was read from and whether it was verified; a change also with its type, the repos its tasks.md names and what its requirements plan. A topic's or an entry's name works where exactly one record has it. An id the map lacks answers which it is: in the manifests and not read, planned by an open change, or neither, with the nearest ids (atticus context show).",
     args: [s("id", "The id, as search or a record names it.")],
     argv: (a) => ["context", "show", String(a.id)],
     mapId: "id",
@@ -190,7 +195,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "walk",
     description:
-      "The links from one id: what it calls, contains, names or is named by, each with how the link was made, at most two hops (atticus context walk).",
+      "The links from one id: what it calls, contains, names or is named by, each with how the link was made, at most two hops. A topic's or an entry's name works where exactly one record has it; an id the map lacks answers which it is, as show does (atticus context walk).",
     args: [
       s("id", "The id to walk from."),
       { name: "hops", description: "1 (the default) or 2.", choices: ["1", "2"] },
@@ -269,7 +274,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "impact",
     description:
-      "What a change to one record reaches, with owners and open questions; an id the map lacks answers that it is planned or not read (atticus impact).",
+      "What a change to one record reaches, hop by hop, with each record's owner (from the catalog, else the manifest or profile; \"no owner on record\" when none names one) and open questions. It gives no file and line: show <id> does. A topic's or an entry's name works where exactly one record has it. An id the map lacks answers which it is: in the manifests and not read, planned by an open change, or neither, with the nearest ids (atticus impact).",
     args: [s("id", "The record's id.")],
     argv: (a) => ["impact", String(a.id)],
     mapId: "id",
@@ -297,6 +302,7 @@ export const MCP_TOOLS: McpTool[] = [
       ...(a.unverified ? ["--unverified"] : []),
       "--json",
     ],
+    answers: /^There are no knowledge items yet\./,
   },
   {
     name: "changes",
@@ -518,10 +524,18 @@ export async function handleMcp(
       }
       const r = await run(tool.argv(a));
       // An id the map lacks is an answer (ADR 0201): planned, or not read yet.
-      const lacks = tool.mapId && a[tool.mapId] ? notInMap(String(a[tool.mapId])) : undefined;
-      if (r.code !== 0 && lacks && (r.err.trim() === lacks || r.out.trim() === lacks))
-        return ok(text(lacks));
+      // The sentence may go on to say which of the three it is (the addendum of 2026-11-19), and a
+      // name several records have is an answer too: it says which ids.
+      const id = tool.mapId && a[tool.mapId] ? String(a[tool.mapId]) : undefined;
+      const said = [r.err.trim(), r.out.trim()].find(
+        (t) =>
+          id !== undefined &&
+          (t.startsWith(notInMap(id)) || t.startsWith(severalNamed(id, []).split("(")[0]!)),
+      );
+      if (r.code !== 0 && said) return ok(text(said));
       if (tool.answersOnExit?.includes(r.code) && r.out.trim()) return ok(text(r.out.trim()));
+      if (r.code !== 0 && tool.answers && !r.out.trim() && tool.answers.test(r.err.trim()))
+        return ok(text(r.err.trim()));
       if (r.code !== 0 && !r.out.trim())
         return ok(
           text(r.err.trim() || `atticus ${tool.argv(a).join(" ")} stopped (exit ${r.code}).`, true),
