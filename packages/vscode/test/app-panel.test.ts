@@ -14,7 +14,8 @@ import {
   versionIn,
 } from "../src/app-panel";
 import { WORDS } from "../src/words";
-import { commandText } from "../src/cli";
+import { cliRunner, commandText } from "../src/cli";
+import { EXTENSION_NEEDS_ENV, needsEnv } from "../src/needs";
 
 /** A stand-in for `atticus ui`: a .js file the extension runs with node. */
 async function fakeAtticus(body: string): Promise<string> {
@@ -108,6 +109,37 @@ describe("starting the app for the panel", { timeout: 60_000 }, () => {
     const stopped = new Promise<void>((r) => app.onExit(() => r()));
     app.stop();
     await stopped;
+  });
+
+  it("tells the atticus ui it starts which Atticus this extension needs (ADR 0202 point 8)", async () => {
+    const bin = await fakeAtticus(
+      `console.log("Atticus is running at http://127.0.0.1:4997 (Ctrl+C stops it).");
+       console.log("For assistants and scripts, the session token is tok-7");
+       console.log("needs " + process.env.ATTICUS_EXTENSION_NEEDS);
+       setInterval(() => {}, 1000);`,
+    );
+    const lines: string[] = [];
+    // Whatever the window's environment says, the extension's own need is the one given.
+    const app = await startApp({
+      atticusPath: bin,
+      cwd: tmpdir(),
+      log: (l) => lines.push(l),
+      env: { ...process.env, ATTICUS_EXTENSION_NEEDS: "0.0.1" },
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(needsEnv()).toEqual({ [EXTENSION_NEEDS_ENV]: MIN_CLI });
+    expect(EXTENSION_NEEDS_ENV).toBe("ATTICUS_EXTENSION_NEEDS");
+    expect(lines).toContain(`needs ${MIN_CLI}`);
+    const stopped = new Promise<void>((r) => app.onExit(() => r()));
+    app.stop();
+    await stopped;
+  });
+
+  it("tells every atticus command it runs the same (ADR 0202 point 8)", async () => {
+    const bin = await fakeAtticus(`console.log("needs " + process.env.ATTICUS_EXTENSION_NEEDS);`);
+    const cli = cliRunner({ atticusPath: bin, nodePath: process.execPath, cwd: tmpdir() });
+    const r = await cli(["status"]);
+    expect(r.stdout.trim()).toBe(`needs ${MIN_CLI}`);
   });
 
   it("starts it with --full when the setting atticus.fullUi asks for every page (Phase D)", async () => {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { needsEnv } from "./needs";
 import type { Cancel, Cli, CliResult } from "./types";
 
 /**
@@ -144,7 +145,8 @@ export function runCli(
       child = spawn(cmd.shell ? `"${cmd.file}"` : cmd.file, argv, {
         cwd: o.cwd,
         // ADR 0187: the app's Console says this run was started from VS Code.
-        env: { ...(o.env ?? process.env), ATTICUS_STARTED_BY: "vscode" },
+        // ADR 0202 point 8: and what this extension needs, for the line after a refusal.
+        env: { ...(o.env ?? process.env), ...needsEnv(), ATTICUS_STARTED_BY: "vscode" },
         shell: cmd.shell,
         windowsHide: true,
       });
