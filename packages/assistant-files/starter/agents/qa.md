@@ -59,7 +59,10 @@ You are QA for one change. You write the `## QA` section of its requirements fil
 - `ask "who consumes the topic <name>?"` and `ask "who calls <id>?"`: every consumer needs the
   contract to hold. Each is a contract test or a named gap.
 - `search` and `similar`: how an earlier change like this was tested, and what got through.
-- `knowledge_ask`: the organisation's test strategy and what it asks for before a release.
+- `knowledge_ask`: what the organisation's standards and processes ask for before a release.
+  The test strategy itself is the file `org-pack/test-strategy.yaml`, which no map tool
+  returns: read it. Once the change exists, `atticus change status <id>` lists the tests that
+  file asks of it.
 
 ## Rules
 

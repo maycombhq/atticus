@@ -3425,10 +3425,16 @@ export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { pro
  * The files an undo would put back that were changed since the command it takes back wrote them
  * (a hand edit, or a write no undo copy covers): each file's bytes now against what the newest
  * copy touching it says it left. Copies from before this was recorded say nothing, and are
- * trusted. `atticus catalog undo` refuses over them where the build's own hand-edit guard can't
- * see (a catalog with no build.json: an undo that took back the upgrade).
+ * trusted. Given the undo folder, a file that already holds what the undo puts back is skipped
+ * (a write killed after its copy was taken never reached it). `atticus catalog undo` refuses over
+ * the rest: always for files outside catalog/generated (slot files, build.json), and for every
+ * file where the build's own hand-edit guard can't see (no build.json that reads).
  */
-export async function undoHandEdits(root: string, plan: UndoPlan): Promise<string[]> {
+export async function undoHandEdits(
+  root: string,
+  plan: UndoPlan,
+  undoDir?: string,
+): Promise<string[]> {
   const left = new Map<string, string | null>();
   const seen = new Set<string>();
   for (const c of plan.copies)
@@ -3437,10 +3443,23 @@ export async function undoHandEdits(root: string, plan: UndoPlan): Promise<strin
       seen.add(f.path);
       if (f.after !== undefined) left.set(f.path, f.after);
     }
+  const target = new Map(plan.files.map((f) => [f.path, f]));
   const out: string[] = [];
   for (const [path, after] of left) {
     const now = await readText(join(root, ...path.split("/")));
-    if ((now === undefined ? null : sha(now)) !== after) out.push(path);
+    if ((now === undefined ? null : sha(now)) === after) continue;
+    // A file that already holds what the undo puts back is no hand edit: a write cut short (a
+    // process killed after its copy was taken) never got to write it (the review of the undo
+    // fix). Overwriting it with the same bytes loses nothing.
+    const t = target.get(path);
+    if (t && undoDir !== undefined) {
+      if (t.to === "absent" && now === undefined) continue;
+      if (t.to === "file" && now !== undefined) {
+        const kept = await readText(join(undoDir, String(t.from), "files", ...path.split("/")));
+        if (kept !== undefined && kept === now) continue;
+      }
+    }
+    out.push(path);
   }
   return out.sort(cmpText);
 }

@@ -15,6 +15,7 @@ export * from "./approvals.js";
 export * from "./assess.js";
 export * from "./new-change.js";
 export * from "./requirements.js";
+export * from "./planned.js";
 export * from "./publish.js";
 export * from "./handoff.js";
 export * from "./release-prs.js";

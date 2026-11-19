@@ -827,7 +827,7 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus spec seed <repo> [--json]    Propose a repo's starting openspec/specs from its verified flows, as the change openspec/changes/seed-<repo>/: a requirement per flow, a scenario per path and error case, each citing its lines (ADR 0146)
   atticus spec accept <repo>           Accept the repo's seeded spec: OpenSpec validates it strictly, then archives it into openspec/specs/; the next change modifies it
-  atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
+  atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus): validate, list, show, view, status, instructions, templates, schemas, version, doctor and help, which read the metarepo and write nothing; anything else is refused with what Atticus runs instead. status, instructions and show take --change from the only change open when you don't name one
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record] [--approve: a pr-level task run's push and PR]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
@@ -1286,7 +1286,13 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     return 0;
   }
   const [group, command, arg] = positionals;
-  const refused = await checkFlags(argv, positionals, io);
+  // `atticus openspec <command> <args...>` is the bundled OpenSpec (ADR 0006 addendum): which
+  // commands and options it passes on is its own allow list (openspec-run-commands.ts). Atticus
+  // refused `validate <id> --strict`, the command ADR 0201 and the guide name (the b30 proof
+  // run). Its own two commands keep the check, and `atticus openspec --help` is Atticus's help.
+  const openspecOwn =
+    group === "openspec" && !!command && command !== "setup" && command !== "check";
+  const refused = openspecOwn ? undefined : await checkFlags(argv, positionals, io);
   if (refused !== undefined) return refused;
   // Review round 32: inside a Copilot session Atticus started, a person's decision is refused
   // here too, whatever started the command (the list is the session check's own). It reads the
@@ -1302,7 +1308,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     }
   }
   // ADR 0119: one command's help, with `atticus help <command>` or `<command> --help`.
-  if (group === "help" || values.help || !group) {
+  if (group === "help" || (values.help && !openspecOwn) || !group) {
     const { helpCommand } = await import("./help-commands.js");
     return helpCommand(group === "help" ? positionals.slice(1) : positionals, HELP, io, {
       all: values.all === true,

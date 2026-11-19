@@ -39,13 +39,20 @@ fact about the estate from memory: it comes from a tool answer, or it is listed 
 1. `product-owner`, then `product-owner-naysayer`
 2. `ux-analyst`, then `ux-analyst-naysayer`
 3. `application-architect`, then `application-architect-naysayer`
-4. `domain-architect`, then `domain-architect-naysayer`
+4. `domain-architect`, then `domain-architect-naysayer` (a template: see below)
 5. `security`, then `security-naysayer`
 6. `developer`, then `developer-naysayer`
 7. `qa`, then `qa-naysayer`
 
 Last, once the check has passed and the change exists: `spec-writer`. It has no naysayer; the
 critic and `atticus change status` say what is wrong with what it writes.
+
+**Step 4 is a template until your organisation fills it.** Before step 4, read
+`agents/domain-architect.md`. While it still holds the note that starts
+`> **This is a template.**`, nobody has said what the domain is: skip step 4, its persona and its
+naysayer both, and tell the person so: "The domain architect is skipped: its file is still the
+template. Copy it for your domain as its first lines say." An organisation that copied it has
+put its own two names on that line of the order, and those run as any other step.
 
 To add a persona, put `<name>.md` and `<name>-naysayer.md` in `agents/` and add one line here.
 A role with nothing to say about this change writes one sentence saying so and why; its naysayer
@@ -97,8 +104,21 @@ not read" that this change really does create. The first word of each item is th
 - `forge.orders.shipped`: the new topic
 ```
 
+A thing another open change plans, which this change uses and doesn't create, is listed too,
+and says so. The tools answer of it "is planned by change `<change id>`":
+
+```markdown
+- `forge-portal`: not created here, planned by `add-forge-portal`
+```
+
+The check holds the item to that: the change it names is open and plans the id.
+
 An id is in the map or under Planned. If it is neither, it is a slip or an invention: fix the
-name or take it out. Never list an existing system under Planned to get past the check.
+name or take it out. Never list an existing system under Planned to get past the check: the
+check refuses an id under Planned that the map has, a manifest's repo nobody read among them
+(name that one in your section and say "not read"). A thing outside the map that this change
+doesn't create and no open change plans (a vendor's system, a sign-on service nobody read) is
+never evidence: write `-` under Evidence and name the thing in the question's own words.
 
 ## When the assistant has no hand-off
 
@@ -116,9 +136,11 @@ When every role has had its turn:
 atticus change new --from requirements.md --check
 ```
 
-It makes nothing. It refuses while a row is open, an evidence id is in neither the map nor
-Planned, or a row doesn't read, and it names the line each time. Fix what it names; an open
-question goes back to the person, not to you. When it passes:
+It makes nothing. It refuses while a row is open, or closed with nothing under Answer; while an
+evidence id is in neither the map nor Planned, or an id under Planned is in the map; while a file
+and line beside a record is not one the record cites (`show <id>` gives them); or while a row
+doesn't read. It names the line each time. Fix what it names; an open question goes back to the
+person, not to you. When it passes:
 
 ```
 atticus change new --from requirements.md
@@ -162,14 +184,16 @@ in the change's folder:
 
   - [ ] t1 Publish forge.orders.shipped when an order ships
   - [ ] t2 [P] Add the event's schema to the contract tests
+  - [ ] t3 [P] Add the event to the service's README
 
   ## forge-ledger
 
-  - [ ] t3 Read forge.orders.shipped and post the entry (after t1)
+  - [ ] t4 Read forge.orders.shipped and post the entry (after t1)
   ```
 
-  One `## <repo>` heading per repo, by its id in the manifest. One checkbox line per task: an id,
-  then what to do. Tasks of one repo run top to bottom; `[P]` marks tasks that may run together.
+  One `## <repo>` heading per repo, by its id in the manifest. One checkbox line per task: an id
+  (`t1`, `t2`, …), then what to do. Tasks of one repo run top to bottom. Two or more `[P]` tasks
+  next to each other in one repo don't wait for each other; a lone `[P]` changes nothing.
   `(after t1)`, or `(after t1, t2)`, at the end of a line holds a task until those are done, in
   whatever repo they are: that is how a wave waits for the wave before it. A repo that doesn't
   exist yet is created by a person first, then added with
@@ -189,3 +213,7 @@ It says what this change still needs: its state, the next step, and under "Block
 that is missing and each blocking finding. When nothing blocks, stop: a person raises the
 hand-off (`atticus change handoff <id> --approve`, which the status names), and merging its pull
 request approves the plan.
+
+**Never run `atticus task run-ready <id>` to look at the order.** It runs the tasks that are
+ready: it starts task runs. `atticus task run-ready <id> --dry-run` only lists them, in order,
+with what each one waits for. Running tasks is a person's step, after the plan is approved.

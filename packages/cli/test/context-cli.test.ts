@@ -77,10 +77,13 @@ describe("atticus context (ADR 0107 addendum)", { timeout: 120_000 }, () => {
     expect(code.out).toMatch(/OrderController.java:4:\n\s*3 {2}.*\n>\s*4 {2}/);
     const none = await run(root, "context", "show", "quillfeather-risk");
     expect(none.code).toBe(2);
-    expect(none.err).toBe("quillfeather-risk is not in the map: planned or not read.");
+    // Which of the three it is follows the sentence (ADR 0201 addendum, 2026-11-19).
+    const neither =
+      "quillfeather-risk is not in the map: planned or not read. Neither: no manifest lists quillfeather-risk and no open change plans it.";
+    expect(none.err).toBe(neither);
     const walkNone = await run(root, "context", "walk", "quillfeather-risk");
     expect(walkNone.code).toBe(2);
-    expect(walkNone.err).toBe("quillfeather-risk is not in the map: planned or not read.");
+    expect(walkNone.err).toBe(neither);
   });
 
   it("lists the tools with their schemas and caps", async () => {

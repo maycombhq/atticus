@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { LineCounter, isMap, isSeq, parse, parseDocument } from "yaml";
 import {
   normalizePath,
+  quickPathOf,
   readFlow,
   specFlowFiles,
   type CatalogRecord,
@@ -13,6 +14,8 @@ import { readChangeRepos } from "@maycombhq/workspace";
 import type { ChangeContext } from "./context.js";
 import { tableWith } from "./markdown.js";
 import type { SignalFactor } from "./policy.js";
+import { looksLikeRepoId, taskRepoHeadings } from "./planned.js";
+import { decodeRequirements, parseRequirements, REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder } from "./store.js";
 import { outsideKindOf, outsideSystemsOf, type OutsideKind } from "./outside.js";
 
@@ -338,7 +341,17 @@ export async function changeFootprint(
   }
 
   // The stage path (B-change): feature.yaml, target-flows/ and tasks.md.
-  const staged = await stageFootprint(ctx, dir, { get, isSystem, outsideKind, ref });
+  // ADR 0201: a quick change has no target flows. What it touches is what its own files name.
+  const type = ctx.orgPack.changeTypes.types.find((t) => t.id === change.type);
+  const quick = !!type && quickPathOf(type);
+  const named = quick ? await requirementsIds(dir) : [];
+  const staged = await stageFootprint(
+    ctx,
+    dir,
+    { get, isSystem, outsideKind, ref },
+    quick ? { planned: new Set(named) } : undefined,
+  );
+  if (named.length) from.add(REQUIREMENTS_FILE);
   for (const f of staged.from) from.add(f);
   for (const r of staged.repos) repos.add(r);
   for (const t of staged.tables) tables.add(t);
@@ -447,10 +460,12 @@ export async function changeFootprint(
     signals.push({
       factor: "spread",
       detail: `${spread.length} repos (${spread.join(", ")})`,
-      // ADR 0203 review: never an empty citation; the file the repos were read from.
+      // Never an empty citation (ADR 0203 review); a quick change's repos are its tasks.md's
+      // headings (b30 proof run: it cited nothing).
       cite:
         staged.deployFile ??
         staged.from.find((f) => f.startsWith("target-flows/")) ??
+        staged.from.find((f) => f === "tasks.md") ??
         staged.from[0] ??
         "change.yaml",
     });
@@ -463,7 +478,7 @@ export async function changeFootprint(
       .sort((a, b) => a.id.localeCompare(b.id)),
     dataStores: sorted(dataStores),
     tables: sorted(tables),
-    records: sorted(change.touches.records),
+    records: sorted([...change.touches.records, ...named]),
     repos: sorted(repos),
     vendors: vendors.sort(),
     ...(otherTeams.length ? { otherTeams: otherTeams.sort() } : {}),
@@ -478,6 +493,19 @@ export async function changeFootprint(
     signals,
     from: sorted(from),
   };
+}
+
+/**
+ * The ids a quick change's requirements file says it touches: each id under `## Planned` (its
+ * own, or one it says another change plans). An id a question only cites as evidence is not
+ * one the change touches (the owner's decision after the b30 proof run: two changes citing the
+ * same service overlapped on it), and what the proposal, specs and design say they change can't
+ * be read for sure from prose, so it is left out too.
+ */
+async function requirementsIds(dir: string): Promise<string[]> {
+  const bytes = await readFile(join(dir, REQUIREMENTS_FILE)).catch(() => undefined);
+  if (!bytes) return [];
+  return [...new Set(parseRequirements(decodeRequirements(bytes)).planned)];
 }
 
 interface StoreTouch {
@@ -520,6 +548,11 @@ async function stageFootprint(
     outsideKind: (id: string) => OutsideKind | undefined;
     ref: (id: string) => void;
   },
+  /**
+   * ADR 0201: a quick change, whose tasks.md's repos count whether or not a manifest lists them,
+   * with the ids its requirements file plans.
+   */
+  quick?: { planned: ReadonlySet<string> },
 ): Promise<Staged> {
   const out: Staged = {
     from: [],
@@ -855,6 +888,18 @@ async function stageFootprint(
   for (const m of tasksText.matchAll(/^##\s+(\S+)\s*$/gm))
     if (catalogRepos.has(m[1]!) || manifestRepos.has(m[1]!) || (await specs.hasRepo(m[1]!)))
       taskRepos.push(m[1]!);
+  // A quick change's tasks.md is its only word on where the work is: a repo it plans (or another
+  // open change plans) is under no manifest yet, and two changes under it still overlap (b30
+  // proof run: `change conflicts` said nothing overlapped).
+  // A heading of notes (`## overview`) is none: a repo counts when a manifest lists it, the
+  // change plans it, or it is shaped like a repo id (the review of b30/proof-fixes).
+  if (quick)
+    for (const r of taskRepoHeadings(tasksText))
+      if (
+        !taskRepos.includes(r) &&
+        (manifestRepos.has(r) || quick.planned.has(r) || looksLikeRepoId(r))
+      )
+        taskRepos.push(r);
   if (taskRepos.length) {
     out.from.push("tasks.md");
     for (const r of taskRepos) out.repos.add(r);

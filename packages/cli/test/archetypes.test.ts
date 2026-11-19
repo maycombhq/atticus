@@ -163,14 +163,17 @@ async function nextFor(root: string, change: string): Promise<NextStep[]> {
 /** A model that finds nothing wrong, and the agents that asked it. */
 function calmCritic() {
   const asked: string[] = [];
+  /** What each lens was sent, by its agent. */
+  const prompts = new Map<string, string>();
   const runtime = new MockRuntime(
     (req) => {
       asked.push(req.agent.id);
+      prompts.set(req.agent.id, req.pack.prompt);
       return "findings: []";
     },
     { now: () => new Date(NOW) },
   );
-  return { runtime, asked };
+  return { runtime, asked, prompts };
 }
 
 const tasksOf = async (root: string, change: string) =>
@@ -327,7 +330,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     it(
       "the critic runs every lens at the plan gate and nothing blocks",
       async () => {
-        const { runtime, asked } = calmCritic();
+        const { runtime, asked, prompts } = calmCritic();
         const c = capture();
         const code = await critic(m.root, a.id, { json: true }, c.io, { runtime, now: NOW });
         expect(c.err).toEqual([]);
@@ -339,6 +342,28 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
           lenses: { lens: string; state: string }[];
           findings: { severity: string; rule: string }[];
         };
+        // The real-model run: the true lens got design.md alone and an empty catalog slice, so it
+        // had nothing to hold the change against. A quick change's lenses read all of its files,
+        // the requirements it was made from, and the records they name.
+        const sent = prompts.get("true-critic")!;
+        const dataIds = [...sent.matchAll(/<atticus-data id="([^"]+)"/g)].map((x) => x[1]!);
+        expect(dataIds).toEqual(
+          expect.arrayContaining(["proposal.md", "design.md", "tasks.md", "requirements.md"]),
+        );
+        expect(dataIds.some((id) => /^specs\/.+\/spec\.md$/.test(id))).toBe(true);
+        const slice = /<atticus-data id="catalog-slice"[^>]*>\n([\s\S]*?)\n<\/atticus-data>/.exec(
+          sent,
+        )![1]!;
+        expect(slice.trim()).not.toBe("[]");
+        // Each catalog record the requirements cite as evidence is in the slice.
+        const records = new Set(
+          (await loadChangeContext(m.root)).records.map((r: { id: string }) => r.id),
+        );
+        const cited = [...a.requirements.matchAll(/`([a-z0-9][a-z0-9._-]*)`/g)]
+          .map((x) => x[1]!)
+          .filter((id) => records.has(id));
+        expect(cited.length).toBeGreaterThan(0);
+        for (const id of cited) expect(slice, id).toContain(`id: ${id}`);
         expect(j.gate).toBe("plan");
         expect(j.mayProceed).toBe(true);
         expect(j.open.blocking).toBe(0);

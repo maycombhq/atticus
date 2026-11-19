@@ -1,0 +1,61 @@
+{
+  "invariant": "large-removals-confirmed",
+  "note": "large-removals-confirmed: verify-write removed 1 of forge-ledger's 3 records without the removals being confirmed. The ledger's GET /orders, joined to orders by its host, is moved to payments' GET /payments by a person's pairing; the pairing is drawn once payments is read from its facts (the second verify --write), and the arrow to orders leaves in that build. Beta.30 (b30/reconnect): an arrow whose call a person's pairing moved, matched one to one with the arrow that takes its place, counts toward neither removal limit; the model had only the loose ends a pairing joins (movedNow, invariants.ts).",
+  "seed": 1950384002,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-orders",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/payments"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [
+            {
+              "method": "GET",
+              "path": "/orders",
+              "host": "orders.forge.example"
+            }
+          ],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "move",
+      "slot": 0,
+      "to": 0,
+      "call": 0,
+      "api": 0
+    },
+    {
+      "t": "verify-write",
+      "slot": 4,
+      "ok": false
+    }
+  ]
+}

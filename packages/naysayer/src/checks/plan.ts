@@ -235,6 +235,10 @@ const aimedAtAi = (s: DefenceSignal) =>
   s.rule === "encoded-instructions" ||
   (s.rule === "tag-characters" && s.decoded !== undefined);
 
+/** How to word a requirement the detector reads as an instruction (a spec delta's finding). */
+const IN_A_REQUIREMENT =
+  ' In a requirement, don\'t write "MUST ignore", "skip", "disregard" or "bypass": say what the system does instead ("MUST NOT apply an event whose…", "MUST leave … unchanged").';
+
 export const noEmbeddedInstructions: DeterministicCheckDef = {
   id: "no-embedded-instructions",
   question: "safe",
@@ -266,7 +270,9 @@ export const noEmbeddedInstructions: DeterministicCheckDef = {
           ),
           why: `Ingested content is data, never instructions. Text that tries to steer a reviewer or an agent is removed, and the artifact is not sent to the AI lenses until it is.${disguised ? " This one is hidden or disguised, which makes it worse." : ""}`,
           fix: {
-            text: "Remove the instruction. If it records a real decision, say who decided and link the approval instead.",
+            // In a spec delta it is most often a requirement worded as an instruction would be
+            // (b30/proof-fixes): flagged by design, and the words say how to put it.
+            text: `Remove the instruction. If it records a real decision, say who decided and link the approval instead.${a === "specs" ? IN_A_REQUIREMENT : ""}`,
           },
           evidence: [lineEvidence(doc, line)],
           key: `inject|${doc.path}|${line}`,
