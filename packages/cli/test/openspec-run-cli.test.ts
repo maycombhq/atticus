@@ -63,6 +63,25 @@ describe("atticus openspec <args...>", () => {
     expect(printed.cwd).toBe(root);
   });
 
+  it("passes on an option only OpenSpec knows: validate --strict, as the hand-off runs it (b30 proof run)", async () => {
+    const root = await metarepo(["add-transfer-limit"]);
+    // "Unknown option --strict… Nothing was run" (exit 2), against ADR 0201 and the guide.
+    for (const args of [
+      ["validate", "add-transfer-limit", "--strict"],
+      ["validate", "add-transfer-limit", "--type", "change", "--strict", "--no-interactive"],
+      ["validate", "--all", "--strict", "--concurrency", "2"],
+    ]) {
+      const r = await run(["openspec", ...args, "--root", root]);
+      expect(r.err, args.join(" ")).toEqual([]);
+      expect(r.code, args.join(" ")).toBe(0);
+      expect((JSON.parse(r.out.at(-1)!) as { args: string[] }).args).toEqual(args);
+    }
+    // Atticus's own commands under the same word still refuse a flag they don't know.
+    const setup = await run(["openspec", "check", "--strikt", "--root", root]);
+    expect(setup.code).toBe(2);
+    expect(setup.err.join("\n")).toMatch(/Unknown option --strikt/);
+  });
+
   it("gives OpenSpec's own exit code and messages back", async () => {
     const root = await metarepo(["add-transfer-limit"]);
     const r = await run(["openspec", "validate", "boom", "--root", root]);

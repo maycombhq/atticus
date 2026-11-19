@@ -1238,7 +1238,11 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     return 0;
   }
   const [group, command, arg] = positionals;
-  const refused = await checkFlags(argv, positionals, io);
+  // `atticus openspec <args...>` is the bundled OpenSpec run as it is (ADR 0006 addendum): its
+  // options are its own to accept or refuse. Atticus refused `validate <id> --strict`, the command
+  // ADR 0201 and the guide name (the b30 proof run). Its own two commands keep the check.
+  const openspecOwn = group === "openspec" && command !== "setup" && command !== "check";
+  const refused = openspecOwn ? undefined : await checkFlags(argv, positionals, io);
   if (refused !== undefined) return refused;
   // Review round 32: inside a Copilot session Atticus started, a person's decision is refused
   // here too, whatever started the command (the list is the session check's own). It reads the
