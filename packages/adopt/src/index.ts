@@ -4,7 +4,6 @@ export * from "./layout.js";
 export * from "./detect.js";
 export * from "./discover.js";
 export * from "./orgpack-files.js";
-export * from "./starter-personas.js";
 export * from "./init.js";
 export * from "./adopt.js";
 export * from "./unadopt.js";

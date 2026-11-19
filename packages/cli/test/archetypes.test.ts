@@ -257,8 +257,13 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         const created = r.out.find((l) => l.startsWith(`Created ${a.id} (quick, from `));
         expect(created, r.out.join("\n")).toBeDefined();
         expect(created).toMatch(/requirements\.md\)\. It is in plan\.$/);
+        // The ADR's addendum (the owner's decision): a separate spec writer writes the four files.
         expect(r.out).toContain(
-          `Next: your personas write its proposal, spec deltas, design and tasks (/define-change ${a.id}). Then a person runs atticus change handoff ${a.id} --approve.`,
+          `Next: hand the cleared requirements to the spec writer: /define-change ${a.id}. Then a person runs atticus change handoff ${a.id} --approve.`,
+        );
+        // So --from makes the change with change.yaml and requirements.md only, and OpenSpec's own file.
+        expect((await readdir(changeFolder(m.root, a.id))).sort()).toEqual(
+          [".openspec.yaml", "change.yaml", "requirements.md"].sort(),
         );
 
         const dir = changeFolder(m.root, a.id);

@@ -6,8 +6,8 @@ import {
   ATTICUS_FOLDER_IGNORE,
   CHECKLISTS_README,
   STARTER_CHECKLISTS_README,
-  starterPersonaFiles,
 } from "@maycombhq/adopt";
+import { starterPersonaFiles } from "@maycombhq/assistant-files";
 import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import { metarepoOrigin } from "@maycombhq/changes";
 import {
@@ -452,7 +452,7 @@ export interface StarterFile {
 
 /** The starter files this Atticus is installed with; none when they aren't there. */
 async function installedStarters(): Promise<StarterFile[]> {
-  return (await starterPersonaFiles()).map((f) => ({ path: f.rel, text: f.bytes }));
+  return starterPersonaFiles().catch(() => []);
 }
 
 /**

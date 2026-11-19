@@ -6,11 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import {
-  CHECKLISTS_README,
-  STARTER_CHECKLISTS_README,
-  starterPersonaFiles,
-} from "@maycombhq/adopt";
+import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
+import { starterPersonaFiles } from "@maycombhq/assistant-files";
 import { starterReviewText } from "@maycombhq/naysayer";
 import { GENERATED_MARK } from "@maycombhq/changes";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
@@ -142,6 +139,8 @@ describe("atticus upgrade", () => {
       ["gates-v2", ["org-pack/gates.yaml"]],
       ["flow-schema-v2", ["specs/forge-web/forge-web.save-customer.yaml"]],
       ["questions-v3", ["questions/q-0f1e2d3c4b5a.yaml"]],
+      // ADR 0201: the 16 starter files, none of which the Forge pack has.
+      ["starter-personas", (await starterPersonaFiles()).map((f) => `org-pack/${f.path}`)],
       // The Forge pack's sources.yaml is at version 1.
       ["sources-v2", ["org-pack/sources.yaml"]],
       // ADR 0132: and on to version 3, in the same run.
@@ -162,7 +161,7 @@ describe("atticus upgrade", () => {
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
     // ADR 0195 (CS2): and the step that adopts its catalog into source slots, shown first.
-    expect(r.out[0]).toMatch(/13 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/14 upgrade steps to run/);
     expect(r.out.join("\n")).toMatch(/Adopt the catalog into source slots \(ADR 0195\)/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");

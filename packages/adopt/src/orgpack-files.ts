@@ -12,7 +12,6 @@ import { starterPersonaFiles } from "@maycombhq/assistant-files";
 import { STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import type { z } from "zod";
 import { writeNew } from "./files.js";
-import { writeStarterPersonas } from "./starter-personas.js";
 
 /**
  * The files of a starting org pack, shared by init (a new metarepo) and adopt (`.atticus/`):
@@ -40,8 +39,6 @@ export interface StartingPack {
    * (init only), so Propose for review and the first hand-off work with no YAML edit.
    */
   gitHost?: { metarepo?: string };
-  /** ADR 0201: the starter personas' folder, for tests; left out, the assistant-files package's. */
-  starterPersonas?: string;
 }
 
 /** checklists/README.md as Atticus wrote it before the starter review (ADR 0120). */
@@ -126,7 +123,5 @@ export async function writeStartingPack(dir: string, p: StartingPack): Promise<s
   const written: string[] = [];
   for (const [rel, text] of files)
     if (await writeNew(join(dir, ...rel.split("/")), text)) written.push(rel);
-  // ADR 0201: the starter personas and the define-change skill, beside the defaults.
-  if (p.defaults) written.push(...(await writeStarterPersonas(dir, p.starterPersonas)));
   return written.sort();
 }
