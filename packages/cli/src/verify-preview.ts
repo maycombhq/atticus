@@ -169,22 +169,32 @@ async function pendingExplained(
   p: {
     existing: readonly CatalogRecord[];
     result: { records: readonly CatalogRecord[] };
-    diff: { added: readonly { kind: string; id: string }[] };
+    diff: {
+      added: readonly { kind: string; id: string }[];
+      removed: readonly { kind: string; id: string }[];
+    };
   },
   extra: number | undefined,
 ): Promise<Parameters<typeof confirmOf>[1]> {
   if (!refused?.reasons.includes("unexplained-removals") || !extra) return refused;
-  const { joinedArrowOf, looseEndsAt, movedArrowOf, pairedArrowsAt } =
+  const { joinedArrowOf, looseEndsAt, movedArrows, pairedArrowsAt } =
     await import("@maycombhq/scanner");
   const k = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`;
   const made = new Set(p.diff.added.map(k));
-  const at = pairedArrowsAt(p.result.records.filter((r) => made.has(k(r))));
+  const added = p.result.records.filter((r) => made.has(k(r)));
+  const at = pairedArrowsAt(added);
   const loose = looseEndsAt(p.existing);
   const before = new Map(p.existing.map((r) => [k(r), r] as const));
+  // Beta.30: an arrow whose call the pairing moves to another box, matched one to one with the
+  // arrow it adds, over everything the build removes (as the build's guard matches them).
+  const moved = movedArrows(
+    p.diff.removed.flatMap((x) => (before.get(k(x)) ? [before.get(k(x))!] : [])),
+    added,
+    p.existing,
+  );
   const all = (refused.unexplained ?? []).every((u) => {
     const r = before.get(k(u));
-    // Beta.30: or an arrow whose call the pairing moves to another box (the build says the same).
-    return !!r && (!!joinedArrowOf(r, at, loose) || !!movedArrowOf(r, at));
+    return !!r && (!!joinedArrowOf(r, at, loose) || moved.has(k(u)));
   });
   return all && refused.unexplained?.length
     ? { ...refused, reasons: refused.reasons.filter((x) => x !== "unexplained-removals") }

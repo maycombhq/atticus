@@ -6469,6 +6469,11 @@
                                       "api": {
                                         "type": "string",
                                         "minLength": 1
+                                      },
+                                      "reason": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 500
                                       }
                                     },
                                     "required": [
@@ -6672,6 +6677,11 @@
                                       "api": {
                                         "type": "string",
                                         "minLength": 1
+                                      },
+                                      "reason": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 500
                                       }
                                     },
                                     "required": [
@@ -43551,6 +43561,25 @@
                 },
                 "stale": {
                   "type": "boolean"
+                },
+                "over": {
+                  "type": "object",
+                  "properties": {
+                    "box": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "box",
+                    "text"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

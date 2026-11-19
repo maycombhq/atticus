@@ -622,6 +622,8 @@ export async function pairingsOf(
   const skipped: { call: string; api: string; said: string }[] = [];
   const decided = o.needReason ? await decidedOf(root, from, c.op, c.facts) : undefined;
   const inBox = inBoxOf(c.op, to);
+  // The pairs that go over what the call's line names and say no reason: all refused together.
+  const lacking: Api.PairNeedsReasonT[] = [];
   for (const p of pairs) {
     if (already.get(p.call) === p.api) {
       const said = `${p.call} goes to ${p.api} of ${c.b.name} already: nothing to write for it.`;
@@ -640,9 +642,7 @@ export async function pairingsOf(
     if (!api) throw notFound(`${c.b.name} has no API ${p.api} on record.`);
     const names = p.reason ? undefined : decided?.codeNames(f.id);
     if (names && !inBox(names.box) && names.box !== (to.repo ?? to.system))
-      throw conflict(
-        overridesCodeWords({ id: f.id, at: `${f.cite.file}:${f.cite.line}` }, names, c.b.name),
-      );
+      lacking.push({ call: f.id, at: `${f.cite.file}:${f.cite.line}`, ...names });
     corrections.push(
       FactCorrection.parse({
         schemaVersion: 1,
@@ -661,6 +661,13 @@ export async function pairingsOf(
       }),
     );
   }
+  if (lacking.length)
+    throw new HttpError(
+      409,
+      "Conflict",
+      lacking.map((x) => overridesCodeWords({ id: x.call, at: x.at }, x, c.b.name)).join(" "),
+      { needsReason: lacking },
+    );
   return {
     corrections,
     rel: `${factsRelOf(root)}/${from}.corrections.jsonl`,

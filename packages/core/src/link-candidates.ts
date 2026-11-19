@@ -586,7 +586,16 @@ export function linkCandidates(o: {
       ...(confident ? { confident: true } : {}),
     });
   }
-  calls.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : 0));
+  // By file, then by line as a number (the review: line 8 before line 20).
+  const place = (at: string) => {
+    const i = at.lastIndexOf(":");
+    return { file: at.slice(0, i), line: Number(at.slice(i + 1)) || 0 };
+  };
+  calls.sort((x, y) => {
+    const a = place(x.at);
+    const b = place(y.at);
+    return a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line;
+  });
   return {
     calls,
     apis: [...o.apis].sort((x, y) =>

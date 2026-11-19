@@ -15,6 +15,7 @@ import {
   FileChangedError,
   joinConventions,
   loadOrgPack,
+  parseFacts,
   orgPackDirOf,
   orgPackRelOf,
   parseCorrections,
@@ -45,6 +46,27 @@ import { looksLikeGatewayType } from "./ui-api-links.js";
  */
 
 const REPO = /^[A-Za-z0-9._-]{1,200}$/;
+
+/**
+ * The box a pairing's call line names, when it is another than the pairing's: read from the
+ * repo's facts and the manifests (`decidedOf`); nothing where the facts don't read.
+ */
+async function overOf(root: string, repo: string) {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
+  const parsed = text.trim() ? parseFacts(text) : undefined;
+  if (!parsed?.ok) return undefined;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const { decidedOf } = await import("./link-how.js");
+  const d = await decidedOf(root, repo, op, parsed.facts);
+  const calls = parsed.facts.filter((f) => f.kind === "call");
+  return (c: FactCorrection) => {
+    const id =
+      calls.find((f) => f.id === c.fact)?.id ??
+      calls.find((f) => f.cite.file === c.target.file && f.cite.line === c.target.line)?.id;
+    const names = id ? d.codeNames(id) : undefined;
+    return names && names.box !== (c.link?.repo ?? c.link?.system) ? names : undefined;
+  };
+}
 
 const says = (c: FactCorrection): string => {
   const what = `${c.target.kind} ${c.target.value} (${c.target.file}:${c.target.line})`;
@@ -375,13 +397,20 @@ export function uiDeclaredRoutes(
           join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`),
           "utf8",
         ).catch(() => "");
+        // Beta.30 (the review): a pairing that goes over what the call's line names says so, with
+        // the box it was moved from and the person's reason (hard rule 6: the fact stays as read).
+        const over = text.includes('"link"') ? await overOf(ctx.root, repo) : undefined;
         // Each line on its own, so Undo removes exactly the line a correction came from.
         for (const line of text.split(/\r?\n/).filter((l) => l.trim())) {
           const c = parseCorrections(line).corrections[0];
           if (!c) continue;
+          const names = c.action === "link" && !c.ai ? over?.(c) : undefined;
           items.push({
             kind: c.action,
-            says: says(c),
+            says: names
+              ? `${says(c)}, moved by ${c.by} from ${names.box} over what its line names (${names.text})${c.reason ? `: "${c.reason}"` : ""}`
+              : says(c),
+            ...(names ? { over: { ...names, ...(c.reason ? { reason: c.reason } : {}) } } : {}),
             by: c.by,
             at: c.at,
             ...(c.ai ? { ai: { runtime: c.ai.runtime, run: c.ai.run } } : {}),

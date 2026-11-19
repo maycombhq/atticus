@@ -703,8 +703,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   or the AI; with who and when), and the box its cited line names when that is another box
  *   than the one connected to (`codeNames`). POST /api/links/connect takes a `reason` with each
  *   pair, kept on the pairing's line, and answers 409 to a pair without one whose call has
- *   `codeNames`: a person overrides what the code says knowingly. The preview of a pairing that
- *   moves a call no longer says the Apply would refuse. Additive only.
+ *   `codeNames`: a person overrides what the code says knowingly; the 409 names each such pair
+ *   in `needsReason` (the call, its line, the box and what is written). POST /api/map/edits
+ *   takes the same `reason` with each pair of a `pair`, and answers the same 409 (with
+ *   `problems`, each naming its pairs in `needsReason`). GET /api/boxes/corrections says of a
+ *   pairing that goes over what its line names the box and the reason (`over`). The preview of
+ *   a pairing that moves a call no longer says the Apply would refuse. Additive only.
  */
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
@@ -2254,11 +2258,32 @@ export const MapEditPair = z.strictObject({
     .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
     .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" }),
   pairs: z
-    .array(z.object({ call: z.string().min(1), api: z.string().min(1) }))
+    .array(
+      z.object({
+        call: z.string().min(1),
+        api: z.string().min(1),
+        /** 3.19 (ADR 0204): why, as Connect to…'s pair takes it; required where the call's line names another box. */
+        reason: z.string().trim().min(3).max(500).optional(),
+      }),
+    )
     .min(1)
     .max(500),
 });
 export type MapEditPairT = z.infer<typeof MapEditPair>;
+/**
+ * 3.19 (ADR 0204): a pair refused (409) until the person says why: the call's cited line names
+ * another box. Carried as `needsReason` on the problem of POST /api/links/connect and POST
+ * /api/map/edits, one item per pair that lacks a reason.
+ */
+export const PairNeedsReason = z.object({
+  call: z.string(),
+  /** The call's cited line, `file:line`. */
+  at: z.string(),
+  /** The box the line names, and what is written there. */
+  box: z.string(),
+  text: z.string(),
+});
+export type PairNeedsReasonT = z.infer<typeof PairNeedsReason>;
 /**
  * 3.13.0: one change staged on the canvas. `delete` is Delete this link's (every Interface behind
  * the link and its two ends); an add is Declare a link…'s (`add`, from a system's box) or Connect
@@ -2288,6 +2313,8 @@ export type MapEditsRequestT = z.infer<typeof MapEditsRequest>;
 export const MapEditProblem = z.object({
   edit: z.number().int().nonnegative(),
   message: z.string(),
+  /** 3.19 (ADR 0204): the change's pairs that lack a reason; the request is then a 409. */
+  needsReason: z.array(PairNeedsReason).optional(),
 });
 export type MapEditProblemT = z.infer<typeof MapEditProblem>;
 /**
@@ -6275,6 +6302,13 @@ export const BoxCorrections = z.object({
       ]),
       /** A correction the latest read didn't meet: kept, said. */
       stale: z.boolean().optional(),
+      /**
+       * 3.19 (ADR 0204): a pairing that goes over what the call's cited line names: the box it
+       * names (the pairing moved the call from it), what is written, and the person's reason.
+       */
+      over: z
+        .object({ box: z.string(), text: z.string(), reason: z.string().optional() })
+        .optional(),
     }),
   ),
 });
