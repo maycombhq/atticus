@@ -114,6 +114,7 @@ import {
   type ScanProblem,
 } from "./scan.js";
 import {
+  WORDS_LINK,
   buildManifestPath,
   factsSlotPaths,
   legacyJoinsPath,
@@ -2433,7 +2434,7 @@ async function interruptedManifest(
 
 /** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
 export const UPGRADE_UNDONE =
-  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
+  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from slots again.";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a
@@ -2687,7 +2688,12 @@ export async function guardBuild(
     const latest = (await listUndo(o.undoDir))[0];
     if (latest?.command.startsWith("atticus catalog undo")) lines.push(UPGRADE_UNDONE);
     lines.push(
-      `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}): run atticus upgrade to adopt its ${onDisk.size} record files into legacy slots (it shows what it would do first; atticus upgrade --yes applies it), or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}.`,
+      // v30 slice 8: what happened, that nothing changed, then what to do.
+      [
+        `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}).`,
+        "Nothing was changed.",
+        `Move its ${onDisk.size} record files into the catalog's stored reads, nothing lost: atticus upgrade (it shows what it would do first; --yes does it). Or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}. ${WORDS_LINK}`,
+      ].join("\n"),
     );
   } else if (edits.length && o.discardEdits !== edits.length) {
     reasons.push("hand-edits");
@@ -3039,7 +3045,12 @@ export async function guardBuild(
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
-      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again. atticus doctor --counts says how many repos are read.`,
+      // v30 slice 8: what happened, that nothing changed, then what to do.
+      [
+        `The build has no record from any repo's code, and ${genRel} has some.`,
+        `Nothing was changed: ${genRel} is left as it was.`,
+        "Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again; to see how many repos are read: atticus doctor --counts",
+      ].join("\n"),
     );
   }
 

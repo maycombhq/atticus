@@ -89,15 +89,15 @@ export function appLines(lines: string[], o: { next?: boolean } = {}): string[] 
       )
       .replace(
         /^(No repo has facts yet \([^)]*\))\. Read one first: \/atticus-map <repo> in your assistant\.$/,
-        "$1. Read one first on Map › Trust.",
+        "$1. Read one first on Map › Read status.",
       )
       .replace(
         /^(No facts for (\S+) at \S+)\. Run \/atticus-map \S+ in your assistant first \(or atticus map \S+ to read it in batches\); it writes that file\.$/,
-        "$1. Read $2 first on Map › Trust; the read writes that file.",
+        "$1. Read $2 first on Map › Read status; the read writes that file.",
       )
       .replace(
         /^(There are no repo specs in \S+ yet)\. Draft them first: atticus spec draft <repo>\.$/,
-        "$1: read a repo on Map › Trust and apply it, which writes its spec.",
+        "$1: read a repo on Map › Read status and Apply it, which writes its spec.",
       )
       .trimStart(),
   );

@@ -566,7 +566,7 @@ export function buildEstate(records: CatalogRecord[], o: BuildEstateOptions = {}
       properties: { name: repo },
       next: {
         command: `atticus map ${repo}`,
-        why: "Read the repo again when its code has changed; Map › Trust says how far its map is trusted now.",
+        why: "Read the repo again when its code has changed; Map › Read status says how far its map is trusted now.",
       },
     });
   }

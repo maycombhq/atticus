@@ -21,6 +21,7 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 import {
+  WORDS_LINK,
   applyUndo,
   baselineTarget,
   buildAndWrite,
@@ -139,7 +140,7 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   if (r.unreadableManifest)
     return `catalog/sources/build.json doesn't read (edited or merged by hand): build again, replacing every record file with this build: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("hand-edits"))
-    return `Files under catalog/generated were changed by hand. Make them curated: atticus catalog edits --curate, or discard them: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
+    return `Files under catalog/generated were changed by hand. Keep them as your edits: atticus catalog edits --curate, or discard them: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
   if (r.reasons.includes("unexplained-removals"))
     return "The build would remove records nothing explains (a bug): nothing was written. The list is in the command's output.";
   if (r.reasons.includes("large-removals"))
@@ -344,7 +345,7 @@ export async function catalogUndo(
     const g = await guardBuild(b, { undoDir, command: "atticus catalog build" });
     if (g.refused?.reasons.includes("hand-edits")) {
       io.err(
-        "Nothing undone: files under catalog/generated were changed by hand since the last build. Make them curated (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
+        "Nothing undone: files under catalog/generated were changed by hand since the last build. Keep them as your edits (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
       const refused = { reasons: ["hand-edits"], edits: g.refused.edits };
       await refusalEnds(root, refused);
@@ -547,7 +548,7 @@ function cantSay(p: Pick<EditPlan, "fields" | "removed">): string {
   ].join(" and ");
   const verb =
     changed.length && removed.length ? "set or remove" : removed.length ? "remove" : "set";
-  return `${what}, which a curated decision can't ${verb}`;
+  return `${what}, which your kept edit can't ${verb}`;
 }
 
 /**
@@ -761,7 +762,9 @@ async function planEdits(
       plan({
         why: derivedNow
           ? "the build makes a record of its id: change that record instead"
-          : "an added record can't be a curated decision (a decision changes or suppresses a record the build makes); discard it, or say it where the build reads it: a fact in facts/<repo>.jsonl that verify --write checks, or a rule in the org pack",
+          : // v30 slice 8: what happened, then what to do (nothing is written for it: said above).
+            "an added record can't be your kept edit (a kept edit changes or suppresses a record the build makes); nothing was written for it.\n" +
+            `Discard it, or say it where the build reads it: a fact in facts/<repo>.jsonl that atticus verify <repo> --write checks, or a rule in the org pack. ${WORDS_LINK}`,
       });
       continue;
     }
@@ -920,7 +923,7 @@ export async function catalogEdits(
       for (const e of listed)
         io.out(`  ${e.how}: ${e.path}${e.fields?.length ? ` (${cantSay(e)})` : ""}`);
       io.out(
-        `Make them curated decisions: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
+        `Keep them as your edits: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
       );
     }
     return 1;
@@ -1650,7 +1653,7 @@ export async function applyMapEdits(
     built = c === 0;
     if (c !== 0)
       io.err(
-        "The changes are saved; the catalog is built with them once the build above is confirmed on Set up › Scans › Catalog builds.",
+        "The changes are saved; the catalog is built with them once the build above is confirmed on Set up › Activity › Catalog builds.",
       );
     return c;
   });

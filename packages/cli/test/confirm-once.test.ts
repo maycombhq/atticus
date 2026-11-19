@@ -326,7 +326,10 @@ describe("a refused build asks once in a terminal (ADR 0202 point 9)", () => {
       await rm(join(old, ".index", "build-undo"), { recursive: true, force: true });
       const b = await run(["catalog", "build", "--root", old], yes);
       expect(b).toMatchObject({ code: 1, asked: [] });
-      expect(b.err.join("\n")).toMatch(/was written before beta\.27.*run atticus upgrade/);
+      // v30 slice 8: what happened, nothing changed, then the command.
+      expect(b.err.join("\n")).toMatch(
+        /was written before beta\.27[^\n]*\nNothing was changed\.\nMove its \d+ record files[^\n]*: atticus upgrade/,
+      );
       const unread = await built();
       // No undo copy names its files either, so none can be told from a hand edit.
       await rm(join(unread, ".index", "build-undo"), { recursive: true, force: true });
@@ -371,7 +374,7 @@ describe("atticus upgrade asks once about the slots step", () => {
       expect(ok.asked).toEqual([CONFIRM_WORDS.apply]);
       expect(ok.code, ok.err.join("\n")).toBe(0);
       expect(ok.out.at(-1)).toBe(
-        "Done: the catalog is adopted into catalog/sources/ (atticus catalog undo takes it back).",
+        "Done: the catalog is moved into catalog/sources/ (atticus catalog undo takes it back).",
       );
       expect(ok.out.join("\n")).toContain("Recorded Atticus");
       expect(existsSync(buildManifestPath(root))).toBe(true);

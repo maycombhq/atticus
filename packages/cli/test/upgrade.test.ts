@@ -162,7 +162,7 @@ describe("atticus upgrade", () => {
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
     // ADR 0195 (CS2): and the step that adopts its catalog into source slots, shown first.
     expect(r.out[0]).toMatch(/14 upgrade steps to run/);
-    expect(r.out.join("\n")).toMatch(/Adopt the catalog into source slots \(ADR 0195\)/);
+    expect(r.out.join("\n")).toMatch(/Move the catalog into source slots \(ADR 0195\)/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);

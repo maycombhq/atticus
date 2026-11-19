@@ -548,7 +548,7 @@ Usage:
   atticus types list [--json]          The organisation's component types (ADR 0180): Atticus's built-ins with the org pack's own, reworded and switched-off ones applied; each with its badge, description and whether it has notes
   atticus types add <id> --name "..." --description "..." [--badge <1-3 chars>] [--shape <shape>] [--colour <css>] [--owner <team>]   Write a component type to org-pack/component-types/<id>/type.yaml with a notes.md to fill in; the next reads are handed it, the canvas draws it, a new box on the canvas can be of it
   atticus types notes <id>             A component type's notes (the architect's write-up), or where to write them
-  atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
+  atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's calls with no arrow and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --key <k> --rule "..." --org-wide | --type <t> | --repo <r> [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
@@ -629,7 +629,7 @@ Usage:
   atticus questions propose [<id>]     /atticus-propose as a command (ADR 0171): under --mode copilot-acp (or runtime.yaml's default) Copilot proposes in a new session, unattended, writing only proposals/questions/, then the proposals are checked; otherwise it prints the line to paste. A person still accepts each one [--mode copilot-acp|hand-off]
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
-  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Apply to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
+  atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Write to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
   atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
   atticus questions route <id> --to product|architecture|analysis|delivery   Move a question to the role that answers it (ADR 0191): a business question to the product owner, a design one to the architect [--by who]
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
@@ -639,7 +639,7 @@ Usage:
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
   atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; the next verify write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
-  atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
+  atticus triage decide <item> <n>     Choose option n for a triage item; writes your kept edit
           [--reason text]
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
@@ -719,8 +719,8 @@ Usage:
   atticus catalog build                Build catalog/generated from the source slots and inputs (ADR 0195): after a curated file is edited by hand, or a merge conflict [--allow-removals <n>] [--discard-edits <n>] [--json]
           [--check]                    Write nothing; exit 1 when catalog/generated isn't what the slots build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
-          [--curate]                   Make each a curated decision, an edit to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
-          [--drop-fields <n>]          With --curate: also make curated the files that change fields no decision can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back
+          [--curate]                   Keep each as your edit, to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
+          [--drop-fields <n>]          With --curate: also keep as yours the files that change fields no decision can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back
   atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)

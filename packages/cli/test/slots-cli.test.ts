@@ -441,7 +441,7 @@ describe("a plugin that times out or is refused leaves the slots of the repos it
       const w = capture();
       await main(["scan", "--root", root, "--no-drift"], w.io);
       expect(w.out.join("\n")).toMatch(
-        /forge-anvil-notes: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): a plugin that applies to it isn't used \(forge-anvil-routes\)/,
+        /forge-anvil-notes: keeps its last good read \(commit [0-9a-f]{7}\): a plugin that applies to it isn't used \(forge-anvil-routes\)/,
       );
     },
     T,

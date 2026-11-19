@@ -13,7 +13,7 @@ import {
   type CatalogRecord,
   type Question,
 } from "@maycombhq/core";
-import { gatewayHostFix, hostQuestionDrafts, unknownHosts } from "@maycombhq/scanner";
+import { WORDS_LINK, gatewayHostFix, hostQuestionDrafts, unknownHosts } from "@maycombhq/scanner";
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 
@@ -141,8 +141,17 @@ export async function askHosts(
   for (const q of raised)
     lines.push(
       gateway.has(hostOfQuestion(q)!)
-        ? `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} ${gateway.get(hostOfQuestion(q)!)}. If one repo alone answers on it, answer: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}).`
-        : `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If a system outside the estate answers on it, pick an outside system (another team's or a vendor's): it goes into the profile with the host as its alias.`,
+        ? // v30 slice 8: what happened, what it leaves, then what to do.
+          [
+            `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question}`,
+            "The map draws no arrow for these calls until it is answered.",
+            `${gateway.get(hostOfQuestion(q)!)}. If one repo alone answers on it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}).`,
+          ].join("\n")
+        : [
+            `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question}`,
+            "The map draws no arrow for these calls until it is answered.",
+            `Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos share the host, list it under hosts on each in repos.manifest.yaml instead; if an outside system answers on it, pick that option. ${WORDS_LINK}`,
+          ].join("\n"),
     );
   for (const q of reasked)
     lines.push(

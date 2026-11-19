@@ -35,7 +35,7 @@ const JOBS: [string, string, boolean | "caller", string][] = [
   ],
   [
     "ui-api-catalog.ts",
-    '"Make the hand edits curated, then build"',
+    '"Keep the hand edits as yours, then build"',
     true,
     "the build: Stop until its write",
   ],

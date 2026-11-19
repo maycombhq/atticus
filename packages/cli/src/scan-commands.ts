@@ -106,7 +106,7 @@ export function scanRefusal(
       ...(u.runs ? { runs: u.runs } : {}),
     })),
     message: [
-      "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were:",
+      "Nothing written: the scan read no repo in full, so the catalog and every stored read are as they were:",
       ...lines.map((l) => `  ${l}`),
       "Clone the repos (atticus workspace sync) or fix what stopped their read, then scan again.",
     ].join("\n"),
@@ -204,8 +204,8 @@ export function sourceLines(
       if (s.reason && s.reason !== "refused" && s.reason !== "dry-run")
         out.push(
           s.slot === "kept-last-good"
-            ? `${s.repo}: its readers slot keeps its last good read${s.commit ? ` (commit ${short(s.commit)})` : ""}: ${keptWhy(s)}.`
-            : `${s.repo}: no readers slot written: ${keptWhy(s)}.`,
+            ? `${s.repo}: keeps its last good read${s.commit ? ` (commit ${short(s.commit)})` : ""}: ${keptWhy(s)}.`
+            : `${s.repo}: not read: ${keptWhy(s)}.`,
         );
   }
   for (const s of sources) {
