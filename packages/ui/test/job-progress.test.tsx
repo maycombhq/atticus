@@ -428,7 +428,7 @@ describe("an Apply that failed", () => {
 });
 
 describe("the other waits that follow a job", () => {
-  it("Propose for review says its time and that it is running, with no Stop (a push isn't stopped)", async () => {
+  it("Propose for review says its time and that it is running, with Stop until its push (ADR 0202)", async () => {
     starts.set("/api/propose", "job-p");
     jobs.set("job-p", [running("Proposing for review")]);
     const m = mount(Propose as never, { scope: "answers" } as never);
@@ -445,7 +445,8 @@ describe("the other waits that follow a job", () => {
       typeof JobProgress
     >[0];
     expect(p.what).toBe(P.proposingSay);
-    expect(p.onStop).toBeUndefined();
+    // ADR 0202 point 2: the job hears Stop until just before the push, and says when it can't.
+    expect(typeof p.onStop).toBe("function");
   });
 
   it("Edit the map's Apply shows the job's step where it said only that it was saving", () => {

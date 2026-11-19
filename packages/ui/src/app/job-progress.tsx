@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { stopJob } from "../api/client.js";
+import { api, stopJob } from "../api/client.js";
 import { COPY } from "../copy.js";
-import { followJob, JobFailed } from "./job.js";
+import { followJob, JobFailed, undoWayOf, type StopStands } from "./job.js";
 import { JobWait } from "./job-wait.js";
 import { focusIfLost } from "./ui.js";
+import { CATALOG_BUILDS_HREF, ErrorWaysOn } from "./ways-on.js";
 
 const J = COPY.app.jobRun;
 
@@ -13,7 +14,8 @@ const J = COPY.app.jobRun;
  * when, and whether Stop was asked. Once it ended: how, and when, so its line stays.
  */
 export interface JobRun {
-  state: "running" | "done" | "failed" | "stopped";
+  /** `refused` (ADR 0202 point 5): a job found again that ended by refusing; nothing written. */
+  state: "running" | "done" | "failed" | "stopped" | "refused";
   /** When the page started it and when it heard it end (the page's clock, ms). */
   startedAt: number;
   endedAt?: number;
@@ -28,13 +30,32 @@ export interface JobRun {
    * Console). No Stop is offered again.
    */
   tooLate?: boolean;
+  /**
+   * API 3.19.0 (ADR 0202 point 2): what the job itself says of Stop: whether one asked now
+   * would end it, and where it would land. Absent from an older server (the page then offers
+   * Stop while the job runs, and tells a late one by looking twice, as before).
+   */
+  stoppable?: boolean;
+  stopLands?: "now" | "after-write";
 }
 
 /** What followJob tells of a running job: handed to work that follows a job elsewhere. */
 export interface JobHears {
   onJob: (jobId: string) => void;
-  onProgress: (p: { done: number; total: number; message: string; stopping?: boolean }) => void;
+  onProgress: (
+    p: { done: number; total: number; message: string; stopping?: boolean } & StopStands,
+  ) => void;
 }
+
+/** A job's word on Stop, as the run keeps it; nothing when the server says nothing. */
+const stopStands = (p: StopStands): Pick<JobRun, "stoppable" | "stopLands"> =>
+  typeof p.stoppable === "boolean"
+    ? { stoppable: p.stoppable, ...(p.stoppable && p.stopLands ? { stopLands: p.stopLands } : {}) }
+    : {};
+
+/** Whether the job says a Stop can no longer take effect: it runs on, its write started. */
+export const cantStopNow = (r: JobRun | undefined): boolean =>
+  r?.state === "running" && r.stoppable === false && !r.stopping;
 
 /**
  * How long a job had run when it last said it was still running: at 30 s, 1 min and 2 min, then
@@ -81,14 +102,17 @@ export function useJobRun(o: { clock?: () => number; wait?: (ms: number) => Prom
           named = true;
           // The job says whether the Stop was taken. The first look after the server heard it
           // may have been on its way already, so the second one decides.
-          const late = !p.stopping && asked.current === "looked";
-          if (p.stopping || late) asked.current = undefined;
+          // A server that says `stoppable` says so itself: no second look is needed.
+          const says = typeof p.stoppable === "boolean";
+          const late = !says && !p.stopping && asked.current === "looked";
+          if (p.stopping || late || (says && asked.current === "heard")) asked.current = undefined;
           else if (asked.current === "heard") asked.current = "looked";
-          running(({ stopping: _s, ...was }) => ({
+          running(({ stopping: _s, stoppable: _a, stopLands: _l, ...was }) => ({
             ...was,
             step: p.message,
             ...(p.stopping || asked.current ? { stopping: true } : {}),
             ...(late ? { tooLate: true } : {}),
+            ...stopStands(p),
           }));
         },
       });
@@ -115,7 +139,9 @@ export function useJobRun(o: { clock?: () => number; wait?: (ms: number) => Prom
         h.onProgress,
       ),
     );
-  const jobId = run?.state === "running" && !run.tooLate ? run.jobId : undefined;
+  // ADR 0202 point 2: no Stop once the job says one can no longer take effect.
+  const jobId =
+    run?.state === "running" && !run.tooLate && run.stoppable !== false ? run.jobId : undefined;
   const stop = jobId
     ? () => {
         asked.current = "sent";
@@ -169,7 +195,9 @@ export function JobProgress(p: {
   const ticked = useTick(r?.state === "running" && p.now === undefined);
   const said = useRef<HTMLParagraphElement | null>(null);
   const ended = !!r && r.state !== "running";
-  const late = !!r?.tooLate;
+  // Too late, as the page worked out (an older server) or as the job says (ADR 0202 point 2).
+  const saysLate = cantStopNow(r);
+  const late = !!r?.tooLate || saysLate;
   useEffect(() => {
     if (ended || late) focusIfLost(said.current);
   }, [ended, late]);
@@ -182,7 +210,9 @@ export function JobProgress(p: {
           ? J.done(took)
           : r.state === "stopped"
             ? J.stopped(took)
-            : J.ended(took)}
+            : r.state === "refused"
+              ? J.refused(took)
+              : J.ended(took)}
       </p>
     );
   }
@@ -193,12 +223,13 @@ export function JobProgress(p: {
       <JobWait
         what={p.what}
         line={r.step ? stepWords(r.step) : undefined}
-        onStop={late ? undefined : p.onStop}
+        onStop={late || r.stoppable === false ? undefined : p.onStop}
         stopping={!!r.stopping}
+        afterRepo={r.stopLands === "after-write"}
       />
       {late && (
         <p role="status" className="ev-say" style={{ margin: 0 }} tabIndex={-1} ref={said}>
-          {J.tooLate}
+          {saysLate ? J.tooLateNow : J.tooLate}
         </p>
       )}
       <p className="ev-say" style={{ margin: 0 }}>
@@ -209,4 +240,213 @@ export function JobProgress(p: {
       </p>
     </div>
   );
+}
+
+/** A job as GET /api/jobs gives it (API 3.19.0), as far as a panel reads it. */
+interface FoundJobView extends StopStands {
+  id: string;
+  state: string;
+  progress?: { done: number; total: number; message: string };
+  startedAt: string;
+  finishedAt?: string;
+  stopping?: boolean;
+  result?: Record<string, unknown>;
+}
+
+/** How long a finished job is still shown by the panel that finds it again. */
+export const FOUND_FOR_MS = 10 * 60_000;
+/** The lines of a job found again that the panel shows (its last ones). */
+export const FOUND_LINES = 6;
+
+/** A job found again: as the panel shows it, its last lines, and its result once it ended. */
+export interface FoundJob {
+  run: JobRun;
+  lines: string[];
+  result?: Record<string, unknown>;
+}
+
+const isRunning = (j: FoundJobView) => j.state === "running" || j.state === "queued";
+
+/** The run of a job as the server tells it: its own start, and how it ended. */
+export function foundRun(j: FoundJobView, now: number): JobRun {
+  const startedAt = Date.parse(j.startedAt) || now;
+  if (isRunning(j))
+    return {
+      state: "running",
+      startedAt,
+      jobId: j.id,
+      ...(j.progress?.message ? { step: j.progress.message } : {}),
+      ...(j.stopping ? { stopping: true } : {}),
+      ...stopStands(j),
+    };
+  const code = j.result?.code;
+  return {
+    state:
+      j.state === "cancelled"
+        ? "stopped"
+        : j.result?.refused
+          ? "refused"
+          : j.state === "done" && (code === undefined || code === 0)
+            ? "done"
+            : "failed",
+    startedAt,
+    endedAt: Date.parse(j.finishedAt ?? "") || now,
+    jobId: j.id,
+  };
+}
+
+/**
+ * ADR 0202 point 5: the job this panel's action started before the page was loaded, found again:
+ * GET /api/jobs?action=&repo= on load. A running one is followed to its end (its message, the
+ * time since the server's `startedAt`, Stop as the job says, its last lines from
+ * GET /api/activity/{id}/lines); with none running, the newest finished within the last ten
+ * minutes is shown as it ended. An older server (no such route) or one that restarted since (no
+ * such job) leaves the panel as it was: nothing is said. `skip`: the panel has a job of its own.
+ */
+export function useJobFound(
+  action: string,
+  repo?: string,
+  o: {
+    skip?: boolean;
+    clock?: () => number;
+    wait?: (ms: number) => Promise<void>;
+    onEnd?: () => void;
+  } = {},
+) {
+  const clock = o.clock ?? Date.now;
+  const [found, setFound] = useState<FoundJob | undefined>();
+  const [asked, setAsked] = useState(false);
+  const skip = !!o.skip;
+  useEffect(() => {
+    if (skip) return undefined;
+    let gone = false;
+    const wait = o.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    void (async () => {
+      const q = `action=${encodeURIComponent(action)}${repo ? `&repo=${encodeURIComponent(repo)}` : ""}`;
+      let j: FoundJobView | undefined;
+      try {
+        j = (await api<{ jobs?: FoundJobView[] }>(`/api/jobs?${q}`, { quiet: true })).jobs?.[0];
+      } catch {
+        return;
+      }
+      if (!j || gone) return;
+      let followed = false;
+      for (;;) {
+        const running = isRunning(j);
+        const run = foundRun(j, clock());
+        // One that ended before the page looked is shown only while it is news.
+        if (!running && !followed && clock() - (run.endedAt ?? 0) > FOUND_FOR_MS) return;
+        const lines = await api<{ lines?: string[] }>(
+          `/api/activity/${encodeURIComponent(j.id)}/lines`,
+          { quiet: true },
+        ).then(
+          (l) => (l.lines ?? []).slice(-FOUND_LINES),
+          () => [] as string[],
+        );
+        if (gone) return;
+        setFound({ run, lines, ...(j.result ? { result: j.result } : {}) });
+        if (!running) {
+          if (followed) o.onEnd?.();
+          return;
+        }
+        followed = true;
+        await wait(700);
+        if (gone) return;
+        try {
+          j = await api<FoundJobView>(`/api/jobs/${encodeURIComponent(j.id)}`, { quiet: true });
+        } catch {
+          return;
+        }
+      }
+    })();
+    return () => {
+      gone = true;
+    };
+    // Once per action and repo: the clock, the wait and onEnd are the caller's of that render.
+  }, [action, repo, skip]);
+  const run = skip ? undefined : found?.run;
+  const jobId = run?.state === "running" && run.stoppable !== false ? run.jobId : undefined;
+  const stop =
+    jobId && !asked
+      ? () => {
+          setAsked(true);
+          void stopJob(jobId).catch(() => setAsked(false));
+        }
+      : undefined;
+  // A Stop asked here is said at once, until the job says how it took it.
+  const pressed = asked && run?.state === "running" && run.stoppable !== false;
+  return {
+    found:
+      skip || !found
+        ? undefined
+        : pressed
+          ? { ...found, run: { ...found.run, stopping: true } }
+          : found,
+    stop,
+  };
+}
+
+/**
+ * The job a panel found again, under its button: that it was started before this page was
+ * loaded, its progress as the panel shows any job (JobProgress), what it printed last, and once
+ * it ended its ways on: the refusal's page, or Undo and the support bundle after a failure.
+ */
+export function JobFoundView(p: {
+  what: string;
+  found: FoundJob | undefined;
+  onStop?: (() => void) | undefined;
+  now?: number;
+}) {
+  const f = p.found;
+  if (!f) return null;
+  const undo = undoWayOf(f.result);
+  return (
+    <div className="stack" role="group" aria-label={J.found} style={{ gap: 4 }}>
+      <p className="ev-say" style={{ margin: 0 }}>
+        {J.found}
+      </p>
+      <JobProgress
+        what={p.what}
+        run={f.run}
+        onStop={p.onStop}
+        {...(p.now !== undefined ? { now: p.now } : {})}
+      />
+      {f.lines.length > 0 && (
+        <pre
+          className="ev-say mono"
+          tabIndex={0}
+          aria-label={J.linesLabel(p.what)}
+          style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        >
+          {f.lines.join("\n")}
+        </pre>
+      )}
+      {f.run.state === "refused" && (
+        <div>
+          <a className="btn primary" href={CATALOG_BUILDS_HREF}>
+            {J.seeRefusal}
+          </a>
+        </div>
+      )}
+      {f.run.state === "failed" && (
+        <ErrorWaysOn short againHref={CATALOG_BUILDS_HREF} undo={undo} undoKnown />
+      )}
+    </div>
+  );
+}
+
+/** useJobFound and its view in one: what a panel puts under its button. */
+export function JobFound(p: {
+  action: string;
+  repo?: string | undefined;
+  what: string;
+  /** The panel started a job of its own: that one is shown, not one found. */
+  skip?: boolean | undefined;
+  onEnd?: (() => void) | undefined;
+}) {
+  const j = useJobFound(p.action, p.repo, {
+    ...(p.skip ? { skip: true } : {}),
+    ...(p.onEnd ? { onEnd: p.onEnd } : {}),
+  });
+  return <JobFoundView what={p.what} found={j.found} onStop={j.stop} />;
 }

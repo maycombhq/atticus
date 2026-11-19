@@ -1,5 +1,5 @@
 import { hashParam } from "../../app/screens.js";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RunWithCopilot } from "../../app/copilot-runs.js";
 import { appStep, ReadRepo } from "../../app/app-step.js";
 import type { Api } from "@maycombhq/core";
@@ -791,6 +791,7 @@ export function TrustPage({
   decide,
   canary,
   filter: initial = "",
+  rejected,
 }: {
   of: Loaded<Api.TrustViewT> & { reload?: () => void };
   fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
@@ -800,10 +801,13 @@ export function TrustPage({
   canary?: Loaded<Api.CanaryViewT> & { reload?: () => void };
   /** Beta.27: the repos filter's words to start with (tests render each state). */
   filter?: string;
+  /** ADR 0202 point 4: one repo's rejected facts, where a refusal's link lands. */
+  rejected?: { repo: string; of: Loaded<Api.TrustViewT> & { reload?: () => void } } | undefined;
 }) {
   const [filter, setFilter] = useState(initial);
   return (
     <div className="bento">
+      {rejected && <RejectedFacts repo={rejected.repo} of={rejected.of} />}
       {fresh && <FreshPanel of={fresh} />}
       {decide && <AiPrecision of={decide} />}
       {canary && <CanaryPanel of={canary} />}
@@ -870,9 +874,74 @@ export function trustFilterOf(hash: string): string {
   return hashParam(hash, "repo") ?? "";
 }
 
+/**
+ * ADR 0202 point 4: the repo whose rejected facts an address asks for
+ * (`#/trust?repo=forge-ledger&rejected=1`: a refusal's "See the N rejected facts"), if it does.
+ */
+export function rejectedAsked(hash: string): string | undefined {
+  return hashParam(hash, "rejected") === "1" ? hashParam(hash, "repo") || undefined : undefined;
+}
+
+/** Where the rejected facts of one repo are read from: that repo's row only, every line. */
+export const rejectedPath = (repo: string) =>
+  `/api/trust?repo=${encodeURIComponent(repo)}&rejected=1`;
+
+/**
+ * One repo's rejected facts, first on the page: "<n> rejected facts in <repo>", each with its
+ * place, code, reason and Drop. The heading takes the keyboard as the link lands (WCAG 2.4.3).
+ * An older server answers the whole view; the repo's row is read from it all the same.
+ */
+export function RejectedFacts(p: {
+  repo: string;
+  of: Loaded<Api.TrustViewT> & { reload?: () => void };
+}) {
+  const head = useRef<HTMLHeadingElement | null>(null);
+  const loaded = p.of.state === "ready";
+  useEffect(() => {
+    if (loaded) head.current?.focus();
+  }, [loaded, p.repo]);
+  const id = `rejected-${p.repo}`;
+  const list =
+    p.of.state === "ready"
+      ? (p.of.data.repos.find((r) => r.repo === p.repo)?.lists?.rejected ?? [])
+      : [];
+  return (
+    <section className="panel" style={{ gridColumn: "1 / -1" }} aria-labelledby={id}>
+      <h2 id={id} className="h" tabIndex={-1} ref={head}>
+        {loaded
+          ? T.rejectedTitle(list.length, p.repo)
+          : p.of.state === "loading"
+            ? T.rejectedLoading(p.repo)
+            : T.rejectedListLabel(p.repo)}
+      </h2>
+      <View of={p.of} empty={() => list.length === 0} emptyText={T.rejectedNone(p.repo)}>
+        {() => (
+          <ul className="trust-items" aria-label={T.rejectedListLabel(p.repo)}>
+            {list.map((x, i) => (
+              <li key={`${x.fact ?? x.code}-${i}`}>
+                <code className="mono">{placeOf(x.file, x.line) ?? T.rejectedNoLine}</code>
+                {x.fact && <span className="mono"> {x.fact}</span>}
+                {" · "}
+                {T.rejectedLine(x.code, x.message)}
+                {x.fact && <DropFact repo={p.repo} fact={x.fact} />}
+              </li>
+            ))}
+          </ul>
+        )}
+      </View>
+      <p className="work-say" style={{ marginBottom: 0 }}>
+        <a href="#/trust">{T.rejectedAll}</a>
+      </p>
+    </section>
+  );
+}
+
 export function Trust() {
   const view = useApi<Api.TrustViewT>("/api/trust");
   useReloadOnFiles(view);
+  const asked = typeof location === "undefined" ? undefined : rejectedAsked(location.hash);
+  const rejected = useApi<Api.TrustViewT>(asked ? rejectedPath(asked) : undefined);
+  useReloadOnFiles(rejected);
   const fresh = useApi<Api.FreshViewT>("/api/trust/fresh");
   useReloadOnFiles(fresh);
   const ds = useDecisions();
@@ -885,6 +954,7 @@ export function Trust() {
         fresh={fresh}
         canary={canary}
         filter={typeof location === "undefined" ? "" : trustFilterOf(location.hash)}
+        rejected={asked ? { repo: asked, of: rejected } : undefined}
         decide={{ ...(ds?.view ?? { state: "loading" }), ...(ds ? { reload: ds.reload } : {}) }}
       />
     </EvidenceProvider>

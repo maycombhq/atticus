@@ -113,8 +113,11 @@ export const COPY = {
     jobWait: {
       now: (line: string) => `Now: ${line}`,
       stop: "Stop",
+      /** ADR 0202 point 2: a job of several is inside a write; it ends when that has finished. */
+      stopAfterRepo: "Stop after this repo",
       stopping: "Stopping…",
       stopLabel: (what: string) => `Stop: ${what}`,
+      stopAfterRepoLabel: (what: string) => `Stop after this repo: ${what}`,
       stopped: "Stopped before it finished: nothing was changed.",
       again: "Start it again",
     },
@@ -137,6 +140,14 @@ export const COPY = {
       /** Stop was asked after the write had started: the server carries on, and so says the page. */
       tooLate:
         "Stop came too late: the write had started, and it finishes whole so nothing is left half-written.",
+      /** ADR 0202 point 2: the job said a Stop can no longer take effect (its write started). */
+      tooLateNow: "Too late to stop: the write has started and finishes whole.",
+      /** ADR 0202 point 5: a finished job found again that refused (nothing was written). */
+      refused: (time: string) => `Refused after ${time}: nothing was written.`,
+      /** A job this page found running or just ended, started before the page was loaded. */
+      found: "Started before this page was loaded:",
+      linesLabel: (what: string) => `What it printed last: ${what}`,
+      seeRefusal: "See why on Set up › Catalog builds",
       /** Why a step ended, when a person's Stop ended it (never the job's raw state word). */
       youStopped: "Stop was asked, and it ended before it finished.",
     },
@@ -1137,7 +1148,35 @@ export const COPY = {
     copyInstallLabel: (cmd: string) => `Copy the install command: ${cmd}`,
     supportCommand: "atticus support bundle",
     supportWhy:
-      "To report it, save a support bundle from a terminal (versions, checks, counts and the redacted log in a zip on this machine; nothing is sent) and read it before you send it:",
+      "To report it, save a support bundle (versions, checks, counts and the redacted log in a zip on this machine; nothing is sent) and read every file before you send it:",
+    /** ADR 0202 point 1: the app saves one itself; the command stays for a terminal. */
+    saveBundle: "Save a support bundle",
+    savingBundle: "Saving a support bundle…",
+    bundleSaved: (file: string, n: number) =>
+      `Saved ${file} (${n} ${n === 1 ? "file" : "files"}). Nothing was sent anywhere. Read every file before you send it outside your organisation.`,
+    saveCopy: "Save a copy…",
+    saveCopyLabel: (name: string) => `Save a copy of ${name}`,
+    copyPath: "Copy the path",
+    copyPathLabel: (file: string) => `Copy the path: ${file}`,
+    bundleFiles: "The files in it",
+    bundleFailed: (why: string) =>
+      `The support bundle couldn't be saved from here: ${why} Nothing was sent anywhere. Save it from a terminal:`,
+    bundleOlder:
+      "The Atticus that serves this app can't save a support bundle from here yet. Save it from a terminal:",
+    bundleTerminal: "From a terminal:",
+    /** ADR 0202 point 3: undo from an error, in one click, confirmed in place. */
+    undoThis: "Undo this build",
+    undoLastOf: (command: string, time: string) => `Undo the last build (${command}, ${time})`,
+    undoListing: "Listing the files it puts back…",
+    undoAsk: "Take back this build?",
+    undoPutsBack: (n: number) =>
+      n === 0 ? "It puts back no file." : `It puts back ${n} ${n === 1 ? "file" : "files"}:`,
+    undoFilesLabel: "The files it puts back",
+    undoYes: "Undo",
+    undoBack: "Go back",
+    undoing: "Undoing…",
+    undone: "Undone: the files are as they were before that build.",
+    undoFailed: (why: string) => `Nothing was undone: ${why}`,
     copySupport: "Copy the command",
     copySupportLabel: (cmd: string) => `Copy the command for a support bundle: ${cmd}`,
     buildAgain: "Build again",
@@ -1626,6 +1665,13 @@ export const COPY = {
       `The cited line doesn't say what the fact claims, or the line isn't a fact. Your assistant fixes each from ${file}, then the verifier checks them again:`,
     rejectedLine: (code: string, message: string) => (message ? `${code}: ${message}` : code),
     rejectedNoLine: "No file or line: the line isn't a fact",
+    /** ADR 0202 point 4: one repo's rejected facts, where a refusal's link lands. */
+    rejectedTitle: (n: number, repo: string) =>
+      `${n} rejected ${n === 1 ? "fact" : "facts"} in ${repo}`,
+    rejectedNone: (repo: string) => `No fact of ${repo} is rejected now.`,
+    rejectedLoading: (repo: string) => `Reading the rejected facts of ${repo}…`,
+    rejectedListLabel: (repo: string) => `The rejected facts of ${repo}`,
+    rejectedAll: "Show every repo",
     /** App-only audit: one rejected fact holds the repo; a person may drop it, with why. */
     rejectedHolds: (n: number) =>
       `Nothing is written to the catalog while ${n === 1 ? "a fact is" : `${n} facts are`} rejected: fix ${n === 1 ? "it" : "them"} with your assistant, or drop ${n === 1 ? "it" : "each"} below.`,
@@ -3681,6 +3727,8 @@ export const COPY = {
     openTheRun: "Open the run: its prompt, Done and Cancel",
     /** Ninth UX walk: what a task waits for; its own repo's tasks say so. */
     waitsForTasks: (tasks: string) => `Waits for ${tasks}`,
+    /** ADR 0202 point 6: why a task isn't ready, when it waits for no task (the plan's sentence). */
+    notReady: (why: string) => `Not ready: ${why}.`,
     sameRepo: (id: string) => `${id} (same repo)`,
     theRuleChecksRan:
       "The rule checks ran; any AI review is with your assistant. Each waits in Model runs, where Done checks its answer.",
@@ -6317,6 +6365,10 @@ export const COPY = {
     at: (time: string) => `at ${time}`,
     exitCode: (code: number) => `exit code ${code}`,
     stop: "Stop",
+    /** ADR 0202 point 2: a job of several is inside a write; it ends when that has finished. */
+    stopAfterRepo: "Stop after this repo",
+    /** ADR 0202 point 2: the job says a Stop can no longer take effect. */
+    tooLate: "Too late to stop: the write has started and finishes whole.",
     stopping: "Stopping…",
     stopFailed: (why: string) => `Stop didn't go through: ${why}`,
     stopTerminal: "Stop it in its terminal (Ctrl+C).",

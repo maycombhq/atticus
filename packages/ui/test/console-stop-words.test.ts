@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isStopping, stateWords, stopHint } from "../src/app/activity.js";
+import { canStop, isStopping, stateWords, stopHint, stopWords } from "../src/app/activity.js";
 import { COPY } from "../src/copy.js";
 
 /**
@@ -56,5 +56,38 @@ describe("beta.27 re-review: the Console's words, merged with the screens' revie
     // This window's own job has its Stop; one that ended needs none.
     expect(stopHint({ ...other, stop: "/api/jobs/job-1/cancel" })).toBeUndefined();
     expect(stopHint({ ...other, state: "done" as never })).toBeUndefined();
+  });
+});
+
+/** ADR 0202 point 2: the Console offers Stop only while the job says one can take effect. */
+describe("the Console's Stop, as the job says it stands (ADR 0202)", () => {
+  const job = {
+    state: "running" as never,
+    kind: "local" as never,
+    where: "app" as never,
+    stop: "/api/jobs/job-1/cancel",
+  };
+
+  it("offers Stop while stoppable, Stop after this repo inside a write of several", () => {
+    expect(canStop({ ...job, stoppable: true })).toBe(true);
+    expect(stopWords({ stopLands: "now" })).toBe("Stop");
+    expect(stopWords({ stopLands: "after-write" })).toBe("Stop after this repo");
+    expect(stopWords({})).toBe("Stop");
+  });
+
+  it("takes Stop away once the write has started, and says it is too late", () => {
+    expect(canStop({ ...job, stoppable: false })).toBe(false);
+    expect(stopHint({ ...job, stoppable: false })).toBe(
+      "Too late to stop: the write has started and finishes whole.",
+    );
+    // Stopping: the button stays, disabled, saying so; nothing is too late.
+    expect(canStop({ ...job, stoppable: false, stopping: true })).toBe(true);
+    expect(stopHint({ ...job, stoppable: false, stopping: true })).toBeUndefined();
+  });
+
+  it("an older server says nothing: Stop while it runs, as before", () => {
+    expect(canStop(job)).toBe(true);
+    expect(stopHint(job)).toBeUndefined();
+    expect(canStop({ ...job, stop: undefined })).toBe(false);
   });
 });

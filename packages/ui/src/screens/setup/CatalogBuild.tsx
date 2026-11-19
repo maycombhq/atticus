@@ -3,8 +3,8 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { ShowInConsole } from "../../app/activity.js";
 import { UpgradeOffer } from "../../app/upgrade.js";
-import { followJob, JobFailed } from "../../app/job.js";
-import { JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
+import { followJob, JobFailed, undoAfter } from "../../app/job.js";
+import { JobFound, JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
 import {
   ErrorWaysOn,
   InstallCopy,
@@ -1063,15 +1063,22 @@ export function CatalogBuildsPage(p: {
 }) {
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // ADR 0202 point 3: the build an Undo would take back, as the failed build said it.
+  const [undo, setUndo] = useState<ReturnType<typeof undoAfter>>({ known: false });
   // Beta.30: Build now's job, step by step, and how it ended.
   const job = useJobRun();
   // Build now and, after a failure, Build again: one build, which holds the button while it runs.
   const buildNow = (plan: string) => {
     setBuilding(true);
     setError(undefined);
+    setUndo({ known: false });
     job
       .watch((on) => p.run("/api/build", { plan }, on))
-      .catch((e: unknown) => stoppedByPerson(e) || setError(B.failed(whyStopped(e))))
+      .catch((e: unknown) => {
+        if (stoppedByPerson(e)) return;
+        setUndo(undoAfter(e));
+        setError(B.failed(whyStopped(e)));
+      })
       .finally(() => setBuilding(false));
   };
   return (
@@ -1132,13 +1139,21 @@ export function CatalogBuildsPage(p: {
               )}
               {/* Build now's step, time and Stop (heard until the write), then how it ended. */}
               <JobProgress what={B.building} run={job.run} onStop={job.stop} />
+              {/* ADR 0202 point 5: a build started before the page was loaded. */}
+              <JobFound action="build" what={B.building} skip={!!job.run} onEnd={p.build.reload} />
               {error && (
                 <>
                   <p className="state error" role="alert" style={{ margin: 0 }}>
                     {error}
                   </p>
-                  {/* Beta.30: Build again (as Build now ran it), Undo below, the bundle. */}
-                  <ErrorWaysOn short onAgain={() => buildNow(v.pending.plan)} />
+                  {/* Build again (as Build now ran it), Undo in one click, the bundle. */}
+                  <ErrorWaysOn
+                    short
+                    onAgain={() => buildNow(v.pending.plan)}
+                    undo={undo.undo}
+                    undoKnown={undo.known}
+                    onUndone={p.build.reload}
+                  />
                 </>
               )}
               {v.orphaned.map((o) => (
