@@ -45,7 +45,15 @@ export interface ChangeTask {
    * it in its repo. Otherwise a task waits for the earlier tasks of its repo (taskrun's ready list).
    */
   parallel?: boolean;
+  /**
+   * ADR 0201 (waves): the tasks its line names in a last `(after <id>[, <id>])` bracket. It is
+   * held, across repos, until each is ticked (taskrun's ready list). Absent when it names none.
+   */
+  after?: string[];
 }
+
+/** ADR 0201: the last bracket on a task line, `(after t1)` or `(after t1, t2)`. */
+const AFTER = /\s*\(after\s+([^()]*)\)\s*$/i;
 
 const TASK_LINE = /^(\s*[-*]\s+\[)([ xX]?)(\]\s+)(\S+)\s+(.*)$/;
 
@@ -63,7 +71,12 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
     }
     const m = TASK_LINE.exec(l);
     if (!m || !repo || !RecordId.safeParse(m[4]!.toLowerCase()).success) return;
-    const rest = m[5]!;
+    const named = AFTER.exec(m[5]!);
+    const rest = named ? m[5]!.slice(0, named.index) : m[5]!;
+    const after = (named?.[1] ?? "")
+      .split(",")
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean);
     const stories = [...rest.matchAll(/\bstor(?:y|ies)\s+([a-z0-9][a-z0-9._-]*)/gi)].map((s) =>
       s[1]!.toLowerCase().replace(/[.,)]+$/, ""),
     );
@@ -75,6 +88,7 @@ export function readChangeTasks(files: ChangeFiles): ChangeTask[] {
       line: i + 1,
       done: m[2]!.toLowerCase() === "x",
       ...(/(^|\s)\[P\](\s|$)/.test(rest) ? { parallel: true } : {}),
+      ...(after.length ? { after: [...new Set(after)] } : {}),
     });
   });
   return out;
@@ -240,7 +254,7 @@ export async function loadTask(
   if (!repo)
     throw new SpecKitError(
       "not-found",
-      `Task ${task.id} is under ${task.repo}, which no repos.manifest.yaml lists.`,
+      `Task ${task.id} is under ${task.repo}, which no repos.manifest.yaml lists. If the repo is new, create it on your Git host, then add it: atticus repo add <its clone URL> --id ${task.repo}. If the name is a slip, fix the heading in tasks.md.`,
     );
   return {
     root,

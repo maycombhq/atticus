@@ -1,6 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
+import { readyTasksOf } from "@maycombhq/taskrun";
 import { uiRoutes } from "../src/ui-api.js";
 import { readyLines, taskRunReady } from "../src/run-ready-commands.js";
 import { CHANGE, git, speckitRoot } from "./run-helpers.js";
@@ -74,6 +78,41 @@ describe("atticus task run-ready", () => {
     expect(readyLines(CHANGE, { tasks: [], ready: [] })).toEqual([
       `Every task of ${CHANGE} is done.`,
     ]);
+  });
+});
+
+describe("waves in tasks.md (ADR 0201 decision 3)", () => {
+  it("says what a task waits for in (after …), an id tasks.md lacks, and tasks that name each other", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-waves-cli-"));
+    try {
+      const dir = join(root, "openspec/changes/ship-orders");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, "tasks.md"),
+        [
+          "## forge-orders",
+          "- [ ] t1 Publish the shipped event",
+          "## forge-ledger",
+          "- [ ] t2 Read the shipped event (after t1)",
+          "## forge-infra",
+          "- [ ] t3 Give the topic its retention (after t9)",
+          "## forge-web",
+          "- [ ] t4 Show the shipped date (after t5)",
+          "## forge-portal-bff",
+          "- [ ] t5 Serve the shipped date (after t4)",
+          "",
+        ].join("\n"),
+      );
+      expect(readyLines("ship-orders", await readyTasksOf(root, "ship-orders"))).toEqual([
+        "Ready to run, in cross-repo order: t1 (forge-orders).",
+        "  Not ready: task t2: it waits for task t1 (after) to be done first.",
+        "  Not ready: task t3: it names task t9 in (after …), which tasks.md doesn't have.",
+        "  Not ready: task t4: it and task t5 each wait for the other in (after …).",
+        "  Not ready: task t5: it and task t4 each wait for the other in (after …).",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
