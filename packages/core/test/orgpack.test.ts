@@ -88,8 +88,12 @@ describe("the quick change type", () => {
   it("takes an organisation's own type of that shape, and none that plans another way", () => {
     const own = { phases: ["plan", "build"], artifacts: ["proposal", "specs", "tasks"] };
     expect(quickPathOf(own)).toBe(true);
-    expect(quickPathOf({ phases: ["plan", "build"], artifacts: ["proposal", "tasks"] })).toBe(true);
-    expect(quickPathOf({ phases: ["plan"], artifacts: ["proposal"] })).toBe(true);
+    // The owner, 2026-11-18: only a type deliberately shaped like `quick` (it lists specs).
+    expect(quickPathOf({ phases: ["plan", "build"], artifacts: ["proposal", "tasks"] })).toBe(
+      false,
+    );
+    expect(quickPathOf({ phases: ["plan"], artifacts: ["proposal"] })).toBe(false);
+    expect(quickPathOf({ phases: ["plan"], artifacts: ["proposal", "specs"] })).toBe(true);
     expect(quickPathOf({ ...own, artifacts: [...own.artifacts, "stories"] })).toBe(false);
     expect(quickPathOf({ ...own, phases: ["define", "plan", "build"] })).toBe(false);
     expect(quickPathOf({ ...own, phases: ["design", "build"] })).toBe(false);

@@ -367,9 +367,10 @@ export function fastPathOf(
 
 /**
  * Whether a change of this type takes the quick path (ADR 0201, with its addendum of
- * 2026-11-18): its only phase before build is plan; its artifacts list neither stories nor a
- * brief; and it is neither small nor a type whose brief may say small (those keep the fast
- * path, ADR 0113). A shape, not a key, so change-types.yaml stays at version 2 and an
+ * 2026-11-18): its only phase before build is plan; its artifacts list specs, as the built-in
+ * `quick` does, and neither stories nor a brief; and it is neither small nor a type whose brief
+ * may say small (those keep the fast path, ADR 0113). So a change of any type not deliberately
+ * shaped like `quick` behaves as it did before the quick path existed. A shape, not a key, so change-types.yaml stays at version 2 and an
  * organisation's own type of that shape is quick too. No stage runs for it: the files its
  * artifacts name are written directly, then handed off once.
  */
@@ -383,6 +384,7 @@ export function quickPathOf(type: {
   return (
     before.length === 1 &&
     before[0] === "plan" &&
+    type.artifacts.includes("specs") &&
     !type.artifacts.includes("stories") &&
     !type.artifacts.includes("brief") &&
     type.size !== "small" &&

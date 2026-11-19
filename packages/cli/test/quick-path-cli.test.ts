@@ -120,7 +120,7 @@ describe("atticus change new --from", () => {
       expect(c.err).toEqual([]);
       expect(c.out).toEqual([
         `Created shipped-orders-event (quick, from ${file}). It is in plan.`,
-        "Next: your personas write its proposal, spec deltas, design and tasks (/define-change shipped-orders-event). Then a person runs atticus change handoff shipped-orders-event --approve.",
+        "Next: hand the cleared requirements to the spec writer: /define-change shipped-orders-event. Then a person runs atticus change handoff shipped-orders-event --approve.",
       ]);
       const dir = join(root, "openspec/changes/shipped-orders-event");
       expect((await readFile(join(dir, "requirements.md"))).equals(await readFile(file))).toBe(
@@ -411,7 +411,7 @@ describe("the door check: what counts as in the map, and what it leaves on disk"
       const c = capture();
       expect(await changeNew(root, { from: file, by: "pat" }, c.io)).toBe(1);
       expect(c.err).toEqual([
-        "This org pack's change type quick doesn't have the quick path's shape (its only phase before build is plan; it lists no brief and no stories; it isn't small), and no other type has it. Give a type that shape in change-types.yaml, or pass --type <type>.",
+        "This org pack's change type quick doesn't have the quick path's shape (its only phase before build is plan; it lists specs, no brief and no stories; it isn't small), and no other type has it. Give a type that shape in change-types.yaml, or pass --type <type>.",
       ]);
     },
     T,
@@ -448,6 +448,10 @@ describe("a change keeps the next step it had unless its type is quick", () => {
     "    name: Bare",
     "    phases: [plan]",
     "    artifacts: [proposal]",
+    "  - id: spec-led",
+    "    name: Spec-led",
+    "    phases: [plan, build]",
+    "    artifacts: [proposal, specs, tasks]",
     "",
   ].join("\n");
 
@@ -466,6 +470,7 @@ describe("a change keeps the next step it had unless its type is quick", () => {
         "briefed",
         "plain",
         "bare",
+        "spec-led",
       ];
       for (const type of types)
         expect(
@@ -496,11 +501,12 @@ describe("a change keeps the next step it had unless its type is quick", () => {
         tweak: ["plan", "small", "fast"],
         "tweak-if-said": ["plan", "small", "fast"],
         briefed: ["plan", "stories", "staged"],
-        // The quick shape: the built-in type and an organisation's own (ADR 0201, a consequence
-        // it names: such a type stops being offered the stories stage).
+        plain: ["plan", "stories", "staged"],
+        bare: ["plan", "stories", "staged"],
+        // Only a type deliberately shaped like `quick` (it lists specs): the built-in one and
+        // an organisation's own.
         quick: ["plan", "quick-define", "quick"],
-        plain: ["plan", "quick-define", "quick"],
-        bare: ["plan", "quick-define", "quick"],
+        "spec-led": ["plan", "quick-define", "quick"],
       });
     },
     T,
@@ -511,31 +517,38 @@ describe("a change keeps the next step it had unless its type is quick", () => {
     async () => {
       const root = await forgeRoot();
       await writeFile(join(root, "org-pack/change-types.yaml"), `schemaVersion: 2\ntypes:\n${OWN}`);
-      for (const type of ["plain", "bare"])
-        expect(
-          await changeNew(root, { title: `A ${type} one`, type, by: "pat" }, capture().io, {
+      expect(
+        await changeNew(
+          root,
+          { title: "A spec-led one", type: "spec-led", by: "pat" },
+          capture().io,
+          {
             now: NOW,
-          }),
-        ).toBe(0);
-      const of = async (id: string) => {
-        const c = (await readNextState(root)).changes.find((x) => x.id === id)!;
+          },
+        ),
+      ).toBe(0);
+      const of = async () => {
+        const c = (await readNextState(root)).changes.find((x) => x.id === "a-spec-led-one")!;
         return { quick: c.quick, step: changeSteps(c)[0]! };
       };
-      const plain = await of("a-plain-one");
-      expect(plain.quick).toEqual({ missing: ["proposal.md", "tasks.md"] });
-      expect(plain.step.why).toContain("proposal.md and tasks.md aren't written yet");
+      const first = await of();
+      // It lists no design, so design.md is never asked for.
+      expect(first.quick).toEqual({
+        missing: ["proposal.md", "a spec delta under specs/", "tasks.md"],
+      });
+      expect(first.step.why).toContain(
+        "proposal.md, a spec delta under specs/ and tasks.md aren't written yet",
+      );
       // No requirements file is there, so none is spoken of; the spec writer is named.
-      expect(plain.step.why).not.toContain("requirements");
-      expect(plain.step.why).toContain("to the spec writer: /define-change a-plain-one");
-      expect((await of("a-bare-one")).quick).toEqual({ missing: ["proposal.md"] });
-      for (const id of ["a-plain-one", "a-bare-one"]) {
-        const dir = join(root, "openspec/changes", id);
-        await cp(join(FORGE_CHANGE, "proposal.md"), join(dir, "proposal.md"));
-        await cp(join(FORGE_CHANGE, "tasks.md"), join(dir, "tasks.md"));
-        const now = await of(id);
-        expect(now.quick).toEqual({ missing: [] });
-        expect(["handoff", "finding", "answer"]).toContain(now.step.step);
-      }
+      expect(first.step.why).not.toContain("requirements");
+      expect(first.step.why).toContain("to the spec writer: /define-change a-spec-led-one");
+      const dir = join(root, "openspec/changes/a-spec-led-one");
+      await cp(join(FORGE_CHANGE, "proposal.md"), join(dir, "proposal.md"));
+      await cp(join(FORGE_CHANGE, "specs"), join(dir, "specs"), { recursive: true });
+      await cp(join(FORGE_CHANGE, "tasks.md"), join(dir, "tasks.md"));
+      const now = await of();
+      expect(now.quick).toEqual({ missing: [] });
+      expect(["handoff", "finding", "answer"]).toContain(now.step.step);
     },
     T,
   );
@@ -578,6 +591,9 @@ describe("a plain OpenSpec change folder", () => {
       ).toBe(0);
       expect(c.err).toEqual([]);
       expect(c.out[0]).toBe('Adopted new-portal (quick, "A new portal for Forge"). It is in plan.');
+      expect(c.out[1]).toBe(
+        "Next: atticus change status new-portal says what it still needs. Then a person runs atticus change handoff new-portal --approve.",
+      );
       expect((await readdir(dir)).sort()).toEqual(["change.yaml", "proposal.md"]);
       expect(await readFile(join(dir, "proposal.md"), "utf8")).toBe(
         "Intro line.\n\n# A new portal for Forge\n\nWhy.\n",

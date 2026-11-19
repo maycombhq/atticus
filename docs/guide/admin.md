@@ -222,7 +222,7 @@ A small type has at most one phase before build, so its plan is one hand-off PR;
 
 ### The quick path
 
-A type whose only phase before build is `plan`, whose artifacts list no `brief` and no `stories`, and which is neither `size: small` nor `smallWhenBriefSays`, takes the quick path ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)): no stage runs; the files its artifacts name are written directly and handed off once. The built-in `quick` type has that shape, and a type of your own with it is quick too. Start one from a requirements file with `atticus change new --from <requirements.md>` (`--check` runs the door check alone: every question closed, every cited id in the map or listed under `## Planned`). A `change-types.yaml` written before 2.0.0-beta.30 gains the `quick` entry with `atticus upgrade`; a type `quick` of your own is left as it is.
+A type whose only phase before build is `plan`, whose artifacts list `specs` and neither `brief` nor `stories`, and which is neither `size: small` nor `smallWhenBriefSays`, takes the quick path ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)): no stage runs; the files its artifacts name are written directly and handed off once. The built-in `quick` type has that shape, and a type of your own with it is quick too. Start one from a requirements file with `atticus change new --from <requirements.md>` (`--check` runs the door check alone: every question closed, every cited id in the map or listed under `## Planned`). A `change-types.yaml` written before 2.0.0-beta.30 gains the `quick` entry with `atticus upgrade`; a type `quick` of your own is left as it is.
 
 ### The starter review (the critic's AI rules)
 

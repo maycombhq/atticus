@@ -267,9 +267,12 @@ const QUICK = {
   noType: "This org pack has no change type quick: run atticus upgrade, or pass --type <type>.",
   // An upgrade leaves a type `quick` of the organisation's own alone, so it wouldn't help here.
   otherShape:
-    "This org pack's change type quick doesn't have the quick path's shape (its only phase before build is plan; it lists no brief and no stories; it isn't small), and no other type has it. Give a type that shape in change-types.yaml, or pass --type <type>.",
+    "This org pack's change type quick doesn't have the quick path's shape (its only phase before build is plan; it lists specs, no brief and no stories; it isn't small), and no other type has it. Give a type that shape in change-types.yaml, or pass --type <type>.",
+  // An adopted folder has no requirements file to hand on: its status says what it still needs.
+  adopted: (id: string) =>
+    `Next: atticus change status ${id} says what it still needs. Then a person runs atticus change handoff ${id} --approve.`,
   next: (id: string) =>
-    `Next: your personas write its proposal, spec deltas, design and tasks (/define-change ${id}). Then a person runs atticus change handoff ${id} --approve.`,
+    `Next: hand the cleared requirements to the spec writer: /define-change ${id}. Then a person runs atticus change handoff ${id} --approve.`,
 };
 
 /** The first `# ` heading of a Markdown file's text. */
@@ -449,7 +452,7 @@ async function adoptChange(
   if (typeof made === "number") return made;
   const c = made.change;
   io.out(`Adopted ${c.id} (${c.type}, "${c.title}"). It is in ${c.state}.`);
-  io.out(QUICK.next(c.id));
+  io.out(QUICK.adopted(c.id));
   return 0;
 }
 
