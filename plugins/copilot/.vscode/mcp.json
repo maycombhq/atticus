@@ -2,9 +2,10 @@
   "servers": {
     "atticus": {
       "type": "stdio",
-      "command": "atticus",
+      "command": "node",
       "args": [
-        "mcp"
+        "-e",
+        "var w=process.platform==='win32';var c=require('node:child_process').spawn(w?'atticus mcp':'atticus',w?[]:['mcp'],{stdio:'inherit',shell:w,windowsHide:true});c.on('error',function(e){console.error('Could not start atticus mcp ('+e.message+'). Install the atticus command line and put it on PATH.');process.exit(1)});c.on('exit',function(x){process.exit(x==null?1:x)})"
       ]
     }
   }
