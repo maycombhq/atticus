@@ -1,0 +1,179 @@
+# Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.
+schemaVersion: 2
+# Forge: every type goes through the plan gate. Ask team-forge before changing one.
+types:
+  - id: feature
+    name: New feature
+    phases:
+      - define
+      - design
+      - plan
+      - build
+      - qa
+      - release
+    artifacts:
+      - brief
+      - proposal
+      - specs
+      - interfaces
+      - mappings
+      - data
+      - design
+      - ux
+      - stories
+      - tasks
+      - snow
+    lenses:
+      - "true"
+      - complete
+      - safe
+      - ship
+    approvals:
+      define:
+        - product-owner
+      design:
+        - architect
+      plan:
+        - team-lead
+      qa:
+        - qa
+      release:
+        - delivery-lead
+    postReleaseReview: false
+  - id: integration
+    name: New or changed integration
+    phases:
+      - define
+      - design
+      - plan
+      - build
+      - qa
+      - release
+    artifacts:
+      - brief
+      - proposal
+      - specs
+      - interfaces
+      - mappings
+      - design
+      - stories
+      - tasks
+      - snow
+    lenses:
+      - "true"
+      - complete
+      - safe
+      - ship
+    approvals:
+      design:
+        - architect
+      plan:
+        - team-lead
+      qa:
+        - qa
+      release:
+        - delivery-lead
+    postReleaseReview: false
+  - id: bug-fix
+    name: Bug fix
+    phases:
+      - define
+      - plan
+      - build
+      - qa
+      - release
+    artifacts:
+      - proposal
+      - specs
+      - tasks
+    lenses:
+      - complete
+      - ship
+    approvals:
+      plan:
+        - team-lead
+      qa:
+        - qa
+    postReleaseReview: false
+  - id: emergency-fix
+    name: Emergency fix
+    description: Built and released first; the skipped lenses run afterwards and their findings become follow-up tasks.
+    phases:
+      - build
+      - release
+    artifacts:
+      - proposal
+      - tasks
+    lenses:
+      - complete
+      - ship
+    approvals:
+      release:
+        - delivery-lead
+    postReleaseReview: true
+  - id: config-change
+    name: Configuration change
+    phases:
+      - define
+      - plan
+      - build
+      - release
+    artifacts:
+      - proposal
+      - tasks
+      - snow
+    lenses:
+      - "true"
+      - safe
+      - ship
+    approvals:
+      plan:
+        - team-lead
+      release:
+        - delivery-lead
+    postReleaseReview: false
+    smallWhenBriefSays: true
+  - id: tech-debt
+    name: Technical debt
+    phases:
+      - design
+      - plan
+      - build
+      - qa
+    artifacts:
+      - proposal
+      - design
+      - tasks
+    lenses:
+      - "true"
+      - complete
+      - safe
+    approvals:
+      design:
+        - architect
+      plan:
+        - team-lead
+    postReleaseReview: false
+    smallWhenBriefSays: true
+  # Forge: small changes are for one repo only.
+  - id: small-change
+    name: Small change
+    description: "One AI step from brief to tasks (ADR 0113): placed on the flows, its target flows and its stories drafted together, checked and criticised at the plan gate, and handed off once."
+    phases:
+      - plan
+      - build
+      - release
+    artifacts:
+      - brief
+      - proposal
+      - design
+      - stories
+      - tasks
+    lenses:
+      - "true"
+      - complete
+      - safe
+      - ship
+    approvals: {}
+    postReleaseReview: false
+    size: small
