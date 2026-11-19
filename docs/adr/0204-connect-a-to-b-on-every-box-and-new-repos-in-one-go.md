@@ -1,6 +1,6 @@
 # 0204. Connect A to B: one action on every box, and new repos in one go
 
-- Status: proposed (2026-11-18), for the owner's approval before any code
+- Status: accepted (2026-11-18, by the owner, with the recommended answers: a declared arrow lives in the profile's links list; once code shows the call the declared arrow stops being drawn at once and its line stays until the person retires it; why is required)
 - Date: 2026-11-18
 - Release: 2.0.0-beta.30, slice 5 of [the plan](../plan/v30.md); items 12 to 14 of [field reliability and ease](../plan/field-reliability-and-ease.md)
 - Builds on: ADR 0174 (correcting the map on the canvas), ADR 0188 (a button for every step), ADR 0195 (source slots, one pure build), ADR 0198 (Apply takes the repos that wait), ADR 0199 (a read is a job; a pairing says where it stands), ADR 0200 (a line is never turned round)
