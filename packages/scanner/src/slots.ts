@@ -544,6 +544,11 @@ export interface NewerFile {
   version: number;
   /** The newest version of it this Atticus reads. */
   reads: number;
+  /**
+   * ADR 0202 point 7: the Atticus that wrote it, when a newer build.json says so (its second
+   * key, `atticus`) in the shape of a version, newer than this Atticus where that is known.
+   */
+  atticus?: string;
 }
 
 /** The versioned formats under catalog/sources a build reads, by their path there. */
@@ -633,7 +638,54 @@ export async function newerFileAt(abs: string, rel: string, name = rel): Promise
       ? head
       : await readFile(abs, "utf8").catch(() => undefined);
   if (text === undefined) return [];
-  return newerVersionsIn(text, format).map((x) => ({ path: rel, name, ...x }));
+  const found = newerVersionsIn(text, format);
+  // ADR 0202 point 7: only a build.json says the Atticus that wrote the catalog.
+  const atticus =
+    found.length && format.field === "version" && !format.also ? atticusIn(head) : undefined;
+  return found.map((x) => ({ path: rel, name, ...x, ...(atticus ? { atticus } : {}) }));
+}
+
+/** What the cli tells the scanner of itself: this Atticus's version (ADR 0202 point 7). */
+export const atticusHooks: { version?: string } = {};
+
+/** The shape of an Atticus version: the only value that may go into a command a person copies. */
+const ATTICUS_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
+
+/** Semver order of two values of that shape, pre-releases included: a is newer than b. */
+function versionNewer(a: string, b: string): boolean {
+  const split = (v: string) => {
+    const [core, pre] = v.split(/-(.*)/s, 2);
+    return { core: core!.split(".").map(Number), pre: pre ? pre.split(".") : [] };
+  };
+  const x = split(a);
+  const y = split(b);
+  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i]! > y.core[i]!;
+  if (!x.pre.length || !y.pre.length) return !x.pre.length && !!y.pre.length;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i];
+    const q = y.pre[i];
+    if (p === undefined || q === undefined) return q === undefined;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p);
+    const qn = /^\d+$/.test(q);
+    return pn && qn ? Number(p) > Number(q) : pn !== qn ? !pn : p > q;
+  }
+  return false;
+}
+
+/**
+ * ADR 0202 point 7: the `atticus` a newer build.json names as its second key, after `version`,
+ * so within the first bytes. Used only in the shape of a version and, where this Atticus is
+ * known (`atticusHooks`), newer than it; anything else is ignored.
+ */
+function atticusIn(head: string): string | undefined {
+  const t = head.charCodeAt(0) === 0xfeff ? head.slice(1) : head;
+  const m = /^\s*\{\s*"version"\s*:\s*\d+\s*,\s*"atticus"\s*:\s*"([^"\\]*)"/.exec(t);
+  const v = m?.[1];
+  if (!v || !ATTICUS_VERSION.test(v)) return undefined;
+  const mine = atticusHooks.version;
+  if (mine && ATTICUS_VERSION.test(mine) && !versionNewer(v, mine)) return undefined;
+  return v;
 }
 
 /**
@@ -648,9 +700,23 @@ export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
  * and never `atticus upgrade`, which would take a newer catalog for an older one.
  */
 export function newerAtticusWords(files: readonly NewerFile[]): string {
-  const f = files[0]!;
+  // ADR 0202 point 7: the file that names its Atticus is the one said, with the exact command.
+  const by = files.find((x) => x.atticus);
+  const f = by ?? files[0]!;
   const more = files.length > 1 ? `, and ${files.length - 1} more of its files` : "";
-  return `This metarepo's catalog was built by a newer Atticus (${f.name} ${f.field === "version" ? "version" : f.field} ${f.version}; this Atticus reads up to ${f.reads}${more}): upgrade Atticus (${NEWER_ATTICUS_COMMAND}), don't run \`atticus upgrade\`.`;
+  const what = `(${f.name} ${f.field === "version" ? "version" : f.field} ${f.version}; this Atticus reads up to ${f.reads}${more})`;
+  return by
+    ? `This metarepo's catalog was built by Atticus ${by.atticus} ${what}: install it (${newerAtticusCommand(files)}), don't run \`atticus upgrade\`.`
+    : `This metarepo's catalog was built by a newer Atticus ${what}: upgrade Atticus (${NEWER_ATTICUS_COMMAND}), don't run \`atticus upgrade\`.`;
+}
+
+/**
+ * The refusal's `command` (ADR 0202 point 7): the exact version when a newer build.json names
+ * the Atticus that wrote it, else `NEWER_ATTICUS_COMMAND`.
+ */
+export function newerAtticusCommand(files: readonly NewerFile[] = []): string {
+  const v = files.find((x) => x.atticus)?.atticus;
+  return v ? `npm install -g @maycombhq/atticus@${v}` : NEWER_ATTICUS_COMMAND;
 }
 
 /**

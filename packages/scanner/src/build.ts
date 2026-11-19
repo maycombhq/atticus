@@ -136,7 +136,7 @@ import {
   BUILD_VERSION,
   sha256Of,
   sourcesDirOf,
-  NEWER_ATTICUS_COMMAND,
+  newerAtticusCommand,
   newerAtticusWords,
   newerFileAt,
   versionedFormatOf,
@@ -2113,6 +2113,11 @@ export interface BuildRefusal {
    * all: making them curated would be the wrong move.
    */
   unreadableManifest?: true;
+  /**
+   * ADR 0202 point 8: where the metarepo stands, in one line. The build never sets it: the
+   * command that printed this refusal does, so `--json` and the app's report carry it.
+   */
+  standing?: string;
 }
 
 export interface GuardResult {
@@ -3873,7 +3878,7 @@ export async function writeRefusedReport(
 export function refusalCommands(r: BuildRefusal, command: string): string[] {
   // A build.json that doesn't read: build again over every record file, never curate them.
   if (r.unreadableManifest) return [`${command} --discard-edits ${r.discardEdits ?? 0}`];
-  if (r.reasons.includes("newer-atticus")) return [NEWER_ATTICUS_COMMAND];
+  if (r.reasons.includes("newer-atticus")) return [newerAtticusCommand(r.newer)];
   if (r.reasons.includes("not-upgraded")) return ["atticus upgrade", "atticus upgrade --yes"];
   if (r.reasons.includes("unexplained-removals")) return ["atticus support bundle"];
   const allow = r.reasons.includes("large-removals")

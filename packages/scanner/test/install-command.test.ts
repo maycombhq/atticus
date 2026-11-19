@@ -24,8 +24,10 @@ describe("the command that upgrades Atticus, in the build's refusal", () => {
     for (const f of ["slots.ts", "build.ts"])
       for (const l of (await readFile(join(__dirname, "..", "src", f), "utf8")).split("\n"))
         if (/npm i(nstall)? -g @maycombhq\/atticus/.test(l)) lines.push(`${f}: ${l.trim()}`);
+    // ADR 0202 point 7: and once more for the exact version a newer build.json names.
     expect(lines).toEqual([
       'slots.ts: export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";',
+      "slots.ts: return v ? `npm install -g @maycombhq/atticus@${v}` : NEWER_ATTICUS_COMMAND;",
     ]);
   });
 });
