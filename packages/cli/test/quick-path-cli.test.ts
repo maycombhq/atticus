@@ -1,12 +1,18 @@
-import { readFileSync } from "node:fs";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { Api, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { parse, stringify } from "yaml";
+import {
+  Api,
+  DEFAULT_CHANGE_TYPES,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+} from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
 import { changeList, changeNew } from "../src/change-commands.js";
 import { main } from "../src/main.js";
@@ -248,6 +254,293 @@ describe("atticus change new --from", () => {
   );
 });
 
+/** Every file under a folder with its bytes' hash, so "nothing was written" is checked whole. */
+async function tree(root: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const e of await readdir(root, { recursive: true, withFileTypes: true }))
+    if (e.isFile()) {
+      const f = join(e.parentPath, e.name);
+      out[f] = createHash("sha256")
+        .update(await readFile(f))
+        .digest("hex");
+    }
+  return out;
+}
+
+describe("the door check: what counts as in the map, and what it leaves on disk", () => {
+  const cites = (evidence: string) =>
+    [
+      "# Shipped-orders event",
+      "",
+      "## QA",
+      "",
+      ...HEADER,
+      `| Who else is touched? | ${evidence} | qa-naysayer | pat | Checked | answered |`,
+      "",
+    ].join("\n");
+
+  it(
+    "--check writes nothing: the whole tree is byte for byte what it was, pass or refuse",
+    async () => {
+      const { root, file } = await withFile(requirements());
+      const before = await tree(root);
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, capture().io)).toBe(0);
+      expect(await tree(root)).toEqual(before);
+      await writeFile(file, cites("forge-nowhere"));
+      const again = await tree(root);
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, capture().io)).toBe(1);
+      expect(await tree(root)).toEqual(again);
+    },
+    T,
+  );
+
+  it(
+    "takes what the personas' map tools return: an open change, an owner, a topic by its name",
+    async () => {
+      const { root, file } = await withFile(
+        cites(
+          "`beta-two`; `team-ledger`, `transfers.completed`; `/transfers`; `topic.payments-initiated`",
+        ),
+      );
+      expect(
+        await changeNew(root, { title: "Beta two", type: "feature", by: "pat" }, capture().io, {
+          now: NOW,
+        }),
+      ).toBe(0);
+      const c = capture();
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, c.io)).toBe(0);
+      expect(c.err).toEqual([]);
+      expect(c.out).toEqual([
+        `${file} passes: 1 question (1 answered, 0 accepted), 5 ids in the map, 0 planned.`,
+      ]);
+      // A change that isn't there, a team nobody names and a name no record has are still refused.
+      await writeFile(file, cites("`beta-nine`; `team-nobody`; `orders.shipped`"));
+      const r = capture();
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, r.io)).toBe(1);
+      expect(r.err[0]).toBe(`Refused: 3 problems in ${file}.`);
+    },
+    T,
+  );
+
+  it(
+    "refuses a name two records have, and says to use the id",
+    async () => {
+      const { root, file } = await withFile(cites("`transfers.completed`"));
+      const twin = parseRecord({
+        schemaVersion: 1,
+        status: "current",
+        kind: "Endpoint",
+        id: "topic.transfers-completed-v2",
+        confidence: "verified",
+        component: "ledger-api",
+        endpointType: "event-topic",
+        pathOrTopic: "transfers.completed",
+        evidence: [{ source: "manual", by: "pat" }],
+      });
+      if (!twin.ok) throw new Error("bad fixture record");
+      await writeFile(
+        join(root, "catalog/generated", recordPath(twin.record)),
+        serializeRecord(twin.record),
+      );
+      const c = capture();
+      expect(await changeNew(root, { from: file, check: true, by: "pat" }, c.io)).toBe(1);
+      expect(c.err).toEqual([
+        `Refused: 1 problem in ${file}.`,
+        `requirements.unknown-id: ${file}:7: the evidence names transfers.completed, which matches several records of the map (topic.transfers-completed, topic.transfers-completed-v2). Name the id of the one meant.`,
+      ]);
+    },
+    T,
+  );
+
+  it(
+    "says in JSON too when the file can't be read",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "nowhere.md");
+      const c = capture();
+      expect(await changeNew(root, { from: file, check: true, json: true, by: "pat" }, c.io)).toBe(
+        1,
+      );
+      expect(c.err[0]).toMatch(/^Can't read /);
+      const said = JSON.parse(c.out.join("\n")) as {
+        ok: boolean;
+        reasons: { code: string; line: number; role: string; message: string }[];
+      };
+      expect(said.ok).toBe(false);
+      expect(said.reasons).toHaveLength(1);
+      expect(said.reasons[0]).toMatchObject({ code: "requirements.unreadable", line: 0, role: "" });
+      expect(said.reasons[0]!.message).toBe(c.err[0]);
+    },
+    T,
+  );
+
+  it(
+    "never writes over a requirements.md that is in the folder: refused when it differs, kept when it is the same",
+    async () => {
+      const { root, file } = await withFile(requirements());
+      const dir = join(root, "openspec/changes/new-portal");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "proposal.md"), "# A new portal\n");
+      await writeFile(join(dir, "requirements.md"), "# Its own requirements\n");
+      const before = await tree(root);
+      const c = capture();
+      expect(await changeNew(root, { from: file, id: "new-portal", by: "pat" }, c.io)).toBe(1);
+      expect(c.err).toEqual([
+        `openspec/changes/new-portal/requirements.md is there already and differs from ${file}. Make the two the same, or pass another --id. Nothing was written.`,
+      ]);
+      expect(await tree(root)).toEqual(before);
+      await writeFile(join(dir, "requirements.md"), await readFile(file));
+      const k = capture();
+      expect(
+        await changeNew(root, { from: file, id: "new-portal", by: "pat" }, k.io, { now: NOW }),
+      ).toBe(0);
+      expect(k.out[0]).toBe(`Created new-portal (quick, from ${file}). It is in plan.`);
+      expect(existsSync(join(dir, "brief.md"))).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "names the shape when the organisation's own type quick doesn't have it",
+    async () => {
+      const { root, file } = await withFile(requirements());
+      await writeFile(
+        join(root, "org-pack/change-types.yaml"),
+        "schemaVersion: 2\ntypes:\n  - id: quick\n    name: Forge quick\n    phases: [define, build]\n    artifacts: [proposal, tasks]\n",
+      );
+      const c = capture();
+      expect(await changeNew(root, { from: file, by: "pat" }, c.io)).toBe(1);
+      expect(c.err).toEqual([
+        "This org pack's change type quick doesn't have the quick path's shape (its only phase before build is plan; it lists no brief and no stories; it isn't small), and no other type has it. Give a type that shape in change-types.yaml, or pass --type <type>.",
+      ]);
+    },
+    T,
+  );
+});
+
+/**
+ * The review of 2026-11-18 (blocker): the shape rule must not capture a type that plans another
+ * way. Every built-in type, and an organisation's own small, brief-says-small and brief-led
+ * types, get the next step they got before the quick path existed; only a type of the quick
+ * shape gets `quick-define`, and it is asked only for the files its own artifacts name.
+ */
+describe("a change keeps the next step it had unless its type is quick", () => {
+  const OWN = [
+    "  - id: tweak",
+    "    name: Tweak",
+    "    size: small",
+    "    phases: [plan, build]",
+    "    artifacts: [brief, proposal, tasks]",
+    "  - id: tweak-if-said",
+    "    name: Tweak if the brief says",
+    "    smallWhenBriefSays: true",
+    "    phases: [plan, build]",
+    "    artifacts: [proposal, tasks]",
+    "  - id: briefed",
+    "    name: Briefed",
+    "    phases: [plan, build]",
+    "    artifacts: [brief, proposal, tasks]",
+    "  - id: plain",
+    "    name: Plain",
+    "    phases: [plan, build]",
+    "    artifacts: [proposal, tasks]",
+    "  - id: bare",
+    "    name: Bare",
+    "    phases: [plan]",
+    "    artifacts: [proposal]",
+    "",
+  ].join("\n");
+
+  it(
+    "for every built-in type and each organisation shape",
+    async () => {
+      const root = await forgeRoot();
+      await writeFile(
+        join(root, "org-pack/change-types.yaml"),
+        `${stringify({ schemaVersion: 2, types: DEFAULT_CHANGE_TYPES.types }, { lineWidth: 0 })}${OWN}`,
+      );
+      const types = [
+        ...DEFAULT_CHANGE_TYPES.types.map((t) => t.id),
+        "tweak",
+        "tweak-if-said",
+        "briefed",
+        "plain",
+        "bare",
+      ];
+      for (const type of types)
+        expect(
+          await changeNew(root, { title: `A ${type} one`, type, by: "pat" }, capture().io, {
+            now: NOW,
+          }),
+          type,
+        ).toBe(0);
+      // A brief that says small, where the type lets it.
+      const said = join(root, "openspec/changes/a-tweak-if-said-one/brief.md");
+      await writeFile(said, `${await readFile(said, "utf8")}\nSize: small\n`);
+      const s = await readNextState(root);
+      const got = Object.fromEntries(
+        s.changes.map((c) => [
+          c.id.replace(/^a-|-one$/g, ""),
+          [c.state, changeSteps(c)[0]?.step, c.quick ? "quick" : c.fast ? "fast" : "staged"],
+        ]),
+      );
+      expect(got).toEqual({
+        // As on release/b30, before the quick path: the state's own stage, or the fast path's step.
+        feature: ["define", "brief", "staged"],
+        integration: ["define", "brief", "staged"],
+        "bug-fix": ["define", "feature", "staged"],
+        "emergency-fix": ["build", "handoff", "staged"],
+        "config-change": ["define", "feature", "staged"],
+        "tech-debt": ["design", "feature", "staged"],
+        "small-change": ["plan", "small", "fast"],
+        tweak: ["plan", "small", "fast"],
+        "tweak-if-said": ["plan", "small", "fast"],
+        briefed: ["plan", "stories", "staged"],
+        // The quick shape: the built-in type and an organisation's own (ADR 0201, a consequence
+        // it names: such a type stops being offered the stories stage).
+        quick: ["plan", "quick-define", "quick"],
+        plain: ["plan", "quick-define", "quick"],
+        bare: ["plan", "quick-define", "quick"],
+      });
+    },
+    T,
+  );
+
+  it(
+    "asks a quick-shaped type only for the files its artifacts name, and reaches the hand-off",
+    async () => {
+      const root = await forgeRoot();
+      await writeFile(join(root, "org-pack/change-types.yaml"), `schemaVersion: 2\ntypes:\n${OWN}`);
+      for (const type of ["plain", "bare"])
+        expect(
+          await changeNew(root, { title: `A ${type} one`, type, by: "pat" }, capture().io, {
+            now: NOW,
+          }),
+        ).toBe(0);
+      const of = async (id: string) => {
+        const c = (await readNextState(root)).changes.find((x) => x.id === id)!;
+        return { quick: c.quick, step: changeSteps(c)[0]! };
+      };
+      const plain = await of("a-plain-one");
+      expect(plain.quick).toEqual({ missing: ["proposal.md", "tasks.md"] });
+      expect(plain.step.why).toContain("proposal.md and tasks.md aren't written yet");
+      // No requirements file is there, so none is spoken of; the spec writer is named.
+      expect(plain.step.why).not.toContain("requirements");
+      expect(plain.step.why).toContain("to the spec writer: /define-change a-plain-one");
+      expect((await of("a-bare-one")).quick).toEqual({ missing: ["proposal.md"] });
+      for (const id of ["a-plain-one", "a-bare-one"]) {
+        const dir = join(root, "openspec/changes", id);
+        await cp(join(FORGE_CHANGE, "proposal.md"), join(dir, "proposal.md"));
+        await cp(join(FORGE_CHANGE, "tasks.md"), join(dir, "tasks.md"));
+        const now = await of(id);
+        expect(now.quick).toEqual({ missing: [] });
+        expect(["handoff", "finding", "answer"]).toContain(now.step.step);
+      }
+    },
+    T,
+  );
+});
+
 describe("a plain OpenSpec change folder", () => {
   async function plain(): Promise<{ root: string; dir: string }> {
     const root = await forgeRoot();
@@ -350,17 +643,21 @@ describe("what is next for a quick change", () => {
       };
 
       const first = await steps();
-      expect(first.c.quick).toEqual({
-        missing: ["proposal.md", "a spec delta under specs/", "design.md", "tasks.md"],
-      });
+      expect(first.c.quick?.missing).toEqual([
+        "proposal.md",
+        "a spec delta under specs/",
+        "design.md",
+        "tasks.md",
+      ]);
       expect(first.own[0]).toMatchObject({
         step: "quick-define",
         command: `atticus change status ${id}`,
         slash: `/define-change ${id}`,
       });
       expect(first.own[0]!.why).toContain(
-        "proposal.md, a spec delta under specs/, design.md and tasks.md aren't written yet",
+        "proposal.md, a spec delta under specs/, design.md and tasks.md aren't written yet: hand the cleared requirements to the spec writer: /define-change shipped-orders-event.",
       );
+      expect(first.c.quick?.requirements).toBe(true);
       expect(first.own[0]!.person).toBeUndefined();
 
       await cp(join(FORGE_CHANGE, "proposal.md"), join(dir, "proposal.md"));
@@ -372,7 +669,7 @@ describe("what is next for a quick change", () => {
 
       await cp(join(FORGE_CHANGE, "design.md"), join(dir, "design.md"));
       const third = await steps();
-      expect(third.c.quick).toEqual({ missing: [] });
+      expect(third.c.quick?.missing).toEqual([]);
       // All four are there: what blocks its gate (as today), else the hand-off, a person's step.
       expect(["handoff", "finding", "answer"]).toContain(third.own[0]!.step);
       if (third.own[0]!.step === "handoff")
@@ -401,13 +698,14 @@ describe("what is next for a quick change", () => {
       step: "finding",
       command: "atticus finding shipped-orders-event f-1 edit-and-apply",
     });
-    expect(blocked[0]!.why).toContain("proposal, spec deltas, design and tasks are written");
+    expect(blocked[0]!.why).toContain(
+      "shipped-orders-event's files are written, but the plan gate is blocked",
+    );
     expect(blocked[0]!.why).not.toContain("stage is done");
-    // A fast-path type or a template brief never turns a quick change back to a stage.
+    // A template brief or a draft not written never turns a quick change back to a stage.
     const odd = changeSteps({
       ...base,
       quick: { missing: ["tasks.md"] },
-      fast: true,
       brief: "openspec/changes/shipped-orders-event/brief.md",
       undrafted: true,
     });

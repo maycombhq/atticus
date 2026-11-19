@@ -26,6 +26,7 @@ import {
 import { fileStepStore } from "@maycombhq/adapters";
 import { stepClassOfNextStep } from "@maycombhq/ai";
 import {
+  artifactFiles,
   assess,
   changeStore,
   isManualPrUrl as isManualPr,
@@ -35,6 +36,8 @@ import {
   releasePrReasons,
   stageCompletion,
   stageWorkDone,
+  REQUIREMENTS_FILE,
+  type Artifact,
   type ChangeContext,
 } from "@maycombhq/changes";
 import type { ChangeLifecycle } from "@maycombhq/core";
@@ -203,11 +206,12 @@ export interface NextState {
     /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
     fastDone?: boolean;
     /**
-     * ADR 0201: it takes the quick path (its type's only phase before build is plan, and it lists
-     * no stories) and isn't built yet: no stage is offered. `missing` is which of its four files
-     * aren't written: proposal.md, a spec delta under specs/, design.md, tasks.md.
+     * ADR 0201: it takes the quick path (`quickPathOf` its type) and isn't built yet: no stage is
+     * offered. `missing` is which of the files its type's artifacts name aren't written (a type
+     * that lists no design is never asked for design.md); `requirements` says its folder has the
+     * requirements file it was made from.
      */
-    quick?: { missing: string[] };
+    quick?: { missing: string[]; requirements?: boolean };
     /**
      * The stages of its stage path that are done, in order (ADR 0124 addendum B-change): the
      * stages can run ahead of the gates, so the state alone doesn't say what is next.
@@ -546,10 +550,11 @@ export async function readNextState(root: string): Promise<NextState> {
           : { draft: false, brief: false };
       const blocking =
         stageOf(c.state) === "tasks" ? await blockingOf(changeContext, c).catch(() => 0) : 0;
-      // ADR 0201: a quick change before build: its four files, then its hand-off; never a stage.
+      // ADR 0201: a quick change before build: its type's files, then its hand-off; never a stage.
+      const type = types.find((t) => t.id === c.type);
       const quick =
-        draftingAt(own) >= 0 && quickPathOf(types.find((t) => t.id === c.type) ?? NOT_QUICK)
-          ? { missing: await quickMissing(join(changesDirOf(root), c.id)) }
+        draftingAt(own) >= 0 && type && quickPathOf(type)
+          ? await quickState(join(changesDirOf(root), c.id), type.artifacts)
           : undefined;
       // Round 49: a drafting stage done with no hand-off raised: what its gate's hand-off checks.
       const gate =
@@ -600,7 +605,7 @@ export async function readNextState(root: string): Promise<NextState> {
           : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
         ...(quick ? { quick } : {}),
-        ...(!quick && (await isFast(root, c, types))
+        ...((await isFast(root, c, types))
           ? {
               fast: true,
               ...(/^state: done$/m.test(
@@ -708,21 +713,23 @@ async function stageQuestions(root: string, change: string, open: Set<string>): 
 const and = (xs: string[]) =>
   xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 
-/** A type that isn't there is never quick. */
-const NOT_QUICK = { phases: [], artifacts: [] };
+/** How a quick change's files are named to a person; an artifact not here is `<artifact>.md`. */
+const QUICK_FILE: Record<string, string> = { specs: "a spec delta under specs/" };
 
-/** ADR 0201: which of a quick change's four files aren't written yet, in the order they are written. */
-async function quickMissing(dir: string): Promise<string[]> {
-  const specs = await readdir(join(dir, "specs"), { recursive: true, withFileTypes: true }).catch(
-    () => [],
-  );
-  const has: [string, boolean][] = [
-    ["proposal.md", existsSync(join(dir, "proposal.md"))],
-    ["a spec delta under specs/", specs.some((e) => e.isFile() && e.name.endsWith(".md"))],
-    ["design.md", existsSync(join(dir, "design.md"))],
-    ["tasks.md", existsSync(join(dir, "tasks.md"))],
-  ];
-  return has.filter(([, there]) => !there).map(([name]) => name);
+/**
+ * ADR 0201: which of the files a quick change's type lists aren't written yet, in the type's
+ * order, and whether its requirements file is there. data.md is due only for a data change (the
+ * gate says so), so it is never asked for here.
+ */
+async function quickState(
+  dir: string,
+  artifacts: readonly Artifact[],
+): Promise<NonNullable<NextState["changes"][number]["quick"]>> {
+  const missing: string[] = [];
+  for (const a of artifacts)
+    if (a !== "data" && (await artifactFiles(dir, a)).length === 0)
+      missing.push(QUICK_FILE[a] ?? `${a}.md`);
+  return { missing, ...(existsSync(join(dir, REQUIREMENTS_FILE)) ? { requirements: true } : {}) };
 }
 
 /** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
@@ -792,7 +799,7 @@ function gateBlockedStep(
   if (!first) return undefined;
   const id = c.id;
   const more = c.gate!.length - 1;
-  const head = `${c.quick ? `${id}'s proposal, spec deltas, design and tasks are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
+  const head = `${c.quick ? `${id}'s files are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
   const tail = more ? `; ${more} more after it.` : ".";
   const asked = /\(owner question (q-[0-9a-f]+)[,)]/.exec(first.message)?.[1];
   if (asked)
@@ -1140,7 +1147,7 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           command: `atticus change status ${id}`,
           slash: `/define-change ${id}`,
           where: METAREPO,
-          why: `${id} is on the quick path, and ${and(missing)} ${missing.length === 1 ? "isn't" : "aren't"} written yet: your personas write its proposal, spec deltas, design and tasks from its requirements file, grounded in the map. No stage runs. Then a person raises its one hand-off (ADR 0201).`,
+          why: `${id} is on the quick path, and ${and(missing)} ${missing.length === 1 ? "isn't" : "aren't"} written yet: hand ${c.quick.requirements ? "the cleared requirements" : "it"} to the spec writer: /define-change ${id}. It writes ${missing.length === 1 ? "that file" : "those files"}, grounded in the map; no stage runs. Then a person raises its one hand-off (ADR 0201).`,
           change: id,
         },
       ];
@@ -1151,7 +1158,7 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
         step: "handoff",
         command: `atticus change handoff ${id} --approve`,
         where: METAREPO,
-        why: `${id}'s proposal, spec deltas, design and tasks are written and nothing blocks its ${c.state} gate: a person raises its ${c.state} hand-off PR, and merging it approves the gate and moves it to build (ADR 0201).`,
+        why: `${id}'s files are written and nothing blocks its ${c.state} gate: a person raises its ${c.state} hand-off PR, and merging it approves the gate and moves it on (ADR 0201).`,
         change: id,
         person: true,
       },

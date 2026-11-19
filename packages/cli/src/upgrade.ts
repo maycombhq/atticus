@@ -22,6 +22,7 @@ import {
 import { openspecRootOf, rewriteStories } from "@maycombhq/planner";
 import {
   addQuickTypeText,
+  QUICK_ENTRY_ONE_LINE,
   catalogDirOf,
   changesDirOf,
   changesRelOf,
@@ -76,6 +77,11 @@ export interface Migration {
   creates?: boolean;
   /** Round 49: files the step leaves as they are, with why, said by --check and the upgrade. */
   problems?(root: string): Promise<string[]>;
+  /**
+   * ADR 0201: the step has nothing to give yet (the starter files aren't installed), so the
+   * stamp doesn't record it and a later upgrade runs it.
+   */
+  unavailable?(root: string): Promise<boolean>;
 }
 
 const rel = (prefix: string, files: string[]) => files.map((f) => `${prefix}/${f}`);
@@ -178,6 +184,16 @@ export const MIGRATIONS: Migration[] = [
       const rel = packRel(root, "change-types.yaml");
       await writeFileAtomic(join(root, rel), text);
       return [rel];
+    },
+    // A list written on one line can't take the entry as text: said until a person adds it.
+    async problems(root) {
+      const rel = packRel(root, "change-types.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && addQuickTypeText(text).why === "one-line"
+        ? [
+            `${rel}: its types are written on one line ([ … ]), so the quick change type wasn't added. Add it to the list by hand: ${QUICK_ENTRY_ONE_LINE}`,
+          ]
+        : [];
     },
   },
   {
@@ -428,21 +444,35 @@ async function quickTypePlan(root: string): Promise<string | undefined> {
   return r.changed ? r.text : undefined;
 }
 
+/** A starter file: its path in the org pack ("/"-separated) and what it holds. */
+export interface StarterFile {
+  path: string;
+  text: string | Uint8Array;
+}
+
+/** The starter files this Atticus is installed with; none when they aren't there. */
+async function installedStarters(): Promise<StarterFile[]> {
+  return (await starterPersonaFiles()).map((f) => ({ path: f.rel, text: f.bytes }));
+}
+
 /**
  * ADR 0201: the starter personas and the define-change skill for an org pack that was made
- * before them, modelled on `starter-review`: each file the starter folder holds is written where
- * no file is at its path, never over one that is there, and not at all once the stamp names the
- * step. `dir` is the starter folder (tests give a fixture; left out, the installed one).
+ * before them, modelled on `starter-review`: each starter file is written where no file is at
+ * its path, never over one that is there, and not at all once the stamp names the step. While
+ * the starter holds no file the step is `unavailable`, so the stamp doesn't name it. `files`
+ * gives the starter (tests give a fixture; left out, the installed one).
  */
-export function starterPersonasStep(dir?: string): Migration {
+export function starterPersonasStep(
+  files: () => Promise<StarterFile[]> = installedStarters,
+): Migration {
   const plan = async (root: string) => {
     if ((await readStamp(root))?.migrations.includes("starter-personas")) return [];
     // Only an org pack that is there gains them: a folder with no org pack isn't given one.
     if (!(await exists(join(root, ...packRel(root, "pack.yaml").split("/"))))) return [];
-    const out: { rel: string; bytes: Buffer }[] = [];
-    for (const f of await starterPersonaFiles(dir)) {
-      const rel = packRel(root, f.rel);
-      if (!(await exists(join(root, ...rel.split("/"))))) out.push({ rel, bytes: f.bytes });
+    const out: { rel: string; text: string | Uint8Array }[] = [];
+    for (const f of await files()) {
+      const rel = packRel(root, f.path);
+      if (!(await exists(join(root, ...rel.split("/"))))) out.push({ rel, text: f.text });
     }
     return out;
   };
@@ -452,12 +482,13 @@ export function starterPersonasStep(dir?: string): Migration {
       "The starter personas, their naysayers and the define-change skill in the org pack's agents/ and skills/, where no file is there already (ADR 0201)",
     creates: true,
     pending: async (root) => (await plan(root)).map((f) => f.rel),
+    unavailable: async () => (await files()).length === 0,
     async apply(root) {
       const out: string[] = [];
       for (const f of await plan(root)) {
         const to = join(root, ...f.rel.split("/"));
         await mkdir(dirname(to), { recursive: true });
-        await writeFile(to, f.bytes, { flag: "wx" });
+        await writeFile(to, f.text, { flag: "wx" });
         out.push(f.rel);
       }
       return out;
@@ -723,6 +754,13 @@ export function newerThan(a: string, b: string): boolean {
   return false;
 }
 
+/** The steps a stamp records as done: every step but one that has nothing to give yet. */
+async function stampedSteps(root: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const m of MIGRATIONS) if (!(await m.unavailable?.(root))) out.push(m.id);
+  return out;
+}
+
 export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
   // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
   const [read, found] = await Promise.all([
@@ -983,7 +1021,7 @@ export async function upgradeCommand(
     atticus: version,
     upgradedAt: stampTime,
     upgradedBy: by,
-    migrations: [...new Set([...(c.stamp?.migrations ?? []), ...MIGRATIONS.map((m) => m.id)])],
+    migrations: [...new Set([...(c.stamp?.migrations ?? []), ...(await stampedSteps(root))])],
   });
   // ADR 0195 point 6 (the review of beta.27): when no other step runs, the stamp already records
   // this Atticus and the slots step is only shown (no --yes, or a count that isn't the one

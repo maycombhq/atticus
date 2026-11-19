@@ -85,13 +85,28 @@ describe("the quick change type", () => {
     expect(QUICK_CHANGE_TYPE.name).toBe("Quick path");
   });
 
-  it("takes an organisation's own type of that shape, and none with a stage's artifacts or phases", () => {
+  it("takes an organisation's own type of that shape, and none that plans another way", () => {
     const own = { phases: ["plan", "build"], artifacts: ["proposal", "specs", "tasks"] };
     expect(quickPathOf(own)).toBe(true);
+    expect(quickPathOf({ phases: ["plan", "build"], artifacts: ["proposal", "tasks"] })).toBe(true);
+    expect(quickPathOf({ phases: ["plan"], artifacts: ["proposal"] })).toBe(true);
     expect(quickPathOf({ ...own, artifacts: [...own.artifacts, "stories"] })).toBe(false);
     expect(quickPathOf({ ...own, phases: ["define", "plan", "build"] })).toBe(false);
     expect(quickPathOf({ ...own, phases: ["design", "build"] })).toBe(false);
     expect(quickPathOf({ ...own, phases: ["build", "release"] })).toBe(false);
+    // The review of 2026-11-18: a type that takes the fast path, may take it, or starts from a
+    // brief keeps the path it had (ADR 0113): the shape alone never captures it.
+    expect(quickPathOf({ ...own, size: "small" })).toBe(false);
+    expect(quickPathOf({ ...own, smallWhenBriefSays: true })).toBe(false);
+    expect(quickPathOf({ ...own, artifacts: ["brief", ...own.artifacts] })).toBe(false);
+    expect(
+      quickPathOf({
+        size: "small",
+        phases: ["plan", "build"],
+        artifacts: ["brief", "proposal", "tasks"],
+      }),
+    ).toBe(false);
+    expect(quickPathOf({ ...own, size: "standard", smallWhenBriefSays: false })).toBe(true);
   });
 
   it("is added at the end of an existing change-types.yaml, every other byte kept", async () => {
@@ -133,6 +148,13 @@ describe("the quick change type", () => {
     // A second run, a type quick of the organisation's own, and a file that doesn't read: left alone.
     expect(addQuickTypeText(r.text)).toEqual({ text: r.text, changed: false });
     expect(addQuickTypeText("schemaVersion: 2\ntypes: [").changed).toBe(false);
+    // Types kept on one line can't take the entry as text: said, not done.
+    expect(
+      addQuickTypeText(
+        "schemaVersion: 2\ntypes: [{ id: feature, name: F, phases: [build], artifacts: [proposal, tasks] }]\n",
+      ),
+    ).toMatchObject({ changed: false, why: "one-line" });
+    expect(addQuickTypeText(r.text).why).toBeUndefined();
   });
 
   it("keeps the file's line endings, its indent and a last line with no newline", () => {

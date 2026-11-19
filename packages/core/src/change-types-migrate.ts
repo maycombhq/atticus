@@ -16,6 +16,9 @@ export function migrateChangeTypesText(text: string): { text: string; changed: b
   return { text: keepLineEndings(text, doc.toString({ lineWidth: 0 })), changed: true };
 }
 
+/** The quick type's entry on one line, for a person to add to a list written that way. */
+export const QUICK_ENTRY_ONE_LINE = `{ id: ${QUICK_CHANGE_TYPE.id}, name: ${QUICK_CHANGE_TYPE.name}, phases: [${QUICK_CHANGE_TYPE.phases.join(", ")}], artifacts: [${QUICK_CHANGE_TYPE.artifacts.join(", ")}], lenses: [${QUICK_CHANGE_TYPE.lenses.map((l) => (l === "true" ? '"true"' : l)).join(", ")}] }`;
+
 /** The quick type's entry as it is written into a change-types.yaml, at no indent (ADR 0201). */
 const QUICK_ENTRY = [
   `- id: ${QUICK_CHANGE_TYPE.id}`,
@@ -30,15 +33,21 @@ const QUICK_ENTRY = [
  * Add the quick change type (ADR 0201) at the end of a change-types.yaml's `types`. The entry is
  * put into the text after the list's last line, at the list's own indent and line endings, so
  * comments and every other entry stay byte for byte. Unchanged when the file doesn't read as
- * change types, already has a type `quick`, or keeps its types on one line.
+ * change types or already has a type `quick`; when it keeps its types on one line, `why` says so.
  */
-export function addQuickTypeText(text: string): { text: string; changed: boolean } {
-  const same = { text, changed: false };
+export function addQuickTypeText(text: string): {
+  text: string;
+  changed: boolean;
+  /** Unchanged because the list is a flow sequence (`types: [ … ]`): a person adds the entry. */
+  why?: "one-line";
+} {
+  const same: ReturnType<typeof addQuickTypeText> = { text, changed: false };
   const doc = parseDocument(text);
   if (doc.errors.length || !ChangeTypes.safeParse(doc.toJS()).success) return same;
   const types = doc.get("types");
-  if (!isSeq(types) || types.flow || !types.range) return same;
+  if (!isSeq(types) || !types.range) return same;
   if (types.items.some((t) => isMap(t) && t.get("id") === QUICK_CHANGE_TYPE.id)) return same;
+  if (types.flow) return { ...same, why: "one-line" };
   // The list's indent: what stands before its first dash on that line.
   const lineStart = text.lastIndexOf("\n", types.range[0] - 1) + 1;
   const indent = /^[ ]*/.exec(text.slice(lineStart))![0];

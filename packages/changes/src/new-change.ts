@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   ChangeTouches,
+  changesDirOf,
+  changesRelOf,
   openspecDirOf,
   RecordId,
   type ChangeLifecycle,
@@ -43,8 +45,12 @@ export interface NewChangeOptions {
     /** Adopting a folder that is there: only change.yaml is written, no `.openspec.yaml`. */
     adopt?: boolean;
   };
-  /** ADR 0201: the requirements file's bytes, copied as they are to `<change>/requirements.md`. */
-  requirements?: Uint8Array;
+  /**
+   * ADR 0201: the requirements file the change is made from: its bytes, copied as they are to
+   * `<change>/requirements.md`, and how it is named to a person. A different requirements.md
+   * already in the folder is never written over: the change is refused.
+   */
+  requirements?: { file: string; bytes: Uint8Array };
 }
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -98,9 +104,20 @@ async function defaultSchema(root: string): Promise<string> {
  * for an emergency fix).
  */
 export async function newChange(root: string, opts: NewChangeOptions): Promise<ChangeLifecycle> {
+  const id = opts.id ?? slugify(opts.title);
+  // Before anything is written: a folder adopted with its own requirements.md keeps it.
+  const had =
+    opts.requirements && RecordId.safeParse(id).success
+      ? await readFile(join(changesDirOf(root), id, REQUIREMENTS_FILE)).catch(() => undefined)
+      : undefined;
+  if (had && !had.equals(opts.requirements!.bytes))
+    throw new ChangeError(
+      "conflict",
+      `${changesRelOf(root)}/${id}/${REQUIREMENTS_FILE} is there already and differs from ${opts.requirements!.file}. Make the two the same, or pass another --id. Nothing was written.`,
+    );
+
   const ctx = await loadChangeContext(root);
   const type = changeTypeOf(ctx, opts.type);
-  const id = opts.id ?? slugify(opts.title);
   if (!RecordId.safeParse(id).success)
     throw new ChangeError(
       "invalid",
@@ -137,7 +154,8 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
         "utf8",
       );
   }
-  if (opts.requirements) await writeFile(join(dir, REQUIREMENTS_FILE), opts.requirements);
+  if (opts.requirements && !had)
+    await writeFile(join(dir, REQUIREMENTS_FILE), opts.requirements.bytes);
   if (template && !(await exists(join(dir, "brief.md"))))
     await writeFileAtomic(
       join(dir, "brief.md"),

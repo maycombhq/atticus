@@ -88,6 +88,168 @@ describe("parseRequirements", () => {
   });
 });
 
+/** The door check is the one check on the quick path: what it can't be sure of, it refuses. */
+describe("a table the parser can't be sure of is refused, never passed over", () => {
+  const OPEN = "| Who owns the topic? | - | qa-naysayer | | | open |";
+  // Shadows the file's `answered`: a closed row that cites nothing.
+  const answered = "| Is it logged? | - | qa-naysayer | pat | Yes | answered |";
+  const reasons = (text: string) =>
+    checkRequirements(parseRequirements(text), has, "r.md").reasons.map((x) => [
+      x.code,
+      x.line,
+      x.message,
+    ]);
+  const codes = (text: string) => reasons(text).map((x) => [x[0], x[1]]);
+
+  it("reads a row after a blank line, a row with no leading bar and a quoted table", () => {
+    const text = [
+      "## QA",
+      "",
+      HEADER,
+      answered,
+      "",
+      OPEN,
+      "Is it retried? | - | qa-naysayer | | | open",
+      "",
+      "## Security",
+      "",
+      ...`${HEADER}\n${OPEN}`.split("\n").map((l) => `> ${l}`),
+      "",
+      "## Developer",
+      "",
+      "Question | Evidence | Asked by | Answered by | Answer | State",
+      "--- | --- | --- | --- | --- | ---",
+      "Is it idempotent? | - | developer-naysayer | | | open",
+    ].join("\n");
+    expect(codes(text)).toEqual([
+      ["requirements.open-question", 7],
+      ["requirements.open-question", 8],
+      ["requirements.open-question", 14],
+      ["requirements.open-question", 20],
+    ]);
+  });
+
+  it("follows CommonMark's fences: an inline run of backticks opens none, and only a bare fence closes one", () => {
+    const inline = ["## QA", "", "```x``` is code, not a fence", "", HEADER, OPEN].join("\n");
+    expect(codes(inline)).toEqual([["requirements.open-question", 7]]);
+    const info = ["## QA", "", "````md", "```js", HEADER, OPEN, "```", "````", "", HEADER, OPEN];
+    expect(codes(info.join("\n"))).toEqual([["requirements.open-question", 13]]);
+    // A longer run closes a shorter fence; a tilde never closes a backtick fence.
+    const tilde = ["## QA", "", "```", "~~~", "`````", "", HEADER, OPEN].join("\n");
+    expect(codes(tilde)).toEqual([["requirements.open-question", 9]]);
+  });
+
+  it("takes a header with emphasis, and refuses one that is reordered or short", () => {
+    const bold = [
+      "## QA",
+      "",
+      "| **Question** | _Evidence_ | `Asked by` | Answered  by | *Answer* | __State__ |",
+      "|:--|:-:|--:|---|---|---|",
+      OPEN,
+    ].join("\n");
+    expect(codes(bold)).toEqual([["requirements.open-question", 5]]);
+    const reordered = [
+      "## QA",
+      "",
+      "| State | Question | Evidence | Asked by | Answered by | Answer |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| open | Who owns the topic? | - | qa-naysayer | | |",
+    ].join("\n");
+    expect(reasons(reordered)).toEqual([
+      [
+        "requirements.unreadable",
+        3,
+        'r.md:3: this table of QA\'s questions doesn\'t read: its header is "State", "Question", "Evidence", "Asked by", "Answered by", "Answer", not the six columns Question, Evidence, Asked by, Answered by, Answer, State.',
+      ],
+    ]);
+    const short = ["## QA", "", "| Question | Answer | State |", "|---|---|---|", "| Q | | open |"];
+    expect(codes(short.join("\n"))).toEqual([["requirements.unreadable", 3]]);
+    // Beside a role's questions, any other table is refused; in a section with none, it is free text.
+    const second = [
+      "## QA",
+      "",
+      HEADER,
+      answered,
+      "",
+      "Notes:",
+      "",
+      "| Service | Platform |",
+      "|---|---|",
+    ];
+    expect(codes(second.join("\n"))).toEqual([["requirements.unreadable", 9]]);
+    expect(
+      codes("## Background\n\n| Service | Platform |\n|---|---|\n| forge-billing | old |\n"),
+    ).toEqual([]);
+  });
+
+  it("refuses a questions table that is under no role's heading", () => {
+    const table = `${HEADER}\n${answered}`;
+    expect(reasons(`# Title\n\n${table}\n`)).toEqual([
+      [
+        "requirements.unreadable",
+        3,
+        'r.md:3: this table doesn\'t read: a table of questions is under no "## <Role>" heading.',
+      ],
+    ]);
+    expect(codes(`### QA\n\n${table}\n`)).toEqual([["requirements.unreadable", 3]]);
+    expect(codes(`## QA\n\n${table}\n\n# Appendix\n\n${table}\n`)).toEqual([
+      ["requirements.unreadable", 9],
+    ]);
+    expect(reasons(`## Planned\n\n- forge-portal\n\n${table}\n`)[0]![2]).toContain(
+      'a table of questions is under "## Planned"',
+    );
+    // A row with no header at all, where a role's questions are.
+    expect(codes(`## QA\n\n${table}\n\nText.\n\n${OPEN}\n`)).toEqual([
+      ["requirements.unreadable", 9],
+    ]);
+    // None of these is "no persona asked".
+    expect(checkRequirements(parseRequirements(`### QA\n\n${table}\n`), has).ok).toBe(false);
+  });
+
+  it("checks every id of an evidence cell: split by ; or , and each one in backticks", () => {
+    const row = (evidence: string) =>
+      `## QA\n\n${HEADER}\n| Q | ${evidence} | qa-naysayer | pat | A | answered |\n`;
+    const unknown = (evidence: string) =>
+      checkRequirements(parseRequirements(row(evidence)), has)
+        .reasons.map((x) => /names (\S+),/.exec(x.message)?.[1])
+        .sort();
+    expect(unknown("`forge-ledger`, `nope`")).toEqual(["nope"]);
+    expect(unknown("`forge-ledger` `nope-one`; nope-two src/A.java:3, `forge-billing`")).toEqual([
+      "nope-one",
+      "nope-two",
+    ]);
+    // A file in backticks is not an id.
+    expect(
+      unknown("`forge-ledger` `src/events/Shipped.java:41`; `forge-billing` `pom.xml:7`"),
+    ).toEqual([]);
+    expect(unknown("-")).toEqual([]);
+  });
+
+  it("refuses a name several records have, and takes an entry's path as a name", () => {
+    const text = `## QA\n\n${HEADER}\n| Q | \`transfers.completed\`; \`/transfers\` | qa-naysayer | pat | A | answered |\n`;
+    const several = (id: string) =>
+      id === "transfers.completed" ? ["topic.a", "topic.b"] : id === "/transfers";
+    const r = checkRequirements(parseRequirements(text), several, "r.md");
+    expect(r.inMap).toBe(1);
+    expect(r.reasons).toEqual([
+      {
+        code: "requirements.unknown-id",
+        line: 5,
+        role: "QA",
+        message:
+          "r.md:5: the evidence names transfers.completed, which matches several records of the map (topic.a, topic.b). Name the id of the one meant.",
+      },
+    ]);
+  });
+
+  it("reads a long Planned list once each, in order", () => {
+    const ids = Array.from({ length: 5000 }, (_, i) => `forge-new-${i % 2500}`);
+    const p = parseRequirements(`## Planned\n\n${ids.map((i) => `- \`${i}\`: new`).join("\n")}\n`);
+    expect(p.planned).toHaveLength(2500);
+    expect(p.planned.slice(0, 2)).toEqual(["forge-new-0", "forge-new-1"]);
+  });
+});
+
 describe("checkRequirements", () => {
   it("passes a file whose questions are closed and whose ids the map has or the file plans", () => {
     const r = checkRequirements(parseRequirements(file([answered])), has);

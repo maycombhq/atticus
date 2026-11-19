@@ -6,7 +6,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
+import {
+  CHECKLISTS_README,
+  STARTER_CHECKLISTS_README,
+  starterPersonaFiles,
+} from "@maycombhq/adopt";
 import { starterReviewText } from "@maycombhq/naysayer";
 import { GENERATED_MARK } from "@maycombhq/changes";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
@@ -216,37 +220,41 @@ describe("atticus upgrade", () => {
       upgradedBy: "pat",
       upgradedAt: "2026-10-19T10:00:00Z",
     });
-    expect(stamp.migrations).toEqual([
-      "catalog-schema-v2",
-      "local-files-ignored",
-      "state-folders-ignored",
-      "gates-v2",
-      "flow-schema-v2",
-      "change-types-v2",
-      // ADR 0201: no change-types.yaml here (the built-in list has the type): recorded as done.
-      "change-types-quick",
-      "questions-v3",
-      "starter-review",
-      "starter-personas",
-      "catalog-schema-v3",
-      "catalog-schema-v4",
-      "sources-v2",
-      "sources-v3",
-      "stamp-committed",
-      "runtime-v2",
-      // ADR 0171: nothing here names copilot-acp, so nothing to do, but recorded as done.
-      "runtime-v3",
-      "roles-v2",
-      // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
-      "org-flow-v2",
-      "stories-b-short",
-      "manifest-schema-v2",
-      "manifest-schema-v3",
-      // ADR 0181: nothing here at catalog 4, naming decide or using corrections v2: recorded as done.
-      "catalog-schema-v5",
-      "runtime-v4",
-      "corrections-v2",
-    ]);
+    // ADR 0201: starter-personas is recorded only once this Atticus has starter files to give.
+    const starters = (await starterPersonaFiles()).length > 0;
+    expect(stamp.migrations).toEqual(
+      [
+        "catalog-schema-v2",
+        "local-files-ignored",
+        "state-folders-ignored",
+        "gates-v2",
+        "flow-schema-v2",
+        "change-types-v2",
+        // ADR 0201: no change-types.yaml here (the built-in list has the type): recorded as done.
+        "change-types-quick",
+        "questions-v3",
+        "starter-review",
+        "starter-personas",
+        "catalog-schema-v3",
+        "catalog-schema-v4",
+        "sources-v2",
+        "sources-v3",
+        "stamp-committed",
+        "runtime-v2",
+        // ADR 0171: nothing here names copilot-acp, so nothing to do, but recorded as done.
+        "runtime-v3",
+        "roles-v2",
+        // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
+        "org-flow-v2",
+        "stories-b-short",
+        "manifest-schema-v2",
+        "manifest-schema-v3",
+        // ADR 0181: nothing here at catalog 4, naming decide or using corrections v2: recorded as done.
+        "catalog-schema-v5",
+        "runtime-v4",
+        "corrections-v2",
+      ].filter((m) => m !== "starter-personas" || starters),
+    );
     // runtime.yaml at version 2 (ADR 0121 addendum): the number only, every line else as it was,
     // so no step names a model of its own.
     const runtime = await readFile(join(root, "org-pack/runtime.yaml"), "utf8");

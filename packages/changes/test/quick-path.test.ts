@@ -31,7 +31,7 @@ async function quickChange() {
     by: "pat",
     now: "2026-11-18T09:00:00Z",
     noBrief: { reason: "Created from docs/requirements.md" },
-    requirements: new TextEncoder().encode(REQUIREMENTS),
+    requirements: { file: "docs/requirements.md", bytes: new TextEncoder().encode(REQUIREMENTS) },
   });
   return { root, c, dir: changeFolder(root, c.id) };
 }

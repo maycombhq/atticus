@@ -91,6 +91,10 @@ async function b285Metarepo(types: string | null = TYPES_B285): Promise<string> 
   return root;
 }
 
+/** The fixture starter folder as the step takes it: each file's org-pack path and its text. */
+const fixtureStarters = async () =>
+  (await starterPersonaFiles(STARTER)).map((f) => ({ path: f.rel, text: f.bytes }));
+
 const changed = (root: string) =>
   git(root, "status", "--porcelain=v1", "--untracked-files=all")
     .split("\n")
@@ -219,7 +223,7 @@ describe("atticus upgrade to beta.30: the starter personas (starter-personas)", 
       await writeFile(join(root, "org-pack/agents/developer.md"), mine);
       const before = await contentOf(root, ["org-pack"]);
 
-      const step = starterPersonasStep(STARTER);
+      const step = starterPersonasStep(fixtureStarters);
       const want = [
         "org-pack/agents/developer-naysayer.md",
         "org-pack/skills/define-change/SKILL.md",
@@ -246,6 +250,10 @@ describe("atticus upgrade to beta.30: the starter personas (starter-personas)", 
 
       // Once the stamp names the step, a file the organisation deleted is not written again.
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
+      const stampFile = join(root, ".atticus/metarepo.yaml");
+      const stamp = parse(await readFile(stampFile, "utf8")) as { migrations: string[] };
+      stamp.migrations = [...new Set([...stamp.migrations, "starter-personas"])];
+      await writeFile(stampFile, stringify(stamp));
       await rm(join(root, "org-pack/skills/define-change/SKILL.md"));
       expect(await step.pending(root)).toEqual([]);
       expect(await step.apply(root)).toEqual([]);
@@ -267,6 +275,66 @@ describe("atticus upgrade to beta.30: the starter personas (starter-personas)", 
       expect((await upgradeCheck(root, B30)).pending).toEqual([]);
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
       expect(await contentOf(root, ["org-pack"])).toEqual(once);
+    },
+    T,
+  );
+});
+
+describe("atticus upgrade to beta.30: what a step can't do is said, and waits", () => {
+  it(
+    "doesn't stamp starter-personas while the starter holds no file, so the files arrive later",
+    async () => {
+      const root = await b285Metarepo();
+      const none = starterPersonasStep(async () => []);
+      expect(await none.pending(root)).toEqual([]);
+      expect(await none.unavailable!(root)).toBe(true);
+      expect(await starterPersonasStep(fixtureStarters).unavailable!(root)).toBe(false);
+      // Through the command: the installed starter decides whether the stamp names the step.
+      const installed = (await starterPersonaFiles()).length > 0;
+      expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
+      const stamp = parse(await readFile(join(root, ".atticus/metarepo.yaml"), "utf8")) as {
+        migrations: string[];
+      };
+      expect(stamp.migrations.includes("starter-personas")).toBe(installed);
+      expect(stamp.migrations).toContain("change-types-quick");
+      // Not stamped, the files are written by a later upgrade, once the starter has them.
+      if (!installed) {
+        const later = starterPersonasStep(fixtureStarters);
+        expect(await later.pending(root)).toEqual([
+          "org-pack/agents/developer-naysayer.md",
+          "org-pack/agents/developer.md",
+          "org-pack/skills/define-change/SKILL.md",
+        ]);
+      }
+    },
+    T,
+  );
+
+  it(
+    "says what to add by hand when change-types.yaml keeps its types on one line",
+    async () => {
+      const flow =
+        "schemaVersion: 2\ntypes: [{ id: feature, name: New feature, phases: [define, plan, build], artifacts: [proposal, tasks] }]\n";
+      const root = await b285Metarepo(flow);
+      const c = await upgradeCheck(root, B30);
+      expect(c.pending.map((p) => p.id)).not.toContain("change-types-quick");
+      expect(c.problems).toEqual([
+        'org-pack/change-types.yaml: its types are written on one line ([ … ]), so the quick change type wasn\'t added. Add it to the list by hand: { id: quick, name: Quick path, phases: [plan, build, release], artifacts: [proposal, specs, design, tasks], lenses: ["true", complete, safe, ship] }',
+      ]);
+      const r = io();
+      expect(await upgradeCommand(root, { by: "pat" }, r.io, B30)).toBe(0);
+      expect(r.err.join("\n")).toContain("so the quick change type wasn't added");
+      expect(await readFile(join(root, "org-pack/change-types.yaml"), "utf8")).toBe(flow);
+      // Said until it is there; a person's own entry ends it.
+      expect((await upgradeCheck(root, B30)).problems).toHaveLength(1);
+      await writeFile(
+        join(root, "org-pack/change-types.yaml"),
+        flow.replace(
+          "]\n",
+          ", { id: quick, name: Quick path, phases: [plan, build], artifacts: [proposal, tasks] }]\n",
+        ),
+      );
+      expect((await upgradeCheck(root, B30)).problems).toBeUndefined();
     },
     T,
   );
