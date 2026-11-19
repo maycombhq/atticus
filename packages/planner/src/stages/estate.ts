@@ -48,6 +48,12 @@ export interface Estate {
   archivedRepos: Set<string>;
   /** Of `problems`, the manifests that didn't read (their repos aren't counted). */
   manifestProblems: string[];
+  /**
+   * ADR 0203 B.7: the ids this change's feature.yaml declares as outside the map (a partner's
+   * system no repo of the estate holds), set by the stage that read the placement. Each is known
+   * to every check, with that standing. Absent: none declared.
+   */
+  outside?: ReadonlySet<string>;
 }
 
 /** What the manifests say, as the estate keeps it. */

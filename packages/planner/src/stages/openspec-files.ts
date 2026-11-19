@@ -17,7 +17,9 @@ import {
 } from "@maycombhq/openspec-adapter";
 import type { Estate } from "./estate.js";
 import type { StageIssue } from "./loop.js";
-import { FeaturePlacement } from "./schema.js";
+import { FeaturePlacement, type Operation, type Wave } from "./schema.js";
+import { readOperations } from "./operations.js";
+import { operationRequirements, operationStories } from "./operation-stories.js";
 import type { DeltaStory, StoriesAnswer, StoryCriterion, StoryWords } from "./stories.js";
 
 /**
@@ -393,6 +395,7 @@ export function renderProposal(
     ...new Set([
       ...changed.flatMap((f) => (o.repoOf?.(f.id) ? [o.repoOf(f.id)!] : [])),
       ...p.newFlows.map((f) => f.repo),
+      ...(p.operations ?? []).flatMap((x) => x.repos),
     ]),
   ].sort();
   const caps = o.capabilities ?? [];
@@ -409,6 +412,9 @@ export function renderProposal(
     `- ${sentence(p.summary.replace(/\s+/g, " "))}`,
     ...changed.map((f) => `- Changes flow \`${f.id}\`: ${sentence(f.why.replace(/\s+/g, " "))}`),
     ...p.newFlows.map((f) => `- New flow in ${f.repo}: ${bare(f.name)}.`),
+    ...(p.operations ?? []).map(
+      (x) => `- Operation (${x.kind}) in ${x.repos.join(", ")}: ${sentence(x.what)}`,
+    ),
     "",
     "## Capabilities",
     "",
@@ -519,6 +525,8 @@ export async function openspecFiles(
   stories: DeltaStory[],
   answer: StoriesAnswer,
   estate?: Estate,
+  /** ADR 0203 B: the operations, when they aren't in the change folder yet (the fast path). */
+  operations?: { operations: Operation[]; waves?: Wave[] },
 ): Promise<OpenSpecFiles> {
   const osRoot = openspecRootOf(root);
   const existing = osRoot
@@ -559,9 +567,44 @@ export async function openspecFiles(
       }),
     });
   }
+  // ADR 0203 B: one capability a repo, `<repo>-operations`, a requirement an operation story, a
+  // scenario a criterion; MODIFIED where openspec/specs has the requirement, its scenarios kept.
+  const ops = operations ?? (await readOperations(dir)).file;
+  const opDeltas = new Map<string, SpecDelta>();
+  for (const r of operationRequirements(
+    change,
+    operationStories(ops?.operations ?? [], ops?.waves),
+    answer.operations,
+  )) {
+    const capability = `${r.repo}-operations`;
+    const had = existing.find((x) => x.id === capability);
+    const prior = had?.requirements.find((x) => x.name.toLowerCase() === r.name.toLowerCase());
+    const fresh = uniqueNames(r.criteria.map(scenarioOf));
+    const d = opDeltas.get(capability) ?? {
+      capability,
+      flow: "",
+      ...(had
+        ? {}
+        : {
+            purpose: `Work in ${r.repo} that changes no runtime step: deployments, pipelines, configuration, secrets, routes and cut-overs. Atticus writes it from the operation stories of each change.`,
+          }),
+      added: [],
+      modified: [],
+      removed: [],
+    };
+    const kept = (prior?.scenarios ?? [])
+      .filter((x) => !fresh.some((f) => f.name.toLowerCase() === x.name.toLowerCase()))
+      .map((x) => ({ name: x.name, body: x.rawText.trim() }));
+    (prior ? d.modified : d.added).push({
+      name: prior?.name ?? r.name,
+      text: r.text,
+      scenarios: [...kept, ...fresh],
+    });
+    opDeltas.set(capability, d);
+  }
   return {
     deltas,
-    files: specFiles(deltas),
+    files: { ...specFiles(deltas), ...specFiles([...opDeltas.values()]) },
     capabilityOf: capabilityOfFlow,
     ...(proposal ? { proposal } : {}),
   };

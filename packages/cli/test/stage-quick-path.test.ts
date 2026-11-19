@@ -90,7 +90,7 @@ newFlows:
     expect(r.drafts).toBe(1);
     expect(r.err.join("\n").split("\n")).toEqual([
       "The feature stage stopped after 1 draft: it found nothing for the staged path to plan.",
-      "  - The feature touches nothing: name the features and flows it touches, or the new flows it needs. (rule feature.nothing-placed; in openspec/changes/add-fraud-check/feature.yaml)",
+      "  - The feature touches nothing: name the features and flows it touches, the new flows it needs, or its operations. (rule feature.nothing-placed; in openspec/changes/add-fraud-check/feature.yaml)",
       "If this change alters no runtime step in a repo the map holds (a new product, a move to another platform, pipeline or configuration work), it belongs on the quick path: write its requirements file and run atticus change new --from <requirements.md>.",
     ]);
   });

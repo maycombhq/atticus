@@ -103,7 +103,8 @@ const BEFORE = {
   // hand-off doesn't have (diffed: that one line in each of the three prompts).
   // ADR 0191: re-pinned when the format asked what each question asks (its asks line, one rule).
   // ADR 0201: re-pinned when the format gained its one line for newRepo (a repo the change plans).
-  feature: "f5b865cacda239e6e8ef5e3d090af69e11388ee42d0fad252503ff8df7b8c039",
+  // ADR 0203 B: re-pinned when the format gained operations and outside, and their one rule.
+  feature: "6ce29017cd87e1a4c23a376d260abf9b9c2b73a7bd84ee96aa4ebc79aa9df956",
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
@@ -112,8 +113,9 @@ const BEFORE = {
   // and after B-place gave three places (the format's `at` line became at, new and uses, one rule
   // added) and the self-check line; and after ADR 0132 asked where a new component runs (the
   // format's runsOn line and one rule); and after ADR 0180 asked what a new component is (the
-  // runsOn line's `type`, and the component-types source listing the organisation's types)
-  arch: "61771c2ed1b004f4a6f10a6f57cce7f317c868773b04683fe2b657d46ea020c8",
+  // runsOn line's `type`, and the component-types source listing the organisation's types); and
+  // after ADR 0203 B gave the format operations, waves and a deploy step's operation (one rule)
+  arch: "09996b7bda34fe68a0924eeee23cd957a6be232bec7a35eacc6d566cac839022",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed

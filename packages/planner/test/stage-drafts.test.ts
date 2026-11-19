@@ -394,7 +394,8 @@ describe("a stage with no corrections", () => {
   // are keyed by the prompt's hash, so it must not move by a byte).
   // ADR 0191: re-pinned when the format asked what each question asks (its asks line, one rule).
   // ADR 0201: re-pinned when the format gained its one line for newRepo (a repo the change plans).
-  const BEFORE = "f5b865cacda239e6e8ef5e3d090af69e11388ee42d0fad252503ff8df7b8c039";
+  // ADR 0203 B: re-pinned when the format gained operations and outside, and their one rule.
+  const BEFORE = "6ce29017cd87e1a4c23a376d260abf9b9c2b73a7bd84ee96aa4ebc79aa9df956";
 
   it("sends exactly the prompt it sent before, with or without an empty corrections file", async () => {
     const first: string[] = [];

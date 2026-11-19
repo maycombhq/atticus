@@ -142,6 +142,18 @@ import {
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
 import { plannedRepos, unreadConsumer } from "./planned.js";
+import { readOperations } from "./operations.js";
+import {
+  checkOperationStories,
+  OPERATION_STORIES_FORMAT,
+  OPERATION_STORIES_RULE,
+  operationSkeleton,
+  operationStories,
+  OperationWords,
+  withOperationStories,
+  type OperationStory,
+} from "./operation-stories.js";
+import { readPlacement } from "./feature.js";
 import {
   keepStoryNumbers,
   lastPart,
@@ -1753,6 +1765,8 @@ const Answer = z.strictObject({
     )
     .default([]),
   requests: z.array(RequestIn).default([]),
+  /** ADR 0203 B: the words of the operations' stories, one an operation. Optional and additive. */
+  operations: z.array(OperationWords).optional(),
 });
 export type StoriesAnswer = z.infer<typeof Answer>;
 /** The story writer's answer's schema, for the fast path (ADR 0113). */
@@ -3715,7 +3729,11 @@ export async function writeStories(
   // B-tasks: the answer is kept keyed by task, as the story files show it.
   const a = foldAnswer(answer, stories);
   const dir = changeFolder(root, change);
-  const keep = new Set(stories.map((s) => `${s.id}.md`));
+  // ADR 0203 B: the operations' stories are written with the flows', below.
+  const ops = (await readOperations(dir)).file;
+  const opStories = operationStories(ops?.operations ?? [], ops?.waves);
+  const keep = new Set([...stories, ...opStories].map((s) => `${s.id}.md`));
+  await mkdir(join(dir, "stories"), { recursive: true });
   // Review round 50: a story the target flows no longer have goes, unless a person edited its
   // file since a stage wrote it: then it stays, and the stage says so.
   const wrote = await writtenHashes(dir);
@@ -3774,9 +3792,20 @@ export async function writeStories(
       files.push(rel);
     }
   }
-  await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
   const ticked = tickedTasks(await readFile(join(dir, "tasks.md"), "utf8").catch(() => ""));
-  await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests, ticked));
+  // ADR 0203 B: the operations' stories and tasks, added to what the flows give.
+  const withOps = withOperationStories(
+    opStories,
+    a.operations,
+    { index: renderIndex(stories, a), tasks: renderTasks(stories, requests, ticked) },
+    ticked,
+  );
+  for (const [rel, text] of Object.entries(withOps.files)) {
+    await writeFileAtomic(join(dir, ...rel.split("/")), text);
+    files.push(rel);
+  }
+  await writeFileAtomic(join(dir, "stories.md"), withOps.index);
+  await writeFileAtomic(join(dir, "tasks.md"), withOps.tasks);
   files.push(...(await writeSpecFiles(dir, spec.files)));
   // Review round 50: only its Capabilities; the feature stage writes the rest.
   if (spec.proposal && (await writeProposal(dir, spec.proposal, "stories")))
@@ -4167,6 +4196,8 @@ function notesCitedInFolder(a: StoriesAnswer, rel: string): StoriesAnswer {
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
   stories: DeltaStory[];
   requests: RequestTask[];
+  /** ADR 0203 B: the stories of the change's operations, one an operation; none without any. */
+  operations?: OperationStory[];
 }
 
 export async function storiesStage(
@@ -4187,12 +4218,17 @@ export async function storiesStage(
     throw new PlannerError("refused", `The target flows don't read: ${read.problems.join("; ")}`);
   const empty = read.deltas.filter(isEmptyDelta);
   const deltas = read.deltas.filter((d) => !isEmptyDelta(d));
-  if (empty.length && !deltas.length)
+  // ADR 0203 B: with operations and no flow delta the stage runs.
+  const opsRead = await readOperations(dir);
+  if (opsRead.problems.length)
+    throw new PlannerError("refused", `The operations don't read: ${opsRead.problems.join("; ")}`);
+  const opStories = operationStories(opsRead.file?.operations ?? [], opsRead.file?.waves);
+  if (empty.length && !deltas.length && !opStories.length)
     throw new PlannerError(
       "refused",
       `${change.id}'s target flows change no step (${empty.map((d) => d.flow).join(", ")} only say modify): run atticus change architecture ${change.id} again.`,
     );
-  if (!deltas.length)
+  if (!deltas.length && !opStories.length)
     throw new PlannerError(
       "refused",
       `${change.id} has no target flows yet: run atticus change architecture ${change.id} first.`,
@@ -4213,6 +4249,8 @@ export async function storiesStage(
     : undefined;
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
+  // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
+  estate.outside = new Set(((await readPlacement(dir))?.outside ?? []).map((x) => x.id));
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
@@ -4273,6 +4311,7 @@ export async function storiesStage(
         ),
       ].join("\n"),
     )
+    .concat(opStories.length ? [operationSkeleton(opStories)] : [])
     .join("\n");
   const itemsText = items
     .map(
@@ -4393,10 +4432,10 @@ requests:      # every request or process from the list below that a step meets;
     flow: <flow id>
     step: <the step's item number in that flow's target>
     why: <one sentence>
-    quote: "<the words of its applies when that the step meets, copied exactly>"
+    quote: "<the words of its applies when that the step meets, copied exactly>"${opStories.length ? OPERATION_STORIES_FORMAT : ""}
 
 Rules:
-- One entry per story and per task listed; don't add or drop any.${shapeText ? SHAPE_RULE : ""}
+- One entry per story and per task listed; don't add or drop any.${shapeText ? SHAPE_RULE : ""}${opStories.length ? OPERATION_STORIES_RULE : ""}
 - Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that accepts the task; checks name only fields of the tasks the criterion accepts.
 - Write each behaviour once: on the task whose code it exercises first, or the one a tester would drive, with the other tasks it accepts under also. Don't repeat it on each task.
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
@@ -4583,6 +4622,7 @@ Rules:
         ...sectionCheck,
         standards: new Set(standards.keys()),
       }),
+      ...checkOperationStories(a.operations, opStories),
       ...(await coverageIssues(unwrittenChecks(a, stories), {
         ...(judging ? { runtime: judging } : {}),
         store,
@@ -4667,5 +4707,10 @@ Rules:
     res.notes.unshift(
       `The architecture PR of ${change.id} isn't merged yet, so these stories rest on target flows a person hasn't approved.`,
     );
-  return { ...res, stories, requests: res.answer ? await merge(res.answer) : requests };
+  return {
+    ...res,
+    stories,
+    requests: res.answer ? await merge(res.answer) : requests,
+    ...(opStories.length ? { operations: opStories } : {}),
+  };
 }

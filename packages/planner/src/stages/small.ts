@@ -43,7 +43,14 @@ import {
   type StageResult,
   type StageSpec,
 } from "./loop.js";
-import { FeaturePlacement, FlowDelta, STAGE_SCHEMA_VERSION } from "./schema.js";
+import { FeaturePlacement, FlowDelta, Operation, STAGE_SCHEMA_VERSION, Wave } from "./schema.js";
+import { checkOperations } from "./operations.js";
+import {
+  checkOperationStories,
+  operationStories,
+  OperationWords,
+  type OperationStory,
+} from "./operation-stories.js";
 import { readStoryNumbers } from "./numbers.js";
 import {
   checkStories,
@@ -130,6 +137,9 @@ export const SmallAnswer = z.strictObject({
     )
     .default([]),
   requests: z.array(RequestIn).default([]),
+  /** ADR 0203 B: work that is no runtime step, each operation with its story's words and tasks. */
+  operations: z.array(Operation.extend(OperationWords.omit({ id: true }).shape)).default([]),
+  waves: z.array(Wave).optional(),
   questions: z.array(QuestionDraft).default([]),
 });
 export type SmallAnswer = z.infer<typeof SmallAnswer>;
@@ -182,6 +192,21 @@ stories:             # one per target flow: Atticus makes a task of each step yo
         criteria:
           - text: "Given <situation>, when <action>, then <what can be checked>"
             checks: [<each of the step's fields whose value this then clause asserts>]
+operations:          # work that changes no runtime step (a deployment, a pipeline, a setting, a secret's key, a route, a cut-over); leave out when there is none
+  - id: <a short id, lower case>
+    kind: deployment | pipeline | config | secret | route | cut-over
+    repos: [<each repo it is done in>]
+    what: <one sentence: what is done>
+    today: [<catalog ids of what is there now>]
+    sets: { platform: <a deployment's platform>, env: <its environment>, host: <its ingress host>, key: <a setting's key> }
+    undo: <how it is taken back; every cut-over gives one>
+    title: <its story's short title>
+    asA: <who>
+    iWant: <what>
+    soThat: <why>
+    tasks:
+      - repo: <one of its repos>
+        criteria: ["Given <how the repo is today>, when <the operation is done>, then <what can be checked in the repo>"]
 requests:            # every process or request from the knowledge below that a step meets
   - item: <process or request id>
     flow: <the target flow's id>
@@ -226,6 +251,10 @@ function wordingOf(a: SmallAnswer, stories: DeltaStory[]): StoriesAnswer {
     requests: a.requests,
   };
 }
+
+/** The keys of `shape` that `x` has. */
+const pick = (x: Record<string, unknown>, shape: object) =>
+  Object.fromEntries(Object.keys(shape).flatMap((k) => (x[k] === undefined ? [] : [[k, x[k]]])));
 
 const andWords = (xs: string[]) =>
   xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? "");
@@ -296,6 +325,8 @@ export interface SmallStageResult extends StageResult<SmallAnswer> {
   requests: RequestTask[];
   /** Why this change took the fast path. */
   size: string;
+  /** ADR 0203 B: the stories of the change's operations; none without any. */
+  operations?: OperationStory[];
 }
 
 export async function smallStage(
@@ -453,14 +484,37 @@ export async function smallStage(
       flows: a.flows,
       newFlows: a.newFlows,
       gaps: a.gaps,
+      ...(a.operations.length
+        ? {
+            operations: a.operations.map((x) => ({
+              kind: x.kind,
+              repos: x.repos,
+              what: x.what,
+              why: x.soThat,
+            })),
+          }
+        : {}),
       conflicts: [],
       questions: [],
     });
+    // ADR 0203 B: the operations as the architecture stage keeps them, and their stories' words.
+    const operations = a.operations.map((x) => Operation.parse(pick(x, Operation.shape)));
+    const opStories = operationStories(operations, a.waves);
     const { deltas, reads } = splitAnswer({ flows: a.targetFlows, reads: a.reads });
     const { stories, numbers } = numberedStories(deltas, estate, kept);
-    const wording = wordingOf(a, stories);
+    const wording: StoriesAnswer = {
+      ...wordingOf(a, stories),
+      ...(operations.length
+        ? {
+            operations: a.operations.map((x) =>
+              OperationWords.parse(pick(x, OperationWords.shape)),
+            ),
+          }
+        : {}),
+    };
     const requests = mergeRequests(wording, deltas, items);
-    return { placement, deltas, reads, stories, numbers, wording, requests };
+    const ops = { operations, ...(a.waves ? { waves: a.waves } : {}) };
+    return { placement, deltas, reads, stories, numbers, wording, requests, ops, opStories };
   };
 
   const spec: StageSpec<SmallAnswer> = {
@@ -506,12 +560,17 @@ export async function smallStage(
           ...(c?.onFile ? { onFile: true } : {}),
         }),
       ];
-      if (!d.deltas.length)
+      out.push(
+        ...checkOperations(d.ops.operations, d.ops.waves, estate, d.placement),
+        ...checkOperationStories(d.wording.operations, d.opStories),
+      );
+      // After ADR 0203 B, raised only with neither a target flow nor an operation.
+      if (!d.deltas.length && !d.ops.operations.length)
         out.push({
           rule: "small.no-target-flow",
           target: change.id,
           message:
-            "The answer changes no step of any flow: write the target flow of every flow the change changes, under targetFlows.",
+            "The answer changes no step of any flow: write the target flow of every flow the change changes, under targetFlows, or its work that is no runtime step under operations.",
           blocking: true,
         });
       out.push(
@@ -526,8 +585,8 @@ export async function smallStage(
       // App-only audit (archive): the specs and proposal this draft makes pass OpenSpec's
       // validate --strict, with a delta its archive would refuse as an error, as the stories
       // stage's gate does; so the archive never meets it.
-      if (openspecRootOf(root) && d.deltas.length) {
-        const f = await openspecFiles(root, change.id, d.stories, d.wording, estate);
+      if (openspecRootOf(root) && (d.deltas.length || d.ops.operations.length)) {
+        const f = await openspecFiles(root, change.id, d.stories, d.wording, estate, d.ops);
         out.push(
           ...(await validateDraft(root, change.id, dir, {
             ...f.files,
@@ -557,7 +616,13 @@ export async function smallStage(
       const by = "atticus change small";
       const files = [
         ...(await writePlacement(root, change, d.placement, estate, by)),
-        ...(await writeTargetFlows(dir, { flows: d.deltas, reads: d.reads }, estate, by)),
+        ...(await writeTargetFlows(
+          dir,
+          { flows: d.deltas, reads: d.reads, ...d.ops },
+          estate,
+          by,
+          change.id,
+        )),
         ...(await writeStories(
           root,
           change.id,
@@ -603,5 +668,11 @@ export async function smallStage(
   await recordKnowledge(root, change.id, "small", context);
   res.notes.unshift(size.words);
   const d = res.answer ? derive(res.answer) : undefined;
-  return { ...res, stories: d?.stories ?? [], requests: d?.requests ?? [], size: size.words };
+  return {
+    ...res,
+    stories: d?.stories ?? [],
+    requests: d?.requests ?? [],
+    size: size.words,
+    ...(d?.opStories.length ? { operations: d.opStories } : {}),
+  };
 }

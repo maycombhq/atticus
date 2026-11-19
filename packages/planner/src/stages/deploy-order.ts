@@ -166,7 +166,7 @@ export function deployIssues(
     u.kind === "migration" && migrations.some((m) => m !== u && m.name === u.name);
   const named = (u: Unit) => (twin(u) ? `${u.name} (in ${u.repo})` : u.name);
   const targetOf = (u: Unit) => (twin(u) ? `${u.repo}:${u.name}` : u.name);
-  if (!deploy?.length) {
+  if (!deploy?.some((s) => !s.operation)) {
     if (!needs.length && codes.length < 2) return [];
     const order = suggestedOrder(units, needs)
       .map((u, i) => `${i + 1}. ${unitWords(u)}${u.kind === "migration" ? `, in ${u.repo}` : ""}`)
@@ -195,6 +195,8 @@ export function deployIssues(
   ]);
   const at: (string | undefined)[] = deploy.map((s, i) => {
     const n = i + 1;
+    // ADR 0203 B: an operation's step is checked with the operations (operationDeployIssues).
+    if (s.operation) return undefined;
     if (!known.has(s.repo)) {
       out.push({
         rule: "delta.deploy-unknown-repo",
@@ -277,7 +279,7 @@ export function renderDeploy(
     "",
     ...deploy.map(
       (s, i) =>
-        `${i + 1}. ${s.migration ? `Migration ${s.migration}, in ${s.repo}.` : `${s.repo}${planned.has(s.repo) ? " (planned in this change: no repo builds it yet)" : ""}.`}${s.why?.trim() ? ` ${end(s.why)}` : ""}`,
+        `${i + 1}. ${s.operation ? `Operation ${s.operation}, in ${s.repo}.` : s.migration ? `Migration ${s.migration}, in ${s.repo}.` : `${s.repo}${planned.has(s.repo) ? " (planned in this change: no repo builds it yet)" : ""}.`}${s.why?.trim() ? ` ${end(s.why)}` : ""}`,
     ),
     "",
   ];
