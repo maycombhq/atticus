@@ -15,12 +15,7 @@ import type { ChangeContext } from "./context.js";
 import { tableWith } from "./markdown.js";
 import type { SignalFactor } from "./policy.js";
 import { taskRepoHeadings } from "./planned.js";
-import {
-  decodeRequirements,
-  evidenceIds,
-  parseRequirements,
-  REQUIREMENTS_FILE,
-} from "./requirements.js";
+import { decodeRequirements, parseRequirements, REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder } from "./store.js";
 import { outsideKindOf, outsideSystemsOf, type OutsideKind } from "./outside.js";
 
@@ -309,7 +304,7 @@ export async function changeFootprint(
   const type = ctx.orgPack.changeTypes.types.find((t) => t.id === change.type);
   const quick = !!type && quickPathOf(type);
   const staged = await stageFootprint(ctx, dir, { get, isSystem, outsideKind, ref }, quick);
-  const named = quick ? await requirementsIds(dir, byId) : [];
+  const named = quick ? await requirementsIds(dir) : [];
   if (named.length) from.add(REQUIREMENTS_FILE);
   for (const f of staged.from) from.add(f);
   for (const r of staged.repos) repos.add(r);
@@ -453,17 +448,16 @@ export async function changeFootprint(
 }
 
 /**
- * The ids a quick change's requirements file names: each evidence id that is a catalog record, and
- * each id under `## Planned` (its own, or one it says another change plans).
+ * The ids a quick change's requirements file says it touches: each id under `## Planned` (its
+ * own, or one it says another change plans). An id a question only cites as evidence is not
+ * one the change touches (the owner's decision after the b30 proof run: two changes citing the
+ * same service overlapped on it), and what the proposal, specs and design say they change can't
+ * be read for sure from prose, so it is left out too.
  */
-async function requirementsIds(dir: string, byId: Map<string, CatalogRecord>): Promise<string[]> {
+async function requirementsIds(dir: string): Promise<string[]> {
   const bytes = await readFile(join(dir, REQUIREMENTS_FILE)).catch(() => undefined);
   if (!bytes) return [];
-  const parsed = parseRequirements(decodeRequirements(bytes));
-  const cited = parsed.roles.flatMap((r) =>
-    r.rows.flatMap((row) => evidenceIds(row.cells[1] ?? "").filter((id) => byId.has(id))),
-  );
-  return [...new Set([...cited, ...parsed.planned])];
+  return [...new Set(parseRequirements(decodeRequirements(bytes)).planned)];
 }
 
 interface StoreTouch {

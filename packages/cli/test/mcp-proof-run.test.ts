@@ -201,8 +201,14 @@ describe("ask", () => {
         `Read as: who receives ${TOPIC_ID}: the receivers first, then what a change reaches past them.`,
       );
       expect(a.receivers.map((r) => r.id)).toEqual([FIELD_TOPIC_LISTENER]);
-      // The run's answer had the listener's own callers in `affected`, beside the listener.
-      expect(a.affected.every((x) => x.path.length <= 3)).toBe(true);
+      // The run's answer had the listener's own callers in `affected`, beside the listener, with
+      // nothing to tell them apart. `affected` keeps what it held (the whole walk); the receivers
+      // and what lies past them are new keys.
+      const walked = JSON.parse((await run(["impact", TOPIC_ID, "--json"])).out) as {
+        affected: unknown[];
+      };
+      expect(a.affected).toEqual(walked.affected);
+      expect(a.affected.some((x) => x.path.length > 3)).toBe(true);
       expect(a.further.length).toBeGreaterThan(0);
       expect(
         a.further.every((x) => x.path.length > 3 && x.path.includes(FIELD_TOPIC_LISTENER)),

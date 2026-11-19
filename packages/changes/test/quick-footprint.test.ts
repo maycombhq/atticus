@@ -84,20 +84,16 @@ async function twoChanges() {
 }
 
 describe("a quick change's footprint", () => {
-  it("counts the repos its tasks.md names, planned or in the manifest, and the ids its requirements cite and plan", async () => {
+  it("counts the repos its tasks.md names, planned or in the manifest, and the ids its requirements plan", async () => {
     const { root, portal, rates } = await twoChanges();
     const ctx = await loadChangeContext(root);
     const a = await changeFootprint(ctx, portal);
     expect(a.repos).toEqual(["forge-approvals-api", "forge-approvals-web"]);
-    expect(a.records).toEqual(["forge-approvals-api", "forge-approvals-web", "ledger-api"]);
+    // A record the requirements only cite as evidence is not one the change touches.
+    expect(a.records).toEqual(["forge-approvals-api", "forge-approvals-web"]);
     const b = await changeFootprint(ctx, rates);
     expect(b.repos).toEqual(["forge-approvals-api", "forge-ledger"]);
-    expect(b.records).toEqual([
-      "forge-approvals-api",
-      "forge.rates.updated",
-      "ledger-api",
-      "ledger-api.post-transfer",
-    ]);
+    expect(b.records).toEqual(["forge-approvals-api", "forge.rates.updated"]);
     expect(b.from).toEqual(expect.arrayContaining(["requirements.md", "tasks.md"]));
     // The spread it is weighed for cites the file the repos were read from, never nothing.
     for (const s of [...a.signals, ...b.signals]) expect(s.cite, s.detail).not.toBe("");
@@ -113,7 +109,7 @@ describe("a quick change's footprint", () => {
           interfaces: [],
           dataStores: [],
           tables: [],
-          records: ["forge-approvals-api", "ledger-api"],
+          records: ["forge-approvals-api"],
           repos: ["forge-approvals-api"],
           flows: [],
         },

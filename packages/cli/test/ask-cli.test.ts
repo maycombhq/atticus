@@ -74,7 +74,10 @@ describe("atticus ask", () => {
     };
     // Every component the walk names is in the answer (ADR 0201), the receivers apart from what
     // lies past them (the b30 proof run: a receiver's own callers read as receivers).
-    expect(components([...asked.affected, ...asked.further])).toEqual(components(walked.affected));
+    expect(asked.affected).toEqual(walked.affected);
+    expect(components(asked.further)).toEqual(
+      components(walked.affected.filter((x) => !asked.receivers.some((r) => r.id === x.id))),
+    );
     expect(asked.receivers.map((x) => x.id)).toEqual(["reports-job"]);
   });
 

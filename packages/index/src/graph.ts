@@ -309,10 +309,10 @@ export function impact(
 
 /**
  * Who receives a topic or an entry (b30 proof run: `ask "who consumes the topic …"` gave the whole
- * impact walk, so callers of the consumer sat beside the real receiver). `receivers` are the
- * components one interface away: an event's subscribers, a call's callers. `affected` is the
- * walk as far as them, and `further` what a change reaches past a receiver, which receives
- * nothing from the root.
+ * impact walk, so callers of the consumer sat beside the real receiver). `affected` is the walk
+ * as impact gives it, unchanged (C4 stays additive). Two keys are added beside it: `receivers`,
+ * the components one interface away (an event's subscribers, a call's callers), and `further`,
+ * what a change reaches past a receiver, which receives nothing from the root.
  */
 export function receiversOf(
   ix: CatalogIndex,
@@ -325,15 +325,14 @@ export function receiversOf(
   const r = impact(ix, rootId, depth, o);
   if (!r) return undefined;
   // root, the interface that names it, the component at its other end.
-  const affected = r.affected.filter((a) => a.path.length <= 3);
   const via = new Set(
-    affected.filter((a) => a.path.length === 2 && a.kind === "Interface").map((a) => a.id),
+    r.affected.filter((a) => a.path.length === 2 && a.kind === "Interface").map((a) => a.id),
   );
-  const receivers = affected.filter(
+  const receivers = r.affected.filter(
     (a) => a.path.length === 3 && a.kind !== "Interface" && via.has(a.path[1]!),
   );
   const further = r.affected.filter((a) => a.path.length > 3);
-  return { root: r.root, receivers, affected, further, gaps: r.gaps };
+  return { root: r.root, affected: r.affected, receivers, further, gaps: r.gaps };
 }
 
 /**

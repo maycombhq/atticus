@@ -231,11 +231,13 @@ describe("the map's own lookups", () => {
       "if-f1cd1f189eaa4b7b",
       "reports-job",
     ]);
-    // Every record of the walk is in one list or the other, and none past a receiver is in the first.
-    expect([...r.affected, ...r.further].map((a) => a.id).sort()).toEqual(
-      walk.affected.map((a) => a.id).sort(),
+    // `affected` is the walk as impact gives it (C4 stays additive); `receivers` and `further`
+    // are new keys beside it: the receivers, and what the walk reaches past them.
+    expect(r.affected).toEqual(walk.affected);
+    expect(r.further.map((a) => a.id)).toEqual(
+      walk.affected.filter((a) => a.path.length > 3).map((a) => a.id),
     );
-    expect(r.affected.every((a) => a.path.length <= 3)).toBe(true);
+    // reports-job has no callers here; the field estate's test has a receiver with some.
     expect(r.further.every((a) => a.path.length > 3)).toBe(true);
     expect(receiversOf(ix, "quillfeather-risk")).toBeUndefined();
     ix.close();

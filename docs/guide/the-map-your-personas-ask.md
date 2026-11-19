@@ -36,7 +36,7 @@ Three more things a persona should know of the tools:
 
 - **A topic's or an entry's name works** in `ask`, `impact`, `show` and `walk` where exactly one record has it. The answer's first line says which record it is.
 - **`impact` gives ids, owners and why, never a file and line.** `show <id>` gives the file and line a record was read from. Where neither the catalog nor the org pack names an owner, the column says "no owner on record".
-- **`ask "who consumes the topic …"` answers `receivers`** first; what a change reaches past a receiver is under `further`, and those receive nothing from the topic.
+- **`ask "who consumes the topic …"` names the `receivers`** apart: `affected` is the whole walk as `impact` gives it, `receivers` the components that receive the topic, and `further` what a change reaches past a receiver, which receives nothing from the topic.
 
 To hold a requirements file to the map without the starter personas, keep each role's questions in a table with the six columns Question, Evidence, Asked by, Answered by, Answer and State under that role's `## ` heading, and run `atticus change new --from requirements.md --check`. It refuses:
 
