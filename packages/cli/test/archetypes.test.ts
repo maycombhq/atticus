@@ -14,7 +14,7 @@ import {
   requireValid,
 } from "@maycombhq/changes";
 import { readChangeFiles } from "@maycombhq/naysayer";
-import { EXPAND_AGENT, metarepoOpenSpec } from "@maycombhq/planner";
+import { checkStageDraft, EXPAND_AGENT, metarepoOpenSpec } from "@maycombhq/planner";
 import { buildAndWrite } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { readyTasksOf } from "@maycombhq/taskrun";
@@ -38,8 +38,11 @@ import {
   section,
   SETTLE_FLOW,
   SETTLE_FLOW_YAML,
+  OUTSIDE_PARTY,
   STAGED_EVENT,
   STAGED_MIGRATION,
+  STAGED_NO_STEP,
+  STAGED_NOTHING,
   STAGED_PRODUCT,
   TOPIC,
   UNREAD_REPO,
@@ -793,7 +796,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
 
 // ===================================================================== the staged path
 
-describe("the staged path on the same three changes (ADR 0201 part 8)", () => {
+describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 part B)", () => {
   let m: Made;
   beforeAll(async () => {
     m = await estate();
@@ -909,10 +912,138 @@ describe("the staged path on the same three changes (ADR 0201 part 8)", () => {
     return said;
   }
 
+  /** A change's stages, each run once with its answer and expected to end done on that draft. */
+  async function staged(c: { id: string; feature: string; architecture: string; stories: string }) {
+    const feature = await stage(["change", "feature", c.id], c.feature);
+    expect(feature.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual([]);
+    expect(feature.result.state).toBe("done");
+    const architecture = await stage(["change", "architecture", c.id], c.architecture);
+    expect(architecture.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual(
+      [],
+    );
+    expect(architecture.result.state).toBe("done");
+    const stories = await stage(["plan", "stories", c.id], c.stories);
+    expect(stories.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual([]);
+    expect(stories.result.state).toBe("done");
+    expect(stories.code).toBe(0);
+    return { feature, architecture, stories };
+  }
+  const fileOf = (id: string, name: string) =>
+    readFile(join(changeFolder(m.root, id), ...name.split("/")), "utf8");
+  const afterOf = async (id: string) =>
+    (
+      (await tasksOf(m.root, id)) as (Awaited<ReturnType<typeof tasksOf>>[number] & {
+        after?: string[];
+      })[]
+    ).map((t) => [t.id, t.repo, t.after ?? []]);
+
   it(
-    "new product: the feature stage stops on its first draft and names the quick path",
+    "new product: a pipeline and a deployment in two planned repos go through the three stages, the outside party declared",
     async () => {
       const p = STAGED_PRODUCT;
+      await change(p, "feature");
+      const r = await staged(p);
+      // The two repos don't exist yet: a note each names how to add them; nothing blocks.
+      const planned = r.feature.result.findings.filter((f) => f.rule === "feature.planned-repo");
+      expect(planned.length).toBeGreaterThan(0);
+      expect(planned.every((f) => !f.blocking)).toBe(true);
+      expect(planned[0]!.message).toContain(`atticus repo add <its clone URL> --id ${PORTAL_API}`);
+      // The party outside the map is kept with its standing.
+      expect(await fileOf(p.id, "feature.md")).toContain(`- Outside the map: ${OUTSIDE_PARTY} (`);
+      expect(parse(await fileOf(p.id, "feature.yaml"))).toMatchObject({
+        outside: [{ id: OUTSIDE_PARTY }],
+      });
+      // One story an operation, one task a repo, under the planned repos; the deployment's
+      // task waits for its repo's pipeline.
+      expect(await afterOf(p.id)).toEqual([
+        ["o1.1", PORTAL_API, []],
+        ["o2.1", PORTAL_API, ["o1.1"]],
+        ["o1.2", PORTAL_WEB, []],
+        ["o2.2", PORTAL_WEB, ["o1.2"]],
+      ]);
+      const ready1 = await ready(m.root, p.id);
+      expect(ready1.plan.ready).toEqual(["o1.1", "o1.2"]);
+      expect(ready1.of("o2.1")).toMatchObject({ ready: false });
+      // The spec deltas the stage made, one capability a repo, pass OpenSpec's strict check.
+      expect(await fileOf(p.id, `specs/${PORTAL_API}-operations/spec.md`)).toContain(
+        "### Requirement: Build and release the portal",
+      );
+      const v = await metarepoOpenSpec(m.root)!.validate({ item: p.id, strict: true });
+      expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
+      expect(v.items[0]!.valid).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "migration: three services in two waves and a cut-over with its undo go through the three stages; tasks are ready in wave order",
+    async () => {
+      const g = STAGED_MIGRATION;
+      await change(g, "feature");
+      // A cut-over without undo is refused at the architecture stage's own check.
+      await stage(["change", "feature", g.id], g.feature);
+      const noUndo = await checkStageDraft(
+        m.root,
+        g.id,
+        "architecture",
+        g.architecture.replace(/ {4}undo: .*\n/, ""),
+      );
+      expect(noUndo.map((i) => i.rule)).toEqual(["operation.no-undo"]);
+
+      await staged(g);
+      const design = await fileOf(g.id, "design.md");
+      expect(design).toContain("## Operations");
+      expect(design).toContain(`| deploy-anvil | deployment | ${MOVED[2]} | 2 | ${MOVED[2]}: `);
+      expect(design).toContain(
+        `| Operation switch | cut-over in ${MOVED.join(", ")} | Point the traffic back at the hosts, which stay up for one release. |`,
+      );
+      expect(await fileOf(g.id, "target-flows/_operations.yaml")).toContain("id: deploy-anvil");
+
+      // Wave 2's tasks wait for the last task of each repo of wave 1: its cut-over.
+      expect(await afterOf(g.id)).toEqual([
+        ["o1.1", MOVED[0], []],
+        ["o2.1", MOVED[0], ["o1.1"]],
+        ["o1.2", MOVED[1], []],
+        ["o2.2", MOVED[1], ["o1.2"]],
+        ["o1.3", MOVED[2], ["o2.1", "o2.2"]],
+        ["o2.3", MOVED[2], ["o2.1", "o2.2", "o1.3"]],
+      ]);
+      let r = await ready(m.root, g.id);
+      expect(r.plan.ready).toEqual(["o1.1", "o1.2"]);
+      expect(r.lines[0]).toBe(
+        `Ready to run, in cross-repo order: o1.1 (${MOVED[0]}), o1.2 (${MOVED[1]}).`,
+      );
+      expect(r.of("o1.3")).toMatchObject({ ready: false, waitsFor: ["o2.1", "o2.2"] });
+      await tick(m.root, g.id, "o1.1");
+      await tick(m.root, g.id, "o1.2");
+      r = await ready(m.root, g.id);
+      expect(r.plan.ready).toEqual(["o2.1", "o2.2"]);
+      // Half of wave 1's cut-over done: wave 2 is still held.
+      await tick(m.root, g.id, "o2.1");
+      r = await ready(m.root, g.id);
+      expect(r.plan.ready).toEqual(["o2.2"]);
+      expect(r.of("o1.3")).toMatchObject({ ready: false, waitsFor: ["o2.2"] });
+      expect(r.lines).toContain(
+        "  Not ready: task o1.3: it waits for task o2.2 (after) to be done first.",
+      );
+      await tick(m.root, g.id, "o2.2");
+      r = await ready(m.root, g.id);
+      expect(r.plan.ready).toEqual(["o1.3"]);
+      await tick(m.root, g.id, "o1.3");
+      r = await ready(m.root, g.id);
+      expect(r.plan.ready).toEqual(["o2.3"]);
+
+      const v = await metarepoOpenSpec(m.root)!.validate({ item: g.id, strict: true });
+      expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
+      expect(v.items[0]!.valid).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "kept: a change with no flow and no operation still stops once and names the quick path",
+    async () => {
+      const p = STAGED_NOTHING;
       await change(p, "feature");
       const said = await refusesOnce(["change", "feature", p.id], p.feature);
       expect(said).toContain("The feature touches nothing");
@@ -923,17 +1054,11 @@ describe("the staged path on the same three changes (ADR 0201 part 8)", () => {
       expect(plan.code).toBe(1);
       expect(plan.err.join("\n")).toContain(`${p.id} has nothing to plan`);
       expect(plan.err.join("\n")).toContain(QUICK_PATH_HINT);
-    },
-    T,
-  );
 
-  it(
-    "migration: the one-step stage stops on its first draft and names the quick path",
-    async () => {
-      const g = STAGED_MIGRATION;
+      const g = STAGED_NO_STEP;
       await change(g, "small-change");
-      const said = await refusesOnce(["change", "small", g.id], g.small);
-      expect(said).toContain("The answer changes no step of any flow");
+      const small = await refusesOnce(["change", "small", g.id], g.small);
+      expect(small).toContain("The answer changes no step of any flow");
       expect((await loopOf(g.id, "small")).state).toBe("stopped");
     },
     T,
