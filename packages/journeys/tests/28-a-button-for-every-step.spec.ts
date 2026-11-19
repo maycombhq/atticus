@@ -4,6 +4,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Page } from "@playwright/test";
 import {
   accessible,
   expect,
@@ -146,21 +147,11 @@ test.describe("reading a repo from the app, with the person's own assistant", ()
 });
 
 test.describe("a correction on the canvas, applied from the app", () => {
-  test.describe.configure({ mode: "serial" });
-  let app: App | undefined;
-  test.beforeAll(async () => {
-    app = await startApp(await forgeStudioMetarepo());
-  });
-  test.afterAll(async () => {
-    if (!app) return;
-    await stopApp(app);
-    await rm(dirname(app.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  });
-
-  test("says where a call really goes, Apply redraws the map, and the arrow moves", async ({
-    page,
-  }) => {
-    const a = app!;
+  /**
+   * The person's pairing on the canvas: the web app's call to POST /api/notes goes to the outside
+   * system northwind-notes, not to the api. Written, the map's bar offers its Apply.
+   */
+  async function correctOnCanvas(page: Page, a: App) {
     await open(page, a, "canvas");
     const outline = page.getByRole("tree");
     // Open the repo's components and pick the web app's box: its links are in the inspector.
@@ -188,37 +179,122 @@ test.describe("a correction on the canvas, applied from the app", () => {
     const bar = page.getByRole("region", { name: "Corrections waiting to be applied" });
     await expect(bar).toContainText("Your corrections aren't in the map yet: forge-studio.");
     await expect(bar.getByRole("button", { name: "Apply to forge-studio's map" })).toBeVisible();
-    await accessible(page, "a link corrected on the canvas");
-    await apply.click();
-    // ADR 0195 point 4: on this one-repo estate the correction's build removes more than a tenth
-    // of forge-studio's records (the web app's arrow to the api, and what it made), so Apply
-    // lists them and waits for their count, as a scan's confirm does, before it writes anything.
-    const review = form.getByRole("button", { name: /^Review the \d+ removals$/ });
-    await expect(review).toBeVisible({ timeout: 90_000 });
-    const n = Number(/\d+/.exec((await review.textContent()) ?? "")?.[0]);
-    await review.click();
-    const dialog = page.getByRole("dialog");
-    // Each removal says what explains it: the person's own correction.
-    await expect(
-      dialog.getByRole("cell", { name: /^A pairing changed \(facts\/\*\.corrections\.jsonl\)/ }),
-    ).toHaveCount(n);
-    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
-    await accessible(page, "a correction's removals, waiting for their count");
-    await dialog.getByRole("button", { name: `Apply, removing ${n} records` }).click();
-    // Apply can take the form away (the link it was on moves): what happened stays on the page,
-    // with where to propose it.
-    await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({
-      timeout: 90_000,
-    });
-    await expect(bar).toHaveCount(0);
-    // The arrow moved: the web app's call goes to the outside system now, not to the api.
-    await open(page, a, "canvas");
-    await expect(
-      page.getByRole("tree").getByRole("treeitem", { name: /northwind-notes/i }),
-    ).toBeVisible({ timeout: 30_000 });
-    // And Home offers Propose for review for it.
-    await open(page, a, "home");
-    await expect(page.getByRole("button", { name: "Propose for review" }).first()).toBeVisible();
+    return { form, apply, bar };
+  }
+
+  test("says where a call really goes, Apply redraws the map with no confirm, and the arrow moves", async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const a = await startApp(await forgeStudioMetarepo());
+    try {
+      const { form, apply, bar } = await correctOnCanvas(page, a);
+      await accessible(page, "a link corrected on the canvas");
+      await apply.click();
+      // ADR 0195 point 4 with the reconnect fix (ADR 0204): the arrow the pairing moves counts
+      // toward neither limit, so the one other removal (the feature the old call made) is under a
+      // tenth of forge-studio's 12 records, and is written with no confirm, as an explained
+      // removal under the limits always was.
+      await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({
+        timeout: 90_000,
+      });
+      await expect(form.getByRole("button", { name: /^Review the \d+ removals$/ })).toHaveCount(0);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(bar).toHaveCount(0);
+      // The arrow moved: web → northwind-notes is drawn, web → api is gone.
+      await open(page, a, "canvas");
+      const outline = page.getByRole("tree");
+      await expect(outline.getByRole("treeitem", { name: /northwind-notes/i })).toBeVisible({
+        timeout: 30_000,
+      });
+      // The outline keeps the boxes the person opened: open each only if it is closed.
+      for (const name of [/system studio/, /forge-studio/]) {
+        const item = outline.getByRole("treeitem", { name }).first();
+        await expect(item).toBeVisible({ timeout: 30_000 });
+        if ((await item.getAttribute("aria-expanded")) !== "true")
+          await item.getByRole("button").first().dblclick();
+      }
+      const web = outline.getByRole("treeitem", { name: /component web/i }).first();
+      await expect(web).toBeVisible({ timeout: 30_000 });
+      await web.getByRole("button").first().click();
+      await expect(
+        page.locator("summary", { hasText: "Why is web calls northwind-notes linked?" }).first(),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page.locator("summary", { hasText: "Why is web calls api linked?" }),
+      ).toHaveCount(0);
+      // The build says what it removed and why: the arrow because its call goes to
+      // northwind-notes now, the feature because the person's pairing changed what was read.
+      await open(page, a, "catalog-builds");
+      const report = page.getByRole("region", { name: "The last build here" });
+      await expect(report).toContainText("Written atticus verify forge-studio --write");
+      await expect(report).toContainText("2 removed");
+      await report.locator("summary", { hasText: "The 2 records it removed, and why" }).click();
+      const last = report.getByRole("table", { name: "The records the build would remove" });
+      const arrow = last.getByRole("row").filter({ hasText: "Interface/if-" });
+      await expect(arrow).toHaveCount(1);
+      await expect(arrow).toContainText("its call goes to northwind-notes now");
+      const feature = last.getByRole("row").filter({ hasText: "Capability/feature.notes" });
+      await expect(feature).toHaveCount(1);
+      await expect(feature).toContainText("A pairing changed (facts/*.corrections.jsonl)");
+      await expect(feature).toContainText("forge-studio's facts snapshot changed");
+      await expect(feature).not.toContainText("its call goes to");
+      await expect(last.getByRole("row")).toHaveCount(3);
+      // And Home offers Propose for review for it.
+      await open(page, a, "home");
+      await expect(page.getByRole("button", { name: "Propose for review" }).first()).toBeVisible();
+    } finally {
+      await stopApp(a);
+      await rm(dirname(a.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+  });
+
+  test("the same pairing with a removal over the limit still waits for the person's count", async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const a = await startApp(await forgeStudioMetarepo());
+    try {
+      // The person also says the web app's API base setting is wrong (as Map › Facts does):
+      // its record goes, and it is no moved arrow, so it counts.
+      await open(page, a, "home");
+      const token = await page.locator('meta[name="atticus-token"]').getAttribute("content");
+      const said = await page.request.post(`${a.url}/api/facts/forge-studio/corrections`, {
+        headers: { "X-Atticus-Token": token ?? "" },
+        data: {
+          fact: "cfg-api-base",
+          action: "wrong",
+          reason: "the web app reads its base from the gateway",
+        },
+      });
+      expect(said.status(), await said.text()).toBeLessThan(300);
+      const { form, apply } = await correctOnCanvas(page, a);
+      await apply.click();
+      // Two counted removals (the setting and the feature) are more than a tenth of 12: Apply
+      // lists them and waits for their count before it writes anything.
+      const review = form.getByRole("button", { name: /^Review the \d+ removals$/ });
+      await expect(review).toBeVisible({ timeout: 90_000 });
+      const n = Number(/\d+/.exec((await review.textContent()) ?? "")?.[0]);
+      await review.click();
+      const dialog = page.getByRole("dialog");
+      // Each removal says what explains it: the person's own corrections.
+      await expect(
+        dialog.getByRole("cell", { name: /^A pairing changed \(facts\/\*\.corrections\.jsonl\)/ }),
+      ).toHaveCount(n);
+      await expect(dialog.getByRole("row").filter({ hasText: "Setting/" })).toHaveCount(1);
+      await expect(
+        dialog.getByRole("row").filter({ hasText: "its call goes to northwind-notes now" }),
+      ).toHaveCount(1);
+      await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+      await accessible(page, "a correction's removals, waiting for their count");
+      await dialog.getByRole("button", { name: `Apply, removing ${n} records` }).click();
+      await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({
+        timeout: 90_000,
+      });
+    } finally {
+      await stopApp(a);
+      await rm(dirname(a.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
   });
 });
 
