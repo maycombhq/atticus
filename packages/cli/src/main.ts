@@ -23,6 +23,7 @@ import { VERSION } from "./version.js";
 import { aliasArgv } from "./top-commands.js";
 import { printProgress, withRunLine } from "./run-progress.js";
 import { OPTIONS, optionsFor } from "@maycombhq/ai/cli-options";
+import { canAsk } from "./ask.js";
 
 /**
  * The model runtime, loaded when a command uses it. Its error classes are read from the same
@@ -95,6 +96,9 @@ const NO_AI = new Set([
   "waiting",
   "mcp",
   "doctor",
+  // ADR 0202: where a metarepo stands, and the checks run on site; files only.
+  "status",
+  "selfcheck",
   "setup",
   "verify",
   "baseline",
@@ -574,6 +578,8 @@ Usage:
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, the tier your assistant reads a repo at, and (where runtime.yaml allows copilot-acp) the Copilot language server, its version and its sign-in, without running a session (ADR 0171)
   atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
+  atticus status [--json]              Where this metarepo stands, in one line: your Atticus, the metarepo's stamp, whether this Atticus reads its catalog, what the editor's extension needs when it said so, and the one command to run (or Nothing to do). The same line ends every refusal. Exit 0 when up to date, 1 otherwise
+  atticus selfcheck [--names] [--quick] [--json]  Run on site, read-only: four named checks against this metarepo (every call the join left has a reason; every refusal names a next step; a build twice gives the same bytes; no long command silent for over 30 seconds), then a shape card of fixed words. Counts are given in bands; no name, id, path, hash or exact count of the estate is printed. Nothing is sent anywhere. --names adds, on screen only, the exact counts and the first 20 ids or paths behind each failed check. --quick skips the check that builds the catalog twice in memory. Exit 0 when none failed, 1 when one did, 2 when it couldn't run (no metarepo, or another command holds the lock)
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
@@ -889,6 +895,25 @@ function num(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** The commands that are one word: what follows it on the line is never a command word. */
+const ONE_WORD = new Set(["selfcheck", "status", "doctor"]);
+
+/**
+ * The command as the log names it (ADR 0050): its words, never a value. The first two
+ * positional words as the parser reads them, so the folder after `--root` is not one of them;
+ * one word for the commands that have no second.
+ */
+export function loggedWords(argv: string[]): string[] {
+  let at: number[];
+  try {
+    at = positionalsAt(argv);
+  } catch {
+    return [];
+  }
+  const words = at.map((i) => argv[i]!);
+  return words.slice(0, ONE_WORD.has(words[0] ?? "") ? 1 : 2);
+}
+
 /** Run the CLI. Returns the process exit code: 0 ok, 1 problems found, 2 usage error. */
 /**
  * Run `atticus <argv>`. What ran, how it ended and how long it took go to the metarepo's local
@@ -912,7 +937,7 @@ export async function main(
   // ADR 0124 addendum D-cli: `legacy <words>`, `join`, `stories` and `task <change> <task>` are
   // the commands that exist, so everything after this (flags, hand-off, the log) sees those.
   const argv = aliasArgv(given, positionalsAt(given));
-  const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
+  const words = loggedWords(argv);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
   ];
@@ -943,8 +968,26 @@ export async function main(
   // ADR 0187: the command words and ids, its flag names (never their values), what it prints.
   const said = o.record ? recorderFor(argv, flags, root) : undefined;
   // Run in the app's server, inside a job, each line also goes to the job's Console entry.
+  // ADR 0202 point 9: a question is never asked with --json or under CI, whoever set `ask`.
+  // Nor in an assistant's session, nor when the app or an editor started the command.
+  const { ask, ...rest } = givenIo;
+  const asks =
+    ask && canAsk({ stdinTTY: true, stdoutTTY: true, argv, env: process.env })
+      ? {
+          // The time a person takes to answer is theirs, never the command's silence.
+          ask: async (question: string) => {
+            said?.waits(true);
+            try {
+              return await ask(question);
+            } finally {
+              said?.waits(false);
+            }
+          },
+        }
+      : {};
   const io: Output = {
-    ...givenIo,
+    ...rest,
+    ...asks,
     out: (l) => {
       said?.line(l);
       printToCurrent(l);
@@ -965,12 +1008,16 @@ export async function main(
   };
   try {
     // A Copilot step's progress (printProgress) goes to this run's log too.
-    const code = await (said
-      ? withRunLine(
-          (l) => said.line(l),
-          () => dispatch(argv, io),
-        )
-      : dispatch(argv, io));
+    // ADR 0202 point 8: a refusal in the command ends with where the metarepo stands, said last.
+    const { refusalScope } = await import("./standing.js");
+    const code = await refusalScope(io, () =>
+      said
+        ? withRunLine(
+            (l) => said.line(l),
+            () => dispatch(argv, io),
+          )
+        : dispatch(argv, io),
+    );
     // Review of beta.23: a run this command resumed is done with; the resume the app kept for it
     // is forgotten, so the app's own check or its next start never resumes it again.
     if (code === 0 && argv.some((a) => a === "--resume" || a.startsWith("--resume="))) {
@@ -1293,6 +1340,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ? process.env.ATTICUS_ROOT
         : process.cwd(),
   );
+  // ADR 0202 point 7: the build is told this Atticus's version, and the others this metarepo
+  // needs, once, before any command that may meet a catalog a newer Atticus built.
+  (await import("./this-atticus.js")).tellScanner(root);
   // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
   // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
   {
@@ -1302,6 +1352,16 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       if (refusedNewer !== undefined) return refusedNewer;
     }
   }
+  // ADR 0202 point 8: where this folder stands, a metarepo or not.
+  if (group === "status" && !command)
+    return (await import("./standing.js")).statusCommand(root, { json: values.json === true }, io);
+  // ADR 0202 point 10: the invariants the tests hold, run on site; nothing leaves the machine.
+  if (group === "selfcheck" && !command)
+    return (await import("./selfcheck.js")).selfcheckCommand(
+      root,
+      { json: values.json === true, names: values.names === true, quick: values.quick === true },
+      io,
+    );
   if (group === "catalog" && command === "validate") {
     if (!arg) {
       io.err(
@@ -1484,10 +1544,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const { repoRename } = await import("./repo-rename.js");
     const counts = countFlags(values, io);
     if (counts === undefined) return 2;
-    return repoRename(root, positionals[2], positionals[3], io, {
-      json: values.json === true,
-      ...counts,
-    });
+    return withBuildConfirm(io, counts, (c) =>
+      repoRename(root, positionals[2], positionals[3], io, { json: values.json === true, ...c }),
+    );
   }
   if (group === "repo" && (command === "add" || command === "describe")) {
     const m = await loadRepoCommands();
@@ -2234,28 +2293,30 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const { verifyCommand } = await import("./verify-commands.js");
     const counts = countFlags(v.values, io);
     if (counts === undefined) return 2;
-    return verifyCommand(
-      // --write is a switch, so a --root right after it is read (it once took --root as its value).
-      text(v.values.root) ? resolve(text(v.values.root)!) : root,
-      repo,
-      {
-        ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
-        ...(text(v.values.commit) ? { commit: text(v.values.commit)! } : {}),
-        ...(text(v.values.routed)
-          ? {
-              routed: text(v.values.routed)!
-                .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean),
-            }
-          : {}),
-        write: v.values.write === true,
-        verbose: v.values.verbose === true,
-        json: v.values.json === true,
-        ...(v.values.skipped === true ? { skipped: true } : {}),
-        ...counts,
-      },
-      io,
+    return withBuildConfirm(io, counts, (c) =>
+      verifyCommand(
+        // --write is a switch, so a --root right after it is read (it once took --root as its value).
+        text(v.values.root) ? resolve(text(v.values.root)!) : root,
+        repo,
+        {
+          ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
+          ...(text(v.values.commit) ? { commit: text(v.values.commit)! } : {}),
+          ...(text(v.values.routed)
+            ? {
+                routed: text(v.values.routed)!
+                  .split(",")
+                  .map((x) => x.trim())
+                  .filter(Boolean),
+              }
+            : {}),
+          write: v.values.write === true,
+          verbose: v.values.verbose === true,
+          json: v.values.json === true,
+          ...(v.values.skipped === true ? { skipped: true } : {}),
+          ...c,
+        },
+        io,
+      ),
     );
   }
   if (group === "scan" && command === "verify") {
@@ -2339,19 +2400,23 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   const scanCounts = group === "scan" ? countFlags(values, io) : {};
   if (scanCounts === undefined) return 2;
   if (group === "scan")
-    return scanCommand(
-      root,
-      {
-        ...(repoIds ? { repos: repoIds } : {}),
-        full: values.full === true,
-        dryRun: values["dry-run"] === true,
-        json: values.json === true,
-        noDrift: values["no-drift"] === true,
-        warnings: values.warnings === true,
-        ...(typeof values.ref === "string" && values.ref.trim() ? { ref: values.ref.trim() } : {}),
-        ...scanCounts,
-      },
-      io,
+    return withBuildConfirm(io, scanCounts, (c) =>
+      scanCommand(
+        root,
+        {
+          ...(repoIds ? { repos: repoIds } : {}),
+          full: values.full === true,
+          dryRun: values["dry-run"] === true,
+          json: values.json === true,
+          noDrift: values["no-drift"] === true,
+          warnings: values.warnings === true,
+          ...(typeof values.ref === "string" && values.ref.trim()
+            ? { ref: values.ref.trim() }
+            : {}),
+          ...c,
+        },
+        io,
+      ),
     );
   // WP7.5: follow a change without being on it.
   if (group === "cites") {
@@ -3288,7 +3353,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     if (counts === undefined) return 2;
     const json = values.json === true;
     if (command === "build")
-      return m.catalogBuild(root, { check: values.check === true, json, ...counts }, io);
+      return withBuildConfirm(io, counts, (c) =>
+        m.catalogBuild(root, { check: values.check === true, json, ...c }, io),
+      );
     if (command === "edits") {
       const drop = values["drop-fields"];
       if (drop !== undefined && !(typeof drop === "string" && /^\d+$/.test(drop))) {
@@ -4196,6 +4263,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
  * build listed (a confirmation never covers more than was shown). Undefined, said, when one isn't
  * a whole number.
  */
+const withBuildConfirm: typeof import("./confirm-once.js").withBuildConfirm = (...a) =>
+  import("./confirm-once.js").then((m) => m.withBuildConfirm(...a));
+
 function countFlags(
   values: Record<string, unknown>,
   io: Output,

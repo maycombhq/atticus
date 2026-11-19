@@ -50,6 +50,7 @@ import {
 import { gitUser } from "@maycombhq/workspace";
 import { buildPlanOf, pageChanged, prunePlanHash, undoPlanHash } from "./build-report.js";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 import { catalogBuildProgress } from "./write-progress.js";
 
 /**
@@ -144,7 +145,7 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   if (r.reasons.includes("large-removals"))
     return `The build would remove ${r.allowRemovals ?? 0} records, more than the limit: confirm exactly these with ${command} --allow-removals ${r.allowRemovals ?? 0}.`;
   if (r.reasons.includes("empty"))
-    return "The build has no record from any repo's code, so the catalog is left as it was.";
+    return "The build has no record from any repo's code, so the catalog is left as it was. atticus doctor --counts says how many repos are read.";
   return r.message.split("\n")[0] ?? "Nothing written.";
 }
 
@@ -207,6 +208,7 @@ export async function catalogBuild(
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
     });
     if (!o.check && !r.guard.refused && !r.changed) progress.end({ done: true });
+    if (!o.check && r.guard.refused) await refusalEnds(root, r.guard.refused);
     if (o.check) {
       if (o.json)
         io.out(JSON.stringify({ upToDate: r.upToDate, sources: r.build.sources }, null, 2));
@@ -295,7 +297,7 @@ export async function catalogUndo(
       ...(await newerCatalogFiles(root, { undoDir })),
       ...("problem" in p ? [] : await newerInUndoPlan(undoDir, p)),
     ];
-    return files.length ? refuseNewer(io, o.json, files, "Nothing undone") : undefined;
+    return files.length ? refuseNewer(root, io, o.json, files, "Nothing undone") : undefined;
   };
   const list = await listUndo(undoDir);
   const plan = await planUndo(undoDir, o.n);
@@ -344,10 +346,9 @@ export async function catalogUndo(
       io.err(
         "Nothing undone: files under catalog/generated were changed by hand since the last build. Make them curated (atticus catalog edits --curate) or discard them (atticus catalog build --discard-edits <count>) first.",
       );
-      if (o.json)
-        io.out(
-          JSON.stringify({ refused: { reasons: ["hand-edits"], edits: g.refused.edits } }, null, 2),
-        );
+      const refused = { reasons: ["hand-edits"], edits: g.refused.edits };
+      await refusalEnds(root, refused);
+      if (o.json) io.out(JSON.stringify({ refused }, null, 2));
       return 1;
     }
     // A catalog with no build.json (an undo took back the upgrade) has no hand-edit guard of the
@@ -359,14 +360,9 @@ export async function catalogUndo(
         io.err(
           `Nothing undone: ${edited.length} ${edited.length === 1 ? "file was" : "files were"} changed since ${plan.copies[0]!.command} wrote ${edited.length === 1 ? "it" : "them"}: ${edited.slice(0, 10).join(", ")}${edited.length > 10 ? ` and ${edited.length - 10} more` : ""}. Put ${edited.length === 1 ? "it" : "them"} back as ${edited.length === 1 ? "it was" : "they were"}, or keep ${edited.length === 1 ? "it" : "them"} and run atticus upgrade --yes.`,
         );
-        if (o.json)
-          io.out(
-            JSON.stringify(
-              { refused: { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) } },
-              null,
-              2,
-            ),
-          );
+        const refused = { reasons: ["hand-edits"], edits: edited.map((path) => ({ path })) };
+        await refusalEnds(root, refused);
+        if (o.json) io.out(JSON.stringify({ refused }, null, 2));
         return 1;
       }
     }
@@ -411,23 +407,19 @@ export async function catalogUndo(
  * Beta.28.2 (ADR 0197): a command that refuses a catalog a newer Atticus wrote, in the build's
  * words (upgrade Atticus, never `atticus upgrade`), and with `--json` the build's refusal shape.
  */
-function refuseNewer(
+async function refuseNewer(
+  root: string,
   io: Output,
   json: boolean | undefined,
   files: readonly NewerFile[],
   what: string,
   extra: Record<string, unknown> = {},
-): number {
+): Promise<number> {
   const message = `${what}: ${newerAtticusWords(files)}`;
   io.err(message);
-  if (json)
-    io.out(
-      JSON.stringify(
-        { ...extra, refused: { reasons: ["newer-atticus"], message, newer: files } },
-        null,
-        2,
-      ),
-    );
+  const refused = { reasons: ["newer-atticus"], message, newer: files };
+  await refusalEnds(root, refused);
+  if (json) io.out(JSON.stringify({ ...extra, refused }, null, 2));
   return 1;
 }
 
@@ -860,7 +852,10 @@ export async function catalogEdits(
   // Beta.28.2 (ADR 0197): a catalog a newer Atticus wrote has no hand edits this one can tell.
   const newerFiles = await newerCatalogFiles(root, { undoDir });
   if (newerFiles.length)
-    return refuseNewer(io, o.json, newerFiles, "Nothing to curate", { edits: [], decisions: [] });
+    return refuseNewer(root, io, o.json, newerFiles, "Nothing to curate", {
+      edits: [],
+      decisions: [],
+    });
   const memo = new Map<string, Map<string, CatalogRecord>>();
   const listed = await planEdits(root, undoDir, memo);
   // Property seed 1562698156: every writer refuses until `atticus upgrade --yes`, and so does
@@ -868,14 +863,9 @@ export async function catalogEdits(
   if (listed.notUpgraded) {
     const why = `Nothing to curate: catalog/generated was written before beta.27 (there is no catalog/sources/build.json${(await latestUndoIsUpgrade(undoDir)) ? ": an undo took the upgrade back" : ""}), so no file in it is a hand edit yet. Run atticus upgrade: it adopts every record file there, yours with them, into legacy slots (it shows what it would do first; atticus upgrade --yes applies it).`;
     io.err(why);
-    if (o.json)
-      io.out(
-        JSON.stringify(
-          { edits: [], decisions: [], refused: { reasons: ["not-upgraded"], message: why } },
-          null,
-          2,
-        ),
-      );
+    const refused = { reasons: ["not-upgraded"], message: why };
+    await refusalEnds(root, refused);
+    if (o.json) io.out(JSON.stringify({ edits: [], decisions: [], refused }, null, 2));
     return 1;
   }
   if (listed.unreadableManifest) {
@@ -939,7 +929,10 @@ export async function catalogEdits(
     // Planned again under the lock: what it writes is what it listed, or nothing.
     const newerNow = await newerCatalogFiles(root, { undoDir });
     if (newerNow.length)
-      return refuseNewer(io, o.json, newerNow, "Nothing to curate", { edits: [], decisions: [] });
+      return refuseNewer(root, io, o.json, newerNow, "Nothing to curate", {
+        edits: [],
+        decisions: [],
+      });
     const plans = await planEdits(root, undoDir, memo);
     if (JSON.stringify(plans) !== JSON.stringify(listed)) {
       const why =

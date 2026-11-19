@@ -12361,6 +12361,37 @@
         }
       }
     },
+    "/api/status": {
+      "get": {
+        "operationId": "getStatus",
+        "summary": "3.19.0 (ADR 0202): where this metarepo stands (atticus status --json): this Atticus, the metarepo's stamp, whether this Atticus reads its catalog, what the extension needs, the state that holds (no-metarepo, catalog-newer, atticus-behind, metarepo-behind, up-to-date), the one command to run and all of it in one line. Reads only",
+        "tags": [
+          "run"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/upgrade": {
       "get": {
         "operationId": "getUpgrade",
@@ -42619,6 +42650,64 @@
         ],
         "additionalProperties": false
       },
+      "StandingView": {
+        "type": "object",
+        "properties": {
+          "atticus": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "no-metarepo",
+              "catalog-newer",
+              "atticus-behind",
+              "metarepo-behind",
+              "up-to-date"
+            ]
+          },
+          "stamp": {
+            "type": "string"
+          },
+          "stampUnread": {
+            "type": "boolean",
+            "const": true
+          },
+          "catalog": {
+            "type": "string",
+            "enum": [
+              "none",
+              "read",
+              "newer"
+            ]
+          },
+          "catalogBuiltBy": {
+            "type": "string"
+          },
+          "extensionNeeds": {
+            "type": "string"
+          },
+          "pendingSteps": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "do": {
+            "type": "string"
+          },
+          "line": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "atticus",
+          "state",
+          "catalog",
+          "pendingSteps",
+          "line"
+        ],
+        "additionalProperties": false
+      },
       "TaskContextView": {
         "type": "object",
         "properties": {
@@ -48283,6 +48372,9 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "atticus": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -48294,6 +48386,9 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "standing": {
+                    "type": "string"
                   },
                   "command": {
                     "type": "string"
@@ -48606,6 +48701,9 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "atticus": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -48617,6 +48715,9 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "standing": {
+                    "type": "string"
                   },
                   "command": {
                     "type": "string"
@@ -49479,6 +49580,9 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "atticus": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -49490,6 +49594,9 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "standing": {
+                "type": "string"
               },
               "command": {
                 "type": "string"
@@ -49795,6 +49902,9 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "atticus": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -49806,6 +49916,9 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "standing": {
+                "type": "string"
               },
               "command": {
                 "type": "string"

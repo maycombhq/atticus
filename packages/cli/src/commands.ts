@@ -30,6 +30,13 @@ export interface Output {
    * out, it is an `err` line (a terminal's standard error, the run log).
    */
   progress?(line: string): void;
+  /**
+   * ADR 0202 point 9: ask the person one question and give back the line they typed (undefined
+   * at the end of input). Set only by the command line's own process, when standard input and
+   * output are both a terminal, `--json` is not given and `CI` is not set; a test injects it.
+   * Never set for a job the app runs, so nothing there ever waits for an answer.
+   */
+  ask?(question: string): Promise<string | undefined>;
 }
 
 /** One fact a step reports as data (Output.report). */

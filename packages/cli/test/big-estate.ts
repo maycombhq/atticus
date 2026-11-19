@@ -40,6 +40,12 @@ export interface BigEstateOptions {
   /** Routes per gateway proxy. */
   routes?: number;
   /**
+   * ADR 0202 (the shape card's `deploy-token-hosts`): with `false`, no service calls a host
+   * written as a deploy token nothing sets; those calls go to the outside vendor instead. The
+   * default keeps them, so an estate made without this option is the one it always was.
+   */
+  tokens?: boolean;
+  /**
    * Clusters of repos (repo r in cluster r mod clusters): calls stay in a repo's cluster and each
    * cluster's paths use nouns of its own, so each cluster's flows are features of their own (with
    * one, the default, the estate's flows are one feature). Each cluster needs two repos or more.
@@ -250,7 +256,7 @@ export function bigRepoFacts(
         path = basePathOf(to) + entryPath(to, k, c);
         method = METHODS[k % 4]!;
       }
-    } else if (kind < 0.95) {
+    } else if (kind < 0.95 || o.tokens === false) {
       host = `api.northwind-pay.example`;
       path = `/v2/${NOUNS[k % NOUNS.length]}s/{id}`;
       method = "POST";
@@ -321,6 +327,7 @@ const defaults = (o: BigEstateOptions) => ({
   routes: Math.min(o.routes ?? 40, o.entries ?? 360),
   clusters: o.clusters ?? 1,
   fieldNames: o.fieldNames ?? 0,
+  ...(o.tokens === false ? { tokens: false as const } : {}),
   termRepos: Math.min(o.termRepos ?? 0, o.gateways ?? 0, o.repos ?? 60),
   termValues: o.termValues ?? 90,
 });

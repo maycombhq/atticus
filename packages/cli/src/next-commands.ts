@@ -288,6 +288,8 @@ export interface NextState {
    * refuse, so the first step is to upgrade Atticus.
    */
   newerCatalog?: string;
+  /** ADR 0202 point 7: what installs that Atticus, by its exact version when build.json says it. */
+  newerCommand?: string;
 }
 
 const METAREPO = "metarepo";
@@ -341,7 +343,7 @@ async function staleOf(root: string, repo: string): Promise<RepoState["stale"]> 
 
 /** Read everything the steps depend on. Files that don't read are problems, never a crash. */
 export async function readNextState(root: string): Promise<NextState> {
-  const { refuseIfNewer } = await import("@maycombhq/scanner");
+  const { newerAtticusCommand, refuseIfNewer } = await import("@maycombhq/scanner");
   const newer = await refuseIfNewer(root);
   const view = await onboardingView(root);
   const problems = [...view.problems];
@@ -645,7 +647,9 @@ export async function readNextState(root: string): Promise<NextState> {
     problems,
     ...(orgpack ? { orgpack } : {}),
     ...(unverifiedNeeds ? { unverifiedNeeds } : {}),
-    ...(newer ? { newerCatalog: newer.message } : {}),
+    ...(newer
+      ? { newerCatalog: newer.message, newerCommand: newerAtticusCommand(newer.newer) }
+      : {}),
   };
 }
 
@@ -1434,7 +1438,7 @@ export function nextSteps(s: NextState): NextStep[] {
   if (s.newerCatalog)
     out.push({
       step: "upgrade-atticus",
-      command: NEWER_ATTICUS_COMMAND,
+      command: s.newerCommand ?? NEWER_ATTICUS_COMMAND,
       why: s.newerCatalog,
       person: true,
     });

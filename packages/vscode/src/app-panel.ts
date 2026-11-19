@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { commandText, resolveCommand, SHELL_UNSAFE, type CliOptions } from "./cli";
 import { hideInLog } from "./log-channel";
+import { MIN_CLI, needsEnv } from "./needs";
 import { WORDS } from "./words";
 
 /**
@@ -61,8 +62,7 @@ export function appTokenFrom(stdout: string): string | undefined {
 const TOKEN_GIVEN = /session token isn't printed/;
 /** How long atticus ui may take to say its address and token before the start is given up. */
 const START_TIMEOUT_MS = 30_000;
-/** The oldest atticus this extension's flags and pages work with (atticus ui --embed, --parent). */
-export const MIN_CLI = "2.0.0-beta.28.5";
+export { MIN_CLI };
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
@@ -173,7 +173,13 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
     try {
       child = spawn(cmd.shell ? `"${cmd.file}"` : cmd.file, argv, {
         cwd: o.cwd,
-        env: { ...(o.env ?? process.env), ATTICUS_UI_TOKEN: given, ATTICUS_UI_PAGE_KEY: pageKey },
+        env: {
+          ...(o.env ?? process.env),
+          // ADR 0202 point 8: so atticus status can say what this extension needs.
+          ...needsEnv(),
+          ATTICUS_UI_TOKEN: given,
+          ATTICUS_UI_PAGE_KEY: pageKey,
+        },
         shell: cmd.shell,
         windowsHide: true,
       });

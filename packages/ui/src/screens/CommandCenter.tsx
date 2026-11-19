@@ -50,6 +50,7 @@ import { Command } from "./work/RunNext.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
 import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
 import { UpgradeOffer } from "../app/upgrade.js";
+import { StandingLine } from "../app/standing.js";
 import { TileGroup, toneOf, type Tile } from "./home/HomeTiles.js";
 import {
   HomeChanges,
@@ -291,6 +292,8 @@ export function OwnInstall(p: { setup?: SetupLoad } = {}) {
       : undefined;
   return (
     <>
+      {/* ADR 0202 point 8: where the metarepo stands, as atticus status says it. */}
+      <StandingLine />
       {machine && (
         <section
           className="state error stack"

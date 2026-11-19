@@ -43,11 +43,20 @@ else if ((await import("./node-version.js")).nodeTooOld(process.versions.node)) 
     }
   }
   const { main } = await import("./main.js");
+  // ADR 0202 point 9: one question may be asked, and only of a person at a terminal.
+  const { canAsk, terminalAsk } = await import("./ask.js");
+  const asks = canAsk({
+    stdinTTY: process.stdin.isTTY,
+    stdoutTTY: process.stdout.isTTY,
+    argv,
+    env: process.env,
+  });
   await main(
     argv,
     {
       out: (line) => process.stdout.write(line + "\n"),
       err: (line) => process.stderr.write(line + "\n"),
+      ...(asks ? { ask: terminalAsk } : {}),
     },
     // ADR 0187: a long command keeps what it prints for the app's Console.
     { record: true },

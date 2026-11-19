@@ -25,6 +25,7 @@ import {
 } from "@maycombhq/core";
 import {
   buildAndWrite,
+  type BuildAndWrite,
   buildCatalog,
   buildLines,
   curatedDirOf,
@@ -49,7 +50,9 @@ import {
   type SlotWrite,
 } from "@maycombhq/scanner";
 import { loadRepos } from "@maycombhq/workspace";
+import { buildPlanOf, pageChanged } from "./build-report.js";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 
 /**
  * atticus repo rename <old> <new> (F5): a repo's id moved with everything filed under it, in one
@@ -122,7 +125,13 @@ function rewriteFactsFile(name: string, text: string, from: string, to: string):
  */
 export const renameHooks: { breakNewSlots?: boolean } = {};
 
-type RenameOptions = { json?: boolean; allowRemovals?: number; discardEdits?: number };
+type RenameOptions = {
+  json?: boolean;
+  allowRemovals?: number;
+  discardEdits?: number;
+  /** ADR 0202 point 9: the plan of the refusal a terminal's yes confirms, checked at the write. */
+  plan?: string;
+};
 
 export async function repoRename(
   root: string,
@@ -455,7 +464,15 @@ async function renameLocked(
   const newest = (await listUndo(undoDir))[0]?.n ?? 0;
   let written;
   try {
-    written = await buildAndWrite(root, { command, build, slots: writes, ...confirm });
+    written = await buildAndWrite(root, {
+      command,
+      build,
+      slots: writes,
+      ...confirm,
+      ...(o.plan !== undefined
+        ? { expect: (listed: BuildAndWrite["guard"]) => buildPlanOf(listed) === o.plan }
+        : {}),
+    });
   } catch (e) {
     await rollBackUndo(root, undoDir, newest);
     forgetKeptReads();
@@ -464,9 +481,15 @@ async function renameLocked(
     );
     throw e;
   }
+  if (written.changed && !written.guard.refused) {
+    io.err(pageChanged("what the build would remove or discard"));
+    io.err("Nothing was renamed.");
+    return 1;
+  }
   if (written.guard.refused) {
     for (const l of buildLines(root, written)) io.err(l);
     io.err("Nothing was renamed.");
+    await refusalEnds(root, written.guard.refused);
     if (o.json) io.out(JSON.stringify({ renamed: false, refused: written.guard.refused }, null, 2));
     return 1;
   }

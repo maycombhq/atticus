@@ -66,6 +66,7 @@ export * from "./hash-cache.js";
 export * from "./kept-files.js";
 export * from "./log.js";
 export * from "./run-log.js";
+export * from "./version-order.js";
 export * from "./printer.js";
 export * from "./zip.js";
 export * from "./words.js";

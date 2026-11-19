@@ -24,6 +24,7 @@ import {
 } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { refusalEnds } from "./standing.js";
 import {
   carryOf,
   checkoutOf,
@@ -430,6 +431,7 @@ export async function verifyCommand(
       const refusal = newerAtticusRefusal(genRel, newer).refused!;
       await writeRefusedReport(root, `atticus verify ${repo} --write`, refusal);
       for (const l of refusal.message.split("\n")) io.err(l);
+      await refusalEnds(root, refusal);
       if (o.json) io.out(JSON.stringify({ written: false, refused: refusal }, null, 2));
       return 1;
     }
