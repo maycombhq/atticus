@@ -436,13 +436,17 @@ export function componentsOfRepo<C extends { id: string; repo?: string }>(
   return items.filter((c) => c.repo === repo).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** The request for a repo's components: by its own repo field (3.19.0), never by words. */
+export const repoComponentsPath = (repo: string) =>
+  `/api/catalog/Component?limit=500&repo=${encodeURIComponent(repo)}`;
+
 /**
  * Impact asked of a repo (`?repo=`, from a repo box's panel): a repo has no record of its own,
  * so its components are listed, each opening its impact.
  */
 function RepoComponents({ repo }: { repo: string }) {
   const list = useApi<{ items: { id: string; repo?: string; name?: string }[] }>(
-    `/api/catalog/Component?limit=500&q=${encodeURIComponent(repo)}`,
+    repoComponentsPath(repo),
   );
   return (
     <Panel title={T.impactOfRepo(repo)} span="1 / -1">

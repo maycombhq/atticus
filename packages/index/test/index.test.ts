@@ -153,6 +153,13 @@ describe("the local index", () => {
       "portal-bff",
       "portal-ui",
     ]);
+    // v30 slice 8 (3.19.0, additive): a repo's components, for Impact asked of a repo box. The
+    // repo's name is in neither the id nor the name (forge-portal-bff holds portal-bff).
+    expect(ix.list("Component", { repo: "forge-portal-bff" }).items.map((r) => r.id)).toEqual([
+      "portal-bff",
+    ]);
+    expect(ix.list("Component", { q: "forge-portal-bff" }).total).toBe(0);
+    expect(ix.list("Component", { repo: "forge-nowhere" }).total).toBe(0);
     // A count of one confidence by total, without reading every record (the Contracts ring).
     const all = ix.list("Column", { limit: 500 }).items;
     const verified = ix.list("Column", { confidence: "verified", limit: 1 });
@@ -322,7 +329,9 @@ describe("impact", () => {
     expect(r.gaps).toContainEqual({
       record: "portal-bff.unresolved-1",
       field: "raw",
-      question: expect.stringContaining("GET https://fx.example.com/rates"),
+      // v30 slice 8: an HTTP call's loose end, in the glossary's words.
+      question:
+        "portal-bff has a call with no arrow (GET https://fx.example.com/rates). Where does it go?",
     });
 
     const audit = impact(ix, "audit-svc")!;

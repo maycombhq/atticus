@@ -82,4 +82,12 @@ describe("Impact asked of a repo", () => {
     ]);
     expect(componentsOfRepo(items, "forge-none")).toEqual([]);
   });
+
+  it("asks for them by repo, not by words: a repo's name is rarely in its components' ids", async () => {
+    // Forge's forge-portal-bff holds portal-bff (server.test.ts asks the real route).
+    const { repoComponentsPath } = await import("../src/screens/know/Know.js");
+    expect(repoComponentsPath("forge-portal-bff")).toBe(
+      "/api/catalog/Component?limit=500&repo=forge-portal-bff",
+    );
+  });
 });

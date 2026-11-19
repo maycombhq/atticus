@@ -245,6 +245,12 @@ describe("the local server (ADR 0015)", () => {
     const idOf = (r: unknown) => (r as { id: string }).id;
     expect(idOf(next.items[0]) > idOf(page.items[1])).toBe(true);
 
+    // v30 slice 8 (3.19.0, additive): ?repo= lists the repo's own records.
+    const ofRepo = RecordPage.parse(
+      (await call("/api/catalog/Component?repo=forge-portal-bff&limit=500")).body,
+    );
+    expect(ofRepo.items.map(idOf)).toEqual(["portal-bff"]);
+
     const one = await call(`/api/catalog/Component/${encodeURIComponent(idOf(page.items[0]))}`);
     expect(one.status).toBe(200);
     expect(one.body).toMatchObject({ kind: "Component", id: idOf(page.items[0]) });
