@@ -5,7 +5,7 @@ import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
 import { UndoConfirm } from "./confirm-dialog.js";
 import { followJob, type UndoWay } from "./job.js";
-import { hashParam } from "./screens.js";
+import { hashParam, movedHash } from "./screens.js";
 import { panelId } from "./ui.js";
 
 const W = COPY.waysOn;
@@ -47,7 +47,11 @@ export function showOnPage(id: string): boolean {
  * panel itself. From any other address the page shows it as it arrives (useShowPanel).
  */
 export const showIfHere = (href: string) => (): void => {
-  const at = typeof location !== "undefined" && location.hash === href && panelAsked(href);
+  // v30 slice 8: the page's old address opens at its new one (Activity's tab), which counts too.
+  const here =
+    typeof location !== "undefined" &&
+    (location.hash === href || location.hash === movedHash(href));
+  const at = here && panelAsked(href);
   if (at) showOnPage(at);
 };
 

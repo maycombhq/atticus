@@ -152,8 +152,10 @@ test("the Map draws the manifest's system and the outside system the facts call"
   await expect(page.locator("main")).not.toContainText(STALE_SCAN);
   await accessible(page, "estate canvas on an Atticus 2 metarepo");
 
+  // v30 slice 8: the Ecosystem map's address opens Systems, with its coverage.
   await open(page, app(), "map");
-  const systems = page.getByRole("region", { name: "Systems" });
+  await expect(page).toHaveURL(/#\/systems$/);
+  const systems = page.getByRole("region", { name: "Verified, by system" });
   await expect(systems).toContainText("studio");
   await expect(systems).toContainText("llm");
   await expect(page.getByText("No systems yet.")).toHaveCount(0);
@@ -162,7 +164,7 @@ test("the Map draws the manifest's system and the outside system the facts call"
   await expect(knows.getByRole("row", { name: /forge-studio/ })).toContainText("3");
   await expect(knows).toContainText("Entries");
   await expect(knows).toContainText("Flows");
-  await accessible(page, "ecosystem map on an Atticus 2 metarepo");
+  await accessible(page, "Systems' coverage on an Atticus 2 metarepo");
 });
 
 test("a flow's caller is the flow the join says calls it", async ({ page }) => {

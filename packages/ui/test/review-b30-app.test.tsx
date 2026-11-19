@@ -157,6 +157,13 @@ describe("a link to a panel, clicked when the address names that panel already",
     showIfHere(UPGRADE_HREF)();
     expect(did.filter((x) => x.startsWith("scroll"))).toHaveLength(1);
   });
+
+  it("v30 slice 8: at the page's new address (Activity's tab) a second click shows the panel too", () => {
+    const did = page([UPGRADE_PANEL]);
+    vi.stubGlobal("location", { hash: "#/activity?tab=catalog-builds&at=upgrade" });
+    showIfHere(UPGRADE_HREF)();
+    expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UPGRADE_PANEL}`]);
+  });
 });
 
 describe("Build now and Build again on Catalog builds", () => {

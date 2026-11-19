@@ -175,7 +175,8 @@ test("More pages and Settings are in the activity bar, and the classic layout a 
   const more = bar.getByRole("button", { name: /^More pages \d+$/ });
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await more.click();
-  await expect(page.locator("#more-pages a")).toHaveCount(21);
+  // v30 slice 8: Contracts, Impact and Decided by AI joined More pages; the Ecosystem map left.
+  await expect(page.locator("#more-pages a")).toHaveCount(23);
   await accessible(page, "More pages open in the activity bar");
   // Escape closes it and gives the focus back.
   await page.keyboard.press("Escape");
@@ -255,7 +256,8 @@ test("in an editor's panel there is no second activity bar, and every page is st
   await expect(page.getByRole("contentinfo", { name: "Status" })).toHaveCount(0);
   const tools = page.getByRole("group", { name: "Page tools" });
   await tools.getByRole("button", { name: /^More pages/ }).click();
-  await expect(page.locator("#more-pages a")).toHaveCount(21);
+  // v30 slice 8: Contracts, Impact and Decided by AI joined More pages; the Ecosystem map left.
+  await expect(page.locator("#more-pages a")).toHaveCount(23);
   await page.keyboard.press("Escape");
   await tools.getByRole("button", { name: /^Search the estate/ }).click();
   await expect(page.getByRole("dialog", { name: "Go to anything" })).toBeVisible();

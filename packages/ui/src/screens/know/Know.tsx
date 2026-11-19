@@ -182,7 +182,7 @@ export function CatalogCoverage() {
   const qs = useView<Questions>("questions");
   return (
     <>
-      <Panel title={T.systems} span="span 4" rows="span 2">
+      <Panel title={T.verifiedBySystem} span="span 4" rows="span 2">
         <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
           {(c) => (
             <div className="stack">

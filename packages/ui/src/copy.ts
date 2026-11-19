@@ -3681,6 +3681,8 @@ export const COPY = {
     factsVerifiedFromCode: (system: string | number) => `${system}: facts verified from code`,
     noSystemsYet: "No systems yet.",
     systems: "Systems",
+    /** v30 slice 8: the coverage's list on Systems, beside the system picker (named apart). */
+    verifiedBySystem: "Verified, by system",
     coverageBySystemAnd: "Coverage by system and area",
     notExpected: "not expected",
     notExpected2: (system: string | number, name: string | number) =>
