@@ -18,8 +18,10 @@ import {
 } from "@maycombhq/core";
 import { main } from "../src/main.js";
 import { initCommand } from "../src/setup-commands.js";
+import { installCommand } from "../src/version.js";
 import {
   contentOf,
+  installedStarters,
   MIGRATIONS,
   STAMP_FILE,
   starterPersonasStep,
@@ -345,6 +347,64 @@ describe("atticus upgrade to beta.30: what a step can't do is said, and waits", 
     },
     T,
   );
+
+  it(
+    "says the starters aren't in this install, on --check and on the upgrade, until they are",
+    async () => {
+      const root = await b285Metarepo();
+      const words = `The starter personas aren't in this install: reinstall Atticus (${installCommand(B30)}), then run atticus upgrade again.`;
+      const at = MIGRATIONS.findIndex((m) => m.id === "starter-personas");
+      const real = MIGRATIONS[at]!;
+      // An install whose starter folder is missing.
+      MIGRATIONS[at] = starterPersonasStep(() =>
+        installedStarters(() => starterPersonaFiles(join(root, "no-starter-here"))),
+      );
+      try {
+        const c = await upgradeCheck(root, B30);
+        expect(c.unavailable).toEqual([words]);
+        expect(c.pending.map((p) => p.id)).toEqual(["change-types-quick"]);
+        const check = io();
+        expect(await upgradeCommand(root, { check: true }, check.io, B30)).toBe(1);
+        expect(check.err).toEqual([words]);
+        const run = io();
+        expect(await upgradeCommand(root, { by: "pat" }, run.io, B30)).toBe(0);
+        expect(run.err).toEqual([words]);
+        // Nothing else is pending now: it is still said, and never "Up to date" with no word.
+        const again = io();
+        expect(await upgradeCommand(root, { check: true }, again.io, B30)).toBe(0);
+        expect(again.err).toEqual([words]);
+        expect(again.out).toEqual([`Up to date for Atticus ${B30}, but for the starter personas.`]);
+        const json = io();
+        expect(await upgradeCommand(root, { check: true, json: true }, json.io, B30)).toBe(0);
+        expect(JSON.parse(json.out.join("\n"))).toMatchObject({ unavailable: [words] });
+      } finally {
+        MIGRATIONS[at] = real;
+      }
+      // With the starter installed the same metarepo gets the files, and nothing is said.
+      const c = await upgradeCheck(root, B30);
+      expect(c.unavailable).toBeUndefined();
+      expect(c.pending.map((p) => p.id)).toEqual(["starter-personas"]);
+      const r = io();
+      expect(await upgradeCommand(root, { by: "pat" }, r.io, B30)).toBe(0);
+      expect(r.err).toEqual([]);
+      const done = io();
+      expect(await upgradeCommand(root, { check: true }, done.io, B30)).toBe(0);
+      expect(done.out).toEqual([`Up to date for Atticus ${B30}.`]);
+      expect(done.err).toEqual([]);
+    },
+    T,
+  );
+
+  it("takes only a starter folder that isn't there as nothing to give: any other error is said", async () => {
+    const fails = (code: string) => () =>
+      Promise.reject(Object.assign(new Error(`${code}: reading the starter`), { code }));
+    expect(await installedStarters(fails("ENOENT"))).toEqual([]);
+    await expect(installedStarters(fails("EACCES"))).rejects.toThrow("EACCES: reading the starter");
+    await expect(
+      installedStarters(() => Promise.reject(new Error("not a file error"))),
+    ).rejects.toThrow("not a file error");
+    expect((await installedStarters()).length).toBe(16);
+  });
 
   it(
     "says what to add by hand when change-types.yaml keeps its types on one line",
