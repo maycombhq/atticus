@@ -13,6 +13,7 @@ import {
 } from "../src/doctor.js";
 import { setupSteps } from "../src/baseline-commands.js";
 import { upgradeCommand } from "../src/upgrade.js";
+import { VERSION } from "../src/version.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 let root: string;
@@ -84,6 +85,10 @@ describe("atticus doctor", () => {
       expect(byId(checks, id).status, id).toBe("fail");
       expect(byId(checks, id).fix, id).toBeTruthy();
     }
+    // Beta.30: reinstalling means this version, not whatever a tag points at.
+    expect(byId(checks, "openspec").fix).toContain(
+      `npm install -g @maycombhq/atticus@${VERSION} from your npm mirror`,
+    );
     const out: string[] = [];
     const code = await doctorCommand(
       root,

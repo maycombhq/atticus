@@ -136,6 +136,7 @@ import {
   BUILD_VERSION,
   sha256Of,
   sourcesDirOf,
+  NEWER_ATTICUS_COMMAND,
   newerAtticusWords,
   newerFileAt,
   versionedFormatOf,
@@ -2401,9 +2402,6 @@ export async function newerInUndoPlan(undoDir: string, plan: UndoPlan): Promise<
   }
   return out;
 }
-
-/** What upgrades Atticus itself (ADR 0197): never `atticus upgrade`, which is for an older catalog. */
-export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
 
 /** A writer's refusal of a metarepo whose catalog a newer Atticus built (`refuseIfNewer`). */
 export interface NewerAtticusRefusal {

@@ -4,6 +4,19 @@
  * screens still hold theirs inline and move here when they are next changed.
  */
 
+/**
+ * The one command that installs Atticus, at the exact version where it is known (beta.30): a
+ * tag (`@latest`, `@beta`) moves, and behind a mirror may point at an older Atticus.
+ */
+// prettier-ignore
+export const installCommand = (version: string) => `npm install -g @maycombhq/atticus@${version}`;
+
+/**
+ * What upgrades Atticus where only the catalog's format says a newer one built it (ADR 0197):
+ * the version isn't recorded there, and this is the `command` a newer-atticus refusal carries.
+ */
+export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
+
 /** "a", "a and b", "a, b and c". */
 const listWords = (xs: readonly string[]) =>
   xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)!}`;
@@ -1140,7 +1153,7 @@ export const COPY = {
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
       // Beta.28.2 (ADR 0197): build.json or a slot a newer Atticus wrote.
       "newer-atticus": () =>
-        "This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (npm i -g @maycombhq/atticus@beta), don't run atticus upgrade.",
+        `This metarepo's catalog was built by a newer Atticus, so this one writes nothing to it: upgrade Atticus (${NEWER_ATTICUS_COMMAND}), don't run atticus upgrade.`,
     } as Record<string, (n: number) => string>,
     inTerminal: "In a terminal",
     reviewRemovals: (n: number) => `Review the ${n} removals`,
@@ -4674,10 +4687,9 @@ export const COPY = {
     intro: (n: number) =>
       `This metarepo waits on ${n} upgrade step${n === 1 ? "" : "s"} for this Atticus. Upgrading backs up every file it changes under .atticus/backups/, runs each step and stamps the metarepo; then propose the changes for review.`,
     newer: (stamp: string, mine: string) =>
-      `A newer Atticus (${stamp}) upgraded this metarepo; this is ${mine}. Install ${stamp} or later before working in it.`,
+      `A newer Atticus (${stamp}) upgraded this metarepo; this is ${mine}. Install ${stamp} or later before working in it (${installCommand(stamp)}, from your npm mirror or that version's offline bundle).`,
     /** Beta.28.2 (ADR 0197): the catalog was built by a newer Atticus than this one. */
-    newerCatalog:
-      "This metarepo's catalog was built by a newer Atticus: upgrade Atticus (npm i -g @maycombhq/atticus@beta) before working in it. Don't run atticus upgrade; it is for a catalog older than this Atticus.",
+    newerCatalog: `This metarepo's catalog was built by a newer Atticus: upgrade Atticus (${NEWER_ATTICUS_COMMAND}) before working in it. Don't run atticus upgrade; it is for a catalog older than this Atticus.`,
     step: (summary: string, files: number) => `${summary} (${files} file${files === 1 ? "" : "s"})`,
     run: "Run the upgrade",
     running: "Upgrading…",
@@ -5055,7 +5067,7 @@ export const COPY = {
       `Nothing applied to ${repo}'s map yet: its build waits for you to confirm what it lists.`,
     /** Beta.28.3: Apply's build refused a catalog a newer Atticus built; no confirm goes on. */
     applyNewer: (repo: string) =>
-      `Nothing applied to ${repo}'s map: this catalog was built by a newer Atticus. Upgrade Atticus (npm i -g @maycombhq/atticus@beta), then Apply again.`,
+      `Nothing applied to ${repo}'s map: this catalog was built by a newer Atticus. Upgrade Atticus (${NEWER_ATTICUS_COMMAND}), then Apply again.`,
     confirmApply: (n: number) => `Apply, removing ${n} ${n === 1 ? "record" : "records"}`,
     /** ADR 0195 point 4: Apply's hand edits made curated; the facts wait for Apply again. */
     editsChanged:
@@ -5445,8 +5457,7 @@ export const COPY = {
       `Saved. The catalog build waits for you to review ${n} removal${n === 1 ? "" : "s"} first.`,
     waitsBuild: "Saved. The catalog build waits for you on Catalog builds.",
     /** Beta.28.3: nothing on Catalog builds confirms a newer Atticus's catalog. */
-    newerAtticus:
-      "Saved, but nothing was built: this catalog was built by a newer Atticus. Upgrade Atticus (npm i -g @maycombhq/atticus@beta), then build again.",
+    newerAtticus: `Saved, but nothing was built: this catalog was built by a newer Atticus. Upgrade Atticus (${NEWER_ATTICUS_COMMAND}), then build again.`,
     reviewRemovals: (n: number) => `Review the ${n} removal${n === 1 ? "" : "s"}`,
     reviewBuild: "Review the build",
     printed: (n: number) => `What it printed (${n} line${n === 1 ? "" : "s"})`,
@@ -6638,8 +6649,7 @@ export const COPY = {
               empty:
                 "its build would hold no record from any repo's code over a catalog that has some",
               "nothing-read": "no repo could be read",
-              "newer-atticus":
-                "this metarepo's catalog was built by a newer Atticus (upgrade Atticus: npm i -g @maycombhq/atticus@beta; don't run atticus upgrade)",
+              "newer-atticus": `this metarepo's catalog was built by a newer Atticus (upgrade Atticus: ${NEWER_ATTICUS_COMMAND}; don't run atticus upgrade)`,
             })[r],
         )
         .join("; ")}.`,

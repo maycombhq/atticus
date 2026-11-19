@@ -269,10 +269,7 @@ ${view.next.why}`
         });
     else if (!svc.cliOk)
       void vscode.window
-        .showWarningMessage(
-          "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
-          "Check again",
-        )
+        .showWarningMessage(WORDS.cliMissing(MIN_CLI), "Check again")
         .then((p) => p && vscode.commands.executeCommand("atticus.checkHealth"));
     return root && svc.cliOk ? root : undefined;
   };
@@ -716,7 +713,7 @@ ${view.next.why}`
     refreshAll();
     if (!svc.cliOk) {
       const pick = await vscode.window.showWarningMessage(
-        "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
+        WORDS.cliMissing(MIN_CLI),
         "How to install",
         "Set the path",
       );

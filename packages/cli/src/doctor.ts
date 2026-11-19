@@ -54,7 +54,7 @@ import {
 import type { Output } from "./commands.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { newerAtticusOf, upgradeCheck, type UpgradeCheck } from "./upgrade.js";
-import { versionAtLeast } from "./version.js";
+import { installCommand, versionAtLeast } from "./version.js";
 import { defaultKeyStore, keyEnvFromEnvironment, type KeyStore } from "@maycombhq/model-providers";
 export { versionAtLeast };
 
@@ -342,7 +342,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     detail: osv
       ? `OpenSpec ${osv} (tested with ${OPENSPEC_PINNED})`
       : "the bundled OpenSpec CLI didn't run",
-    fix: "Reinstall Atticus (it carries a pinned OpenSpec): npm install -g @maycombhq/atticus from your npm mirror, or with the offline bundle run its install script again.",
+    fix: `Reinstall Atticus (it carries a pinned OpenSpec): ${installCommand()} from your npm mirror, or with the offline bundle run its install script again.`,
   });
 
   // ADR 0126: OpenSpec's stores are beta and optional. Atticus reads the stores the org pack
@@ -560,7 +560,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           : "up to date",
     fix: up.newer
       ? newerAtticusOf(up)
-        ? `Install Atticus ${newerAtticusOf(up)} or later before working in this metarepo (npm install -g @maycombhq/atticus@${newerAtticusOf(up)} from your npm mirror, or that version's offline bundle).`
+        ? `Install Atticus ${newerAtticusOf(up)} or later before working in this metarepo (${installCommand(newerAtticusOf(up))} from your npm mirror, or that version's offline bundle).`
         : "Install the Atticus that upgraded this metarepo before working in it; or, if .atticus/metarepo.yaml was edited by hand, put it back as it was in Git. Don't run atticus upgrade until then."
       : "Run atticus upgrade, then commit what it changed in a pull request.",
   });
@@ -794,7 +794,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
             : // ADR 0124 addendum D-npm: an npm install carries the model's and onnxruntime's
               // bytes, so the default is ready with nothing fetched.
               `${ort ? "ready: " : ""}${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}), ${e.setting === "bundled" ? "installed with Atticus" : "the folder runtime.yaml names"}, in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
-      fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/atticus on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror (npm install -g @maycombhq/atticus) or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
+      fix: `The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/atticus on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror (${installCommand()}) or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.`,
     });
   }
   const live = Object.entries(rt.adapters).filter(

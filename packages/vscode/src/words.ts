@@ -9,10 +9,20 @@ import type { NextStep } from "./types";
  * What the extension says when something it does by itself goes wrong (ADR 0119): never
  * nothing, and never as if all were well.
  */
+/**
+ * The one command that installs Atticus, at the exact version (beta.30): a tag (`@latest`,
+ * `@beta`) moves, and behind a mirror may point at an Atticus older than the one needed.
+ */
+// prettier-ignore
+export const installCommand = (version: string) => `npm install -g @maycombhq/atticus@${version}`;
+
 export const WORDS = {
   /** The atticus found is older than the extension needs (ADR 0099): what to do, in words. */
   cliOld: (found: string, needed: string) =>
-    `Atticus ${found} is installed, and this extension needs ${needed} or newer: some pages and commands will fail until it is updated (npm install -g @maycombhq/atticus@latest, from your npm mirror or the offline bundle).`,
+    `Atticus ${found} is installed, and this extension needs ${needed} or newer: some pages and commands will fail until it is updated (${installCommand(needed)}, from your npm mirror or the offline bundle).`,
+  /** No atticus answered: install the one this extension needs, or say where it is. */
+  cliMissing: (needed: string) =>
+    `Atticus can't run its command line (atticus). Install it (${installCommand(needed)}, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.`,
   showOutput: "Show the output",
   /** Review of beta.23: the running app took a call and hasn't answered it yet. */
   appSlow: "The Atticus app is still working on it",

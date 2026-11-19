@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   commandTitle,
+  installCommand,
   modelChoice,
   modelPickItem,
   modelPickRows,
@@ -296,5 +297,37 @@ describe("the org pack's owner as a form (WP4.4)", () => {
     expect(
       ownerFrom("No one looks after the org pack yet: atticus orgpack owner <handle> sets it."),
     ).toBeUndefined();
+  });
+});
+
+describe("the one command that installs Atticus (beta.30)", () => {
+  it("names the exact version, never a tag that moves", () => {
+    expect(installCommand("2.0.0-beta.28.5")).toBe(
+      "npm install -g @maycombhq/atticus@2.0.0-beta.28.5",
+    );
+  });
+
+  it("is in every hint the extension gives, at the version the extension needs", () => {
+    const needed = "2.0.0-beta.28.5";
+    const hints = [WORDS.cliOld("2.0.0-beta.28.1", needed), WORDS.cliMissing(needed)];
+    for (const h of hints) {
+      expect(h).toContain(installCommand(needed));
+      expect(h).not.toMatch(/@latest|@beta/);
+      expect(h.match(/npm i(nstall)? -g/g)).toHaveLength(1);
+    }
+  });
+
+  it("is written in one place: no other install line in the extension's sources", async () => {
+    const { readdir, readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const src = join(__dirname, "..", "src");
+    const lines: string[] = [];
+    for (const f of await readdir(src))
+      if (f.endsWith(".ts"))
+        for (const l of (await readFile(join(src, f), "utf8")).split("\n"))
+          if (/npm i(nstall)? -g @maycombhq\/atticus/.test(l)) lines.push(`${f}: ${l.trim()}`);
+    expect(lines).toEqual([
+      "words.ts: export const installCommand = (version: string) => `npm install -g @maycombhq/atticus@${version}`;",
+    ]);
   });
 });
