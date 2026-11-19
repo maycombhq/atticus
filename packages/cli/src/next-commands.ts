@@ -11,6 +11,7 @@ import {
   factsFileOf,
   factsRelOf,
   fastPathOf,
+  quickPathOf,
   listQuestions,
   orderQuestions,
   questionWeights,
@@ -201,6 +202,12 @@ export interface NextState {
     fast?: boolean;
     /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
     fastDone?: boolean;
+    /**
+     * ADR 0201: it takes the quick path (its type's only phase before build is plan, and it lists
+     * no stories) and isn't built yet: no stage is offered. `missing` is which of its four files
+     * aren't written: proposal.md, a spec delta under specs/, design.md, tasks.md.
+     */
+    quick?: { missing: string[] };
     /**
      * The stages of its stage path that are done, in order (ADR 0124 addendum B-change): the
      * stages can run ahead of the gates, so the state alone doesn't say what is next.
@@ -539,9 +546,16 @@ export async function readNextState(root: string): Promise<NextState> {
           : { draft: false, brief: false };
       const blocking =
         stageOf(c.state) === "tasks" ? await blockingOf(changeContext, c).catch(() => 0) : 0;
+      // ADR 0201: a quick change before build: its four files, then its hand-off; never a stage.
+      const quick =
+        draftingAt(own) >= 0 && quickPathOf(types.find((t) => t.id === c.type) ?? NOT_QUICK)
+          ? { missing: await quickMissing(join(changesDirOf(root), c.id)) }
+          : undefined;
       // Round 49: a drafting stage done with no hand-off raised: what its gate's hand-off checks.
       const gate =
-        draftingAt(own) >= 0 && !live && (stagesDone.includes(own) || c.state === "returned")
+        draftingAt(own) >= 0 &&
+        !live &&
+        (quick ? quick.missing.length === 0 : stagesDone.includes(own) || c.state === "returned")
           ? await gateFindingsOf(changeContext, c).catch(() => [])
           : [];
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
@@ -585,7 +599,8 @@ export async function readNextState(root: string): Promise<NextState> {
             }
           : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
-        ...((await isFast(root, c, types))
+        ...(quick ? { quick } : {}),
+        ...(!quick && (await isFast(root, c, types))
           ? {
               fast: true,
               ...(/^state: done$/m.test(
@@ -690,6 +705,26 @@ async function stageQuestions(root: string, change: string, open: Set<string>): 
   return out;
 }
 
+const and = (xs: string[]) =>
+  xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+/** A type that isn't there is never quick. */
+const NOT_QUICK = { phases: [], artifacts: [] };
+
+/** ADR 0201: which of a quick change's four files aren't written yet, in the order they are written. */
+async function quickMissing(dir: string): Promise<string[]> {
+  const specs = await readdir(join(dir, "specs"), { recursive: true, withFileTypes: true }).catch(
+    () => [],
+  );
+  const has: [string, boolean][] = [
+    ["proposal.md", existsSync(join(dir, "proposal.md"))],
+    ["a spec delta under specs/", specs.some((e) => e.isFile() && e.name.endsWith(".md"))],
+    ["design.md", existsSync(join(dir, "design.md"))],
+    ["tasks.md", existsSync(join(dir, "tasks.md"))],
+  ];
+  return has.filter(([, there]) => !there).map(([name]) => name);
+}
+
 /** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
 async function isFast(
   root: string,
@@ -757,7 +792,7 @@ function gateBlockedStep(
   if (!first) return undefined;
   const id = c.id;
   const more = c.gate!.length - 1;
-  const head = `${id}'s ${stage} stage is done, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
+  const head = `${c.quick ? `${id}'s proposal, spec deltas, design and tasks are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
   const tail = more ? `; ${more} more after it.` : ".";
   const asked = /\(owner question (q-[0-9a-f]+)[,)]/.exec(first.message)?.[1];
   if (asked)
@@ -1063,7 +1098,9 @@ function questionStep(c: NextState["changes"][number]): NextStep[] {
   const stage = stageOf(c.state);
   const again =
     draftingAt(stage) >= 0
-      ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
+      ? c.quick
+        ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>); its files go on after.`
+        : `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
       : `Its stage goes on once ${ids.length === 1 ? "it is" : "they are"} answered.`;
   return [
     {
@@ -1092,6 +1129,34 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
   // Seventh UX walk: the stage the change's state puts it at, never a later one.
   const stage = stageOf(c.state);
+  // ADR 0201: a quick change before build: its files, what blocks its gate, then its one
+  // hand-off. Never a brief, a stage, the fast path's step or a draft.
+  if (c.quick && (stage === "feature" || stage === "architecture" || stage === "stories")) {
+    const missing = c.quick.missing;
+    if (missing.length)
+      return [
+        {
+          step: "quick-define",
+          command: `atticus change status ${id}`,
+          slash: `/define-change ${id}`,
+          where: METAREPO,
+          why: `${id} is on the quick path, and ${and(missing)} ${missing.length === 1 ? "isn't" : "aren't"} written yet: your personas write its proposal, spec deltas, design and tasks from its requirements file, grounded in the map. No stage runs. Then a person raises its one hand-off (ADR 0201).`,
+          change: id,
+        },
+      ];
+    const blocked = gateBlockedStep(c, stage, c.state);
+    if (blocked) return [blocked];
+    return [
+      {
+        step: "handoff",
+        command: `atticus change handoff ${id} --approve`,
+        where: METAREPO,
+        why: `${id}'s proposal, spec deltas, design and tasks are written and nothing blocks its ${c.state} gate: a person raises its ${c.state} hand-off PR, and merging it approves the gate and moves it to build (ADR 0201).`,
+        change: id,
+        person: true,
+      },
+    ];
+  }
   // Sixth UX walk: a brief that holds only the template is written before any stage reads it.
   if (c.brief && stage === "feature" && !c.stagesDone?.includes("feature"))
     return [

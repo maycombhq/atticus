@@ -111,6 +111,8 @@ describe("the default change types ask the four questions (the product owner, 20
       "config-change": ["true", "safe", "ship"],
       "tech-debt": ["true", "complete", "safe"],
       "small-change": ["true", "complete", "safe", "ship"],
+      // ADR 0201: the quick path asks all four.
+      quick: ["true", "complete", "safe", "ship"],
     });
     // Each type asks exactly the questions its old lenses covered (the architecture lens covered
     // true and safe), so a rule written for a question applies to the same types as before.
@@ -122,6 +124,7 @@ describe("the default change types ask the four questions (the product owner, 20
       "config-change": ["architecture", "release"],
       "tech-debt": ["architecture", "code-and-test"],
       "small-change": ["architecture", "story", "code-and-test", "release"],
+      quick: ["architecture", "story", "code-and-test", "release"],
     };
     for (const t of DEFAULT_CHANGE_TYPES.types) {
       const covered = new Set(OLD[t.id]!.flatMap(lensCovers));

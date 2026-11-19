@@ -39,6 +39,7 @@ import {
 import type { GitRunner } from "@maycombhq/workspace";
 import { captureHandoff, type DraftCapture } from "./drafted.js";
 import type { HandoffPublisher } from "./publish.js";
+import { REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder, changeStore } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
 
@@ -124,10 +125,10 @@ async function keptPairFiles(dir: string): Promise<string[]> {
 
 /**
  * The files a phase's hand-off PR carries, relative to the change folder: the phase's
- * artifacts that exist (brief.md with the first phase), tasks.md and repos.yaml with
+ * artifacts that exist (brief.md and requirements.md with the first phase), tasks.md and repos.yaml with
  * Build, and the gate's review files. change.yaml always rides along but isn't listed.
  */
-async function handoffFiles(
+export async function handoffFilesOf(
   ctx: ChangeContext,
   a: Assessment,
   phase: PhaseId,
@@ -167,6 +168,10 @@ async function handoffFiles(
     "stage/stories-shape.yaml",
   ])
     if (await present(own)) files.add(own);
+  // ADR 0201: the requirements file a change was made from rides with its first phase's
+  // hand-off, as brief.md does.
+  if (phase === a.type.phases[0] && (await present(REQUIREMENTS_FILE)))
+    files.add(REQUIREMENTS_FILE);
   if (phase === "build") {
     for (const extra of ["tasks.md", "repos.yaml"]) if (await present(extra)) files.add(extra);
     // Ninth UX walk: each task's report (tasks/<task>/report.md), not its run records.
@@ -318,7 +323,7 @@ export async function handoff(
   // OpenSpec's own validation first.
   if (opts.openspec && phase === "plan") await requireValid(opts.openspec, id);
 
-  const { files, artifacts } = await handoffFiles(ctx, a, phase);
+  const { files, artifacts } = await handoffFilesOf(ctx, a, phase);
   const dir = changeFolder(root, id);
   const hashed = await Promise.all(
     files.map(async (path) => ({ path, sha256: sha256(await readFile(join(dir, path))) })),

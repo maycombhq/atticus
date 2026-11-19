@@ -223,8 +223,11 @@ describe("atticus upgrade", () => {
       "gates-v2",
       "flow-schema-v2",
       "change-types-v2",
+      // ADR 0201: no change-types.yaml here (the built-in list has the type): recorded as done.
+      "change-types-quick",
       "questions-v3",
       "starter-review",
+      "starter-personas",
       "catalog-schema-v3",
       "catalog-schema-v4",
       "sources-v2",
@@ -360,7 +363,11 @@ describe("atticus upgrade", () => {
     expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
     const text = await readFile(join(root, "org-pack/change-types.yaml"), "utf8");
     expect(text).toMatch(/^# The Forge pack's change types/);
-    expect(parse(text)).toMatchObject({ schemaVersion: 2, types: [{ id: "config-change" }] });
+    // ADR 0201: the same run adds the quick type at the end; the type that was there is as it was.
+    expect(parse(text)).toMatchObject({
+      schemaVersion: 2,
+      types: [{ id: "config-change" }, { id: "quick" }],
+    });
     expect(parse(text).types[0].size).toBeUndefined();
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });

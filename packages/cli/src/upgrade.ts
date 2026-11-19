@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { cp, lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   ATTICUS_FOLDER_IGNORE,
   CHECKLISTS_README,
   STARTER_CHECKLISTS_README,
+  starterPersonaFiles,
 } from "@maycombhq/adopt";
 import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import { metarepoOrigin } from "@maycombhq/changes";
@@ -20,6 +21,7 @@ import {
 } from "@maycombhq/openspec-adapter";
 import { openspecRootOf, rewriteStories } from "@maycombhq/planner";
 import {
+  addQuickTypeText,
   catalogDirOf,
   changesDirOf,
   changesRelOf,
@@ -164,6 +166,21 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   {
+    // ADR 0201: an org pack with its own change-types.yaml gains the quick path's type, once.
+    id: "change-types-quick",
+    summary:
+      "change-types.yaml gains the quick change type, added at the end; every other type stays as it is (ADR 0201)",
+    pending: async (root) =>
+      (await quickTypePlan(root)) ? [packRel(root, "change-types.yaml")] : [],
+    async apply(root) {
+      const text = await quickTypePlan(root);
+      if (text === undefined) return [];
+      const rel = packRel(root, "change-types.yaml");
+      await writeFileAtomic(join(root, rel), text);
+      return [rel];
+    },
+  },
+  {
     // The id is kept as it was first shipped (stamps record it); the step writes the current version.
     id: "questions-v3",
     summary:
@@ -193,6 +210,7 @@ export const MIGRATIONS: Migration[] = [
       return out;
     },
   },
+  starterPersonasStep(),
   // The version-2 files: only the number changes, no field gains a required (ADR 0125).
   catalogStep(
     "catalog-schema-v3",
@@ -394,6 +412,58 @@ export const MIGRATIONS: Migration[] = [
     apply: (root) => migrateCorrections(root),
   },
 ];
+
+/**
+ * ADR 0201: change-types.yaml with the quick type added, or undefined when there is nothing to
+ * do: the file isn't there (the built-in list applies), doesn't read, has a type `quick` of its
+ * own, or this metarepo's stamp says the step ran (the org deleted the entry: it stays deleted).
+ */
+async function quickTypePlan(root: string): Promise<string | undefined> {
+  if ((await readStamp(root))?.migrations.includes("change-types-quick")) return undefined;
+  const text = await readFile(join(root, packRel(root, "change-types.yaml")), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return undefined;
+  const r = addQuickTypeText(text);
+  return r.changed ? r.text : undefined;
+}
+
+/**
+ * ADR 0201: the starter personas and the define-change skill for an org pack that was made
+ * before them, modelled on `starter-review`: each file the starter folder holds is written where
+ * no file is at its path, never over one that is there, and not at all once the stamp names the
+ * step. `dir` is the starter folder (tests give a fixture; left out, the installed one).
+ */
+export function starterPersonasStep(dir?: string): Migration {
+  const plan = async (root: string) => {
+    if ((await readStamp(root))?.migrations.includes("starter-personas")) return [];
+    // Only an org pack that is there gains them: a folder with no org pack isn't given one.
+    if (!(await exists(join(root, ...packRel(root, "pack.yaml").split("/"))))) return [];
+    const out: { rel: string; bytes: Buffer }[] = [];
+    for (const f of await starterPersonaFiles(dir)) {
+      const rel = packRel(root, f.rel);
+      if (!(await exists(join(root, ...rel.split("/"))))) out.push({ rel, bytes: f.bytes });
+    }
+    return out;
+  };
+  return {
+    id: "starter-personas",
+    summary:
+      "The starter personas, their naysayers and the define-change skill in the org pack's agents/ and skills/, where no file is there already (ADR 0201)",
+    creates: true,
+    pending: async (root) => (await plan(root)).map((f) => f.rel),
+    async apply(root) {
+      const out: string[] = [];
+      for (const f of await plan(root)) {
+        const to = join(root, ...f.rel.split("/"));
+        await mkdir(dirname(to), { recursive: true });
+        await writeFile(to, f.bytes, { flag: "wx" });
+        out.push(f.rel);
+      }
+      return out;
+    },
+  };
+}
 
 /** The org-flow schema file, metarepo-relative. */
 const orgFlowRel = (root: string) =>

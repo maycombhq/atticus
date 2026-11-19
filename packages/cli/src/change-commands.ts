@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createAdapters,
@@ -13,6 +14,7 @@ import {
   handoffBranch,
   loadOrgPack,
   orgPackDirOf,
+  quickPathOf,
   type ManualStep,
 } from "@maycombhq/core";
 import {
@@ -22,9 +24,13 @@ import {
   formatLearn,
   learnReport,
   type DraftCapture,
+  changeFolder,
   changeFootprint,
   changeReport,
   changeStore,
+  checkRequirements,
+  parseRequirements,
+  unadoptedChanges,
   detectConflicts,
   handoff,
   loadChangeContext,
@@ -254,7 +260,164 @@ export function parseOwners(values: string[]): Record<string, string[]> | string
   return out;
 }
 
-/** atticus change new "<title>" --type <type> [--template t] [--id x] [--owner role=a,b] [--system s] [--by <you>] */
+/** ADR 0201: what follows a quick change's creation, in the words the ADR gives. */
+const QUICK = {
+  noType: "This org pack has no change type quick: run atticus upgrade, or pass --type <type>.",
+  next: (id: string) =>
+    `Next: your personas write its proposal, spec deltas, design and tasks (/define-change ${id}). Then a person runs atticus change handoff ${id} --approve.`,
+};
+
+/** The first `# ` heading of a Markdown file's text. */
+const firstHeading = (text: string) => /^#\s+(.+?)\s*#*\s*$/m.exec(text)?.[1];
+
+/**
+ * The type a quick change takes when none is named (ADR 0201): `quick`, else the org pack's
+ * first type of the quick shape. Undefined when it has none.
+ */
+async function quickTypeOf(root: string): Promise<string | undefined> {
+  const types = (await loadOrgPack(orgPackDirOf(root))).changeTypes.types;
+  return (types.find((t) => t.id === "quick" && quickPathOf(t)) ?? types.find(quickPathOf))?.id;
+}
+
+/**
+ * atticus change new ["<title>"] --from <requirements.md> [--type quick] [--id <id>] [--check]
+ * [--json] (ADR 0201): the door check, then the change with the file copied into its folder. The
+ * check calls no model: every question closed, every evidence id in the map or planned.
+ */
+async function changeFromRequirements(
+  root: string,
+  o: Parameters<typeof changeNew>[1] & { from: string },
+  io: Output,
+  deps: ChangeDeps,
+): Promise<number> {
+  const file = o.from;
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(file);
+  } catch (e) {
+    io.err(`Can't read ${file}: ${(e as Error).message.split("\n")[0]}`);
+    return 1;
+  }
+  const parsed = parseRequirements(bytes.toString("utf8"));
+  // The map: the catalog's records (the index's find) and every manifest's repos, read or not.
+  const repos = new Set((await loadRepos(root)).map((r) => r.id));
+  const { openIndex } = await import("@maycombhq/index");
+  const ix = await openIndex(root);
+  let r;
+  try {
+    r = checkRequirements(parsed, (id) => repos.has(id) || ix.find(id).length > 0, file);
+  } finally {
+    ix.close();
+  }
+  if (!r.ok) {
+    if (o.json) io.out(JSON.stringify({ ok: false, reasons: r.reasons }, null, 2));
+    io.err(`Refused: ${r.reasons.length} problem${r.reasons.length === 1 ? "" : "s"} in ${file}.`);
+    for (const x of r.reasons) io.err(`${x.code}: ${x.message}`);
+    return 1;
+  }
+  const passes = [
+    ...(r.roles ? [] : [`No persona asked a question in ${file}.`]),
+    `${file} passes: ${r.questions} question${r.questions === 1 ? "" : "s"} (${r.answered} answered, ${r.accepted} accepted), ${r.inMap} id${r.inMap === 1 ? "" : "s"} in the map, ${r.planned} planned.`,
+  ];
+  if (o.check) {
+    if (o.json) io.out(JSON.stringify({ ok: true, reasons: [] }, null, 2));
+    else for (const l of passes) io.out(l);
+    return 0;
+  }
+  const title = o.title ?? parsed.title;
+  if (!title || !o.by) {
+    io.err(
+      `${file} has no "# " heading to take the title from: give one, atticus change new "<title>" --from ${file}.`,
+    );
+    return 2;
+  }
+  const owners = parseOwners(o.owners ?? []);
+  if (typeof owners === "string") {
+    io.err(owners);
+    return 2;
+  }
+  try {
+    const type = o.type ?? (await quickTypeOf(root));
+    if (!type) {
+      io.err(QUICK.noType);
+      return 1;
+    }
+    const known = (await loadOrgPack(orgPackDirOf(root))).changeTypes.types.find(
+      (t) => t.id === type,
+    );
+    // A type of another shape keeps its brief: its stages read it.
+    const quick = !!known && quickPathOf(known);
+    const c = await newChange(root, {
+      title,
+      type,
+      by: o.by,
+      owners,
+      requirements: bytes,
+      ...(quick ? { noBrief: { reason: `Created from ${file}` } } : {}),
+      ...(o.template ? { template: o.template } : {}),
+      ...(o.id ? { id: o.id } : {}),
+      ...(o.systems?.length ? { systems: o.systems } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
+    if (o.json) io.out(JSON.stringify({ ok: true, reasons: [], change: c.id }, null, 2));
+    else {
+      if (!r.roles) io.out(passes[0]!);
+      io.out(`Created ${c.id} (${c.type}, from ${file}). It is in ${c.state}.`);
+      io.out(quick ? QUICK.next(c.id) : `Write the brief: ${changesRelOf(root)}/${c.id}/brief.md`);
+    }
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * ADR 0201: `atticus change new --id <id>` on a plain OpenSpec folder (no change.yaml): its title
+ * is proposal.md's first heading (else the id), its type quick when none is given, and only
+ * change.yaml is written.
+ */
+async function adoptChange(
+  root: string,
+  o: Parameters<typeof changeNew>[1] & { id: string; by: string },
+  io: Output,
+  deps: ChangeDeps,
+): Promise<number> {
+  const owners = parseOwners(o.owners ?? []);
+  if (typeof owners === "string") {
+    io.err(owners);
+    return 2;
+  }
+  try {
+    const type = o.type ?? (await quickTypeOf(root));
+    if (!type) {
+      io.err(QUICK.noType);
+      return 1;
+    }
+    const proposal = await readFile(join(changeFolder(root, o.id), "proposal.md"), "utf8").catch(
+      () => "",
+    );
+    const c = await newChange(root, {
+      title: o.title ?? firstHeading(proposal) ?? o.id,
+      type,
+      by: o.by,
+      id: o.id,
+      owners,
+      noBrief: { reason: "Adopted from its OpenSpec folder", adopt: true },
+      ...(o.systems?.length ? { systems: o.systems } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
+    io.out(`Adopted ${c.id} (${c.type}, "${c.title}"). It is in ${c.state}.`);
+    io.out(QUICK.next(c.id));
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * atticus change new "<title>" --type <type> [--template t] [--id x] [--owner role=a,b] [--system s] [--by <you>];
+ * with --from <requirements.md>, a quick change from a requirements file (ADR 0201).
+ */
 export async function changeNew(
   root: string,
   o: {
@@ -272,14 +435,29 @@ export async function changeNew(
      * footprint: the vendor and the systems, repos, flows and Interfaces it reaches.
      */
     impact?: string;
+    /** ADR 0201: a requirements file to make the change from, once it passes the door check. */
+    from?: string;
+    /** With `from`: run the check and create nothing. */
+    check?: boolean;
+    /** With `from`: the check's result as JSON. */
+    json?: boolean;
   },
   io: Output,
   deps: ChangeDeps = {},
 ): Promise<number> {
+  if (o.from !== undefined) return changeFromRequirements(root, { ...o, from: o.from }, io, deps);
+  if (o.check || o.json) {
+    io.err("--check and --json go with --from <requirements.md>.");
+    return 2;
+  }
+  // ADR 0201: `change new --id <id>` on a plain OpenSpec folder adopts it as it is.
+  if (o.id && o.by && (!o.title || !o.type) && (await unadoptedChanges(root)).includes(o.id))
+    return adoptChange(root, { ...o, id: o.id, by: o.by }, io, deps);
   if (!o.title || !o.type || !o.by) {
     io.err(
       'Usage: atticus change new "<title>" --type <change type> [--by <you>] [--template <id>]',
     );
+    io.err("  or, from a requirements file: atticus change new --from <requirements.md> [--check]");
     // The types this metarepo has, so nobody has to open change-types.yaml to pick one (ADR 0119).
     if (!o.type) {
       try {
@@ -963,6 +1141,8 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
     const p = progress.get(id);
     return p ? { completedTasks: p.completedTasks, totalTasks: p.totalTasks } : undefined;
   };
+  // ADR 0201: a plain OpenSpec folder Atticus doesn't track yet, with the command that adopts it.
+  const plain = await unadoptedChanges(root);
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -974,6 +1154,7 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
             state: c.state,
             ...(tasksOf(c.id) ? { tasks: tasksOf(c.id) } : {}),
           })),
+          ...plain.map((id) => ({ id, adopted: false })),
           ...stores.json,
         ],
         null,
@@ -982,7 +1163,8 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
     );
     return 0;
   }
-  if (all.length === 0) io.out("No changes yet. Start one with atticus change new.");
+  if (all.length === 0 && plain.length === 0)
+    io.out("No changes yet. Start one with atticus change new.");
   else {
     const withTasks = progress.size > 0;
     const rows = all.map((c) => {
@@ -997,8 +1179,13 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
         c.title,
       ];
     });
+    for (const id of plain) rows.push([id, "not adopted"]);
     const head = ["ID", "TYPE", "STATE", ...(withTasks ? ["TASKS"] : []), "HAND-OFF", "TITLE"];
     for (const l of table(head, rows)) io.out(l);
+    for (const id of plain)
+      io.out(
+        `Not adopted: ${id} is an OpenSpec change Atticus doesn't track yet. Adopt it: atticus change new --id ${id}`,
+      );
   }
   for (const l of stores.lines) io.out(l);
   return 0;

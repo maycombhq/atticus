@@ -11,10 +11,14 @@ import {
   DEFAULT_ROLES,
   DEFAULT_RUNTIME,
   DEFAULT_TEST_STRATEGY,
+  addQuickTypeText,
+  ChangeTypes,
   FrameworkModel,
   IntegrationPattern,
   loadOrgPack,
   Profile,
+  quickPathOf,
+  QUICK_CHANGE_TYPE,
   Roles,
   Runtime,
   ServiceRequestTemplate,
@@ -24,7 +28,7 @@ const msgs = (r: { success: boolean; error?: { issues: { message: string }[] } }
   r.success ? [] : r.error!.issues.map((i) => i.message);
 
 describe("built-in defaults", () => {
-  it("cover the thirteen roles, seven change types and a gate per phase", () => {
+  it("cover the thirteen roles, eight change types and a gate per phase", () => {
     expect(BUILT_IN_ROLES).toHaveLength(13);
     expect(DEFAULT_CHANGE_TYPES.types.map((t) => t.id)).toEqual([
       "feature",
@@ -35,6 +39,8 @@ describe("built-in defaults", () => {
       "tech-debt",
       // ADR 0113: the fast path's type.
       "small-change",
+      // ADR 0201: the quick path's type.
+      "quick",
     ]);
     expect(DEFAULT_GATES.gates.map((g) => g.phase)).toEqual([
       "define",
@@ -54,6 +60,93 @@ describe("built-in defaults", () => {
     expect(
       DEFAULT_CHANGE_TYPES.types.find((t) => t.id === "emergency-fix")!.postReleaseReview,
     ).toBe(true);
+  });
+});
+
+/** ADR 0201: the quick path is a type's shape, not a key. */
+describe("the quick change type", () => {
+  it("is quick by its shape, and no other built-in type is", () => {
+    expect(
+      Object.fromEntries(DEFAULT_CHANGE_TYPES.types.map((t) => [t.id, quickPathOf(t)])),
+    ).toEqual({
+      feature: false,
+      integration: false,
+      "bug-fix": false,
+      "emergency-fix": false,
+      "config-change": false,
+      "tech-debt": false,
+      "small-change": false,
+      quick: true,
+    });
+    const quick = DEFAULT_CHANGE_TYPES.types.find((t) => t.id === "quick")!;
+    expect(quick.phases).toEqual(["plan", "build", "release"]);
+    expect(quick.artifacts).toEqual(["proposal", "specs", "design", "tasks"]);
+    expect(quick.lenses).toEqual(["true", "complete", "safe", "ship"]);
+    expect(QUICK_CHANGE_TYPE.name).toBe("Quick path");
+  });
+
+  it("takes an organisation's own type of that shape, and none with a stage's artifacts or phases", () => {
+    const own = { phases: ["plan", "build"], artifacts: ["proposal", "specs", "tasks"] };
+    expect(quickPathOf(own)).toBe(true);
+    expect(quickPathOf({ ...own, artifacts: [...own.artifacts, "stories"] })).toBe(false);
+    expect(quickPathOf({ ...own, phases: ["define", "plan", "build"] })).toBe(false);
+    expect(quickPathOf({ ...own, phases: ["design", "build"] })).toBe(false);
+    expect(quickPathOf({ ...own, phases: ["build", "release"] })).toBe(false);
+  });
+
+  it("is added at the end of an existing change-types.yaml, every other byte kept", async () => {
+    const text = [
+      "# Our types. Change through a pull request.",
+      "schemaVersion: 2",
+      "types:",
+      "  - id: feature # the usual one",
+      "    name: 'New feature'",
+      "    phases: [define, design, plan, build, qa, release]",
+      "    artifacts:",
+      "      - proposal",
+      "      - tasks",
+      "    lenses: [ complete ]",
+      "  # Forge's own",
+      "  - id: forge-hotfix",
+      "    name: Forge hotfix",
+      "    phases: [build]",
+      "    artifacts: [proposal, tasks]   # short",
+      "",
+    ].join("\n");
+    const r = addQuickTypeText(text);
+    expect(r.changed).toBe(true);
+    expect(r.text.startsWith(text)).toBe(true);
+    expect(r.text.slice(text.length)).toBe(
+      [
+        "  - id: quick",
+        "    name: Quick path",
+        '    description: "From a requirements file to a plain OpenSpec change: proposal, spec deltas, design and tasks, written by your personas and grounded in the map. No stage runs. One hand-off before build."',
+        "    phases: [plan, build, release]",
+        "    artifacts: [proposal, specs, design, tasks]",
+        '    lenses: ["true", complete, safe, ship]',
+        "",
+      ].join("\n"),
+    );
+    const types = ChangeTypes.parse((await import("yaml")).parse(r.text)).types;
+    expect(types.map((t) => t.id)).toEqual(["feature", "forge-hotfix", "quick"]);
+    expect(types.at(-1)).toEqual(QUICK_CHANGE_TYPE);
+    // A second run, a type quick of the organisation's own, and a file that doesn't read: left alone.
+    expect(addQuickTypeText(r.text)).toEqual({ text: r.text, changed: false });
+    expect(addQuickTypeText("schemaVersion: 2\ntypes: [").changed).toBe(false);
+  });
+
+  it("keeps the file's line endings, its indent and a last line with no newline", () => {
+    const crlf =
+      "schemaVersion: 2\r\ntypes:\r\n- id: feature\r\n  name: F\r\n  phases: [build]\r\n  artifacts: [proposal, tasks]";
+    const r = addQuickTypeText(crlf);
+    expect(r.text.startsWith(`${crlf}\r\n- id: quick\r\n  name: Quick path\r\n`)).toBe(true);
+    expect(r.text.includes("\n") && !/[^\r]\n/.test(r.text)).toBe(true);
+    // Keys after the list stay after it.
+    const after =
+      "types:\n  - id: feature\n    name: F\n    phases: [build]\n    artifacts: [proposal, tasks]\nschemaVersion: 2\n";
+    const a = addQuickTypeText(after);
+    expect(a.text.endsWith("ship]\nschemaVersion: 2\n")).toBe(true);
+    expect(a.text.replace(/ {2}- id: quick\n( {4}.*\n)+/, "")).toBe(after);
   });
 });
 

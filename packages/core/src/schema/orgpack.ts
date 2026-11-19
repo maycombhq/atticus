@@ -366,6 +366,20 @@ export function fastPathOf(
 }
 
 /**
+ * Whether a change of this type takes the quick path (ADR 0201): its only phase before build is
+ * plan, and its artifacts list no stories. A shape, not a key, so change-types.yaml stays at
+ * version 2 and an organisation's own type of that shape is quick too. No stage runs for it:
+ * its proposal, spec deltas, design and tasks are written directly, then handed off once.
+ */
+export function quickPathOf(type: {
+  phases: readonly string[];
+  artifacts: readonly string[];
+}): boolean {
+  const before = type.phases.filter((p) => PRE_BUILD.includes(p));
+  return before.length === 1 && before[0] === "plan" && !type.artifacts.includes("stories");
+}
+
+/**
  * The gate whose critic reviews the fast path's step (ADR 0113): the type's fastGate, else the
  * first gate of its last phase before build, else of its first phase. Undefined when gates.yaml
  * has no gate on that phase.

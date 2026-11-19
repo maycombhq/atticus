@@ -13,6 +13,7 @@ import {
   Api,
   ChangeArtifact,
   changesDirOf,
+  quickPathOf,
   changesRelOf,
   factsDirOf,
   factsFileOf,
@@ -371,6 +372,8 @@ async function changeDetail(root: string, id: string) {
     openFindings: open,
     updatedAt: c.history.at(-1)?.at ?? c.createdAt,
     ...(fast ? { fastPath: true } : {}),
+    // 3.18.0 (ADR 0201): it takes the quick path, by its type's shape.
+    ...(quickPathOf(report.type) ? { quickPath: true } : {}),
     // Ninth UX walk (2.83.0): who owns each role, so the change page can name them.
     owners: c.owners,
     artifacts,

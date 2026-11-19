@@ -220,6 +220,10 @@ types:
 
 A small type has at most one phase before build, so its plan is one hand-off PR; the gates it keeps are the gates of its phases, and `fastGate: <gate id>` picks the one whose critic reviews the step (by default the gate of its last phase before build). A brief that says `Size: standard` takes the full path whatever the type. A version 1 file still reads, every type standard; `atticus upgrade` moves it to version 2 without changing what any type does. The built-in types include `small-change`.
 
+### The quick path
+
+A type whose only phase before build is `plan` and whose artifacts list no `stories` takes the quick path ([ADR 0201](../adr/0201-the-quick-path-and-personas-that-ask-the-map.md)): no stage runs; its proposal, spec deltas, design and tasks are written directly and handed off once. The built-in `quick` type has that shape, and a type of your own with it is quick too. Start one from a requirements file with `atticus change new --from <requirements.md>` (`--check` runs the door check alone: every question closed, every cited id in the map or listed under `## Planned`). A `change-types.yaml` written before 2.0.0-beta.30 gains the `quick` entry with `atticus upgrade`; a type `quick` of your own is left as it is.
+
 ### The starter review (the critic's AI rules)
 
 The critic's AI lenses review every draft a stage writes, with Copilot too, but only where the org pack has AI rules for that gate and lens (ADR 0115). The built-in constitution has deterministic rules only, so `atticus init` and `atticus adopt` write a starter review into `org-pack/checklists/review.yaml` (ADR 0120): ten AI rules, each a prompt in plain words that asks a lens to judge the draft's meaning against the estate and the brief.

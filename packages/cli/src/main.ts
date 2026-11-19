@@ -666,6 +666,9 @@ Usage:
   atticus change new "<title>" --type <type>  Start a change from a template
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change new ["<title>"] --from <requirements.md>   A quick change from a requirements file, once every question in it is closed and every id it cites is in the map or planned (ADR 0201)
+          [--type quick] [--id id] [--check] [--json]  (--check: the check alone, nothing is created)
+  atticus change new --id <id>         Adopt a plain OpenSpec change folder that change list shows as not adopted
   atticus change sketch <change> --from <file.drawio|.mmd|strokes.yaml|.json> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out), or a strokes file as written (ADR 0193: absorb, retire, call and the rest); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--change <id>] [--limit n] [--json]
@@ -3458,6 +3461,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
           ...(list(values.system) ? { systems: list(values.system)! } : {}),
           ...(str(values.like) ? { like: str(values.like)! } : {}),
           ...(str(values.impact) ? { impact: str(values.impact)! } : {}),
+          ...(str(values.from) ? { from: str(values.from)! } : {}),
+          ...(values.check === true ? { check: true } : {}),
+          ...(json ? { json: true } : {}),
         },
         io,
       );

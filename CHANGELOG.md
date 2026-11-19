@@ -2,6 +2,21 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.30 (unreleased)
+
+### Added
+
+- **The quick path has a change type (ADR 0201).** `quick` is one more built-in type: proposal, spec deltas, design and tasks, phases plan, build and release, and no stage. A type is quick by its shape (its only phase before build is plan, and it lists no stories), so an organisation's own type of that shape is quick too and `change-types.yaml` stays at version 2.
+- **`atticus change new --from <requirements.md>`** makes a quick change from a free-form requirements file: the title is the file's first heading, the file is copied byte for byte to the change's `requirements.md`, and no brief is written. Before it creates anything, one deterministic check (no model) refuses a file with an open question (`requirements.open-question`), with evidence that names an id neither in the map nor listed under `## Planned` (`requirements.unknown-id`), or with a row that doesn't read (`requirements.unreadable`), each with its file and line. A repo a manifest lists counts as in the map, read or not. `--check` runs the check alone; `--json` prints `{ ok, reasons }`.
+- **`atticus next` and the app never offer a stage for a quick change.** Before build its step is `quick-define` (`/define-change <id>`), naming which of its four files are missing; then what blocks its gate; then its one hand-off, raised by a person. Home's Stage column says "Quick path".
+- **`requirements.md` rides with the hand-off of a change's first phase**, as `brief.md` does.
+- **A plain OpenSpec change folder is listed, not passed over.** `atticus change list` shows a folder with no `change.yaml` as `not adopted`, with the command that adopts it (`{ "id": …, "adopted": false }` with `--json`). `atticus change new --id <id>` on such a folder takes its title from `proposal.md`'s first heading (else the id) and the type `quick`, writes `change.yaml` and no other file.
+- **`atticus upgrade` gives an existing org pack the quick path**, in two steps. `change-types-quick` adds the one entry at the end of `change-types.yaml`, every other byte kept; a type `quick` of your own is left alone, and an entry you delete afterwards stays deleted. `starter-personas` writes the starter personas, their naysayers and the define-change skill into the org pack's `agents/` and `skills/`, never over a file that is there. `atticus init` writes the same into a new org pack.
+
+### Local API 3.18.0
+
+- **Additive (ADR 0201):** a change says whether it takes the quick path, `quickPath` beside `fastPath`, in `GET /api/changes` and `GET /api/changes/{id}`.
+
 ## 2.0.0-beta.28.5 (2026-11-17)
 
 beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
