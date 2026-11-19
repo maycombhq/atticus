@@ -48,6 +48,7 @@ import {
   specsRelOf,
   WORKSPACE_SCHEMA_VERSION,
   writeFileAtomic,
+  newerThan,
 } from "@maycombhq/core";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -739,40 +740,7 @@ export function newerWords(c: UpgradeCheck): string {
   return `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}). Install it${u?.atticus ? ` (Atticus ${u.atticus} or later)` : ""} before working in this metarepo, so nothing it wrote is lost; or, if the file was edited by hand, put it back as it was committed. Nothing was changed.`;
 }
 
-/**
- * Round 38: semver order with pre-releases (2.0.0-beta.30 > 2.0.0-beta.21 > 2.0.0-beta.9, and a
- * release above its pre-releases), so an older beta refuses a metarepo a newer beta upgraded.
- */
-export function newerThan(a: string, b: string): boolean {
-  const split = (v: string) => {
-    const [core, pre] = v.trim().replace(/^v/, "").split(/-(.*)/s, 2);
-    return { core: (core ?? "").split(".").map((n) => Number(n) || 0), pre: pre ?? "" };
-  };
-  const x = split(a);
-  const y = split(b);
-  for (let i = 0; i < Math.max(x.core.length, y.core.length); i++) {
-    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0);
-    if (d) return d > 0;
-  }
-  if (x.pre === y.pre) return false;
-  if (!x.pre) return true; // a release is above its pre-releases
-  if (!y.pre) return false;
-  const xp = x.pre.split(".");
-  const yp = y.pre.split(".");
-  for (let i = 0; i < Math.max(xp.length, yp.length); i++) {
-    const p = xp[i];
-    const q = yp[i];
-    if (p === undefined) return false;
-    if (q === undefined) return true;
-    if (p === q) continue;
-    const pn = /^\d+$/.test(p);
-    const qn = /^\d+$/.test(q);
-    if (pn && qn) return Number(p) > Number(q);
-    if (pn !== qn) return !pn; // numeric identifiers sort below the others
-    return p > q;
-  }
-  return false;
-}
+export { newerThan };
 
 /** The steps a stamp records as done: every step but one that has nothing to give yet. */
 async function stampedSteps(root: string): Promise<string[]> {
@@ -781,22 +749,31 @@ async function stampedSteps(root: string): Promise<string[]> {
   return out;
 }
 
-export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
+export async function upgradeCheck(
+  root: string,
+  version = VERSION,
+  /**
+   * ADR 0202 point 8, `quick`: without any step's dry run (they read every record), for the
+   * line after a refusal. A step then counts as pending when the stamp doesn't name its id.
+   */
+  o: { quick?: boolean } = {},
+): Promise<UpgradeCheck> {
   // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
   const [read, found] = await Promise.all([
     readStampFile(root),
     Promise.all(
       MIGRATIONS.map(async (m) => ({
         m,
-        files: await m.pending(root),
-        problems: m.problems ? await m.problems(root) : [],
+        files: o.quick ? [] : await m.pending(root),
+        problems: !o.quick && m.problems ? await m.problems(root) : [],
         unavailable: m.unavailable ? await m.unavailable(root) : false,
       })),
     ),
   ]);
   const { stamp, unread } = read;
+  const named = new Set(read.stamp?.migrations ?? []);
   const pending = found
-    .filter((x) => x.files.length)
+    .filter((x) => (o.quick ? !named.has(x.m.id) && !x.unavailable : x.files.length))
     .map(({ m, files }) => ({ id: m.id, summary: m.summary, files }));
   const problems = found.flatMap((x) => x.problems);
   // Said only where the step still has something to do here: an org pack, and no stamp of it.
@@ -815,26 +792,6 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
     pending,
     ...(problems.length ? { problems } : {}),
     ...(unavailable.length ? { unavailable } : {}),
-  };
-}
-
-/**
- * ADR 0202 point 8: the check a refusal's last line is made from, without any step's dry run
- * (they read every record): a step counts as pending when the stamp doesn't name its id.
- */
-export async function upgradeCheckQuick(root: string, version = VERSION): Promise<UpgradeCheck> {
-  const { stamp, unread } = await readStampFile(root);
-  const named = new Set(stamp?.migrations ?? []);
-  const pending = [];
-  for (const m of MIGRATIONS)
-    if (!named.has(m.id) && !(await m.unavailable?.(root)))
-      pending.push({ id: m.id, summary: m.summary, files: [] as string[] });
-  return {
-    atticus: version,
-    ...(stamp ? { stamp } : {}),
-    newer: stamp ? newerThan(stamp.atticus, version) : !!unread,
-    ...(unread ? { unreadStamp: unread } : {}),
-    pending,
   };
 }
 
@@ -894,7 +851,6 @@ export async function newerCatalogOf(
   root: string,
 ): Promise<{ message: string; files: import("@maycombhq/scanner").NewerFile[] } | undefined> {
   const { newerAtticusWords, newerCatalogFiles, undoDirOf } = await import("@maycombhq/scanner");
-  await import("./this-atticus.js");
   const files = await newerCatalogFiles(root, { undoDir: await undoDirOf(root) });
   return files.length
     ? { message: `${newerAtticusWords(files)} Nothing was changed.`, files }
@@ -1175,6 +1131,8 @@ export async function upgradeCommand(
   // ADR 0202 point 8: a step refused ends with where the metarepo stands.
   const standingLine =
     slotsDone === "refused" || slotsDone === "changed" ? await refusalEnds(root) : undefined;
+  // Whether this run wrote anything before the slots step: another step, the store, the stamp.
+  const wroteBefore = c.pending.length > 0 || store?.action === "create" || !onlyShown;
   if (o.json)
     io.out(
       JSON.stringify(
@@ -1201,7 +1159,8 @@ export async function upgradeCommand(
     if (slots.pending) {
       if (answered === undefined)
         for (const l of slotsLines()) (slotsDone === "refused" ? io.err : io.out)(l);
-      if (answered === false) io.out(CONFIRM_WORDS.no);
+      // Declined: nothing of this step; what the run wrote before it is said above.
+      if (answered === false) io.out(wroteBefore ? CONFIRM_WORDS.noStep : CONFIRM_WORDS.no);
       else if (slotsDone === "shown")
         io.out("Nothing of it written yet: atticus upgrade --yes applies this step.");
       else if (slotsDone === "refused")

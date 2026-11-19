@@ -23,15 +23,25 @@ afterAll(async () => {
 });
 
 type Ask = (question: string) => Promise<string | undefined>;
+/** What says a command isn't a person's own: cleared for a run, so the test's own shell (an
+ * assistant's, a CI's) never decides whether a question is asked. */
+const NOT_A_PERSON = [
+  "CI",
+  "CLAUDECODE",
+  "GEMINI_CLI",
+  "CURSOR_AGENT",
+  "ATTICUS_ASSISTANT",
+  "ATTICUS_ACP_SESSION",
+  "ATTICUS_STARTED_BY",
+];
 async function run(argv: string[], ask?: Ask, env: Record<string, string> = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const asked: string[] = [];
-  const kept = {
-    CI: process.env.CI,
-    ...Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]])),
-  };
-  delete process.env.CI;
+  const kept = Object.fromEntries(
+    [...NOT_A_PERSON, ...Object.keys(env)].map((k) => [k, process.env[k]]),
+  );
+  for (const k of NOT_A_PERSON) delete process.env[k];
   Object.assign(process.env, env);
   try {
     const code = await main(argv, {
@@ -196,9 +206,28 @@ describe("a refused build asks once in a terminal (ADR 0202 point 9)", () => {
       const refused = await run(["catalog", "build", "--root", root], no);
       expect(refused.asked).toEqual([`Remove these ${n} records? [y/N]`]);
       expect(refused.code).toBe(1);
-      expect(refused.err.slice(0, plain.err.length - 1)).toEqual(plain.err.slice(0, -1));
-      expect(refused.err.at(-2)).toBe("Nothing written.");
-      expect(refused.err.at(-1)).toBe(plain.err.at(-1));
+      // The metarepo is up to date, so no line about where it stands follows the refusal.
+      expect(plain.err.at(-1)).toBe(
+        `Confirm exactly these: atticus catalog build --allow-removals ${n}.`,
+      );
+      expect(plain.err.join("\n")).not.toContain("You are on Atticus");
+      expect(refused.err).toEqual([...plain.err, "Nothing written."]);
+      // An assistant's session, the app or an editor's extension can't answer: none is asked,
+      // though a terminal is there (the review: the question waited for ever under a pty).
+      for (const env of [
+        { ATTICUS_ACP_SESSION: "1" },
+        { CURSOR_AGENT: "1" },
+        { CLAUDECODE: "1" },
+        { GEMINI_CLI: "1" },
+        { ATTICUS_ASSISTANT: "forge-bot" },
+        { ATTICUS_STARTED_BY: "vscode" },
+        { ATTICUS_STARTED_BY: "intellij" },
+      ] as Record<string, string>[]) {
+        const r = await run(["catalog", "build", "--root", root], yes, env);
+        expect(r.asked, JSON.stringify(env)).toEqual([]);
+        expect(r.code, JSON.stringify(env)).not.toBe(0);
+      }
+      expect(generated(root)).toEqual(before);
       expect(generated(root)).toEqual(before);
       // Enter and the end of input are no.
       for (const a of ["", undefined]) {
@@ -352,6 +381,24 @@ describe("atticus upgrade asks once about the slots step", () => {
         code: 0,
         asked: [],
       });
+    },
+    T,
+  );
+
+  it(
+    "declined after another step ran: nothing of this step, and what was written is said above it",
+    async () => {
+      const root = await beforeSlots();
+      // Another step waits too (this machine's ignore file is gone): it runs before the question.
+      await rm(join(root, ".atticus", ".gitignore"));
+      const r = await run(["upgrade", "--by", "pat", "--root", root], no);
+      expect(r.asked).toEqual([CONFIRM_WORDS.apply]);
+      expect(r.code).toBe(0);
+      expect(r.out.some((l) => l.startsWith("Done: "))).toBe(true);
+      expect(r.out.some((l) => l.startsWith("Recorded Atticus "))).toBe(true);
+      expect(r.out.at(-1)).toBe("Nothing of this step written.");
+      expect(r.out).not.toContain("Nothing written.");
+      expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
     },
     T,
   );

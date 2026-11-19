@@ -579,7 +579,7 @@ Usage:
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, the tier your assistant reads a repo at, and (where runtime.yaml allows copilot-acp) the Copilot language server, its version and its sign-in, without running a session (ADR 0171)
   atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus status [--json]              Where this metarepo stands, in one line: your Atticus, the metarepo's stamp, whether this Atticus reads its catalog, what the editor's extension needs when it said so, and the one command to run (or Nothing to do). The same line ends every refusal. Exit 0 when up to date, 1 otherwise
-  atticus selfcheck [--names] [--json]  Run on site, read-only: four named checks against this metarepo (every call drawn, loose or asked; every refusal names a next step; a build twice gives the same bytes; no long command silent for over 30 seconds), then a shape card of fixed words with no name, id, path, hash or count of the estate. Nothing is sent anywhere. --names adds, on screen only, the first 20 ids or paths behind each failed check. Exit 0 when none failed, 1 when one did, 2 outside a metarepo
+  atticus selfcheck [--names] [--quick] [--json]  Run on site, read-only: four named checks against this metarepo (every call the join left has a reason; every refusal names a next step; a build twice gives the same bytes; no long command silent for over 30 seconds), then a shape card of fixed words. Counts are given in bands; no name, id, path, hash or exact count of the estate is printed. Nothing is sent anywhere. --names adds, on screen only, the exact counts and the first 20 ids or paths behind each failed check. --quick skips the check that builds the catalog twice in memory. Exit 0 when none failed, 1 when one did, 2 when it couldn't run (no metarepo, or another command holds the lock)
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
@@ -895,6 +895,25 @@ function num(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** The commands that are one word: what follows it on the line is never a command word. */
+const ONE_WORD = new Set(["selfcheck", "status", "doctor"]);
+
+/**
+ * The command as the log names it (ADR 0050): its words, never a value. The first two
+ * positional words as the parser reads them, so the folder after `--root` is not one of them;
+ * one word for the commands that have no second.
+ */
+export function loggedWords(argv: string[]): string[] {
+  let at: number[];
+  try {
+    at = positionalsAt(argv);
+  } catch {
+    return [];
+  }
+  const words = at.map((i) => argv[i]!);
+  return words.slice(0, ONE_WORD.has(words[0] ?? "") ? 1 : 2);
+}
+
 /** Run the CLI. Returns the process exit code: 0 ok, 1 problems found, 2 usage error. */
 /**
  * Run `atticus <argv>`. What ran, how it ended and how long it took go to the metarepo's local
@@ -918,7 +937,7 @@ export async function main(
   // ADR 0124 addendum D-cli: `legacy <words>`, `join`, `stories` and `task <change> <task>` are
   // the commands that exist, so everything after this (flags, hand-off, the log) sees those.
   const argv = aliasArgv(given, positionalsAt(given));
-  const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
+  const words = loggedWords(argv);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
   ];
@@ -950,9 +969,22 @@ export async function main(
   const said = o.record ? recorderFor(argv, flags, root) : undefined;
   // Run in the app's server, inside a job, each line also goes to the job's Console entry.
   // ADR 0202 point 9: a question is never asked with --json or under CI, whoever set `ask`.
+  // Nor in an assistant's session, nor when the app or an editor started the command.
   const { ask, ...rest } = givenIo;
   const asks =
-    ask && canAsk({ stdinTTY: true, stdoutTTY: true, argv, env: process.env }) ? { ask } : {};
+    ask && canAsk({ stdinTTY: true, stdoutTTY: true, argv, env: process.env })
+      ? {
+          // The time a person takes to answer is theirs, never the command's silence.
+          ask: async (question: string) => {
+            said?.waits(true);
+            try {
+              return await ask(question);
+            } finally {
+              said?.waits(false);
+            }
+          },
+        }
+      : {};
   const io: Output = {
     ...rest,
     ...asks,
@@ -1308,6 +1340,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ? process.env.ATTICUS_ROOT
         : process.cwd(),
   );
+  // ADR 0202 point 7: the build is told this Atticus's version, once, before any command that
+  // may meet a catalog a newer Atticus built.
+  await import("./this-atticus.js");
   // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
   // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
   {
@@ -1324,7 +1359,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "selfcheck" && !command)
     return (await import("./selfcheck.js")).selfcheckCommand(
       root,
-      { json: values.json === true, names: values.names === true },
+      { json: values.json === true, names: values.names === true, quick: values.quick === true },
       io,
     );
   if (group === "catalog" && command === "validate") {

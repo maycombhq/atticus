@@ -2,11 +2,15 @@
  * ADR 0202 point 9: when the command line may ask its one question, and how. Kept apart from the
  * commands so `bin.ts` loads nothing more to decide it.
  */
+import { assistantSession } from "./assistant-session.js";
 
 /**
- * A question is asked only when standard input and output are both a terminal, `--json` is not
- * given and `CI` is not set. Anything else (a pipe, a script, a job of the app, an editor's run)
- * is never asked, and prints what it always printed.
+ * A question is asked only of a person at a terminal: standard input and output are both a
+ * terminal, `--json` is not given, `CI` is not set, and no assistant or tool started the
+ * command. An assistant's session runs commands under a terminal of its own (a Copilot session
+ * Atticus started, Claude Code, Cursor, Gemini, any that sets ATTICUS_ASSISTANT), and the app or
+ * an editor's extension says so with ATTICUS_STARTED_BY: none of them can answer, and a
+ * question there would wait for ever. Anything else prints what it always printed.
  */
 export function canAsk(o: {
   stdinTTY: boolean | undefined;
@@ -16,6 +20,9 @@ export function canAsk(o: {
 }): boolean {
   if (!o.stdinTTY || !o.stdoutTTY) return false;
   if (o.env.CI !== undefined && o.env.CI !== "") return false;
+  if (o.env.ATTICUS_ACP_SESSION || assistantSession(o.env)) return false;
+  const by = o.env.ATTICUS_STARTED_BY?.trim();
+  if (by && by !== "terminal") return false;
   const end = o.argv.indexOf("--");
   const flags = end < 0 ? o.argv : o.argv.slice(0, end);
   return !flags.some((a) => a === "--json" || a.startsWith("--json="));

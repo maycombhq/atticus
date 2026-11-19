@@ -20,6 +20,8 @@ export const CONFIRM_WORDS = {
   both: (n: number, m: number) =>
     `Discard these ${n} hand edits and remove these ${m} records? [y/N]`,
   no: "Nothing written.",
+  /** Declined, when the same run wrote something before the step asked about. */
+  noStep: "Nothing of this step written.",
 } as const;
 
 /** Only `y` or `yes`, in any case, is yes: Enter, anything else and the end of input are no. */
