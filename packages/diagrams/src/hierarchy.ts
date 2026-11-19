@@ -1044,8 +1044,14 @@ function merge(
   cap: number = MAX_JOINS,
 ): HierEdge[] {
   const by = new Map<string, HierEdge>();
+  // ADR 0204 B.1: where the code links the two ends, a declared arrow merged in is neither counted
+  // nor listed; the code's calls are what the edge says. Opened, it is drawn between its own boxes.
+  const coded = new Set<string>();
+  for (const { from, to, atom } of mapped)
+    if (!atom.join?.declaredBy) coded.add(`${atom.type}:${from}>${to}`);
   for (const { from, to, atom } of mapped) {
     const id = `${atom.type}:${from}>${to}`;
+    if (atom.join?.declaredBy && coded.has(id)) continue;
     const e = by.get(id);
     if (!e) {
       by.set(id, {
