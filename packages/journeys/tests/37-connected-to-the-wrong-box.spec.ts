@@ -11,8 +11,8 @@ import { accessible, expect, open, reconnectJourney, test } from "../support/app
  * forge-orders to forge-ledger, sees those calls listed first with where each goes today and how
  * that was decided, ticks them, says why for the three the code names, says yes to replacing
  * sam's pairing, moves them, applies, and the map draws forge-orders → forge-ledger and no
- * forge-orders → forge-billing. Then Undo and Apply, with its removals confirmed, put the arrow back. No network; nothing is
- * committed or pushed.
+ * forge-orders → forge-billing. Then Undo, with its removals confirmed (a pairing taken back
+ * counts toward the limits), puts the arrow back. No network; nothing is committed or pushed.
  */
 const app = reconnectJourney();
 
@@ -148,16 +148,35 @@ test("a call joined to the wrong box is moved to the right one from Connect", as
   ).toBeVisible({ timeout: 60_000 });
   await accessible(page, "the map after the move");
 
-  // Undo takes the four lines back in one job and builds: the arrow is back where it was, and
-  // the removals are the Undo's own, so nothing waits for a confirm.
+  // Undo takes the four lines back in one job. A pairing taken back counts toward the removal
+  // limits (ADR 0195's addendum of 2026-11-19): three of forge-orders's 13 records is over a
+  // tenth, so the build waits for the person's count, each removal listed with why.
   await panel.getByRole("button", { name: "Undo" }).click();
   await expect(
-    panel.getByText("Undone: what this wrote is taken back, and the map built again."),
+    panel.getByText(
+      "Undone: what this wrote is taken back. The map is built again once you confirm the records it would remove: what is taken back counts toward the removal limits.",
+    ),
   ).toBeVisible({ timeout: 120_000 });
   expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
+  await expect(page.locator(RIGHT)).toHaveAttribute("aria-label", /paired by a person/);
+  await accessible(page, "Connect after Undo, the build waiting");
+  await panel.getByRole("link", { name: /^Review the \d+ removals?$/ }).click();
+  await expect(page).toHaveURL(/#\/catalog-builds$/);
+  const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
+  const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+  await review.click();
+  const dialog = page.getByRole("dialog", { name: `Confirm ${n} removals` });
+  await expect(
+    dialog.getByRole("row").filter({ hasText: "its call goes to forge-billing now" }),
+  ).toHaveCount(3);
+  await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+  await dialog.getByRole("button", { name: `Remove ${n} records` }).click();
+  await expect(dialog).toBeHidden({ timeout: 120_000 });
+  // Confirmed: the arrow is back where it was.
+  await open(page, app(), "canvas");
   await expect(page.locator(WRONG)).toHaveAttribute("aria-label", /4 × calls/, {
     timeout: 120_000,
   });
   await expect(page.locator(RIGHT)).toHaveCount(0);
-  await accessible(page, "Connect after Undo");
+  await accessible(page, "the map after Undo, confirmed");
 });

@@ -21,6 +21,7 @@ vi.mock("react", async () => {
 });
 const { Pairing, howWords, initialPicks, pairsOf, undoneWords } =
   await import("../src/screens/architecture/Connect.js");
+const { JobFailed } = await import("../src/app/job.js");
 
 type PairApply = import("../src/screens/architecture/Connect.js").PairApply;
 vi.mock("../src/app/propose.js", async () => ({
@@ -311,6 +312,31 @@ describe("Move to forge-ledger", () => {
     await t.click(C.undo);
     expect(undone).toEqual([wrote]);
     expect(t.said()).toContain(COPY.connectAB.undone);
+  });
+
+  it("says an Undo over the removal limits is taken back and waits for the person's confirm (ADR 0195 addendum)", async () => {
+    const wrote = [
+      { edit: 0, file: "facts/forge-orders.corrections.jsonl", lines: ['{"fact":"call.12"}'] },
+    ];
+    const refused = {
+      reasons: ["large-removals"],
+      message: "This would remove 4 records…",
+      removals: [],
+    } as unknown as Api.BuildRefusalViewT;
+    const t = start([byAnswer, byMe], {
+      apply: () => Promise.resolve({ wrote, built: true }),
+      undo: () => Promise.reject(new JobFailed("Refused", [], undefined, 1, { refused })),
+    });
+    t.tick(pick(byAnswer));
+    await t.click(C.moveTo("forge-ledger"));
+    await t.click(C.moveConfirm(1, "forge-ledger"));
+    await t.click(C.undo);
+    expect(t.said()).toContain(COPY.connectAB.undoneWaits);
+    // A pairing taken back counts toward the limits like any removal: the words say the build
+    // waits for the person, never that the removals are someone else's.
+    expect(COPY.connectAB.undoneWaits).toMatch(/confirm/);
+    expect(COPY.connectAB.undoneWaits).not.toMatch(/didn't change/);
+    expect(t.els().some((x) => x.props.refused === refused)).toBe(true);
   });
 
   it("moves only the ticked moves: a loose call that started ticked is left for Preview", async () => {
