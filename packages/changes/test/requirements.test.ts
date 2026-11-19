@@ -431,6 +431,80 @@ describe("a table the parser can't be sure of is refused, never passed over", ()
     ]);
   });
 
+  it("takes a line indented four spaces or by a tab as indented code, never as a fence's opener", () => {
+    // CommonMark: a fence may be indented up to three spaces. Deeper, the backticks are code,
+    // and taking them as an opener would hide the table after them.
+    for (const indent of ["    ", "     ", "\t"]) {
+      const text = ["## QA", "", `${indent}\`\`\``, "", HEADER, OPEN].join("\n");
+      expect(codes(text), JSON.stringify(indent)).toEqual([["requirements.open-question", 7]]);
+    }
+    // Up to three spaces it is a fence: closed, it hides what it holds; never closed, it is refused.
+    for (const indent of [" ", "  ", "   "]) {
+      const closed = ["## QA", "", `${indent}~~~`, HEADER, OPEN, `${indent}~~~`, "", HEADER, OPEN];
+      expect(codes(closed.join("\n")), JSON.stringify(indent)).toEqual([
+        ["requirements.open-question", 11],
+      ]);
+      const open = ["## QA", "", `${indent}\`\`\``, "", HEADER, OPEN].join("\n");
+      expect(codes(open), JSON.stringify(indent)).toEqual([["requirements.unreadable", 3]]);
+    }
+  });
+
+  it("hides what a fence inside a blockquote holds, as any fence does, until the quote ends", () => {
+    // A quoted example of a questions table, in a fence: not a question, and not counted as one.
+    const quoted = [
+      "## QA",
+      "",
+      "> Write each question like this:",
+      "> ```",
+      ...HEADER.split("\n").map((l) => `> ${l}`),
+      `> ${OPEN}`,
+      "> ```",
+      "",
+      HEADER,
+      answered,
+    ].join("\n");
+    expect(reasons(quoted)).toEqual([]);
+    expect(parseRequirements(quoted).roles.map((r) => r.rows.length)).toEqual([1]);
+    // The same without the fence is a quoted table, which is read.
+    const bare = quoted.split("\n").filter((l) => l !== "> ```");
+    expect(codes(bare.join("\n"))).toEqual([["requirements.open-question", 6]]);
+    // A quoted fence ends with its quote, closed or not: what follows the quote is read.
+    const ended = ["## QA", "", "> ```", "> make", "", HEADER, OPEN].join("\n");
+    expect(codes(ended)).toEqual([["requirements.open-question", 8]]);
+    // A quoted line doesn't close a fence that isn't quoted: it is the fence's text.
+    const inside = ["## QA", "", "```", "> ```", HEADER, OPEN, "```", "", HEADER, OPEN];
+    expect(codes(inside.join("\n"))).toEqual([["requirements.open-question", 12]]);
+    // Still open where the file ends inside the quote: refused where it opens.
+    expect(codes(["## QA", "", HEADER, answered, "", "> ~~~", "> make"].join("\n"))).toEqual([
+      ["requirements.unreadable", 7],
+    ]);
+  });
+
+  it("still refuses a fence in a list item that only the list's end closes", () => {
+    const text = [
+      "## QA",
+      "",
+      "- Build it first:",
+      "  ```sh",
+      "  make",
+      "",
+      "After the list.",
+      "",
+      HEADER,
+      OPEN,
+    ].join("\n");
+    expect(reasons(text)).toEqual([
+      [
+        "requirements.unreadable",
+        4,
+        "r.md:4: a code fence opens here and is never closed, so the rest of the file isn't read: close it (```).",
+      ],
+    ]);
+    // Closed in the item, however far its closing line is indented, the table after it is read.
+    const closed = text.replace("  make\n", "  make\n      ```\n");
+    expect(codes(closed)).toEqual([["requirements.open-question", 12]]);
+  });
+
   it("refuses a code fence never closed, at the line it opens on: it would hide every table after it", () => {
     const words = (fence: string) =>
       `a code fence opens here and is never closed, so the rest of the file isn't read: close it (${fence}).`;
