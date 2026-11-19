@@ -23,6 +23,21 @@ Atticus reads their `.claude/skills/<name>/`, `.claude/agents/`, `.github/agents
 
 Your own skills and agents go in `org-pack/skills/<name>/SKILL.md`, `org-pack/agents/<name>.md` and `org-pack/instructions/<name>.md`, and are written the same way. `atticus skills write --check` exits 1 when a written file is behind its source; `atticus skills list` shows each and where it goes.
 
+## Your own agent's tools and hand-offs
+
+An agent of your own may list `tools` and `handoffs` (ADR 0201). Each is written the way each assistant takes it; `role` and `owns` are for the [define-change loop](the-map-your-personas-ask.md) and are written to neither.
+
+| Source                  | `.claude/agents/<name>.md`                                      | `.github/agents/<name>.agent.md`                                                    |
+| ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `tools: read`           | `Read`                                                          | `read`                                                                              |
+| `tools: search`         | `Grep, Glob`                                                    | `search`                                                                            |
+| `tools: edit`           | `Edit, Write`                                                   | `edit`                                                                              |
+| `tools: atticus/<tool>` | `mcp__atticus__<tool>`                                          | `atticus/<tool>`                                                                    |
+| any other tool          | as written                                                      | `Read` as `read`, `Grep` and `Glob` as `search`; else left out, and said            |
+| `handoffs`              | a last line of the body: "When you are done, hand to: <names>." | `handoffs: [{ label, agent, prompt, send: false }]`; a person presses each hand-off |
+
+An agent that lists no tools is written as before. One that lists them has only those in Copilot from now on, so `atticus skills write --check` reports its files as behind once after the upgrade. A map tool `atticus mcp` doesn't serve and a hand-off to an agent the org pack lacks are left out and named. `atticus skills write` also writes the metarepo's `.vscode/mcp.json` with the `atticus` server: a new file where there is none, the server added where the file has others, nothing where it has one or doesn't read as JSON.
+
 ## Your edits are kept
 
 A written file you edit, or an imported copy you change, is left as it is on the next write or import, and Atticus says so. `--replace` on import takes theirs.

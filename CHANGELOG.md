@@ -2,6 +2,24 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.30 (unreleased)
+
+### Added
+
+- **Personas that ask the map (ADR 0201).** Seven starter personas (product owner, UX analyst, application architect, domain architect, security, developer, QA), a naysayer for each, and the `define-change` skill that runs them, as Markdown an organisation owns: `atticus init` writes them into a new org pack's `agents/` and `skills/`. Each persona writes its section of a requirements file from the map tools and never names a system the map lacks; each naysayer asks at most five questions about that section, every one with an id and a file and line from a tool answer, or marked as having no evidence in the map. The domain architect is a template to copy for your own domain. See [The map your personas ask](docs/guide/the-map-your-personas-ask.md).
+- **Map tool `conflicts` (C4, additive):** open changes that overlap, and with an id only the overlaps that id is in (`atticus change conflicts --touching <id>`). An overlap is an answer, not an error result.
+- **`atticus skills write` passes your own agent's `tools` and `handoffs` through** to the Claude and the Copilot file (`read`, `search`, `edit` and `atticus/<tool>` named as each assistant wants; a hand-off is a button a person presses in Copilot and a last line in Claude), and writes or merges the metarepo's `.vscode/mcp.json`. It names what it leaves out. An agent that lists tools has only those in Copilot from now on, so `atticus skills write --check` reports its files as behind once.
+
+### Fixed
+
+- **`atticus ask "who consumes the topic transfers.completed?"` names the consumers `atticus impact` names.** It was read as the calls to the topic, which an event never is; a topic is also found by its name, not only its id.
+- **`atticus ask "who calls <a name the map lacks>"` no longer lists every interface.** It says the name is not in the map.
+- **`atticus ask --json` keeps how the question was read** (`readAs`, `query`), so the `ask` tool shows it.
+
+### Changed
+
+- **An id the map lacks is said in one sentence everywhere:** "`<id>` is not in the map: planned or not read." from `atticus impact`, `atticus context show` and `atticus context walk` (exit codes as before), and the `impact`, `show` and `walk` tools answer with it instead of an error result (C4, additive).
+
 ## 2.0.0-beta.28.5 (2026-11-17)
 
 beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
