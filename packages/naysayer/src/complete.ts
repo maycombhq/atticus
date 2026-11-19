@@ -41,7 +41,9 @@ export function lensRunOf(request: {
   outputIn?: string;
 }): LensName | undefined {
   if (request.outputIn !== "run") return undefined;
-  const m = /^findings-([a-z-]+)\.yaml$/.exec(request.outputPath);
+  const m = /^findings-([a-z0-9-]+)\.yaml$/.exec(request.outputPath);
+  // ADR 0203 C: a persona's naysayer rides on the complete question.
+  if (m?.[1]?.endsWith("-naysayer")) return "complete";
   const lens = m ? Lens.safeParse(m[1]) : undefined;
   return lens?.success ? lens.data : undefined;
 }
@@ -144,6 +146,7 @@ export async function completeLensRun(
 
   const base = {
     lens,
+    ...(entry.lens !== lens ? { persona: entry.lens } : {}),
     agent: entry.agent,
     rules: entry.rules,
     artifacts: entry.artifacts,

@@ -45,6 +45,7 @@ import {
 } from "./proposals.js";
 import { checkRoundRule } from "./gates.js";
 import { parse } from "yaml";
+import { STAGE_GATE_PREFIX } from "./gate-rounds.js";
 
 export type Action = z.infer<typeof FindingAction>;
 
@@ -258,6 +259,12 @@ export async function act(
       throw new CriticError(
         "refused",
         `${f.id} comes from a constitution rule (${f.rule}), which can never be waived. Fix it.`,
+      );
+    // ADR 0203 A.4: a stage's finding not on the accept list says the way on its fix gives.
+    if (!f.waivable && f.gate.startsWith(STAGE_GATE_PREFIX))
+      throw new CriticError(
+        "refused",
+        `${f.id} (rule ${f.rule}) can't be accepted. ${f.fix.text.replace(/^.*?It can't be accepted: /s, "")}`,
       );
     if (!f.waivable)
       throw new CriticError("refused", `Rule ${f.rule} says its findings can't be waived. Fix it.`);

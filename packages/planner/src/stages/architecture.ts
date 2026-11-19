@@ -93,7 +93,8 @@ import {
   withOperationRollback,
   writeOperations,
 } from "./operations.js";
-import { plannedComponents, plannedRepos } from "./planned.js";
+import { acceptedIds, acceptedWords, readAccepted } from "./accept.js";
+import { knownToChange, plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
 
@@ -1506,6 +1507,8 @@ export function checkDeltas(
         !planned.has(s.to.component) &&
         !unread.has(s.to.component) &&
         !e.outside?.has(s.to.component) &&
+        // ADR 0203 A: a target a person accepted is known as accepted, as an outside system is.
+        !e.accepted?.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(
@@ -2322,6 +2325,21 @@ export function renderArchitecture(
     for (const r of reads) lines.push(`- ${r.flow}${readName(r.flow)}: ${r.why}`);
     lines.push("");
   }
+  // ADR 0203: each consumer the catalog doesn't hold, with its standing; no task is made for it.
+  const known = knownToChange(deltas, e);
+  const listed = deltas.flatMap((d) =>
+    [...(d.consumers ?? []), ...d.steps.flatMap((s) => s.store?.consumers ?? [])]
+      .filter((c) => !e.byId.has(c) && known.has(c))
+      .map((c) => ({ c, flow: d.flow, k: known.get(c)! })),
+  );
+  if (listed.length) {
+    lines.push("## Consumers the map can't check", "");
+    for (const { c, flow, k } of listed)
+      lines.push(
+        `- ${c} (of ${flow}): ${k.standing === "accepted" ? acceptedWords({ by: k.by!, why: k.why! }) : k.standing}; its use can't be checked.`,
+      );
+    lines.push("");
+  }
   const ifs = interfaceChanges(deltas, e);
   lines.push("## Interface changes", "");
   if (ifs.length) {
@@ -2575,6 +2593,8 @@ export async function architectureStage(
   const estate = await loadEstate(root, ctx.records);
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
   estate.outside = new Set((placement.outside ?? []).map((x) => x.id));
+  // ADR 0203 A.4: the ids people accepted at a stage are known to every check, with who and why.
+  estate.accepted = acceptedIds(await readAccepted(root, change.id, ctx).catch(() => new Map()));
   const knowledge = await readKnowledge(root, { cacheRoot: root });
   const patterns = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
 

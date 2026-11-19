@@ -8,5 +8,5 @@ export * from "./model.js";
 export * from "./names.js";
 export * from "./generators/index.js";
 export * from "./generate.js";
-export * from "./rounds.js";
+export { writeGateRound, type RoundWrite } from "@maycombhq/naysayer";
 export * from "./trace.js";

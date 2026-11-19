@@ -46,6 +46,7 @@ import {
   type EffectiveRule,
   type PackSource,
 } from "./rules.js";
+import { personaLensesAt, type PersonaLens } from "./personas.js";
 
 /**
  * The parts of a critic round that `runCritic` (a whole round) and `completeLensRun` (one AI
@@ -161,6 +162,8 @@ export interface Layers {
   layered: ReturnType<typeof layerRules>;
   problems: string[];
   skipped: { rule: string; reason: string }[];
+  /** ADR 0203 C: the personas' naysayers this gate runs as lenses; their rules are in applicable. */
+  personas: PersonaLens[];
 }
 
 /** The critic's context (the change's files, the catalog) and the rules that apply at the gate. */
@@ -195,7 +198,16 @@ export async function prepareLayers(
     if (why) skipped.push({ rule: r.id, reason: why });
     else applicable.push(r);
   }
-  return { ctx, applicable, layered, problems, skipped };
+  // ADR 0203 C.1: a naysayer whose frontmatter gives this gate runs as a lens; none otherwise.
+  const personas = await personaLensesAt(
+    root,
+    gate.id,
+    lifecycle.orgPack.gates.gates.map((x) => x.id),
+    lifecycle.orgPack.runtime.budgets.defaultTokens,
+  ).catch(() => ({ lenses: [] as PersonaLens[], notes: [] as string[] }));
+  problems.push(...personas.notes);
+  applicable.push(...personas.lenses.map((p) => p.rule));
+  return { ctx, applicable, layered, problems, skipped, personas: personas.lenses };
 }
 
 export interface CriticFinding {

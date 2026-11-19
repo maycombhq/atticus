@@ -54,6 +54,12 @@ export interface Estate {
    * to every check, with that standing. Absent: none declared.
    */
   outside?: ReadonlySet<string>;
+  /**
+   * ADR 0203 A.4: the ids people accepted at a stage of this change (a repo, a component, a
+   * consumer the map doesn't hold), with who and why, set by the stage that read them. Each is
+   * known to every check, with that standing. Absent: none accepted.
+   */
+  accepted?: ReadonlyMap<string, { by: string; why: string; rule: string }>;
 }
 
 /** What the manifests say, as the estate keeps it. */

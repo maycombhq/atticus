@@ -270,6 +270,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
+  atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]

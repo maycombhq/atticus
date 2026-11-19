@@ -155,7 +155,9 @@ export function toFinding(
   h: RuledHit,
   o: { id: string; change: string; gate: string; round: number; now: string },
 ): Finding {
-  const gap = h.hit.kind === "knowledge-gap";
+  // ADR 0203 C.3: a persona's finding is always a risk, never a gap, and names its persona.
+  const persona = h.rule.persona;
+  const gap = !persona && h.hit.kind === "knowledge-gap";
   const layer = h.rule.effectiveLayer;
   // A finding about what a person decided by answering (ADR 0115 addendum, 2026-10-24) doesn't
   // block: they already made the decision a waiver would be. Only where a waiver could be: a
@@ -182,7 +184,8 @@ export function toFinding(
     rule: h.rule.id,
     layer,
     // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
-    lens: questionOfRule(h.rule),
+    lens: persona ? "persona" : questionOfRule(h.rule),
+    ...(persona ? { persona } : {}),
     severity,
     artifact: h.hit.artifact,
     locator: h.hit.locator,
@@ -190,7 +193,7 @@ export function toFinding(
     why,
     fix: h.hit.fix,
     evidence: h.hit.evidence,
-    ...(h.hit.question ? { question: h.hit.question } : {}),
+    ...(h.hit.question && !persona ? { question: h.hit.question } : {}),
     ...(!gap && h.hit.answered ? { answered: h.hit.answered } : {}),
     waivable: !gap && severity === "blocking" && h.rule.waivable && layer !== "constitution",
     state: "open",
@@ -230,7 +233,8 @@ function foundNote(
     rule: h.rule.id,
     layer,
     // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
-    lens: questionOfRule(h.rule),
+    lens: h.rule.persona ? "persona" : questionOfRule(h.rule),
+    ...(h.rule.persona ? { persona: h.rule.persona } : {}),
     severity: "idea",
     artifact: h.hit.artifact,
     locator: h.hit.locator,

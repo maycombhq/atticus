@@ -215,7 +215,7 @@ export async function runCritic(
   }
   const checkRound = actedOn.length ? { after: counted.at(-1)!, actedOn } : undefined;
   const now = opts.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  const { ctx, applicable, layered, problems, skipped } = await prepareLayers(
+  const { ctx, applicable, layered, problems, skipped, personas } = await prepareLayers(
     root,
     { lifecycle, change, type, gate },
     now,
@@ -372,6 +372,7 @@ export async function runCritic(
       : {}),
     quarantined,
     ...(opts.codeSearch ? { codeSearch: opts.codeSearch } : {}),
+    personas,
   });
   // The texts the lenses reviewed, kept on this machine for the next redraft's diff, once a lens
   // has them; the texts an older round kept go, but the one this round was diffed against.
@@ -393,8 +394,8 @@ export async function runCritic(
   skipped.push(...ai.skipped);
   ran.push(...ai.runs.filter((r) => r.state === "ran").flatMap((r) => r.rules));
 
-  const all = mergeHits([...merged1, ...ai.hits], ctx.systemOf).filter((h) =>
-    lenses.includes(questionOfRule(h.rule)),
+  const all = mergeHits([...merged1, ...ai.hits], ctx.systemOf).filter(
+    (h) => !!h.rule.persona || lenses.includes(questionOfRule(h.rule)),
   );
 
   // A redraft's findings about what didn't change are carried as they were (ADR 0115 addendum,
@@ -472,7 +473,7 @@ export async function runCritic(
         refused: layered.refused,
         problems,
         lenses: ai.runs.map((r) => ({
-          lens: r.lens,
+          lens: r.persona ?? r.lens,
           agent: r.agent,
           state: r.state,
           ...(r.held ? { held: true } : {}),

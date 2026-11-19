@@ -1,21 +1,25 @@
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { Finding, toCanonicalYaml } from "@maycombhq/core";
-import {
-  fingerprint,
-  readRound,
-  roundsOf,
-  writeFinding,
-  type StoredFinding,
-} from "@maycombhq/naysayer";
+import { fingerprint, readRound, roundsOf, writeFinding, type StoredFinding } from "./findings.js";
 
 /**
  * Rounds for a check that runs again and again (traceability after each generation or
  * build): the newest round always holds the whole picture, so the lifecycle's and the
  * critic's reading of a gate works unchanged. A new round is written only when something
  * changed; a finding seen before keeps its state and resolution (dismissed stays dismissed).
- * The same rules as the Spec Kit layer's drift rounds.
+ * The same rules as the Spec Kit layer's drift rounds. Conformance (ADR 0114) and the stages'
+ * own gates (ADR 0203 A) write through it too, so it lives beside the rounds it writes.
  */
+/**
+ * ADR 0203 A.1: the built-in gate each stage's own blocking findings are written to as C3
+ * findings (`stage-feature`, `stage-architecture`, `stage-stories`, `stage-small`), so a person
+ * can accept one with `atticus finding … waive`. No phase's hand-off reads these gates: the
+ * stage's own state already holds its phase.
+ */
+export const STAGE_GATE_PREFIX = "stage-";
+export const stageGateOf = (stage: string) => `${STAGE_GATE_PREFIX}${stage}`;
+
 export interface RoundWrite {
   gate: string;
   round?: number;

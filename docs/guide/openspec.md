@@ -62,6 +62,20 @@ The plan's order is one: waves, then `after`, then each repo's own order. A plan
 
 What is not checked: Atticus never connects to a live system, so a cut-over is never verified by it, and the catalog has no record for a pipeline. In this release `atticus change conform` checks target flows only: for a change whose work is operations it says "This change's work is operations (N): Atticus doesn't check operations against the code in this release", and beside a change's flows it says how many operations are not checked. The app's Code against design panel says the same. Comparing what `sets` says with a rescan is not built yet. `atticus change estimate` doesn't size operation tasks, and says how many it leaves out.
 
+## Accepting a stage's finding
+
+Some blocking findings of a stage are ones a person can know better than the map: a repo that isn't created yet, a consumer whose team said it reads the topic, a field the story leaves without a criterion. A person may accept one with a name and a reason, the way a critic finding is waived (ADR 0203):
+
+```
+atticus finding <change> stage-<id> waive --reason "Its team reads the topic; the repo comes into the map next quarter"
+```
+
+When a stage's run ends, its blocking findings are written as findings of its own gate, `stage-feature`, `stage-architecture`, `stage-stories` or `stage-small`, so `atticus findings <change>` lists them with their ids, and each says whether it can be accepted and how. Only a person accepts, never an assistant; `--by` names them, else Git's user. The acceptance is kept in the finding's file and rides with the stage's hand-off PR, where your Git host decides who approves. The one who accepts may approve that hand-off too, as with a waiver.
+
+An accepted finding no longer blocks: it isn't handed back to your assistant to fix and doesn't count toward three drafts in a row. Run the stage again and it checks its files, runs its critic round and is done with no new draft when nothing else blocks. If the question the finding became is still open, it is answered with the acceptance's words. If what the finding is about changes, it is a new finding.
+
+Twelve rules can be accepted: `feature.unknown-repo`, `operation.unknown-repo`, `delta.unknown-component`, `delta.unknown-entry`, `delta.unknown-consumer`, `stories.unknown-consumer`, `delta.consumer-missing`, `delta.new-folder`, `stories.field-not-checked`, `stories.field-no-validation`, `stories.field-no-error-case` and `stories.shape-uncovered`. The list is fixed, not configuration. Every other rule's refusal says the way on (put it under `newFlows`, read the repo, take `new` off, answer the question). A rule of the constitution is never accepted. The later stages take what was accepted: an accepted repo is known as a new repo is, and an accepted consumer passes with a note and is listed in `design.md` under "Consumers the map can't check", with no task made for it. `atticus change status` says "1 finding accepted at the architecture stage: <rule>, by <who>", and the hand-off PR's body lists each one with who and why.
+
 ## Drawing a change on the canvas
 
 A change's target flows can start as a drawing ([ADR 0179](../adr/0179-drawing-a-change-on-the-canvas.md)). Under the change's diagram (**Design › Change diagram**), **Draw the change** takes a stroke at a time: a call one component makes to another's API (ticking _the API doesn't exist yet_ when it is new), a topic it publishes and a component that listens, a table it reads or writes, a step of today's flow taken out or sent elsewhere, or a new flow of a component the catalog doesn't have yet, with what starts it. **Preview** shows the lines the stroke adds to `target-flows/<flow>.yaml`; **Draw it** writes exactly those lines, the picture redraws with the stroke marked, and **Undo** takes any stroke back. When a component has several flows, the panel asks which one the stroke is on.

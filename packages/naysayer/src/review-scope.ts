@@ -455,7 +455,9 @@ export async function sinceReview(
   const carry: Finding[] = [];
   const carried: Proposal[] = [];
   for (const { finding: f } of (await readRound(root, o.change, o.gate, last.round)).findings) {
-    if (!ai.has(f.id) || !o.questions.includes(f.lens)) continue;
+    // ADR 0203 C: a persona's finding is carried with its persona lens, whatever the questions.
+    if (!ai.has(f.id) || !(f.lens === "persona" || (o.questions as string[]).includes(f.lens)))
+      continue;
     const byPerson = decided.get(fingerprintOf(f));
     const reopened = !byPerson && assistantClosed(f);
     const proposal = proposalOf(f);

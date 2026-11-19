@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   AgentDefinition,
   answerByWords,
+  answerQuestion,
   answerWords,
   changesRelOf,
   gateRoundLimit,
@@ -89,6 +90,7 @@ import {
   type FindingKind,
 } from "./finding-kind.js";
 import { STAGE_PHASE, STAGE_SCHEMA_VERSION, Stage, StageLoop, type LoopFinding } from "./schema.js";
+import { acceptedWords, readAccepted, writeStageGate, type Accepted } from "./accept.js";
 
 /**
  * The loop every stage runs (ADR 0087, plan principle 4): the assistant drafts through the AI
@@ -508,7 +510,55 @@ export async function runStageLoop<A>(
   spec: StageSpec<A>,
   o: StageOptions,
 ): Promise<StageResult<A>> {
+  if (o.checkDraft !== undefined) return runLoop(root, changeId, spec, o);
+  // ADR 0203 A: a finding a person accepted no longer blocks: the stage's checks pass it with
+  // the acceptance's words, so it is never handed back, never counts toward three drafts, and a
+  // stopped stage run again is done with no new draft when nothing else blocks.
   const ctx = await loadChangeContext(root);
+  const accepted = await readAccepted(root, changeId, ctx, [spec.stage]).catch(
+    () => new Map<string, Accepted>(),
+  );
+  const check: StageSpec<A>["check"] = async (a, co) =>
+    (await spec.check(a, co)).map((i) => {
+      const yes = i.blocking && accepted.get(issueFingerprint(i.rule, i.target, i.evidence ?? ""));
+      return yes ? { ...i, blocking: false, message: `${i.message} (${acceptedWords(yes)}.)` } : i;
+    });
+  try {
+    return await runLoop(root, changeId, { ...spec, check }, o, ctx);
+  } finally {
+    // ADR 0203 A.1: however the run ended, its blocking findings go to the stage's gate.
+    const dir = changeFolder(root, changeId);
+    const { loop, present } = await readStageLoop(dir, changeId, spec.stage).catch(() => ({
+      loop: undefined,
+      present: false,
+    }));
+    if (present && loop && loop.iteration > 0)
+      await writeStageGate(
+        root,
+        loop.findings.filter((f) => f.seenIn.at(-1) === loop.iteration),
+        accepted,
+        {
+          change: changeId,
+          stage: spec.stage,
+          source: spec.source,
+          rerun: rerunOf(spec.stage, changeId),
+          now: (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z"),
+          ...(spec.locate
+            ? { locate: (f: LoopFinding) => spec.locate!({ ...f, blocking: true }) }
+            : {}),
+        },
+      ).catch(() => undefined);
+  }
+}
+
+async function runLoop<A>(
+  root: string,
+  changeId: string,
+  spec: StageSpec<A>,
+  o: StageOptions,
+  loaded?: ChangeContext,
+): Promise<StageResult<A>> {
+  const ctx = loaded ?? (await loadChangeContext(root));
   const change = await changeStore(root)
     .read(changeId)
     .catch((e: Error) => {
@@ -2231,8 +2281,38 @@ export async function retireSettledEscalations(
   loop: StageLoop,
   at: string,
 ): Promise<boolean> {
+  // ADR 0203 A.6: a stage finding a person accepted answers the question it became, in the
+  // acceptance's words; with no other question open the stage is stopped, so its next run checks
+  // its files and is done with no new draft when nothing else blocks.
+  const mine = loop.findings.filter((f) => f.question && f.source === "stage");
+  const accepted = mine.length
+    ? await readAccepted(root, change, undefined, [loop.stage]).catch(
+        () => new Map<string, Accepted>(),
+      )
+    : new Map<string, Accepted>();
+  let settled = false;
+  for (const f of mine) {
+    const a = accepted.get(f.fingerprint);
+    const q = a ? await readQuestion(root, f.question!).catch(() => undefined) : undefined;
+    if (!a || !q || q.state !== "open") continue;
+    await answerQuestion(root, q.id, { text: `Accepted: ${a.why}`, by: a.by, at });
+    loop.read = [...new Set([...loop.read, q.id])].sort();
+    f.stoppedAt = loop.iteration;
+    settled = true;
+  }
+  if (settled && loop.state === "questions") {
+    const open = await Promise.all(
+      loop.questions.map((id) =>
+        readQuestion(root, id).then(
+          (q) => q?.state === "open",
+          () => false,
+        ),
+      ),
+    );
+    if (!open.some(Boolean)) loop.state = "stopped";
+  }
   const asked = loop.findings.filter((f) => f.question && f.source === "critic");
-  if (!asked.length || !loop.critic.length) return false;
+  if (!asked.length || !loop.critic.length) return settled;
   const gate = loop.critic.at(-1)!.gate;
   const round = (await roundsOf(root, change, gate).catch(() => [] as number[])).at(-1);
   if (round === undefined) return false;
@@ -2267,7 +2347,11 @@ export async function retireChangeEscalations(
   const touched: string[] = [];
   for (const stage of Stage.options) {
     const { loop, present } = await readStageLoop(dir, change, stage);
-    if (present && (await retireSettledEscalations(root, change, loop, at))) touched.push(stage);
+    if (present && (await retireSettledEscalations(root, change, loop, at))) {
+      touched.push(stage);
+      // ADR 0203 A.6: an acceptance's answer is read, and may leave the stage stopped.
+      await writeLoop(dir, loop);
+    }
   }
   return touched;
 }

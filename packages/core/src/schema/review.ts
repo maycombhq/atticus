@@ -72,6 +72,13 @@ export function lensCovers(l: Lens): CriticQuestion[] {
   return isCriticQuestion(l) ? [l] : (LEGACY_COVERS[l] ?? [LEGACY_QUESTION[l]]);
 }
 
+/**
+ * A finding's lens: a rule's lens, or `persona` for a persona's naysayer run as a lens of the
+ * critic (ADR 0203 C.3, C3 additive, no bump). Rules' lenses stay as they are.
+ */
+export const FindingLens = z.enum([...Lens.options, "persona"]);
+export type FindingLens = z.infer<typeof FindingLens>;
+
 /** Where a rule comes from. Constitution rules can never be waived. */
 export const Layer = z.enum(["constitution", "org", "team"]);
 
@@ -312,7 +319,9 @@ export const Finding = z
     round: z.number().int().positive(),
     rule: RecordId,
     layer: Layer,
-    lens: Lens,
+    lens: FindingLens,
+    /** ADR 0203 C.3: the persona whose naysayer raised it (its file's name), with lens persona only. */
+    persona: RecordId.optional(),
     severity: Severity,
     /** Path of the artifact relative to the change folder, or "catalog". */
     artifact: z.string().min(1),
@@ -357,6 +366,10 @@ export const Finding = z
     }
     if (f.layer === "constitution" && f.waivable)
       add(["waivable"], "constitution findings are never waivable");
+    if (f.lens === "persona" && !f.persona)
+      add(["persona"], "a finding of the persona lens names its persona");
+    if (f.lens !== "persona" && f.persona)
+      add(["persona"], "only a finding of the persona lens names a persona");
     if (f.state === "open") {
       if (f.resolution) add(["resolution"], "an open finding has no resolution");
       return;

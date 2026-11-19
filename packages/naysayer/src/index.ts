@@ -28,3 +28,5 @@ export * from "./snow-triggers.js";
 export * from "./proposals.js";
 export * from "./review-scope.js";
 export * from "./planned.js";
+export * from "./gate-rounds.js";
+export * from "./personas.js";

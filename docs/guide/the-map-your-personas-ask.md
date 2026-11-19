@@ -98,6 +98,30 @@ An agent with no naysayer, like the spec writer, leaves `role` and `handoffs` ou
 
 Then `atticus skills write`.
 
+## A naysayer as a lens of the critic
+
+A naysayer can also ask its questions of a change at a gate, after the critic's four questions (ADR 0203). Give it the gate ids of `gates.yaml` in its frontmatter:
+
+```markdown
+---
+name: ledger-architect-naysayer
+owns: Ledger architect
+gates: [design]
+---
+```
+
+With no `gates` it never runs in the critic; the starters ship without it. It runs through the critic's own code: its file's body is what it looks for, Atticus's output format and quote rule hold, and a finding whose quote isn't on the line it cites is dropped. Its findings are risks with lens `persona` and its name: shown, handed back to your assistant once, never blocking and never holding the gate. A gate id `gates.yaml` lacks is said in the round's notes. Another team's agents (`agents/imported/`) are never run as lenses.
+
+## Reviewing a requirements file
+
+`atticus review <requirements.md | change>` reviews the file without refusing it:
+
+- the door check's reasons (an open question, an id not in the map, a row that doesn't read), as findings;
+- the map's standing of each id the file cites: a manifest repo nobody read (`atticus map <repo>`), an id listed under Planned, and an id an open change touches (`atticus change conflicts --touching <id>`);
+- unless `--no-ai`, each naysayer whose `owns` heading the file has, as a lens over the file (`--mode` picks the runtime).
+
+Each finding prints as `<file>:<line>: <who asks>: <question> [<evidence>]`, and the command exits 0 unless the file can't be read. `--write` adds each finding not already there as an open row of its role's table, making the table or the heading when it is missing and keeping the file's line endings; nothing else in the file changes. `atticus change new --from` stays the only door that refuses. The checklist rules need a change's artifacts and type, so they run at a gate (`atticus critic`). A review of a file outside a change keeps its model runs under `.runs/atticus-review/`, as every run is kept on this machine; for a change, under that change's runs.
+
 ## Limits
 
 - The map grounds what is written. It doesn't prove an answer is right, and the door check doesn't open the file and line a row cites.

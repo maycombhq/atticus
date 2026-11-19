@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { MockGitHost } from "@maycombhq/adapters";
-import { MockRuntime } from "@maycombhq/ai";
+import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
   changeFolder,
   changeFootprint,
@@ -23,6 +24,8 @@ import { critic } from "../src/critic-commands.js";
 import { main } from "../src/main.js";
 import type { NextStep } from "../src/next-commands.js";
 import { readyLines, taskRunReady } from "../src/run-ready-commands.js";
+import { handoffReview } from "../src/handoff-review.js";
+import { reviewCommand } from "../src/review-commands.js";
 import { stageCli } from "../src/stage-commands.js";
 import {
   ARCHETYPES,
@@ -65,6 +68,8 @@ import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
  */
 
 const NOW = "2026-11-18T09:00:00Z";
+/** ADR 0203 A: a consumer nothing knows: no record, no manifest, not planned, not declared outside. */
+const GHOST = "forge-ghost";
 const T = 300_000;
 const META = "forge/forge";
 
@@ -160,6 +165,46 @@ async function nextFor(root: string, change: string): Promise<NextStep[]> {
   return steps;
 }
 
+// ADR 0203 C: the starter application architect's naysayer, as an org pack copies it.
+const NAYSAYER = "application-architect-naysayer";
+const STARTER_NAYSAYER = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../assistant-files/starter/agents",
+  `${NAYSAYER}.md`,
+);
+
+/** The naysayer's answer: one question, quoting `quoted` of the file it reviews. */
+const naysayerAnswer =
+  (quoted: string, artifact = "requirements.md") =>
+  (req: AiRequest): string => {
+    let line = 1;
+    for (const m of req.pack.prompt.matchAll(/^(\d+): (.*)$/gm))
+      if (m[2]!.trimEnd() === quoted) {
+        line = Number(m[1]);
+        break;
+      }
+    return [
+      "findings:",
+      `  - rule: persona.${NAYSAYER}`,
+      "    kind: issue",
+      `    artifact: ${artifact}`,
+      `    locator: { line: ${line} }`,
+      "    summary: Nothing says who runs it at night.",
+      "    why: Someone is paged when it fails.",
+      "    fix: Name who runs it.",
+      "    evidence:",
+      `      - { path: ${artifact}, line: ${line}, quote: ${JSON.stringify(quoted)} }`,
+      "",
+    ].join("\n");
+  };
+
+/** A model in which only the naysayer finds something. */
+const naysayerModel = (quoted: string) =>
+  new MockRuntime(
+    (req) => (req.agent.id === NAYSAYER ? naysayerAnswer(quoted)(req) : "findings: []"),
+    { now: () => new Date(NOW) },
+  );
+
 /** A model that finds nothing wrong, and the agents that asked it. */
 function calmCritic() {
   const asked: string[] = [];
@@ -213,6 +258,70 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     beforeAll(async () => {
       file = await requirementsFile(m, a.id, a.requirements, eol);
     });
+
+    it(
+      "atticus review says what the door would, the map's standing and the naysayer's questions, exits 0, and --write adds rows once (ADR 0203 C.4)",
+      async () => {
+        // A copy, so the door check above and --from below read the file as it was written.
+        const copy = await requirementsFile(m, `${a.id}-review`, a.requirements, eol);
+        const plain = await run(["review", copy, "--no-ai", "--root", m.root]);
+        expect(plain.err).toEqual([]);
+        expect(plain.code).toBe(0);
+        for (const l of plain.out.filter((x) => x.startsWith(copy)))
+          expect(l).toMatch(/requirements\.md:\d+: atticus: .+ \[.+\]$/);
+        if (a === NEW_EVENT)
+          expect(plain.out).toContain(
+            `${copy}:${lineOf(a.requirements, `\`${UNREAD_REPO}\``)}: atticus: ${UNREAD_REPO} is in the manifest, not read: atticus map ${UNREAD_REPO} [${UNREAD_REPO}]`,
+          );
+
+        // The application architect's naysayer, as the org pack keeps it: no gates needed here.
+        const agents = join(m.root, "org-pack", "agents");
+        await mkdir(agents, { recursive: true });
+        const persona = join(agents, `${NAYSAYER}.md`);
+        await writeFile(persona, await readFile(STARTER_NAYSAYER, "utf8"));
+        try {
+          const before = await readFile(copy, "utf8");
+          const quoted =
+            a.requirements.split("\n")[lineOf(a.requirements, "## Application architect") + 1]!;
+          const says = async (write: boolean) => {
+            const c = capture();
+            const code = await reviewCommand(m.root, copy, { write }, c.io, {
+              runtime: naysayerModel(quoted),
+              now: new Date(NOW),
+            });
+            expect(c.err).toEqual([]);
+            expect(code).toBe(0);
+            return c.out;
+          };
+          const once = await says(true);
+          expect(once).toContain(
+            `${copy}:${lineOf(a.requirements, quoted)}: ${NAYSAYER}: Nothing says who runs it at night. [-]`,
+          );
+          expect(once.at(-1)).toMatch(new RegExp(`^Added \\d+ rows? to `));
+          const after = await readFile(copy, "utf8");
+          // Only rows were added, under the role's table, with the file's line endings.
+          const kept = before.split(eol);
+          const now = after.split(eol);
+          expect(
+            now.filter((l) => !kept.includes(l)).every((l) => l.endsWith(" | - | - | open |")),
+          ).toBe(true);
+          expect(now.filter((l) => kept.includes(l))).toEqual(kept);
+          if (eol === "\r\n") expect(/[^\r]\n/.test(after)).toBe(false);
+          // A second --write adds nothing.
+          expect((await says(true)).at(-1)).toBe(`${copy} has every row already.`);
+          expect(await readFile(copy, "utf8")).toBe(after);
+          // And the door now refuses for the open rows.
+          const door = await run(["change", "new", "--from", copy, "--check", "--root", m.root]);
+          expect(door.code).toBe(1);
+          expect(door.err.join("\n")).toContain(
+            openWords("Application architect", "Nothing says who runs it at night."),
+          );
+        } finally {
+          await rm(persona, { force: true });
+        }
+      },
+      T,
+    );
 
     it(
       "the door check passes its requirements file and creates nothing (--check)",
@@ -1118,6 +1227,163 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       const small = await refusesOnce(["change", "small", g.id], g.small);
       expect(small).toContain("The answer changes no step of any flow");
       expect((await loopOf(g.id, "small")).state).toBe("stopped");
+    },
+    T,
+  );
+
+  // ------------------------------------------------------------- ADR 0203 parts A and C
+
+  /** The newest round of a gate's findings. */
+  const gateFindings = async (id: string, gate: string) => {
+    const dir = join(changeFolder(m.root, id), "review", gate);
+    const n = Math.max(...(await readdir(dir)).map(Number).filter((x) => x > 0));
+    return (await readdir(join(dir, String(n))))
+      .filter((f) => f.endsWith(".yaml"))
+      .map(
+        async (f) =>
+          parse(await readFile(join(dir, String(n), f), "utf8")) as Record<string, unknown>,
+      );
+  };
+
+  it(
+    "new event: a consumer nothing knows blocks, a person accepts it, and the stages finish; status and the PR body list the acceptance",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-accepted" };
+      const ghost = e.architecture.replace(`, ${UNREAD_REPO}]`, `, ${GHOST}]`);
+      const ghostStories = e.stories.replace(`, ${UNREAD_REPO}]`, `, ${GHOST}]`);
+      expect(ghost).toContain(GHOST);
+      await change(e, "feature");
+      expect((await stage(["change", "feature", e.id], e.feature)).result.state).toBe("done");
+
+      // The architecture stage stops on it: three drafts had it, and nothing knows forge-ghost.
+      const first = assistant(ghost);
+      const c1 = capture();
+      expect(
+        await stageCli(m.root, ["change", "architecture", e.id], {}, c1.io, {
+          runtime: first.runtime,
+          now: new Date(NOW),
+        }),
+      ).toBe(1);
+      expect(c1.err.join("\n")).toContain(`lists consumer ${GHOST}, which isn't in the catalog`);
+      const [projected] = await Promise.all(await gateFindings(e.id, "stage-architecture"));
+      expect(projected).toMatchObject({
+        rule: "delta.unknown-consumer",
+        severity: "blocking",
+        waivable: true,
+        state: "open",
+        locator: { record: GHOST },
+      });
+
+      // A person accepts it, with a name and a reason, as a waiver.
+      const why = "Its team reads the topic; the repo comes into the map next quarter";
+      const w = await run([
+        "finding",
+        e.id,
+        String(projected!.id),
+        "waive",
+        "--reason",
+        why,
+        "--by",
+        "pat",
+        "--root",
+        m.root,
+      ]);
+      expect(w.err.join("\n")).not.toContain("Error");
+      expect(w.code).toBe(0);
+
+      // Run again: its files pass, the critic reviews, done with no new draft.
+      const again = assistant(ghost);
+      const c2 = capture();
+      expect(
+        await stageCli(m.root, ["change", "architecture", e.id], { json: true }, c2.io, {
+          runtime: again.runtime,
+          now: new Date(NOW),
+        }),
+      ).toBe(0);
+      expect((JSON.parse(c2.out.join("\n")) as { state: string }).state).toBe("done");
+      expect(again.drafts).toEqual([]);
+      const design = await readFile(join(changeFolder(m.root, e.id), "design.md"), "utf8");
+      expect(design).toContain(
+        `- ${GHOST} (of ${SETTLE_FLOW.id}): accepted by pat: ${why}; its use can't be checked.`,
+      );
+
+      // The stories stage takes the accepted consumer with a note, and makes no task for it.
+      const stories = await stage(["plan", "stories", e.id], ghostStories);
+      expect(stories.result.state).toBe("done");
+      const note = stories.result.findings.find((f) => f.rule === "stories.unknown-consumer");
+      expect(note).toMatchObject({ blocking: false });
+      expect(note!.message).toContain(
+        `${GHOST} is accepted by pat: ${why}, so its use can't be checked.`,
+      );
+      expect((await tasksOf(m.root, e.id)).map((t) => t.repo)).toEqual([NEW_PUBLISHER]);
+
+      // Shown in change status and the hand-off PR's body, one line each: rule, who, why.
+      const status = await run(["change", "status", e.id, "--root", m.root]);
+      expect(status.out).toContain(
+        "Accepted: 1 finding accepted at the architecture stage: delta.unknown-consumer, by pat.",
+      );
+      const body = await handoffReview(m.root, e.id);
+      expect(body).toContain(
+        `### Accepted by people\n\n- \`delta.unknown-consumer\` at the architecture stage, by \`pat\`: \`${why}\``,
+      );
+    },
+    T,
+  );
+
+  it(
+    "a persona's naysayer with gates: [design] runs at the design gate; its finding is a risk with lens persona, and the gate isn't held",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-persona" };
+      const agents = join(m.root, "org-pack", "agents");
+      await mkdir(agents, { recursive: true });
+      const persona = join(agents, `${NAYSAYER}.md`);
+      const starter = await readFile(STARTER_NAYSAYER, "utf8");
+      await writeFile(
+        persona,
+        starter.replace(
+          "\nowns: Application architect\n",
+          "\nowns: Application architect\ngates: [design]\n",
+        ),
+      );
+      try {
+        await change(e, "feature");
+        await stage(["change", "feature", e.id], e.feature);
+        const brief = e.brief.split("\n")[2]!;
+        const lens = naysayerAnswer(brief, "brief.md");
+        const drafts: string[] = [];
+        const runtime = new MockRuntime(
+          (req) => {
+            if (req.agent.id === NAYSAYER) return lens(req);
+            if (req.agent.id.endsWith("-critic")) return "findings: []";
+            if (req.agent.id === EXPAND_AGENT) return "terms: [settled refund]\nnames: []\n";
+            drafts.push(req.agent.id);
+            return e.architecture;
+          },
+          { now: () => new Date(NOW) },
+        );
+        const c = capture();
+        expect(
+          await stageCli(m.root, ["change", "architecture", e.id], { json: true }, c.io, {
+            runtime,
+            now: new Date(NOW),
+          }),
+        ).toBe(0);
+        expect((JSON.parse(c.out.join("\n")) as { state: string }).state).toBe("done");
+        const found = (await Promise.all(await gateFindings(e.id, "design"))).filter(
+          (f) => f.lens === "persona",
+        );
+        expect(found.length).toBeGreaterThan(0);
+        expect(found[0]).toMatchObject({
+          lens: "persona",
+          persona: NAYSAYER,
+          rule: `persona.${NAYSAYER}`,
+          severity: "risk",
+        });
+        const s = await run(["findings", e.id, "--root", m.root]);
+        expect(s.out.join("\n")).not.toMatch(/design gate is closed/);
+      } finally {
+        await rm(persona, { force: true });
+      }
     },
     T,
   );

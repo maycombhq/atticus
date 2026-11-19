@@ -305,7 +305,7 @@ const isFile = (w: string) => /:\d+$/.test(w) || FILE_ENDINGS.test(w);
  * item's first word, in backticks or bare, is its id, whatever it looks like. Every other word
  * in backticks is checked too unless it is a file (`src/a.java:41`, `pom.xml`).
  */
-function evidenceIds(cell: string): string[] {
+export function evidenceIds(cell: string): string[] {
   const ids = cell.split(/[;,]|<br\s*\/?>/i).flatMap((raw) => {
     const item = raw.trim();
     if (item === "" || item === "-") return [];

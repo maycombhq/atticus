@@ -141,6 +141,7 @@ import {
   withoutResume,
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
+import { acceptedIds, readAccepted } from "./accept.js";
 import { plannedRepos, unreadConsumer } from "./planned.js";
 import { checkOperations, readOperations } from "./operations.js";
 import {
@@ -4252,6 +4253,8 @@ export async function storiesStage(
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
   const placement = await readPlacement(dir);
   estate.outside = new Set((placement?.outside ?? []).map((x) => x.id));
+  // ADR 0203 A.4: the ids people accepted at a stage are known to every check, with who and why.
+  estate.accepted = acceptedIds(await readAccepted(root, change.id, ctx).catch(() => new Map()));
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );

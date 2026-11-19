@@ -470,7 +470,11 @@ export function apiRoutes(r: Router, ctx: Context): Router {
             (!gate || f.gate === gate) &&
             (!state || f.state === state) &&
             // A lens filter asks its question: an old lens name finds what its question raised.
-            (!lens || questionOfLens(f.lens) === questionOfLens(lens)) &&
+            // ADR 0203 C.3: a persona's finding is found by lens persona only.
+            (!lens ||
+              (f.lens === "persona"
+                ? (lens as string) === "persona"
+                : questionOfLens(f.lens) === questionOfLens(lens))) &&
             (!severity || f.severity === severity) &&
             (!asks || level === asks)
           )
