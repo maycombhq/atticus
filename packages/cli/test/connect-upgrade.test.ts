@@ -3,7 +3,8 @@ import { join, relative } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { declareArrow } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
-import { reconnectEstate, A, B, type ReconnectEstate } from "./reconnect-estate.js";
+import { createHash } from "node:crypto";
+import { reconnectEstate, A, B, FIX, type ReconnectEstate } from "./reconnect-estate.js";
 
 /**
  * ADR 0204's migration: a beta.28.5 metarepo (hand pairings, a declared gateway route and a
@@ -60,6 +61,17 @@ beforeAll(async () => {
 afterAll(async () => g?.close(), 120_000);
 
 describe("upgrade of a beta.28.5 metarepo (ADR 0204, Migration)", () => {
+  it("builds the catalog beta.28.5 built, byte for byte (its hashes, built by the base)", async () => {
+    const golden = JSON.parse(
+      readFileSync(join(FIX, "expected", "catalog-beta28.5.json"), "utf8"),
+    ) as { files: Record<string, string> };
+    const now: Record<string, string> = {};
+    for (const [k, v] of files(join(g.root, "catalog")))
+      now[k] = createHash("sha256").update(v).digest("hex");
+    expect(Object.keys(now).sort()).toEqual(Object.keys(golden.files).sort());
+    for (const [k, v] of Object.entries(golden.files)) expect(now[k], k).toBe(v);
+  }, 300_000);
+
   it("builds every file byte for byte the same until an arrow is declared", async () => {
     const before = tree();
     const b = await buildAndWrite(g.root, { command: "atticus catalog build" });
