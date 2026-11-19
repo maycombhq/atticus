@@ -137,14 +137,18 @@ export const wordsOf = (s: string): string[] =>
  * slash), after a scheme and host are dropped: `POST https://host/a/7?x=1` is `POST /a/{}`'s
  * entry too. Case is kept: `/A` may be another route. A topic is its name, trimmed.
  */
-function entryParts(entry: string): { method?: string; path: string } {
+export function entryParts(entry: string): { method?: string; path: string } {
   const m = /^\s*([A-Za-z]+)\s+(\S+)/.exec(entry);
   const ORIGIN = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*/;
   const norm = (p: string) => {
     const t = p.trim();
     // With its scheme and host gone, what is left is a path: "/" when nothing is.
     const local = ORIGIN.test(t) ? `/${t.replace(ORIGIN, "")}` : t;
-    return normalizePath(local).replace(/:[A-Za-z_]\w*/g, "{}");
+    // normalizePath empties a parameter that is a whole segment; one inside a segment
+    // (`/orders/{id}.pdf`, `/orders({key})`) is emptied here too, so its name never decides.
+    return normalizePath(local)
+      .replace(/\{[^}]*\}/g, "{}")
+      .replace(/:[A-Za-z_]\w*/g, "{}");
   };
   return m ? { method: m[1]!.toUpperCase(), path: norm(m[2]!) } : { path: norm(entry) };
 }

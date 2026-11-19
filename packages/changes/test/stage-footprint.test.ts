@@ -12,6 +12,7 @@ import {
   changeReport,
   changeStore,
   detectConflicts,
+  entryParts,
   loadChangeContext,
   scoreRisk,
   stageCompletion,
@@ -255,6 +256,16 @@ describe("a change's footprint from the stages' files (B-change)", () => {
       detail: "breaks who uses it today: validate step now requires channel",
       points: 3,
     });
+  });
+
+  it("matches a parameter inside a segment whatever the draft names it (review of beta.30)", () => {
+    // `{id}.pdf` and `{orderId}.pdf` are one entry: a new flow on it still breaks who calls it.
+    const same = (a: string, b: string) => expect(entryParts(a)).toEqual(entryParts(b));
+    same("GET /orders/{id}.pdf", "GET /orders/{orderId}.pdf");
+    same("GET /orders({key})", "GET /orders({orderKey})");
+    same("POST /orders/{id}:print", "POST /orders/{orderId}:print");
+    same("GET /orders/{id}", "GET https://shop.forge.example/orders/{orderId}/?x=1");
+    expect(entryParts("GET /orders/{id}.pdf")).not.toEqual(entryParts("GET /orders/{id}.csv"));
   });
 
   it("knows an entry people call today however the draft writes its path (review of beta.30)", async () => {
