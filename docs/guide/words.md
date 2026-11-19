@@ -1,0 +1,58 @@
+# The words Atticus uses
+
+One name for each thing, in the app, the command line's everyday messages and these guides (2.0.0-beta.30). Each word says what it means in one line, and the names it replaces, so an older message, a bookmark or a colleague's note still makes sense. The app has the same list under **Words**, beside **Help**.
+
+A command, a flag, a file name, an API value and a record kind keep their names: only the words a person reads changed. `atticus catalog edits --curate` is still the command that keeps your hand edits, though the words now say "keep them as your edits".
+
+## The map and how far it was read
+
+| Word                   | What it means                                                                                                                                                                | Replaces                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Map**                | The drawing of your estate: a box for each repo and outside system, an arrow for each call between them, each citing its line of code. It is the first tab of the Map entry. | Estate canvas, Estate map, Ecosystem map, "the picture", Canvas |
+| **Read status**        | How far each repo was read and checked: what is up to date, behind or read only in part, what was rejected, and what to read again. A tab of the Map.                        | Trust, the Trust tab, Map › Trust                               |
+| **Cross-check**        | For a repo your assistant read, what Atticus's built-in readers found compared with what its facts say. It never changes the map by itself.                                  | Readers found / facts say                                       |
+| **Flows**              | One path through your code from a trigger to what it reads, writes and returns, step by step. A tab of the Map.                                                              |                                                                 |
+| **repo**               | A Git repository the manifest lists. On the map it is a box.                                                                                                                 | "system" for a repo's box                                       |
+| **outside system**     | A system outside your estate that your repos call, named in the profile: a vendor, or another team's service. On the map it is a box marked outside.                         | System, system (for such a box)                                 |
+| **system**             | A group of your own repos the catalog names, with a guide on the Systems page.                                                                                               |                                                                 |
+| **call with no arrow** | A call read from code whose target Atticus can't tell yet, so the map draws no arrow for it. Connect it, or answer the question about where it goes.                         | loose call                                                      |
+
+## Doing things
+
+| Word               | What it means                                                                                                                                            | Replaces                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Apply**          | Update the map from what was read: verify checks each fact on its cited line and the catalog is built again. Apply means only this.                      | Apply was also used for writing a fix and for spreading a correction           |
+| **Write**          | Save a correction, an answer or a fix into the metarepo's files. Nothing reaches the map until you Apply it, and nothing is shared until you Propose it. | Apply fix (now **Write the fix**), Apply to similar (now **Write to similar**) |
+| **Propose**        | Share what you wrote for review, as a pull request. A person reviews and merges it.                                                                      |                                                                                |
+| **your changes**   | Your corrections, declarations and answers together, waiting to be applied and proposed.                                                                 | the answers and corrections                                                    |
+| **your kept edit** | A file under `catalog/generated` you changed by hand, kept as yours so every later build keeps it (it is stored under `catalog/curated`).                | curated decision, "make them curated"                                          |
+
+## Where things are in the app
+
+| Word                                         | What it means                                                                                                                                                                                                     | Replaces                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Activity**                                 | One page for what ran, a tab each: Model runs (what Atticus asked a model), Prompt history (what people asked their assistant), Scans and Catalog builds. In Set up. What runs now is in the Console at the foot. | Model runs, Prompt history, Scans and Catalog builds as pages of their own |
+| **More pages**                               | Every page that isn't a tab, by section, at the foot of the menu. Ctrl+K finds every page, by its name now or the name it had.                                                                                    |                                                                            |
+| **Contracts**, **Impact**, **Decided by AI** | The Map's pages about one box: a box's panel opens each for that box (**Its contracts**, **What breaks if it changes**, **What the AI decided here**); the estate-wide page is under More pages.                  | tabs of the Map                                                            |
+| **Systems**                                  | A system's guide, its open questions and changes, and what the catalog knows by system and area.                                                                                                                  | the Ecosystem map's coverage (the Ecosystem map's address opens Systems)   |
+
+An old address still opens its page's new place: `#/runs`, `#/history`, `#/scans` and `#/catalog-builds` open Activity on that tab, with the rest of the address kept, and `#/map` opens Systems.
+
+## Words of the files and the build
+
+These name what the files hold. They are shown on the pages for diagnosing a build (Catalog builds, Cross-check) and in the admin guide, not in everyday messages.
+
+| Word                   | What it means                                                                                                                                                   | Replaces                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **fact**               | One thing your assistant read from a repo's code, with its file, line, the value it claims and a quote. Verify checks it on that line.                          |                                       |
+| **record**             | One entry of the catalog (a component, an API, a table, an arrow), built from the facts.                                                                        |                                       |
+| **stored read** (slot) | What a build reads for each repo: its verified facts, else the built-in readers' last full read, under `catalog/sources`. Everyday text says "the repo's read". | source slot, readers slot, facts slot |
+| **legacy join**        | An arrow kept from a catalog written before beta.27, until a new read makes it again or it leaves.                                                              |                                       |
+| **upgrade**            | `atticus upgrade`: moves a catalog written before beta.27 into stored reads, nothing lost, after you confirm.                                                   | adopt, adopted                        |
+| **profile**            | `profile.yaml` in the org pack: a platform's outside systems, teams and gateways.                                                                               |                                       |
+| **manifest**           | `manifest.yaml`: the repos Atticus reads, with where each is cloned from.                                                                                       |                                       |
+| **entry point**        | Where a flow starts: an API a repo serves, a job, a message it listens for.                                                                                     | entry                                 |
+| **API**                | An endpoint a repo serves, read from its code or its spec.                                                                                                      |                                       |
+| **route**              | A gateway's path, which forwards a call to an API.                                                                                                              |                                       |
+
+See also [Correcting the map](correcting-the-map.md) and [Troubleshooting](troubleshooting.md).
