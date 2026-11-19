@@ -42,6 +42,7 @@ import {
   repoBand,
   shapeText,
   timeBand,
+  type RecordBand,
   type ShapeCard,
   type ShapeFlag,
   type Step,
@@ -88,8 +89,17 @@ export const CHECK_FLAGS: Partial<Record<CheckId, readonly ShapeFlag[]>> = {
   "refusals-have-next-step": ["legacy-slots", "hand-pairings", "empty-repo", "unread-repo"],
 };
 
-/** Past this many record files, the two builds in memory are said before they start. */
-export const COSTLY_FILES = 5_000;
+/**
+ * What the two builds in memory cost, by the card's record band only: words of a fixed table,
+ * never a figure worked out from the estate's own count. Seeded with what was measured on the
+ * invented field estate (beta.30: about 21 s and 0.72 GB at 14,000 records, 70 s and 1.4 GB at
+ * 70,000). A band below 10k builds in seconds, so nothing is said.
+ */
+export const COST_BY_BAND: Partial<Record<RecordBand, string>> = {
+  "10k-50k": "about half a minute and under 1 GB",
+  "50k-200k": "about a minute or two and 1 to 2 GB",
+  "over-200k": "several minutes and over 2 GB",
+};
 
 const b = countBand;
 
@@ -130,8 +140,8 @@ export const SELFCHECK_WORDS = {
   repeatableExact: (c: { files: number; differ: number }) =>
     `${c.files} files listed, ${c.differ} differ.`,
   repeatableQuick: "left out with --quick: it builds the catalog twice in memory.",
-  cost: (minutes: number, gb: number) =>
-    `build-is-repeatable builds the catalog twice in memory: about ${minutes} ${minutes === 1 ? "minute" : "minutes"} and ${gb} GB here. atticus selfcheck --quick leaves it out.`,
+  cost: (band: RecordBand) =>
+    `build-is-repeatable builds the catalog twice in memory. An estimate for ${band} records: ${COST_BY_BAND[band] ?? ""}. atticus selfcheck --quick leaves it out.`,
   quiet: (ok: boolean) =>
     ok
       ? "the newest run of each command on record printed a line at least every 30 seconds."
@@ -379,17 +389,10 @@ export async function selfcheck(
     build = await buildCatalog(await inputs()).catch(() => undefined);
   } else
     try {
-      // What it costs is said before it starts, where the catalog is large: by the record
-      // files on disk (about 5 seconds and 0.1 GB a thousand, for the two builds, as measured
-      // on the invented field estate).
-      const files = await countFiles(generatedDirOf(root), ".yaml");
-      if (files >= COSTLY_FILES)
-        o.progress?.(
-          SELFCHECK_WORDS.cost(
-            Math.max(1, Math.round((files / 1000) * (5 / 60))),
-            Math.max(0.1, Math.round(files / 1000) / 10),
-          ),
-        );
+      // What it costs is said before it starts, where the catalog is large: by the band of its
+      // record files on disk (one file a record), in the table's words.
+      const band = recordBand(await countFiles(generatedDirOf(root), ".yaml"));
+      if (COST_BY_BAND[band]) o.progress?.(SELFCHECK_WORDS.cost(band));
       o.progress?.(SELFCHECK_WORDS.building(1, 2));
       const first = await buildCatalog(await inputs());
       o.progress?.(SELFCHECK_WORDS.building(2, 2));

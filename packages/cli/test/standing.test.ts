@@ -207,6 +207,20 @@ describe("atticus status: the five states, each with one command", () => {
       expect(named.line).toBe(
         `You are on Atticus ${VERSION}. This metarepo is at 9.1.0 (.atticus/metarepo.yaml), and its catalog was built by Atticus 9.4.0. Do: npm install -g @maycombhq/atticus@9.4.0`,
       );
+      // The refusal over a catalog of 9.0.5, with the stamp at 9.1.0 and the extension needing
+      // 9.2.0, defers to the newest: the one command shown is 9.2.0's, in the refusal's words and
+      // in the line after it.
+      await newerCatalog(root, "9.0.5");
+      const deferred = await run(["catalog", "build", "--root", root], {
+        [EXTENSION_NEEDS]: "9.2.0",
+      });
+      expect(deferred.code).toBe(1);
+      expect(deferred.err.join("\n")).toContain(
+        "built by Atticus 9.0.5 (build.json version 3; this Atticus reads up to 2): install Atticus 9.2.0, the newest one needed here",
+      );
+      expect(new Set(deferred.err.join("\n").match(/npm install -g [^\s),]+/g))).toEqual(
+        new Set(["npm install -g @maycombhq/atticus@9.2.0"]),
+      );
       // Three versions behind at once: the newest one needed is named, once, whichever it is.
       await newerCatalog(root, "9.0.5");
       const three = await standing(root, { env: { [EXTENSION_NEEDS]: "9.2.0" } });

@@ -31,6 +31,7 @@ afterAll(async () => {
 });
 afterEach(() => {
   delete atticusHooks.version;
+  delete atticusHooks.alsoNeeded;
 });
 
 const REL = "catalog/sources/build.json";
@@ -140,6 +141,32 @@ describe("a newer build.json that names the Atticus that wrote it (ADR 0202 poin
     const files = await newerFileAt(p, rel);
     expect(files).toHaveLength(1);
     expect(files[0]).not.toHaveProperty("atticus");
+  });
+
+  it("defers to a newer Atticus the metarepo needs too: one command, the newest (review of ADR 0202)", async () => {
+    const p = await fileOf(manifest({ version: N, atticus: "2.0.0-beta.31" }));
+    const files = await newerFileAt(p, REL, "build.json");
+    // The stamp or the extension needs a newer one than the catalog's: that one is named.
+    atticusHooks.alsoNeeded = () => "2.0.0-beta.33";
+    const command = "npm install -g @maycombhq/atticus@2.0.0-beta.33";
+    expect(newerAtticusCommand(files)).toBe(command);
+    expect(newerAtticusWords(files)).toBe(
+      `This metarepo's catalog was built by Atticus 2.0.0-beta.31 (build.json version ${N}; this Atticus reads up to ${M}): install Atticus 2.0.0-beta.33, the newest one needed here (${command}), don't run \`atticus upgrade\`.`,
+    );
+    expect(newerAtticusWords(files).match(/npm install -g [^\s),]+/g)).toEqual([
+      "npm install -g @maycombhq/atticus@2.0.0-beta.33",
+    ]);
+    // An older one, or a value that isn't a version, changes nothing.
+    for (const v of ["2.0.0-beta.30", "latest", undefined]) {
+      atticusHooks.alsoNeeded = () => v;
+      expect(newerAtticusCommand(files)).toBe("npm install -g @maycombhq/atticus@2.0.0-beta.31");
+      expect(newerAtticusWords(files)).toContain("built by Atticus 2.0.0-beta.31 (");
+      expect(newerAtticusWords(files)).toContain(": install it (");
+    }
+    // A catalog that doesn't name its Atticus keeps @beta: it may need a newer one still.
+    atticusHooks.alsoNeeded = () => "2.0.0-beta.33";
+    const plain = await newerFileAt(await fileOf(manifest({ version: N })), REL, "build.json");
+    expect(newerAtticusCommand(plain)).toBe(NEWER_ATTICUS_COMMAND);
   });
 
   it("among several newer files, the build.json's version is the one named", () => {

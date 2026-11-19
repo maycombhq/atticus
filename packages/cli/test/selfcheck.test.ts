@@ -23,7 +23,7 @@ import { main } from "../src/main.js";
 import {
   CHECK_FLAGS,
   CHECK_IDS,
-  COSTLY_FILES,
+  COST_BY_BAND,
   selfcheck,
   SELFCHECK_WORDS,
   selfcheckHooks,
@@ -362,14 +362,24 @@ describe("atticus selfcheck on the invented field estate", () => {
       // A small catalog is built twice with no word about cost.
       const small = await run(["selfcheck", "--root", e.root]);
       expect(small.err.join("\n")).not.toContain("about");
-      // 5,000 record files on disk: the cost is said before the first build starts.
+      // 10,000 record files on disk: the cost is said, by the card's band, before the first
+      // build starts. It holds no number of the estate: only the band and the table's words.
       const dir = join(e.root, "catalog", "generated", "system");
       await mkdir(dir, { recursive: true });
-      for (let k = 0; k < COSTLY_FILES; k++) await writeFile(join(dir, `forge-${k}.yaml`), "");
+      await Promise.all(
+        Array.from({ length: 10_000 }, (_, k) => writeFile(join(dir, `forge-${k}.yaml`), "")),
+      );
       const big = await run(["selfcheck", "--root", e.root]);
       expect(big.err[0]).toBe(
-        "build-is-repeatable builds the catalog twice in memory: about 1 minute and 0.5 GB here. atticus selfcheck --quick leaves it out.",
+        "build-is-repeatable builds the catalog twice in memory. An estimate for 10k-50k records: about half a minute and under 1 GB. atticus selfcheck --quick leaves it out.",
       );
+      for (const band of ["10k-50k", "50k-200k", "over-200k"] as const) {
+        const line = SELFCHECK_WORDS.cost(band);
+        const rest = line.replace(band, "").replace(COST_BY_BAND[band]!, "");
+        expect(rest, line).not.toMatch(/\d/);
+      }
+      expect(Object.keys(COST_BY_BAND)).toEqual(["10k-50k", "50k-200k", "over-200k"]);
+      expect(big.err.join("\n")).not.toMatch(/10,?000|10\.0|\b1\.\d GB/);
       expect(big.err[1]).toBe("Building in memory (1 of 2)…");
     },
     T,
@@ -627,7 +637,9 @@ describe("nothing of the estate is in the card, the default output or --json", (
     W.repeatable(true),
     W.repeatable(false),
     W.repeatableQuick,
-    W.cost(1, 1),
+    W.cost("10k-50k"),
+    W.cost("50k-200k"),
+    W.cost("over-200k"),
     W.quiet(true),
     W.quiet(false),
     W.quietNone,

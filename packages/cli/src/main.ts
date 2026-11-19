@@ -1340,9 +1340,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ? process.env.ATTICUS_ROOT
         : process.cwd(),
   );
-  // ADR 0202 point 7: the build is told this Atticus's version, once, before any command that
-  // may meet a catalog a newer Atticus built.
-  await import("./this-atticus.js");
+  // ADR 0202 point 7: the build is told this Atticus's version, and the others this metarepo
+  // needs, once, before any command that may meet a catalog a newer Atticus built.
+  (await import("./this-atticus.js")).tellScanner(root);
   // Beta.28.2 (ADR 0197): a writer of the build's inputs refuses before it writes anything
   // when a newer Atticus built this metarepo's catalog (newer-guard.ts lists them).
   {
