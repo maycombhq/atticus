@@ -12,6 +12,7 @@ import {
   loadRepos,
   vscodeWorkspacePath,
   intellijProjectPath,
+  type GitRunner,
   type LoadedRepo,
 } from "@maycombhq/workspace";
 import { HandoffRuntime, type AiRequest } from "@maycombhq/ai";
@@ -63,6 +64,30 @@ function pick(
 const lockWait = (o: { lockWaitMs?: number }) =>
   o.lockWaitMs !== undefined ? { lockWaitMs: o.lockWaitMs } : {};
 
+/**
+ * Beta.30: what to do about a git that failed for a reason outside the repo, in a plain line:
+ * a sign-in git couldn't make by itself, a proxy that asks for one (407), a certificate git
+ * doesn't trust (a company proxy's own authority, most often). Anything else: undefined, and
+ * git's own words stand alone. The proxy's 407 is asked first: its line can read as a sign-in.
+ */
+export function gitFailureWords(reason: string): string | undefined {
+  if (/\b407\b.*proxy|proxy.*\b407\b|Proxy Authentication Required/i.test(reason))
+    return "The proxy asked for a sign-in (407) and git had none to give: set the proxy with your sign-in, once (git config --global http.proxy http://<user>@<proxy-host>:<port>, or the HTTPS_PROXY environment variable), then sync again.";
+  if (
+    /SSL certificate problem|unable to get local issuer certificate|self[- ]signed certificate|certificate verify failed|SEC_E_UNTRUSTED_ROOT|CERT_TRUST_|server certificate verification failed|certificate chain was issued by an authority that is not trusted/i.test(
+      reason,
+    )
+  )
+    return "Git doesn't trust the server's certificate (a company proxy signs with its own authority, most often): point git at your organisation's CA file (git config --global http.sslCAInfo <path to its .pem file>) and Node at the same file (the NODE_EXTRA_CA_CERTS environment variable), then sync again. Leave certificate checking on.";
+  if (
+    /Authentication failed|could not read (Username|Password)|terminal prompts disabled|Permission denied \(publickey|Invalid username or (password|token)|HTTP Basic: Access denied|Logon failed/i.test(
+      reason,
+    )
+  )
+    return "Git couldn't sign in to the remote, and Atticus never asks for a password: sign in once by running git fetch in a terminal in a clone of this repo (or git ls-remote <its URL>), so your credential manager keeps it, then sync again.";
+  return undefined;
+}
+
 /** atticus workspace sync: clone or update base clones. Exit 1 if any repo failed. */
 export async function workspaceSync(
   root: string,
@@ -73,6 +98,8 @@ export async function workspaceSync(
     lockWaitMs?: number;
     /** Beta.27 review: stops the sync (the app's Stop): each git under way is killed. */
     signal?: AbortSignal;
+    /** The git to run (tests pass a mock); the machine's own by default. */
+    git?: GitRunner;
   } = {},
 ): Promise<number> {
   const all = await loadRepos(root);
@@ -84,7 +111,7 @@ export async function workspaceSync(
   if (!repos) return 2;
   // --from <folder>: copy each missing base clone from your own clone there, with no network.
   // Round 50: the app waits for another sync of a base clone only briefly (lockWaitMs).
-  const results = await createWorkspace(root, undefined, {
+  const results = await createWorkspace(root, o.git, {
     ...lockWait(o),
     ...(o.signal ? { signal: o.signal } : {}),
   }).sync(repos, o.from ? { from: o.from } : {});
@@ -92,8 +119,13 @@ export async function workspaceSync(
     const sha = r.sha ? ` ${r.sha.slice(0, 12)}` : "";
     const why = r.from ? `copied from your clone at ${r.from}` : r.reason;
     const line = `${r.id}: ${r.action}${sha}${why ? ` (${why})` : ""}`;
-    if (r.action === "failed") io.err(line);
-    else io.out(line);
+    if (r.action === "failed") {
+      // Beta.30: what to do first, in plain words, where the failure is one we know; git's own
+      // line after it.
+      const todo = r.reason ? gitFailureWords(r.reason) : undefined;
+      if (todo) io.err(`${r.id}: ${todo}`);
+      io.err(line);
+    } else io.out(line);
     // ADR 0123: the manifest names one default branch; the remote may call another its default.
     const named = repos.find((x) => x.id === r.id)?.defaultBranch;
     if (r.remoteDefault && named && r.remoteDefault !== named)

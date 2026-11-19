@@ -40,6 +40,8 @@ const healthy = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   assistantFiles: async () => ({ missing: [], stale: [], edited: [] }),
   // Round 50: this machine's credential store, empty here (never the real one in a test).
   keys: { get: () => undefined, set: () => undefined, forget: () => undefined },
+  // Beta.30: PowerShell and npm are never run in a test (doctor-windows-shell.test.ts passes their output).
+  commandOutput: async () => undefined,
   ...o,
 });
 

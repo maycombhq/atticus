@@ -133,6 +133,100 @@ export interface DoctorDeps {
   copilotAcp?: (o: { command: string; cwd: string }) => Promise<CopilotAcpProbe>;
   /** This machine's credential store (atticus secret set), asked by name only. Tests pass one. */
   keys?: KeyStore;
+  /**
+   * Beta.30: what a program on this machine prints (PowerShell's execution policy, npm's global
+   * folder; asked on Windows only), or undefined when it can't be run. Tests pass the output.
+   */
+  commandOutput?: (program: "powershell" | "npm", args: string[]) => Promise<string | undefined>;
+}
+
+/**
+ * What a program prints, or undefined when it isn't there, fails or takes too long. The program
+ * and its arguments are doctor's own words, never a person's: npm is npm.cmd on Windows, which
+ * Node starts only through the shell.
+ */
+async function defaultCommandOutput(
+  program: "powershell" | "npm",
+  args: string[],
+): Promise<string | undefined> {
+  const { execFile } = await import("node:child_process");
+  return new Promise((resolve) => {
+    execFile(
+      program === "npm" ? "npm.cmd" : "powershell.exe",
+      args,
+      { timeout: 15_000, windowsHide: true, encoding: "utf8", shell: program === "npm" },
+      (err, stdout) => resolve(err ? undefined : stdout),
+    );
+  });
+}
+
+/** The execution policies under which PowerShell runs a local, unsigned script (atticus.ps1). */
+const POLICY_RUNS: Record<string, boolean> = {
+  restricted: false,
+  allsigned: false,
+  remotesigned: true,
+  unrestricted: true,
+  bypass: true,
+};
+const POLICY_NAME: Record<string, string> = {
+  restricted: "Restricted",
+  allsigned: "AllSigned",
+  remotesigned: "RemoteSigned",
+  unrestricted: "Unrestricted",
+  bypass: "Bypass",
+};
+
+/** A Windows folder as PATH compares them: no quotes, one kind of slash, no trailing one, no case. */
+const winFolder = (d: string) =>
+  d
+    .trim()
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/\//g, "\\")
+    .replace(/\\+$/, "")
+    .toLowerCase();
+
+/**
+ * Beta.30, Windows: the two reasons the first `atticus` after `npm install -g` isn't found or
+ * won't start. PowerShell picks npm's atticus.ps1, which its execution policy may block
+ * (atticus.cmd needs none); and npm's global folder may not be on PATH. A program that didn't
+ * answer says nothing: the offline bundle needs neither.
+ */
+async function windowsShellChecks(
+  env: NodeJS.ProcessEnv,
+  ask: NonNullable<DoctorDeps["commandOutput"]>,
+): Promise<DoctorCheck[]> {
+  const out: DoctorCheck[] = [];
+  const quiet = (p: Promise<string | undefined>) => p.catch(() => undefined);
+  const [policyOut, prefixOut] = await Promise.all([
+    quiet(ask("powershell", ["-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"])),
+    quiet(ask("npm", ["config", "get", "prefix"])),
+  ]);
+  const policy = (policyOut ?? "").trim().toLowerCase();
+  if (policy in POLICY_RUNS) {
+    const runs = POLICY_RUNS[policy]!;
+    out.push({
+      id: "powershell-policy",
+      label: "PowerShell scripts (Windows)",
+      status: runs ? "ok" : "warn",
+      detail: runs
+        ? `PowerShell's execution policy is ${POLICY_NAME[policy]}: it runs atticus.ps1`
+        : `PowerShell's execution policy is ${POLICY_NAME[policy]}: it won't run atticus.ps1, the script npm installs, so atticus in PowerShell fails with "running scripts is disabled on this system"`,
+      fix: "In PowerShell, run atticus.cmd instead of atticus (it needs no policy; Command Prompt and Git Bash run it already), or allow local scripts for your user: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned. If your organisation sets the policy, atticus.cmd is the way.",
+    });
+  }
+  const prefix = (prefixOut ?? "").trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+  if (prefix) {
+    const dirs = (env.PATH ?? env.Path ?? "").split(";").map(winFolder);
+    const on = dirs.includes(winFolder(prefix));
+    out.push({
+      id: "npm-path",
+      label: "npm's global folder (Windows)",
+      status: on ? "ok" : "warn",
+      detail: `npm's global folder (${prefix}) ${on ? "is" : "isn't"} on PATH`,
+      fix: `A terminal finds atticus after npm install -g only with that folder on PATH: add ${prefix} to your user PATH (Settings › Edit environment variables for your account › Path › New), then open a new terminal.`,
+    });
+  }
+  return out;
 }
 
 export interface AssistantFilesState {
@@ -257,6 +351,11 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       }
     });
   const openspecSoon = openspecVersion();
+  const windowsSoon =
+    platform === "win32"
+      ? windowsShellChecks(env, deps.commandOutput ?? defaultCommandOutput)
+      : undefined;
+  windowsSoon?.catch(() => undefined);
   const storesSoon = (deps.openspecStores ?? (() => openspecHasStores()))().catch(() => false);
   // Outside a metarepo only the machine is checked (the metarepo's checks would read defaults
   // and ask for an upgrade of a folder that isn't one).
@@ -276,6 +375,9 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     detail: `Node ${node} (needs ${MIN_NODE} or later)`,
     fix: `Install Node ${MIN_NODE} or later (the LTS 22 line), or use the offline bundle, which carries its own.`,
   });
+
+  // ---- Windows: PowerShell's execution policy, npm's global folder on PATH (beta.30)
+  if (platform === "win32") out.push(...(await windowsSoon!));
 
   // ---- Git
   const gitConfig = async (key: string) => {
