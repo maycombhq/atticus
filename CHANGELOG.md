@@ -2,6 +2,20 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.30 (unreleased)
+
+### Fixed
+
+- **The VS Code extension compares every number of the command line's version.** It read only the first number after `beta`, so `2.0.0-beta.28.1` passed for the `2.0.0-beta.28.5` it needs. Every number is compared now, in the command line's own order, and the version read from `atticus --version` keeps them all.
+- **One install command, at the exact version.** The extension said `@latest`, other hints `@beta`, and "a newer Atticus upgraded this metarepo" gave no command. Each hint now gives `npm install -g @maycombhq/atticus@<version>` with the version needed: the one the extension needs (an old or a missing command line), the one that upgraded the metarepo (the app, `atticus doctor`), this Atticus's own (doctor's reinstall hints). The one line left as it was is for a catalog a newer Atticus built: its files don't record that Atticus's version, and the line is the refusal's `command` in the local API.
+- **`atticus doctor` on Windows names the two reasons `atticus` won't start after `npm install -g`.** It warns when PowerShell's execution policy (Restricted, AllSigned) won't run `atticus.ps1` (run `atticus.cmd`, or `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`), and when npm's global folder isn't on PATH, naming the folder.
+- **A sync that fails on sign-in, a proxy or a certificate says what to do.** A plain line comes first (sign in once with `git fetch` in a terminal; set the proxy for a 407; point git's `http.sslCAInfo` and `NODE_EXTRA_CA_CERTS` at your organisation's CA file), and git's own line follows it.
+- **`atticus waiting` lists a critic round's findings.** After a critic round it printed `finding  undefined (undefined): undefined` for each gate and listed no finding.
+- **A new integration starts from an integration brief.** `atticus change new --type integration` said "from the decommission template", and the brief was the one for retiring a system. There is a built-in integration brief now (your `process/change-templates/integration.md` replaces it); `--template decommission` still gives the other. A plain bug fix likewise starts from the defect-fix brief, not the data-fix one.
+- **`atticus change architecture` says "Target flows: none"** when the design changes no flow, where it printed `Target flows: ,`.
+- **`atticus task context` no longer says "read its story" when there is none.** For a task the target flows don't give, it names the story's file, or says the change has no stories (or the task names none) and points at the task's line in `tasks.md` and the change's folder.
+- **A new flow's entry is no longer scored as "breaks who uses it today".** A flow that is new has no users today, so the fields its entry requires add nothing to the risk score; a field an existing flow now requires still does.
+
 ## 2.0.0-beta.28.5 (2026-11-17)
 
 beta.28.5 answers a second day of field reports from the same 40-repo estate. One additive change to the local API (3.17.0, ADR 0200); no new file formats, and the facts on file are used as they are: nothing needs to be mapped again, only applied. A team may upgrade one member at a time.
