@@ -351,6 +351,7 @@ export async function runCritic(
             [ANSWERS_TEXT, ctx.answers?.length ? answersText(ctx.answers) : ""] as const,
           ]),
           questions: lenses,
+          personas: personas.map((p) => p.name),
           prior: rounds.at(-1),
         })
       : undefined;

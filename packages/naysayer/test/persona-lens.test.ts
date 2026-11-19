@@ -129,3 +129,21 @@ describe("a persona's naysayer with gates runs as a lens", () => {
     expect(all[0]!.agent.id).toBe(NAYSAYER);
   });
 });
+
+describe("the stages' gate names are kept for them (ADR 0203 A.1)", () => {
+  it("refuses a gates.yaml gate named stage-<x>", async () => {
+    const r = await forgeChangeRoot();
+    const file = join(r, "org-pack/gates.yaml");
+    const text = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      text.replace(
+        "gates:\n",
+        "gates:\n  - id: stage-architecture\n    phase: design\n    approvers: [architect]\n",
+      ),
+    );
+    await expect(runCritic(r, CHANGE, { now: NOW, gate: "stage-architecture" })).rejects.toThrow(
+      "Gate stage-architecture in gates.yaml has a name Atticus keeps for a stage's own findings (stage-<stage>, ADR 0203): rename it in org-pack/gates.yaml.",
+    );
+  });
+});

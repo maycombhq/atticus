@@ -47,6 +47,7 @@ import {
   type PackSource,
 } from "./rules.js";
 import { personaLensesAt, type PersonaLens } from "./personas.js";
+import { STAGE_GATE_PREFIX } from "./gate-rounds.js";
 
 /**
  * The parts of a critic round that `runCritic` (a whole round) and `completeLensRun` (one AI
@@ -151,6 +152,13 @@ export async function resolveGate(
       id
         ? `There is no gate ${id}. Gates: ${lifecycle.orgPack.gates.gates.map((g) => g.id).join(", ")}.`
         : `${change.id} is ${change.state}, which has no gate; name one with --gate.`,
+    );
+  // ADR 0203 A.1: stage-<stage> is the stages' own gate; a gates.yaml gate of that name would
+  // mix a critic's rounds with the stage's findings, so it is refused (the schema is C6's).
+  if (gate.id.startsWith(STAGE_GATE_PREFIX))
+    throw new CriticError(
+      "refused",
+      `Gate ${gate.id} in gates.yaml has a name Atticus keeps for a stage's own findings (${STAGE_GATE_PREFIX}<stage>, ADR 0203): rename it in org-pack/gates.yaml.`,
     );
   return { lifecycle, change, type, gate };
 }

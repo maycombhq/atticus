@@ -405,6 +405,8 @@ export async function sinceReview(
     /** The texts the lenses review now, by path. */
     texts: ReadonlyMap<string, string>;
     questions: readonly string[];
+    /** ADR 0203 C: the personas whose naysayers run at this gate now; another's finding drops. */
+    personas?: readonly string[];
     /** The round before this one, when it isn't the last reviewed: what a person decided there holds. */
     prior?: number | undefined;
   },
@@ -456,8 +458,11 @@ export async function sinceReview(
   const carried: Proposal[] = [];
   for (const { finding: f } of (await readRound(root, o.change, o.gate, last.round)).findings) {
     // ADR 0203 C: a persona's finding is carried with its persona lens, whatever the questions.
-    if (!ai.has(f.id) || !(f.lens === "persona" || (o.questions as string[]).includes(f.lens)))
-      continue;
+    const runs =
+      f.lens === "persona"
+        ? (o.personas ?? []).includes(f.persona ?? "")
+        : (o.questions as string[]).includes(f.lens);
+    if (!ai.has(f.id) || !runs) continue;
     const byPerson = decided.get(fingerprintOf(f));
     const reopened = !byPerson && assistantClosed(f);
     const proposal = proposalOf(f);
