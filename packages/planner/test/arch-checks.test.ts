@@ -209,7 +209,7 @@ describe("every breaking contract change lists its consumers (check 2)", () => {
       i.rule.startsWith("delta.consumer"),
     );
     expect(got.map((i) => [i.rule, i.target])).toEqual([
-      ["delta.consumer-missing", "forge-orders.place-order"],
+      ["delta.consumer-missing", "forge-orders.place-order:forge-web"],
     ]);
     expect(got[0]!.message).toBe(
       "Flow forge-orders.place-order changes POST /orders in a way that breaks who calls it today (change 1 is marked breaking: shopId is required), but doesn't list forge-web, which the map shows calling it. List every caller under consumers: [forge-web].",

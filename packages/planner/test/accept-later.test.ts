@@ -99,7 +99,7 @@ describe("design.md lists an accepted consumer the draft leaves out (delta.consu
     e.acceptedFindings = byPrint(
       accepted(
         "delta.consumer-missing",
-        "forge-orders.place-order",
+        "forge-orders.place-order:forge-web",
         "Flow … doesn't list forge-web.",
       ),
     );
@@ -110,6 +110,11 @@ describe("design.md lists an accepted consumer the draft leaves out (delta.consu
         "- forge-web (of forge-orders.place-order): not affected, accepted by pat: Web moves off it first.",
       ].join("\n"),
     );
+    // An acceptance of other consumers left out says nothing of these.
+    e.acceptedFindings = byPrint(
+      accepted("delta.consumer-missing", "forge-orders.place-order:forge-mobile", "Other."),
+    );
+    expect(renderArchitecture([marked], e)).not.toContain("## Consumers not affected");
   });
 });
 
@@ -161,7 +166,7 @@ describe("a story file takes what a person accepted", () => {
       accepted: [
         accepted(
           "stories.field-not-checked",
-          "1.3",
+          "1.3:deliver_by",
           "Task 1.3's criteria check no value of deliver_by: write a criterion whose then clause asserts each, and list it under that criterion's checks.",
           "stories",
         ),

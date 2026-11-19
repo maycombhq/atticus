@@ -73,6 +73,7 @@ const NOW = "2026-11-18T09:00:00Z";
 const GHOST = "forge-ghost";
 /** A repo and a component nothing knows either, for an operation and a call (ADR 0203 A). */
 const GHOST_SVC = "forge-ghost-svc";
+const EVIL_SVC = "forge-evil-svc";
 const T = 300_000;
 const META = "forge/forge";
 
@@ -301,7 +302,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
           };
           const once = await says(true);
           expect(once).toContain(
-            `${copy}:${lineOf(a.requirements, quoted)}: ${NAYSAYER}: Nothing says who runs it at night. [-]`,
+            `${copy}:${lineOf(a.requirements, quoted)}: ${NAYSAYER}: Nothing says who runs it at night. [requirements.md:${lineOf(a.requirements, quoted)}]`,
           );
           expect(once.at(-1)).toMatch(new RegExp(`^Added \\d+ rows? to `));
           const after = await readFile(copy, "utf8");
@@ -1456,6 +1457,28 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
         "utf8",
       );
       expect(story).toContain(`goes to ${GHOST_SVC} ${TOPIC}`);
+
+      // The acceptance covers that component only. Drafted again to the same one: still accepted.
+      const same = assistant(architecture);
+      const c1 = capture();
+      await stageCli(m.root, ["change", "architecture", e.id], { json: true, force: true }, c1.io, {
+        runtime: same.runtime,
+        now: new Date(NOW),
+      });
+      expect((JSON.parse(c1.out.join("\n")) as { state: string }).state).toBe("done");
+      // Drafted to another component nothing knows: a new open finding, and the stage isn't done.
+      const evil = assistant(architecture.replace(GHOST_SVC, EVIL_SVC));
+      const c2 = capture();
+      await stageCli(m.root, ["change", "architecture", e.id], { json: true, force: true }, c2.io, {
+        runtime: evil.runtime,
+        now: new Date(NOW),
+      });
+      expect(c2.out.join("\n")).not.toContain('"state": "done"');
+      const now = await Promise.all(await gateFindings(e.id, "stage-architecture"));
+      expect(now.map((x) => [(x.locator as { record?: string }).record, x.state])).toEqual([
+        [EVIL_SVC, "open"],
+      ]);
+      expect(String(now[0]!.summary)).toContain(EVIL_SVC);
     },
     T,
   );

@@ -510,19 +510,19 @@ export async function runStageLoop<A>(
   spec: StageSpec<A>,
   o: StageOptions,
 ): Promise<StageResult<A>> {
-  if (o.checkDraft !== undefined) return runLoop(root, changeId, spec, o);
   // ADR 0203 A: a finding a person accepted no longer blocks: the stage's checks pass it with
   // the acceptance's words, so it is never handed back, never counts toward three drafts, and a
-  // stopped stage run again is done with no new draft when nothing else blocks.
+  // stopped stage run again is done with no new draft when nothing else blocks. An acceptance at
+  // any stage counts: the same rule and target is the same problem (the stories stage checks the
+  // operations again). The draft's self-check reads them too.
   const ctx = await loadChangeContext(root);
-  const accepted = await readAccepted(root, changeId, ctx, [spec.stage]).catch(
-    () => new Map<string, Accepted>(),
-  );
+  const accepted = await readAccepted(root, changeId, ctx).catch(() => new Map<string, Accepted>());
   const check: StageSpec<A>["check"] = async (a, co) =>
     (await spec.check(a, co)).map((i) => {
       const yes = i.blocking && accepted.get(issueFingerprint(i.rule, i.target, i.evidence ?? ""));
       return yes ? { ...i, blocking: false, message: `${i.message} (${acceptedWords(yes)}.)` } : i;
     });
+  if (o.checkDraft !== undefined) return runLoop(root, changeId, { ...spec, check }, o, ctx);
   try {
     return await runLoop(root, changeId, { ...spec, check }, o, ctx, accepted);
   } finally {
@@ -1223,6 +1223,11 @@ async function runLoop<A>(
                 kind: "artifact" as const,
                 origin: "atticus (the stage's findings people accepted)",
                 text: [...accepted.values()]
+                  .filter(
+                    (a) =>
+                      a.stage === spec.stage ||
+                      loop.findings.some((f) => f.fingerprint === a.fingerprint),
+                  )
                   .map(
                     (a) =>
                       `- ${a.rule} (${loop.findings.find((f) => f.fingerprint === a.fingerprint)?.target ?? a.record ?? a.finding}), ${acceptedWords(a)}.`,

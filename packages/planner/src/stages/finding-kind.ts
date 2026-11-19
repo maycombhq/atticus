@@ -88,6 +88,25 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "stories.unknown-step",
 ]);
 
+/**
+ * ADR 0203 A.3: the stage rules a person may accept (accept.ts projects and reads them): only where a person can know better than the map and the next
+ * stage can still do its work. A fixed list, not configuration (rule 6).
+ */
+export const ACCEPTABLE_STAGE_RULES: ReadonlySet<string> = new Set([
+  "feature.unknown-repo",
+  "operation.unknown-repo",
+  "delta.unknown-component",
+  "delta.unknown-entry",
+  "delta.unknown-consumer",
+  "stories.unknown-consumer",
+  "delta.consumer-missing",
+  "delta.new-folder",
+  "stories.field-not-checked",
+  "stories.field-no-validation",
+  "stories.field-no-error-case",
+  "stories.shape-uncovered",
+]);
+
 /** The kind of a stage's own finding, by its rule. */
 export const stageRuleKind = (rule: string): FindingKind =>
   DRAFTING_STAGE_RULES.has(rule) ? "drafting" : "decision";

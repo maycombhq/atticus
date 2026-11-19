@@ -1,5 +1,5 @@
 import { Finding } from "@maycombhq/core";
-import type { ChangeContext } from "@maycombhq/changes";
+import { loadChangeContext, type ChangeContext } from "@maycombhq/changes";
 import {
   assistantOf,
   readRound,
@@ -8,6 +8,7 @@ import {
   writeGateRound,
   type RoundWrite,
 } from "@maycombhq/naysayer";
+import { ACCEPTABLE_STAGE_RULES } from "./finding-kind.js";
 import type { LoopFinding, Stage } from "./schema.js";
 
 /**
@@ -19,29 +20,11 @@ import type { LoopFinding, Stage } from "./schema.js";
  * else; the loop reads it there.
  */
 
-/**
- * The rules a person may accept: only where a person can know better than the map and the next
- * stage can still do its work. A fixed list, not configuration (rule 6).
- */
-export const ACCEPTABLE_STAGE_RULES: ReadonlySet<string> = new Set([
-  "feature.unknown-repo",
-  "operation.unknown-repo",
-  "delta.unknown-component",
-  "delta.unknown-entry",
-  "delta.unknown-consumer",
-  "stories.unknown-consumer",
-  "delta.consumer-missing",
-  "delta.new-folder",
-  "stories.field-not-checked",
-  "stories.field-no-validation",
-  "stories.field-no-error-case",
-  "stories.shape-uncovered",
-]);
-
 /** The rules about one id (a repo, a component, a consumer): the id is the target's last part. */
 const ABOUT_ONE_ID: ReadonlySet<string> = new Set([
   "feature.unknown-repo",
   "operation.unknown-repo",
+  "delta.unknown-component",
   "delta.unknown-consumer",
   "stories.unknown-consumer",
 ]);
@@ -150,10 +133,12 @@ const STAGE_IDS = ["feature", "architecture", "stories", "small"] as const;
 export async function readAccepted(
   root: string,
   change: string,
-  ctx?: Pick<ChangeContext, "orgPack">,
+  given?: Pick<ChangeContext, "orgPack">,
   stages: readonly string[] = STAGE_IDS,
 ): Promise<Map<string, Accepted>> {
   const out = new Map<string, Accepted>();
+  // Always with the org pack's assistants known: a resolution an assistant wrote accepts nothing.
+  const ctx = given ?? (await loadChangeContext(root));
   for (const stage of stages) {
     const gate = stageGateOf(stage);
     const round = (await roundsOf(root, change, gate).catch(() => [] as number[])).at(-1);
@@ -162,7 +147,7 @@ export async function readAccepted(
       const r = f.resolution;
       // Rule 6: a constitution rule is never accepted, whatever its file says.
       if (f.state !== "waived" || !r?.reason || f.layer === "constitution") continue;
-      if (ctx && assistantOf(ctx, r.by)) continue;
+      if (assistantOf(ctx, r.by) || !acceptableStageRule(f.rule)) continue;
       const fp = f.id.replace(/^stage-/, "").slice(0, 12);
       out.set(fp, {
         finding: f.id,
@@ -200,7 +185,6 @@ export interface ProjectOptions {
 /** The id a finding is about, for a rule about one id. */
 const recordOf = (f: LoopFinding): string | undefined => {
   if (ABOUT_ONE_ID.has(f.rule)) return f.target.split(":").at(-1);
-  if (f.rule === "delta.unknown-component") return /goes to ([\w.-]+), which/.exec(f.message)?.[1];
   return undefined;
 };
 
@@ -260,22 +244,15 @@ export async function writeStageGate(
   accepted: ReadonlyMap<string, Accepted>,
   o: ProjectOptions,
 ): Promise<RoundWrite> {
-  const gate = stageGateOf(o.stage);
-  const last = (await roundsOf(root, o.change, gate).catch(() => [] as number[])).at(-1);
-  const before = new Map(
-    (last === undefined ? [] : (await readRound(root, o.change, gate, last)).findings).map((s) => [
-      s.finding.id,
-      s.finding,
-    ]),
-  );
   const fresh: Finding[] = [];
-  for (const f of current)
-    if (f.source === "stage" && (f.blocking || accepted.has(f.fingerprint))) {
-      const g = await stageFinding(f, o);
-      const was = before.get(g.id);
-      fresh.push(was ? { ...g, summary: was.summary, why: was.why, locator: was.locator } : g);
-    }
-  return writeGateRound(root, o.change, gate, fresh, o.now);
+  // The gate says what the current draft has, in its words; an acceptance is carried by the id,
+  // which holds what was accepted. One accepted at another stage is that stage's to show.
+  for (const f of current) {
+    const mine = accepted.get(f.fingerprint)?.stage === o.stage;
+    if (f.source === "stage" && (mine || (f.blocking && !accepted.has(f.fingerprint))))
+      fresh.push(await stageFinding(f, o));
+  }
+  return writeGateRound(root, o.change, stageGateOf(o.stage), fresh, o.now, { carryById: true });
 }
 
 /**

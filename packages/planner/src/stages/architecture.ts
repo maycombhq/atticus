@@ -76,6 +76,7 @@ import { callsAt, declaresMethod, doneAt, flowCitesFile } from "./places.js";
 import {
   breakingChanges,
   consumerIssues,
+  consumerMissingTarget,
   endpointConsumers,
   endpointName,
   renderBreaking,
@@ -96,7 +97,7 @@ import {
   writeOperations,
 } from "./operations.js";
 import { type Accepted, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
-import { knownToChange, plannedComponents, plannedRepos } from "./planned.js";
+import { acceptedRepos, knownToChange, plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
 
@@ -1037,7 +1038,7 @@ export async function placeIssues(
         const f = parseNewFile(s.new);
         if (!f) {
           issue(
-            "new",
+            `new:${s.new}`,
             "delta.new-folder",
             `${change} puts the new code in ${s.new}, which isn't a path in ${d.repo}: give the new file's path from the repo's root, in the folder of its nearest kin.`,
           );
@@ -1060,14 +1061,14 @@ export async function placeIssues(
         if (!there && root && (await checkoutEmpty(root, d.repo)))
           // ADR 0201: an empty repo has no layout to follow yet: a note, not a refusal.
           issue(
-            "new",
+            `new:${folder || "."}`,
             "delta.new-folder",
             `${change} puts the new code in a new file ${f}, and ${d.repo} is an empty repo: the change gives it its layout, so the folder isn't checked.`,
             false,
           );
         else if (!there)
           issue(
-            "new",
+            `new:${folder || "."}`,
             "delta.new-folder",
             `${change} puts the new code in a new file ${f}, but ${d.repo} has no folder ${folder || "at its root"}${checkout ? "" : " that the catalog cites"}: name the file in the folder of its nearest kin, the repo's own layout.`,
             // Without a checkout the catalog may not cite every folder: a note, not a refusal.
@@ -1509,13 +1510,13 @@ export function checkDeltas(
         !planned.has(s.to.component) &&
         !unread.has(s.to.component) &&
         !e.outside?.has(s.to.component) &&
-        // ADR 0203 A: a target a person accepted is known as accepted, as an outside system is.
-        !e.accepted?.has(s.to.component) &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(
           "delta.unknown-component",
-          at,
+          // ADR 0203 A: the target holds what a person may accept, so a draft that names another
+          // component is another finding.
+          `${at}:${s.to.component}`,
           ["Table", "DataStore"].includes(e.byId.get(s.to.component)?.kind ?? "")
             ? `Change ${i + 1} to ${t} goes to ${s.to.component}, which is a ${e.byId.get(s.to.component)!.kind === "Table" ? "table" : "data store"}, not a component: a step that reads or writes it names it under store, as store: { table: ${s.to.component}, columns: [the columns] }, and has no to.`
             : `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
@@ -1539,7 +1540,7 @@ export function checkDeltas(
         if (have.size && !s.to.new && !known)
           issue(
             "delta.unknown-entry",
-            at,
+            `${at}:${s.to.component}:${s.to.entry}`,
             `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}${/^METHOD\s/i.test(s.to.entry) ? `: write the HTTP method itself (GET, POST, PUT, PATCH or DELETE), not METHOD. ${s.to.component} has` : ", which the catalog doesn't have; it has"} ${nearestEntries(s.to.entry, [...have.values()]).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
             d.repo,
           );
@@ -2344,12 +2345,13 @@ export function renderArchitecture(
   }
   // ADR 0203 A: a consumer the map knows and the draft leaves out, which a person accepted.
   const unaffected = breakingChanges(deltas, e).flatMap((c) => {
-    const a = e.acceptedFindings?.get(issueFingerprint("delta.consumer-missing", c.target));
-    return a
-      ? c.consumers
-          .filter((x) => !c.listed.includes(x))
-          .map((x) => `- ${x} (of ${c.flow}): not affected, ${acceptedWords(a)}.`)
-      : [];
+    const missing = c.consumers.filter((x) => !c.listed.includes(x));
+    const a = missing.length
+      ? e.acceptedFindings?.get(
+          issueFingerprint("delta.consumer-missing", consumerMissingTarget(c.target, missing)),
+        )
+      : undefined;
+    return a ? missing.map((x) => `- ${x} (of ${c.flow}): not affected, ${acceptedWords(a)}.`) : [];
   });
   if (unaffected.length) lines.push("## Consumers not affected", "", ...unaffected, "");
   const ifs = interfaceChanges(deltas, e);
@@ -2381,7 +2383,7 @@ export function renderArchitecture(
         (ops.operations.length
           ? [...suggestedDeploy(deltas, e), ...suggestedOperationOrder(ops.operations, ops.waves)]
           : []),
-      plannedRepos(deltas, e),
+      new Set([...plannedRepos(deltas, e), ...acceptedRepos(e)]),
     ),
     ...withOperationRollback(renderRollback(deltas, e), ops.operations),
   );
@@ -2870,7 +2872,11 @@ export async function architectureStage(
         a.waves,
         estate,
         placement,
-        plannedRepos(a.flows, estate),
+        // ADR 0203 A: a repo accepted at the feature stage; one accepted here is raised again.
+        new Set([
+          ...plannedRepos(a.flows, estate),
+          ...acceptedRepos(estate, ["feature.unknown-repo"]),
+        ]),
       ),
       ...operationDeployIssues(
         a.operations ?? [],

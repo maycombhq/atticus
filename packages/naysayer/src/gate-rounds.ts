@@ -39,6 +39,11 @@ export async function writeGateRound(
   gate: string,
   fresh: Finding[],
   now: string,
+  /**
+   * ADR 0203 A: also carry a finding's state and resolution by its id, for a gate whose ids say
+   * exactly what each finding is (a stage's, `stage-<fingerprint>`): its words may change.
+   */
+  o: { carryById?: boolean } = {},
 ): Promise<RoundWrite> {
   const rounds = await roundsOf(root, change, gate);
   const last = rounds.at(-1);
@@ -46,10 +51,11 @@ export async function writeGateRound(
     ? (await readRound(root, change, gate, last)).findings.map((s) => s.finding)
     : [];
   const byPrint = new Map(prev.map((f) => [fingerprint(f), f]));
+  const byId = new Map(prev.map((f) => [f.id, f]));
   const taken = new Set<string>();
   const next: Finding[] = [];
   for (const f of fresh) {
-    const before = byPrint.get(fingerprint(f));
+    const before = byPrint.get(fingerprint(f)) ?? (o.carryById ? byId.get(f.id) : undefined);
     let id = f.id;
     for (let i = 2; taken.has(id); i++) id = `${f.id}-${i}`;
     taken.add(id);

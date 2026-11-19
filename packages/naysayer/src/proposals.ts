@@ -1,9 +1,16 @@
+import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { changeFolder, writeFileAtomic, type ChangeContext } from "@maycombhq/changes";
-import { assistantActor, IsoDateTime, toCanonicalYaml, type Finding } from "@maycombhq/core";
+import {
+  assistantActor,
+  IsoDateTime,
+  orgPackDirOf,
+  toCanonicalYaml,
+  type Finding,
+} from "@maycombhq/core";
 
 /**
  * What an assistant proposes about a finding (ADR 0115 addendum, 2026-10-25, finding integrity).
@@ -37,15 +44,56 @@ const ProposalsFile = z.strictObject({
 const fileOf = (root: string, change: string, gate: string, round: number) =>
   join(changeFolder(root, change), "review", gate, String(round), "meta", "proposals.yaml");
 
-/** The names that are an AI's in this metarepo, besides the built-in ones: the org pack's agents and models. */
-export function assistantNames(lifecycle: Pick<ChangeContext, "orgPack">): string[] {
+/**
+ * Atticus's own agents, which draft, judge and review: a `by` that names one is an AI, never a
+ * person (ADR 0203 A.4). With the suffixes every critic and every persona's naysayer has.
+ */
+export const BUILT_IN_AGENTS: readonly string[] = [
+  "feature-placer",
+  "flow-architect",
+  "story-writer-flows",
+  "small-change-planner",
+  "context-expander",
+  "context-reranker",
+  "judge",
+  "critic-lenses",
+  // A name ending -critic or -naysayer is matched by its last word (assistantActor).
+  "critic",
+  "naysayer",
+];
+
+/**
+ * The names that are an AI's in this metarepo, besides the built-in ones: Atticus's own agents,
+ * the org pack's agents (its YAML definitions and, with the root, its persona files) and models.
+ */
+export function assistantNames(
+  lifecycle: Pick<ChangeContext, "orgPack"> & { root?: string },
+): string[] {
   const rt = lifecycle.orgPack.runtime as { models?: { allowed?: string[] } };
-  return [...lifecycle.orgPack.agents.map((a) => a.id), ...(rt.models?.allowed ?? [])];
+  const personas = lifecycle.root
+    ? (() => {
+        try {
+          return readdirSync(join(orgPackDirOf(lifecycle.root), "agents"))
+            .filter((f) => f.endsWith(".md"))
+            .map((f) => f.slice(0, -3));
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+  return [
+    ...BUILT_IN_AGENTS,
+    ...lifecycle.orgPack.agents.map((a) => a.id),
+    ...personas,
+    ...(rt.models?.allowed ?? []),
+  ];
 }
 
 /** The AI a `by` names, with the org pack's agents and models known; undefined for a person. */
-export const assistantOf = (lifecycle: Pick<ChangeContext, "orgPack">, by: string) =>
-  assistantActor(by, assistantNames(lifecycle));
+export const assistantOf = (
+  lifecycle: Pick<ChangeContext, "orgPack"> & { root?: string },
+  by: string,
+) => assistantActor(by, assistantNames(lifecycle));
 
 /** The severities only a person's resolution closes. */
 export const PERSON_CLOSES: ReadonlySet<string> = new Set(["blocking", "risk"]);

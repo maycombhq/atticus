@@ -129,7 +129,7 @@ describe("which stage rules a person may accept (ADR 0203 A.3)", () => {
     const component = await stageFinding(
       loopFinding(
         "delta.unknown-component",
-        "forge-orders.place-order#3",
+        "forge-orders.place-order#3:forge-ghost",
         "Change 3 to forge-orders.place-order goes to forge-ghost, which the catalog doesn't have; use an id from the index, or new: true.",
       ),
       opts,
@@ -245,6 +245,44 @@ describe("accepting the feature stage's finding about a repo the estate doesn't 
     await featureStage(root, CHANGE, { runtime: other.runtime, now: NOW, force: true });
     const now = await stageGate(root);
     expect(now.map((x) => [x.locator.record, x.state])).toContainEqual(["forge-queue", "open"]);
+  });
+
+  it("refuses Atticus's own agents and the org pack's personas as the one who accepts", async () => {
+    const root = await estateRoot();
+    const r = assistant(placed("forge-screening"));
+    await featureStage(root, CHANGE, { runtime: r.runtime, now: NOW });
+    const [f] = await stageGate(root);
+    await mkdir(join(root, "org-pack/agents"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/agents/ledger-architect.md"),
+      "---\nname: ledger-architect\n---\nWrites.\n",
+    );
+    for (const by of [
+      "feature-placer",
+      "application-architect-naysayer",
+      "true-critic",
+      "ledger-architect",
+    ])
+      await expect(act(root, CHANGE, f!.id, "waive", { by, reason: "It is new." })).rejects.toThrow(
+        `${by} is an assistant: only a person waives a finding.`,
+      );
+  });
+
+  it("reads no acceptance an assistant wrote by hand into a finding's file", async () => {
+    const root = await estateRoot();
+    const r = assistant(placed("forge-screening"));
+    await featureStage(root, CHANGE, { runtime: r.runtime, now: NOW });
+    const [f] = await stageGate(root);
+    const file = join(root, "openspec/changes", CHANGE, "review/stage-feature/1", `${f!.id}.yaml`);
+    const text = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      text.replace(
+        "state: open",
+        "state: waived\nresolution:\n  action: waive\n  by: feature-placer\n  at: 2026-11-19T10:00:00Z\n  reason: It is new.",
+      ),
+    );
+    expect([...(await readAccepted(root, CHANGE)).values()]).toEqual([]);
   });
 
   it("refuses to accept a rule not on the list, saying the row's way on", async () => {

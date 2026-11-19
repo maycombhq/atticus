@@ -65,8 +65,9 @@ export function knownToChange(
   e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos" | "outside" | "accepted">,
 ): Map<string, { standing: Standing; by?: string; why?: string }> {
   const out = new Map<string, { standing: Standing; by?: string; why?: string }>();
+  // Only a consumer a person accepted as one: an id accepted under another rule is no consumer.
   for (const [id, a] of e.accepted ?? [])
-    out.set(id, { standing: "accepted", by: a.by, why: a.why });
+    if (CONSUMER_RULES.has(a.rule)) out.set(id, { standing: "accepted", by: a.by, why: a.why });
   for (const p of plannedComponents(deltas, e).values())
     if (p.action === "new") out.set(p.component, { standing: "planned" });
   // A repo that was read is known by its component: only one nobody read is named by its repo.
@@ -97,19 +98,29 @@ export function unreadConsumer(
   return undefined;
 }
 
-/**
- * The repos a change's planned new components deploy from, and (ADR 0203 A) the repos people
- * accepted at a stage, known exactly as a newRepo is.
- */
+/** The repos a change's planned new components deploy from. */
 export const plannedRepos = (
   deltas: readonly FlowDelta[],
-  e: Pick<Estate, "ids" | "flows" | "accepted">,
+  e: Pick<Estate, "ids" | "flows">,
 ): Set<string> =>
-  new Set([
-    ...[...plannedComponents(deltas, e).values()]
-      .filter((p) => p.action === "new")
-      .map((p) => p.repo),
-    ...[...(e.accepted ?? [])]
-      .filter(([, a]) => a.rule.endsWith(".unknown-repo"))
-      .map(([id]) => id),
-  ]);
+  new Set(
+    [...plannedComponents(deltas, e).values()].filter((p) => p.action === "new").map((p) => p.repo),
+  );
+
+/** The rules whose accepted id is a consumer, and those whose accepted id is a repo. */
+const CONSUMER_RULES: ReadonlySet<string> = new Set([
+  "delta.unknown-consumer",
+  "stories.unknown-consumer",
+]);
+const REPO_RULES = ["feature.unknown-repo", "operation.unknown-repo"] as const;
+
+/**
+ * ADR 0203 A: the repos people accepted, known exactly as a newRepo is, by the rules that
+ * accepted them. A check never passes over what its own rule accepted: it raises it again and the
+ * acceptance is read off its fingerprint, so the acceptance stays on file.
+ */
+export const acceptedRepos = (
+  e: Pick<Estate, "accepted">,
+  rules: readonly string[] = REPO_RULES,
+): Set<string> =>
+  new Set([...(e.accepted ?? [])].filter(([, a]) => rules.includes(a.rule)).map(([id]) => id));
