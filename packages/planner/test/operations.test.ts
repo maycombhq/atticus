@@ -838,7 +838,8 @@ describe("the review's other refusals", () => {
       kind: "secret",
       repos: ["forge-orders"],
       what: "Set carrier.password=hunter2-s3cret-value in the vault.",
-      sets: { key: "carrier.api-key=sk_live_4eC39HqLyjWDarjtT1zdp7dc" },
+      // Built from parts, so no key-shaped literal sits in the repository.
+      sets: { key: `carrier.api-key=${["sk", "live", "q8Rt2Lm9Wx4Zp7Kc3Vn6Bh1J"].join("_")}` },
       undo: "Put password: 'old-s3cret-value-9' back.",
     });
     expect(JSON.stringify(o)).not.toMatch(/hunter2|sk_live|old-s3cret/);
