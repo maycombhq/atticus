@@ -408,6 +408,40 @@ describe("catalog undo never overwrites a hand edit while build.json reads (revi
   };
   const snapshot = (root: string) => ({ generated: generated(root), sources: sources(root) });
 
+  for (const at of ["after-slots", "mid-records"] as const)
+    it(
+      `a build killed ${at}, after its undo copy was taken: the undo puts everything back, never refusing over the files it never wrote`,
+      async () => {
+        const root = await scanned();
+        // A build that changes something: a hand edit made a kept decision, built next.
+        const dir = join(root, "catalog", "generated", "endpoint");
+        const [file] = readdirSync(dir).sort();
+        const path = join(dir, file!);
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(path, readFileSync(path, "utf8").replace(/^auth: .*$/m, "") + "auth: mtls\n");
+        expect(
+          (await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"])).code,
+        ).toBe(0);
+        const before = snapshot(root);
+        const { buildAndWrite, buildWriteHooks, BuildCrash } = await import("@maycombhq/scanner");
+        buildWriteHooks.crash = at;
+        try {
+          await expect(buildAndWrite(root, { command: "atticus catalog build" })).rejects.toThrow(
+            BuildCrash,
+          );
+        } finally {
+          buildWriteHooks.crash = undefined;
+        }
+        // As a killed process leaves it: the copy is kept, the write half done (a catalog build
+        // writes no slot, so stopped after the slots it has written nothing yet).
+        if (at === "mid-records") expect(snapshot(root)).not.toEqual(before);
+        const undo = await run(["catalog", "undo", "--root", root, "--yes"]);
+        expect(undo.code, undo.err).toBe(0);
+        expect(snapshot(root)).toEqual(before);
+      },
+      T,
+    );
+
   it(
     "a slot file changed by hand since the build the undo takes back: refused, named, nothing put back",
     async () => {

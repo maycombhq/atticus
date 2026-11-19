@@ -360,7 +360,7 @@ export async function catalogUndo(
     // always, and everything when there is no build.json that reads (an undo took back the
     // upgrade, or one written by hand).
     const checkAll = g.refused?.reasons.includes("not-upgraded") === true || unreadable;
-    const edited = (await undoHandEdits(root, plan)).filter(
+    const edited = (await undoHandEdits(root, plan, undoDir)).filter(
       (p) => checkAll || !p.startsWith("catalog/generated/"),
     );
     if (edited.length) {
@@ -372,7 +372,7 @@ export async function catalogUndo(
           if (f.after !== undefined && !left.has(f.path))
             left.set(f.path, { after: f.after, command: c.command, n: c.n });
       const commands = [...new Set(edited.map((p) => left.get(p)!.command))];
-      const who = commands.length === 1 ? commands[0]! : "the builds this undo takes back";
+      const who = commands.length === 1 ? commands[0]! : "the commands this undo takes back";
       const how = (p: string): "added" | "changed" | "deleted" =>
         left.get(p)!.after === null
           ? "added"
