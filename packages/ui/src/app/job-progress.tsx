@@ -396,6 +396,8 @@ export function JobFoundView(p: {
   found: FoundJob | undefined;
   onStop?: (() => void) | undefined;
   now?: number;
+  /** Where to build again after a failure, when a build is what the job ran. */
+  againHref?: string | undefined;
 }) {
   const f = p.found;
   if (!f) return null;
@@ -414,6 +416,7 @@ export function JobFoundView(p: {
       {f.lines.length > 0 && (
         <pre
           className="ev-say mono"
+          role="group"
           tabIndex={0}
           aria-label={J.linesLabel(p.what)}
           style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
@@ -429,7 +432,7 @@ export function JobFoundView(p: {
         </div>
       )}
       {f.run.state === "failed" && (
-        <ErrorWaysOn short againHref={CATALOG_BUILDS_HREF} undo={undo} undoKnown />
+        <ErrorWaysOn short againHref={p.againHref} undo={undo} undoKnown />
       )}
     </div>
   );
@@ -448,5 +451,12 @@ export function JobFound(p: {
     ...(p.skip ? { skip: true } : {}),
     ...(p.onEnd ? { onEnd: p.onEnd } : {}),
   });
-  return <JobFoundView what={p.what} found={j.found} onStop={j.stop} />;
+  return (
+    <JobFoundView
+      what={p.what}
+      found={j.found}
+      onStop={j.stop}
+      againHref={p.action === "apply" ? undefined : CATALOG_BUILDS_HREF}
+    />
+  );
 }
