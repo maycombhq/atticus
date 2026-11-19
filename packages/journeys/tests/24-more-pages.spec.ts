@@ -14,7 +14,8 @@ const app = forgeJourney();
 test.beforeEach(async ({ page }) => classicLayout(page));
 
 // Beta.23: Manual steps, Release, Scans, Prompt history and the Brief became tabs (ADR 0188, 0191).
-const HIDDEN = 21;
+// v30 slice 8: Contracts, Impact and Decided by AI joined More pages; the Ecosystem map left.
+const HIDDEN = 23;
 
 test("More pages is in the menu on first load, closed, and lists every page the six don't show", async ({
   page,
@@ -39,7 +40,19 @@ test("More pages is in the menu on first load, closed, and lists every page the 
   // By section, Change's by phase.
   for (const [group, pages] of [
     ["Home", ["Initiatives"]],
-    ["Map", ["Ecosystem map", "Features", "API mappings", "Diagrams", "Reconcile"]],
+    // v30 slice 8: the Map's pages about one box leave its tabs; the Ecosystem map is gone.
+    [
+      "Map",
+      [
+        "Contracts",
+        "Impact explorer",
+        "Decided by AI",
+        "Features",
+        "API mappings",
+        "Diagrams",
+        "Reconcile",
+      ],
+    ],
     ["Define", ["Prototypes and UX"]],
     ["Plan", ["Breakdown", "Estimate"]],
     ["Build", ["Task board", "Code against design", "Test trace"]],
@@ -58,7 +71,7 @@ test("More pages is in the menu on first load, closed, and lists every page the 
   await accessible(page, "the menu with More pages open, light theme");
 });
 
-test("Estimate opens from More pages; Prompt history and Model runs are tabs of Set up", async ({
+test("Estimate opens from More pages; Prompt history and Model runs are tabs of Set up › Activity", async ({
   page,
 }) => {
   await open(page, app(), "home");
@@ -74,22 +87,28 @@ test("Estimate opens from More pages; Prompt history and Model runs are tabs of 
   await nav.getByRole("link", { name: "Estimate", exact: true }).click();
   await expect(page).toHaveURL(/#\/estimate\?change=add-transfer-limit$/);
   await expect(page.getByRole("heading", { level: 1, name: "Estimate" })).toBeAttached();
-  // Model runs, in plain sight: Set up's tabs, beside AI.
+  // Model runs, in plain sight: Set up's tabs, beside AI (v30 slice 8: Activity, whose tabs are
+  // Model runs, Prompt history, Scans and Catalog builds).
   await nav.getByRole("link", { name: "Set up" }).click();
   const tabs = page.getByRole("navigation", { name: "Set up pages" });
-  await expect(tabs.getByRole("link")).toHaveText([
-    "Repos",
-    "AI",
+  await expect(tabs.getByRole("link")).toHaveText(["Repos", "AI", "Activity", "Org pack"]);
+  await tabs.getByRole("link", { name: "Activity" }).click();
+  await expect(page).toHaveURL(/#\/activity$/);
+  const activity = page.getByRole("navigation", { name: "Activity pages" });
+  await expect(activity.getByRole("link")).toHaveText([
     "Model runs",
-    "Org pack",
-    "Scans",
     "Prompt history",
+    "Scans",
+    "Catalog builds",
   ]);
-  await tabs.getByRole("link", { name: "Prompt history" }).click();
-  await expect(page).toHaveURL(/#\/history$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Prompt history" })).toBeAttached();
-  await tabs.getByRole("link", { name: "Model runs" }).click();
-  await expect(page).toHaveURL(/#\/runs$/);
+  await activity.getByRole("link", { name: "Prompt history" }).click();
+  await expect(page).toHaveURL(/#\/activity\?tab=history$/);
+  await expect(activity.getByRole("link", { name: "Prompt history" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await activity.getByRole("link", { name: "Model runs" }).click();
+  await expect(page).toHaveURL(/#\/activity\?tab=runs$/);
   await expect(nav.getByRole("link", { name: "Set up" })).toHaveAttribute("aria-current", "page");
   await accessible(page, "model runs from Set up");
 });
@@ -157,7 +176,7 @@ test("the menu says Ctrl+K reaches any page, and it does, Prompt history among t
   await page.keyboard.type("Prompt history");
   await expect(dialog.getByRole("option").first()).toContainText("Prompt history");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#\/history$/);
+  await expect(page).toHaveURL(/#\/activity\?tab=history$/);
 });
 
 test("in an editor's panel (780 px) More pages fits beside the page", async ({ page }) => {

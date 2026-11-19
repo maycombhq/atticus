@@ -58,19 +58,13 @@ test("opens a tab per page, focuses one already open, closes one, and follows Ba
   const tabs = page.getByRole("tablist", { name: "Open pages" });
   await bar.getByRole("link", { name: "Map" }).click();
   await expect(page).toHaveURL(/#\/canvas$/);
-  await expect(tabs.getByRole("tab", { name: "Estate canvas" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(tabs.getByRole("tab", { name: "Map" })).toHaveAttribute("aria-selected", "true");
   await bar.getByRole("link", { name: /^Questions/ }).click();
   await expect(tabs.getByRole("tab")).toHaveCount(3);
   // The Map again: its tab, not a new one.
   await bar.getByRole("link", { name: "Map" }).click();
   await expect(tabs.getByRole("tab")).toHaveCount(3);
-  await expect(tabs.getByRole("tab", { name: "Estate canvas" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(tabs.getByRole("tab", { name: "Map" })).toHaveAttribute("aria-selected", "true");
   // A change's stages share the change's tab.
   await page.goto(`${app().url}/#/stories?change=${CHANGE}`);
   await expect(tabs.getByRole("tab", { name: CHANGE })).toHaveAttribute("aria-selected", "true");
@@ -95,14 +89,10 @@ test("opens a tab per page, focuses one already open, closes one, and follows Ba
   // A reload keeps the tabs and the one shown.
   await page.reload();
   await expect(page.locator(".panel").first()).toBeVisible();
-  await expect(tabs.getByRole("tab")).toHaveText([
-    /^Home$/,
-    /^Estate canvas/,
-    new RegExp(`^${CHANGE}`),
-  ]);
+  await expect(tabs.getByRole("tab")).toHaveText([/^Home$/, /^Map/, new RegExp(`^${CHANGE}`)]);
   await expect(tabs.getByRole("tab", { name: CHANGE })).toHaveAttribute("aria-selected", "true");
   // Back goes to the page before, in its tab.
-  await tabs.getByRole("tab", { name: "Estate canvas" }).click();
+  await tabs.getByRole("tab", { name: "Map" }).click();
   await expect(page).toHaveURL(/#\/canvas$/);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`#/architecture\\?change=${CHANGE}$`));
@@ -126,7 +116,7 @@ test("keeps what was typed into a page, and what was opened, when its tab comes 
   await box.fill("teller");
   await tabs.getByRole("tab", { name: /^Questions/ }).click();
   await expect(page.locator("#questions-filter")).toHaveValue("ledger");
-  await tabs.getByRole("tab", { name: "Estate canvas" }).click();
+  await tabs.getByRole("tab", { name: "Map" }).click();
   await expect(page.locator(".canvas-tools-body input[type=search]").first()).toHaveValue("teller");
 });
 
@@ -169,7 +159,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   );
   // ADR 0195 point 4: the nothing-read guard writes no slot either, and says so.
   await expect(panel.getByRole("log")).toContainText(
-    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
+    "Nothing written: the scan read no repo in full, so the catalog and every stored read are as they were",
   );
   await expect(panel.getByRole("log")).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",

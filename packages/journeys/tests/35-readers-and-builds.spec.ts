@@ -88,16 +88,14 @@ test.use({ deviceScaleFactor: 2 });
 
 test("reads what the readers found beside the facts, and dismisses one", async ({ page }) => {
   await open(page, a(), "trust");
-  await page.getByRole("link", { name: "Readers found / facts say" }).first().click();
+  await page.getByRole("link", { name: "Cross-check" }).first().click();
   await expect(page).toHaveURL(/#\/crosscheck/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Readers found / facts say" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Cross-check" })).toBeVisible();
   await expect(page.getByLabel("Repo")).toHaveValue("forge-ledger");
   const list = page.getByRole("list", { name: "Cross-check items of forge-ledger" });
   await expect(list).toBeVisible();
   await expect(list.getByText("api/ledger-openapi.yaml:6")).toBeVisible();
-  await accessible(page, "Readers found / facts say, dark");
+  await accessible(page, "Cross-check, dark");
   await shot(page, "crosscheck-1440-dark");
 
   // The filter is a group of radios: the arrow keys move between them.
@@ -188,7 +186,8 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   expect(atticus(a().root, "catalog", "build")).toMatch(/--allow-removals \d+/);
   await open(page, a(), "scans");
   await page.getByRole("link", { name: "Catalog builds: confirm, undo, prune" }).click();
-  await expect(page).toHaveURL(/#\/catalog-builds$/);
+  // v30 slice 8: Catalog builds is a tab of Activity.
+  await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds$/);
   await expect(page.getByText("The build waits for you: nothing has been written.")).toBeVisible();
   const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
   const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
@@ -265,7 +264,7 @@ async function opensAtUndo(page: Page): Promise<void> {
   await page.evaluate(`location.hash = '#/catalog-builds'`);
   const away = async () => {
     await page.locator("#p-catalog-builds").scrollIntoViewIfNeeded();
-    await page.getByRole("link", { name: "Readers found / facts say" }).first().focus();
+    await page.getByRole("link", { name: "Cross-check" }).first().focus();
     await expect(undo).not.toBeFocused();
   };
   await away();
@@ -275,7 +274,7 @@ async function opensAtUndo(page: Page): Promise<void> {
   await expect(undo).toBeFocused();
   // The second click: the address says ?at=undo already, and the link still goes there.
   await away();
-  await expect(page).toHaveURL(/#\/catalog-builds\?at=undo$/);
+  await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds&at=undo$/);
   await link.click();
   await expect(undo).toBeInViewport();
   await expect(undo).toBeFocused();
