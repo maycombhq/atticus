@@ -2170,6 +2170,17 @@ export const renamedWords = (ids: readonly string[]): string =>
   `renamed ${ids.map((id) => `Unresolved/${id}`).join(" and ")} (the repo in its id)`;
 
 /**
+ * The ids a removal's reason says a loose end was renamed to (`renamedWords`'s), or undefined
+ * for any other reason: how the upgrade step reads a build report's renamed lines.
+ */
+export function renamedIdsOf(words: string): string[] | undefined {
+  const m = /^renamed (.+) \(the repo in its id\)$/.exec(words);
+  if (!m) return undefined;
+  const ids = m[1]!.split(" and ").map((x) => /^Unresolved\/(\S+)$/.exec(x)?.[1]);
+  return ids.every((x): x is string => !!x) ? ids : undefined;
+}
+
+/**
  * ADR 0195, the beta.28.1 addendum and its sub-addendum (the owner, 2026-11-19): an arrow this
  * build removes because its call's whole host is one nothing gives a value (a deploy token,
  * `@name@`, `${NAME}`, `$NAME`, `%NAME%`; or a variable of the code's, `${baseUrl}`, `$env:X`),

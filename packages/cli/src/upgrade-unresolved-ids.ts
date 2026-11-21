@@ -34,9 +34,10 @@ import { loadRepos } from "@maycombhq/workspace";
  * One plan (`planOf`) gives both what the step lists and what it writes, so every file it writes
  * is in the upgrade's backup; the write refuses a file the list didn't name (the review of
  * 93ddfc5e). An old id goes to one id: the repo the old catalog's record cited (the record on
- * disk, or in an undo copy of the build that renamed it), else the repo beta.28.5's merge cited,
- * the first by id. Another repo's loose end of the same fact id appears as a new loose end:
- * nobody saw it, so no decision of the old one is its.
+ * disk, in an undo copy of the build that renamed it, or in that build's report), else the repo
+ * beta.28.5's merge cited, the first by id. Another repo's loose end of the same fact id appears
+ * as a new loose end: nobody saw it, so no decision of the old one is its. A carry never goes
+ * over a file there, or onto an id another decision already targets: the step refuses.
  *
  * Where record ids are kept, and what this step does with each:
  * - `catalog/generated/`: the build's. The step builds once, under the scan's lock, through the
@@ -202,6 +203,11 @@ interface Plan {
   curatedNext?: CatalogRecord[];
   questions?: Question[];
   op?: Awaited<ReturnType<typeof loadOrgPack>>;
+  /**
+   * Why the step can't run as it stands (a file or a decision a carry would go over): listed as
+   * pending, so `atticus upgrade` says it, and refused by the write before anything is written.
+   */
+  refused?: string;
 }
 
 /**
@@ -276,6 +282,11 @@ async function planOf(root: string): Promise<Plan | undefined> {
   for (const r of [...renamedGen.map((g) => g.r), ...(await oldRecordsInUndo(root))])
     if (!cited.has(r.id))
       cited.set(r.id, [...new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort());
+  // With the undo copies gone, the latest build's report: a beta.30 build that renamed them
+  // listed each as `renamed Unresolved/<id>`, with the repos its old record cited.
+  for (const x of (await scanner.readBuildReport(root))?.removed ?? [])
+    if (x.kind === "Unresolved" && !cited.has(x.id) && scanner.renamedIdsOf(x.explainedBy[0] ?? ""))
+      cited.set(x.id, [...x.repos].sort());
   const map = new Map<string, string>();
   for (const [o, cs] of candidates) {
     const sorted = [...cs].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
@@ -287,6 +298,10 @@ async function planOf(root: string): Promise<Plan | undefined> {
   }
 
   // ---- the inputs, carried in memory
+  let refused: string | undefined;
+  const refuse = (why: string) => {
+    refused ??= why;
+  };
   const writes: Plan["writes"] = [];
   const write = (path: string, text: string | null) => {
     const at = writes.findIndex((w) => w.path === path);
@@ -308,13 +323,34 @@ async function planOf(root: string): Promise<Plan | undefined> {
       continue;
     }
     curatedNext.push(next);
+    // A decision carried onto an id a person's decision already names (one made on beta.30):
+    // applied in time order, one would decide over the other unsaid. The person picks.
+    if (
+      r.kind === "CuratedDecision" &&
+      next.kind === "CuratedDecision" &&
+      next.target !== r.target
+    ) {
+      const there = curatedNow.records.find(
+        (d) =>
+          d.kind === "CuratedDecision" &&
+          d.status === "current" &&
+          d.id !== r.id &&
+          d.target === next.target,
+      );
+      if (there)
+        refuse(
+          `The curated decision ${r.id} targets ${r.target}, which goes to ${next.target}, but ${there.id} targets ${next.target} already (${posix(relative(root, join(curatedDir, ...recordPath(there).split("/"))))}): carried, one would decide over the other. Nothing of this step was written: keep the one you want (remove the other's file), then run atticus upgrade again.`,
+        );
+    }
     const to = join(curatedDir, ...recordPath(next).split("/"));
     if (to !== from) {
       // A curated loose end renamed: its file moves, never over another's.
-      if (existsSync(to))
-        throw new UnresolvedIdsRefused(
+      if (existsSync(to)) {
+        refuse(
           `${posix(relative(root, to))} is there already, so ${posix(relative(root, from))} can't move to it under its new id. Nothing of this step was written: move or merge one of them, then run atticus upgrade again.`,
         );
+        continue;
+      }
       write(to, carried.get(from)!);
       write(from, null);
     } else write(from, carried.get(from)!);
@@ -350,10 +386,12 @@ async function planOf(root: string): Promise<Plan | undefined> {
     const qs = await allQuestions();
     const q = qs.find((x) => x.id === oldQ);
     if (q) {
-      if (qs.some((x) => x.id === newQ) || existsSync(questionFileOf(root, newQ)))
-        throw new UnresolvedIdsRefused(
-          `The owner question ${newQ} is there already, so ${oldQ} can't be re-keyed to it (knowledge gap ${was.id} of ${was.change}). Nothing of this step was written.`,
+      if (qs.some((x) => x.id === newQ) || existsSync(questionFileOf(root, newQ))) {
+        refuse(
+          `The owner question ${newQ} is there already, so ${oldQ} can't be re-keyed to it (knowledge gap ${was.id} of ${was.change}). Nothing of this step was written: remove the one that is no longer asked, then run atticus upgrade again.`,
         );
+        continue;
+      }
       const moved = Question.parse({ ...q, id: newQ });
       write(questionFileOf(root, newQ), questionFileText(moved));
       write(questionFileOf(root, oldQ), null);
@@ -377,6 +415,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
     curatedNext,
     ...(questions ? { questions } : {}),
     op,
+    ...(refused ? { refused } : {}),
   };
 }
 
@@ -398,6 +437,7 @@ export async function unresolvedIdsApply(
   const lock = await acquireLock(root, "scan", "atticus upgrade");
   try {
     const plan = await planOf(root);
+    if (plan?.refused) throw new UnresolvedIdsRefused(plan.refused);
     if (!plan?.builds) return [];
     if (o.listed) {
       const listed = new Set(o.listed);

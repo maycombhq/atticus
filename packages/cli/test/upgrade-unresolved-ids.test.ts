@@ -1,11 +1,11 @@
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { askedGapQuestionId, readQuestion } from "@maycombhq/core";
-import { readBuildReport } from "@maycombhq/scanner";
+import { askedGapQuestionId, readQuestion, sha256Of } from "@maycombhq/core";
+import { readBuildReport, undoDirOf } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
 import { unresolvedIdsApply, unresolvedIdsPending } from "../src/upgrade-unresolved-ids.js";
@@ -112,6 +112,50 @@ const INPUTS = [
   SURVEY_Q,
   SPEC,
 ];
+
+/**
+ * The old record of `unresolved.c-1` as if the catalog's last build had cited forge-payments'
+ * line (forge-ledger's call came after it), its hash in build.json made to match, so it is no hand
+ * edit: the repo the old catalog cited is then not the first by id.
+ */
+async function citePayments(root: string): Promise<void> {
+  const rel = "catalog/generated/unresolved/unresolved.c-1.yaml";
+  const path = join(root, ...rel.split("/"));
+  const text = (await readFile(path, "utf8"))
+    .replace("repo: forge-ledger", "repo: forge-payments")
+    .replace("owner: forge-ledger", "owner: forge-payments")
+    .replace("/v1/rates/forge-ledger", "/v1/rates/forge-payments");
+  await writeFile(path, text);
+  const manifest = join(root, "catalog", "sources", "build.json");
+  const m = JSON.parse(await readFile(manifest, "utf8")) as {
+    files: { path: string; sha256: string }[];
+  };
+  m.files.find((f) => f.path === rel)!.sha256 = sha256Of(text);
+  await writeFile(manifest, JSON.stringify(m, null, 2) + "\n");
+}
+/** The undo copies taken away (a machine that pruned them), the latest build's report kept. */
+async function dropUndoCopies(root: string): Promise<void> {
+  const dir = await undoDirOf(root);
+  for (const n of await readdir(dir).catch(() => [] as string[]))
+    if (/^\d+$/.test(n)) await rm(join(dir, n), { recursive: true, force: true });
+}
+/** A curated decision as Atticus writes it (canonical, schema version 5). */
+const decision = (id: string, target: string, reason: string) =>
+  [
+    "schemaVersion: 5",
+    "kind: CuratedDecision",
+    `id: ${id}`,
+    "status: current",
+    "confidence: asserted",
+    "action: suppress",
+    "at: 2026-11-20T00:00:00Z",
+    "by: sam",
+    "evidence: []",
+    `reason: ${reason}`,
+    `target: ${target}`,
+    "value: null",
+    "",
+  ].join("\n");
 
 describe("atticus upgrade names every loose end again with its repo (ADR 0124 addendum E-ids)", () => {
   it("is the only step a metarepo beta.28.5 built and wrote has, and lists every file it writes", async () => {
@@ -265,6 +309,91 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await files(join(root, "catalog", "curated"))).toEqual(
         await files(join(direct, "catalog", "curated")),
       );
+    },
+    T,
+  );
+
+  it(
+    "carries an old id to the repo the old record cited, not the first by id, in either order",
+    async () => {
+      // Direct: the record on disk says forge-payments.
+      const direct = await metarepo();
+      await citePayments(direct);
+      expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+      const finding = await yamlOf(direct, FINDING);
+      expect((finding.locator as { record: string }).record).toBe("unresolved.forge-payments.c-1");
+      const touches = (
+        (await yamlOf(direct, `${CHANGE_DIR}/change.yaml`)).touches as {
+          records: string[];
+        }
+      ).records;
+      expect(touches).toContain("unresolved.forge-payments.c-1");
+      expect(touches).not.toContain("unresolved.forge-ledger.c-1");
+      // forge-ledger's call has a loose end of its own: nobody's input names it.
+      expect(unresolvedIds(await generated(direct))).toContain("unresolved.forge-ledger.c-1");
+      const ins = (m: Map<string, string>) => [...m].filter(([p]) => !p.startsWith("catalog/"));
+
+      // A beta.30 build first: the step reads the old record from that build's undo copy; and
+      // with the undo copies gone, from that build's report (its renamed lines).
+      for (const drop of [false, true]) {
+        const root = await metarepo();
+        await citePayments(root);
+        const b = quiet();
+        expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
+        if (drop) await dropUndoCopies(root);
+        expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+        expect(ins(await tree(root)), `undo copies dropped: ${drop}`).toEqual(
+          ins(await tree(direct)),
+        );
+        expect(await generated(root), `undo copies dropped: ${drop}`).toEqual(
+          await generated(direct),
+        );
+      }
+    },
+    T,
+  );
+
+  it(
+    "never carries an id onto one a person's decision already names, nor a file over another",
+    async () => {
+      // A decision made on beta.30 of forge-notify's c-7, the id the old suppress goes to.
+      const root = await metarepo();
+      await writeFile(
+        join(root, ...DEC("dec-keep-notify-c7").split("/")),
+        decision("dec-keep-notify-c7", "unresolved.forge-notify.c-7", "notify's call is known"),
+      );
+      const before = await tree(root);
+      const q = quiet();
+      expect(await upgradeCommand(root, { by: "pat" }, q.io, B30)).toBe(1);
+      const said = q.err.join("\n");
+      expect(said).toMatch(
+        /dec-suppress-fees targets unresolved\.c-7, which goes to unresolved\.forge-notify\.c-7, but dec-keep-notify-c7 targets unresolved\.forge-notify\.c-7 already/,
+      );
+      expect(said).toMatch(/Nothing of this step was written/);
+      expect(await tree(root)).toEqual(before);
+
+      // A curated loose end whose new id's file is there already.
+      const other = await metarepo();
+      const gen = await readFile(
+        join(other, "catalog", "generated", "unresolved", "unresolved.c-solo.yaml"),
+        "utf8",
+      );
+      const curated = join(other, "catalog", "curated", "unresolved");
+      await rm(curated, { recursive: true, force: true });
+      await cp(join(other, "catalog", "generated", "unresolved"), curated, { recursive: true });
+      for (const f of await readdir(curated))
+        if (f !== "unresolved.c-solo.yaml") await rm(join(curated, f));
+      await writeFile(
+        join(curated, "unresolved.forge-ledger.c-solo.yaml"),
+        gen.replace("id: unresolved.c-solo", "id: unresolved.forge-ledger.c-solo"),
+      );
+      const before2 = await tree(other);
+      const q2 = quiet();
+      expect(await upgradeCommand(other, { by: "pat" }, q2.io, B30)).toBe(1);
+      expect(q2.err.join("\n")).toMatch(
+        /catalog\/curated\/unresolved\/unresolved\.forge-ledger\.c-solo\.yaml is there already/,
+      );
+      expect(await tree(other)).toEqual(before2);
     },
     T,
   );
