@@ -439,12 +439,16 @@ export async function handoffDone(
         io.out(
           `${run.request.outputPath} is handed in for a person: the stage's checks found ${one ? "1 finding" : `${found.length} findings`} a person may accept (${[...new Set(found.map((f) => f.rule))].join(", ")}), so ${one ? "it is" : "they are"} on the stage's gate now.`,
         );
+        // Said to the person who accepts, not to the assistant that handed the draft in.
         for (const f of found)
           io.out(
-            `  - ${f.message} Accept it: atticus finding ${run.request.change} ${f.id} waive --reason "<why>"`,
+            `  - ${f.message} A person accepts it in the app, or with: atticus finding ${run.request.change} ${f.id} waive --reason "<why>"`,
           );
         io.out(
-          `A person accepts ${one ? "it" : "each"} with a reason, or tells your assistant how to fix the draft. Then run the step again, which stops for a person while ${one ? "it is" : "one is"} open: ${rerunOf(forAPerson.stage, run.request.change)} --resume ${runId}`,
+          "Or the person tells the assistant how to fix the draft, and the stage drafts again.",
+        );
+        io.out(
+          `Once ${one ? "it is" : "each is"} accepted, the stage goes on from this draft: in the app by itself, in a terminal with: ${rerunOf(forAPerson.stage, run.request.change)} --resume ${runId}`,
         );
         return 0;
       }

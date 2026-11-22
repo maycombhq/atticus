@@ -1761,7 +1761,7 @@ async function runLoop<A>(
         [
           ...blocking.map(
             (f) =>
-              `  - ${f.message} (rule ${f.rule}; accept it: atticus finding ${change.id} stage-${f.fingerprint} waive --reason "<why>")`,
+              `  - ${f.message} (rule ${f.rule}; a person accepts it in the app, or with: atticus finding ${change.id} stage-${f.fingerprint} waive --reason "<why>")`,
           ),
           `Accept ${one ? "it" : "each"} with a reason when you know better than the map, then run ${rerun} again: the stage checks its files and is done with no new draft. Or tell your assistant how to fix ${rel}/${spec.source}, and run ${rerun} again for a new draft.`,
         ],

@@ -133,7 +133,16 @@ describe("handoff done and a draft whose every blocking finding a person may acc
     // On the gate before the stage read the answer in: a person can accept it straight away.
     const g = await gate(root);
     expect(g.map((f) => [f.rule, f.state])).toEqual([["feature.unknown-repo", "open"]]);
-    expect(said).toContain(g[0]!.id);
+    // Addressed to a person, not to the assistant that handed it in.
+    expect(said).toContain(
+      `A person accepts it in the app, or with: atticus finding ${CHANGE} ${g[0]!.id} waive --reason "<why>"`,
+    );
+    expect(said).toContain(
+      "Or the person tells the assistant how to fix the draft, and the stage drafts again.",
+    );
+    expect(said).toContain(
+      `Once it is accepted, the stage goes on from this draft: in the app by itself, in a terminal with: atticus change feature ${CHANGE} --resume ${run}`,
+    );
   });
 
   it("accepted before the stage reads it in: the stage is done on that one draft", async () => {
@@ -159,7 +168,9 @@ describe("handoff done and a draft whose every blocking finding a person may acc
     expect(msg).toContain(
       "The feature stage stopped after 1 draft for a person: its draft has 1 finding a person may accept.",
     );
-    expect(msg).toContain(`atticus finding ${CHANGE} stage-`);
+    expect(msg).toContain(
+      `a person accepts it in the app, or with: atticus finding ${CHANGE} stage-`,
+    );
     expect(await loopState(root)).toBe("stopped");
     // No second prompt went to the assistant.
     expect(await readdir(join(root, ".runs", CHANGE))).toEqual([run]);
