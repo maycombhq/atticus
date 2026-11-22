@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse, parseDocument } from "yaml";
 import {
@@ -404,7 +405,7 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
 });
 
 describe("the hint is never evidence (ADR 0204 A, property)", () => {
-  it("the build gives the same records with and without a links item, but the declared arrow", async () => {
+  it("for any set of links items, the build's records but the declared arrows are those without", async () => {
     const op = await loadOrgPack(orgPackDirOf(g.root));
     const ends = [
       { repo: A },
@@ -413,7 +414,7 @@ describe("the hint is never evidence (ADR 0204 A, property)", () => {
       { system: "northwind-pay" },
       { system: "northwind-cards" },
     ];
-    const strip = (o: OrgPack, links: DeclaredLink[]): OrgPack => ({
+    const withLinks = (o: OrgPack, links: DeclaredLink[]): OrgPack => ({
       ...o,
       profiles: o.profiles.map((p) =>
         p.profile ? { ...p, profile: { ...p.profile, schemaVersion: 3, links } } : p,
@@ -425,24 +426,29 @@ describe("the hint is never evidence (ADR 0204 A, property)", () => {
       ).build.records
         .filter((r) => !r.flags?.includes("declared-link"))
         .map((r) => JSON.stringify(r));
-    const without = await records(strip(op, []));
-    // Every ordered pair of ends, one arrow at a time: the code's records never move.
-    let seed = 7;
-    const pick = () => ends[(seed = (seed * 31 + 11) % 97) % ends.length]!;
-    for (let n = 0; n < 6; n++) {
-      const from = pick();
-      let to = pick();
-      if (JSON.stringify(to) === JSON.stringify(from))
-        to = ends[(ends.indexOf(from) + 1) % ends.length]!;
-      const link = {
-        from,
-        to,
-        why: "A hint only, in a property test.",
-        by: "pat",
-        at: "2026-11-18T10:02:00Z",
-      } as DeclaredLink;
-      expect(await records(strip(op, [link])), JSON.stringify(link)).toEqual(without);
-    }
+    const without = await records(withLinks(op, []));
+    // Any ordered pairs of distinct ends (each listed once), each planned or not: the code's
+    // records never move. A build is seconds, so the runs are few and the seed fixed.
+    const pair = fc
+      .tuple(fc.nat(ends.length - 1), fc.nat(ends.length - 2), fc.boolean())
+      .map(([f, t, planned]) => ({ f, t: t >= f ? t + 1 : t, planned }));
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(pair, { minLength: 1, maxLength: 4, selector: (p) => `${p.f}>${p.t}` }),
+        async (pairs) => {
+          const links = pairs.map((p): DeclaredLink => ({
+            from: ends[p.f]!,
+            to: ends[p.t]!,
+            why: "A hint only, in a property test.",
+            by: "pat",
+            at: "2026-11-18T10:02:00Z",
+            ...(p.planned ? { planned: true } : {}),
+          }));
+          expect(await records(withLinks(op, links)), JSON.stringify(links)).toEqual(without);
+        },
+      ),
+      { numRuns: 6, seed: 20261121, endOnFailure: true },
+    );
   }, 600_000);
 });
 
