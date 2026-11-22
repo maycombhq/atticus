@@ -440,17 +440,24 @@ export function componentsOfRepo<C extends { id: string; repo?: string }>(
 export const repoComponentsPath = (repo: string) =>
   `/api/catalog/Component?limit=500&repo=${encodeURIComponent(repo)}`;
 
-type RepoComponentList = { items: { id: string; repo?: string; name?: string }[] };
+type RepoComponentList = {
+  items: { id: string; repo?: string; name?: string }[];
+  /** The server gave a cursor it had given already: the list stopped there (it may lack some). */
+  repeated?: true;
+};
 
 /**
  * A repo's components, every page of them: the list follows the `next` cursor to its end, so a
- * repo with more than one page of components lists them all, never a silent first 500.
+ * repo with more than one page of components lists them all, never a silent first 500. A cursor
+ * the server gave already is never followed again (it would loop for ever): the list stops there
+ * and says so (`repeated`).
  */
 export async function loadRepoComponents(
   path: string,
   signal: AbortSignal,
 ): Promise<RepoComponentList> {
   const items: RepoComponentList["items"] = [];
+  const seen = new Set<string>();
   let next: string | undefined;
   do {
     const page = await api<RepoComponentList & { next?: string }>(
@@ -458,7 +465,9 @@ export async function loadRepoComponents(
       { signal },
     );
     items.push(...page.items);
+    if (next !== undefined) seen.add(next);
     next = page.next;
+    if (next !== undefined && seen.has(next)) return { items, repeated: true };
   } while (next && !signal.aborted);
   return { items };
 }
@@ -490,6 +499,11 @@ export function RepoComponentsView({
           </ul>
         )}
       </View>
+      {list.state === "ready" && list.data.repeated && (
+        <p role="status" style={{ marginBottom: 0 }}>
+          {T.componentsCursorRepeated(repo)}
+        </p>
+      )}
     </Panel>
   );
 }

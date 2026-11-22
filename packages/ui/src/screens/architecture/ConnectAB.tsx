@@ -549,7 +549,8 @@ export function FindButton(p: {
         <div className="stack">
           <p role="status" className="ev-say">
             {notBuilt.readFailed
-              ? W.findReadFailed(notBuilt.repo ?? v.toName)
+              ? // The callee's read: the server names it; else the box's id, never its display name.
+                W.findReadFailed(notBuilt.repo ?? name(v.to))
               : notBuilt.refused
                 ? notBuilt.repo
                   ? W.findNotBuiltRead(notBuilt.repo)
