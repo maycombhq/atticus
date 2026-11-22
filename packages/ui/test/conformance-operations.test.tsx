@@ -148,3 +148,40 @@ describe("the conformance panel and the claims a change states (ADR 0206)", () =
     expect(renderToStaticMarkup(<Conformance hash="#/conformance" />)).toContain(esc(C.none));
   });
 });
+
+describe("the review of ADR 0206: a quick change, a change of claims only, and the claims' words", () => {
+  it("a quick change with nothing to check yet is offered the quick path's next step, never a stage", () => {
+    const out = renderToStaticMarkup(<ConformanceView c={{ ...VIEW, operations: 0 }} quick />);
+    expect(out).toContain(esc(C.nothingYetQuick(CHANGE)));
+    expect(out).toContain(`atticus change status ${CHANGE}`);
+    expect(out).not.toContain("atticus change architecture");
+    // The screen reads it from the change's row, as Home does.
+    reads.set("/api/changes", {
+      state: "ready",
+      data: [{ id: CHANGE, title: VIEW.title, quickPath: true }],
+    });
+    reads.set(PATH, { state: "ready", data: { ...VIEW, operations: 0 } });
+    const screen = renderToStaticMarkup(<Conformance hash={`#/conformance?change=${CHANGE}`} />);
+    expect(screen).toContain(esc(C.nothingYetQuick(CHANGE)));
+    expect(screen).not.toContain("atticus change architecture");
+  });
+
+  it("a change of claims only leads with its claims' counts, never the flows' zeros", () => {
+    const out = renderToStaticMarkup(
+      <ConformanceView c={{ ...VIEW, claims: 2, results: [CLAIMED], round: 1 }} />,
+    );
+    const big = /<p class="est-big">([^<]*)<\/p>/.exec(out)?.[1];
+    expect(big).toBe(esc(C.claimCounts(CLAIMED.counts.claims!)));
+    expect(out).not.toContain(esc(C.counts(CLAIMED.counts)));
+    // And no empty table of flow items.
+    expect(out).not.toContain(esc(C.itemsCaption("forge-ledger")));
+  });
+
+  it("the claims' framing words come from the copy file", () => {
+    const out = renderToStaticMarkup(
+      <ConformanceView c={{ ...VIEW, claims: 2, results: [CLAIMED], round: 1 }} />,
+    );
+    expect(out).toContain(esc(C.claimWhy(CLAIMED.claims![0]!.why!)));
+    expect(out).toContain(esc(C.claimNextNone));
+  });
+});

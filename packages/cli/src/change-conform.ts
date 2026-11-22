@@ -1,4 +1,5 @@
-import type { Api } from "@maycombhq/core";
+import { changeStore } from "@maycombhq/changes";
+import { loadOrgPack, orgPackDirOf, quickPathOf, type Api } from "@maycombhq/core";
 import { conformanceOf, conformChange, ConformError } from "@maycombhq/taskrun";
 import type { Output } from "./commands.js";
 
@@ -88,17 +89,39 @@ function print(results: Api.ConformRepoResultT[], io: Output): void {
   }
 }
 
-/** ADR 0206: a change with nothing to check yet, flows or claims. */
-const nothingYet = (change: string) =>
-  `${change} has no target flows and states no claims yet, so there is nothing to check the code against: the architecture stage writes target flows and operations (atticus change architecture ${change}); a quick change's design.md says what the code will have under ## In the code.`;
-/** What a check that ran found to act on: flows' and claims'. */
+/**
+ * ADR 0206: a change with nothing to check yet, flows or claims. The review: a quick change is
+ * offered the quick path's next step, never a stage (ADR 0201).
+ */
+const nothingYet = (change: string, quick: boolean) =>
+  quick
+    ? `${change} is a quick change and its design.md doesn't say what the code will have yet, so there is nothing to check the code against: the spec writer writes its ## In the code (/define-change ${change}), or a person does; atticus change status ${change} says whether it reads. Then check again: atticus change conform ${change}.`
+    : `${change} has no target flows and states no claims yet, so there is nothing to check the code against: the architecture stage writes target flows and operations (atticus change architecture ${change}); a quick change's design.md says what the code will have under ## In the code.`;
+
+/** Whether the change takes the quick path (`quickPathOf` its type). */
+async function quickChange(root: string, change: string): Promise<boolean> {
+  const c = await changeStore(root)
+    .read(change)
+    .catch(() => undefined);
+  const op = c ? await loadOrgPack(orgPackDirOf(root)).catch(() => undefined) : undefined;
+  const type = op?.changeTypes.types.find((t) => t.id === c?.type);
+  return !!type && quickPathOf(type);
+}
+
+/**
+ * What a check that ran found to act on: the flows' items and the claims that make a finding,
+ * whose finding is still open (the review of ADR 0206: a waived or dismissed one is acted on).
+ */
+const open = (x: { finding?: { state: string } }) => (x.finding?.state ?? "open") === "open";
 const toActOn = (r: Api.ConformRepoResultT) =>
-  r.counts.missing +
-  r.counts.stillThere +
-  r.counts.unexpected +
-  (r.counts.claims
-    ? r.counts.claims.missing + r.counts.claims.differs + r.counts.claims.notCheckable
-    : 0);
+  r.items.filter((i) => i.status !== "found" && open(i)).length +
+  (r.claims ?? []).filter(
+    (c) =>
+      (c.outcome === "missing" ||
+        c.outcome === "present-differently" ||
+        c.outcome === "not-checkable") &&
+      open(c),
+  ).length;
 
 export async function changeConformCommand(
   root: string,
@@ -132,7 +155,7 @@ export async function changeConformCommand(
       io.out(
         v.flows || v.claims
           ? `${change} hasn't been checked against its design yet: atticus change conform ${change}.`
-          : nothingYet(change),
+          : nothingYet(change, await quickChange(root, change)),
       );
     print(v.results, io);
     return 0;
@@ -143,18 +166,23 @@ export async function changeConformCommand(
       ...(o.ref ? { ref: o.ref } : {}),
       ...(o.task ? { task: o.task } : {}),
     });
-    const bad = run.results.some((r) => toActOn(r) > 0);
+    // The results with their findings' states, as the gate now holds them.
+    const view = await conformanceOf(root, change);
+    const results = run.results.map(
+      (r) => view?.results.find((v) => v.repo === r.repo && v.checkedAt === r.checkedAt) ?? r,
+    );
+    const bad = results.some((r) => toActOn(r) > 0);
     if (o.json) {
-      io.out(JSON.stringify(await conformanceOf(root, change), null, 2));
+      io.out(JSON.stringify(view, null, 2));
       return run.results.length && !bad ? 0 : 1;
     }
     for (const p of run.problems) io.err(p);
     if (!run.flows && !run.claims) {
-      io.err(nothingYet(change));
+      io.err(nothingYet(change, await quickChange(root, change)));
       return 1;
     }
     if (!run.results.length) return 1;
-    print(run.results, io);
+    print(results, io);
     io.out(
       bad
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`

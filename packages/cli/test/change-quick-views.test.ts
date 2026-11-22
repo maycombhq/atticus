@@ -147,6 +147,15 @@ describe("a quick change's map, impact and estimate, from design.md's In the cod
         expect(r.out[0]).toBe(
           `${ID}'s impact is read from design.md's ## In the code, which it doesn't have yet: the spec writer writes it (/define-change ${ID}).`,
         );
+        // The review of ADR 0206: the check offers the quick path's next step, never a stage.
+        const quick = `${ID} is a quick change and its design.md doesn't say what the code will have yet, so there is nothing to check the code against: the spec writer writes its ## In the code (/define-change ${ID}), or a person does; atticus change status ${ID} says whether it reads. Then check again: atticus change conform ${ID}.`;
+        const c = await run(["change", "conform", ID]);
+        expect(c.code).toBe(1);
+        expect(c.err).toContain(quick);
+        expect([...c.out, ...c.err].join("\n")).not.toContain("atticus change architecture");
+        const latest = await run(["change", "conform", ID, "--latest"]);
+        expect(latest.out).toContain(quick);
+        expect(latest.out.join("\n")).not.toContain("atticus change architecture");
       } finally {
         await writeFile(designFile(), text);
       }

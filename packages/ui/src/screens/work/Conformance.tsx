@@ -25,7 +25,7 @@ const cite = (c: Api.ConformItemT["at"][number]) =>
  * ADR 0206: what the change states for this repo (its operations, its In the code), each with
  * its outcome, where it is stated, its cite, and what the person does next.
  */
-function Claims({ r }: { r: Api.ConformRepoResultT }) {
+function Claims({ r, claimsOnly }: { r: Api.ConformRepoResultT; claimsOnly: boolean }) {
   if (!r.claims?.length) return null;
   const head = `claims-${r.repo}`;
   return (
@@ -34,7 +34,7 @@ function Claims({ r }: { r: Api.ConformRepoResultT }) {
         {C.claimsTitle}
       </h4>
       <p className="muted">{C.claimsIntro}</p>
-      {r.counts.claims && <p>{C.claimCounts(r.counts.claims)}</p>}
+      {r.counts.claims && !claimsOnly && <p>{C.claimCounts(r.counts.claims)}</p>}
       <table className="run-table" aria-labelledby={head}>
         <caption className="sr">{C.claimsCaption(r.repo)}</caption>
         <thead>
@@ -59,11 +59,11 @@ function Claims({ r }: { r: Api.ConformRepoResultT }) {
               </td>
               <td>
                 {c.what}
-                {c.why ? <span className="muted"> {c.why}</span> : null}
+                {c.why ? <span className="muted"> {C.claimWhy(c.why)}</span> : null}
               </td>
               <td className="mono">{`${c.from.file}:${c.from.line}`}</td>
               <td className="mono">{c.at.map(cite).join(", ")}</td>
-              <td>{c.outcome === "present" ? "" : c.next}</td>
+              <td>{c.outcome === "present" ? C.claimNextNone : c.next}</td>
               <td className="mono">{c.finding ? `${c.finding.id} (${c.finding.state})` : ""}</td>
             </tr>
           ))}
@@ -73,12 +73,17 @@ function Claims({ r }: { r: Api.ConformRepoResultT }) {
   );
 }
 
-/** One repo's check: the counts, every item with its citation, and what a scan can't show. */
-function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
+/**
+ * One repo's check: the counts, every item with its citation, and what a scan can't show. A
+ * change with no target flow (claims only) leads with its claims' counts and has no flow items
+ * table unless the branch adds something its design doesn't name.
+ */
+function RepoResult({ r, flows }: { r: Api.ConformRepoResultT; flows: number }) {
   const k = r.counts.claims;
   const bad =
     r.counts.missing + r.counts.stillThere + r.counts.unexpected > 0 ||
     (!!k && k.missing + k.differs + k.notCheckable + k.unconfirmed > 0);
+  const claimsOnly = !flows && !!k;
   const head = `conf-${r.repo}`;
   return (
     <section aria-labelledby={head} className="est-band">
@@ -89,37 +94,45 @@ function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
         {r.commit ? C.commits(r.commit, r.base) : C.notScanned}
         {r.task ? `. ${C.task(r.task)}` : ""}
       </p>
-      <p className="est-big">{bad ? C.counts(r.counts) : C.allGood}</p>
-      <table className="run-table">
-        <caption className="sr">{C.itemsCaption(r.repo)}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{C.col.status}</th>
-            <th scope="col">{C.col.what}</th>
-            <th scope="col">{C.col.step}</th>
-            <th scope="col">{C.col.task}</th>
-            <th scope="col">{C.col.at}</th>
-            <th scope="col">{C.col.finding}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {r.items.map((i, n) => (
-            <tr
-              key={`${i.status}.${i.check}.${i.flow ?? ""}.${i.item ?? ""}.${i.record ?? ""}.${n}`}
-            >
-              <td>
-                {i.status === "found" ? C.status[i.status] : <strong>{C.status[i.status]}</strong>}
-              </td>
-              <td>{i.what}</td>
-              <td className="mono">{i.flow ? C.step(i.flow, i.item) : C.noStep}</td>
-              <td className="mono">{i.task ?? ""}</td>
-              <td className="mono">{i.at.map(cite).join(", ")}</td>
-              <td className="mono">{i.finding ? `${i.finding.id} (${i.finding.state})` : ""}</td>
+      <p className="est-big">
+        {claimsOnly ? C.claimCounts(k) : bad ? C.counts(r.counts) : C.allGood}
+      </p>
+      {(!claimsOnly || r.items.length > 0) && (
+        <table className="run-table">
+          <caption className="sr">{C.itemsCaption(r.repo)}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{C.col.status}</th>
+              <th scope="col">{C.col.what}</th>
+              <th scope="col">{C.col.step}</th>
+              <th scope="col">{C.col.task}</th>
+              <th scope="col">{C.col.at}</th>
+              <th scope="col">{C.col.finding}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <Claims r={r} />
+          </thead>
+          <tbody>
+            {r.items.map((i, n) => (
+              <tr
+                key={`${i.status}.${i.check}.${i.flow ?? ""}.${i.item ?? ""}.${i.record ?? ""}.${n}`}
+              >
+                <td>
+                  {i.status === "found" ? (
+                    C.status[i.status]
+                  ) : (
+                    <strong>{C.status[i.status]}</strong>
+                  )}
+                </td>
+                <td>{i.what}</td>
+                <td className="mono">{i.flow ? C.step(i.flow, i.item) : C.noStep}</td>
+                <td className="mono">{i.task ?? ""}</td>
+                <td className="mono">{i.at.map(cite).join(", ")}</td>
+                <td className="mono">{i.finding ? `${i.finding.id} (${i.finding.state})` : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <Claims r={r} claimsOnly={claimsOnly} />
       {r.unchecked.length > 0 && (
         <>
           <h4 className="hud">{C.unchecked}</h4>
@@ -176,9 +189,17 @@ function CheckAgain({ change }: { change: string }) {
   );
 }
 
-/** A change's newest checks. */
-export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
-  // ADR 0206: a change is checked against its target flows and the claims it states.
+/** A change's newest checks; `quick` when it takes the quick path (ADR 0201). */
+export function ConformanceView({ c, quick }: { c: Api.ChangeConformanceT; quick?: boolean }) {
+  // ADR 0206: a change is checked against its target flows and the claims it states. A quick
+  // change's next step is its own (ADR 0201: never a stage).
+  if (!c.flows && !c.claims && quick)
+    return (
+      <>
+        <p>{C.nothingYetQuick(c.change)}</p>
+        <Command text={`atticus change status ${c.change}`} label={COPY.runNext.copy} />
+      </>
+    );
   if (!c.flows && !c.claims)
     return (
       <>
@@ -196,7 +217,7 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
   return (
     <>
       {c.results.map((r) => (
-        <RepoResult key={r.repo} r={r} />
+        <RepoResult key={r.repo} r={r} flows={c.flows} />
       ))}
       <p>{C.gate(c.round)}</p>
       <CheckAgain change={c.change} />
@@ -234,7 +255,13 @@ export function Conformance({ hash }: { hash: string }) {
         {(l) => (
           <>
             <ChangePicker list={l} current={current} screen="conformance" />
-            {current && <View of={conf}>{(c) => <ConformanceView c={c} />}</View>}
+            {current && (
+              <View of={conf}>
+                {(c) => (
+                  <ConformanceView c={c} quick={!!l.find((x) => x.id === current)?.quickPath} />
+                )}
+              </View>
+            )}
           </>
         )}
       </View>

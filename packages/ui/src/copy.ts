@@ -1957,6 +1957,18 @@ export const COPY = {
       next: "What to do next",
       finding: "Finding",
     },
+    /**
+     * The review of ADR 0206: how sure a claim's outcome is (the stored `why`: what is written on
+     * the cited lines, what is the assistant's reading), and a present claim's next step.
+     */
+    claimWhy: (why: string) => `How sure: ${why}`,
+    claimNextNone: "Nothing: the line is cited for the reviewer.",
+    /**
+     * The review of ADR 0206: a quick change with no In the code yet. Never a stage (ADR 0201):
+     * the spec writer writes the table, and status says whether it reads.
+     */
+    nothingYetQuick: (id: string) =>
+      `${id} is a quick change and its design.md doesn't say what the code will have yet, so there is nothing to check the code against. The spec writer writes its ## In the code (/define-change ${id}), or a person does; then this says whether it reads:`,
     /** A change with no target flow and no claim yet. */
     nothingYet: (id: string) =>
       `${id} has no target flows and states no claims yet, so there is nothing to check the code against. Its architecture stage writes target flows and operations; a quick change's design.md says what the code will have under ## In the code.`,

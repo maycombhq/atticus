@@ -242,9 +242,26 @@ describe("POST /api/changes/{id}/conformance: Check the code again from the app 
       );
       // The cut-over is a person's to check: a finding, so the check exits 1.
       expect(r.code).toBe(1);
+      // The review of ADR 0206: once a named person has waived it, it no longer holds the check.
+      const w = await run([
+        "finding",
+        id,
+        "conform-not-checked-cut-over-switch-forge-ledger",
+        "waive",
+        "--reason",
+        "Pointed the route back and forth with the platform team.",
+        "--by",
+        "pat",
+        "--root",
+        root,
+      ]);
+      expect(w.code, w.err).toBe(0);
+      const again = await run(["change", "conform", id, "--ref", "HEAD", "--root", root]);
+      expect(again.out.split("\n")).toContain(`${CUT_OVER} (waived)`);
+      expect(again.code).toBe(0);
       const latest = await run(["change", "conform", id, "--latest", "--root", root]);
       expect(latest.code).toBe(0);
-      expect(latest.out.split("\n")).toContain(CUT_OVER);
+      expect(latest.out.split("\n")).toContain(`${CUT_OVER} (waived)`);
     },
     T,
   );
