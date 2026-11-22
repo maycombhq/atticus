@@ -32,12 +32,21 @@ describe("assistantActor", () => {
 
   it("matches the known names exactly, never as part of a person's name or address", () => {
     const known = ["judge", "critic", "naysayer", "feature-placer", "ledger-architect"];
-    for (const by of ["judge", "Judge", "critic", "feature-placer", "ledger-architect"])
+    for (const by of [
+      "judge",
+      "Judge",
+      "critic",
+      "feature-placer",
+      "ledger-architect",
+      // The part before @ too: an agent's name as an address is still the agent.
+      "feature-placer@forge.example",
+      "judge@forge.example",
+      "Ledger-Architect@forge.example",
+    ])
       expect(assistantActor(by, known), by).toBe(by);
     for (const by of [
       "m.judge@forge.example",
       "judge.smith",
-      "judge@forge.example",
       "critic.anna@forge.example",
       "feature-placer.fan",
       "pat.naysayer",

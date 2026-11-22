@@ -19,8 +19,9 @@ const LENS_HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*-(?:critic|naysayer)$/;
  *    matches when it is the handle, or starts or ends it joined by a hyphen, dot, underscore or
  *    space ("copilot-agent", "ai-reviewer"); an email is read by its local part.
  * 2. One of `known`, which the caller fills (Atticus's own agents, the org pack's agents, its
- *    persona files, the models it allows): the whole `by`, exactly, case aside. Never a part of
- *    it, so a person "m.judge@…" or "judge.smith" is a person.
+ *    persona files, the models it allows): the whole `by`, or an email's local part, exactly,
+ *    case aside. Never a part of either, so a person "m.judge@…" or "judge.smith" is a person,
+ *    and "feature-placer@…" is the agent.
  * 3. A handle that ends `-critic` or `-naysayer` and is one hyphenated word of letters and digits
  *    (every critic lens and every persona's naysayer is named so): not an email, a dotted name,
  *    or words with spaces or underscores, which are people's.
@@ -34,7 +35,7 @@ export function assistantActor(by: string, known: readonly string[] = []): strin
   const local = whole.replace(/@.*$/, "");
   if (!local) return undefined;
   if (BOT.test(local)) return said;
-  if (known.some((k) => k.trim() && k.trim().toLowerCase() === whole)) return said;
+  if (known.some((k) => [whole, local].includes(k.trim().toLowerCase()) && !!k.trim())) return said;
   if (LENS_HANDLE.test(whole)) return said;
   const names = new Set<string>([...GENERIC, ...RuntimeKind.options]);
   for (const a of ASSISTANTS) {
