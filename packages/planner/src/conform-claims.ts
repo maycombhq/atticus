@@ -84,6 +84,11 @@ export interface Claim {
   undo?: string;
   /** The operation's task label, `o<operation>.<repo>`, as tasks.md numbers it (ADR 0203). */
   label?: string;
+  /**
+   * The other repos the operation names, for a deployment or a route: a deploy fact read in one
+   * of them whose `exposes` names this repo counts for it (ADR 0206 point 2).
+   */
+  with?: string[];
 }
 
 export interface ClaimResult {
@@ -107,6 +112,13 @@ export interface ClaimResult {
   fact?: string;
 }
 
+/**
+ * What a repo's facts at a commit rest on: verified facts with the changed files no fact covers
+ * yet, the built-in readers only, or nothing (a repo nobody read).
+ */
+export type ClaimBasis =
+  { from: "facts"; unread: readonly string[] } | { from: "readers" } | { from: "none" };
+
 export interface ClaimsInput {
   change: string;
   /** The changes folder, relative to the metarepo (`openspec/changes`), for the words. */
@@ -121,7 +133,18 @@ export interface ClaimsInput {
    * What the facts at the commit rest on: verified facts with the changed files no fact covers
    * yet, the built-in readers only, or nothing (a repo nobody read).
    */
-  basis: { from: "facts"; unread: readonly string[] } | { from: "readers" } | { from: "none" };
+  basis: ClaimBasis;
+  /**
+   * What names this repo besides its id, for a deploy fact's `exposes` read in another repo: its
+   * components' ids.
+   */
+  names?: readonly string[];
+  /**
+   * The facts at the branch's commit of the other repos the change names, each with what they
+   * rest on: a deployment's or a route's claim reads the deploy facts of the repos its operation
+   * names whose `exposes` names this repo (ADR 0206 point 2).
+   */
+  elsewhere?: readonly { repo: string; facts: readonly Fact[]; basis: ClaimBasis }[];
   /** A file's line at the commit, for a value the verifier doesn't check on it. */
   lineAt?: (path: string, line: number) => string | undefined;
   /**
@@ -168,6 +191,9 @@ export function operationClaims(ops: readonly Operation[], lines: Map<string, nu
       from: { file: OPERATIONS_FILE, line: lines.get(o.id) ?? 1, operation: o.id },
       ...(o.undo ? { undo: o.undo } : {}),
       label: `o${i + 1}.${k + 1}`,
+      ...((o.kind === "deployment" || o.kind === "route") && o.repos.length > 1
+        ? { with: o.repos.filter((r) => r !== repo) }
+        : {}),
     })),
   );
 }
@@ -339,13 +365,31 @@ export function conformClaims(input: ClaimsInput): {
   unexpected: ConformItem[];
 } {
   const { repo, change } = input;
-  const mine = (f: Fact) =>
-    f.repo === repo || (f.kind === "deploy" && (f as F<"deploy">).exposes === repo);
+  const names = new Set([repo, ...(input.names ?? [])]);
+  const exposed = (f: Fact) =>
+    f.kind === "deploy" && !!(f as F<"deploy">).exposes && names.has((f as F<"deploy">).exposes!);
+  const mine = (f: Fact) => f.repo === repo || exposed(f);
   const after = input.after.filter(mine);
   const of = <K extends Fact["kind"]>(k: K) => after.filter((f): f is F<K> => f.kind === k);
   const basis = input.basis;
   const factsSay = basis.from === "facts";
-  const decisive = basis.from === "facts" && basis.unread.length === 0;
+  const sure = (b: ClaimBasis) => b.from === "facts" && b.unread.length === 0;
+  /**
+   * The repo whose read the claim in hand rests on when it isn't sure: this repo, or another
+   * repo its operation names (a deployment's, a route's). Set for each claim.
+   */
+  let lead: { repo: string; basis: ClaimBasis } = { repo, basis };
+  let decisive = sure(basis);
+  /** A deployment's or a route's deploy facts: this repo's, and those read in its other repos. */
+  const deploysOf = (c: Claim): F<"deploy">[] => {
+    const away = (input.elsewhere ?? []).filter((x) => c.with?.includes(x.repo));
+    lead = (sure(basis) && away.find((x) => !sure(x.basis))) || { repo, basis };
+    decisive = sure(lead.basis);
+    return [
+      ...of("deploy"),
+      ...away.flatMap((x) => x.facts.filter((f): f is F<"deploy"> => exposed(f))),
+    ];
+  };
   const matched = new Set<string>();
   const results: ClaimResult[] = [];
 
@@ -386,18 +430,29 @@ export function conformClaims(input: ClaimsInput): {
       .join(" ");
   };
 
-  const unreadWhy = () =>
-    basis.from === "facts"
-      ? `no fact covers ${shown(basis.unread)}, which changed since ${repo} was read`
-      : basis.from === "readers"
-        ? `${repo} hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check`
-        : `nobody has read ${repo} at this commit`;
-  const unreadNext = () =>
-    basis.from === "facts"
-      ? `Have your assistant read ${shown(basis.unread)} in ${repo}'s branch into ${branchFacts} (facts at the branch's commit, each citing its file and line), then check again: ${conformCmd}. They are verified here and never written to the catalog.`
-      : `Read ${repo} into facts (/atticus-map ${repo}, then atticus verify ${repo} --write), then check again: ${conformCmd}.`;
+  const factsOf = (r: string) => `${input.changesRel}/${change}/conform/facts/${r}.jsonl`;
+  const unreadWhy = () => {
+    const { repo: r, basis: b } = lead;
+    return b.from === "facts"
+      ? `no fact covers ${shown(b.unread)}${r === repo ? "" : ` in ${r}`}, which changed since ${r} was read`
+      : b.from === "readers"
+        ? `${r} hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check`
+        : `nobody has read ${r} at this commit`;
+  };
+  const unreadNext = () => {
+    const { repo: r, basis: b } = lead;
+    return b.from === "facts"
+      ? `Have your assistant read ${shown(b.unread)} in ${r}'s branch into ${factsOf(r)} (facts at the branch's commit, each citing its file and line), then check again: ${conformCmd}. They are verified here and never written to the catalog.`
+      : `Read ${r} into facts (/atticus-map ${r}, then atticus verify ${r} --write), then check again: ${conformCmd}.`;
+  };
+  /** A cited file to read again, for a couldn't-confirm that rests on one fact's reading. */
+  const rereadNext = (f: Fact, what: string) =>
+    `Have your assistant read ${f.cite.file} in ${repo}'s branch again into ${branchFacts}, ${what}, then check again: ${conformCmd}. Or check it by hand.`;
 
-  const push = (c: Claim, r: Omit<ClaimResult, "check" | "repo" | "from" | "next">) => {
+  const push = (
+    c: Claim,
+    r: Omit<ClaimResult, "check" | "repo" | "from" | "next"> & { next?: string },
+  ) => {
     const full = { ...r, check: c.check, repo, from: c.from } as ClaimResult;
     const where = quick(c) ? "the row" : "the operation";
     full.next =
@@ -411,7 +466,7 @@ export function conformClaims(input: ClaimsInput): {
             ? `Build it on the branch in ${repo}; if it lives in a repo the change doesn't name, add that repo to ${where}${quick(c) ? ` (design.md:${c.from.line})` : ""}. Then check again: ${conformCmd}.`
             : r.outcome === "not-checkable"
               ? `Check it by hand, then say how: atticus finding ${change} ${claimFindingId(full)} waive --reason "<how it was checked>".`
-              : unreadNext();
+              : (r.next ?? unreadNext());
     results.push(full);
   };
 
@@ -430,7 +485,7 @@ export function conformClaims(input: ClaimsInput): {
   ) => {
     if (hit) matched.add(hit.id);
     if (other) matched.add(other.fact.id);
-    if (hit && factsSay)
+    if (hit && (factsSay || hit.repo !== repo))
       return push(c, {
         outcome: "present",
         expected,
@@ -486,6 +541,7 @@ export function conformClaims(input: ClaimsInput): {
       what: `Atticus couldn't confirm that ${bare(says)}: ${loose.cite.file}:${loose.cite.line} names no env, so which env it is for isn't read.`,
       at: [codeCite(loose), claimCite(c)],
       fact: loose.id,
+      next: rereadNext(loose, "with its env when the file is one env's"),
     });
     return true;
   };
@@ -508,6 +564,8 @@ export function conformClaims(input: ClaimsInput): {
   };
 
   for (const c of input.claims.filter((x) => x.repo === repo)) {
+    lead = { repo, basis };
+    decisive = sure(basis);
     const e = c.expect;
     const op = c.from.operation;
     const pairs = (keys: Key[]) =>
@@ -586,7 +644,7 @@ export function conformClaims(input: ClaimsInput): {
       case "deployment": {
         const expected = pairs(["platform", "env"]);
         const envOf = (f: F<"deploy">) => f.env ?? "default";
-        const deploys = of("deploy");
+        const deploys = deploysOf(c);
         const sameEnv = e.env ? deploys.filter((f) => same(envOf(f), e.env)) : deploys;
         const hit = sameEnv.find((f) => !e.platform || same(f.platform, e.platform));
         const says = e.platform
@@ -620,7 +678,7 @@ export function conformClaims(input: ClaimsInput): {
       case "route": {
         const expected = pairs(["host", "basePath"]);
         const at = `${e.host ?? ""}${e.basePath ?? ""}`;
-        const hosts = of("deploy").filter((f) => f.host || f.basePath);
+        const hosts = deploysOf(c).filter((f) => f.host || f.basePath);
         const hit = hosts.find(
           (f) => (!e.host || same(f.host, e.host)) && (!e.basePath || f.basePath === e.basePath),
         );
@@ -683,6 +741,10 @@ export function conformClaims(input: ClaimsInput): {
                 : `Atticus couldn't confirm that ${bare(says)}: the fact at ${doubt.cite.file}:${doubt.cite.line} gives no source.`,
               at: [codeCite(doubt), claimCite(c)],
               fact: doubt.id,
+              next: rereadNext(
+                doubt,
+                "citing the line (or a cite.with part) that names where the value is kept",
+              ),
             });
             break;
           }
@@ -828,6 +890,7 @@ export function conformClaims(input: ClaimsInput): {
             what: `Atticus couldn't confirm that ${table} has the column ${col} in ${repo}: the facts name the table and none of its columns.`,
             at: [codeCite(stores[0]!), claimCite(c)],
             fact: stores[0]!.id,
+            next: rereadNext(stores[0]!, "with the table's columns"),
           });
           break;
         }

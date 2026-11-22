@@ -82,6 +82,9 @@ describe("a secret's key (ADR 0206, the review's blocker 1)", () => {
     expect(c.what).toBe(
       "Atticus couldn't confirm that forge-ledger keeps ledger.client.key by a reference to where secrets are kept: deploy/values-prod.yaml:1 doesn't show vault:forge/ledger/client, so the reference is only the assistant's reading.",
     );
+    expect(c.next).toBe(
+      "Have your assistant read deploy/values-prod.yaml in forge-ledger's branch again into openspec/changes/move-orders-to-anvil/conform/facts/forge-ledger.jsonl, citing the line (or a cite.with part) that names where the value is kept, then check again: atticus change conform move-orders-to-anvil. Or check it by hand.",
+    );
     expect(JSON.stringify(r)).not.toContain(PLAIN);
   });
 
