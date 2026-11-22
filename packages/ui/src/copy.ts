@@ -5297,6 +5297,9 @@ export const COPY = {
   /** ADR 0106: what Atticus asked a model and what it answered, run by run. */
   /** ADR 0183: Apply and Propose for review, run from the app. */
   propose: {
+    /** ADR 0204's final review: a profile whose version on the proposal's target can't be read. */
+    raisesUnread: (file: string, target: string) =>
+      `Check ${file} on ${target} before this merges: Atticus couldn't read it there, so it can't say whether this raises its profile version, and an Atticus older than 2.0.0-beta.30 refuses version 3.`,
     apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
     applying: "Applying…",
     /** Beta.30: what the panel says over the job's step while one repo's Apply runs. */
@@ -8330,8 +8333,6 @@ export const COPY = {
     shownCount: (n: number) =>
       `${n} declared arrow${n === 1 ? "" : "s"} the code now shows: retire ${n === 1 ? "it" : "them"} when you agree.`,
     shownOpen: (a: string, b: string) => `${a} → ${b}`,
-    raisesUnread: (file: string, target: string) =>
-      `Atticus couldn't read ${file} on ${target}, so it can't say whether this raises its profile version. An Atticus older than 2.0.0-beta.30 refuses version 3: check it before this merges.`,
     raisesProfile: (file: string, from: number, to: number) =>
       `This raises ${file} from profile version ${from} to ${to}: an Atticus older than 2.0.0-beta.30 refuses it. Upgrade everyone who works in this metarepo before it merges.`,
     retireConfirm: (label: string) => `${label}: take these lines out and build`,

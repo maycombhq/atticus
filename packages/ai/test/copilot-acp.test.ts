@@ -8,6 +8,7 @@ import {
   AcpServerGoneError,
   AcpSignInError,
   endedByCtrlC,
+  acpPathsOf,
   atticusArgvOf,
   carryOnPrompt,
   buildContextPack,
@@ -684,6 +685,23 @@ describe("a session given only some files and no commands (ADR 0204 A.2, the sec
     );
     expect(r.refused.join("\n")).toMatch(/a search must say where/);
     expect(readFileSync(join(m.root, "facts", "forge-billing.jsonl"), "utf8")).toBe(FACT);
+  });
+
+  it("matches a step's allowed commands by their words, each whole (the final review)", () => {
+    const p = acpPathsOf({
+      readRoots: ["/m"],
+      writeRoots: [],
+      commands: ["verify", "catalog show"],
+    });
+    expect(p.runnable(["verify", "forge-ledger"])).toBeUndefined();
+    expect(p.runnable(["catalog", "show", "forge-ledger"])).toBeUndefined();
+    for (const no of [
+      ["verify forge-ledger --write"],
+      ["verifyx"],
+      ["catalog", "showx"],
+      ["catalog"],
+    ])
+      expect(p.runnable(no), no.join("|")).toMatch(/is refused/);
   });
 
   it("tells a session that runs no command to carry on without one", () => {

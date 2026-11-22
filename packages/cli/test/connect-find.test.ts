@@ -310,6 +310,11 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     async () => {
       const link = join(g.root, "workspace", A, "src", "link.ts");
       symlinkSync(join("..", "..", "..", "facts", `${B}.jsonl`), link);
+      // The final review: a listed symlink to a folder inside A grants nothing beyond it.
+      const dirLink = join(g.root, "workspace", A, "src", "all");
+      symlinkSync("main", dirLink, "dir");
+      const unlisted = join(g.root, "workspace", A, "src", "main", "Unlisted.java");
+      writeFileSync(unlisted, "class Unlisted {}\n");
       // Listed among the files no fact cites, as verify.yaml would say of it.
       const vy = join(g.root, "facts", `${A}.verify.yaml`);
       const was = readFileSync(vy, "utf8");
@@ -318,7 +323,10 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
         vy,
         stringify({
           ...doc,
-          coverage: { ...doc.coverage, unknown: [...(doc.coverage?.unknown ?? []), "src/link.ts"] },
+          coverage: {
+            ...doc.coverage,
+            unknown: [...(doc.coverage?.unknown ?? []), "src/link.ts", "src/all"],
+          },
         }),
       );
       try {
@@ -333,8 +341,14 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
         const p = acpPathsOf(stepPolicyOf(g.root, s));
         expect(p.readable(link)).toMatch(/outside what it may read/);
         expect(p.readable(bFacts)).toMatch(/outside what it may read/);
+        expect(s.readRoots!.map((f) => realpathSync(f))).not.toContain(
+          realpathSync(join(g.root, "workspace", A, "src", "main")),
+        );
+        expect(p.readable(unlisted)).toMatch(/outside what it may read/);
       } finally {
         rmSync(link);
+        rmSync(dirLink);
+        rmSync(unlisted);
         writeFileSync(vy, was);
       }
     },

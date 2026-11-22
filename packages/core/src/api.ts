@@ -737,7 +737,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   caller's code (a job, `FindResult`; addendum A), GET /api/connect carries the last find
  *   (`find`, `findAgain`), and POST /api/reading-rules/from-find drafts a reading rule from the
  *   call it confirmed. POST /api/setup/repos/run adds, syncs, reads and applies new repos as one
- *   local job (`ReposRunResult`: its `parts`, `handoff`, `done` of `of`). An Interface's join says who declared it
+ *   local job (`ReposRunResult`: its `parts`, `handoff`, `done` of `of`, and `refused`, an
+ *   Apply's build that waits for a confirm). A find that didn't build says so (`FindResult`'s
+ *   `notBuilt`, B's when B's read stopped it), and B not read yet where the app can't start the
+ *   assistant is `readFirst`; Propose says a profile on the target it couldn't read
+ *   (`ProposePlanView.raisesProfileUnread`). An Interface's join says who declared it
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
  */
@@ -2501,7 +2505,7 @@ export const MapEditsResult = z.object({
   waitsOn: z.array(z.string()),
   /**
    * The build refused after the changes were saved (a large removal it lists, a hand edit): its
-   * listing, as Apply's job gives it, which Set up › Scans › Catalog builds confirms.
+   * listing, as Apply's job gives it, which Set up › Activity › Catalog builds confirms.
    */
   refused: BuildRefusalView.optional(),
   /**
@@ -6785,7 +6789,7 @@ export const ReposRunResult = z.object({
   handoff: z.object({ command: z.string() }).optional(),
   /**
    * The second review: an Apply whose build refused (a large removal, a hand edit) waits for the
-   * person's confirm: its listing, which Set up › Scans › Catalog builds confirms.
+   * person's confirm: its listing, which Set up › Activity › Catalog builds confirms.
    */
   refused: BuildRefusalView.optional(),
   /** How many of the repos are on the map (applied), of how many. */
@@ -6822,7 +6826,7 @@ export const FindResult = z.object({
    * The second review: `verify <A> --write` didn't build (its build refused, or verify refused the
    * facts). The session's facts and answer are saved; no outcome is told from the catalog before
    * this build, and the report isn't written. `refused` is the build's refusal (its listing, which
-   * Set up › Scans › Catalog builds confirms); `lines` what verify said; `command` the way on once
+   * Set up › Activity › Catalog builds confirms); `lines` what verify said; `command` the way on once
    * it is confirmed or fixed (the find's --read, which checks the answer and builds again).
    */
   notBuilt: z

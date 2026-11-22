@@ -608,8 +608,18 @@ export async function runFind(
     const ofA = async (f: string): Promise<string[]> => {
       if (!checkout || !home || !f || isAbsolute(f) || f.split(/[\\/]/).includes("..")) return [];
       const real = await realpath(join(checkout, ...f.split("/"))).catch(() => undefined);
-      const r = real ? relative(home, real) : "..";
-      return r && !r.startsWith("..") && !isAbsolute(r) ? [real!] : [];
+      // The final review: a regular file only, so a listed symlink to a folder of A grants
+      // nothing beyond the file it names.
+      if (
+        !real ||
+        !(await stat(real).then(
+          (x) => x.isFile(),
+          () => false,
+        ))
+      )
+        return [];
+      const r = relative(home, real);
+      return r && !r.startsWith("..") && !isAbsolute(r) ? [real] : [];
     };
     const listed = (await Promise.all(made.reads.map(ofA))).flat();
     await runner({

@@ -515,7 +515,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
               return ran.code;
             });
             // Saved but the build refused (a large removal, a hand edit): its listing, which
-            // Set up › Scans › Catalog builds confirms in full width. Only this job's report.
+            // Set up › Activity › Catalog builds confirms in full width. Only this job's report.
             let refused: unknown;
             if (ran && !ran.built && ran.edits.every((x) => x.state === "saved")) {
               const { lastBuildOf } = await import("./build-report.js");

@@ -246,7 +246,8 @@ class Paths {
     if (!allowed.length)
       return "Atticus runs no command in this session: this step reads and writes files only. Read the files it names with your file tools.";
     const line = argv.join(" ");
-    return allowed.some((c) => line === c || line.startsWith(`${c} `))
+    // The final review: by its words, each matched whole, never a text prefix of one argument.
+    return allowed.some((c) => c.split(" ").every((w, i) => argv[i] === w))
       ? undefined
       : `Atticus runs only ${allowed.map((c) => `atticus ${c}`).join(", ")} in this session; atticus ${short(line)} is refused`;
   }

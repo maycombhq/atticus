@@ -39,7 +39,7 @@ export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
  * Beta.28 (the owner's feedback of 2026-11-12, 22:29: the canvas's side panel is too cramped for
  * results): inside a narrow panel (the canvas's details), a step's result is one status line and
  * one primary button. Its whole output is the job's Console entry (the bottom panel), and a
- * refused build's removals and confirm are on Set up › Scans › Catalog builds, full width.
+ * refused build's removals and confirm are on Set up › Activity › Catalog builds, full width.
  */
 export const ResultsInPanel = createContext(false);
 export const useResultsInPanel = () => useContext(ResultsInPanel);
@@ -446,7 +446,7 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
           ))}
           {(plan.raisesProfileUnread ?? []).map((x) => (
             <p key={x.file} className="run-note" role="note">
-              {COPY.connectAB.raisesUnread(x.file, x.target)}
+              {P.raisesUnread(x.file, x.target)}
             </p>
           ))}
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
