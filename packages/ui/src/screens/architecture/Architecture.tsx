@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { api, ApiError, isOffline, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { latestCall } from "../../api/latest.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
@@ -859,9 +859,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
           (status.notYet ? (
             <CatalogEmpty text={WORDS.emptyEstate} />
           ) : (
-            <div className="state error" role="alert">
-              {WORDS.loadFailed(status.error)}
-            </div>
+            <MapLoadError error={status.error} />
           ))}
 
         {status.state === "ready" && stepError && (
@@ -982,9 +980,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               {!graph.boxes.length ? (
                 <div className="state">{WORDS.empty}</div>
               ) : arrangement.state === "error" ? (
-                <div className="state error" role="alert">
-                  {WORDS.loadFailed(arrangement.error)}
-                </div>
+                <MapLoadError error={arrangement.error} />
               ) : arrangement.state === "loading" || arrangement.key !== key ? (
                 <div className="stack" aria-busy="true" aria-live="polite">
                   <p className="hud">{WORDS.layingOutBoxes(graph.boxes.length)}</p>
@@ -1718,4 +1714,17 @@ export function arrowBetween(
     return (f === x && t === y) || (f === y && t === x);
   });
   return l?.id;
+}
+
+/**
+ * Why the map didn't load. While the server is down the one note above the page says so, with
+ * Try again (the beta.27 review, as LoadError): the map only says, quietly, that it isn't loaded.
+ */
+function MapLoadError({ error }: { error: string }) {
+  if (isOffline(error)) return <div className="state muted">{COPY.app.notLoadedOffline}</div>;
+  return (
+    <div className="state error" role="alert">
+      {WORDS.loadFailed(error)}
+    </div>
+  );
 }
