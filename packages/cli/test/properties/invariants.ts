@@ -106,20 +106,29 @@ const BUILDS = new Set<Desc["t"]>([
   "crash",
   "upgrade",
   "again",
+  "apply-app",
+  "crash-after-result",
 ]);
 
 /** The command a step ran in the end: what `again`, a confirmation or a crash ran. */
 function base(s: Step): Desc {
-  if (s.desc.t === "again" && s.inner) return s.inner;
-  if ((s.desc.t === "confirm-removals" || s.desc.t === "discard-edits") && s.rerun) return s.rerun;
+  if (s.desc.t === "again" && s.inner) return asVerify(s.inner);
+  if ((s.desc.t === "confirm-removals" || s.desc.t === "discard-edits") && s.rerun)
+    return asVerify(s.rerun);
   if (s.desc.t === "crash")
     return s.desc.via === "scan"
       ? { t: "scan" }
       : s.desc.via === "rename"
         ? { t: "rename", slot: s.desc.slot }
         : { t: "verify-write", slot: s.desc.slot, ok: true };
-  return s.desc;
+  return asVerify(s.desc);
 }
+
+/** ADR 0205: the app's Apply is verify --write, run as the server runs it. */
+const asVerify = (d: Desc): Desc =>
+  d.t === "apply-app" || d.t === "crash-after-result"
+    ? { t: "verify-write", slot: d.slot, ok: true }
+    : d;
 
 /** The step wrote a build: a command that builds, and it succeeded. */
 const builtOk = (s: Step) =>

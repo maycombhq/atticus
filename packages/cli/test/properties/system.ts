@@ -1,6 +1,7 @@
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { appMemory, forgetFactsParses } from "@maycombhq/core";
 import { main } from "../../src/main.js";
 import { git, writeRead } from "./estate.js";
 import type { CatalogSystem, Outcome } from "./seam.js";
@@ -158,7 +159,17 @@ export async function freshFromSlots(sys: CatalogSystem, from: string, to: strin
       recursive: true,
       filter: (src) => !/[\\/]catalog[\\/]sources[\\/]build\.json$/.test(src),
     });
-  const r = await sys.build(to, {});
+  // ADR 0205: no cache, in memory either (an app's server the sequence ran keeps the last
+  // build's texts and the facts parses in this process).
+  const serving = appMemory.on;
+  appMemory.on = false;
+  forgetFactsParses();
+  let r: Outcome;
+  try {
+    r = await sys.build(to, {});
+  } finally {
+    appMemory.on = serving;
+  }
   if (!r.wrote)
     throw new Error(
       `harness: the fresh build of the final slots didn't write: ${r.err.join("\n")}`,
