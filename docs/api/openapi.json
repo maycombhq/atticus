@@ -37855,6 +37855,27 @@
               "additionalProperties": false
             }
           },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "has": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "line",
+                "has"
+              ],
+              "additionalProperties": false
+            }
+          },
           "breaks": {
             "type": "integer",
             "minimum": -9007199254740991,
