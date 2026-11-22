@@ -16,6 +16,7 @@ import {
   checkRequirements,
   decodeRequirements,
   evidenceIds,
+  headingOf,
   loadChangeContext,
   parseRequirements,
   REQUIREMENTS_FILE,
@@ -136,12 +137,16 @@ export function withRows(text: string, found: ReviewFinding[]): { text: string; 
       "| Question | Evidence | Asked by | Answered by | Answer | State |",
       "| --- | --- | --- | --- | --- | --- |",
     ];
-    const heading = lines.findIndex((l) => l.text.trim() === `## ${role}`);
+    // The role's heading as the door check reads it (headingOf: closing #s aren't its words).
+    const heading = lines.findIndex((l) => {
+      const h = headingOf(l.text.trim());
+      return h?.level === 2 && h.words === role;
+    });
     // A table with its header and no row yet: the rows go under its delimiter, never a second
     // header (the second review of beta.30).
     if (table && heading >= 0) {
       let under: number | undefined;
-      for (let i = heading + 1; i < lines.length && !/^##\s/.test(lines[i]!.text); i++)
+      for (let i = heading + 1; i < lines.length && !headingOf(lines[i]!.text.trim()); i++)
         if (QUESTIONS_HEADER.test(lines[i]!.text) && DELIMITER.test(lines[i + 1]?.text ?? ""))
           under = i + 2;
       if (under !== undefined) return { at: under, rows };
@@ -257,7 +262,11 @@ export async function reviewCommand(
       runtime = await runtimeForCli(root, { ...(o.mode ? { mode: o.mode } : {}), env: process.env })
         .then((r) => r.runtime)
         .catch((e: Error) => {
-          notes.push(e instanceof AiOffError ? REVIEW_WORDS.aiOff : REVIEW_WORDS.failed(e.message));
+          notes.push(
+            e instanceof AiOffError
+              ? REVIEW_WORDS.aiOff
+              : REVIEW_WORDS.failed(String(e?.message ?? e).split("\n")[0]!),
+          );
           return undefined;
         });
     // A naysayer's run that throws is said, never the review's end: it exits 0 (ADR 0203 C.4).

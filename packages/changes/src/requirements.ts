@@ -137,8 +137,12 @@ export function decodeRequirements(bytes: Uint8Array): string {
   return new TextDecoder(utf16 ?? "utf-8").decode(bytes);
 }
 
-/** A `# ` or `## ` heading's level and words, read without a regex that backtracks. */
-function headingOf(raw: string): { level: 1 | 2; words: string } | undefined {
+/**
+ * A `# ` or `## ` heading's level and words, read without a regex that backtracks: a closing run
+ * of #s after a space is not part of the words. Exported so a writer of the file (`atticus review
+ * --write`) finds a role's heading as this parser does.
+ */
+export function headingOf(raw: string): { level: 1 | 2; words: string } | undefined {
   const level = raw.startsWith("## ") ? 2 : raw.startsWith("# ") ? 1 : undefined;
   if (!level) return undefined;
   const text = raw.trimEnd();

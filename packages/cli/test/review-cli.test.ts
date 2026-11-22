@@ -296,6 +296,31 @@ describe("atticus review", () => {
     });
   });
 
+  it("finds a role's heading with closing #s as the door check reads it", () => {
+    const header = [
+      "| Question | Evidence | Asked by | Answered by | Answer | State |",
+      "| --- | --- | --- | --- | --- | --- |",
+    ];
+    const row = "| What if it fails? | - | qa-naysayer | - | - | open |";
+    const f = {
+      line: 1,
+      who: "qa-naysayer",
+      question: "What if it fails?",
+      evidence: "-",
+      role: "QA",
+    };
+    // A header-only table under "## QA ##": the row under it.
+    const withTable = ["# T", "", "## QA ##", "", ...header, ""].join("\n");
+    expect(withRows(withTable, [f]).text).toBe(
+      ["# T", "", "## QA ##", "", ...header, row, ""].join("\n"),
+    );
+    // No table yet under "## QA #": the table goes under that heading, not a second one.
+    const bare = ["# T", "", "## QA #", "", "Words.", ""].join("\n");
+    expect(withRows(bare, [f]).text).toBe(
+      ["# T", "", "## QA #", "", ...header, row, "", "Words.", ""].join("\n"),
+    );
+  });
+
   it("reads a lone carriage return as the door check does: inside its line, kept", () => {
     const text = [
       "# T",
