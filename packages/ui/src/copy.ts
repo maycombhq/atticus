@@ -2018,6 +2018,8 @@ export const COPY = {
       `${id}'s impact is read from design.md's In the code, which it doesn't have yet: the spec writer writes it.`,
     reachesCaption: "What each row of In the code names, and who receives it",
     reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },
+    /** A row of design.md's In the code, by its line and what it has (ADR 0206). */
+    reachRow: (line: number, has: string) => `design.md:${line} (${has})`,
     newCaller: (target: string) => `A new caller of ${target}`,
     notInMap: "Not in the map yet: planned, or nobody has read it",
     nobodyReceives: "Nothing in the map receives it",

@@ -93,7 +93,9 @@ describe("a quick change's picture and impact (ADR 0206)", () => {
   it("impact lists who each row reaches under its own words, never as breaks", () => {
     const out = renderToStaticMarkup(<ImpactView i={IMPACT} />);
     expect(out).toContain(esc(I.quick));
-    expect(out).toContain("design.md:15 (publishes)");
+    // The row's cell from the copy file (its line in design.md and what it has).
+    expect(I.reachRow(15, "publishes")).toBe("design.md:15 (publishes)");
+    expect(out).toContain(esc(I.reachRow(15, "publishes")));
     expect(out).toContain("forge-svc-03 (team-forge)");
     expect(out).toContain(esc(I.notInMap));
     expect(out).toContain(`<caption class="sr">${esc(I.reachesCaption)}</caption>`);

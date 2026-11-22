@@ -37,7 +37,7 @@ function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
         <tbody>
           {i.reaches.map((r) => (
             <tr key={`${r.line}.${r.has}`}>
-              <td className="mono">{`design.md:${r.line} (${r.has})`}</td>
+              <td className="mono">{I.reachRow(r.line, r.has)}</td>
               <td className="mono">{r.name}</td>
               <td>
                 {r.has === "calls"
