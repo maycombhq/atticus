@@ -158,6 +158,8 @@ const AREA_BY_WORD: Record<string, string> = {
   site: "catalog",
   digest: "changes",
   change: "changes",
+  // ADR 0203 C.4: a requirements file reviewed without refusing it, beside change new --from.
+  review: "changes",
   finding: "changes",
   findings: "changes",
   stage: "changes",
