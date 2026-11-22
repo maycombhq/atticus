@@ -43,7 +43,7 @@ import {
   withoutResume,
 } from "./loop.js";
 import { runsTodaySource } from "./operations.js";
-import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
+import { FeaturePlacement, STAGE_SCHEMA_VERSION, type FlowDelta } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
 import { openspecInstructionSource, renderProposal, writeProposal } from "./openspec-files.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
@@ -271,16 +271,31 @@ const archivedOperation = (o: { kind: string; what: string }, repo: string): Sta
  */
 export function archivedWorkIssues(
   p: Pick<FeaturePlacement, "newFlows"> & Partial<Pick<FeaturePlacement, "operations">>,
-  e: Pick<Estate, "archivedRepos">,
-  deltas: readonly { flow: string; repo: string }[] = [],
+  e: Pick<Estate, "archivedRepos"> & Partial<Pick<Estate, "byId">>,
+  deltas: readonly FlowDelta[] = [],
 ): StageIssue[] {
+  // A target flow that moves work out of an archived repo does what the finding would ask: the
+  // flow removed (a retire or absorb stroke of the sketch, ADR 0189, ADR 0193), or a change whose
+  // steps are only removed or sent to a component of a repo that isn't archived.
+  const repoOf = (component: string) =>
+    (e.byId?.get(component) as { repo?: unknown } | undefined)?.repo;
+  const movesOut = (d: FlowDelta) =>
+    d.change === "remove" ||
+    (d.change === "modify" &&
+      d.steps.every(
+        (s) =>
+          s.op === "remove" ||
+          (s.op === "change" &&
+            !!s.to &&
+            (s.to.new || !e.archivedRepos.has(String(repoOf(s.to.component) ?? "")))),
+      ));
   return [
     ...p.newFlows.filter((n) => e.archivedRepos.has(n.repo)).map(archivedNewFlow),
     ...(p.operations ?? []).flatMap((o) =>
       o.repos.filter((r) => e.archivedRepos.has(r)).map((r) => archivedOperation(o, r)),
     ),
     ...deltas
-      .filter((d) => e.archivedRepos.has(d.repo))
+      .filter((d) => e.archivedRepos.has(d.repo) && !movesOut(d))
       .map((d): StageIssue => ({
         rule: "feature.archived-repo",
         target: `${d.flow}:${d.repo}`,

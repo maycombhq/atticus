@@ -4690,7 +4690,8 @@ Rules:
       }),
       ...checkOperationStories(a.operations, opStories),
       // ADR 0203 B addendum: a repo archived since the feature stage takes no new work here either.
-      ...archivedWorkIssues(placement ?? { newFlows: [] }, estate, deltas),
+      // Its operations are the operations file's, checked by checkOperations: raised once.
+      ...archivedWorkIssues({ newFlows: placement?.newFlows ?? [] }, estate, deltas),
       // ADR 0203 review: the operations file as it is now, checked as the architecture stage
       // checks it (a person may have edited it since): no story is written from a plan it refuses.
       ...checkOperations(

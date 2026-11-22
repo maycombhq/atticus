@@ -927,13 +927,13 @@ describe("the review's other refusals", () => {
     );
     const archived = (issues: { rule: string; target: string; blocking: boolean }[]) =>
       issues
-        .filter((i) => i.rule === "feature.archived-repo")
-        .map((i) => [i.target, i.blocking])
+        .filter((i) => i.rule.endsWith(".archived-repo"))
+        .map((i) => [i.rule, i.target, i.blocking])
         .sort();
-    // What feature.yaml puts in it, with the feature stage's own rule and target.
+    // Each operation in it once: the operations file's, not feature.yaml's as well.
     const want = [
-      ["cut-over:forge-stock", true],
-      ["deployment:forge-stock", true],
+      ["operation.archived-repo", "deploy-new:forge-stock", true],
+      ["operation.archived-repo", "switch:forge-stock", true],
     ];
     expect(archived(await checkStageDraft(root, CHANGE, "architecture", ARCHITECTURE))).toEqual(
       want,
@@ -984,6 +984,59 @@ describe("the review's other refusals", () => {
         .filter((i) => i.rule === "feature.archived-repo")
         .map((i) => [i.target, i.message]),
     ).toEqual(archivedWorkIssues(placed, e).map((i) => [i.target, i.message]));
+  });
+
+  it("work moved out of an archived repo isn't refused; work added to it is", () => {
+    const e = {
+      archivedRepos: new Set(["forge-stock"]),
+      byId: new Map([
+        ["forge-orders", { kind: "Component", id: "forge-orders", repo: "forge-orders" }],
+        ["forge-stock", { kind: "Component", id: "forge-stock", repo: "forge-stock" }],
+      ]),
+    } as unknown as Estate;
+    const delta = (change: "modify" | "remove" | "new", steps: Record<string, unknown>[] = []) =>
+      FlowDelta.parse({
+        schemaVersion: 2,
+        flow: "forge-stock.reserve-stock",
+        repo: "forge-stock",
+        change,
+        why: "w",
+        ...(change === "new"
+          ? { name: "Reserve", trigger: { kind: "endpoint", what: "POST /reserve" } }
+          : {}),
+        steps,
+      });
+    const raised = (d: ReturnType<typeof delta>) =>
+      archivedWorkIssues({ newFlows: [] }, e, [d]).map((i) => [i.rule, i.target]);
+    const blocked = [["feature.archived-repo", "forge-stock.reserve-stock:forge-stock"]];
+    // The flow retired (ADR 0189) or absorbed elsewhere (ADR 0193): the person did what it asks.
+    expect(raised(delta("remove"))).toEqual([]);
+    expect(raised(delta("modify", [{ op: "remove", step: 2 }]))).toEqual([]);
+    expect(
+      raised(
+        delta("modify", [
+          { op: "remove", step: 3 },
+          { op: "change", step: 2, to: { component: "forge-orders", entry: "POST /reserve" } },
+        ]),
+      ),
+    ).toEqual([]);
+    // New work in it still blocks.
+    expect(
+      raised(delta("modify", [{ op: "add", after: 1, kind: "call-out", what: "Ask." }])),
+    ).toEqual(blocked);
+    expect(
+      raised(
+        delta("modify", [
+          { op: "change", step: 2, to: { component: "forge-stock", entry: "POST /hold" } },
+        ]),
+      ),
+    ).toEqual(blocked);
+    expect(raised(delta("modify", [{ op: "change", step: 2, what: "Reserve twice." }]))).toEqual(
+      blocked,
+    );
+    expect(
+      raised(delta("new", [{ op: "add", after: 0, kind: "entry", what: "Take the order." }])),
+    ).toEqual(blocked);
   });
 
   it("the stories stage checks the operations file again: an undo deleted after architecture is refused", async () => {
