@@ -488,6 +488,115 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     expect(said.join("\n")).toMatch(/isn't a repo or system id/);
     expect(outside()).toEqual([]);
   }, 300_000);
+
+  describe("B read whole first, as part of the find (A.2, the third review)", () => {
+    // B's facts file gone: no facts of B on record for the estate join.
+    const slot = () => join(g.root, "facts", `${B}.jsonl`);
+    let kept = "";
+    const unread = () => {
+      kept = readFileSync(slot(), "utf8");
+      rmSync(slot());
+    };
+    const job = async (body: object) => {
+      const started = await g.call("/api/connect/find", "POST", { ...body, job: true });
+      expect(started.status, JSON.stringify(started.body)).toBe(202);
+      const id = String(started.body.jobId);
+      let j: Json = {};
+      for (let n = 0; n < 2400; n++) {
+        j = (await g.call(`/api/jobs/${id}`)).body;
+        if (j.state !== "running" && j.state !== "queued") break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return { id, j };
+    };
+    afterAll(() => {
+      if (!existsSync(slot()) && kept) writeFileSync(slot(), kept);
+      findHooks.read = undefined;
+      delete linksJobHooks.onStep;
+    });
+
+    it("where the app can't start the assistant, says what to paste to read B, and writes nothing", async () => {
+      unread();
+      const brief = readFileSync(join(g.root, "facts", `${A}.find.md`), "utf8");
+      const r = await g.call("/api/connect/find", "POST", {
+        from: A,
+        to: { repo: B },
+        mode: "hand-off",
+      });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(Api.FindResult.parse(r.body).readFirst).toEqual({
+        repo: B,
+        command: `/atticus-map ${B}`,
+        then: `atticus connect find ${A} --to ${B}`,
+      });
+      expect(readFileSync(join(g.root, "facts", `${A}.find.md`), "utf8")).toBe(brief);
+      writeFileSync(slot(), kept);
+    }, 300_000);
+
+    it("Stop before B's read ends the job: B not read, no brief, no session", async () => {
+      unread();
+      let reads = 0;
+      findHooks.read = async () => {
+        reads++;
+        return 0;
+      };
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let reached!: () => void;
+      const at = new Promise<void>((r) => (reached = r));
+      linksJobHooks.onStep = async (what) => {
+        if (what.startsWith(`Reading ${B} whole first`)) {
+          reached();
+          await held;
+        }
+      };
+      steps.length = 0;
+      findHooks.runner = session([], { looked: [FILE], none: "No line calls the ledger." });
+      const started = await g.call("/api/connect/find", "POST", {
+        from: A,
+        to: { repo: B },
+        mode: "copilot-acp",
+        job: true,
+      });
+      expect(started.status).toBe(202);
+      await at;
+      expect((await g.call(`/api/jobs/${String(started.body.jobId)}/cancel`, "POST")).status).toBe(
+        200,
+      );
+      release();
+      let j: Json = {};
+      for (let n = 0; n < 2400; n++) {
+        j = (await g.call(`/api/jobs/${String(started.body.jobId)}`)).body;
+        if (j.state !== "running" && j.state !== "queued") break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(j.state).toBe("cancelled");
+      expect(reads).toBe(0);
+      expect(steps).toEqual([]);
+      delete linksJobHooks.onStep;
+      writeFileSync(slot(), kept);
+    }, 300_000);
+
+    it("reads B in the same job with its progress, then finds the arrow", async () => {
+      unread();
+      const read: string[] = [];
+      findHooks.read = async (root, repo, _io, signal) => {
+        read.push(repo);
+        expect(signal).toBeDefined();
+        // The assistant's read of B, and its verify --write: B's facts on record again.
+        writeFileSync(slot(), kept);
+        return 0;
+      };
+      findHooks.runner = session([], { looked: [FILE], none: "No line calls the ledger." });
+      const { id, j } = await job({ from: A, to: { repo: B }, mode: "copilot-acp" });
+      expect(j.state, JSON.stringify(j)).toBe("done");
+      expect(read).toEqual([B]);
+      const said = (g.srv.jobs.linesOf(id)?.lines ?? []).join("\n");
+      expect(said).toContain(`Reading ${B} whole first (atticus map --all --repos ${B})`);
+      const r = Api.FindResult.parse((j.result as { answer: unknown }).answer);
+      expect(r.entry?.outcome).toBeDefined();
+    }, 300_000);
+  });
 });
 
 describe("the hint is never evidence (ADR 0204 A, property)", () => {

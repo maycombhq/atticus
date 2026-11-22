@@ -11,6 +11,8 @@ import {
   parseFacts,
   proposalsDirOf,
   proposalsRelOf,
+  CancelledError,
+  currentSignal,
   RecordId,
   writeFileAtomic,
   type Fact,
@@ -256,6 +258,7 @@ export const findHooks: {
     o: Pick<VerifyCommandOptions, "onBuildRefused">,
   ) => Promise<number>;
   verifyOptions?: Omit<VerifyCommandOptions, "write">;
+  read?: (root: string, repo: string, io: Output, signal?: AbortSignal) => Promise<number>;
 } = {};
 
 const verifyWrite = async (
@@ -443,9 +446,11 @@ async function outcomeOf(
 }
 
 /**
- * The find, one job of up to three parts here: the session in A (or the hand-off), the check of
- * its answer and `verify <A> --write`, and the outcome from the catalog. B must be on record
- * first (a repo with no facts is read first: 409 with the read's command).
+ * The find, one job of up to four parts (A.2): B read whole first when B is a repo with no facts
+ * on record (the ordinary read, `atticus map --all --repos <B>`: its own session's read limits,
+ * and verify --write's guarded build; Stop heard before and after it; where the app can't start
+ * the assistant, `readFirst` says what to paste), the session in A (or the hand-off), the check
+ * of its answer and `verify <A> --write`, and the outcome from the catalog.
  */
 export async function runFind(
   root: string,
@@ -479,11 +484,36 @@ export async function runFind(
   if (!arrow)
     throw notFound(`No arrow ${o.from} → ${boxWords(o.to)} is declared: declare it first.`);
   const files = findFilesOf(root, o.from, o.to);
-  const est = await estateFacts(root, op, "");
-  if (o.to.repo && !est.repos.some((r) => r.repo === o.to.repo && r.facts.length))
-    throw conflict(
-      `${o.to.repo} hasn't been read yet: read it first (atticus map --all --repos ${o.to.repo}), then find the arrow.`,
-    );
+  const onRecord = async (repo: string) =>
+    (await estateFacts(root, op, "")).repos.some((r) => r.repo === repo && r.facts.length > 0);
+  const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
+  const canRun = acp && (copilotAcpAllowed(op) || !!findHooks.runner);
+  const b = o.to.repo;
+  if (b && !(await onRecord(b))) {
+    // The third review (the owner's decision of 2026-11-21): B is read as part of the find.
+    const read = `atticus map --all --repos ${b}`;
+    if (o.read)
+      throw conflict(`${b} hasn't been read yet: read it first (${read}), then find the arrow.`);
+    if (!canRun)
+      return {
+        brief: files.brief,
+        readFirst: {
+          repo: b,
+          command: `/atticus-map ${b}`,
+          then: `atticus connect find ${o.from} --to ${b}`,
+        },
+        leftOut: [],
+      };
+    const signal = currentSignal();
+    await step(`Reading ${b} whole first (${read}): the find looks for a call to what it serves`);
+    if (signal?.aborted) throw new CancelledError();
+    await (findHooks.read ?? readWhole)(root, b, io, signal);
+    if (signal?.aborted) throw new CancelledError();
+    if (!(await onRecord(b)))
+      throw conflict(
+        `The read of ${b} ended with nothing on record, so the find can't say what ${b} serves: see the read's lines, then find the arrow again.`,
+      );
+  }
   const answerPath = join(root, ...files.answer.split("/"));
   if (!o.read) {
     await step(`Writing the brief for ${o.from}`);
@@ -497,8 +527,7 @@ export async function runFind(
     await mkdir(files.answerDir, { recursive: true });
     // An earlier answer is of an earlier brief.
     await rm(answerPath, { force: true });
-    const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
-    if (!acp || (!copilotAcpAllowed(op) && !findHooks.runner))
+    if (!canRun)
       return {
         brief: files.brief,
         handoff: {
@@ -674,6 +703,13 @@ export async function connectFindCommand(
   }
   if (o.json) {
     io.out(JSON.stringify(r, null, 2));
+    // The third review: saved, not built is no success, with --json too.
+    return r.notBuilt ? 1 : 0;
+  }
+  if (r.readFirst) {
+    io.out(
+      `${r.readFirst.repo} hasn't been read yet, and Atticus can't start your assistant here. In a NEW Copilot Chat (agent mode) or Claude Code session: ${r.readFirst.command}. Then: ${r.readFirst.then}`,
+    );
     return 0;
   }
   if (r.handoff) {

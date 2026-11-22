@@ -8242,6 +8242,10 @@ export const COPY = {
     // The second review: a find whose build refused tells no outcome; it waits for the build.
     findNotBuilt: (a: string) =>
       `Saved, not built: ${a}'s facts and the answer are saved, and the build waits for you to confirm what it lists. Then read the answer again.`,
+    // The third review: B is read as part of the find; where the app can't start the assistant,
+    // the read waits for the person's.
+    findReadFirst: (b: string) =>
+      `${b} hasn't been read yet, and Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code to read it, then find the arrow again:`,
     findNotVerified: (a: string) =>
       `Saved, not built: verify refused ${a}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again.`,
     outcome: {

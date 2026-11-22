@@ -494,6 +494,7 @@ export function FindButton(p: {
   const [error, setError] = useState<string | undefined>();
   const [handoff, setHandoff] = useState<string | undefined>();
   const [notBuilt, setNotBuilt] = useState<Api.FindResultT["notBuilt"]>();
+  const [readFirst, setReadFirst] = useState<Api.FindResultT["readFirst"]>();
   const go = (read: boolean) => {
     setBusy(true);
     setError(undefined);
@@ -502,8 +503,9 @@ export function FindButton(p: {
       .then(
         (r) => {
           setNotBuilt(r.notBuilt);
+          setReadFirst(r.readFirst);
           if (r.handoff) setHandoff(r.handoff.command);
-          else if (!r.notBuilt) {
+          else if (!r.notBuilt && !r.readFirst) {
             setHandoff(undefined);
             p.reload();
           }
@@ -533,6 +535,14 @@ export function FindButton(p: {
           <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
             {W.readAnswer}
           </button>
+        </div>
+      )}
+      {readFirst && (
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {W.findReadFirst(readFirst.repo)}
+          </p>
+          <Command text={readFirst.command} label={W.findReadFirst(readFirst.repo)} noRun />
         </div>
       )}
       {notBuilt && (

@@ -6806,6 +6806,11 @@ export const ConnectFindRequest = z.strictObject({
 export const FindResult = z.object({
   /** The read waits for the person's assistant: the brief, where its answer goes, what to paste. */
   handoff: z.object({ brief: z.string(), answer: z.string(), command: z.string() }).optional(),
+  /**
+   * The third review (A.2's first part): B, a repo with no facts on record, is read whole first,
+   * and here the app can't start the assistant: what to paste to read it, then the find to run.
+   */
+  readFirst: z.object({ repo: z.string(), command: z.string(), then: z.string() }).optional(),
   entry: FindEntryView.optional(),
   brief: z.string(),
   report: z.string().optional(),

@@ -31527,6 +31527,25 @@
               ],
               "additionalProperties": false
             }
+          },
+          "raisesProfileUnread": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "target"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -44867,6 +44886,26 @@
               "brief",
               "answer",
               "command"
+            ],
+            "additionalProperties": false
+          },
+          "readFirst": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "then": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "command",
+              "then"
             ],
             "additionalProperties": false
           },

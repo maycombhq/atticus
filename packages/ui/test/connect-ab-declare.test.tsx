@@ -348,3 +348,44 @@ describe("a find whose build refused (ADR 0204 A.2, the second review)", () => {
     expect(asked.at(-1)).toMatchObject({ read: true });
   });
 });
+
+describe("a find whose callee isn't read yet, where the app can't start the assistant (the third review)", () => {
+  it("says what to paste to read it, tells no outcome, and finds again from the same button", async () => {
+    const { FindButton } = await import("../src/screens/architecture/ConnectAB.js");
+    const asked: Api.ConnectFindRequestT[] = [];
+    let reloads = 0;
+    const m = mount(
+      FindButton as never,
+      {
+        v: { ...v, mechanism: "declared" },
+        reload: () => void reloads++,
+        io: {
+          find: (body: Api.ConnectFindRequestT) => {
+            asked.push(body);
+            return Promise.resolve({
+              brief: "facts/forge-edge-proxy.find.md",
+              leftOut: [],
+              readFirst: {
+                repo: "forge-ledger-svc",
+                command: "/atticus-map forge-ledger-svc",
+                then: "atticus connect find forge-edge-proxy --to forge-ledger-svc",
+              },
+            });
+          },
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(W.findReadFirst("forge-ledger-svc"));
+    expect(all(m.tree).some((e) => e.props.text === "/atticus-map forge-ledger-svc")).toBe(true);
+    expect(reloads).toBe(0);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).not.toHaveProperty("read");
+  });
+});
