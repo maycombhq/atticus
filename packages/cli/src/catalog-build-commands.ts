@@ -43,6 +43,7 @@ import {
   UPGRADE_UNDONE,
   UNRESOLVED_IDS_COMMAND,
   unresolvedIdsUndoneWords,
+  undoneFiles,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -280,23 +281,6 @@ export function netRenames(commandsNewestFirst: readonly string[]): { from: stri
 export const renameUndone = (from: string, to: string): string =>
   `This undoes the rename's build, not the rename: the manifest still names ${to}. Rename back with atticus repo rename ${to} ${from} to read the old slot again.`;
 
-/**
- * The newest of the upgrade's backups (`.atticus/backups/<time>/`) holding the inputs a step
- * carried as they were, relative to the root and ending in `/`; undefined when none does.
- */
-async function backupHolding(
-  root: string,
-  inputs: readonly { path: string; before: string }[],
-): Promise<string | undefined> {
-  const dir = join(root, ".atticus", "backups");
-  const had = inputs.filter((x) => x.before === "file").map((x) => x.path);
-  if (!had.length) return undefined;
-  for (const n of (await readdir(dir).catch(() => [] as string[])).sort().reverse())
-    if (had.every((p) => existsSync(join(dir, n, ...p.split("/")))))
-      return `.atticus/backups/${n}/`;
-  return undefined;
-}
-
 /** atticus catalog undo [<n>] [--yes]: list the copies kept, and take back the latest (or back to before n). */
 export async function catalogUndo(
   root: string,
@@ -387,7 +371,7 @@ export async function catalogUndo(
       // What the newest copy touching each file says it left there, and which command that was.
       const left = new Map<string, { after: string | null; command: string; n: number }>();
       for (const c of plan.copies)
-        for (const f of c.files)
+        for (const f of undoneFiles(c))
           if (f.after !== undefined && !left.has(f.path))
             left.set(f.path, { after: f.after, command: c.command, n: c.n });
       const commands = [...new Set(edited.map((p) => left.get(p)!.command))];
@@ -452,14 +436,11 @@ export async function catalogUndo(
       );
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
-      // ADR 0124 addendum E-ids: the upgrade step that named loose ends with their repo says what
-      // it leaves (its inputs name the new ids); the slots' adoption says its own words.
-      for (const c of plan.copies.filter((x) => x.command === UNRESOLVED_IDS_COMMAND)) {
-        const now = (c.inputs ?? [])
-          .map((x) => x.path)
-          .filter((x) => existsSync(join(root, ...x.split("/"))));
-        io.out(unresolvedIdsUndoneWords(now, await backupHolding(root, c.inputs ?? [])));
-      }
+      // ADR 0195's addendum of 2026-11-21: the upgrade step that named loose ends with their
+      // repo is taken back with the inputs it carried, and says which; the slots' adoption says
+      // its own words.
+      for (const c of plan.copies.filter((x) => x.command === UNRESOLVED_IDS_COMMAND))
+        io.out(unresolvedIdsUndoneWords((c.inputs ?? []).map((x) => x.path)));
       if (
         plan.copies.some(
           (c) => c.command.startsWith("atticus upgrade") && c.command !== UNRESOLVED_IDS_COMMAND,

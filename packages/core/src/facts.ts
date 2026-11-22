@@ -534,6 +534,17 @@ export function oldLooseEndId(id: string): boolean {
   return parts.length === 1 || (parts.length === 2 && parts[1]!.startsWith("on-"));
 }
 
+/**
+ * ADR 0124 addendum E-ids: the id a loose end of the new form (`unresolved.<repo>.<rest>`) had
+ * before beta.30 (`unresolved.<rest>`); undefined for a record of any other form.
+ */
+export function oldIdOfLooseEnd(r: Parameters<typeof unresolvedIdsNow>[0]): string | undefined {
+  const ids = unresolvedIdsNow(r);
+  if (ids.length !== 1 || ids[0] !== r.id) return undefined;
+  const rest = r.id.slice("unresolved.".length);
+  return `unresolved.${rest.slice(rest.indexOf(".") + 1)}`;
+}
+
 /** The Endpoint id an entry fact projects to in its component (`projectFacts`). */
 export function entryEndpointId(f: FactOf<"entry">, component: string): string {
   const name =

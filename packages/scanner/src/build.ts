@@ -55,6 +55,7 @@ import {
   unresolvedIdsNow,
   unsetHostOf,
   oldLooseEndId,
+  oldIdOfLooseEnd,
 } from "@maycombhq/core";
 import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -2522,12 +2523,12 @@ async function interruptedManifest(
 export const UNRESOLVED_IDS_COMMAND = "atticus upgrade (loose ends named with their repo)";
 
 /**
- * What an undo of that step leaves (ADR 0195 point 7: undo puts the catalog back, not inputs):
- * the inputs it carried, still naming the new ids, and the upgrade's backup holding them as they
- * were, for going back to an Atticus older than 2.0.0-beta.30.
+ * What an undo of that step says (ADR 0195's addendum of 2026-11-21): it put back the inputs the
+ * step carried, as they were before it, so the loose ends have their old ids in the catalog and
+ * in them again, and the step is pending.
  */
-export function unresolvedIdsUndoneWords(inputs: readonly string[], backup?: string): string {
-  return `The catalog has the loose ends' old ids again (unresolved.<fact id>); the inputs it carried still name the loose ends' new ids: ${[...inputs].sort().join(", ")}. This Atticus names the loose ends with their repo again at its next build, so leave them. Only to go back to an Atticus older than 2.0.0-beta.30, put them back as they were${backup ? ` from ${backup}` : " from the upgrade's backup (.atticus/backups/<time>/)"} (and remove those the step made), or an older Atticus shows the loose ends a person took off the map again.`;
+export function unresolvedIdsUndoneWords(inputs: readonly string[]): string {
+  return `It put back the inputs the step carried, as they were before it: ${[...inputs].sort(cmpText).join(", ")}. The loose ends have their ids from before beta.30 again (unresolved.<fact id>), in the catalog and in those inputs: atticus upgrade names them with their repo again, and atticus catalog undo --yes takes this undo back.`;
 }
 
 /** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
@@ -3232,10 +3233,24 @@ interface UndoEntry {
   files: { path: string; before: "file" | "absent"; after?: string | null }[];
   /**
    * The build inputs the command wrote with its slots (a rename's manifest, facts files,
-   * questions and curated decisions), kept the same way. Only a failed write puts them back
-   * (`rollBackUndo`); `atticus catalog undo` doesn't, as point 7 says of inputs.
+   * questions and curated decisions), kept the same way. A failed write puts them back
+   * (`rollBackUndo`); `atticus catalog undo` doesn't, as point 7 says of inputs, but for the
+   * upgrade step that names loose ends with their repo (`undoneFiles`).
    */
-  inputs?: { path: string; before: "file" | "absent" }[];
+  inputs?: { path: string; before: "file" | "absent"; after?: string | null }[];
+}
+
+/**
+ * The files an undo of a copy puts back: its files, and for the upgrade step that names loose
+ * ends with their repo (`UNRESOLVED_IDS_COMMAND`) the inputs it carried too. ADR 0195's addendum
+ * of 2026-11-21 (accepted by the owner): a narrow exception to point 7 for that step only, so an
+ * undo of it returns exactly what was there; each is checked against what the step left, as a
+ * record file is (`undoHandEdits`), and the undo's own copy keeps them, so it can be undone.
+ */
+export function undoneFiles(
+  c: UndoEntry,
+): { path: string; before: "file" | "absent"; after?: string | null }[] {
+  return c.command === UNRESOLVED_IDS_COMMAND ? [...c.files, ...(c.inputs ?? [])] : c.files;
 }
 
 /** The undo copies, newest first. */
@@ -3496,7 +3511,7 @@ export async function planUndo(undoDir: string, n = 1): Promise<UndoPlan | { pro
   const files = new Map<string, { path: string; to: "file" | "absent"; from: number }>();
   // The oldest copy that touched a file knows what it was before them all.
   for (const c of [...copies].reverse())
-    for (const f of c.files)
+    for (const f of undoneFiles(c))
       if (!files.has(f.path)) files.set(f.path, { path: f.path, to: f.before, from: c.n });
   return { copies, files: [...files.values()].sort((a, b) => cmpText(a.path, b.path)) };
 }
@@ -3518,7 +3533,7 @@ export async function undoHandEdits(
   const left = new Map<string, string | null>();
   const seen = new Set<string>();
   for (const c of plan.copies)
-    for (const f of c.files) {
+    for (const f of undoneFiles(c)) {
       if (seen.has(f.path)) continue;
       seen.add(f.path);
       if (f.after !== undefined) left.set(f.path, f.after);
@@ -4255,13 +4270,18 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     out.push(
       `${x.repo}: ${x.why === "archived" ? "archived" : "no longer in the manifests"}, so its slots aren't built from; they are kept (${x.files.join(", ")}). atticus catalog prune lists them to remove.`,
     );
+  // ADR 0124 addendum E-ids: a decision of a loose end's id from before beta.30 waits for the
+  // upgrade that carries it, never for its target to return (it doesn't, under that id). Only
+  // where this build has that loose end under its repo's id has the upgrade something to carry:
+  // a legacy repo's loose ends keep their old ids (ADR 0195 point 6) until it is read from facts.
+  const carriable = new Set(r.build.records.flatMap((x) => oldIdOfLooseEnd(x) ?? []));
   for (const d of r.build.orphanedDecisions) {
-    // ADR 0124 addendum E-ids: a decision of a loose end's id from before beta.30 waits for the
-    // upgrade that carries it, never for its target to return (it doesn't, under that id).
     const target = r.build.orphanedTargets?.[d];
     out.push(
       target && oldLooseEndId(target)
-        ? `The curated decision ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.`
+        ? carriable.has(target)
+          ? `The curated decision ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.`
+          : `The curated decision ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it), and no loose end of this build is it under its repo's id: it is kept, and applies again once its loose end is back. A legacy repo's loose ends get their repo's id when the repo is read from facts (atticus verify <repo> --write); atticus upgrade then carries this decision to it.`
         : `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
   }

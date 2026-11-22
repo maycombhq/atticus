@@ -272,18 +272,32 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       // A second upgrade has nothing to do.
       expect((await upgradeCheck(root, B30)).pending).toEqual([]);
 
-      // An undo takes the catalog back, and says what it leaves: the inputs name the new ids.
+      // The owner, 2026-11-21 (ADR 0195's addendum of that day): an undo of the step takes back
+      // the catalog and the inputs it carried, so every file is as it was before the upgrade.
       const u = quiet();
       expect(await main(["catalog", "undo", "--yes", "--root", root], u.io), u.err.join("\n")).toBe(
         0,
       );
-      expect(await generated(root)).toEqual(genBefore);
+      expect(await tree(root)).toEqual(before);
       const said = u.out.join("\n");
       expect(said).not.toMatch(/took back the upgrade; run atticus upgrade --yes/);
+      expect(said).not.toMatch(/still name the loose ends' new ids/);
       expect(said).toContain(
-        `the inputs it carried still name the loose ends' new ids: ${[...INPUTS.filter((x) => x !== GAP_Q), newGap].sort().join(", ")}`,
+        `It put back the inputs the step carried, as they were before it: ${[...INPUTS, newGap].sort().join(", ")}.`,
       );
-      expect(said).toContain(`.atticus/backups/${backup}/`);
+      // The step is pending again, and the undo can itself be undone.
+      expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual([STEP]);
+      const uu = quiet();
+      expect(
+        await main(["catalog", "undo", "--yes", "--root", root], uu.io),
+        uu.err.join("\n"),
+      ).toBe(0);
+      expect(await tree(root)).toEqual(after);
+      // Back again, and the upgrade run a second time gives what the first gave.
+      expect(await main(["catalog", "undo", "--yes", "--root", root], quiet().io)).toBe(0);
+      expect(await tree(root)).toEqual(before);
+      expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      expect(await tree(root)).toEqual(after);
     },
     T,
   );
@@ -403,6 +417,143 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await upgradeCommand(other, { by: "pat" }, q3.io, B30)).toBe(1);
       expect(q3.err.join("\n")).toMatch(/unresolved\.forge-ledger\.c-solo\.yaml is there already/);
       expect(await tree(other)).toEqual(before3);
+    },
+    T,
+  );
+
+  it(
+    "refuses an undo of the step over an input changed since, changing nothing",
+    async () => {
+      const root = await metarepo();
+      expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      const change = join(root, ...`${CHANGE_DIR}/change.yaml`.split("/"));
+      await writeFile(change, (await readFile(change, "utf8")) + "# a person's note\n");
+      const before = await tree(root);
+      const u = quiet();
+      expect(await main(["catalog", "undo", "--yes", "--root", root], u.io)).toBe(1);
+      const said = u.err.join("\n");
+      expect(said).toMatch(/^Nothing undone: 1 file was changed since/);
+      expect(said).toContain(`${CHANGE_DIR}/change.yaml`);
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "stays pending, saying why, when a refused carry is the only one after a beta.30 build",
+    async () => {
+      const root = await metarepo();
+      // No input names an old id but a curated loose end, whose new id's file is there already.
+      for (const rel of [
+        "catalog/curated/curateddecision",
+        DISMISSALS,
+        CHANGE_DIR,
+        GAP_Q,
+        SURVEY_Q,
+        SPEC,
+      ])
+        await rm(join(root, ...rel.split("/")), { recursive: true, force: true });
+      const curated = join(root, "catalog", "curated", "unresolved");
+      const gen = await readFile(
+        join(root, "catalog", "generated", "unresolved", "unresolved.c-solo.yaml"),
+        "utf8",
+      );
+      await cp(join(root, "catalog", "generated", "unresolved"), curated, { recursive: true });
+      for (const f of await readdir(curated))
+        if (f !== "unresolved.c-solo.yaml") await rm(join(curated, f));
+      await writeFile(
+        join(curated, "unresolved.forge-ledger.c-solo.yaml"),
+        gen.replace("id: unresolved.c-solo", "id: unresolved.forge-ledger.c-solo"),
+      );
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
+      const c = await upgradeCheck(root, B30);
+      expect(c.pending.map((p) => [p.id, p.files])).toEqual([
+        [STEP, ["catalog/curated/unresolved/unresolved.c-solo.yaml"]],
+      ]);
+      const before = await tree(root);
+      const q = quiet();
+      expect(await upgradeCommand(root, { by: "pat" }, q.io, B30)).toBe(1);
+      expect(q.err.join("\n")).toMatch(
+        /catalog\/curated\/unresolved\/unresolved\.forge-ledger\.c-solo\.yaml is there already, so catalog\/curated\/unresolved\/unresolved\.c-solo\.yaml can't move to it/,
+      );
+      expect(await tree(root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "brings a metarepo from before source slots up to date in one upgrade, and carries once its repos are read from facts",
+    async () => {
+      // As beta.26 left a metarepo: catalog/generated, no catalog/sources/.
+      const root = await metarepo();
+      const facts = await files(join(root, "catalog", "sources", "facts"));
+      await rm(join(root, "catalog", "sources"), { recursive: true, force: true });
+      const before = await tree(root);
+      const ins = (m: Map<string, string>) => [...m].filter(([p]) => !p.startsWith("catalog/"));
+      const curatedOf = (m: Map<string, string>) =>
+        [...m].filter(([p]) => p.startsWith("catalog/curated/"));
+
+      // The dry run lists the adoption, and says what follows it and what it can't know yet.
+      const d = quiet();
+      expect(await upgradeCommand(root, { by: "pat", dryRun: true }, d.io, B30)).toBe(0);
+      expect(d.out.join("\n")).toContain(
+        "3 loose ends have an id from before beta.30 (unresolved.<fact id>), and 3 curated decisions name one. The adoption keeps them, as it keeps every record it adopts; a repo read from facts later (atticus verify <repo> --write) names its loose ends with its repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before that read.",
+      );
+
+      // One upgrade: the adoption, and nothing left pending. The loose ends keep their ids (a
+      // legacy repo's records as they were adopted), and every input is as it was.
+      const q = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", yes: true }, q.io, B30),
+        q.err.join("\n"),
+      ).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      expect(unresolvedIds(await generated(root))).toEqual([
+        "unresolved.c-1",
+        "unresolved.c-solo",
+        "unresolved.forge-notify.on-forge-payments-settled",
+      ]);
+      const adopted = await tree(root);
+      expect(ins(adopted)).toEqual(ins(before));
+      expect(curatedOf(adopted)).toEqual(curatedOf(before));
+      // A decision of a suppressed loose end waits for the read, and says so (not "run atticus
+      // upgrade", which has nothing to carry yet).
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
+      const said = b.out.join("\n");
+      expect(said).toContain(
+        "The curated decision dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it), and no loose end of this build is it under its repo's id: it is kept, and applies again once its loose end is back. A legacy repo's loose ends get their repo's id when the repo is read from facts (atticus verify <repo> --write); atticus upgrade then carries this decision to it.",
+      );
+      expect(said).not.toMatch(
+        /dec-suppress-fees targets unresolved\.c-7, .*: run atticus upgrade/,
+      );
+
+      // The repos read from facts (the facts slots verify --write leaves, for the legacy ones):
+      // the build names the loose ends with their repo as renames, asking nothing, and the
+      // decisions now say to run the upgrade, which carries each to the id the direct one gives.
+      for (const [rel, text] of facts) {
+        const to = join(root, "catalog", "sources", "facts", ...rel.split("/"));
+        await cp(join(FIXTURE, "catalog", "sources", "facts", ...rel.split("/")), to);
+        expect(await readFile(to, "utf8")).toBe(text);
+      }
+      for (const f of await readdir(join(root, "catalog", "sources", "readers")))
+        await rm(join(root, "catalog", "sources", "readers", f));
+      const r = quiet();
+      expect(await main(["catalog", "build", "--root", root], r.io), r.err.join("\n")).toBe(0);
+      expect(r.out.join("\n")).toContain(
+        "The curated decision dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
+      );
+      expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual([STEP]);
+      expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      const direct = await metarepo();
+      expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+      const now = await tree(root);
+      const want = await tree(direct);
+      expect(unresolvedIds(await generated(root))).toEqual(unresolvedIds(await generated(direct)));
+      expect(ins(now)).toEqual(ins(want));
+      expect(curatedOf(now)).toEqual(curatedOf(want));
     },
     T,
   );

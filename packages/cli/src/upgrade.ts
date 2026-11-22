@@ -57,6 +57,7 @@ import { recordUpgraded } from "./propose.js";
 import { refusalEnds } from "./standing.js";
 import { installCommand, VERSION } from "./version.js";
 import {
+  legacyLooseEndsWords,
   UNRESOLVED_IDS_STEP,
   unresolvedIdsApply,
   UnresolvedIdsRefused,
@@ -926,6 +927,8 @@ export async function upgradeCommand(
   let slots = await planUpgradeToSlots(root);
   // CS3: every file --yes writes, with its hash, the same list the app's upgrade screen shows.
   let view = await upgradeSlotsView(root, slots);
+  // ADR 0124 addendum E-ids: what the adoption leaves of the loose ends' ids for that step.
+  const legacyIds = slots.pending ? await legacyLooseEndsWords(root) : undefined;
   const slotsJson = () => (slots.pending ? { slots: view } : {});
   const slotsLines = (): string[] => [
     `Adopt the catalog into source slots (ADR 0195): ${slots.records} records, nothing lost:`,
@@ -942,6 +945,7 @@ export async function upgradeCommand(
           `  Accept exactly these with: atticus upgrade --yes --accept-changes ${slots.differs.length}`,
         ]
       : ["  The first build changes nothing: catalog/generated stays byte for byte."]),
+    ...(legacyIds ? [`  ${legacyIds}`] : []),
     ...slots.verifiable.map(
       (r) =>
         `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them in its facts slot.`,

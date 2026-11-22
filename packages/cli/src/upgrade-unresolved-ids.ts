@@ -13,6 +13,7 @@ import {
   listQuestions,
   loadOrgPack,
   newerThan,
+  oldIdOfLooseEnd,
   oldLooseEndId,
   orgPackDirOf,
   parseRecord,
@@ -42,7 +43,8 @@ import { loadRepos } from "@maycombhq/workspace";
  * Where record ids are kept, and what this step does with each:
  * - `catalog/generated/`: the build's. The step builds once, under the scan's lock, through the
  *   guards; the guard lists each loose end as renamed (counted toward no removal limit). Its undo
- *   copy (`atticus catalog undo`) holds every file it wrote there.
+ *   copy holds every file it wrote, there and in the inputs: `atticus catalog undo` of it puts
+ *   back both (ADR 0195's addendum of 2026-11-21, an exception to point 7 for this step only).
  * - `catalog/curated/`: a decision's `target`, and a curated loose end's own id (its file moved,
  *   never over another's).
  * - A change's YAML files (`change.yaml`'s `touches`, a flow delta's target, a review finding's
@@ -117,13 +119,6 @@ async function builtBefore(root: string): Promise<boolean | undefined> {
   }
 }
 
-/** An id of the new form, `unresolved.<repo>.<rest>`, as the old one `unresolved.<rest>`. */
-const oldFormOf = (id: string): string | undefined => {
-  if (!id.startsWith(PREFIX)) return undefined;
-  const rest = id.slice(PREFIX.length);
-  const dot = rest.indexOf(".");
-  return dot > 0 ? `${PREFIX}${rest.slice(dot + 1)}` : undefined;
-};
 /** The repo part of a new id (`factIdPart` of the repo). */
 const repoPartOf = (id: string) => id.slice(PREFIX.length).split(".")[0]!;
 
@@ -271,8 +266,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
   const rawIds = new Set(raw.records.filter((r) => r.kind === "Unresolved").map((r) => r.id));
   const candidates = new Map<string, { id: string; repo: string }[]>();
   for (const r of raw.records) {
-    if (r.kind !== "Unresolved" || isOld(r) || unresolvedIdsNow(r)[0] !== r.id) continue;
-    const o = oldFormOf(r.id);
+    const o = oldIdOfLooseEnd(r);
     if (!o || rawIds.has(o)) continue;
     const repo = r.evidence.find((e) => e.repo && factIdPart(e.repo) === repoPartOf(r.id))?.repo;
     if (repo) candidates.set(o, [...(candidates.get(o) ?? []), { id: r.id, repo }]);
@@ -420,6 +414,34 @@ async function planOf(root: string): Promise<Plan | undefined> {
     op,
     ...(refused ? { refused } : {}),
   };
+}
+
+/**
+ * What the dry run of the adoption into source slots says of this step (a metarepo from before
+ * slots, beta.26's): the loose ends of the old form it adopts as they are (ADR 0195 point 6) and
+ * the decisions that name one, which this step carries only once a repo is read from facts; and
+ * that which repo each goes to can't be known before. Undefined when there are none.
+ */
+export async function legacyLooseEndsWords(root: string): Promise<string | undefined> {
+  const records = (await generatedLooseEnds(root)).filter((g) => oldLooseEndId(g.r.id)).length;
+  const scanner = await import("@maycombhq/scanner");
+  const curatedDir = scanner.curatedDirOf(root, await loadOrgPack(orgPackDirOf(root)));
+  let decisions = 0;
+  for (const p of await walk(curatedDir, yamlFile)) {
+    const r = recordOf(await readText(p));
+    if (r?.kind === "CuratedDecision" && r.status === "current" && oldLooseEndId(r.target))
+      decisions++;
+  }
+  if (!records && !decisions) return undefined;
+  const ends = `${records} loose end${records === 1 ? " has" : "s have"} an id from before beta.30 (unresolved.<fact id>)`;
+  const named = `${decisions} curated decision${decisions === 1 ? "" : "s"} name${decisions === 1 ? "s" : ""} one`;
+  const what =
+    records && decisions
+      ? `${ends}, and ${named}`
+      : records
+        ? ends
+        : `${named.replace(/ one$/, " a loose end by an id from before beta.30 (unresolved.<fact id>)")}`;
+  return `${what}. The adoption keeps them, as it keeps every record it adopts; a repo read from facts later (atticus verify <repo> --write) names its loose ends with its repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before that read.`;
 }
 
 /** The files the step would change (what `unresolvedIdsApply` writes, and only those). */
