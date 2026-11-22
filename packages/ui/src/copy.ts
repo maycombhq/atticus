@@ -1290,7 +1290,7 @@ export const COPY = {
       "hand-edits": (n: number) =>
         `${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build.`,
       "unexplained-removals": (n: number) =>
-        `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
+        `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed stored read or input explains. That is a bug: nothing can confirm it. The list is its report.`,
       // ADR 0124 addendum E-ids (2026-11-22): with no record file to count, it is a build that
       // would name again with their repo loose ends your changes name by their old ids (the page
       // passes 0 for a refusal with `renames` and not `beforeSlots`, whatever its hand edits).
@@ -1338,7 +1338,7 @@ export const COPY = {
     unreadableManifest: (n: number) =>
       `catalog/sources/build.json doesn't read: it was edited or merged by hand. Without it none of the ${n} record files under catalog/generated can be told from a hand edit, so nothing is overwritten.`,
     unreadableIntro:
-      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
+      "Build again: the build replaces every record file with what the stored reads build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
     buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
     curate: (n: number) => (n === 1 ? "Keep my edit" : `Keep my ${n} edits`),
@@ -1349,7 +1349,7 @@ export const COPY = {
     discard: (_n: number) => "Use Atticus's version…",
     discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
     discardIntro:
-      "The build replaces these files with what the slots build. Their bytes are kept in the undo copy first.",
+      "The build replaces these files with what the stored reads build. Their bytes are kept in the undo copy first.",
     confirmDiscard: (n: number) => `Discard ${n} ${n === 1 ? "edit" : "edits"}`,
     upgradeTodo:
       "Review the upgrade below: it shows every file it writes before it writes one. In a terminal:",
@@ -1370,7 +1370,7 @@ export const COPY = {
       `${added} added · ${changed} changed · ${removed} removed`,
     lastWouldCounts: (added: number, changed: number, removed: number) =>
       `It would have added ${added}, changed ${changed} and removed ${removed}.`,
-    lastSlots: (n: number) => `${n} slot ${n === 1 ? "file" : "files"} written`,
+    lastSlots: (n: number) => `${n} stored ${n === 1 ? "read" : "reads"} written`,
     lastRemoved: (n: number) => `The ${n} ${n === 1 ? "record" : "records"} it removed, and why`,
     lastWouldRemove: (n: number) =>
       `The ${n} ${n === 1 ? "record" : "records"} it would have removed, and why`,
@@ -1398,8 +1398,9 @@ export const COPY = {
     upgradeIntro:
       "This catalog was written before beta.27. The upgrade moves every record into stored reads, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
     /**
-     * The upgrade panel says "stored read" only (the glossary, docs/guide/words.md); "slot" stays
-     * on this page only as the files' word in Undo and Prune, as the glossary allows there.
+     * The page says "stored read" (the glossary, docs/guide/words.md): the upgrade panel, a
+     * refusal's reason, the discard confirm, the last build's line and an orphaned repo's. "slot"
+     * stays on this page only as the files' word in Undo and Prune, as the glossary allows there.
      */
     upgradeRecords: (records: number, files: number) =>
       `${records} ${records === 1 ? "record" : "records"} moved into stored reads, ${files} ${files === 1 ? "file" : "files"}:`,
@@ -1478,7 +1479,7 @@ export const COPY = {
     failed: (why: string) => `It stopped: ${why}`,
     problems: "Problems the build reported",
     orphaned: (repo: string, why: string) =>
-      `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its slots are kept, not built from.`,
+      `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its stored reads are kept, not built from.`,
   },
   /** Set up › Activity › Scans (ADR 0195): each repo's outcome of the last scan run here. */
   scanSources: {

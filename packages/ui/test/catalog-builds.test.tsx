@@ -449,6 +449,36 @@ describe("the upgrade to stored reads, shown first and confirmed with its count"
     expect(B.upgradeSlotsCaption).toBe("The stored reads the upgrade writes");
   });
 
+  // The review of beta.30: "slot" is the files' word in Undo and Prune only; the refusal, the
+  // unreadable build.json, the discard confirm, the last build's line and an orphaned repo's line
+  // say "stored reads" as the glossary does.
+  it("says slot on the page only in Undo and Prune", () => {
+    expect(B.reason["unexplained-removals"]!(3)).toBe(
+      "It would remove 3 records that no changed stored read or input explains. That is a bug: nothing can confirm it. The list is its report.",
+    );
+    expect(B.unreadableIntro).toBe(
+      "Build again: the build replaces every record file with what the stored reads build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
+    );
+    expect(B.discardIntro).toBe(
+      "The build replaces these files with what the stored reads build. Their bytes are kept in the undo copy first.",
+    );
+    expect(B.lastSlots(1)).toBe("1 stored read written");
+    expect(B.lastSlots(4)).toBe("4 stored reads written");
+    expect(B.orphaned("forge-ledger", "archived")).toBe(
+      "forge-ledger: archived; its stored reads are kept, not built from.",
+    );
+    // Every plain string of the page's copy outside Undo and Prune.
+    const walk = (v: unknown, key: string, out: [string, string][]) => {
+      if (typeof v === "string") out.push([key, v]);
+      else if (v && typeof v === "object")
+        for (const [k, x] of Object.entries(v)) walk(x, `${key}.${k}`, out);
+    };
+    const all: [string, string][] = [];
+    for (const [k, v] of Object.entries(B)) if (!/^(undo|prune)/.test(k)) walk(v, k, all);
+    expect(all.length).toBeGreaterThan(40);
+    for (const [key, line] of all) expect(line, key).not.toMatch(/\bslots?\b/i);
+  });
+
   it("lists each stored read, the copy kept and that the first build changes nothing, behind Review", () => {
     const out = upgrade({});
     expect(out).toContain(esc(B.upgradeTitle));
