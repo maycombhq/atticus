@@ -15,12 +15,14 @@ import {
 /**
  * ADR 0203 A, in the app: a person accepts a stage's finding. On the tidy Forge estate the
  * feature stage places a new flow in forge-limits, a repo the estate doesn't have yet; the
- * stage's checks block on it twice (feature.unknown-repo), and the stage's thread shows it with
- * Accept. The tech lead knows better than the map (the repo is created in this release): Accept
- * asks why, says who it records and previews what accepting does; the acceptance is written as
- * `atticus finding … waive` writes it; the thread lists it apart, by whom and why; the
- * assistant's next answer passes and the stage ends done. Axe runs on each state. Invented
- * names only (CLAUDE.md rule 3).
+ * stage's checks find feature.unknown-repo, the only thing they find, so `atticus handoff done`
+ * hands the draft in on its first check and writes the finding on the stage's gate at once (ADR
+ * 0203 A, addendum 2026-11-22): the stage's thread shows it with Accept, after one hand-in. The
+ * tech lead knows better than the map (the repo is created in this release): Accept asks why,
+ * says who it records and previews what accepting does; the acceptance is written as `atticus
+ * finding … waive` writes it; the thread lists it apart, by whom and why; the stage reads the
+ * draft in and ends done, with no new draft. Axe runs on each state. Invented names only
+ * (CLAUDE.md rule 3).
  */
 
 const CHANGE = "add-transfer-limit";
@@ -58,20 +60,6 @@ async function waitingRun(root: string): Promise<{ id: string; out: string }> {
   throw new Error(`No run waits: ${seen.join(", ")}`);
 }
 
-/** The newest run whose answer didn't pass its checks: the one the stage waits on. */
-async function answeredRun(root: string): Promise<{ id: string; out: string }> {
-  const runs = join(root, ".runs", CHANGE);
-  for (const id of (await readdir(runs)).sort().reverse()) {
-    const r = JSON.parse(await readFile(join(runs, id, "run.json"), "utf8")) as {
-      state: string;
-      request: { outputPath: string };
-    };
-    if (r.state === "failed" || r.state === "waiting")
-      return { id, out: join(runs, id, r.request.outputPath) };
-  }
-  throw new Error("No run waits for an answer.");
-}
-
 /** The finding's file in the newest round of the stage's own gate. */
 async function findingFile(id: string): Promise<string> {
   const gate = join(dir(), "review/stage-feature");
@@ -82,14 +70,15 @@ async function findingFile(id: string): Promise<string> {
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   // Before the app starts, as a terminal would: the stage hands the draft to the assistant, which
-  // keeps the repo nobody has; the stage's checks refuse it until its three checks are spent,
-  // then the stage takes it and hands it back once more, blocked on feature.unknown-repo.
+  // puts the flow in a repo nobody has; its one hand-in goes in for a person, the finding on the
+  // stage's gate. Nobody has run the stage again with --resume.
   const root = await forgeMetarepo();
   atticus(root, "change", "feature", CHANGE);
   const first = await waitingRun(root);
   await writeFile(first.out, ANSWER);
-  for (let i = 0; i < 3; i++) atticus(root, "handoff", "done", first.id);
-  atticus(root, "change", "feature", CHANGE, "--resume", first.id);
+  expect(atticus(root, "handoff", "done", first.id)).toContain(
+    "feature-answer.yaml is handed in for a person",
+  );
   app = await startApp(root);
 });
 test.afterAll(async () => {
@@ -141,19 +130,12 @@ test("a tech lead accepts the stage's finding with a reason, and the stage ends 
   await expect(thread.getByRole("status").filter({ hasText: /^Accepted\./ })).toBeVisible();
   await accessible(page, "a stage's thread with an accepted finding");
 
-  // The assistant's last answer kept the repo, and the app checked it as soon as it started: it
-  // didn't pass then. The tech lead goes on in the app (the stage was started in a terminal):
-  // the next round is the same prompt, still with the assistant, which hands the same placement
-  // in again, in its own words. It passes now, and the stage ends done with nothing blocking.
-  const next = await answeredRun(a().root);
+  // The stage was started in a terminal: the tech lead goes on in the app. The next round reads
+  // the draft the assistant handed in, which passes now, and the stage ends done with no new
+  // draft and no new prompt for the assistant.
+  const runs = await readdir(join(a().root, ".runs", CHANGE));
   const again = thread.getByRole("button", { name: "Start the next round", exact: true });
   await again.click();
-  await expect(again).toBeEnabled();
-  await expect(thread.getByRole("alert")).toHaveCount(0);
-  await writeFile(
-    next.out,
-    ANSWER.replace("checked by a new limits service", "which a new limits service checks"),
-  );
   await expect
     .poll(
       async () => {
@@ -163,6 +145,7 @@ test("a tech lead accepts the stage's finding with a reason, and the stage ends 
       { timeout: 60_000 },
     )
     .toBe("done");
+  expect(await readdir(join(a().root, ".runs", CHANGE))).toEqual(runs);
   await expect(thread.getByText(/^The stage is done/)).toBeVisible({ timeout: 30_000 });
   await expect(accepted.getByText(`Accepted by priya: ${REASON}.`, { exact: true })).toBeVisible();
   // The command line says the same of the change.

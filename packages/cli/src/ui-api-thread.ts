@@ -9,6 +9,7 @@ import {
   personWrittenPlanning,
 } from "@maycombhq/changes";
 import {
+  acceptableStageRule,
   commentOnFinding,
   keepDroppedQuestion,
   PlannerError,
@@ -199,6 +200,8 @@ export async function stageThreadView(
     });
   }
   let state: Api.StageThreadViewT["state"] = runs.length ? "drafting" : "not-started";
+  /** ADR 0203 A (addendum 2026-11-22): the stage stopped for a person to accept its findings. */
+  let forAPerson = 0;
   let replyOpen = stage === "proposal";
   let replyWhy: string | undefined;
   if (stage !== "proposal") {
@@ -208,6 +211,16 @@ export async function stageThreadView(
     if (!present)
       replyWhy = `The ${stage} stage hasn't run for ${change} yet: start it, then reply to its assistant here.`;
     if (present) state = loop.state === "waiting" ? "waiting" : loop.state;
+    if (present && loop.state === "stopped") {
+      const stopped = loop.findings.filter(
+        (f) => f.stoppedAt === loop.iteration && f.seenIn.at(-1) === loop.iteration,
+      );
+      if (
+        stopped.length &&
+        stopped.every((f) => f.source === "stage" && acceptableStageRule(f.rule))
+      )
+        forAPerson = stopped.length;
+    }
     // The critic's latest round at the stage's gate, its findings with their options, and the
     // stage's own questions (as the stage tab showed them, ADR 0124 addendum D-app).
     const review = await stageReviewView(
@@ -331,11 +344,13 @@ export async function stageThreadView(
             ? "Your assistant's last answer didn't pass its checks: the problems are below. Tell the assistant, or fix the file and the app checks it again."
             : state === "questions"
               ? `The stage waits on ${questions === 1 ? "the question" : `${questions} questions`} below.`
-              : state === "stopped"
-                ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
-                : state === "done"
-                  ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
-                  : "Ready for the next round: tell the assistant what to change, or start the round.";
+              : state === "stopped" && forAPerson
+                ? `The stage stopped for a person: its draft has ${forAPerson === 1 ? "a finding" : `${forAPerson} findings`} below that you may accept. Accept ${forAPerson === 1 ? "it" : "each"} with a reason, or tell the assistant how to fix the draft.`
+                : state === "stopped"
+                  ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
+                  : state === "done"
+                    ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
+                    : "Ready for the next round: tell the assistant what to change, or start the round.";
   if (dropped)
     items.push({
       kind: "note",

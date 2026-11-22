@@ -1,10 +1,13 @@
 import { HandoffRuntime, ToolError, type AiRequest, type ToolBox } from "@maycombhq/ai";
-import { architectureStage } from "./architecture.js";
+import { changeFolder } from "@maycombhq/changes";
+import { acceptableStageRule, readAccepted, writeStageGate, type Accepted } from "./accept.js";
+import { architectureStage, TARGET_DIR } from "./architecture.js";
 import { featureStage } from "./feature.js";
-import type { StageIssue } from "./loop.js";
-import type { Stage } from "./schema.js";
+import { issueFingerprint, readStageLoop, type StageIssue } from "./loop.js";
+import type { LoopFinding, Stage } from "./schema.js";
 import { smallStage } from "./small.js";
 import { storiesStage } from "./stories.js";
+import { rerunOf } from "./waiting.js";
 
 /**
  * The drafter checks its own draft (ADR 0087 addendum, W3a). A stage's checks were right, but a
@@ -35,6 +38,19 @@ export async function checkStageDraft(
   stage: Stage,
   text: string,
 ): Promise<StageIssue[]> {
+  return (await stageDraftIssues(root, change, stage, text)).filter((i) => i.blocking);
+}
+
+/**
+ * Every finding the stage's checks make of a draft's text, blocking or not: one a person accepted
+ * is there, no longer blocking, so a gate written from them keeps the acceptance.
+ */
+export async function stageDraftIssues(
+  root: string,
+  change: string,
+  stage: Stage,
+  text: string,
+): Promise<StageIssue[]> {
   const o = {
     runtime: new HandoffRuntime({ root, validate: async () => [] }),
     checkDraft: text,
@@ -48,7 +64,65 @@ export async function checkStageDraft(
         : stage === "stories"
           ? await storiesStage(root, change, o)
           : await smallStage(root, change, o);
-  return (r.checked ?? []).filter((i) => i.blocking);
+  return r.checked ?? [];
+}
+
+/**
+ * ADR 0203 A (addendum 2026-11-22): a hand-off draft goes to a person, not back to its drafter,
+ * when it has a blocking finding and every blocking finding is one a person may accept
+ * (ACCEPTABLE_STAGE_RULES). Only a person can say the map is behind; another draft can't.
+ */
+export const draftForAPerson = (issues: readonly Pick<StageIssue, "rule" | "blocking">[]) =>
+  issues.some((i) => i.blocking) && issues.every((i) => !i.blocking || acceptableStageRule(i.rule));
+
+/** Each stage's source in the change folder, when its loop file doesn't say. */
+const STAGE_SOURCE: Record<Stage, string> = {
+  feature: "feature.yaml",
+  architecture: `${TARGET_DIR}/`,
+  stories: "stage/stories-answer.yaml",
+  small: "stage/small-answer.yaml",
+};
+
+/**
+ * ADR 0203 A (addendum 2026-11-22): `atticus handoff done` writes a draft's findings on the
+ * stage's own gate at once, as the stage does when its run ends, so a person may accept them
+ * before the stage reads the draft in. `issues` are the draft's, blocking or not (an accepted one
+ * keeps its file). Returns the blocking ones with the id each has on the gate.
+ */
+export async function recordDraftFindings(
+  root: string,
+  change: string,
+  stage: Stage,
+  issues: StageIssue[],
+  now: string,
+): Promise<{ id: string; rule: string; message: string }[]> {
+  const { loop } = await readStageLoop(changeFolder(root, change), change, stage);
+  const accepted = await readAccepted(root, change).catch(() => new Map<string, Accepted>());
+  const findings: LoopFinding[] = issues.map((i) => ({
+    fingerprint: issueFingerprint(i.rule, i.target, i.evidence ?? ""),
+    rule: i.rule,
+    target: i.target,
+    ...(i.evidence ? { evidence: i.evidence } : {}),
+    message: i.message,
+    blocking: i.blocking,
+    source: "stage",
+    seenIn: [],
+  }));
+  const written = await writeStageGate(root, findings, accepted, {
+    change,
+    stage,
+    source: loop.source ?? STAGE_SOURCE[stage],
+    rerun: rerunOf(stage, change),
+    now,
+  });
+  const ids = new Map(written.findings.map((s) => [s.finding.id.slice(0, 18), s.finding.id]));
+  return findings
+    .filter((f) => f.blocking)
+    .map((f) => ({
+      id: ids.get(`stage-${f.fingerprint}`) ?? `stage-${f.fingerprint}`,
+      rule: f.rule,
+      message: f.message,
+    }));
 }
 
 /** The problems in a few short lines a small model can act on: each with its line, when known. */
