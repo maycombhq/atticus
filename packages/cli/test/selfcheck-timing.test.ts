@@ -1,11 +1,12 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { buildPhases } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
-import { TIMING_WORDS } from "../src/selfcheck-timing.js";
+import { FACTS_SIDE, TIMING_WORDS, timeWords } from "../src/selfcheck-timing.js";
+import { FACTS_SIDE_FILES, timeLeftWords } from "../src/verify-commands.js";
 import type { Shape } from "../src/shape-words.js";
 import { makeFieldEstate, type FieldEstate } from "./field-estate.js";
 
@@ -43,15 +44,19 @@ async function run(argv: string[]) {
   const code = await main(argv, { out: (l) => out.push(l), err: (l) => err.push(l) });
   return { code, out, err };
 }
-/** Every file under the metarepo, with its bytes, but this machine's log. */
+/**
+ * Every file under the metarepo, with its bytes and its modification time, but the one log line
+ * every command appends (`.atticus/logs/atticus.log`): a rewrite with the same bytes shows too.
+ */
 async function tree(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const walk = async (d: string, rel: string) => {
     for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
       const r = `${rel}${e.name}`;
-      if (r === ".atticus/logs") continue;
-      if (e.isDirectory()) await walk(join(d, e.name), `${r}/`);
-      else out[r] = await readFile(join(d, e.name), "latin1");
+      if (r === ".atticus/logs/atticus.log") continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) await walk(p, `${r}/`);
+      else out[r] = `${(await stat(p)).mtimeMs} ${await readFile(p, "latin1")}`;
     }
   };
   await walk(dir, "");
@@ -60,6 +65,7 @@ async function tree(dir: string): Promise<Record<string, string>> {
 
 /** A phase line: two spaces, a phase name of fixed words, then wall and CPU seconds. */
 const PHASE_LINE = /^ {2}[a-z0-9 :.,'-]+? {2,}\d+\.\d s wall, \d+\.\d s CPU$/;
+const TOTAL_LINE = /^One Apply, before its writes: \d+\.\d s wall, \d+\.\d s CPU\.$/;
 
 describe("atticus selfcheck --timing", () => {
   it(
@@ -78,15 +84,18 @@ describe("atticus selfcheck --timing", () => {
 
       expect(r.out[0]).toBe(TIMING_WORDS.head);
       const phases = r.out.filter((l) => PHASE_LINE.test(l));
-      // The read an Apply makes first, then the build's own inputs and passes.
-      expect(phases[0]).toMatch(/^ {2}read: the catalog on disk /);
-      // Then the hash of every record file the write's guards make: where antivirus shows.
-      expect(phases[1]).toMatch(/^ {2}guards: hash the catalog on disk /);
+      // The read-only steps of one Apply, in its order (the hash is where antivirus shows),
+      // then the build's own phases.
+      expect(phases.slice(0, 5).map((l) => l.trim().split(/ {2,}/)[0])).toEqual([
+        "read: the org pack",
+        "read: the catalog on disk",
+        "guards: hash the catalog on disk",
+        "read: the questions",
+        "join: every repo's facts",
+      ]);
       expect(phases.some((l) => l.startsWith("  inputs: "))).toBe(true);
-      expect(phases.some((l) => l.startsWith("  build: "))).toBe(true);
-      expect(r.out).toContainEqual(
-        expect.stringMatching(/^One build: \d+\.\d s wall, \d+\.\d s CPU\.$/),
-      );
+      expect(phases.some((l) => l.startsWith("  build: 1 sources"))).toBe(true);
+      expect(r.out).toContainEqual(expect.stringMatching(TOTAL_LINE));
       expect(r.out.at(-1)).toBe(TIMING_WORDS.apply);
     },
     T,
@@ -104,10 +113,7 @@ describe("atticus selfcheck --timing", () => {
         TIMING_WORDS.notWritten,
       ]);
       for (const l of plain.out) {
-        const ok =
-          fixed.has(l) ||
-          PHASE_LINE.test(l) ||
-          /^One build: \d+\.\d s wall, \d+\.\d s CPU\.$/.test(l);
+        const ok = fixed.has(l) || PHASE_LINE.test(l) || TOTAL_LINE.test(l);
         expect(ok, l).toBe(true);
       }
       // Phase names are the build's own fixed words: none names a repo of this estate.
@@ -118,7 +124,7 @@ describe("atticus selfcheck --timing", () => {
       expect(named.code).toBe(0);
       const line = named.out.find((l) => l.startsWith("Repos with facts: "));
       expect(line).toMatch(
-        /^Repos with facts: \d+\. Apply to every repo, at one build each: (under a minute|about \d+ min|about \d+ h( \d+ min)?), before the writes\.$/,
+        /^Repos with facts: \d+\. Apply to every repo, at that each: at least (under a minute|about \d+ min|about \d+ h( \d+ min)?)\.$/,
       );
     },
     T,
@@ -136,8 +142,8 @@ describe("atticus selfcheck --timing", () => {
         cpuMs: number;
       };
       expect(j.phases.length).toBeGreaterThan(3);
-      expect(j.phases[0]!.phase).toBe("read: the catalog on disk");
-      expect(j.phases[1]!.phase).toBe("guards: hash the catalog on disk");
+      expect(j.phases[1]!.phase).toBe("read: the catalog on disk");
+      expect(j.phases[2]!.phase).toBe("guards: hash the catalog on disk");
       for (const p of j.phases) {
         expect(p.ms).toBeGreaterThanOrEqual(0);
         expect(p.cpuMs).toBeGreaterThanOrEqual(0);
@@ -147,6 +153,58 @@ describe("atticus selfcheck --timing", () => {
     },
     T,
   );
+
+  it(
+    "after a build was kept (an Apply, catalog build), it still times a whole build, not the cache",
+    async () => {
+      const e = await estate();
+      const built = await run(["catalog", "build", "--root", e.root]);
+      expect(built.code, [...built.out, ...built.err].join("\n")).toBe(0);
+      const before = await tree(e.root);
+      const r = await run(["selfcheck", "--timing", "--root", e.root]);
+      expect(r.code, [...r.out, ...r.err].join("\n")).toBe(0);
+      const names = r.out.filter((l) => PHASE_LINE.test(l)).map((l) => l.trim().split(/ {2,}/)[0]);
+      for (const pass of ["build: 1 sources", "build: 3 merge", "build: 6 curated"])
+        expect(names, pass).toContain(pass);
+      // With a kept build and kept parses on disk, still nothing is written.
+      expect(await tree(e.root)).toEqual(before);
+    },
+    T,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a step that fails says one fixed sentence and exits 2; its message only with --names",
+    async () => {
+      const e = await estate();
+      // A record file that can't be opened, as a file another program holds would be.
+      const held = join(e.root, "catalog/generated/capability/forge-svc-held.yaml");
+      await mkdir(dirname(held), { recursive: true });
+      await symlink(join(e.root, "no-such-file.yaml"), held);
+      const plain = await run(["selfcheck", "--timing", "--root", e.root]);
+      expect(plain.code).toBe(2);
+      expect(plain.err).toEqual([TIMING_WORDS.failed]);
+      expect([...plain.out, ...plain.err].join("\n")).not.toMatch(/forge-svc-held|catalog\//);
+      const json = await run(["selfcheck", "--timing", "--json", "--root", e.root]);
+      expect(json.code).toBe(2);
+      expect(JSON.parse(json.out.join("\n"))).toEqual({ error: TIMING_WORDS.failed });
+      expect([...json.out, ...json.err].join("\n")).not.toMatch(/forge-svc-held/);
+      const named = await run(["selfcheck", "--timing", "--names", "--root", e.root]);
+      expect(named.code).toBe(2);
+      expect(named.err.join("\n")).toMatch(/forge-svc-held/);
+      // The lock was let go: with the file gone, the next run takes it and finishes.
+      await rm(held);
+      expect((await run(["selfcheck", "--timing", "--root", e.root])).code).toBe(0);
+    },
+    T,
+  );
+
+  it("its time words and its facts-file test are verify's own", () => {
+    for (const m of [0, 0.5, 1, 7, 44, 59.4, 59.6, 61, 64, 89, 119, 121, 177.6, 600])
+      expect(timeWords(m * 60_000), `${m} min`).toBe(timeLeftWords(m * 60_000));
+    expect(timeWords(60 * 1_983)).toBe(timeLeftWords(60 * 1_983));
+    expect(timeWords(118.9 * 60_000)).not.toMatch(/60 min/);
+    expect(FACTS_SIDE.source).toBe(FACTS_SIDE_FILES.source);
+  });
 
   it("a folder that is no metarepo: exit 2", async () => {
     const dir = await mkdtemp(join(tmpdir(), "b31-st-tm-none-"));

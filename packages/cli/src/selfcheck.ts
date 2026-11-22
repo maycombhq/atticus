@@ -572,7 +572,8 @@ export async function selfcheckCommand(
   if (o.timing) {
     // Gate 1 of the v31 plan: one build in memory, timed (selfcheck-timing.ts). The four
     // checks don't run: this is the number to read off the screen, on its own.
-    const { timeOneBuild, factsRepoCount, timingLines } = await import("./selfcheck-timing.js");
+    const { timeOneBuild, factsRepoCount, timingLines, TIMING_WORDS } =
+      await import("./selfcheck-timing.js");
     try {
       const t = await timeOneBuild(root);
       if (o.json) {
@@ -582,6 +583,12 @@ export async function selfcheckCommand(
       const repos = o.names ? await factsRepoCount(root) : undefined;
       for (const l of timingLines(t, repos)) io.out(l);
       return 0;
+    } catch (e) {
+      // A held file's message names its path: the fixed sentence, the message with --names only.
+      if (o.json) io.out(JSON.stringify({ error: TIMING_WORDS.failed }, null, 2));
+      else io.err(TIMING_WORDS.failed);
+      if (o.names && !o.json) io.err(`  ${e instanceof Error ? e.message : String(e)}`);
+      return 2;
     } finally {
       await lock.release();
     }
