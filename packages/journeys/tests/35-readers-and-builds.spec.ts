@@ -225,7 +225,7 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByText("Done. What it printed is in the Console.")).toBeVisible();
   await expect(
-    page.getByText("catalog/generated is what the slots and inputs build."),
+    page.getByText("catalog/generated is what the stored reads and inputs build."),
   ).toBeVisible();
   const after = catalogFiles(a().root);
   expect(Object.keys(after).length).toBeLessThan(Object.keys(before).length);
@@ -246,7 +246,7 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   writeFileSync(slot, was);
   await page.reload();
   await expect(
-    page.getByText("catalog/generated is what the slots and inputs build."),
+    page.getByText("catalog/generated is what the stored reads and inputs build."),
   ).toBeVisible();
   await shot(page, "catalog-builds-1440-dark");
 });
@@ -312,7 +312,7 @@ test("a hand edit is never overwritten: it is made curated", async ({ page }) =>
     timeout: 60_000,
   });
   await expect(
-    page.getByText("catalog/generated is what the slots and inputs build."),
+    page.getByText("catalog/generated is what the stored reads and inputs build."),
   ).toBeVisible();
   expect(readFileSync(path, "utf8")).toContain("-by-hand");
 });
@@ -335,7 +335,9 @@ test("a catalog from before beta.27 is upgraded from the app, every file listed 
     await expect(
       panel.getByText(/is copied to catalog\/sources\/legacy\/generated-before-upgrade/),
     ).toBeVisible();
-    await expect(panel.getByRole("table", { name: "The slots the upgrade writes" })).toBeVisible();
+    await expect(
+      panel.getByRole("table", { name: "The stored reads the upgrade writes" }),
+    ).toBeVisible();
     // The upgrade's other steps (the org pack's files) wait first: they may change what this
     // step writes, so it is confirmed only after them.
     const others = panel.getByRole("button", { name: "Run the upgrade" });
@@ -373,7 +375,7 @@ test("a catalog from before beta.27 is upgraded from the app, every file listed 
     await write.click();
     await expect(dialog).toBeHidden({ timeout: 60_000 });
     await expect(
-      page.getByText("catalog/generated is what the slots and inputs build."),
+      page.getByText("catalog/generated is what the stored reads and inputs build."),
     ).toBeVisible();
     await expect(panel).toBeHidden();
     // Every record adopted, the catalog byte for byte as it was.
@@ -439,7 +441,7 @@ test.describe("the field-shaped estate", () => {
     writeFileSync(slot, was);
     await page.reload();
     await expect(
-      page.getByText("catalog/generated is what the slots and inputs build."),
+      page.getByText("catalog/generated is what the stored reads and inputs build."),
     ).toBeVisible();
   });
 
