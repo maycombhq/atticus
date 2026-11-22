@@ -10,6 +10,7 @@ import { parseRecord, readQuestion, recordPath, serializeRecord } from "@maycomb
 import { act, readRound, roundsOf } from "@maycombhq/naysayer";
 import {
   ACCEPTABLE_STAGE_RULES,
+  checkStageDraft,
   EXPAND_AGENT,
   featureStage,
   issueFingerprint,
@@ -247,6 +248,30 @@ describe("accepting the feature stage's finding about a repo the estate doesn't 
     await featureStage(root, CHANGE, { runtime: other.runtime, now: NOW, force: true });
     const now = await stageGate(root);
     expect(now.map((x) => [x.locator.record, x.state])).toContainEqual(["forge-queue", "open"]);
+  });
+
+  it("the draft's self-check reads the acceptances: an accepted finding isn't a problem to fix", async () => {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, {
+      runtime: assistant(placed("forge-screening")).runtime,
+      now: NOW,
+    });
+    const [f] = await stageGate(root);
+    expect(
+      (await checkStageDraft(root, CHANGE, "feature", placed("forge-screening"))).map(
+        (i) => i.rule,
+      ),
+    ).toEqual(["feature.unknown-repo"]);
+    await act(root, CHANGE, f!.id, "waive", {
+      by: "pat",
+      reason: "The screening repo is created this week",
+      now: "2026-11-19T10:00:00Z",
+    });
+    expect(await checkStageDraft(root, CHANGE, "feature", placed("forge-screening"))).toEqual([]);
+    // Another repo is another finding, still a problem.
+    expect(
+      (await checkStageDraft(root, CHANGE, "feature", placed("forge-queue"))).map((i) => i.rule),
+    ).toEqual(["feature.unknown-repo"]);
   });
 
   it("refuses Atticus's own agents and the org pack's personas as the one who accepts", async () => {

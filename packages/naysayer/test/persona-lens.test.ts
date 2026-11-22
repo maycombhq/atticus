@@ -6,11 +6,13 @@ import { changeStore, checkFindings } from "@maycombhq/changes";
 import {
   completeLensRun,
   gateStatus,
+  lastReviewed,
   personaLenses,
   readRound,
   readRoundMeta,
   roundsOf,
   runCritic,
+  sinceReview,
   waitingLenses,
 } from "../src/index.js";
 import { CHANGE, NOW, forgeChangeRoot } from "./helpers.js";
@@ -223,6 +225,30 @@ describe("a persona lens never holds a gate (ADR 0203 C, the owner's decision of
     expect(
       (await gateStatus(r, CHANGE, "plan")).findings.some((x) => x.finding.lens === "persona"),
     ).toBe(true);
+  });
+});
+
+describe("a redraft carries a persona's finding only while its lens runs (ADR 0203 C)", () => {
+  it("drops it once the persona's naysayer no longer runs at the gate, and carries it while it does", async () => {
+    const r = await root("[plan]");
+    await runCritic(r, CHANGE, { now: NOW, runtime: model([]), gate: "plan" });
+    const last = (await lastReviewed(r, CHANGE, "plan", 2))!;
+    expect(last.round).toBe(1);
+    const scope = (personas: string[]) =>
+      sinceReview(r, {
+        change: CHANGE,
+        gate: "plan",
+        round: 2,
+        now: "2026-10-21T09:00:00Z",
+        texts: last.texts,
+        questions: ["true", "complete", "safe", "ship"],
+        personas,
+      });
+    const carried = async (personas: string[]) =>
+      ((await scope(personas))?.carry ?? []).filter((f) => f.lens === "persona");
+    expect((await carried([NAYSAYER])).map((f) => f.persona)).toEqual([NAYSAYER]);
+    expect(await carried([])).toEqual([]);
+    expect(await carried(["another-naysayer"])).toEqual([]);
   });
 });
 
