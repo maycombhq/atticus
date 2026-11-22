@@ -5,18 +5,18 @@ import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
 import { UndoConfirm } from "./confirm-dialog.js";
 import { followJob, type UndoWay } from "./job.js";
-import { hashParam } from "./screens.js";
+import { hashParam, movedHash } from "./screens.js";
 import { panelId } from "./ui.js";
 
 const W = COPY.waysOn;
 
 /** Where a refused build is reviewed and confirmed, full width. */
-export const CATALOG_BUILDS_HREF = "#/catalog-builds";
+export const CATALOG_BUILDS_HREF = "#/activity?tab=catalog-builds";
 
 /** Set up › Catalog builds, opened at its Undo (the files it puts back are listed first). */
-export const UNDO_HREF = "#/catalog-builds?at=undo";
+export const UNDO_HREF = "#/activity?tab=catalog-builds&at=undo";
 /** The same page at its upgrade to source slots. */
-export const UPGRADE_HREF = "#/catalog-builds?at=upgrade";
+export const UPGRADE_HREF = "#/activity?tab=catalog-builds&at=upgrade";
 
 /** The panel of Catalog builds an address names (`?at=undo`, `?at=upgrade`), by its heading. */
 export const panelAsked = (hash: string): string | undefined => {
@@ -47,7 +47,11 @@ export function showOnPage(id: string): boolean {
  * panel itself. From any other address the page shows it as it arrives (useShowPanel).
  */
 export const showIfHere = (href: string) => (): void => {
-  const at = typeof location !== "undefined" && location.hash === href && panelAsked(href);
+  // v30 slice 8: the page's old address opens at its new one (Activity's tab), which counts too.
+  const here =
+    typeof location !== "undefined" &&
+    (location.hash === href || location.hash === movedHash(href));
+  const at = here && panelAsked(href);
   if (at) showOnPage(at);
 };
 

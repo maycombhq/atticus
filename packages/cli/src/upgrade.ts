@@ -457,7 +457,7 @@ export const MIGRATIONS: Migration[] = [
     // It may write a file that isn't there yet (a knowledge gap's owner question, re-keyed).
     creates: true,
     summary:
-      "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; every decision, change, question, spec flow and dismissal that cites one carried to the new id (ADR 0124 addendum E-ids)",
+      "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; your changes, change folders, questions, spec flows and dismissals that cite one carried to the new id (ADR 0124 addendum E-ids)",
     pending: (root) => unresolvedIdsPending(root),
     apply: (root, o) => unresolvedIdsApply(root, o),
   },
@@ -766,7 +766,12 @@ export function newerWords(c: UpgradeCheck): string {
   const v = newerAtticusOf(c);
   if (v)
     return `This metarepo was upgraded by Atticus ${v}; this is ${c.atticus}. Install ${v} or later before working in it, so nothing it wrote is lost.`;
-  return `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}). Install it${u?.atticus ? ` (Atticus ${u.atticus} or later)` : ""} before working in this metarepo, so nothing it wrote is lost; or, if the file was edited by hand, put it back as it was committed. Nothing was changed.`;
+  // v30 slice 8: what to do first, then what happened, then that nothing changed.
+  return [
+    `Install ${u?.atticus ? `Atticus ${u.atticus} or later` : "the newer Atticus"} before working here (npm i -g @maycombhq/atticus@beta), so nothing it wrote is lost; if the file was edited by hand, put it back: git checkout -- .atticus/metarepo.yaml`,
+    `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}).`,
+    "Nothing was changed.",
+  ].join("\n");
 }
 
 export { newerThan };
@@ -931,7 +936,7 @@ export async function upgradeCommand(
   const legacyIds = slots.pending ? await legacyLooseEndsWords(root) : undefined;
   const slotsJson = () => (slots.pending ? { slots: view } : {});
   const slotsLines = (): string[] => [
-    `Adopt the catalog into source slots (ADR 0195): ${slots.records} records, nothing lost:`,
+    `Move the catalog into stored reads (ADR 0195): ${slots.records} records, nothing lost:`,
     ...slots.slots.map(
       (x) =>
         `  ${x.path}: ${x.records} record${x.records === 1 ? "" : "s"}${x.repo ? ` (${x.repo}, legacy)` : " (joined and evidence-less records, legacy)"}`,
@@ -948,7 +953,7 @@ export async function upgradeCommand(
     ...(legacyIds ? [`  ${legacyIds}`] : []),
     ...slots.verifiable.map(
       (r) =>
-        `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them in its facts slot.`,
+        `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them on the map.`,
     ),
   ];
   if (c.newer) {
@@ -1226,7 +1231,7 @@ export async function upgradeCommand(
         );
       else
         io.out(
-          "Done: the catalog is adopted into catalog/sources/ (atticus catalog undo takes it back).",
+          "Done: the catalog is moved into catalog/sources/ (atticus catalog undo takes it back).",
         );
     }
   }

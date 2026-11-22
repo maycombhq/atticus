@@ -139,7 +139,7 @@ async function dropUndoCopies(root: string): Promise<void> {
   for (const n of await readdir(dir).catch(() => [] as string[]))
     if (/^\d+$/.test(n)) await rm(join(dir, n), { recursive: true, force: true });
 }
-/** A curated decision as Atticus writes it (canonical, schema version 5). */
+/** One of your changes (a suppress) as Atticus writes it (canonical, schema version 5). */
 const decision = (id: string, target: string, reason: string) =>
   [
     "schemaVersion: 5",
@@ -283,7 +283,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(said).not.toMatch(/took back the upgrade; run atticus upgrade --yes/);
       expect(said).not.toMatch(/still name the loose ends' new ids/);
       expect(said).toContain(
-        `It put back the inputs the step carried, as they were before it: ${[...INPUTS, newGap].sort().join(", ")}.`,
+        `It put back your changes and the other files the step carried to the new ids, as they were before it: ${[...INPUTS, newGap].sort().join(", ")}.`,
       );
       // The step is pending again, and the undo can itself be undone.
       expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual([STEP]);
@@ -313,7 +313,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       // Until the upgrade, a decision of an old id says to run it, never that its target returns.
       const said = b.out.join("\n");
       expect(said).toContain(
-        "The curated decision dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
+        "Your change dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
       );
       expect(said).not.toMatch(/dec-suppress-fees targets a record that isn't in the build/);
       expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
@@ -381,7 +381,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await upgradeCommand(root, { by: "pat" }, q.io, B30)).toBe(1);
       const said = q.err.join("\n");
       expect(said).toMatch(
-        /dec-suppress-fees targets unresolved\.c-7, which goes to unresolved\.forge-notify\.c-7, but dec-keep-notify-c7 targets unresolved\.forge-notify\.c-7 already/,
+        /^Your change dec-suppress-fees targets unresolved\.c-7, which goes to unresolved\.forge-notify\.c-7, but your change dec-keep-notify-c7 targets unresolved\.forge-notify\.c-7 already/m,
       );
       expect(said).toMatch(/Nothing of this step was written/);
       expect(await tree(root)).toEqual(before);
@@ -475,7 +475,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       const q = quiet();
       expect(await upgradeCommand(root, { by: "pat" }, q.io, B30)).toBe(1);
       expect(q.err.join("\n")).toMatch(
-        /catalog\/curated\/unresolved\/unresolved\.forge-ledger\.c-solo\.yaml is there already, so catalog\/curated\/unresolved\/unresolved\.c-solo\.yaml can't move to it/,
+        /catalog\/curated\/unresolved\/unresolved\.forge-ledger\.c-solo\.yaml is there already, so your change catalog\/curated\/unresolved\/unresolved\.c-solo\.yaml can't move to it/,
       );
       expect(await tree(root)).toEqual(before);
     },
@@ -498,7 +498,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       const d = quiet();
       expect(await upgradeCommand(root, { by: "pat", dryRun: true }, d.io, B30)).toBe(0);
       expect(d.out.join("\n")).toContain(
-        "3 loose ends have an id from before beta.30 (unresolved.<fact id>), and 3 curated decisions name one. The adoption keeps them, as it keeps every record it adopts; a repo read from facts later (atticus verify <repo> --write) names its loose ends with its repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before that read.",
+        "3 loose ends have an id from before beta.30 (unresolved.<fact id>), and 3 of your changes name one. The upgrade keeps them, as it keeps every record it moves into stored reads; once a repo's facts are applied (atticus verify <repo> --write), its loose ends are named with their repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before then.",
       );
 
       // One upgrade: the adoption, and nothing left pending. The loose ends keep their ids (a
@@ -523,7 +523,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
       const said = b.out.join("\n");
       expect(said).toContain(
-        "The curated decision dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it), and no loose end of this build is it under its repo's id: it is kept, and applies again once its loose end is back. A legacy repo's loose ends get their repo's id when the repo is read from facts (atticus verify <repo> --write); atticus upgrade then carries this decision to it.",
+        "Your change dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it), and this build has no loose end of that id under its repo's: it is kept, and applies again once the loose end is back. A repo whose read is still the one the upgrade kept gets its repo's id in its loose ends when its facts are applied (atticus verify <repo> --write); atticus upgrade then carries your change to it.",
       );
       expect(said).not.toMatch(
         /dec-suppress-fees targets unresolved\.c-7, .*: run atticus upgrade/,
@@ -542,7 +542,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       const r = quiet();
       expect(await main(["catalog", "build", "--root", root], r.io), r.err.join("\n")).toBe(0);
       expect(r.out.join("\n")).toContain(
-        "The curated decision dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
+        "Your change dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
       );
       expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual([STEP]);
       expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);

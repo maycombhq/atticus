@@ -2,13 +2,14 @@ import { useApi, useReloadOnFiles } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, useView } from "./common.js";
-import { SystemGuide } from "./Know.js";
+import { CatalogCoverage, SystemGuide } from "./Know.js";
 
 /**
  * A system's page (WP7.7, Estate › Systems): one place a new joiner or a reviewer reads about a
  * system. Its guide, generated from the catalog with every fact citing code and what it doesn't
- * know yet; the open questions about it; and the changes in flight in its repos. The ecosystem
- * map links here. It reads; it changes nothing.
+ * know yet; the open questions about it; and the changes in flight in its repos. Below them, what
+ * the catalog knows by system and area (v30 slice 8: it was the Ecosystem map's, whose address
+ * opens the Map now). It reads; it changes nothing.
  */
 
 const Y = COPY.systems;
@@ -120,6 +121,7 @@ export function Systems({ hash }: { hash: string }) {
           </View>
         </Panel>
       )}
+      <CatalogCoverage />
     </div>
   );
 }

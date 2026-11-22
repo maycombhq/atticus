@@ -216,7 +216,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       for (const words of [...NEWER_GUARDED_COMMANDS].map((c) => c.split(" "))) {
         const x = await run([...words, "--root", root]);
         expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
-        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
         notUpgradeAdvice(x.err);
         const j = await run([...words, "--json", "--root", root]);
         if (j.code === 1 && j.out.trim().startsWith("{"))
@@ -253,7 +253,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         const x = await run([...words, "--root", root]);
         expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
-        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
         notUpgradeAdvice(x.err);
         const j = await run([...words, "--json", "--root", root]);
         expect(j.code, words.join(" ")).toBe(1);
@@ -265,7 +265,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
         ["catalog", "crosscheck", "forge-ledger"],
       ]) {
         const x = await run([...words, "--root", root]);
-        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).not.toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
       }
       expect(await tree(root)).toEqual(before);
     },
@@ -339,7 +339,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         const x = await run([...words, "--root", root]);
         expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
-        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
         const j = await run([...words, "--json", "--root", root]);
         expect(j.code, words.join(" ")).toBe(1);
         expect(JSON.parse(j.out).refused.reasons, words.join(" ")).toEqual(["newer-atticus"]);
@@ -351,7 +351,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         // Each may fail on its own grounds (no such repo here); never with the refusal.
         const x = await run([...words, "--root", root]).catch((e: Error) => ({ err: e.message }));
-        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).not.toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
       }
       expect(await tree(root)).toEqual(before);
       // The app: the same writers answer 409 before they write (and a run's start before it
@@ -401,7 +401,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         const x = await run([...words, "--root", root]);
         expect(x.code, `${words.join(" ")}: ${x.err}`).toBe(1);
-        expect(x.err, words.join(" ")).toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
         notUpgradeAdvice(x.err);
         const j = await run([...words, "--json", "--root", root]);
         expect(j.code, words.join(" ")).toBe(1);
@@ -417,7 +417,7 @@ describe("a catalog a newer Atticus built is refused by every writer, which writ
       ]) {
         // Each may fail on its own grounds; never with the refusal.
         const x = await run([...words, "--root", root]).catch((e: Error) => ({ err: e.message }));
-        expect(x.err, words.join(" ")).not.toContain(`Nothing written: ${MESSAGE(N)}`);
+        expect(x.err, words.join(" ")).not.toContain(`The catalog wasn't changed: ${MESSAGE(N)}`);
       }
       expect(await tree(root)).toEqual(before);
       const { call } = await serve(root);

@@ -32,7 +32,9 @@ describe("the menu's More pages", () => {
     const html = at("#/home");
     // ADR 0188: Manual steps, Release, Scans and Prompt history are tabs now (26 before).
     // ADR 0191: the brief is a tab of a change too.
-    expect(COUNT).toBe(21);
+    // v30 slice 8: Contracts, Impact and Decided by AI leave the Map's tabs for More pages (and
+    // the box's panel); the Ecosystem map is gone (its address opens Systems).
+    expect(COUNT).toBe(23);
     expect(html).toMatch(
       new RegExp(`<button type="button"[^>]*aria-expanded="false"[^>]*>.*More pages.*${COUNT}`),
     );
@@ -48,7 +50,8 @@ describe("the menu's More pages", () => {
       expect(html).toContain(`aria-label="${label}"`);
     expect(html).toContain(">AI quality<");
     expect(html).toContain(">Estimate<");
-    // Model runs is a tab of Set up, not under More.
+    // Activity (Model runs and the rest) is a tab of Set up, not under More.
+    expect(html).not.toContain('href="#/activity"');
     expect(html).not.toContain('href="#/runs"');
   });
 
@@ -71,6 +74,7 @@ describe("the menu's More pages", () => {
   });
 
   it("keeps the six entries in their own group, Model runs marking Set up", () => {
+    // v30 slice 8: Model runs' old address opens Activity, in Set up.
     const html = at("#/runs");
     expect(html).toMatch(/href="#\/repos" aria-current="page">Set up</);
   });

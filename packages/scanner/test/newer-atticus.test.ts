@@ -151,8 +151,9 @@ describe("the build refuses a catalog a newer Atticus wrote, and writes nothing 
         for (const o of [{}, { discardEdits: 1 }, { allowRemovals: 1 }, { check: true }]) {
           const r = await buildAndWrite(root, { command: "atticus catalog build", ...o });
           expect(r.guard.refused?.reasons).toEqual(["newer-atticus"]);
+          // v30 slice 8: only the catalog is said to be unchanged, with no slot word.
           expect(r.guard.refused!.message.split("\n")).toEqual([
-            "Nothing written: catalog/generated and every slot are as they were.",
+            "The catalog wasn't changed: catalog/generated is as it was.",
             MESSAGE(n),
           ]);
           expect(r.write).toBeUndefined();

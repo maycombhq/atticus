@@ -155,7 +155,7 @@ export function checkMatchAnswer(
     // ADR 0181: paired since (by AI, applied from this answer, or by a person): nothing to propose.
     else if (view.calls.some((c) => c.fact === p.call && c.status === "paired")) continue;
     else if (!calls.has(p.call))
-      rejected.push(`${p.call} isn't one of ${view.from}'s loose calls.`);
+      rejected.push(`${p.call} isn't one of ${view.from}'s calls with no arrow.`);
     else if (!apis.has(p.api)) rejected.push(`${p.api} isn't an API of ${view.toName}.`);
     else if (seen.has(p.call)) rejected.push(`${p.call} is paired twice; the first is kept.`);
     else {
@@ -175,7 +175,8 @@ export function checkMatchAnswer(
     if (!isMap(raw)) continue;
     const n = { call: str(raw.call), why: str(raw.why) };
     if (!n.call) continue;
-    if (!calls.has(n.call)) rejected.push(`${n.call} isn't one of ${view.from}'s loose calls.`);
+    if (!calls.has(n.call))
+      rejected.push(`${n.call} isn't one of ${view.from}'s calls with no arrow.`);
     else if (seen.has(n.call))
       rejected.push(`${n.call} is both paired and said to match nothing; the pair is kept.`);
     else {
@@ -482,7 +483,7 @@ export async function connectMatchCommand(
   const { view, facts } = await o.candidates(from, to);
   const loose = view.calls.filter((c) => c.status !== "paired");
   if (!loose.length) {
-    io.out(`${from} has no loose call to match with ${view.toName}.`);
+    io.out(`Every call of ${from} has an arrow: there is nothing to match with ${view.toName}.`);
     return 0;
   }
   if (!view.apis.length) {

@@ -155,7 +155,7 @@ run carries on from there.
 
 ## From the app
 
-With copilot-acp allowed, Map › Trust has buttons that start the same run from the app (ADR 0173):
+With copilot-acp allowed, Map › Read status has buttons that start the same run from the app (ADR 0173):
 **Read the stale repos with Copilot**, **Fill the gaps with Copilot**, **Read the repos not read yet
 with Copilot**, and in each read repo's **Read it again** section **Read it again with Copilot** (whole,
 as `--force`; every read repo has it, a trusted one too). Each asks first:
@@ -214,7 +214,7 @@ lists them.
 
 ## Limits
 
-- The editors' own buttons still hand steps to Copilot Chat; the app's Map › Trust buttons (also in
+- The editors' own buttons still hand steps to Copilot Chat; the app's Map › Read status buttons (also in
   the editors' app tab) start an unattended run.
 - A run started in a terminal isn't shown in the app while it runs, nor the other way round; both
   carry on from the same saved state.

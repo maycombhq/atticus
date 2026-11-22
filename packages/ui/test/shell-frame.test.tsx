@@ -161,7 +161,7 @@ describe("the tab strip", () => {
       ),
     );
     expect(html).toMatch(/id="sh-tab-canvas"[^>]*aria-selected="false"[^>]*tabindex="-1"/);
-    expect(html).toContain(">Estate canvas<");
+    expect(html).toContain(">Map<");
     expect(html).toContain('title="add-transfer-limit · All changes"');
   });
 

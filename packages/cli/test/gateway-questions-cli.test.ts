@@ -220,7 +220,9 @@ describe("old-shape target questions on a gateway estate (beta.12, ADR 0168)", (
       expect((await q(root, id)).retired!.replacedBy).toEqual([group.id]);
 
     // The shared gateway host no repo lists: said once, with the one-time fix.
-    const host = lines.find((l) => l.startsWith("Calls to api.forge.example join no repo"))!;
+    // v30 slice 8: the one-time fix leads; what happened follows on its own line.
+    const host = lines.find((l) => l.includes("\nCalls to api.forge.example join no repo"))!;
+    expect(host.split("\n")).toHaveLength(3);
     expect(host).toContain(
       "forge-proxy-core-v1's routes serve the paths the calls to api.forge.example make, and no repo lists api.forge.example: it looks like a shared gateway's host. Once, not per call: list api.forge.example under hosts: on each proxy repo in repos.manifest.yaml (forge-proxy-core-v1, and any other proxy on it); the path then picks the proxy",
     );

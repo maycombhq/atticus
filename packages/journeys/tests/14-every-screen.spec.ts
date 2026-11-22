@@ -8,7 +8,7 @@ import {
   routeOf,
   test,
 } from "../support/app.js";
-import { SCREENS } from "../support/screens.js";
+import { MOVED, SCREENS } from "../support/screens.js";
 
 /**
  * WCAG 2.1 AA on every screen in the dark theme: axe reports no moderate, serious or critical violation
@@ -105,4 +105,13 @@ for (const estate of ESTATES)
         await page.keyboard.press("Enter");
         await expect(page).toHaveURL(/#\/governance$/);
       });
+
+    // v30 slice 8: a page folded into another keeps its address, which opens its new place
+    // (the addresses don't depend on the estate's shape: the tidy estate's only).
+    if (estate === "tidy")
+      for (const [old, now] of MOVED)
+        test(`#/${old} opens its new place`, async ({ page }) => {
+          await open(page, app(), old);
+          await expect(page).toHaveURL(now);
+        });
   });

@@ -1,5 +1,5 @@
 import { COPY } from "../../copy.js";
-import { changeOf, screenOf } from "../screens.js";
+import { changeOf, MOVED, movedHash, screenOf } from "../screens.js";
 
 /**
  * ADR 0194: the IDE layout's tabs, as data. The address (#/...) stays the page shown, so deep
@@ -68,7 +68,9 @@ function capped(s: TabsState): TabsState {
 }
 
 /** The address moved to a page: open its tab, or focus it and keep the address in it. */
-export function openTab(s: TabsState, hash: string): TabsState {
+export function openTab(s: TabsState, asked: string): TabsState {
+  // v30 slice 8: a page folded into another is kept at its new address.
+  const hash = movedHash(asked) ?? asked;
   const key = tabKeyOf(hash);
   // Home is one page: an old address of it, or one the app doesn't know, opens it as #/home.
   const h = key === HOME_KEY || !PAGE_HASH.test(hash) ? HOME_HASH : hash;
@@ -130,14 +132,17 @@ export function readTabs(store: Store | undefined = browserStore()): TabsState |
   if (!o || !Array.isArray(o.tabs)) return undefined;
   const tabs: Tab[] = [homeTab()];
   let used = 0;
+  // v30 slice 8: a tab kept at a page's old address (#/runs) comes back at its new place.
+  const keyOf = (k: string): string => (MOVED[k] ? MOVED[k]!.to : k);
   for (const t of o.tabs as { hash?: unknown }[]) {
-    const hash = typeof t?.hash === "string" ? t.hash : "";
+    const kept = typeof t?.hash === "string" ? t.hash : "";
+    const hash = movedHash(kept) ?? kept;
     if (!PAGE_HASH.test(hash)) continue;
     const key = tabKeyOf(hash);
     if (key === HOME_KEY || tabs.some((x) => x.key === key)) continue;
     tabs.push({ key, hash, used: ++used });
   }
-  const savedActive = typeof o.active === "string" ? o.active : HOME_KEY;
+  const savedActive = typeof o.active === "string" ? keyOf(o.active) : HOME_KEY;
   const active = tabs.some((t) => t.key === savedActive) ? savedActive : HOME_KEY;
   // The one shown is the most recent.
   const s = { tabs: tabs.map((t) => (t.key === active ? { ...t, used: used + 1 } : t)), active };

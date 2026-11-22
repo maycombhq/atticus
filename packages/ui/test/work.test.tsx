@@ -424,8 +424,11 @@ describe("an entry's tabs", () => {
     expect(out).toContain('aria-label="You are here"');
     expect(out).toContain('aria-label="Map pages"');
     expect(out).toContain('href="#/trust" aria-current="page"');
-    for (const id of ["canvas", "flows", "contracts", "impact"]) expect(out).toContain(`#/${id}"`);
-    for (const id of ["map", "features", "explore", "systems"])
+    // v30 slice 8: the Map keeps Map, Flows and Read status; Contracts and Impact open from a
+    // box's panel (and More pages), and the Ecosystem map is gone.
+    for (const id of ["canvas", "flows"]) expect(out).toContain(`#/${id}"`);
+    expect(out).toContain(">Read status</a>");
+    for (const id of ["map", "features", "explore", "systems", "contracts", "impact", "decisions"])
       expect(out).not.toContain(`href="#/${id}"`);
   });
 

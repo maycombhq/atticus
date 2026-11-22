@@ -7,6 +7,7 @@ import { followJob, JobFailed, undoAfter } from "../../app/job.js";
 import { JobFound, JobProgress, useJobRun, type JobHears } from "../../app/job-progress.js";
 import {
   ErrorWaysOn,
+  CATALOG_BUILDS_HREF,
   InstallCopy,
   panelAsked,
   refusalWay,
@@ -246,7 +247,7 @@ export function RefusalView(p: {
                 {again ? B.building : W.buildAgain}
               </button>
             ) : (
-              <a className={btn("again")} href="#/catalog-builds">
+              <a className={btn("again")} href={CATALOG_BUILDS_HREF}>
                 {W.buildAgainOn}
               </a>
             )}

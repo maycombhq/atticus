@@ -520,7 +520,7 @@ export function uiActivityRoutes(
       out.push(
         `Waiting for your assistant${h.agent ? ` (${h.agent})` : ""} on ${h.change}.`,
         `The prompt: ${prompt}`,
-        "Give it to your assistant (Copilot Chat, Claude Code): copy it from Set up › Model runs, or open the file.",
+        "Give it to your assistant (Copilot Chat, Claude Code): copy it from Set up › Activity › Model runs, or open the file.",
         h.output
           ? `When the answer is in ${h.output}, press Done on its run, or run: atticus handoff done ${h.runId}`
           : `When the answer is written, press Done on its run, or run: atticus handoff done ${h.runId}`,

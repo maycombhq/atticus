@@ -53,17 +53,17 @@ function page(ids: string[]) {
 
 describe("the address names a panel of Catalog builds", () => {
   it("reads one value of an address, once for every page that takes one", () => {
-    expect(hashParam("#/catalog-builds?at=undo", "at")).toBe("undo");
+    expect(hashParam("#/activity?tab=catalog-builds&at=undo", "at")).toBe("undo");
     expect(hashParam("#/trust?repo=forge%20x&at=y", "repo")).toBe("forge x");
     expect(hashParam("#/trust", "repo")).toBeUndefined();
-    expect(panelAsked("#/catalog-builds?at=undo")).toBe(UNDO_PANEL);
-    expect(panelAsked("#/catalog-builds?at=upgrade")).toBe(UPGRADE_PANEL);
-    expect(panelAsked("#/catalog-builds?at=else")).toBeUndefined();
+    expect(panelAsked("#/activity?tab=catalog-builds&at=undo")).toBe(UNDO_PANEL);
+    expect(panelAsked("#/activity?tab=catalog-builds&at=upgrade")).toBe(UPGRADE_PANEL);
+    expect(panelAsked("#/activity?tab=catalog-builds&at=else")).toBeUndefined();
   });
 
   it("on arrival it waits for the page to load, then scrolls to the panel and gives it the keyboard, once", () => {
     const did = page([UNDO_PANEL]);
-    const props = { hash: "#/catalog-builds?at=undo", ready: false };
+    const props = { hash: "#/activity?tab=catalog-builds&at=undo", ready: false };
     const Probe = (p: typeof props) => useShowPanel(p.hash, p.ready);
     const m = mount(Probe as never, props as never);
     // Still loading: the panels above would push it away again.
@@ -89,10 +89,10 @@ describe("the address names a panel of Catalog builds", () => {
     const Probe = (p: typeof props) => useShowPanel(p.hash, p.ready);
     const m = mount(Probe as never, props as never);
     expect(did).toEqual([]);
-    props.hash = "#/catalog-builds?at=undo";
+    props.hash = "#/activity?tab=catalog-builds&at=undo";
     m.render();
     expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UNDO_PANEL}`]);
-    props.hash = "#/catalog-builds?at=upgrade";
+    props.hash = "#/activity?tab=catalog-builds&at=upgrade";
     m.render();
     expect(did.filter((x) => x.startsWith("scroll"))).toEqual([
       `scroll ${UNDO_PANEL}`,
@@ -100,14 +100,14 @@ describe("the address names a panel of Catalog builds", () => {
     ]);
     props.hash = "#/catalog-builds";
     m.render();
-    props.hash = "#/catalog-builds?at=undo";
+    props.hash = "#/activity?tab=catalog-builds&at=undo";
     m.render();
     expect(did.filter((x) => x.startsWith("scroll"))).toHaveLength(3);
   });
 
   it("a panel that isn't on the page (nothing to upgrade) is asked for again when it comes", () => {
     const none = page([]);
-    const props = { hash: "#/catalog-builds?at=upgrade", ready: true };
+    const props = { hash: "#/activity?tab=catalog-builds&at=upgrade", ready: true };
     const Probe = (p: typeof props) => useShowPanel(p.hash, p.ready);
     const m = mount(Probe as never, props as never);
     expect(none).toEqual([]);
@@ -152,10 +152,17 @@ describe("a link to a panel, clicked when the address names that panel already",
     vi.stubGlobal("location", { hash: UPGRADE_HREF });
     showIfHere(UPGRADE_HREF)();
     expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UPGRADE_PANEL}`]);
-    expect(UPGRADE_HREF).toBe("#/catalog-builds?at=upgrade");
+    expect(UPGRADE_HREF).toBe("#/activity?tab=catalog-builds&at=upgrade");
     vi.stubGlobal("location", { hash: UNDO_HREF });
     showIfHere(UPGRADE_HREF)();
     expect(did.filter((x) => x.startsWith("scroll"))).toHaveLength(1);
+  });
+
+  it("v30 slice 8: at the page's new address (Activity's tab) a second click shows the panel too", () => {
+    const did = page([UPGRADE_PANEL]);
+    vi.stubGlobal("location", { hash: "#/activity?tab=catalog-builds&at=upgrade" });
+    showIfHere(UPGRADE_HREF)();
+    expect(did.filter((x) => x.startsWith("scroll"))).toEqual([`scroll ${UPGRADE_PANEL}`]);
   });
 });
 

@@ -194,16 +194,17 @@ describe("the Explorer's sections, from the data the app already reads", () => {
   });
 
   it("names a pinned page by its page and what it is about", () => {
-    expect(pageLabel("#/trust")).toBe("Map › Trust");
+    expect(pageLabel("#/trust")).toBe("Map › Read status");
     expect(pageLabel("#/home")).toBe("Home");
     expect(pageLabel("#/changes/card-freeze-v2")).toBe("Change › card-freeze-v2");
     expect(pageLabel("#/stories?change=card-freeze-v2")).toBe("Change › Stories › card-freeze-v2");
     // Beta.27 review: a box by its name; its id less the kind while the estate isn't read.
-    expect(pageLabel("#/canvas?node=system%3Aledger")).toBe("Map › Estate canvas › ledger");
-    expect(pageLabel("#/canvas?node=system%3Aledger", () => "Ledger")).toBe(
-      "Map › Estate canvas › Ledger",
-    );
-    expect(pinnedItems(["#/trust"])[0]).toMatchObject({ label: "Map › Trust", hash: "#/trust" });
+    expect(pageLabel("#/canvas?node=system%3Aledger")).toBe("Map › ledger");
+    expect(pageLabel("#/canvas?node=system%3Aledger", () => "Ledger")).toBe("Map › Ledger");
+    expect(pinnedItems(["#/trust"])[0]).toMatchObject({
+      label: "Map › Read status",
+      hash: "#/trust",
+    });
   });
 
   it("renders four labelled sections, each a tree of its items", () => {
@@ -218,7 +219,7 @@ describe("the Explorer's sections, from the data the app already reads", () => {
     expect(h).toContain(">lib<");
     expect(h).toContain(">outside<");
     expect(h).toContain("waits on you");
-    expect(h).toContain(">Map › Trust<");
+    expect(h).toContain(">Map › Read status<");
   });
 
   it("keeps Pin beside the Pinned heading, not in it: the heading's name is the section's alone", () => {

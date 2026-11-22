@@ -194,7 +194,7 @@ describe("a scan writes only what it read in full, and keeps every other repo's 
       const events = parseReadersSlot(readFileSync(readers(root, "forge-events"), "utf8"));
       expect(events.ok && events.slot.commit).toBe(head);
       expect(r.out.join("\n")).toMatch(
-        /forge-ledger: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here\./,
+        /forge-ledger: keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here\./,
       );
       expect(r.out.join("\n")).toContain("slots: catalog/sources/readers/forge-events.json");
       expect(r.out.join("\n")).toMatch(/catalog\/sources\/readers: 1 written, 5 unchanged/);
@@ -223,7 +223,7 @@ describe("a scan writes only what it read in full, and keeps every other repo's 
       const r = await atticus(root, "scan", "--no-drift");
       expect(readFileSync(readers(root, "forge-portal-bff"), "utf8")).toBe(bff);
       expect(r.out.join("\n")).toMatch(
-        /forge-portal-bff: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): its clone has changes not committed/,
+        /forge-portal-bff: keeps its last good read \(commit [0-9a-f]{7}\): its clone has changes not committed/,
       );
       // Nothing else moved, so nothing else was written.
       expect(catalogBytes(root)).toEqual(before);
@@ -717,13 +717,13 @@ describe("atticus upgrade of a beta.26 metarepo: every record adopted, shown fir
       // A build refuses over a catalog from before the slots, and says to upgrade.
       const b = await atticus(root, "catalog", "build");
       expect(b.code).toBe(1);
-      expect(b.all()).toMatch(/run atticus upgrade/);
+      expect(b.all()).toMatch(/: atticus upgrade \(it shows what it would do first/);
       const dry = await atticus(root, "upgrade");
       expect(dry.code, dry.all()).toBe(0);
       const said = dry.out.join("\n");
       expect(said).toMatch(
         new RegExp(
-          `Adopt the catalog into source slots \\(ADR 0195\\): ${Object.keys(old).length} records, nothing lost`,
+          `Move the catalog into stored reads \\(ADR 0195\\): ${Object.keys(old).length} records, nothing lost`,
         ),
       );
       expect(said).toMatch(

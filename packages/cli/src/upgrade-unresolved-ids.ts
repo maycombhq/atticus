@@ -333,7 +333,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
       );
       if (there)
         refuse(
-          `The curated decision ${r.id} targets ${r.target}, which goes to ${next.target}, but ${there.id} targets ${next.target} already (${posix(relative(root, join(curatedDir, ...recordPath(there).split("/"))))}): carried, one would decide over the other. Nothing of this step was written: keep the one you want (remove the other's file), then run atticus upgrade again.`,
+          `Your change ${r.id} targets ${r.target}, which goes to ${next.target}, but your change ${there.id} targets ${next.target} already (${posix(relative(root, join(curatedDir, ...recordPath(there).split("/"))))}): carried, one would override the other. Nothing of this step was written: keep the one you want (remove the other's file), then run atticus upgrade again.`,
         );
     }
     const to = join(curatedDir, ...recordPath(next).split("/"));
@@ -341,7 +341,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
       // A curated loose end renamed: its file moves, never over another's.
       if (existsSync(to)) {
         refuse(
-          `${posix(relative(root, to))} is there already, so ${posix(relative(root, from))} can't move to it under its new id. Nothing of this step was written: move or merge one of them, then run atticus upgrade again.`,
+          `${posix(relative(root, to))} is there already, so your change ${posix(relative(root, from))} can't move to it under its new id. Nothing of this step was written: move or merge one of them, then run atticus upgrade again.`,
         );
         // Listed (so the step is pending and says why), never written: the write refuses.
         write(from, carried.get(from)!);
@@ -434,14 +434,14 @@ export async function legacyLooseEndsWords(root: string): Promise<string | undef
   }
   if (!records && !decisions) return undefined;
   const ends = `${records} loose end${records === 1 ? " has" : "s have"} an id from before beta.30 (unresolved.<fact id>)`;
-  const named = `${decisions} curated decision${decisions === 1 ? "" : "s"} name${decisions === 1 ? "s" : ""} one`;
+  const named = `${decisions} of your changes name${decisions === 1 ? "s" : ""} one`;
   const what =
     records && decisions
       ? `${ends}, and ${named}`
       : records
         ? ends
         : `${named.replace(/ one$/, " a loose end by an id from before beta.30 (unresolved.<fact id>)")}`;
-  return `${what}. The adoption keeps them, as it keeps every record it adopts; a repo read from facts later (atticus verify <repo> --write) names its loose ends with its repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before that read.`;
+  return `${what}. The upgrade keeps them, as it keeps every record it moves into stored reads; once a repo's facts are applied (atticus verify <repo> --write), its loose ends are named with their repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before then.`;
 }
 
 /** The files the step would change (what `unresolvedIdsApply` writes, and only those). */
