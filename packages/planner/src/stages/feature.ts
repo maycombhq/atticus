@@ -239,6 +239,61 @@ export async function writePlacement(
   return [FEATURE_FILE, "feature.md", ...(wrote ? ["proposal.md"] : [])];
 }
 
+/** ADR 0203 B addendum: a new flow feature.yaml puts in an archived repo. */
+const archivedNewFlow = (n: { name: string; repo: string }): StageIssue => ({
+  rule: "feature.archived-repo",
+  target: `${n.name}:${n.repo}`,
+  message: archivedRepoWords(
+    `New flow "${n.name}" is put in`,
+    n.repo,
+    "Put it in the repo that took over its work",
+  ),
+  blocking: true,
+});
+
+/** ADR 0203 B addendum: an operation feature.yaml puts in an archived repo. */
+const archivedOperation = (o: { kind: string; what: string }, repo: string): StageIssue => ({
+  rule: "feature.archived-repo",
+  target: `${o.kind}:${repo}`,
+  message: archivedRepoWords(
+    `Operation "${o.what}" is put in`,
+    repo,
+    "Put it in the repo that took over its work",
+  ),
+  blocking: true,
+});
+
+/**
+ * ADR 0203 B addendum: the work feature.yaml and the target flows put in a repo the manifest
+ * marks archived, checked again at every stage after the feature stage: a repo archived since is
+ * refused there as at the feature stage, with the same rule and target (so the same finding),
+ * which a person can't accept. A target flow in such a repo is one more.
+ */
+export function archivedWorkIssues(
+  p: Pick<FeaturePlacement, "newFlows"> & Partial<Pick<FeaturePlacement, "operations">>,
+  e: Pick<Estate, "archivedRepos">,
+  deltas: readonly { flow: string; repo: string }[] = [],
+): StageIssue[] {
+  return [
+    ...p.newFlows.filter((n) => e.archivedRepos.has(n.repo)).map(archivedNewFlow),
+    ...(p.operations ?? []).flatMap((o) =>
+      o.repos.filter((r) => e.archivedRepos.has(r)).map((r) => archivedOperation(o, r)),
+    ),
+    ...deltas
+      .filter((d) => e.archivedRepos.has(d.repo))
+      .map((d): StageIssue => ({
+        rule: "feature.archived-repo",
+        target: `${d.flow}:${d.repo}`,
+        message: archivedRepoWords(
+          `Target flow ${d.flow} puts work in`,
+          d.repo,
+          "Put it in the repo that took over its work",
+        ),
+        blocking: true,
+      })),
+  ];
+}
+
 export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRead): StageIssue[] {
   const out: StageIssue[] = [];
   const issue = (rule: string, target: string, message: string, repo?: string) =>
@@ -261,16 +316,7 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // passes with a note; anything else is refused.
   const repos = estateRepos(e);
   for (const n of p.newFlows)
-    if (e.archivedRepos.has(n.repo))
-      issue(
-        "feature.archived-repo",
-        `${n.name}:${n.repo}`,
-        archivedRepoWords(
-          `New flow "${n.name}" is put in`,
-          n.repo,
-          "Put it in the repo that took over its work",
-        ),
-      );
+    if (e.archivedRepos.has(n.repo)) out.push(archivedNewFlow(n));
     else if (repos.has(n.repo)) continue;
     else if (n.newRepo)
       out.push({
@@ -289,16 +335,7 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // catalog doesn't have.
   for (const o of p.operations ?? [])
     for (const repo of o.repos.filter((r) => !repos.has(r) || e.archivedRepos.has(r)))
-      if (e.archivedRepos.has(repo))
-        issue(
-          "feature.archived-repo",
-          `${o.kind}:${repo}`,
-          archivedRepoWords(
-            `Operation "${o.what}" is put in`,
-            repo,
-            "Put it in the repo that took over its work",
-          ),
-        );
+      if (e.archivedRepos.has(repo)) out.push(archivedOperation(o, repo));
       else if (o.newRepo)
         out.push({
           rule: "feature.planned-repo",

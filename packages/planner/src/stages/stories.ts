@@ -154,7 +154,7 @@ import {
   withOperationStories,
   type OperationStory,
 } from "./operation-stories.js";
-import { readPlacement } from "./feature.js";
+import { archivedWorkIssues, readPlacement } from "./feature.js";
 import {
   keepStoryNumbers,
   lastPart,
@@ -4689,6 +4689,8 @@ Rules:
         standards: new Set(standards.keys()),
       }),
       ...checkOperationStories(a.operations, opStories),
+      // ADR 0203 B addendum: a repo archived since the feature stage takes no new work here either.
+      ...archivedWorkIssues(placement ?? { newFlows: [] }, estate, deltas),
       // ADR 0203 review: the operations file as it is now, checked as the architecture stage
       // checks it (a person may have edited it since): no story is written from a plan it refuses.
       ...checkOperations(

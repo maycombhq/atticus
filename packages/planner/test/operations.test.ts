@@ -10,6 +10,7 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { loadChangeContext } from "@maycombhq/changes";
 import {
   architectureStage,
+  archivedWorkIssues,
   checkOperations,
   checkPlacement,
   checkStageDraft,
@@ -908,6 +909,81 @@ describe("the review's other refusals", () => {
     expect(got[0]).toBe(
       "operation.archived-repo: Operation deploy-new names repo forge-stock, which the manifest marks archived: an archived repo takes no new work, and that can't be accepted. Name the repo that took over its work, or take archived off in the manifest.",
     );
+  });
+
+  it("a repo the manifest archives after the feature stage is refused at architecture and stories, as at feature", async () => {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, { runtime: assistant([FEATURE]), now: NOW });
+    await architectureStage(root, CHANGE, { runtime: assistant([ARCHITECTURE]), now: NOW });
+    // Then forge-stock is archived.
+    await mkdir(join(root, "org-pack/profiles/forge-old"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/profiles/forge-old/repos.manifest.yaml"),
+      "schemaVersion: 1\nplatform: forge-old\nrepos:\n  - id: forge-stock\n    url: https://git.example.com/forge/forge-stock.git\n    type: spring-boot\n    owner: team-orders\n    archived: true\n",
+    );
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      MANIFEST.replace(/ {2}- id: forge-stock\n(?: {4}.*\n){3}/, ""),
+    );
+    const archived = (issues: { rule: string; target: string; blocking: boolean }[]) =>
+      issues
+        .filter((i) => i.rule === "feature.archived-repo")
+        .map((i) => [i.target, i.blocking])
+        .sort();
+    // What feature.yaml puts in it, with the feature stage's own rule and target.
+    const want = [
+      ["cut-over:forge-stock", true],
+      ["deployment:forge-stock", true],
+    ];
+    expect(archived(await checkStageDraft(root, CHANGE, "architecture", ARCHITECTURE))).toEqual(
+      want,
+    );
+    expect(archived(await checkStageDraft(root, CHANGE, "stories", STORIES))).toEqual(want);
+  });
+
+  it("a new flow or a target flow in an archived repo is the same finding at every stage", () => {
+    const e = { archivedRepos: new Set(["forge-stock"]) } as unknown as Estate;
+    const placed = FeaturePlacement.parse({
+      ...placement(),
+      newFlows: [{ name: "Stock screen", repo: "forge-stock", why: "Screens stock." }],
+    });
+    const delta = FlowDelta.parse({
+      schemaVersion: 2,
+      flow: "forge-stock.reserve-stock",
+      repo: "forge-stock",
+      change: "modify",
+      why: "w",
+      steps: [
+        {
+          op: "add",
+          after: 1,
+          kind: "call-out",
+          what: "Ask.",
+          to: { component: "forge-orders", entry: "POST /x" },
+        },
+      ],
+    });
+    expect(archivedWorkIssues(placed, e, [delta]).map((i) => [i.rule, i.target])).toEqual([
+      ["feature.archived-repo", "Stock screen:forge-stock"],
+      ["feature.archived-repo", "deployment:forge-stock"],
+      ["feature.archived-repo", "cut-over:forge-stock"],
+      ["feature.archived-repo", "forge-stock.reserve-stock:forge-stock"],
+    ]);
+    // The feature stage's own check gives the same findings for what feature.yaml has.
+    const full = {
+      ...e,
+      byId: new Map(),
+      flowById: new Map(),
+      flows: [],
+      records: [],
+      manifestRepos: new Set(),
+      manifestProblems: [],
+    } as unknown as Estate;
+    expect(
+      checkPlacement(placed, full)
+        .filter((i) => i.rule === "feature.archived-repo")
+        .map((i) => [i.target, i.message]),
+    ).toEqual(archivedWorkIssues(placed, e).map((i) => [i.target, i.message]));
   });
 
   it("the stories stage checks the operations file again: an undo deleted after architecture is refused", async () => {

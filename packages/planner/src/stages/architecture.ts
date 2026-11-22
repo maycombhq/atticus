@@ -37,7 +37,7 @@ import {
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { openspecInstructionSource } from "./openspec-files.js";
-import { readPlacement } from "./feature.js";
+import { archivedWorkIssues, readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
@@ -2870,6 +2870,8 @@ export async function architectureStage(
       }),
       // B-arch, check 4: the deploy order puts a callee before its caller, a migration first.
       ...deployIssues(a.flows, a.deploy, estate),
+      // ADR 0203 B addendum: a repo archived since the feature stage takes no new work here either.
+      ...archivedWorkIssues(placement, estate, a.flows),
       // ADR 0203 B: the operations against the estate, the feature and what runs today.
       ...checkOperations(
         a.operations ?? [],
