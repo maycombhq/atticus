@@ -9,8 +9,9 @@ import { reconnectEstate, A, B, FIX, type ReconnectEstate } from "./reconnect-es
 /**
  * ADR 0204's migration: a beta.28.5 metarepo (hand pairings, a declared gateway route and a
  * declared topic, profile version 2) is opened and built by beta.30 and every file is byte for
- * byte the same; one declared arrow then raises only the profile's version and adds its item, and
- * the catalog gains exactly its Interface.
+ * byte the same apart from the loose ends' ids (ADR 0124 addendum E-ids: the repo in each); one
+ * declared arrow then raises only the profile's version and adds its item, and the catalog gains
+ * exactly its Interface.
  */
 
 const PROFILE = ["org-pack", "profiles", "forge", "profile.yaml"];
@@ -61,15 +62,40 @@ beforeAll(async () => {
 afterAll(async () => g?.close(), 120_000);
 
 describe("upgrade of a beta.28.5 metarepo (ADR 0204, Migration)", () => {
-  it("builds the catalog beta.28.5 built, byte for byte (its hashes, built by the tag v2.0.0-beta.28.5)", async () => {
+  // The rule of the comparison (the whole-release review of beta.30): beta.30 builds what the tag
+  // v2.0.0-beta.28.5 built, but for the one thing ADR 0124's addendum E-ids changed on purpose.
+  // A loose end's id carries its repo (`unresolved.<repo>.<fact id>`, was `unresolved.<fact id>`),
+  // so its file has that name and its `id:` line that id. With each new id read back as the old
+  // one, every record file and stored read is byte for byte beta.28.5's. `build.json` is left out
+  // of the bytes compared: it lists each file by path and hash and names the build's version, so
+  // it differs wherever an id does; that it is there is still checked.
+  it("builds the catalog beta.28.5 built, byte for byte but for the loose ends' ids (its hashes, built by the tag v2.0.0-beta.28.5)", async () => {
     const golden = JSON.parse(
       readFileSync(join(FIX, "expected", "catalog-beta28.5.json"), "utf8"),
     ) as { files: Record<string, string> };
+    const BUILD = "catalog/sources/build.json";
+    // The repos as an id names them (dots made dashes), from the stored reads on file.
+    const repos = [...files(join(g.root, "catalog", "sources", "facts")).keys()]
+      .map((k) => /([^/\\]+)\.meta\.json$/.exec(k)?.[1])
+      .filter((r): r is string => !!r)
+      .map((r) => r.replace(/\./g, "-"));
+    const eIds = new RegExp(
+      `\\bunresolved\\.(?:${repos.map((r) => r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\.`,
+      "g",
+    );
+    const asBefore = (text: string) => text.replace(eIds, "unresolved.");
     const now: Record<string, string> = {};
-    for (const [k, v] of files(join(g.root, "catalog")))
-      now[k] = createHash("sha256").update(v).digest("hex");
+    let renamed = 0;
+    for (const [k, v] of files(join(g.root, "catalog"))) {
+      const key = asBefore(k.split("\\").join("/"));
+      if (key !== k.split("\\").join("/")) renamed++;
+      now[key] = createHash("sha256").update(asBefore(v)).digest("hex");
+    }
     expect(Object.keys(now).sort()).toEqual(Object.keys(golden.files).sort());
-    for (const [k, v] of Object.entries(golden.files)) expect(now[k], k).toBe(v);
+    for (const [k, v] of Object.entries(golden.files)) if (k !== BUILD) expect(now[k], k).toBe(v);
+    // The rename is the one E-ids makes, and only it: the estate's one loose end.
+    expect(renamed).toBe(1);
+    expect(now).toHaveProperty(["catalog/generated/unresolved/unresolved.call-get-fees-id.yaml"]);
   }, 300_000);
 
   it("builds every file byte for byte the same until an arrow is declared", async () => {
