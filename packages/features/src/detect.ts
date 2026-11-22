@@ -145,9 +145,6 @@ export class Tracer {
   private outsMemo = new Map<string, Iface[]>();
   /** How many starts each component has, for the entry points in play (reset with them). */
   private startsMemo = new Map<string, number>();
-  /** ADR 0205 addendum, step 3b: the entry points in play by start, and the parts kept for them. */
-  private startUses = new Map<string, number>();
-  private bfsMemo = new Map<string, SharedBfs>();
 
   constructor(
     records: readonly CatalogRecord[],
@@ -282,14 +279,6 @@ export class Tracer {
     this.entriesAt.clear();
     this.claimed.clear();
     this.startsMemo.clear();
-    // Step 3b: how many entry points in play share each start (both ways of keeping visits).
-    this.bfsMemo.clear();
-    this.startUses.clear();
-    for (const e of entries)
-      for (const keep of [false, true]) {
-        const k = startKey(e, keep);
-        this.startUses.set(k, (this.startUses.get(k) ?? 0) + 1);
-      }
     for (const e of entries) {
       const l = this.entriesAt.get(e.component) ?? [];
       l.push(e);
@@ -542,12 +531,6 @@ export class Tracer {
    */
   traceIx(entry: EntryPoint, keep: boolean): FlowIx {
     const g = this.g;
-    // ADR 0205's addendum, step 3b: an entry point whose start (component, words, mode) another
-    // in play shares takes the breadth-first part traced once for that start.
-    const key = traceHooks.off ? undefined : startKey(entry, keep);
-    const uses = key === undefined ? 0 : (this.startUses.get(key) ?? 0);
-    const shared =
-      uses > 1 || this.bfsMemo.has(key!) ? this.sharedBfs(entry, key!, keep) : undefined;
     const pass = ++this.pass;
     const recMark = this.recMark;
     const reachMark = this.reachMark;
@@ -565,6 +548,8 @@ export class Tracer {
         reached.push(k);
       }
     };
+    const visits: Flow["visits"] | undefined = keep ? [] : undefined;
+    const hops: Iface[] | undefined = keep ? [] : undefined;
     rec(this.indexOf(entry.id));
     rec(this.indexOf(entry.component));
     reach(this.indexOf(entry.id));
@@ -580,53 +565,14 @@ export class Tracer {
         rec(this.indexOf(c.from));
       }
     }
-    if (shared) {
-      // The head first, then the start's breadth-first part as it added them, less the head's:
-      // what one trace adding the head and then the part gives.
-      for (const k of shared.records) rec(k);
-      for (const k of shared.reached) reach(k);
-      return {
-        entry,
-        records: Int32Array.from(records),
-        reached: Int32Array.from(reached),
-        ...(keep ? { visits: shared.visits!.slice(), hops: shared.hops!.slice() } : {}),
-      };
-    }
-    const visits: Flow["visits"] | undefined = keep ? [] : undefined;
-    const hops: Iface[] | undefined = keep ? [] : undefined;
-    const start = traceHooks.onBreadthFirst ? traceHooks.onBreadthFirst(entry) : entry;
-    this.breadthFirst(start.component, start.tokens, start.mode, pass, rec, reach, visits, hops);
-    return {
-      entry,
-      records: Int32Array.from(records),
-      reached: Int32Array.from(reached),
-      ...(visits ? { visits } : {}),
-      ...(hops ? { hops } : {}),
-    };
-  }
-
-  /**
-   * The breadth-first part of a trace from a start (the entry point's component, words and
-   * mode): it reads nothing else of the entry point, so entry points with one start share it.
-   * Each component is visited once, with the words of the first hop that queued it. A component
-   * already queued is not queued again: the later copy would be skipped when it came up, so it
-   * is never made (nor its words' union).
-   */
-  private breadthFirst(
-    component0: string,
-    tokens0: Set<string>,
-    mode0: Mode,
-    pass: number,
-    rec: (k: number) => void,
-    reach: (k: number) => void,
-    visits: Flow["visits"] | undefined,
-    hops: Iface[] | undefined,
-  ): void {
+    // Breadth first; a component is visited once, with the words of the first hop that queued
+    // it. A component already queued is not queued again: the later copy would be skipped when
+    // it came up, so it is never made (nor its words' union).
     const queuedMark = this.queuedMark;
-    const first = this.indexOf(component0);
+    const first = this.indexOf(entry.component);
     queuedMark[first] = pass;
     const queue: { component: string; at: number; toks: Set<string>; depth: number; mode: Mode }[] =
-      [{ component: component0, at: first, toks: tokens0, depth: 0, mode: mode0 }];
+      [{ component: entry.component, at: first, toks: entry.tokens, depth: 0, mode: entry.mode }];
     for (let q = 0; q < queue.length; q++) {
       const { component, at, toks, depth, mode } = queue[q]!;
       if (!this.ownAt(at, component)) continue;
@@ -668,82 +614,15 @@ export class Tracer {
         }
       }
     }
-  }
-
-  /**
-   * The breadth-first part for a start other entry points in play share: traced on its first
-   * use (each id once, in the order it first adds it), kept until its last, then let go.
-   */
-  private sharedBfs(entry: EntryPoint, key: string, keep: boolean): SharedBfs {
-    let b = this.bfsMemo.get(key);
-    if (!b) {
-      const pass = ++this.pass;
-      const recMark = this.recMark;
-      const reachMark = this.reachMark;
-      const records: number[] = [];
-      const reached: number[] = [];
-      const visits: Flow["visits"] | undefined = keep ? [] : undefined;
-      const hops: Iface[] | undefined = keep ? [] : undefined;
-      const start = traceHooks.onBreadthFirst ? traceHooks.onBreadthFirst(entry) : entry;
-      this.breadthFirst(
-        start.component,
-        start.tokens,
-        start.mode,
-        pass,
-        (k) => {
-          if (recMark[k] !== pass) {
-            recMark[k] = pass;
-            records.push(k);
-          }
-        },
-        (k) => {
-          if (reachMark[k] !== pass) {
-            reachMark[k] = pass;
-            reached.push(k);
-          }
-        },
-        visits,
-        hops,
-      );
-      b = {
-        records: Int32Array.from(records),
-        reached: Int32Array.from(reached),
-        ...(visits ? { visits } : {}),
-        ...(hops ? { hops } : {}),
-        left: this.startUses.get(key) ?? 1,
-      };
-      this.bfsMemo.set(key, b);
-    } else traceStats.shared++;
-    if (--b.left <= 0) this.bfsMemo.delete(key);
-    return b;
+    return {
+      entry,
+      records: Int32Array.from(records),
+      reached: Int32Array.from(reached),
+      ...(visits ? { visits } : {}),
+      ...(hops ? { hops } : {}),
+    };
   }
 }
-
-/** A breadth-first part kept for the entry points that share its start (step 3b). */
-interface SharedBfs {
-  records: Int32Array;
-  reached: Int32Array;
-  visits?: Flow["visits"];
-  hops?: Iface[];
-  /** The uses left: let go after the last. */
-  left: number;
-}
-
-/** A start's key: its component, mode, words in their order, and whether visits are kept. */
-const startKey = (e: EntryPoint, keep: boolean) =>
-  `${e.component}\u0000${e.mode}\u0000${keep ? 1 : 0}\u0000${[...e.tokens].join("\u0001")}`;
-
-/**
- * ADR 0205's addendum, step 3b: `off` traces every entry point alone (the way before, the proof's
- * other side); `onBreadthFirst` gives the tests a recording view of the entry point the
- * breadth-first part reads its start from.
- */
-export const traceHooks: {
-  off?: boolean;
-  onBreadthFirst?: (entry: EntryPoint) => EntryPoint;
-} = {};
-/** How many traces took a breadth-first part another entry point's trace made (the tests). */
-export const traceStats = { shared: 0 };
 
 /** Union-find over entry points that never joins two entry points people pinned apart. */
 class Groups {
