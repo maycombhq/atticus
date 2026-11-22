@@ -3,7 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { stopJob } from "../../api/client.js";
 import { followJob, JobFailed } from "../../app/job.js";
 import { JobWait } from "../../app/job-wait.js";
-import { Propose } from "../../app/propose.js";
+import { Propose, RefusalLink } from "../../app/propose.js";
 import { Command } from "../work/RunNext.js";
 import { COPY } from "../../copy.js";
 
@@ -118,6 +118,7 @@ export function RunNewRepos(p: { repos: Repos; platform?: string; io?: RunIo }) 
           <p role="status" className="ev-say">
             {W.onMap(res.done, res.of)}
           </p>
+          {res.refused && <RefusalLink refused={res.refused} />}
           {res.done > 0 && (
             <a className="btn" href="#/map">
               {W.showThem}

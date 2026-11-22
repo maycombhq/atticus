@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   addManifestRepos,
   factsDirOf,
+  factsRelOf,
   loadOrgPack,
   manifestFiles,
   orgPackDirOf,
@@ -12,6 +13,7 @@ import { estateRepos, factsSlotPaths } from "@maycombhq/scanner";
 import { badRequest } from "@maycombhq/server";
 import type { Output } from "./commands.js";
 import { copilotAcpAllowed } from "./copilot-acp-steps.js";
+import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
 
 /**
  * ADR 0204 decision 4: new repos in one go, as one job of four parts, each the code that is
@@ -42,7 +44,7 @@ export const reposRunHooks: {
     root: string,
     repos: string[],
     io: Output,
-    onRepo: (repo: string, code: number) => void,
+    onRepo: (repo: string, code: number, refused?: Api.BuildRefusalViewT) => void,
   ) => Promise<number>;
   clock?: () => number;
 } = {};
@@ -97,6 +99,7 @@ export async function reposRun(
   };
   const stopped = () => o.signal?.aborted === true;
   let handoff: Api.ReposRunResultT["handoff"];
+  let refused: Api.BuildRefusalViewT | undefined;
   const parts: Api.ReposRunPartT[] = [];
   const part = (p: Part, rows: Api.ReposRunPartT["repos"]): Api.ReposRunPartT => {
     const states = new Set(rows.map((r) => r.state));
@@ -228,11 +231,27 @@ export async function reposRun(
   if (toApply.length) {
     let k = 0;
     say("apply", toApply[0]!, 1, toApply.length);
-    await (reposRunHooks.apply ?? defaultApply)(root, toApply, o.io, (repo, code) => {
+    await (reposRunHooks.apply ?? defaultApply)(root, toApply, o.io, (repo, code, r) => {
+      // The second review: facts left out (exit 3) are on the map and wait to be fixed; a build
+      // that refused waits for the person's confirm (its listing's page, `refused`): neither is
+      // done, and the second is no failure.
+      if (r) refused = r;
       applied.push(
-        code === 0 || code === 3
+        code === 0
           ? { repo, state: "done" }
-          : { repo, state: "failed", why: "verify refused it: see the lines" },
+          : code === APPLIED_WITH_LEFT_OUT
+            ? {
+                repo,
+                state: "waiting",
+                why: `on the map with facts left out: fix them from ${factsRelOf(root)}/${repo}.rejected.jsonl, then apply it again`,
+              }
+            : r
+              ? {
+                  repo,
+                  state: "waiting",
+                  why: "saved, not built: the build waits for you to confirm what it lists",
+                }
+              : { repo, state: "failed", why: "verify refused it: see the lines" },
       );
       done++;
       k++;
@@ -252,6 +271,7 @@ export async function reposRun(
     return {
       parts,
       ...(handoff ? { handoff } : {}),
+      ...(refused ? { refused } : {}),
       done: ids.filter((id) => now.out.get(id)!.applied).length,
       of: ids.length,
     };
@@ -276,8 +296,25 @@ const defaultApply = async (
   root: string,
   repos: string[],
   io: Output,
-  onRepo: (repo: string, code: number) => void,
+  onRepo: (repo: string, code: number, refused?: Api.BuildRefusalViewT) => void,
 ) => {
   const { verifyAllCommand } = await import("./verify-commands.js");
-  return verifyAllCommand(root, { write: true, only: repos, onRepo }, io);
+  const { refusalView } = await import("./build-report.js");
+  // Each repo's refused build, told by its own verify (one repo at a time, in order).
+  let current: string | undefined;
+  const refusals = new Map<string, Api.BuildRefusalViewT>();
+  return verifyAllCommand(
+    root,
+    {
+      write: true,
+      only: repos,
+      onStart: (repo) => (current = repo),
+      onBuildRefused: (r) => {
+        if (current)
+          refusals.set(current, refusalView(root, r, `atticus verify ${current} --write`));
+      },
+      onRepo: (repo, code) => onRepo(repo, code, code === 0 ? undefined : refusals.get(repo)),
+    },
+    io,
+  );
 };

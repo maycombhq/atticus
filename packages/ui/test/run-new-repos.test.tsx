@@ -118,4 +118,42 @@ describe("Sync, read and apply these N (ADR 0204 4.1 to 4.5)", () => {
     expect(t.sent[1]).toEqual({ repos, read: true });
     expect(text(t.m.tree)).toContain(W.onMap(3, 3));
   });
+
+  it("an Apply whose build refused says it waits for a confirm, with the link (the second review)", async () => {
+    const t = open([
+      {
+        parts: [
+          ...["add", "sync", "read"].map((x) => part(x as never, "done")),
+          {
+            part: "apply",
+            state: "waiting",
+            repos: [
+              {
+                repo: "forge-fx",
+                state: "waiting",
+                why: "saved, not built: the build waits for you to confirm what it lists",
+              },
+            ],
+          },
+        ],
+        refused: {
+          reasons: ["large-removals"],
+          message: "12 records would go.",
+          command: "atticus verify forge-fx --write --allow-removals 12",
+        },
+        done: 2,
+        of: 3,
+      },
+    ]);
+    (t.button(W.run(3))!.props.onClick as () => void)();
+    await t.done();
+    // The refusal's link (RefusalLink: its words and Set up › Scans › Catalog builds).
+    expect(all(t.m.tree).find((e) => e.props.refused)?.props.refused).toEqual({
+      reasons: ["large-removals"],
+      message: "12 records would go.",
+      command: "atticus verify forge-fx --write --allow-removals 12",
+    });
+    expect(text(t.m.tree)).toContain("forge-fx (waiting: saved, not built");
+    expect(text(t.m.tree)).not.toContain("failed");
+  });
 });

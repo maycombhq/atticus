@@ -6776,6 +6776,11 @@ export const ReposRunPart = z.object({
 export const ReposRunResult = z.object({
   parts: z.array(ReposRunPart),
   handoff: z.object({ command: z.string() }).optional(),
+  /**
+   * The second review: an Apply whose build refused (a large removal, a hand edit) waits for the
+   * person's confirm: its listing, which Set up › Scans › Catalog builds confirms.
+   */
+  refused: BuildRefusalView.optional(),
   /** How many of the repos are on the map (applied), of how many. */
   done: z.number().int().nonnegative(),
   of: z.number().int().nonnegative(),

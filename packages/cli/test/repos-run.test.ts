@@ -165,3 +165,57 @@ describe("where the app can't start the assistant, and a repo that fails", () =>
     expect(res).toMatchObject({ done: 1, of: 2 });
   }, 300_000);
 });
+
+describe("Apply's ends that aren't done (the second review)", () => {
+  const THREE = ["forge-lot", "forge-pnl", "forge-sla"].map((id) => ({
+    id,
+    url: `https://git.forge.example/forge/${id}.git`,
+  }));
+  it("facts left out (exit 3) wait to be fixed, and a refused build waits for a confirm with its link", async () => {
+    reposRunHooks.canRead = true;
+    refuse = new Set();
+    const refusal: Api.BuildRefusalViewT = {
+      reasons: ["large-removals"],
+      message: "The build would remove 12 records.",
+      command: "atticus verify forge-sla --write --allow-removals 12",
+      allowRemovals: 12,
+    };
+    const apply = reposRunHooks.apply!;
+    reposRunHooks.apply = async (root, rs, _io, onRepo) => {
+      for (const r of rs) {
+        if (r === "forge-sla") {
+          onRepo(r, 1, refusal);
+          continue;
+        }
+        const f = factsSlotPaths(root, r).facts;
+        mkdirSync(dirname(f), { recursive: true });
+        writeFileSync(f, "");
+        onRepo(r, r === "forge-pnl" ? 3 : 0);
+      }
+      return 1;
+    };
+    try {
+      const r = await reposRun(g.root, { repos: THREE }, { by: "pat", io: quiet });
+      expect(state(r, "apply")).toEqual({
+        part: "apply",
+        state: "waiting",
+        repos: [
+          { repo: "forge-lot", state: "done" },
+          {
+            repo: "forge-pnl",
+            state: "waiting",
+            why: "on the map with facts left out: fix them from facts/forge-pnl.rejected.jsonl, then apply it again",
+          },
+          {
+            repo: "forge-sla",
+            state: "waiting",
+            why: "saved, not built: the build waits for you to confirm what it lists",
+          },
+        ],
+      });
+      expect(r.refused).toEqual(refusal);
+    } finally {
+      reposRunHooks.apply = apply;
+    }
+  }, 300_000);
+});
