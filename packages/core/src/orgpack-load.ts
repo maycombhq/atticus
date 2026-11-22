@@ -496,7 +496,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
       problems.push({
         file: "gates.yaml",
         path: `${g.id}.id`,
-        message: `${g.id} is a name Atticus keeps for a stage's own findings (${STAGE_GATE_PREFIX}<stage>, ADR 0203): rename the gate.`,
+        message: `rename the gate: ${STAGE_GATE_PREFIX}<stage> is the name Atticus keeps for a stage's own findings (ADR 0203).`,
       });
     for (const r of g.approvers)
       if (!roleIds.has(r))

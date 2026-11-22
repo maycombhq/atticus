@@ -165,7 +165,7 @@ export async function resolveGate(
   if (gate.id.startsWith(STAGE_GATE_PREFIX))
     throw new CriticError(
       "refused",
-      `Gate ${gate.id} in gates.yaml has a name Atticus keeps for a stage's own findings (${STAGE_GATE_PREFIX}<stage>, ADR 0203): rename it in org-pack/gates.yaml.`,
+      `Rename gate ${gate.id} in org-pack/gates.yaml: ${STAGE_GATE_PREFIX}<stage> is the name Atticus keeps for a stage's own findings (ADR 0203).`,
     );
   return { lifecycle, change, type, gate };
 }

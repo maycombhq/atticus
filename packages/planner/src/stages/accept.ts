@@ -81,7 +81,7 @@ const WAYS_ON: [readonly string[] | RegExp, string][] = [
   ],
   [
     ["feature.archived-repo", "operation.archived-repo"],
-    "An archived repo takes no new work, whatever the catalog still holds of it: put the work in the repo that took it over, or take archived off in the manifest.",
+    "Put the work in the repo that took over the archived repo's work, or take archived off in the manifest: an archived repo takes no new work, whatever the catalog still holds of it.",
   ],
   [
     /^delta\.(at|uses)-/,
