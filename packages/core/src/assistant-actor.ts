@@ -8,26 +8,92 @@ const GENERIC = ["assistant", "agent", "agents", "ai", "bot", "llm", "model"];
 const BOT = /\[bot\]$|[-_.]bot$/;
 
 /**
+ * Atticus's own agents, which draft, judge and review: a `by` that names one is an AI, never a
+ * person (ADR 0203 A.4). Matched exactly (assistantActor); a hyphenated handle ending `-critic`
+ * or `-naysayer` (every critic lens and every persona's naysayer) is matched by that suffix.
+ * assistantActor always knows them, as the whole handle or an email's local part; the org
+ * pack's names (assistantNames, in @maycombhq/changes) only as the whole handle.
+ * packages/changes/test/assistant-names.test.ts reads every agent id the code defines and
+ * checks each is here.
+ */
+export const BUILT_IN_AGENTS: readonly string[] = [
+  // The stages and the context engine.
+  "feature-placer",
+  "flow-architect",
+  "story-writer-flows",
+  "small-change-planner",
+  "context-expander",
+  "context-reranker",
+  "change-drafter",
+  "needs-finder",
+  "story-writer",
+  "template-writer",
+  // Review, the task run and the tests.
+  "judge",
+  "critic-lenses",
+  "critic",
+  "naysayer",
+  "task-runner",
+  "test-writer",
+  // Reading the estate and its knowledge.
+  "repo-reader",
+  "knowledge-reader",
+  "knowledge-asker",
+  "feature-namer",
+  "glossary-definer",
+  "explainer",
+  "spec-drafter",
+  "dialect-drafter",
+  "dialect-writer",
+  "framework-drafter",
+  // The Copilot agents Atticus writes for the person's assistant (assistant-files).
+  "atticus-repo-reader",
+  "atticus-verifier",
+  "atticus-repo-describer",
+  "atticus-question-proposer",
+  "atticus-stage-drafter",
+  "atticus-task-runner",
+  "atticus-knowledge-reader",
+];
+
+/** A handle every critic lens and every persona's naysayer has: one hyphenated word, no address. */
+const LENS_HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*-(?:critic|naysayer)$/;
+
+/**
  * The name a `by` matched when it names an AI agent or runtime rather than a person (ADR 0115
- * addendum, 2026-10-25): one of the assistants Atticus writes files for, or its short name (the
- * part before its first hyphen); a runtime kind; a generic word for an AI; a Git host's bot
- * account; or one of `known`, which the caller fills from the org pack (its agents' ids, the models
- * it allows). A handle matches a name when it is the name, or starts or ends with it joined by a
- * hyphen, dot, underscore or space ("copilot-agent", "ai-reviewer"); an email is read by its local
- * part. Undefined for a person. Facts about the words only: Atticus can't see who typed them, so
- * this is a record and a speed bump, and the pull request a person approves stays the gate.
+ * addendum, 2026-10-25; ADR 0203 A.4). Three rules:
+ *
+ * 1. One of the assistants Atticus writes files for, or its short name (the part before its first
+ *    hyphen); a runtime kind; a generic word for an AI; a Git host's bot account. Such a word
+ *    matches when it is the handle, or starts or ends it joined by a hyphen, dot, underscore or
+ *    space ("copilot-agent", "ai-reviewer"); an email is read by its local part.
+ * 2. One of Atticus's own agents (BUILT_IN_AGENTS): the whole `by`, or an email's local part,
+ *    exactly, case aside ("feature-placer@…" is the agent). One of `known`, which the caller
+ *    fills from the org pack (its agents, its persona files, the models it allows): the whole
+ *    `by` only, exactly, case aside, never an email's local part: a persona's name is often a
+ *    role's, and a team mailbox of that name ("security@…", "qa@…") is a person. Never a part
+ *    of either, so "m.judge@…" or "judge.smith" is a person.
+ * 3. A handle that ends `-critic` or `-naysayer` and is one hyphenated word of letters and digits
+ *    (every critic lens and every persona's naysayer is named so): not an email, a dotted name,
+ *    or words with spaces or underscores, which are people's.
+ *
+ * Undefined for a person. Facts about the words only: Atticus can't see who typed them, so this
+ * is a record and a speed bump, and the pull request a person approves stays the gate.
  */
 export function assistantActor(by: string, known: readonly string[] = []): string | undefined {
   const said = by.trim();
-  const local = said.toLowerCase().replace(/@.*$/, "");
+  const whole = said.toLowerCase();
+  const local = whole.replace(/@.*$/, "");
   if (!local) return undefined;
   if (BOT.test(local)) return said;
+  if (BUILT_IN_AGENTS.includes(whole) || BUILT_IN_AGENTS.includes(local)) return said;
+  if (known.some((k) => !!k.trim() && k.trim().toLowerCase() === whole)) return said;
+  if (LENS_HANDLE.test(whole)) return said;
   const names = new Set<string>([...GENERIC, ...RuntimeKind.options]);
   for (const a of ASSISTANTS) {
     names.add(a);
     names.add(a.split("-")[0]!);
   }
-  for (const k of known) if (k.trim()) names.add(k.trim().toLowerCase());
   for (const n of names) {
     if (local === n) return said;
     if (local.length > n.length && (local.startsWith(n) || local.endsWith(n))) {

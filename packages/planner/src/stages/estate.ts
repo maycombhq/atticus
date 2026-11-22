@@ -11,6 +11,7 @@ import {
   type CatalogRecord,
   type FlowRecord,
 } from "@maycombhq/core";
+import type { Accepted } from "./accept.js";
 
 /**
  * The estate as the stages read it (ADR 0087): every repo's spec of flows (ADR 0079) and the
@@ -54,6 +55,16 @@ export interface Estate {
    * to every check, with that standing. Absent: none declared.
    */
   outside?: ReadonlySet<string>;
+  /**
+   * ADR 0203 A.4: the ids people accepted at a stage of this change (a repo, a component, a
+   * consumer the map doesn't hold), with who and why, set by the stage that read them. Each is
+   * known to every check, with that standing, as the kind its rule says (a repo, a consumer, a
+   * call's target). One a list, by rule and id: one id accepted under two rules is both. Absent:
+   * none accepted.
+   */
+  accepted?: readonly { id: string; by: string; why: string; rule: string }[];
+  /** ADR 0203 A: every acceptance of the change's stages, by fingerprint, for what they render. */
+  acceptedFindings?: ReadonlyMap<string, Accepted>;
 }
 
 /** What the manifests say, as the estate keeps it. */
@@ -95,6 +106,14 @@ export function unreadRepos(e: Pick<Estate, "records" | "manifestRepos">): Set<s
  * Why a repo a draft names isn't the estate's, when the manifests can say: it is archived, or a
  * manifest didn't read. Words that follow the finding's own sentence; empty when neither.
  */
+/**
+ * ADR 0203 B addendum: an archived repo takes no new work, whatever the catalog still holds of
+ * it. Its finding has its own rule (`feature.archived-repo`, `operation.archived-repo`), which a
+ * person can't accept, so an acceptance of the repo as unknown never covers it.
+ */
+export const archivedRepoWords = (what: string, repo: string, way: string) =>
+  `${what} repo ${repo}, which the manifest marks archived: an archived repo takes no new work, and that can't be accepted. ${way}, or take archived off in the manifest.`;
+
 export function notEstateWhy(
   e: Pick<Estate, "archivedRepos" | "manifestProblems">,
   repo: string,

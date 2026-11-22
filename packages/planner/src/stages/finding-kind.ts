@@ -77,6 +77,9 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.deploy-missing",
   "delta.deploy-unknown-repo",
   "delta.deploy-unknown-migration",
+  // ADR 0203 B addendum: the manifest settles it; answering a question never passes it.
+  "feature.archived-repo",
+  "operation.archived-repo",
   "stories.no-criteria",
   "stories.field-not-checked",
   "stories.unknown-check",
@@ -86,6 +89,25 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "stories.unknown-story",
   "stories.unknown-task",
   "stories.unknown-step",
+]);
+
+/**
+ * ADR 0203 A.3: the stage rules a person may accept (accept.ts projects and reads them): only where a person can know better than the map and the next
+ * stage can still do its work. A fixed list, not configuration (rule 6).
+ */
+export const ACCEPTABLE_STAGE_RULES: ReadonlySet<string> = new Set([
+  "feature.unknown-repo",
+  "operation.unknown-repo",
+  "delta.unknown-component",
+  "delta.unknown-entry",
+  "delta.unknown-consumer",
+  "stories.unknown-consumer",
+  "delta.consumer-missing",
+  "delta.new-folder",
+  "stories.field-not-checked",
+  "stories.field-no-validation",
+  "stories.field-no-error-case",
+  "stories.shape-uncovered",
 ]);
 
 /** The kind of a stage's own finding, by its rule. */

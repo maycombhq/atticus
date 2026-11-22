@@ -1,5 +1,6 @@
 import { unreadRepos, type Estate } from "./estate.js";
 import type { FlowDelta } from "./schema.js";
+import { acceptedWords } from "./accept.js";
 
 /**
  * ADR 0189: the components a change plans that the catalog doesn't have yet, or retires. The
@@ -49,25 +50,51 @@ export function plannedComponents(
   return out;
 }
 
+/** How a change knows an id the catalog doesn't hold (ADR 0203). */
+export type Standing = "planned" | "not read" | "outside" | "accepted";
+
+/**
+ * ADR 0203: the ids a change may name that the catalog doesn't hold, each with its standing:
+ * `outside` (its feature.yaml declares the party outside the map, B.7), `not read` (a repo a
+ * manifest lists that nobody read, ADR 0201), `planned` (a component its target flows plan, ADR
+ * 0189), or `accepted` (a person accepted a stage's finding about it, A.4, with who and why).
+ * The checks that ask "is this id known" read it.
+ */
+export function knownToChange(
+  deltas: readonly FlowDelta[],
+  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos" | "outside" | "accepted">,
+): Map<string, { standing: Standing; by?: string; why?: string }> {
+  const out = new Map<string, { standing: Standing; by?: string; why?: string }>();
+  // Only a consumer a person accepted as one: an id accepted under another rule is no consumer.
+  for (const a of e.accepted ?? [])
+    if (CONSUMER_RULES.has(a.rule)) out.set(a.id, { standing: "accepted", by: a.by, why: a.why });
+  for (const p of plannedComponents(deltas, e).values())
+    if (p.action === "new") out.set(p.component, { standing: "planned" });
+  // A repo that was read is known by its component: only one nobody read is named by its repo.
+  for (const id of unreadRepos(e)) out.set(id, { standing: "not read" });
+  for (const id of e.outside ?? []) out.set(id, { standing: "outside" });
+  return out;
+}
+
 /**
  * ADR 0201: a consumer the catalog doesn't have that is still known, and why its use can't be
- * checked: a repo a manifest lists that nobody read, a component this change plans (ADR 0189), or
- * a party its feature.yaml declares as outside the map (ADR 0203 B.7).
- * The words that end the note; undefined for an id nothing knows, which is refused as before.
+ * checked (its standing, knownToChange). The words that end the note; undefined for an id
+ * nothing knows, which is refused as before.
  */
 export function unreadConsumer(
   id: string,
   deltas: readonly FlowDelta[],
-  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos" | "outside">,
+  e: Pick<Estate, "ids" | "flows" | "records" | "manifestRepos" | "outside" | "accepted">,
 ): string | undefined {
-  // ADR 0203 B.7: a party the feature declares as outside the map.
-  if (e.outside?.has(id))
+  const k = knownToChange(deltas, e).get(id);
+  if (k?.standing === "outside")
     return "is declared outside the map in feature.yaml, so its use can't be checked.";
-  // A repo that was read is known by its component: only one nobody read is named by its repo.
-  if (unreadRepos(e).has(id))
+  if (k?.standing === "not read")
     return `is in the manifest and hasn't been read, so its use can't be checked: atticus map ${id}`;
-  if (plannedComponents(deltas, e).get(id)?.action === "new")
+  if (k?.standing === "planned")
     return "is planned in this change and hasn't been read, so its use can't be checked.";
+  if (k?.standing === "accepted")
+    return `is ${acceptedWords({ by: k.by!, why: k.why! })}, so its use can't be checked.`;
   return undefined;
 }
 
@@ -78,4 +105,27 @@ export const plannedRepos = (
 ): Set<string> =>
   new Set(
     [...plannedComponents(deltas, e).values()].filter((p) => p.action === "new").map((p) => p.repo),
+  );
+
+/** The rules whose accepted id is a consumer, and those whose accepted id is a repo. */
+const CONSUMER_RULES: ReadonlySet<string> = new Set([
+  "delta.unknown-consumer",
+  "stories.unknown-consumer",
+]);
+const REPO_RULES = ["feature.unknown-repo", "operation.unknown-repo"] as const;
+
+/**
+ * ADR 0203 A: the repos people accepted, known exactly as a newRepo is, by the rules that
+ * accepted them. A check never passes over what its own rule accepted: it raises it again and the
+ * acceptance is read off its fingerprint, so the acceptance stays on file.
+ */
+export const acceptedRepos = (
+  e: Pick<Estate, "accepted"> & Partial<Pick<Estate, "archivedRepos">>,
+  rules: readonly string[] = REPO_RULES,
+): Set<string> =>
+  new Set(
+    (e.accepted ?? [])
+      // An archived repo takes no new work: an acceptance from before it was archived is void.
+      .filter((a) => rules.includes(a.rule) && !e.archivedRepos?.has(a.id))
+      .map((a) => a.id),
   );

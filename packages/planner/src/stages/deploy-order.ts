@@ -2,7 +2,7 @@ import { endpointKey, notEstateWhy, type Estate } from "./estate.js";
 import { endpointName } from "./contracts.js";
 import type { StageIssue } from "./loop.js";
 import type { DeployStep, FlowDelta } from "./schema.js";
-import { plannedRepos } from "./planned.js";
+import { acceptedRepos, plannedRepos } from "./planned.js";
 
 /**
  * The deploy order the architecture stage drafts across a change's repos (ADR 0124 addendum
@@ -195,6 +195,8 @@ export function deployIssues(
   // lists, read or not.
   const known = new Set<string>([
     ...plannedRepos(deltas, e),
+    // ADR 0203 A: a repo a person accepted, known as a new one is.
+    ...acceptedRepos(e),
     ...e.manifestRepos,
     ...codes.map((u) => u.repo),
     ...e.flows.map((f) => f.repo),
