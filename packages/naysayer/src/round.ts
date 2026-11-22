@@ -25,7 +25,14 @@ import { buildContext, type CriticContext, type GateDef } from "./context.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { questionOfRule, typeTakes } from "./questions.js";
 import { CriticError } from "./errors.js";
-import { assistantClosed, readProposals, writeProposals, type Proposal } from "./proposals.js";
+import {
+  assistantClosed,
+  assistantNames,
+  BUILT_IN_AGENTS,
+  readProposals,
+  writeProposals,
+  type Proposal,
+} from "./proposals.js";
 import {
   askedElsewhere,
   decidedElsewhere,
@@ -189,7 +196,7 @@ export async function prepareLayers(
   // What people answered for the change: part of the brief the lenses review against.
   ctx.answers = await changeAnswers(root, change.id);
   // What people recorded on the change's findings, at any gate (W2): the lenses read it as data.
-  ctx.recorded = await recordedFacts(root, change.id);
+  ctx.recorded = await recordedFacts(root, change.id, assistantNames(lifecycle));
   // ADR 0140: the reads and open link questions the change's calls rest on.
   ctx.estate = await loadEstateReads(root, ctx);
 
@@ -255,8 +262,11 @@ export async function writeHits(
      * problem isn't written twice.
      */
     skip?: ReadonlySet<string>;
+    /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+    known?: readonly string[];
   },
 ): Promise<CriticFinding[]> {
+  const known = o.known ?? BUILT_IN_AGENTS;
   const prior = new Map<string, Finding>();
   const proposed = new Map<string, Proposal>();
   if (o.priorRound !== undefined) {
@@ -265,7 +275,7 @@ export async function writeHits(
       if (
         (["dismissed", "waived", "asked"].includes(s.finding.state) || wroteIn(s.finding)) &&
         // An assistant's resolution of a blocking or risk finding is never carried as a decision.
-        !assistantClosed(s.finding)
+        !assistantClosed(s.finding, known)
       )
         prior.set(fingerprint(s.finding), s.finding);
     // What an assistant proposed about a finding that comes back unchanged waits on a person still;
@@ -275,7 +285,7 @@ export async function writeHits(
   }
   const elsewhere = await askedElsewhere(root, o.change, o.gate);
   // A person's decision at another gate holds here too (W2), as it does within a gate.
-  const decided = await decidedElsewhere(root, o.change, o.gate);
+  const decided = await decidedElsewhere(root, o.change, o.gate, known);
   const taken = o.taken ?? new Set<string>();
   const findings: CriticFinding[] = [];
   const carriedProposals: Proposal[] = [];

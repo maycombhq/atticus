@@ -13,6 +13,7 @@ import {
   type ChangeType,
   type LifecycleState,
 } from "@maycombhq/core";
+import { BUILT_IN_AGENTS } from "./assistant-names.js";
 import type { ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
 import type { Footprint } from "./footprint.js";
@@ -333,6 +334,8 @@ export async function checkFindings(
   root: string,
   change: ChangeLifecycle,
   gates: string[],
+  /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+  known: readonly string[] = BUILT_IN_AGENTS,
 ): Promise<Reason[]> {
   const reasons: Reason[] = [];
   for (const gate of gates) {
@@ -422,7 +425,7 @@ export async function checkFindings(
       }
       // An assistant's resolution of a blocking finding closes nothing (ADR 0115 addendum,
       // 2026-10-25): only a person's does. A file from before the rule still blocks.
-      const byAssistant = x.severity === "blocking" && isAssistantResolution(x.resolution);
+      const byAssistant = x.severity === "blocking" && isAssistantResolution(x.resolution, known);
       if (x.state !== "open" && !byAssistant) continue;
       if (x.severity === "blocking")
         reasons.push({

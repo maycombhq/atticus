@@ -5,7 +5,7 @@ import { Finding, runsDirOf, type CriticQuestion } from "@maycombhq/core";
 import { writeFileAtomic } from "@maycombhq/changes";
 import type { OpenFinding, ReviewSince } from "./ai.js";
 import { fingerprint as fingerprintOf, readRound, readRoundMeta, wroteIn } from "./findings.js";
-import { assistantClosed, readProposals, type Proposal } from "./proposals.js";
+import { assistantClosed, BUILT_IN_AGENTS, readProposals, type Proposal } from "./proposals.js";
 
 /**
  * What a critic round's lenses get, sized to need (ADR 0115 addendum, 2026-10-25, critic cost).
@@ -409,8 +409,11 @@ export async function sinceReview(
     personas?: readonly string[];
     /** The round before this one, when it isn't the last reviewed: what a person decided there holds. */
     prior?: number | undefined;
+    /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+    known?: readonly string[];
   },
 ): Promise<SinceReview | undefined> {
+  const known = o.known ?? BUILT_IN_AGENTS;
   const last = await lastReviewed(root, o.change, o.gate, o.round);
   if (!last) return undefined;
   const meta = await readRoundMeta(root, o.change, o.gate, last.round);
@@ -429,7 +432,7 @@ export async function sinceReview(
     const props = await readProposals(root, o.change, o.gate, later);
     for (const { finding: f } of read.findings) {
       laterHas.add(fingerprintOf(f));
-      if (["dismissed", "waived", "asked"].includes(f.state) && !assistantClosed(f))
+      if (["dismissed", "waived", "asked"].includes(f.state) && !assistantClosed(f, known))
         decided.set(fingerprintOf(f), f);
       const p = props.find((x) => x.finding === f.id);
       if (p) laterProposals.set(fingerprintOf(f), p);
@@ -464,7 +467,7 @@ export async function sinceReview(
         : (o.questions as string[]).includes(f.lens);
     if (!ai.has(f.id) || !runs) continue;
     const byPerson = decided.get(fingerprintOf(f));
-    const reopened = !byPerson && assistantClosed(f);
+    const reopened = !byPerson && assistantClosed(f, known);
     const proposal = proposalOf(f);
     // A fix marked applied is a claim the lens checks, as an assistant's is.
     const applied = f.state === "applied" && !wroteIn(f);

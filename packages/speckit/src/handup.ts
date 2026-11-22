@@ -2,7 +2,13 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { join } from "node:path";
-import { changeFolder, changeFootprint, changeTypeOf, writeFileAtomic } from "@maycombhq/changes";
+import {
+  assistantNames,
+  changeFolder,
+  changeFootprint,
+  changeTypeOf,
+  writeFileAtomic,
+} from "@maycombhq/changes";
 import {
   changeBranch,
   taskBranch,
@@ -419,7 +425,8 @@ export async function handUp(
     lens.reason = `agent ${agent.id} reads neither tasks nor repo code`;
   else {
     const levels = criticCtx.classifications;
-    const recorded = await recordedFacts(root, t.change.id).catch(() => []);
+    // What an assistant wrote isn't what people recorded: the org pack's agents and personas known.
+    const recorded = await recordedFacts(root, t.change.id, assistantNames(t.ctx)).catch(() => []);
     const sources: SourceInput[] = [
       {
         id: "0-instructions",

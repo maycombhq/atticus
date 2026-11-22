@@ -1,5 +1,11 @@
 import { join } from "node:path";
-import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import {
+  assistantNames,
+  changeFolder,
+  changeStore,
+  loadChangeContext,
+  writeFileAtomic,
+} from "@maycombhq/changes";
 import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
 import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
@@ -193,6 +199,7 @@ export async function completeLensRun(
       meta.findings.filter((f) => f.layer === "ai" && f.unchanged).map((f) => f.id),
     );
     findings = await writeHits(root, hits, {
+      known: assistantNames(ctx.lifecycle),
       change: changeId,
       gate: gateId,
       round,

@@ -55,6 +55,7 @@ import {
   failLens,
   fingerprint as criticFingerprint,
   assistantClosed,
+  assistantNames,
   readProposals,
   readRound,
   readRoundMeta,
@@ -488,7 +489,7 @@ export async function refuseWhileEarlierStuck(
     // knowledge gap waits for its owner's answer and doesn't hold the next stage up.
     if (gate)
       why.push(
-        ...(await checkFindings(root, change, [gate]))
+        ...(await checkFindings(root, change, [gate], assistantNames(ctx)))
           .filter((r) => r.code !== "open-gap")
           .map((r) => r.message),
       );
@@ -705,7 +706,7 @@ async function runLoop<A>(
   // Ninth UX walk: a question the loop raised about a critic finding a person has since
   // dismissed, waived or fixed, or that the gate's newest round no longer raises, asks about
   // nothing: it is retired, saying why, so it no longer holds the stage.
-  if (await retireSettledEscalations(root, change.id, loop, at)) await writeLoop(dir, loop);
+  if (await retireSettledEscalations(root, change.id, loop, at, ctx)) await writeLoop(dir, loop);
   // A stage waiting for a person stays stopped until the questions are answered.
   if (!o.resume && loop.state === "questions") {
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
@@ -1110,7 +1111,7 @@ async function runLoop<A>(
     }
     if (review) {
       // ---- the critic's AI lenses on the last draft, handed off one at a time (ADR 0115)
-      const lenses = await lensesIn(root, change.id, review, o, at, kindOf);
+      const lenses = await lensesIn(root, change.id, review, o, at, kindOf, assistantNames(ctx));
       resume = undefined;
       if (lenses.waiting) return handedToLens(lenses.waiting, review);
       if (lenses.failed.length) {
@@ -1485,7 +1486,7 @@ async function runLoop<A>(
       for (const f of loop.findings)
         if (f.question && f.source === "stage" && f.seenIn.at(-1) !== n)
           await retireOpen(root, f.question, `Draft ${n} no longer has it: ${f.message}`, at);
-    await retireSettledEscalations(root, change.id, loop, at);
+    await retireSettledEscalations(root, change.id, loop, at, ctx);
     await writeLoop(dir, loop);
 
     // ADR 0201 (amending ADR 0087's end rule): the draft says the change places nothing or
@@ -2309,13 +2310,18 @@ export async function retireSettledEscalations(
   change: string,
   loop: StageLoop,
   at: string,
+  /** The change context, or how to read it: read here only when needed. */
+  given?: ChangeContext | (() => Promise<ChangeContext>),
 ): Promise<boolean> {
+  let ctx = typeof given === "function" ? undefined : given;
+  const context = async () =>
+    (ctx ??= typeof given === "function" ? await given() : await loadChangeContext(root));
   // ADR 0203 A.6: a stage finding a person accepted answers the question it became, in the
   // acceptance's words; with no other question open the stage is stopped, so its next run checks
   // its files and is done with no new draft when nothing else blocks.
   const mine = loop.findings.filter((f) => f.question && f.source === "stage");
   const accepted = mine.length
-    ? await readAccepted(root, change, undefined, [loop.stage]).catch(
+    ? await readAccepted(root, change, await context(), [loop.stage]).catch(
         () => new Map<string, Accepted>(),
       )
     : new Map<string, Accepted>();
@@ -2348,12 +2354,13 @@ export async function retireSettledEscalations(
   const meta = await readRoundMeta(root, change, gate, round).catch(() => undefined);
   const complete = !(meta?.lenses ?? []).some((l) => l.state === "waiting" || l.state === "failed");
   const { findings } = await readRound(root, change, gate, round);
+  const known = assistantNames(await context());
   let any = false;
   for (const f of asked) {
     const hit = findings.find((x) => criticFingerprint(x.finding) === f.target);
     let why: string | undefined;
     if (hit) {
-      const words = assistantClosed(hit.finding) ? undefined : settledWords(hit.finding);
+      const words = assistantClosed(hit.finding, known) ? undefined : settledWords(hit.finding);
       if (words) why = `Its critic finding ${hit.finding.id} was ${words}.`;
     } else if (complete)
       why = `Round ${round} at the ${gate} gate no longer raises it: ${f.message}`;
@@ -2374,9 +2381,12 @@ export async function retireChangeEscalations(
 ): Promise<string[]> {
   const dir = changeFolder(root, change);
   const touched: string[] = [];
+  // Read once, and only when a stage needs it.
+  let ctx: Promise<ChangeContext> | undefined;
+  const context = () => (ctx ??= loadChangeContext(root));
   for (const stage of Stage.options) {
     const { loop, present } = await readStageLoop(dir, change, stage);
-    if (present && (await retireSettledEscalations(root, change, loop, at))) {
+    if (present && (await retireSettledEscalations(root, change, loop, at, context))) {
       touched.push(stage);
       // ADR 0203 A.6: an acceptance's answer is read, and may leave the stage stopped.
       await writeLoop(dir, loop);
@@ -2390,6 +2400,7 @@ async function criticIssues(
   change: string,
   findings: StoredFinding[],
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
+  known: readonly string[],
 ): Promise<StageIssue[]> {
   const rel = `${changesRelOf(root)}/${change}`;
   const out: StageIssue[] = [];
@@ -2401,7 +2412,7 @@ async function criticIssues(
   // person decided by answering: they already made that decision.
   for (const f of findings.filter(
     (x) =>
-      (x.finding.state === "open" || assistantClosed(x.finding)) &&
+      (x.finding.state === "open" || assistantClosed(x.finding, known)) &&
       (x.finding.severity === "blocking" || (x.finding.severity === "risk" && !x.finding.answered)),
   )) {
     const risk = f.finding.severity === "risk";
@@ -2445,6 +2456,7 @@ async function lensesIn(
   o: StageOptions,
   at: string,
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
+  known: readonly string[],
 ): Promise<{
   waiting?: LensWait;
   issues: StageIssue[];
@@ -2500,7 +2512,7 @@ async function lensesIn(
   }
   const { findings } = await readRound(root, change, review.gate, review.round);
   return {
-    issues: await criticIssues(root, change, findings, kindOf),
+    issues: await criticIssues(root, change, findings, kindOf, known),
     failed: await failedLenses(root, change, review.gate, review.round),
     discarded: ((await readRoundMeta(root, change, review.gate, review.round))?.discarded ??
       []) as Discarded[],
@@ -2602,7 +2614,7 @@ async function criticRound(
     .map((l) => ({ lens: l.lens, reason: l.reason ?? "it gave no review" }));
   if (failed.length) return { issues: [], stop: lensStop(spec.stage, change.id, draftNo, failed) };
   notes.push(...discardedNotes(r.discarded));
-  const issues = await criticIssues(root, change.id, r.findings, kindOf);
+  const issues = await criticIssues(root, change.id, r.findings, kindOf, assistantNames(ctx));
   // A checking round past the limit reviewed what a person did: what it finds goes to a person,
   // not to another draft no round is left to review (ADR 0115 addendum).
   if (r.checkRound && issues.some((i) => i.blocking))

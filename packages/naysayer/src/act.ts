@@ -440,7 +440,8 @@ async function afterLimit(
   ).length;
   if (left)
     return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}; once every one is acted on, ${checkRoundRule(f.round)}.`;
-  if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
+  if ((await checkRoundDue(root, change, f.gate, assistantNames(ctx))).length === 0)
+    return undefined;
   return `The ${f.gate} gate has no critic round left, but ${checkRoundRule(f.round)}: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
 }
 

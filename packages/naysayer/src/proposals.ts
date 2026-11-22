@@ -1,16 +1,15 @@
-import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { changeFolder, writeFileAtomic, type ChangeContext } from "@maycombhq/changes";
 import {
-  assistantActor,
-  IsoDateTime,
-  orgPackDirOf,
-  toCanonicalYaml,
-  type Finding,
-} from "@maycombhq/core";
+  assistantNames,
+  BUILT_IN_AGENTS,
+  changeFolder,
+  writeFileAtomic,
+  type ChangeContext,
+} from "@maycombhq/changes";
+import { assistantActor, IsoDateTime, toCanonicalYaml, type Finding } from "@maycombhq/core";
 
 /**
  * What an assistant proposes about a finding (ADR 0115 addendum, 2026-10-25, finding integrity).
@@ -44,50 +43,8 @@ const ProposalsFile = z.strictObject({
 const fileOf = (root: string, change: string, gate: string, round: number) =>
   join(changeFolder(root, change), "review", gate, String(round), "meta", "proposals.yaml");
 
-/**
- * Atticus's own agents, which draft, judge and review: a `by` that names one is an AI, never a
- * person (ADR 0203 A.4). With the suffixes every critic and every persona's naysayer has.
- */
-export const BUILT_IN_AGENTS: readonly string[] = [
-  "feature-placer",
-  "flow-architect",
-  "story-writer-flows",
-  "small-change-planner",
-  "context-expander",
-  "context-reranker",
-  "judge",
-  "critic-lenses",
-  // A name ending -critic or -naysayer is matched by its last word (assistantActor).
-  "critic",
-  "naysayer",
-];
-
-/**
- * The names that are an AI's in this metarepo, besides the built-in ones: Atticus's own agents,
- * the org pack's agents (its YAML definitions and, with the root, its persona files) and models.
- */
-export function assistantNames(
-  lifecycle: Pick<ChangeContext, "orgPack"> & { root?: string },
-): string[] {
-  const rt = lifecycle.orgPack.runtime as { models?: { allowed?: string[] } };
-  const personas = lifecycle.root
-    ? (() => {
-        try {
-          return readdirSync(join(orgPackDirOf(lifecycle.root), "agents"))
-            .filter((f) => f.endsWith(".md"))
-            .map((f) => f.slice(0, -3));
-        } catch {
-          return [];
-        }
-      })()
-    : [];
-  return [
-    ...BUILT_IN_AGENTS,
-    ...lifecycle.orgPack.agents.map((a) => a.id),
-    ...personas,
-    ...(rt.models?.allowed ?? []),
-  ];
-}
+/** Atticus's own agents and the metarepo's: in @maycombhq/changes, so the lifecycle reads them too. */
+export { BUILT_IN_AGENTS, assistantNames };
 
 /** The AI a `by` names, with the org pack's agents and models known; undefined for a person. */
 export const assistantOf = (
@@ -102,7 +59,7 @@ export const PERSON_CLOSES: ReadonlySet<string> = new Set(["blocking", "risk"]);
  * Whether a finding's resolution doesn't count as closing it: an AI resolved a blocking or risk
  * finding (a file from before this rule, or written by hand). It is read as still open.
  */
-export const assistantClosed = (f: Finding, known: readonly string[] = []): boolean =>
+export const assistantClosed = (f: Finding, known: readonly string[] = BUILT_IN_AGENTS): boolean =>
   f.state !== "open" &&
   PERSON_CLOSES.has(f.severity) &&
   !!f.resolution &&

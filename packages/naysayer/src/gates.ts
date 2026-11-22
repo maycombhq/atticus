@@ -7,7 +7,7 @@ import {
 } from "@maycombhq/changes";
 import { gateRoundLimit, type ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
-import { proposalWords, readProposals } from "./proposals.js";
+import { assistantNames, proposalWords, readProposals } from "./proposals.js";
 import {
   checkRoundDue,
   countedRounds,
@@ -84,7 +84,8 @@ export async function gateStatusOf(
   });
   const open = findings.filter((f) => f.finding.state === "open");
   // The lifecycle's own reading decides: one answer for the critic and for the hand-off.
-  const checked = await checkFindings(root, change, [gate]);
+  const known = assistantNames(lifecycle);
+  const checked = await checkFindings(root, change, [gate], known);
   const blocking = checked.map((r) => r.message);
   // Ninth UX walk: a gap waits on its owner (open, or asked and its owner question unanswered),
   // never on a person's decision about the draft.
@@ -126,7 +127,7 @@ export async function gateStatusOf(
       blocking.length > 0 &&
       usedUp &&
       !(count(open).blocking === 0 && onlyGaps && waiting.length === 0),
-    checkRound: usedUp && (await checkRoundDue(root, change.id, gate)).length > 0,
+    checkRound: usedUp && (await checkRoundDue(root, change.id, gate, known)).length > 0,
     checkRoundsRun,
     waiting,
     reasons,

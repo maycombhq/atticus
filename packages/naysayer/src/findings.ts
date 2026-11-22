@@ -6,7 +6,7 @@ import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { changeAnswers } from "./answers.js";
 import { decidedAt, decidedReason } from "./recorded.js";
 import type { Hit } from "./hits.js";
-import { assistantClosed, type Proposal } from "./proposals.js";
+import { assistantClosed, BUILT_IN_AGENTS, type Proposal } from "./proposals.js";
 import { questionOfRule } from "./questions.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
@@ -324,8 +324,13 @@ const DECIDED: ReadonlySet<string> = new Set(["applied", "waived", "dismissed"])
  * again, and a further round needs a further decision. The finding and question ids acted on
  * come back; none when no checking round is due.
  */
-export async function checkRoundDue(root: string, change: string, gate: string): Promise<string[]> {
-  return (await checkRoundState(root, change, gate)).actedOn;
+export async function checkRoundDue(
+  root: string,
+  change: string,
+  gate: string,
+  known: readonly string[] = BUILT_IN_AGENTS,
+): Promise<string[]> {
+  return (await checkRoundState(root, change, gate, known)).actedOn;
 }
 
 /**
@@ -336,6 +341,8 @@ export async function checkRoundState(
   root: string,
   change: string,
   gate: string,
+  /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+  known: readonly string[] = BUILT_IN_AGENTS,
 ): Promise<{ round?: number; openBlocking: number; actedOn: string[] }> {
   const n = (await countedRounds(root, change, gate)).at(-1);
   if (n === undefined) return { openBlocking: 0, actedOn: [] };
@@ -348,7 +355,7 @@ export async function checkRoundState(
   const openBlocking = findings.filter(
     (f) =>
       f.finding.severity === "blocking" &&
-      (!DECIDED.has(f.finding.state) || !f.finding.resolution || assistantClosed(f.finding)),
+      (!DECIDED.has(f.finding.state) || !f.finding.resolution || assistantClosed(f.finding, known)),
   ).length;
   if (openBlocking) return { round: n, openBlocking, actedOn: [] };
   const acted = findings
@@ -356,7 +363,7 @@ export async function checkRoundState(
       (f) =>
         f.finding.resolution &&
         f.finding.state !== "open" &&
-        !isAssistantResolution(f.finding.resolution) &&
+        !isAssistantResolution(f.finding.resolution, known) &&
         !carried.has(f.finding.id) &&
         f.finding.resolution.at >= since,
     )
@@ -387,6 +394,7 @@ export async function decidedElsewhere(
   root: string,
   change: string,
   gate: string,
+  known: readonly string[] = BUILT_IN_AGENTS,
 ): Promise<Map<string, Finding>> {
   const out = new Map<string, Finding>();
   for (const g of await reviewedGates(root, change)) {
@@ -397,7 +405,7 @@ export async function decidedElsewhere(
       const f = s.finding;
       if (!f.resolution || !(["dismissed", "waived"].includes(f.state) || wroteIn(f))) continue;
       // An assistant's dismissal of a blocking or risk finding was never a decision (ADR 0115 addendum).
-      if (assistantClosed(f)) continue;
+      if (assistantClosed(f, known)) continue;
       const reason = f.resolution.reason;
       const linked = !reason || decidedReason(reason).gate !== undefined;
       const resolution = linked

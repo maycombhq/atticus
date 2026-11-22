@@ -39,7 +39,7 @@ import {
   writeFinding,
   type RuledHit,
 } from "./findings.js";
-import { writeProposals } from "./proposals.js";
+import { assistantNames, writeProposals } from "./proposals.js";
 import {
   ANSWERS_TEXT,
   dropReviewedBefore,
@@ -199,7 +199,7 @@ export async function runCritic(
   // limit reviews their fixes (ADR 0115 addendum). Its own blocking findings go to a person.
   const limit =
     max !== undefined && counted.length >= max
-      ? await checkRoundState(root, change.id, gate.id)
+      ? await checkRoundState(root, change.id, gate.id, assistantNames(lifecycle))
       : { openBlocking: 0, actedOn: [] as string[] };
   const actedOn = limit.actedOn;
   if (max !== undefined && counted.length >= max && actedOn.length === 0) {
@@ -337,6 +337,7 @@ export async function runCritic(
   const scope =
     opts.review && failed.size === 0
       ? await sinceReview(root, {
+          known: assistantNames(lifecycle),
           change: change.id,
           gate: gate.id,
           round,
@@ -435,6 +436,7 @@ export async function runCritic(
   const findings = [
     ...carriedFindings,
     ...(await writeHits(root, all, {
+      known: assistantNames(lifecycle),
       change: change.id,
       gate: gate.id,
       round,
