@@ -4359,7 +4359,13 @@ export function refusalCommands(r: BuildRefusal, command: string): string[] {
   // A build.json that doesn't read: build again over every record file, never curate them.
   if (r.unreadableManifest) return [`${command} --discard-edits ${r.discardEdits ?? 0}`];
   if (r.reasons.includes("newer-atticus")) return [newerAtticusCommand(r.newer)];
-  if (r.reasons.includes("not-upgraded")) return ["atticus upgrade", "atticus upgrade --yes"];
+  // A catalog from before the slots: the upgrade shows the adoption, and --yes does it. A build
+  // that waits only for the loose ends' step (ADR 0124 addendum E-ids; the final review of
+  // b30/unresolved-ids, I1): --dry-run shows what it would write, and atticus upgrade does it.
+  if (r.reasons.includes("not-upgraded"))
+    return refusedBeforeSlots(r)
+      ? ["atticus upgrade", "atticus upgrade --yes"]
+      : ["atticus upgrade --dry-run", "atticus upgrade"];
   if (r.reasons.includes("unexplained-removals")) return ["atticus support bundle"];
   const allow = r.reasons.includes("large-removals")
     ? ` --allow-removals ${r.allowRemovals ?? 0}`

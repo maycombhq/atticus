@@ -605,6 +605,34 @@ describe("a refused build: its list and its ways on, nothing written until confi
     expect(out).toContain(esc(B.upgradeOn));
   });
 
+  it("names atticus upgrade, never --yes, for a build that waits for the loose ends' step (ADR 0124 addendum E-ids)", () => {
+    // The final review of b30/unresolved-ids (I1): plain atticus upgrade does an ordinary step;
+    // --dry-run shows it. Told by the refusal's `renames`, with hand edits listed or not.
+    for (const edits of [0, 3]) {
+      const out = html(
+        <RefusalView
+          refused={{
+            reasons: edits ? ["hand-edits", "not-upgraded"] : ["not-upgraded"],
+            message: "x",
+            renames: 6,
+            ...(edits ? { edits: [], discardEdits: edits } : {}),
+            command: "atticus upgrade --dry-run",
+          }}
+          onAllowRemovals={fail}
+          onCurate={fail}
+          onDiscard={fail}
+        />,
+      );
+      expect(out).toContain(esc(B.reason["not-upgraded"]!(0)));
+      expect(B.reason["not-upgraded"]!(0)).toContain(
+        "atticus upgrade --dry-run shows what it would write; atticus upgrade does it.",
+      );
+      expect(out).not.toContain(esc(B.reason["not-upgraded"]!(edits || 96)));
+      expect(out).not.toContain("--yes");
+      expect(out).toContain(">atticus upgrade<");
+    }
+  });
+
   it("a catalog a newer Atticus built: the copy's words, the command to upgrade Atticus, no confirm or count (beta.28.2)", () => {
     const refused: Api.BuildRefusalViewT = {
       reasons: ["newer-atticus"],

@@ -5,8 +5,16 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { askedGapQuestionId, readQuestion, sha256Of } from "@maycombhq/core";
-import { readBuildReport } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  readBuildReport,
+  refusalCommands,
+  refusedBeforeSlots,
+} from "@maycombhq/scanner";
+import { refusalView } from "../src/build-report.js";
+import { refusalHint } from "../src/catalog-build-commands.js";
 import { main } from "../src/main.js";
+import { statusCommand } from "../src/standing.js";
 import { upgradeCheck, upgradeCommand, type UpgradeStepRefusal } from "../src/upgrade.js";
 import { unresolvedIdsApply, unresolvedIdsPending } from "../src/upgrade-unresolved-ids.js";
 
@@ -431,6 +439,65 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         expect(await main(["catalog", "build", "--root", r], quiet().io)).toBe(0);
         expect(await tree(r)).toEqual(once);
       }
+    },
+    T,
+  );
+
+  it(
+    "says the way on from that refusal as the step does it: --dry-run shows, atticus upgrade does it",
+    async () => {
+      // The final review of b30/unresolved-ids (I1): plain `atticus upgrade` applies an ordinary
+      // step (backed up, undoable); `--yes` gates only the slots adoption; the preview is
+      // --dry-run. The refusal's flags tell it from a catalog from before the slots (the nit).
+      const root = await metarepo();
+      const command = "atticus catalog build";
+      const r = await buildAndWrite(root, { command });
+      const refused = r.guard.refused!;
+      expect(refused.reasons).toEqual(["not-upgraded"]);
+      expect(refused.renames).toBe(6);
+      expect(refused.beforeSlots).toBeUndefined();
+      expect(refusedBeforeSlots(refused)).toBe(false);
+      expect(refusalCommands(refused, command)).toEqual([
+        "atticus upgrade --dry-run",
+        "atticus upgrade",
+      ]);
+      expect(refusalHint(refused, command)).toBe(
+        `${RENAMES(6)} atticus upgrade --dry-run shows what it would write; atticus upgrade does it.`,
+      );
+      // The app's view of it (API 3.19.0, additive): the count, the first command.
+      const view = refusalView(root, refused, command);
+      expect(view).toMatchObject({ renames: 6, command: "atticus upgrade --dry-run" });
+      expect(view).not.toHaveProperty("beforeSlots");
+      // The command line, its --json, the report and atticus status: never --yes for it.
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", root], b.io)).toBe(1);
+      expect(saidBy(b, root)).not.toContain("--yes");
+      const j = quiet();
+      expect(await main(["catalog", "build", "--json", "--root", root], j.io)).toBe(1);
+      expect(
+        (JSON.parse(j.out.join("\n")) as { refused: Record<string, unknown> }).refused,
+      ).toMatchObject({ reasons: ["not-upgraded"], renames: 6 });
+      expect((await readBuildReport(root))?.run).toEqual([
+        "atticus upgrade --dry-run",
+        "atticus upgrade",
+      ]);
+      const s = quiet();
+      expect(await statusCommand(root, {}, s.io, { version: B30 })).toBe(1);
+      expect(s.out[0]).toMatch(/Do: atticus upgrade$/);
+      // The preview writes nothing and names the step; atticus upgrade then does it.
+      const before = await tree(root);
+      const d = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", dryRun: true }, d.io, B30),
+        d.err.join("\n"),
+      ).toBe(0);
+      expect(await tree(root)).toEqual(before);
+      expect(d.out.join("\n")).toMatch(
+        /^1 upgrade step to run \(atticus upgrade\):\n  Loose ends named with their repo, .*: 14 files$/,
+      );
+      const u = quiet();
+      expect(await upgradeCommand(root, { by: "pat" }, u.io, B30), u.err.join("\n")).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
     },
     T,
   );

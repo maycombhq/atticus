@@ -132,6 +132,10 @@ export function buildJson(r: BuildAndWrite) {
   };
 }
 
+/** How the loose ends' step goes on (the final review of b30/unresolved-ids, I1). */
+export const UPGRADE_DRY_RUN_WORDS =
+  "atticus upgrade --dry-run shows what it would write; atticus upgrade does it.";
+
 /**
  * How the app says a refused build (ADR 0195 point 4; CS3 adds its confirm steps): the reason
  * in plain words and the command that goes on, so an action never just fails.
@@ -141,11 +145,13 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   if (r.reasons.includes("newer-atticus"))
     return r.message.split("\n").slice(1).join(" ") || r.message;
   // ADR 0124 addendum E-ids (2026-11-22): a build that waits for the loose ends' step says it.
+  // The final review of b30/unresolved-ids (I1): plain atticus upgrade does that step (backed up,
+  // undoable) and --dry-run shows it; --yes is only the adoption of a catalog from before the slots.
   const renames = r.message.split("\n").find((l) => l.startsWith(UPGRADE_RENAMES));
-  if (renames)
-    return `${renames} It shows what it would do first; atticus upgrade --yes applies it.`;
-  if (r.reasons.includes("not-upgraded"))
-    return "This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).";
+  const beforeSlots = refusedBeforeSlots(r);
+  if (renames && !beforeSlots) return `${renames} ${UPGRADE_DRY_RUN_WORDS}`;
+  if (beforeSlots)
+    return `${renames ? `${renames} ` : ""}This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).`;
   // ADR 0197 review: build.json doesn't read; building again is the only way on, never curate.
   if (r.unreadableManifest)
     return `catalog/sources/build.json doesn't read (edited or merged by hand): build again, replacing every record file with this build: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
