@@ -75,8 +75,9 @@ export function acceptOf(
 
 /**
  * The newest round of the stage's own gate, each finding as the thread shows it: its options
- * (a fix, a comment, Accept; never Not relevant, which the stage's next run would raise again),
- * whether it may be accepted, and its acceptance.
+ * (a fix, a comment, Accept; never Not relevant, which the command line refuses on a stage's own
+ * finding: only a fix to the draft or an acceptance settles it, act.ts), whether it may be
+ * accepted, and its acceptance.
  */
 export async function stageGateViews(
   root: string,

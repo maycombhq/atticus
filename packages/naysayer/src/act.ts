@@ -218,6 +218,22 @@ export async function act(
       "refused",
       `${o.by} is an assistant: only a person waives a finding. Propose that ${f.id} is not relevant, with a reason, or fix it and record the fix; a person decides.`,
     );
+  // ADR 0203 A (addendum 2026-11-22, the second review): a stage's own finding is settled by a
+  // fix to the draft (the stage's next run no longer raises it) or by a person's acceptance
+  // (waive), which is all the stage reads (readAccepted). Any other state closed the file, not
+  // the stage, was carried by id into every later round, and then barred the acceptance
+  // ("already dismissed"): the stage stayed blocked for good. Its fix says the way on.
+  if (f.gate.startsWith(STAGE_GATE_PREFIX) && act !== "waive")
+    throw new CriticError(
+      "refused",
+      `${f.id} is the ${f.gate.slice(STAGE_GATE_PREFIX.length)} stage's own finding: only a fix to the draft or a person's acceptance settles it, so it can't be ${
+        act === "not-relevant"
+          ? "dismissed as not relevant"
+          : act === "ask"
+            ? "asked of someone"
+            : "marked applied"
+      }. ${f.fix.text}`,
+    );
 
   // A gap has no fix to apply, only a fact to write in: a person who already wrote it by hand
   // records that with edit-and-apply and a reason, no patch needed.

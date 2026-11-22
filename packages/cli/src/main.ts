@@ -708,7 +708,7 @@ Usage:
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
-  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
+  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR). A stage's own finding (stage-<id>) takes only waive, to accept it; otherwise fix the draft and run the stage again
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
   atticus feature list [--json]        Features found in code, named by people or proposed by AI
   atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps
