@@ -335,11 +335,17 @@ describe("a stored conformance check from beta.28.5 (ADR 0206)", () => {
         f === ".index/upgraded.json" ||
         f === ".atticus/metarepo.yaml" ||
         f.startsWith(".atticus/backups/") ||
+        // A read's parse cache, which any command reading the catalog keeps (core's
+        // record-cache.ts, out of Git), written by the reads around the upgrade, not by it.
+        f.startsWith(".atticus/cache/") ||
         meant.has(f);
       const moved = [...new Set([...every.keys(), ...now.keys()])].filter(
         (f) => every.get(f) !== now.get(f),
       );
-      expect(moved.filter((f) => !own(f) && !folders.some((d) => f.startsWith(d)))).toEqual([]);
+      expect(
+        moved.filter((f) => !own(f) && !folders.some((d) => f.startsWith(d))),
+        JSON.stringify(moved),
+      ).toEqual([]);
       // And it did write what it is meant to.
       expect(moved).toContain(`${ORG_FLOW}/schema.yaml`);
       expect(changedPaths(root).filter((f) => f.includes("/conform/"))).toEqual([]);
