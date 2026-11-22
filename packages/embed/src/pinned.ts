@@ -57,6 +57,16 @@ export const httpGet: Getter = async (url) => {
 };
 
 /**
+ * Beta.30's CI: raw.githubusercontent.com answered 404 to a Windows runner for a file of a
+ * pinned revision. jsDelivr serves the same revision's file (`/gh/<owner>/<repo>@<ref>/<path>`),
+ * so it is tried next; the pinned sha256 decides, as for the source itself.
+ */
+export function copiesOf(url: string): string[] {
+  const m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/.exec(url);
+  return m ? [`https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${m[4]}`] : [];
+}
+
+/**
  * A pinned source's bytes: from the cache (`<cacheDir>/<sha256>`) when it is there and still
  * matches, else downloaded once, checked, and kept.
  */
@@ -68,8 +78,20 @@ export async function fetchSource(
   const kept = await readFile(file).catch(() => undefined);
   if (kept && sha256Of(kept) === src.sha256) return { bytes: kept, cached: true };
   if (o.offline) throw new PinError(`${src.url} isn't in the cache and this run may not download`);
-  const bytes = await (o.get ?? httpGet)(src.url);
-  checkPinned(bytes, src.sha256, src.url);
+  // The source, then its copies (copiesOf): the first whose bytes are the pinned ones.
+  const tried: string[] = [];
+  let bytes: Uint8Array | undefined;
+  for (const url of [src.url, ...copiesOf(src.url)]) {
+    try {
+      const got = await (o.get ?? httpGet)(url);
+      checkPinned(got, src.sha256, url);
+      bytes = got;
+      break;
+    } catch (e) {
+      tried.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (!bytes) throw new PinError(tried.join("; "));
   await mkdir(o.cacheDir, { recursive: true });
   await writeFile(`${file}.part`, bytes);
   await rename(`${file}.part`, file);

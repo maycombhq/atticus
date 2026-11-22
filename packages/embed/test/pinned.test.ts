@@ -73,6 +73,44 @@ describe("pinned files", () => {
     await expect(readFile(join(cacheDir, bad.sha256))).rejects.toThrow();
   });
 
+  it("takes a file of a GitHub revision from jsDelivr's copy when raw.githubusercontent.com fails, checked the same", async () => {
+    // Beta.30's CI: raw.githubusercontent.com answered 404 to a Windows runner for a pinned
+    // licence at its tag, so the bundle couldn't be made. The same revision's file, from the CDN
+    // that mirrors GitHub, is taken instead; the pinned sha256 decides, wherever it came from.
+    const cacheDir = await mkdtemp(join(tmpdir(), "atticus-pinned-cache-"));
+    const b = bytes("MIT License, invented for the test");
+    const calls: string[] = [];
+    const raw = "https://raw.githubusercontent.com/forge/runtime/v1.2.3/LICENSE";
+    const cdn = "https://cdn.jsdelivr.net/gh/forge/runtime@v1.2.3/LICENSE";
+    const get = async (url: string) => {
+      calls.push(url);
+      if (url.startsWith("https://raw.githubusercontent.com/")) throw new Error(`${url}: HTTP 404`);
+      return b;
+    };
+    const r = await fetchSource({ url: raw, sha256: sha256Of(b) }, { cacheDir, get });
+    expect(r.cached).toBe(false);
+    expect(Buffer.from(r.bytes).toString("utf8")).toBe("MIT License, invented for the test");
+    expect(calls).toEqual([raw, cdn]);
+    // The copy is refused when it isn't the pinned bytes, and the error names both.
+    const other = { url: raw.replace("v1.2.3", "v9.9.9"), sha256: "2".repeat(64) };
+    await expect(fetchSource(other, { cacheDir, get })).rejects.toThrow(
+      /HTTP 404.*cdn\.jsdelivr\.net\/gh\/forge\/runtime@v9\.9\.9\/LICENSE has sha256 [0-9a-f]{64}, not the pinned 2{64}: refused/s,
+    );
+    // A source anywhere else has no copy to try.
+    const plain = async (url: string) => {
+      calls.push(url);
+      throw new Error(`${url}: HTTP 404`);
+    };
+    calls.length = 0;
+    await expect(
+      fetchSource(
+        { url: "https://example.invalid/x", sha256: "3".repeat(64) },
+        { cacheDir, get: plain },
+      ),
+    ).rejects.toThrow(/HTTP 404/);
+    expect(calls).toEqual(["https://example.invalid/x"]);
+  });
+
   it("writes a package's files from whole sources and from tarball entries, each checked", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "atticus-pinned-cache-"));
     const dir = await mkdtemp(join(tmpdir(), "atticus-pinned-pkg-"));
