@@ -69,6 +69,16 @@ describe("featureFlows", () => {
     );
     const [g] = featureFlows([...paired, ...detectFeatures(paired)]);
     expect(g!.looseEnds.map((e) => e.kind)).toEqual(["loose-end"]);
+    // A webhook the component sends (an outbound HTTP call, a vendor spec's) is a call too.
+    const hook = records.map((r) =>
+      r.kind === "Unresolved"
+        ? ({ ...r, unresolvedKind: "webhook-send", raw: "POST loans.checked" } as typeof r)
+        : r,
+    );
+    const [w] = featureFlows([...hook, ...detectFeatures(hook)]);
+    expect(w!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
+      "scoring has a call with no arrow (POST loans.checked): Atticus couldn't tell where it goes",
+    );
     // Any other kind (a topic listened to, a table) stays a loose end in words.
     const topic = records.map((r) =>
       r.kind === "Unresolved"

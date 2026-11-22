@@ -10,8 +10,12 @@ import { overlaps, splitWords, tokens } from "./words.js";
  * happen, a call seen at one end only, or a loose end in a component the flow passes.
  */
 
-/** v30 slice 8: an Unresolved record that is an HTTP call: on the map, a call with no arrow. */
-const isHttpCall = (kind: string): boolean => kind === "http-call" || kind === "call";
+/**
+ * v30 slice 8: an Unresolved record that is an HTTP call: on the map, a call with no arrow. A
+ * webhook the component sends (`webhook-send`, a vendor spec's) is an outbound HTTP call too.
+ */
+const isHttpCall = (kind: string): boolean =>
+  kind === "http-call" || kind === "call" || kind === "webhook-send";
 
 export type LooseEndKind = "unknown-caller" | "unknown-trigger" | "one-end" | "loose-end";
 

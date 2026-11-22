@@ -336,7 +336,33 @@ describe("impact", () => {
       evidence: [{ source: "code", repo: "forge-portal-bff", path: "src/Rates.java", line: 3 }],
     });
     if (!extra.ok) throw new Error(JSON.stringify(extra.issues));
-    const ix = await openIndex(await forgeRoot([extra.record]));
+    // A webhook portal-bff sends (an outbound HTTP call) and a topic it publishes no one reads.
+    const loose = (id: string, unresolvedKind: string, raw: string) => {
+      const p = parseRecord({
+        schemaVersion: 1,
+        kind: "Unresolved",
+        id,
+        status: "current",
+        confidence: "inferred",
+        unresolvedKind,
+        raw,
+        owner: "portal-bff",
+        evidence: [{ source: "code", repo: "forge-portal-bff", path: "src/Hooks.java", line: 7 }],
+      });
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    };
+    const hook = loose(
+      "portal-bff.webhook-send.statement-ready-post",
+      "webhook-send",
+      "POST statement.ready",
+    );
+    const topic = loose(
+      "portal-bff.event-publish.balance-viewed",
+      "event-publish",
+      "balance-viewed",
+    );
+    const ix = await openIndex(await forgeRoot([extra.record, hook, topic]));
     const r = impact(ix, "ledger-api.post-transfer")!;
     // portal-bff calls it; portal-ui calls portal-bff; ledger-api subscribes to what portal-bff publishes.
     expect(r.affected.map((a) => a.id)).toEqual([
@@ -361,6 +387,18 @@ describe("impact", () => {
       // v30 slice 8: an HTTP call's loose end, in the glossary's words.
       question:
         "portal-bff has a call with no arrow (GET https://fx.example.com/rates). Where does it go?",
+    });
+    expect(r.gaps).toContainEqual({
+      record: "portal-bff.webhook-send.statement-ready-post",
+      field: "raw",
+      question: "portal-bff has a call with no arrow (POST statement.ready). Where does it go?",
+    });
+    // Any other kind stays a loose end in words.
+    expect(r.gaps).toContainEqual({
+      record: "portal-bff.event-publish.balance-viewed",
+      field: "raw",
+      question:
+        "portal-bff has a loose end Atticus couldn't follow (balance-viewed). Where does it go?",
     });
 
     const audit = impact(ix, "audit-svc")!;
