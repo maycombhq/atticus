@@ -1175,16 +1175,21 @@ export async function writeFactsIntoCatalog(
     };
   } finally {
     progress.end();
-    // ADR 0205 step 2: the caches after the result, then the lock let go.
-    if (later.length)
-      runAfterResult(async () => {
-        try {
-          for (const w of later) await w();
-        } finally {
-          await lock.release();
-        }
-      });
-    else await lock.release();
+    // ADR 0205 step 2: the caches after the result, then the lock let go. The lock says so
+    // meanwhile: a process stopped then left the catalog whole and its caches unsaved.
+    if (later.length) {
+      await lock.caching();
+      runAfterResult(
+        async () => {
+          try {
+            for (const w of later) await w();
+          } finally {
+            await lock.release();
+          }
+        },
+        { root, name: "scan" },
+      );
+    } else await lock.release();
   }
 }
 

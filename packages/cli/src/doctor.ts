@@ -1,3 +1,4 @@
+import { staleLockDetail } from "./lock-words.js";
 import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -633,20 +634,22 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   out.push({
     id: "facts-read",
     label: "Facts read",
-    status: lock?.stale ? "warn" : "ok",
+    // ADR 0205 step 2: a write that stopped while it saved its caches wrote the catalog whole.
+    status: lock?.stale && lock.phase !== "caches" ? "warn" : "ok",
     detail: [
       lock
         ? lock.stale
-          ? `the write started ${lock.startedAt} stopped before it finished`
+          ? staleLockDetail(lock)
           : `a write is running (since ${lock.startedAt})`
         : "",
       facts.length ? facts.join("; ") : "no repo is listed yet",
     ]
       .filter(Boolean)
       .join("; "),
-    fix: lock?.stale
-      ? "Run atticus verify <repo> --write again: every file it writes is whole."
-      : "Read a repo with /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
+    fix:
+      lock?.stale && lock.phase !== "caches"
+        ? "Run atticus verify <repo> --write again: every file it writes is whole."
+        : "Read a repo with /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
   });
 
   // ADR 0123: the branch each repo is read from, against the one its remote calls its default

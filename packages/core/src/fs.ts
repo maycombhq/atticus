@@ -424,6 +424,11 @@ export interface LockInfo {
   host: string;
   startedAt: string;
   what: string;
+  /**
+   * ADR 0205 step 2: `caches` once its writer gave its result and is writing its local caches
+   * (`caching`): a lock left so by a process that stopped then was of a catalog written whole.
+   */
+  phase?: "caches";
 }
 
 export class LockHeldError extends Error {
@@ -477,22 +482,45 @@ export async function readLock(
   }
 }
 
-/** ADR 0205 step 2: work a writer does after its result, each still holding its writer's lock. */
-const afterResult = new Set<Promise<void>>();
+/**
+ * ADR 0205 step 2: work a writer does after its result, each still holding its writer's lock,
+ * with the lock file it holds (`under`), so only a taker of that lock waits for it.
+ */
+const afterResult = new Map<Promise<void>, string | undefined>();
+
+/** The tests' fault (the property tests, ADR 0205): the process stops after its result. */
+export const afterResultHooks: {
+  /**
+   * The next `runAfterResult` never runs its work: its writer's lock is left as a process that
+   * stopped there leaves it (held by no one here, so the next taker takes it over). Once.
+   */
+  die?: boolean;
+} = {};
 
 /**
  * ADR 0205 step 2 (the owner's answer of 2026-11-19: "done" is shown while the caches are
  * written under the lock): run `work` after the caller has given its result. The work must end
- * by releasing the lock its writer holds. Every later `acquireLock` in this process waits for it
- * first, so the next writer here never meets that lock held; a failure is swallowed, since the
+ * by releasing the lock its writer holds (`under`: the metarepo and the lock's name). A later
+ * `acquireLock` of that lock in this process waits for it first, so the next writer here never
+ * meets that lock held; a taker of another lock doesn't wait. A failure is swallowed, since the
  * work is only a cache's (a cache not written is no cache).
  */
-export function runAfterResult(work: () => Promise<void>): void {
+export function runAfterResult(
+  work: () => Promise<void>,
+  under?: { root: string; name: string },
+): void {
+  const file = under ? resolve(lockFileOf(under.root, under.name)) : undefined;
+  if (afterResultHooks.die) {
+    delete afterResultHooks.die;
+    // As a process that stopped here: the lock file stays, and no one here holds it.
+    if (under) heldHere.delete(lockFileOf(under.root, under.name));
+    return;
+  }
   const p: Promise<void> = Promise.resolve()
     .then(work)
     .catch(() => undefined)
     .finally(() => afterResult.delete(p));
-  afterResult.add(p);
+  afterResult.set(p, file);
 }
 
 /** How many `runAfterResult` works of this process haven't ended (the tests). */
@@ -500,9 +528,14 @@ export function afterResultPending(): number {
   return afterResult.size;
 }
 
-/** Wait for every `runAfterResult` work of this process (a lock's taker, a server closing). */
-export async function settleAfterResult(): Promise<void> {
-  while (afterResult.size) await Promise.all([...afterResult]);
+/**
+ * Wait for the `runAfterResult` works of this process: every one (a server closing, a command
+ * ending), or only those under one lock (its next taker).
+ */
+export async function settleAfterResult(under?: { root: string; name: string }): Promise<void> {
+  const file = under ? resolve(lockFileOf(under.root, under.name)) : undefined;
+  const mine = () => [...afterResult].filter(([, f]) => !file || f === file).map(([p]) => p);
+  for (let ps = mine(); ps.length; ps = mine()) await Promise.all(ps);
 }
 
 /**
@@ -518,8 +551,13 @@ export async function acquireLock(
   now: () => Date = () => new Date(),
   /** A lock older than this is taken over (Windows reuses a dead process's PID). */
   o: { maxAgeMs?: number } = {},
-): Promise<{ release: () => Promise<void>; interrupted?: LockInfo }> {
-  await settleAfterResult();
+): Promise<{
+  release: () => Promise<void>;
+  /** ADR 0205 step 2: the result is given; the caches are written next, under this lock. */
+  caching: () => Promise<void>;
+  interrupted?: LockInfo;
+}> {
+  await settleAfterResult({ root, name });
   const file = lockFileOf(root, name);
   await ensureLocalIgnore(root);
   await mkdir(dirname(file), { recursive: true });
@@ -540,7 +578,14 @@ export async function acquireLock(
           await rm(file, { force: true });
         heldHere.delete(file);
       };
-      return interrupted ? { release, interrupted } : { release };
+      const caching = async () => {
+        const cur = await readLock(root, name);
+        if (cur && cur.pid === info.pid && cur.startedAt === info.startedAt)
+          await writeFileAtomic(file, JSON.stringify({ ...info, phase: "caches" }), {
+            quick: true,
+          }).catch(() => undefined);
+      };
+      return interrupted ? { release, caching, interrupted } : { release, caching };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
       const held = await readLock(root, name, { ...o, now });
