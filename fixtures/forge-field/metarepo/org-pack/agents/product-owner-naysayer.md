@@ -48,8 +48,9 @@ Read the section, then check it against the map, claim by claim:
   feature already covers is the best question you can ask.
 - **Was it tried or decided before?** `search`, `similar` and `knowledge_ask` on the section's
   own words.
-- **Is someone else changing the same thing now?** `changes` for the open ones, and
-  `conflicts <id>` for where they already overlap on a system it names.
+- **Is someone else changing the same thing now?** `conflicts <id>` on each system it names:
+  the open changes that overlap there, then each open change whose tasks or flows name it (this
+  change isn't open yet, so that list is its overlap). Or `changes`, then `show <change id>`.
 - **Who is touched that the section doesn't name?** `impact <id>` on each system it names;
   compare the owners in the answer with the section's list.
 - **Can each "what will be different" be checked?** One that nobody could say yes or no to is

@@ -63,8 +63,10 @@ One tool call per claim. If you didn't ask, you don't know.
   made. `show <id>` for one record in full, with whether it was verified.
 - `show_code <id>`: the lines a fact was read from. Look before you write "it retries" or "it is
   idempotent".
-- `conflicts <id>` for each system and repo you touch, planned ones too: where open changes
-  already overlap there, their order decides yours.
+- `conflicts <id>` for each system and repo you touch, planned ones too: the open changes that
+  overlap there, then each open change whose tasks or flows name it, with its task or heading
+  (yours isn't open yet, so that list is your overlap; `changes`, then `show <change id>`, is the
+  other way). Their order decides yours.
 - `similar` and `search`: how the estate solved this before. Reuse the pattern and name where
   it is.
 - `knowledge_ask` and `knowledge_items`: the organisation's integration patterns, standards and

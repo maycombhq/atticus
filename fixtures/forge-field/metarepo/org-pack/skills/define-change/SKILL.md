@@ -176,7 +176,10 @@ in the change's folder:
   switched off and when.
 
 - **`design.md`**: how, which systems and why, what was decided and what was turned down. Each
-  existing system it names is a map id. It ends with `## In the code`: a table (Repo, Task, Has,
+  existing system it names is a map id. Under `## Data changes`, each new table and column with
+  its classification, from security's section (marked "assumed" where it is an assumption), and
+  the migration that creates it, or a line saying no table is written. It ends with
+  `## In the code`: a table (Repo, Task, Has,
   What, Spec) with a row for each thing a repo's code or deployment will have, as the spec
   writer's file shows. Every `## <repo>` of `tasks.md` has a row; work no scan can see is a row
   with Has `other`. The plan hand-off refuses a design without it, and after the build each row

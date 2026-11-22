@@ -116,6 +116,13 @@ the interface and data changes with their consumers, the order across repos, and
 undone. What was turned down, and why, in a line each. Where a heading of the template doesn't
 apply to this change, say so in a line under it; don't drop the heading.
 
+Under `## Data changes`, name each new table and each new or changed column, one line each, with
+its classification, from security's section (say "assumed" when security's section gives it as
+an assumption, or when it gives none and you take the nearest), and the migration that creates or
+changes it (its task, and its file where the developer's section names one). The critic's
+`review.new-column-complete` blocks a column that has no classification or no migration. A
+change that writes no table says so in a line.
+
 Then, at the end of `design.md`, what the code will have, one row each, under `## In the code`.
 After the build each row is looked for in the branch's code and answered present, present
 differently, missing, not checkable or not confirmed; the change's map, impact and estimate are
@@ -172,6 +179,8 @@ read from it. The plan hand-off refuses a design without it.
   for itself, and no two wait for each other.
 - A repo that doesn't exist yet gets no task to create it: a person creates it and adds it with
   `atticus repo add <its clone URL> --id <repo>`. Say so above the tasks.
+- Reading a repo into the map is never a task: say it above the tasks, as for a new repo (a
+  person runs `/atticus-map <repo>`, then `atticus verify <repo> --write`, before its tasks run).
 - Every requirement in `specs/` has a task that builds it and a task or a line that tests it.
 
 When the tasks are written, read the vaguest one as the coder who gets it: does its line name
