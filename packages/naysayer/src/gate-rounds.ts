@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
-import { Finding, toCanonicalYaml } from "@maycombhq/core";
+import { Finding, STAGE_GATE_PREFIX, toCanonicalYaml } from "@maycombhq/core";
 import { fingerprint, readRound, roundsOf, writeFinding, type StoredFinding } from "./findings.js";
 
 /**
@@ -17,7 +17,7 @@ import { fingerprint, readRound, roundsOf, writeFinding, type StoredFinding } fr
  * can accept one with `atticus finding … waive`. No phase's hand-off reads these gates: the
  * stage's own state already holds its phase.
  */
-export const STAGE_GATE_PREFIX = "stage-";
+export { STAGE_GATE_PREFIX };
 export const stageGateOf = (stage: string) => `${STAGE_GATE_PREFIX}${stage}`;
 
 export interface RoundWrite {

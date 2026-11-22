@@ -9,6 +9,7 @@ import {
   listQuestions,
   readQuestion,
   PHASES,
+  STAGE_GATE_PREFIX,
   type ChangeLifecycle,
   type ChangeType,
   type LifecycleState,
@@ -486,7 +487,11 @@ export async function checkMandatoryRounds(
 
 /** Gate ids from gates.yaml that sit on this phase. */
 export function phaseGates(ctx: ChangeContext, phase: PhaseId): string[] {
-  return ctx.orgPack.gates.gates.filter((g) => g.phase === phase).map((g) => g.id);
+  // ADR 0203 A.1: a gates.yaml gate named stage-<x> is a problem of the org pack, never a
+  // phase's gate: its folder holds a stage's own findings.
+  return ctx.orgPack.gates.gates
+    .filter((g) => g.phase === phase && !g.id.startsWith(STAGE_GATE_PREFIX))
+    .map((g) => g.id);
 }
 
 /**

@@ -2,7 +2,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { changeStore, checkFindings } from "@maycombhq/changes";
+import {
+  changeStore,
+  checkFindings,
+  loadChangeContext,
+  phaseFindingGates,
+  phaseGates,
+} from "@maycombhq/changes";
 import {
   completeLensRun,
   gateStatus,
@@ -267,5 +273,12 @@ describe("the stages' gate names are kept for them (ADR 0203 A.1)", () => {
     await expect(runCritic(r, CHANGE, { now: NOW, gate: "stage-architecture" })).rejects.toThrow(
       "Gate stage-architecture in gates.yaml has a name Atticus keeps for a stage's own findings (stage-<stage>, ADR 0203): rename it in org-pack/gates.yaml.",
     );
+    // Said when the org pack is read, and no phase reads that gate's findings as its own.
+    const ctx = await loadChangeContext(r);
+    expect(ctx.problems).toContain(
+      "org-pack/gates.yaml: stage-architecture.id: stage-architecture is a name Atticus keeps for a stage's own findings (stage-<stage>, ADR 0203): rename the gate.",
+    );
+    expect(phaseGates(ctx, "design")).not.toContain("stage-architecture");
+    expect(phaseFindingGates(ctx, "design")).not.toContain("stage-architecture");
   });
 });
