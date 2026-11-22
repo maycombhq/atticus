@@ -65,6 +65,26 @@ export interface WaitingLens {
   lens: string;
   runId: string;
   round: number;
+  /** ADR 0203 C: the persona whose lens this is; nothing waits on it. */
+  persona?: string;
+}
+
+/**
+ * ADR 0203 C: the persona lenses of every round at a gate still with the person's assistant,
+ * newest round first. Nothing waits on them; an answer that comes is read in (into the gate's
+ * newest round, completeLensRun), whatever round it was asked in.
+ */
+export async function personaLensesOut(
+  root: string,
+  change: string,
+  gate: string,
+): Promise<WaitingLens[]> {
+  const out: WaitingLens[] = [];
+  for (const n of (await roundsOf(root, change, gate)).reverse())
+    out.push(
+      ...(await waitingLenses(root, change, gate, n, { personas: true })).filter((w) => w.persona),
+    );
+  return out;
 }
 
 /**
@@ -86,7 +106,12 @@ export async function waitingLenses(
   const meta = await readRoundMeta(root, change, gate, round);
   return (meta?.lenses ?? [])
     .filter((l) => l.state === "waiting" && l.runId && (o.personas || !l.persona))
-    .map((l) => ({ lens: l.lens, runId: l.runId!, round }));
+    .map((l) => ({
+      lens: l.lens,
+      runId: l.runId!,
+      round,
+      ...(l.persona ? { persona: l.persona } : {}),
+    }));
 }
 
 export interface CompletedLens {

@@ -31,6 +31,7 @@ import {
   proposalWords,
   reviewedGates,
   runCritic,
+  personaLensesOut,
   waitingLenses,
   type CompletedLens,
   type GateStatus,
@@ -264,7 +265,7 @@ export async function critic(
 
 /** Say a lens read in from a hand-off run, and what is still out. */
 function printCompleted(c: CompletedLens, io: Output): boolean {
-  const where = `The ${c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
+  const where = `The ${c.lens.persona ?? c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
   io.out(
     c.lens.state === "ran"
       ? `${where} raised ${plural(c.findings.length, "finding", "findings")}.`
@@ -320,7 +321,7 @@ export async function completeCriticBatch(
     return fail(io, e);
   }
   for (const c of read) {
-    const where = `The ${c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
+    const where = `The ${c.lens.persona ?? c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
     io.out(
       c.lens.state === "ran"
         ? `${where} raised ${plural(c.findings.length, "finding", "findings")}.`
@@ -349,7 +350,9 @@ export async function completeCriticBatch(
 /**
  * atticus critic <change> [--gate g] --resume: read in every AI lens answer that is there. A
  * lens whose answer file is written is checked and read in (as `handoff done` would); the rest
- * stay waiting. Exit 0 when the gate may proceed, else 1.
+ * stay waiting. A persona lens's answer is read in from whatever round asked it, into the gate's
+ * newest round; one not answered is said, and nothing waits for it (ADR 0203 C). Exit 0 when the
+ * gate may proceed, else 1.
  */
 async function resumeLenses(
   root: string,
@@ -369,7 +372,11 @@ async function resumeLenses(
     let any = false;
     let statusPrinted = false;
     for (const gate of gates) {
-      for (const w of await waitingLenses(root, changeId, gate)) {
+      const out = [
+        ...(await waitingLenses(root, changeId, gate)),
+        ...(await personaLensesOut(root, changeId, gate)),
+      ];
+      for (const w of out) {
         any = true;
         let run = await rt.result(w.runId);
         const file = join(runsDirOf(root), changeId, w.runId, `findings-${w.lens}.yaml`);
@@ -388,7 +395,10 @@ async function resumeLenses(
             await completeLensRun(root, run, deps.now ? { now: deps.now } : {}),
             io,
           );
-        }
+        } else if (w.persona)
+          io.out(
+            `${w.persona} (a persona lens) of round ${w.round} is still with your assistant; nothing waits for it. Its answer is read in when you run atticus critic ${changeId} --resume again, or atticus handoff done ${w.runId}.`,
+          );
       }
     }
     if (!any)
