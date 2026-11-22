@@ -163,6 +163,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Two repo ids whose loose ends would share one id are refused.** A loose end's id carries its repo with dots made dashes, so `forge.api` and `forge-api` would make one record of two repos' loose ends. `atticus repo add`, Add repos in the app, `atticus repo rename` and a manifest saved in the raw editor refuse such a pair, naming both and what to do, and a manifest on disk that has one is said as a problem of the estate the stages read (ADR 0124 addendum E-ids).
 - **`atticus review --write` adds under a role's header-only table.** A role whose table had its header and no row yet got a second header and the rows under it; the rows now go under the table's own header. A lone carriage return inside a line is read as the door check reads it, inside its line and kept, so the rows go where the door check counts them.
 - **`atticus review` exits 0 when a naysayer's run fails outright.** A run that threw (a provider gone, a run that couldn't be prepared) ended the review with the error; it is said now ("The naysayers didn't run: <why>", in `notes` with `--json`), with the door check's and the map's findings, and the review exits 0, as it does unless the file can't be read.
+- **`atticus change conform`'s help says all it checks (ADR 0206).** It named only the target flows; it now names each operation's `sets` in its repos, a quick change's In the code rows, and the five outcomes a stated claim gets. docs/guide/commands.md says the same.
 
 ### Known
 
