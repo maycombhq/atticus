@@ -590,6 +590,26 @@ export function repoIdTwinOf(id: string, ids: Iterable<string>): string | undefi
 export const repoIdTwinWords = (listed: string, id: string) =>
   `Repo ids ${listed} and ${id} name one loose-end id (unresolved.${idPart(id)}.…), so the map couldn't tell their loose ends apart`;
 
+/** A pair of repo ids that name one loose-end id, and the way on: for a warning of what is on disk. */
+export const repoIdTwinWarning = (listed: string, id: string) =>
+  `${repoIdTwinWords(listed, id)}: rename one (atticus repo rename ${id} <new id>)`;
+
+/**
+ * Every pair of repo ids that name one loose-end id, in the order given: each later id with the
+ * first one before it that names its loose ends. What a merge of two pull requests, or a hand
+ * edit, can leave on disk past the refusals where an id is written (doctor, selfcheck, a build).
+ */
+export function repoIdTwins(ids: Iterable<string>): [string, string][] {
+  const first = new Map<string, string>();
+  const out: [string, string][] = [];
+  for (const id of ids) {
+    const had = first.get(idPart(id));
+    if (had === undefined) first.set(idPart(id), id);
+    else if (had !== id) out.push([had, id]);
+  }
+  return out;
+}
+
 /** The loose ends a listener leaves: its rest is an Endpoint id, `<component>.<name>`. */
 const SUBSCRIBE = "event-subscribe";
 

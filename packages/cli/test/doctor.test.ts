@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -774,5 +774,27 @@ describe("outside a metarepo", () => {
     await mkdir(join(outer, "metarepo", "org-pack"), { recursive: true });
     const checks = await doctorChecks(outer, healthy());
     expect(byId(checks, "metarepo").detail).toContain(`the metarepo is in .${sep}metarepo`);
+  });
+});
+
+describe("repo ids that name one loose-end id (the review of b30/review2-fixes)", () => {
+  it("warns, naming both ids and atticus repo rename, where two manifests or a hand edit made a pair", async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-doctor-twins-"));
+    await cp(join(FIXTURES, "forge/metarepo"), at, { recursive: true });
+    await upgradeCommand(at, { by: "pat" }, { out: () => undefined, err: () => undefined });
+    expect((await doctorChecks(at, healthy())).find((c) => c.id === "repo-ids")).toBeUndefined();
+    const file = join(at, "org-pack/profiles/forge/repos.manifest.yaml");
+    await writeFile(
+      file,
+      `${(await readFile(file, "utf8")).trimEnd()}\n  - id: forge.ledger\n    url: https://git.example.com/forge/forge-ledger-two.git\n    type: forge-service\n    owner: team-ledger\n`,
+    );
+    expect(byId(await doctorChecks(at, healthy()), "repo-ids")).toEqual({
+      id: "repo-ids",
+      label: "Repo ids",
+      status: "warn",
+      detail:
+        "Repo ids forge-ledger and forge.ledger name one loose-end id (unresolved.forge-ledger.…), so the map couldn't tell their loose ends apart",
+      fix: "Rename one of each pair: atticus repo rename forge.ledger <new id>.",
+    });
   });
 });

@@ -8,7 +8,7 @@ import {
   readRepoSpec,
   RepoManifest,
   repoIdTwinOf,
-  repoIdTwinWords,
+  repoIdTwinWarning,
   specsDirOf,
   type CatalogRecord,
   type FlowRecord,
@@ -181,9 +181,7 @@ export async function readManifests(root: string): Promise<ManifestRead> {
       seen.push(r.id);
     }
     if (twins) {
-      problems.push(
-        `${rel}: ${repoIdTwinWords(...twins)}: rename one (atticus repo rename ${twins[1]} <new id>)`,
-      );
+      problems.push(`${rel}: ${repoIdTwinWarning(...twins)}`);
       continue;
     }
     for (const r of m.data.repos) {

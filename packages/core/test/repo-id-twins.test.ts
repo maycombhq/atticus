@@ -7,6 +7,8 @@ import {
   readOrgPackFile,
   renamedManifest,
   repoIdTwinOf,
+  repoIdTwins,
+  repoIdTwinWarning,
   unresolvedIdOf,
   writeOrgPackFile,
 } from "../src/index.js";
@@ -65,6 +67,17 @@ describe("repo ids that name one loose-end id", () => {
     expect(repoIdTwinOf("forge-api", ["forge-ledger", "forge.api"])).toBe("forge.api");
     expect(repoIdTwinOf("forge-api", ["forge-api", "forge-ledger"])).toBeUndefined();
     expect(repoIdTwinOf("forge-cards", ["forge.api"])).toBeUndefined();
+  });
+
+  it("are listed in pairs, each later id with the first that names its loose ends, for a warning", () => {
+    expect(repoIdTwins(["forge.api", "forge-ledger", "forge-api", "forge--api"])).toEqual([
+      ["forge.api", "forge-api"],
+      ["forge.api", "forge--api"],
+    ]);
+    expect(repoIdTwins(["forge-ledger", "forge-cards"])).toEqual([]);
+    expect(repoIdTwinWarning("forge.api", "forge-api")).toBe(
+      `${WORDS("forge.api", "forge-api")}: rename one (atticus repo rename forge-api <new id>)`,
+    );
   });
 
   it("refuses one added beside the other, in another profile or the same batch", async () => {

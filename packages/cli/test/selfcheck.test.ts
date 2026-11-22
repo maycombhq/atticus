@@ -713,3 +713,41 @@ describe("nothing of the estate is in the card, the default output or --json", (
     T,
   );
 });
+
+describe("repo ids that name one loose-end id (the review of b30/review2-fixes)", () => {
+  it(
+    "selfcheck warns, naming the ids only with --names, and the build says it as a problem",
+    async () => {
+      const e = await estate(SMALL);
+      await appendFile(
+        join(e.root, "org-pack/profiles/github/repos.manifest.yaml"),
+        [
+          "  - id: forge.svc-00",
+          "    url: https://git.forge.example/forge/forge-svc-00-two.git",
+          "    type: spring-boot",
+          "    owner: team-forge",
+          "",
+        ].join("\n"),
+      );
+      const plain = await run(["selfcheck", "--quick", "--root", e.root]);
+      expect(plain.out).toContain(SELFCHECK_WORDS.twins);
+      expect(plain.out.join("\n")).not.toContain("forge.svc-00");
+      const named = await run(["selfcheck", "--quick", "--names", "--root", e.root]);
+      expect(named.out).toContain(SELFCHECK_WORDS.twins);
+      expect(named.out).toContain(
+        "    Repo ids forge-svc-00 and forge.svc-00 name one loose-end id (unresolved.forge-svc-00.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.svc-00 <new id>)",
+      );
+      const json = await run(["selfcheck", "--quick", "--json", "--root", e.root]);
+      expect(json.out.join("\n")).not.toContain("forge.svc-00");
+      // The build, one place every scan, verify --write and Apply goes through, says it too.
+      const i = await loadBuildInputs(e.root);
+      const b = await buildCatalog(i);
+      expect(b.problems).toContainEqual({
+        source: "org-pack/profiles",
+        message:
+          "Repo ids forge-svc-00 and forge.svc-00 name one loose-end id (unresolved.forge-svc-00.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.svc-00 <new id>)",
+      });
+    },
+    T,
+  );
+});
