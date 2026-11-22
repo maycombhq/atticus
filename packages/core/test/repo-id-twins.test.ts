@@ -59,7 +59,7 @@ const repo = (id: string) => ({
 });
 
 const WORDS = (x: string, y: string) => {
-  const [a, b] = [x, y].sort();
+  const [a, b] = [x, y].sort() as [string, string];
   return `Repo ids ${a} and ${b} name one loose-end id (unresolved.${unresolvedIdOf(b, "").split(".")[1]}.…), so the map couldn't tell their loose ends apart`;
 };
 
