@@ -124,7 +124,7 @@ describe("atticus selfcheck --timing", () => {
       expect(named.code).toBe(0);
       const line = named.out.find((l) => l.startsWith("Repos with facts: "));
       expect(line).toMatch(
-        /^Repos with facts: \d+\. Apply to every repo, at that each: at least (under a minute|about \d+ min|about \d+ h( \d+ min)?)\.$/,
+        /^Repos with facts: \d+\. Apply to every repo, at that each: (under a minute|about \d+ min|about \d+ h( \d+ min)?) or more\.$/,
       );
     },
     T,

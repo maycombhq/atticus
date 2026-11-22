@@ -41,7 +41,7 @@ export const TIMING_WORDS = {
   total: (ms: number, cpuMs: number) =>
     `One Apply, before its writes: ${sec(ms)} s wall, ${sec(cpuMs)} s CPU.`,
   repos: (n: number, ms: number) =>
-    `Repos with facts: ${n}. Apply to every repo, at that each: at least ${timeWords(n * ms)}.`,
+    `Repos with facts: ${n}. Apply to every repo, at that each: ${timeWords(n * ms)} or more.`,
   failed:
     "atticus selfcheck --timing couldn't finish: a step failed. atticus selfcheck --timing --names says why, on this screen only.",
 } as const;
