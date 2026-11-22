@@ -1,6 +1,6 @@
 # 0205. One repo's Apply in fifteen seconds: what was measured, and what is reachable
 
-- Status: accepted (2026-11-19, by the owner, with the three recommended answers: the 15 s is for the field-shaped estate at up to 60 repos, as a CI budget, and the big estate's times go in the release notes as a stress test; "done" is shown while the caches are written under the lock (step 2); the app may hold up to about 1 GB more for its caches at 100,000 records, let go after ten idle minutes or when memory runs low (step 4); built in beta.30, with the step first held back built too (the owner's decision of 2026-11-21: nothing stays out of beta.30), as "As built" says; the addendum of 2026-11-21, incremental global passes: proposed)
+- Status: accepted (2026-11-19, by the owner, with the three recommended answers: the 15 s is for the field-shaped estate at up to 60 repos, as a CI budget, and the big estate's times go in the release notes as a stress test; "done" is shown while the caches are written under the lock (step 2); the app may hold up to about 1 GB more for its caches at 100,000 records, let go after ten idle minutes or when memory runs low (step 4); built in beta.30, with the step first held back built too (the owner's decision of 2026-11-21: nothing stays out of beta.30), as "As built" says; the addendum of 2026-11-21, incremental global passes: accepted (2026-11-22, by the owner: its provable steps built in its recommended order, each held back where its proof fails))
 - Date: 2026-11-19 (proposed and accepted)
 - Release: 2.0.0-beta.30, slice 10 ([the plan](../plan/v30.md))
 - Builds on: ADR 0195 (point 9 and its addenda of 2026-11-12, 2026-11-13 and 2026-11-15), ADR 0197
@@ -278,9 +278,9 @@ Written first, failing where they test new behaviour:
 2. **Is "done" the result, with the caches written after it under the lock (step 2)?** Recommended: yes. It takes 1 to 3.5 s off what a person waits for and changes nothing written.
 3. **May the app's server keep up to about 1 GB more for its caches at 100,000 records (step 4)?** Recommended: yes, let go after ten idle minutes or near the memory limit; steps 1 to 3 don't need it.
 
-## Addendum of 2026-11-21: incremental global passes for a one-repo change (proposed)
+## Addendum of 2026-11-21: incremental global passes for a one-repo change (accepted)
 
-- Status: proposed (the owner asked for this design on 2026-11-21, after the measurements above; no production code is written for it until the owner approves it)
+- Status: accepted (2026-11-22, by the owner: build its provable steps in the recommended order, each with its proof, and hold back any whose proof fails). The owner asked for this design on 2026-11-21, after the measurements above.
 - Aim: one repo's Apply in 15 s on the big estate at 60 repos and 30 proxies (100,407 records), where it takes 44 CPU s in the app and about 51 as a command (the table above) after this note's steps.
 
 ### What it would take
