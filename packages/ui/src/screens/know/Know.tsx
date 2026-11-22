@@ -1409,9 +1409,14 @@ export function scanBuildRefusal(job: Pick<Job, "state" | "result"> | undefined)
   const r = job.result?.refused as Api.BuildRefusalViewT | undefined;
   if (!r || !Array.isArray(r.reasons) || r.reasons.every((x) => x === "nothing-read"))
     return undefined;
-  // As CS2's refusalCommands says them: the upgrade first, then what confirms or curates.
+  // As CS2's refusalCommands says them: the upgrade first, then what confirms or curates. By the
+  // refusal's flags, as Catalog builds tells them: --yes only adopts a catalog from before stored
+  // reads (`beforeSlots`, or neither flag as a report from before beta.30 has); a build that waits
+  // only for the loose ends' step (`renames`) goes on with plain atticus upgrade.
   const command = r.reasons.includes("not-upgraded")
-    ? "atticus upgrade --yes"
+    ? r.beforeSlots === true || r.renames === undefined
+      ? "atticus upgrade --yes"
+      : "atticus upgrade"
     : r.reasons.includes("large-removals")
       ? `atticus scan --allow-removals ${r.allowRemovals ?? 0}`
       : r.reasons.includes("hand-edits")

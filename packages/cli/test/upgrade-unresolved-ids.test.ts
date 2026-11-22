@@ -464,6 +464,19 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(refusalHint(refused, command)).toBe(
         `${RENAMES(6)} atticus upgrade --dry-run shows what it would write; atticus upgrade does it.`,
       );
+      // The review of beta.30: by the refusal's flag (`renames`), never by its words.
+      expect(refusalHint({ ...refused, message: "Nothing written." }, command)).toBe(
+        `${RENAMES(6)} atticus upgrade --dry-run shows what it would write; atticus upgrade does it.`,
+      );
+      expect(refusalHint({ ...refused, renames: 1, message: RENAMES(6) }, command)).toBe(
+        `${RENAMES(1)} atticus upgrade --dry-run shows what it would write; atticus upgrade does it.`,
+      );
+      // Before stored reads and loose ends to rename: both said, the count from the flag.
+      expect(
+        refusalHint({ ...refused, beforeSlots: true, message: "Nothing written." }, command),
+      ).toBe(
+        `${RENAMES(6)} This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).`,
+      );
       // The app's view of it (API 3.19.0, additive): the count, the first command.
       const view = refusalView(root, refused, command);
       expect(view).toMatchObject({ renames: 6, command: "atticus upgrade --dry-run" });

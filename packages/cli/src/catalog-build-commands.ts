@@ -46,7 +46,7 @@ import {
   UNRESOLVED_IDS_COMMAND,
   unresolvedIdsUndoneWords,
   undoneFiles,
-  UPGRADE_RENAMES,
+  upgradeRenamesWords,
   refusedBeforeSlots,
   writeCuratedEdits,
   type BuildAndWrite,
@@ -147,7 +147,8 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   // ADR 0124 addendum E-ids (2026-11-22): a build that waits for the loose ends' step says it.
   // The final review of b30/unresolved-ids (I1): plain atticus upgrade does that step (backed up,
   // undoable) and --dry-run shows it; --yes is only the adoption of a catalog from before the slots.
-  const renames = r.message.split("\n").find((l) => l.startsWith(UPGRADE_RENAMES));
+  // By the refusal's flag (`renames`, the count), never by matching its words (review of beta.30).
+  const renames = r.renames !== undefined ? upgradeRenamesWords(r.renames) : undefined;
   const beforeSlots = refusedBeforeSlots(r);
   if (renames && !beforeSlots) return `${renames} ${UPGRADE_DRY_RUN_WORDS}`;
   if (beforeSlots)

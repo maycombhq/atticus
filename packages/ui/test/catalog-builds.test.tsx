@@ -887,6 +887,25 @@ describe("Set up › Scans says what a scan read of each repo", () => {
     ).toBeUndefined();
   });
 
+  // The review of beta.30: the fallback command of a not-upgraded refusal goes by its flags, as
+  // the page's own does: --yes only adopts a catalog from before stored reads.
+  it("offers atticus upgrade for a scan that waits for the loose ends' step, --yes only before stored reads", () => {
+    const of = (refused: Record<string, unknown>) =>
+      scanBuildRefusal({
+        state: "failed",
+        result: { refused: { reasons: ["not-upgraded"], message: "x", repos: [], ...refused } },
+      })?.command;
+    expect(of({ renames: 2 })).toBe("atticus upgrade");
+    expect(of({ beforeSlots: true })).toBe("atticus upgrade --yes");
+    expect(of({ beforeSlots: true, renames: 2 })).toBe("atticus upgrade --yes");
+    // A report written before beta.30 has neither flag: only that kind was not-upgraded then.
+    expect(of({})).toBe("atticus upgrade --yes");
+    // The server's own command stands.
+    expect(of({ renames: 2, command: "atticus upgrade --dry-run" })).toBe(
+      "atticus upgrade --dry-run",
+    );
+  });
+
   it("confirms a scan's refusal with its count and the plan of the list it showed, nothing carried", () => {
     // The review of beta.27: the scan works the list out again under its lock, and writes
     // nothing when it isn't the one this plan names. An earlier confirm's count and plan are
