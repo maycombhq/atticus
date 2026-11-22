@@ -1043,6 +1043,23 @@ describe("the review's other refusals", () => {
         ]),
       ),
     ).toEqual(blocked);
+    // A remove delta carrying any step that isn't a removal: the stories stage writes tasks from
+    // its steps in the archived repo, so it is work there and blocks (review of 9fd4034a).
+    expect(
+      raised(
+        delta("remove", [
+          {
+            op: "add",
+            after: 1,
+            kind: "call-out",
+            what: "Charge the card.",
+            to: { component: "forge-orders", entry: "POST /charge" },
+          },
+        ]),
+      ),
+    ).toEqual(blocked);
+    expect(raised(delta("remove", [{ op: "change", step: 2, what: "Hold it." }]))).toEqual(blocked);
+    expect(raised(delta("remove", [{ op: "remove", step: 2 }]))).toEqual([]);
     // A modify with no steps moves nothing out: it blocks (delta.empty says it is empty too).
     expect(raised(delta("modify", []))).toEqual(blocked);
     // New work in it still blocks.

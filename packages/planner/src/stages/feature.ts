@@ -278,10 +278,11 @@ export function archivedWorkIssues(
   // A target flow that moves work out of an archived repo does what the finding asks: the flow
   // removed (a retire or absorb stroke of the sketch, ADR 0189, ADR 0193), or a modify that only
   // removes steps. Anything else is code work in the archived repo, whose tasks are written there
-  // (a step sent to another component included); an empty modify moves nothing, so it blocks.
+  // (a step sent to another component included); an empty modify moves nothing, so it blocks. A
+  // remove delta's steps count too: the stories stage writes tasks from them in d.repo.
+  const onlyRemovals = (d: FlowDelta) => d.steps.every((s) => s.op === "remove");
   const movesOut = (d: FlowDelta) =>
-    d.change === "remove" ||
-    (d.change === "modify" && d.steps.length > 0 && d.steps.every((s) => s.op === "remove"));
+    onlyRemovals(d) && (d.change === "remove" || (d.change === "modify" && d.steps.length > 0));
   return [
     ...p.newFlows.filter((n) => e.archivedRepos.has(n.repo)).map(archivedNewFlow),
     ...(p.operations ?? []).flatMap((o) =>
