@@ -9,7 +9,8 @@ import type { Extractor, RepoHandle, ScanContext } from "./plugin.js";
  * The scanner plugin sandbox (ADR 0080, C4). An org-pack plugin is plain JavaScript the AI
  * wrote and a person reviewed; it still runs as if it were hostile:
  *
- * - in its own worker thread, with a heap limit (`resourceLimits`) and a wall-clock limit
+ * - in its own worker thread, with a heap limit (`resourceLimits`, and the host's own watch of
+ *   the worker's heap where a process-wide flag lifts it: `watchHeap`) and a wall-clock limit
  *   after which the worker is terminated;
  * - as an ES module compiled with `vm.SourceTextModule` in a fresh `vm` context: no `require`,
  *   no `process`, no `fetch`, no timers, no Node globals at all, and every import (static or
@@ -325,6 +326,57 @@ function spawnSandbox(o: {
   });
 }
 
+/** How often the host reads a worker's heap while a process-wide flag lifts its limit. */
+const HEAP_WATCH_MS = 25;
+
+/**
+ * The memory limit where V8 doesn't keep it (the review of beta.30). A process-wide
+ * `--max-old-space-size` (in NODE_OPTIONS on many developer and CI machines) overrides a worker's
+ * `resourceLimits`, so a plugin that hoards memory grew to that size, gigabytes, before anything
+ * stopped it. The host reads the worker's heap once it runs: when its limit is the one asked for,
+ * V8 keeps it and the watch ends; when it is larger, the host goes on reading and calls `over`
+ * once the heap in use passes twice the limit plus its young generation (a larger heap is
+ * collected later, so what is in use can hold garbage a heap of the limit's size would have
+ * freed). Needs `worker.getHeapStatistics` (Node 22.16); without it V8's limit is the only one.
+ * Returns what stops the watch.
+ */
+function watchHeap(worker: Worker, memoryMb: number, over: () => void): () => void {
+  const read = (
+    worker as Worker & {
+      getHeapStatistics?: () => Promise<{ heap_size_limit: number; used_heap_size: number }>;
+    }
+  ).getHeapStatistics?.bind(worker);
+  if (!read) return () => undefined;
+  const MB = 2 ** 20;
+  const young = Math.max(4, Math.min(16, Math.floor(memoryMb / 4)));
+  let stopped = false;
+  let reading = false;
+  const stop = () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+  const timer = setInterval(() => {
+    if (reading || stopped) return;
+    reading = true;
+    read().then(
+      (h) => {
+        reading = false;
+        if (stopped) return;
+        // V8 keeps the limit asked for (with room for the young generation): nothing to watch.
+        if (h.heap_size_limit <= (memoryMb + 3 * young + 16) * MB) return stop();
+        if (h.used_heap_size > (2 * memoryMb + young) * MB) {
+          stop();
+          over();
+        }
+      },
+      // Not running yet, or ended: the next read, or the worker's exit, says.
+      () => (reading = false),
+    );
+  }, HEAP_WATCH_MS);
+  timer.unref();
+  return stop;
+}
+
 /** Run the plugin once over the repo in a fresh worker; resolves with its records. */
 function runInWorker(
   p: SandboxPlugin,
@@ -351,10 +403,16 @@ function runInWorker(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      unwatch();
       void worker.terminate();
       if (err) reject(err);
       else resolve(records);
     };
+    const unwatch = watchHeap(worker, memoryMb, () =>
+      finish(
+        new PluginRunError(`stopped: it used more than its ${memoryMb} MB memory limit`, "memory"),
+      ),
+    );
     const timer = setTimeout(
       () =>
         finish(
@@ -489,10 +547,19 @@ export function runTranslator(p: TranslatorPlugin, fn: string, arg: unknown): Pr
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      unwatch();
       void worker.terminate();
       if (err) reject(err);
       else resolve(value);
     };
+    const unwatch = watchHeap(worker, p.limits.memoryMb, () =>
+      finish(
+        new PluginRunError(
+          `stopped: it used more than its ${p.limits.memoryMb} MB memory limit`,
+          "memory",
+        ),
+      ),
+    );
     const timer = setTimeout(
       () =>
         finish(

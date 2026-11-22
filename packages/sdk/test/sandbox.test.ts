@@ -2,6 +2,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { setFlagsFromString } from "node:v8";
+import { Worker } from "node:worker_threads";
 import { describe, expect, it } from "vitest";
 import type { CatalogRecord } from "@maycombhq/core";
 import {
@@ -275,6 +277,42 @@ export default { id: "forge-test", version: "1.0.0", claims: ["**/*"], async *sc
     expect(r.error).toMatch(/stopped: it used more than its 32 MB memory limit/);
     expect(r.builtInRan).toBe(true);
   }, 60_000);
+
+  // Review of beta.30: a process-wide --max-old-space-size (NODE_OPTIONS on a developer's or a CI
+  // machine) overrides a worker's own limit, so the hoard grew to that size (8 GB on the machine
+  // that found it) before anything stopped it. The host watches the worker's heap instead.
+  it.skipIf(typeof Worker.prototype.getHeapStatistics !== "function")(
+    "stops it at its memory limit under a process-wide --max-old-space-size too",
+    async () => {
+      const was = /--max[-_]old[-_]space[-_]size=(\d+)/.exec(
+        [process.env.NODE_OPTIONS ?? "", ...process.execArgv].join(" "),
+      )?.[1];
+      setFlagsFromString("--max-old-space-size=4096");
+      const before = process.memoryUsage().rss;
+      let peak = before;
+      const watch = setInterval(() => (peak = Math.max(peak, process.memoryUsage().rss)), 10);
+      try {
+        const started = Date.now();
+        const r = await run(
+          plugin(
+            body(`    const hoard = [];
+    for (;;) hoard.push(new Array(100000).fill("x"));`),
+            { limits: { timeoutMs: 30_000, memoryMb: 32 } },
+          ),
+        );
+        expect(r.status).toBe("failed");
+        expect(r.error).toMatch(/stopped: it used more than its 32 MB memory limit/);
+        expect(r.builtInRan).toBe(true);
+        expect(Date.now() - started).toBeLessThan(10_000);
+        // Far below the 4 GB the flag allows: stopped within a few polls of passing its limit.
+        expect((peak - before) / 2 ** 20).toBeLessThan(600);
+      } finally {
+        clearInterval(watch);
+        setFlagsFromString(`--max-old-space-size=${was ?? 0}`);
+      }
+    },
+    60_000,
+  );
 
   it("fails a plugin that emits a kind its manifest doesn't name, or isn't the plugin it says", async () => {
     const db = await run(
