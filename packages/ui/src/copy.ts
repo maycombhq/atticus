@@ -1261,14 +1261,15 @@ export const COPY = {
       facts: "Verified facts",
       readers: "Built-in readers",
       legacy: "Kept from before the upgrade",
-      none: "No slot yet",
+      none: "No stored read yet",
     } as Record<string, string>,
     noSources: "The manifests list no repo yet.",
     pendingTitle: "The next build",
-    upToDate: "catalog/generated is what the slots and inputs build. Nothing waits.",
+    upToDate: "catalog/generated is what the stored reads and inputs build. Nothing waits.",
     wouldWrite: (n: number) =>
-      `A build would write the slots' changes, removing ${n} ${n === 1 ? "record" : "records"} (within the limits).`,
-    wouldWriteNothing: "A build would write the slots' changes; nothing would be removed.",
+      `A build would write what the stored reads changed, removing ${n} ${n === 1 ? "record" : "records"} (within the limits).`,
+    wouldWriteNothing:
+      "A build would write what the stored reads changed; nothing would be removed.",
     build: "Build now",
     building: "Building…",
     refusedTitle: "The build waits for you: nothing has been written.",
@@ -1391,10 +1392,14 @@ export const COPY = {
     upgradeTitle: "Upgrade to stored reads",
     upgradeIntro:
       "This catalog was written before beta.27. The upgrade moves every record into stored reads, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
-    upgradeRecords: (records: number, slots: number) =>
-      `${records} ${records === 1 ? "record" : "records"} moved into ${slots} slot ${slots === 1 ? "file" : "files"}:`,
-    upgradeSlotsCaption: "The slots the upgrade writes",
-    upgradeSlotCol: { path: "Slot", repo: "Repo", records: "Records" },
+    /**
+     * The upgrade panel says "stored read" only (the glossary, docs/guide/words.md); "slot" stays
+     * on this page only as the files' word in Undo and Prune, as the glossary allows there.
+     */
+    upgradeRecords: (records: number, files: number) =>
+      `${records} ${records === 1 ? "record" : "records"} moved into stored reads, ${files} ${files === 1 ? "file" : "files"}:`,
+    upgradeSlotsCaption: "The stored reads the upgrade writes",
+    upgradeSlotCol: { path: "File", repo: "Repo", records: "Records" },
     upgradeJoins: "joined and evidence-less records",
     upgradeCopy: (dir: string, files: number) =>
       `The catalog as it is now, ${files} ${files === 1 ? "file" : "files"}, is copied to ${dir}, committed with the upgrade.`,
@@ -1427,7 +1432,7 @@ export const COPY = {
       `atticus upgrade --yes --accept-changes ${n} writes exactly these files, after an undo copy, then the first build's catalog with the ${n} ${n === 1 ? "change" : "changes"} you accepted (undo takes it all back).`,
     upgradeFilesCaption: "Every file the upgrade writes",
     upgradeWhat: {
-      "readers-slot": "readers slot",
+      "readers-slot": "stored read (built-in readers)",
       "legacy-joins": "legacy joins",
       copy: "copy",
       "build-manifest": "build manifest",
@@ -2013,6 +2018,8 @@ export const COPY = {
       `${id}'s impact is read from design.md's In the code, which it doesn't have yet: the spec writer writes it.`,
     reachesCaption: "What each row of In the code names, and who receives it",
     reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },
+    /** A row of design.md's In the code, by its line and what it has (ADR 0206). */
+    reachRow: (line: number, has: string) => `design.md:${line} (${has})`,
     newCaller: (target: string) => `A new caller of ${target}`,
     notInMap: "Not in the map yet: planned, or nobody has read it",
     nobodyReceives: "Nothing in the map receives it",
@@ -3758,6 +3765,9 @@ export const COPY = {
     impactOfRepo: (repo: string) => `Impact of ${repo}: pick one of its components`,
     noComponentsIn: (repo: string) =>
       `No component of ${repo} is in the catalog yet: read the repo, then Apply it.`,
+    /** A server that gave the same page's cursor twice: the list stopped, never looping. */
+    componentsCursorRepeated: (repo: string) =>
+      `The list of ${repo}'s components stopped where the server gave a page it had given already, so it may be missing some. Reload to ask again.`,
     /** v30 slice 8: the coverage's list on Systems, beside the system picker (named apart). */
     verifiedBySystem: "Verified, by system",
     coverageBySystemAnd: "Coverage by system and area",
@@ -8440,7 +8450,7 @@ export const COPY = {
     findNotBuiltRead: (b: string) =>
       `Saved, not built: ${b}'s read is saved, and its build waits for you to confirm what it lists. Then find the arrow again.`,
     findReadFailed: (b: string) =>
-      `Read ${b} again, then find the arrow again: its read ended before it finished, so the find stopped before the caller's session. What it said is below.`,
+      `Read ${b} again, then find the arrow again: its read ended before it finished, or didn't start, so the find stopped before the caller's session. What it said is below.`,
     findNotVerified: (a: string) =>
       `Saved, not built: verify refused ${a}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again.`,
     outcome: {

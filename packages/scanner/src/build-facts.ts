@@ -69,8 +69,8 @@ export const projectionHooks: {
   /** The proof's tests: the step on, as its setting turns it on. */
   on?: boolean;
   /**
-   * The step's proof: each projection kept is frozen (a pass that changed one would throw), and
-   * each taken from memory is compared with a projection made now, or a throw.
+   * The step's proof: each projection taken from memory is compared with a projection made now,
+   * or a throw. (Each projection kept is frozen whether or not this is on.)
    */
   check?: boolean;
 } = {};
@@ -86,7 +86,13 @@ export function projectionMemoOn(env: NodeJS.ProcessEnv = process.env): boolean 
 /** How many repos were projected, and how many projections were taken from memory (the tests). */
 export const projectionStats = { projected: 0, kept: 0 };
 
-type Projected = ReturnType<typeof factsRecords>;
+type Made = ReturnType<typeof factsRecords>;
+/** A repo's projection as a build reads it: a kept one's maps are read-only. */
+type Projected = Omit<Made, "factById" | "loose" | "looseFact"> & {
+  factById: ReadonlyMap<string, Made["factById"] extends Map<string, infer V> ? V : never>;
+  loose: ReadonlyMap<string, Made["loose"] extends Map<string, infer V> ? V : never>;
+  looseFact: ReadonlyMap<string, string>;
+};
 const projections = new Map<string, { key: string; p: Projected; n: number }>();
 let projectionsN = 0;
 /** The most records and facts the kept projections hold (the big estate at 60 repos: about 1 in 2). */
@@ -122,7 +128,7 @@ function projectionKey(
     .digest("hex");
 }
 
-/** Every level frozen, a Map's and a Set's members too (the step's proof). */
+/** Every level frozen, a Map's and a Set's members too (a kept projection). */
 function deepFreeze(v: unknown, seen = new Set<unknown>()): void {
   if (!v || typeof v !== "object" || seen.has(v)) return;
   seen.add(v);
@@ -136,6 +142,21 @@ function deepFreeze(v: unknown, seen = new Set<unknown>()): void {
     Object.freeze(v);
     for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k], seen);
   }
+}
+
+/**
+ * A copy of a map whose set, delete and clear throw, frozen: what a kept projection holds, so a
+ * later build's pass can't change the projection the next build takes (freezing a Map leaves its
+ * entries settable).
+ */
+function readOnlyMap<K, V>(m: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
+  const copy = new Map(m);
+  const refuse = (): never => {
+    throw new TypeError("a kept projection can't be changed (ADR 0205 addendum, step 1)");
+  };
+  for (const name of ["set", "delete", "clear"])
+    Object.defineProperty(copy, name, { value: refuse });
+  return Object.freeze(copy);
 }
 
 /** A repo's projection: the one kept for its key, or made now (and kept, in the app's server). */
@@ -170,10 +191,18 @@ function projectionOf(
   if (key === undefined) return p;
   const n = p.facts.length + p.projected.records.length + p.newRecords.length;
   if (projectionsN + n > PROJECTIONS_MAX) return p;
-  if (projectionHooks.check) deepFreeze(p);
-  projections.set(r.repo, { key, p, n });
+  // Kept: frozen at every level, its maps read-only, so a pass of this build or a later one can't
+  // change what the next build takes (in production too, not only under the proof's check).
+  const kept: Projected = {
+    ...p,
+    factById: readOnlyMap(p.factById),
+    loose: readOnlyMap(p.loose),
+    looseFact: readOnlyMap(p.looseFact),
+  };
+  deepFreeze(kept);
+  projections.set(r.repo, { key, p: kept, n });
   projectionsN += n;
-  return p;
+  return kept;
 }
 
 /**
@@ -216,7 +245,7 @@ export interface FactsEstateProjection {
       projected: ReturnType<typeof factsRecords>["projected"];
       newRecords: CatalogRecord[];
       newFlows: FlowRecord[];
-      looseFact: Map<string, string>;
+      looseFact: ReadonlyMap<string, string>;
       targets: Readonly<Record<string, string>>;
     }
   >;
@@ -445,7 +474,7 @@ export interface FactsRepoAfterMerge {
   /** The repo's flows, with the catalog's ids, for specs/<repo>/. */
   flows: FlowRecord[];
   /** Its loose call records: Unresolved id → call fact id. */
-  looseFact: Map<string, string>;
+  looseFact: ReadonlyMap<string, string>;
   /** The part of the estate join about it. */
   join: FactsJoinResult;
 }

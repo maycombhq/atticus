@@ -186,6 +186,28 @@ describe("each repo's projection kept by its inputs in the app's memory (ADR 020
   });
 });
 
+describe("a kept projection can't be changed by a later pass, with the step on and no check", () => {
+  it("is deep-frozen and its maps refuse a change, in the build that keeps it and the next", () => {
+    startAppMemory();
+    const given = estate();
+    for (const build of [factsEstateRecords(op, given), factsEstateRecords(op, given)]) {
+      const per = build.per.get("forge-web")!;
+      const rec = per.newRecords[0]!;
+      expect(Object.isFrozen(rec)).toBe(true);
+      expect(Object.isFrozen(rec.evidence)).toBe(true);
+      expect(Object.isFrozen(per.facts)).toBe(true);
+      expect(Object.isFrozen(per.projected.records)).toBe(true);
+      const loose = per.looseFact as Map<string, string>;
+      const was = [...loose];
+      expect(() => loose.set("unresolved.added-later", "call.added-later")).toThrow();
+      expect(() => loose.delete(was[0]?.[0] ?? "any")).toThrow();
+      expect(() => loose.clear()).toThrow();
+      expect([...loose]).toEqual(was);
+    }
+    expect(projectionStats.kept).toBeGreaterThan(0);
+  });
+});
+
 describe("the step is off by default, on only by its setting (the owner's decision of 2026-11-22)", () => {
   it("is off with no setting: in the app's server every repo is projected every build, nothing kept", () => {
     delete projectionHooks.on;

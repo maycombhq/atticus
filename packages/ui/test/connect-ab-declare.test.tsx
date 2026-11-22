@@ -450,4 +450,35 @@ describe("a find stopped by the callee's read (the final review)", () => {
     expect(button(W.readAnswer)).toBeUndefined();
     expect(asked.every((x) => !("read" in x))).toBe(true);
   });
+
+  it("names the callee by its id, never its display name, should the answer leave the repo out", async () => {
+    const { FindButton } = await import("../src/screens/architecture/ConnectAB.js");
+    const m = mount(
+      FindButton as never,
+      {
+        v: { ...v, mechanism: "declared", toName: "Ledger service" },
+        reload: () => undefined,
+        io: {
+          find: () =>
+            Promise.resolve({
+              brief: "facts/forge-edge-proxy.find.md",
+              leftOut: [],
+              notBuilt: {
+                readFailed: true as const,
+                message: "Not read",
+                lines: [],
+                command: "atticus connect find forge-edge-proxy --to forge-ledger-svc",
+              },
+            }),
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(W.findReadFailed("forge-ledger-svc"));
+    expect(text(m.tree)).not.toContain(W.findReadFailed("Ledger service"));
+  });
 });

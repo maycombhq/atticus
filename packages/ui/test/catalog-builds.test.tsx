@@ -385,7 +385,7 @@ const UPGRADE: Api.CatalogUpgradeViewT = {
   others: [],
 };
 
-describe("the upgrade to source slots, shown first and confirmed with its count", () => {
+describe("the upgrade to stored reads, shown first and confirmed with its count", () => {
   const upgrade = (u: Partial<Api.CatalogUpgradeViewT> | "loading" | "error") =>
     page({
       build: ready<Api.CatalogBuildViewT>({
@@ -414,7 +414,42 @@ describe("the upgrade to source slots, shown first and confirmed with its count"
             : ready({ ...UPGRADE, ...u }),
     });
 
-  it("lists each slot, the copy kept and that the first build changes nothing, behind Review", () => {
+  // The glossary's one word on the upgrade panel and the page's lines about each repo's source:
+  // "stored read" (docs/guide/words.md), never "slot" (a path under catalog/sources aside).
+  it("says stored reads on the upgrade panel and in each repo's source, never slot", () => {
+    const words = (out: string) =>
+      out.replace(/catalog\/sources\/\S*/g, "").replace(/<[^>]*>/g, " ");
+    const panel = (u: Partial<Api.CatalogUpgradeViewT>, accepted?: number) =>
+      html(
+        <UpgradePanel
+          of={ready({ ...UPGRADE, ...u })}
+          onUpgrade={fail}
+          {...(accepted ? { accepted } : {})}
+        />,
+      );
+    for (const out of [panel({}), panel(CHANGES), panel(CHANGES, 2)])
+      expect(words(out)).not.toMatch(/\bslots?\b/i);
+    expect(words(panel({}))).toContain("stored read");
+    const lines = [
+      B.upgradeTitle,
+      B.upgradeIntro,
+      B.upgradeRecords(53, 2),
+      B.upgradeRecords(1, 1),
+      B.upgradeSlotsCaption,
+      ...Object.values(B.upgradeSlotCol),
+      ...Object.values(B.upgradeWhat),
+      B.upgradeNone,
+      B.source.none!,
+      B.upToDate,
+      B.wouldWrite(2),
+      B.wouldWriteNothing,
+    ];
+    for (const line of lines) expect(line, line).not.toMatch(/\bslots?\b/i);
+    expect(B.source.none).toBe("No stored read yet");
+    expect(B.upgradeSlotsCaption).toBe("The stored reads the upgrade writes");
+  });
+
+  it("lists each stored read, the copy kept and that the first build changes nothing, behind Review", () => {
     const out = upgrade({});
     expect(out).toContain(esc(B.upgradeTitle));
     expect(out).toContain(esc(B.upgradeRecords(53, 2)));

@@ -40,6 +40,7 @@ import {
   type AcpStepRunner,
 } from "../src/copilot-acp-steps.js";
 import { verifyConfirmed } from "./seed-slots.js";
+import { LIMIT_UNKNOWN } from "../src/map-all.js";
 import {
   A,
   B,
@@ -641,6 +642,25 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       expect(r.notBuilt!.command).toBe(`atticus connect find ${A} --to ${B}`);
       expect(steps).toEqual([]);
       expect(readFileSync(join(g.root, "facts", `${A}.find.yaml`), "utf8")).toBe(report);
+      writeFileSync(slot(), kept);
+    }, 300_000);
+
+    it("a read of B that never started (a usage or refusal exit) says it didn't start, with its lines", async () => {
+      unread();
+      findHooks.read = async (_root, _repo, io) => {
+        // map --all refused before reading anything: the model's limit isn't known.
+        io.err(LIMIT_UNKNOWN);
+        return 2;
+      };
+      steps.length = 0;
+      const r = await plain();
+      expect(r.entry).toBeUndefined();
+      expect(r.notBuilt).toMatchObject({ repo: B, readFailed: true });
+      expect(r.notBuilt!.message).toMatch(new RegExp(`^Not read: the read of ${B} didn't start`));
+      expect(r.notBuilt!.message).not.toContain("ended before it finished");
+      expect(r.notBuilt!.message).toContain("(exit 2)");
+      expect(r.notBuilt!.lines.join("\n")).toContain(LIMIT_UNKNOWN);
+      expect(steps).toEqual([]);
       writeFileSync(slot(), kept);
     }, 300_000);
 
