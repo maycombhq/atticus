@@ -604,6 +604,97 @@ describe("the Copilot ACP session (ADR 0171)", () => {
   });
 });
 
+describe("a session given only some files and no commands (ADR 0204 A.2, the second review)", () => {
+  it("runs no command, searches nowhere unnamed, reads only its files, and says so in its words", async () => {
+    const m = metarepo({
+      sessions: [
+        {
+          steps: [
+            { read: "workspace/forge-ledger/src/Ledger.java" },
+            { read: "facts/forge-billing.jsonl" },
+            { run: "atticus", args: ["verify", "forge-billing", "--write"] },
+            { run: "atticus", args: ["catalog", "show", "forge-billing"] },
+            {
+              permission: {
+                kind: "execute",
+                title: "Run",
+                rawInput: { command: "atticus query forge-billing" },
+              },
+            },
+            { permission: { kind: "search", title: "Search the metarepo" } },
+            {
+              permission: {
+                kind: "search",
+                title: "Search facts",
+                locations: ["facts/forge-billing.jsonl"],
+              },
+            },
+            {
+              permission: {
+                kind: "read",
+                title: "Read Ledger",
+                locations: ["workspace/forge-ledger/src/Ledger.java"],
+              },
+            },
+            { write: "facts/forge-ledger.jsonl", content: FACT },
+            { write: "facts/forge-billing.jsonl", content: FACT },
+          ],
+        },
+      ],
+    });
+    write(m.root, "facts/forge-billing.jsonl", FACT);
+    const a = fakeAtticus();
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "Find the call.",
+      policy: {
+        base: m.root,
+        readRoots: [
+          join(m.root, "facts", "forge-ledger.jsonl"),
+          join(m.root, "workspace", "forge-ledger", "src", "Ledger.java"),
+        ],
+        writeRoots: [],
+        writeFiles: [join(m.root, "facts", "forge-ledger.jsonl")],
+        commands: [],
+        reads: "its brief, forge-ledger's facts file and the files the brief lists",
+      },
+      exec: a.exec,
+      env: m.env,
+    });
+    expect(a.ran).toEqual([]);
+    const log = m.log();
+    const of = (event: string) => log.filter((e) => e.event === event);
+    expect(of("read").map((e) => e.ok)).toEqual([true, false]);
+    expect(String(of("read")[1]!.error)).toContain(
+      "Atticus lets this session read only its brief, forge-ledger's facts file and the files the brief lists",
+    );
+    expect(of("run").map((e) => e.ok)).toEqual([false, false]);
+    expect(String(of("run")[0]!.error)).toMatch(/runs no command in this session/);
+    expect(of("permission").map((e) => (e.outcome as { optionId?: string }).optionId)).toEqual([
+      "reject-once",
+      "reject-once",
+      "reject-once",
+      "allow-once",
+    ]);
+    expect(of("write").map((e) => e.ok)).toEqual([true, false]);
+    // Said relative to the metarepo, not to the first file it may read.
+    expect(String(of("write")[1]!.error)).toContain(
+      "it writes only facts/forge-ledger.jsonl; facts/forge-billing.jsonl is refused",
+    );
+    expect(r.refused.join("\n")).toMatch(/a search must say where/);
+    expect(readFileSync(join(m.root, "facts", "forge-billing.jsonl"), "utf8")).toBe(FACT);
+  });
+
+  it("tells a session that runs no command to carry on without one", () => {
+    expect(carryOnPrompt(["x"], { commands: [] })).toContain(
+      "Run no command: this step reads and writes files only.",
+    );
+    expect(carryOnPrompt(["x"], { commands: [] })).not.toContain("the only command Atticus runs");
+    expect(carryOnPrompt(["x"])).toContain("the only command Atticus runs");
+  });
+});
+
 describe("what the session may run (ADR 0171)", () => {
   it("takes atticus and its arguments, as argv or one line, and nothing else", () => {
     expect(atticusArgvOf("atticus", ["verify", "forge-ledger"])).toEqual({

@@ -1,8 +1,17 @@
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  appendFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parse, parseDocument } from "yaml";
+import { parse, parseDocument, stringify } from "yaml";
 import {
   Api,
   declareArrow,
@@ -21,7 +30,11 @@ import {
   type FindInputs,
 } from "../src/connect-find.js";
 import { acpPathsOf } from "@maycombhq/ai";
-import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
+import {
+  stepPolicyOf,
+  UNATTENDED_FILES_ONLY,
+  type AcpStepRunner,
+} from "../src/copilot-acp-steps.js";
 import { verifyConfirmed } from "./seed-slots.js";
 import {
   A,
@@ -261,12 +274,64 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       PROFILE(),
     ])
       expect(p.readable(no), no).toMatch(/outside/);
-    // Every file it may read beside those three is A's, under its checkout.
+    // Every file it may read beside those three is A's, under its checkout (by real path: a
+    // sibling folder whose name starts with A's, forge-orders-other, is not under it).
+    const home = realpathSync(join(g.root, "workspace", A));
     for (const f of s.readRoots!.filter(
       (x) => ![join(facts, `${A}.find.md`), join(facts, `${A}.jsonl`), answer].includes(x),
-    ))
-      expect(f.startsWith(join(g.root, "workspace", A))).toBe(true);
+    )) {
+      const r = relative(home, realpathSync(f));
+      expect(r && !r.startsWith("..") && !isAbsolute(r), f).toBe(true);
+    }
+    // The third review: it runs no command, and the prompts agree.
+    expect(s.commands).toEqual([]);
+    expect(s.reads).toContain(`${A}'s facts file`);
+    expect(readFileSync(join(facts, `${A}.find.md`), "utf8")).toContain(
+      "Run no command: Atticus runs none in this step.",
+    );
+    expect(readFileSync(join(facts, `${A}.find.md`), "utf8")).not.toContain("run no other command");
+    const policy = stepPolicyOf(g.root, s);
+    expect(policy).toMatchObject({ base: g.root, commands: [], writeRoots: [] });
+    expect(policy.reads).toBe(s.reads);
+    expect(UNATTENDED_FILES_ONLY).toContain("Run no command");
+    expect(UNATTENDED_FILES_ONLY).not.toContain("Run commands through the terminal");
   });
+
+  it.skipIf(process.platform === "win32")(
+    "a listed file that is a symlink out of A's clone grants no read (the third review; symlinks need privileges on Windows)",
+    async () => {
+      const link = join(g.root, "workspace", A, "src", "link.ts");
+      symlinkSync(join("..", "..", "..", "facts", `${B}.jsonl`), link);
+      // Listed among the files no fact cites, as verify.yaml would say of it.
+      const vy = join(g.root, "facts", `${A}.verify.yaml`);
+      const was = readFileSync(vy, "utf8");
+      const doc = parse(was) as { coverage?: { unknown?: string[] } };
+      writeFileSync(
+        vy,
+        stringify({
+          ...doc,
+          coverage: { ...doc.coverage, unknown: [...(doc.coverage?.unknown ?? []), "src/link.ts"] },
+        }),
+      );
+      try {
+        steps.length = 0;
+        await find([], { looked: [FILE], none: "No line calls the ledger." });
+        const s = steps.at(-1)!;
+        expect(readFileSync(join(g.root, "facts", `${A}.find.md`), "utf8")).toContain(
+          "src/link.ts",
+        );
+        const bFacts = realpathSync(join(g.root, "facts", `${B}.jsonl`));
+        expect(s.readRoots!.map((f) => realpathSync(f))).not.toContain(bFacts);
+        const p = acpPathsOf(stepPolicyOf(g.root, s));
+        expect(p.readable(link)).toMatch(/outside what it may read/);
+        expect(p.readable(bFacts)).toMatch(/outside what it may read/);
+      } finally {
+        rmSync(link);
+        writeFileSync(vy, was);
+      }
+    },
+    300_000,
+  );
 
   it("found: the code's arrow is drawn, the declared one isn't, and it reads confirmed by code", async () => {
     const r = await find([HOLD], { looked: [FILE], found: [HOLD.id] });
