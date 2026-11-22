@@ -535,6 +535,13 @@ export async function conformChange(
         files: [],
         basis: { from: "none" },
       });
+      // The persona check of beta.30: nothing of it can be read before it is in the estate (a
+      // repo no manifest lists) or cloned here, so that comes first in each claim's next step.
+      const conformCmd = `atticus change conform ${change}`;
+      const first = listed
+        ? `Clone ${repo} first: atticus workspace sync. Then check again: ${conformCmd}.`
+        : `Add ${repo} to the estate first: create it on your Git host if it is new, then atticus repo add <its clone URL> --id ${repo}. Then read it into facts (/atticus-map ${repo}, then atticus verify ${repo} --write) and check again: ${conformCmd}.`;
+      for (const c of judged.claims) if (c.outcome === "unconfirmed") c.next = first;
       const result: Api.ConformRepoResultT = {
         schemaVersion: 1,
         change,

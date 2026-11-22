@@ -259,6 +259,11 @@ describe("POST /api/changes/{id}/conformance: Check the code again from the app 
       const again = await run(["change", "conform", id, "--ref", "HEAD", "--root", root]);
       expect(again.out.split("\n")).toContain(`${CUT_OVER} (waived)`);
       expect(again.code).toBe(0);
+      // The persona check of beta.30: nothing is said to be there that wasn't confirmed.
+      expect(again.out).not.toContain("The code has everything");
+      expect(again.out.split("\n").at(-1)).toBe(
+        "Not everything the change states is confirmed in the code: 1 couldn't be confirmed, 1 waived or dismissed. Each claim above says what to do next; check again once it is done.",
+      );
       const latest = await run(["change", "conform", id, "--latest", "--root", root]);
       expect(latest.code).toBe(0);
       expect(latest.out.split("\n")).toContain(`${CUT_OVER} (waived)`);

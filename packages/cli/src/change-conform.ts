@@ -123,6 +123,29 @@ const toActOn = (r: Api.ConformRepoResultT) =>
       open(c),
   ).length;
 
+/**
+ * What a check found that isn't there for sure, in words (`2 couldn't be confirmed, 1 waived or
+ * dismissed`); empty when every claim is present and every item found.
+ */
+export function notConfirmed(results: readonly Api.ConformRepoResultT[]): string {
+  const claims = results.flatMap((r) => r.claims ?? []);
+  const items = results.flatMap((r) => r.items);
+  const unconfirmed = claims.filter((c) => c.outcome === "unconfirmed").length;
+  const settled =
+    claims.filter((c) => c.outcome !== "present" && c.outcome !== "unconfirmed" && !open(c))
+      .length + items.filter((i) => i.status !== "found" && !open(i)).length;
+  const left =
+    claims.filter((c) => c.outcome !== "present" && c.outcome !== "unconfirmed" && open(c)).length +
+    items.filter((i) => i.status !== "found" && open(i)).length;
+  return [
+    unconfirmed ? `${unconfirmed} couldn't be confirmed` : "",
+    left ? `${left} missing, different or to check by hand` : "",
+    settled ? `${settled} waived or dismissed` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export async function changeConformCommand(
   root: string,
   change: string,
@@ -183,12 +206,17 @@ export async function changeConformCommand(
     }
     if (!run.results.length) return 1;
     print(results, io);
+    // The persona check of beta.30: success is said only when every claim is present and every
+    // item found; else what wasn't, counted (couldn't confirm never counts as there).
+    const unsure = notConfirmed(results);
     io.out(
       bad
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`
-        : run.flows
-          ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
-          : "The code has everything the change states it will have, and nothing its design doesn't name.",
+        : unsure
+          ? `Not everything the change states is confirmed in the code: ${unsure}. Each claim above says what to do next; check again once it is done.`
+          : run.flows
+            ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
+            : "The code has everything the change states it will have, and nothing its design doesn't name.",
     );
     return bad && !o.findingsAnswer ? 1 : 0;
   } catch (e) {
