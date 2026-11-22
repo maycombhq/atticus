@@ -58121,6 +58121,42 @@
           },
           "thread": {
             "$ref": "#/components/schemas/StageThreadView"
+          },
+          "goesOn": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "questions",
+                  "stopped",
+                  "drafting",
+                  "waiting",
+                  "failed",
+                  "held",
+                  "not-resumed"
+                ]
+              },
+              "runId": {
+                "type": "string"
+              },
+              "held": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

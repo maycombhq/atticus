@@ -7470,9 +7470,9 @@ export const COPY = {
     previewRecord: (file: string) =>
       `It is written to ${file} with your name and your reason. The file goes with the stage's hand-off PR, where the Git host decides who approves it.`,
     previewDone: (stage: string, command: string) =>
-      `Nothing else blocks the ${stage} stage: run it again (${command}) and it checks its files and can end done, with no new draft.`,
+      `Nothing else blocks the ${stage} stage: the app runs it again as soon as you accept it (${command}), and it checks its files and can end done, with no new draft.`,
     previewWaiting: (stage: string) =>
-      `Nothing else blocks the ${stage} stage: your assistant's next answer is checked with the acceptance, and the stage can end done on it.`,
+      `Nothing else blocks the ${stage} stage: the app goes on with it as soon as you accept it, checking your assistant's answer with the acceptance, and the stage can end done on it.`,
     previewOthers: (stage: string, n: number) =>
       `${n === 1 ? "One other blocking finding or question is" : `${n} other blocking findings or questions are`} still open at the ${stage} stage: it ends done once ${n === 1 ? "that is" : "they are"} settled too.`,
     /** What the later stages do with an accepted case: the ADR's table, row by row. */
@@ -7510,6 +7510,24 @@ export const COPY = {
     close: "Close",
     done: (id: string, stage: string) =>
       `Accepted. ${id} no longer blocks the ${stage} stage, and the stage's next run reads your reason.`,
+    /** ADR 0203 A (addendum 2026-11-22): what the app did with the stage after the Accept. */
+    went: {
+      done: (stage: string) => `Accepted. The app went on with the ${stage} stage, and it is done.`,
+      questions: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage, which now waits on the question below.`,
+      stopped: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage, and it stopped again: what it says is below.`,
+      drafting: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage: something else needs a new draft, and its prompt for your assistant is below.`,
+      waiting: (stage: string) =>
+        `Accepted. The ${stage} stage goes on when your assistant's answer arrives: the app checks it with the acceptance, with nothing for you to press.`,
+      failed: (stage: string) =>
+        `Accepted. Your assistant's answer still doesn't pass the ${stage} stage's checks: its problems are below. Tell the assistant, or fix the file, and the app checks it again and goes on.`,
+      held: (stage: string, n: number) =>
+        `Accepted. ${n === 1 ? "One more finding or question still holds" : `${n} more findings or questions still hold`} the ${stage} stage, so the app didn't go on yet: accept ${n === 1 ? "it" : "each"} below and the app goes on by itself, or settle ${n === 1 ? "it" : "them"} another way and press Start the next round.`,
+      notResumed: (stage: string, why?: string) =>
+        `Accepted, but the app couldn't go on with the ${stage} stage${why ? `: ${why.replace(/[.!?]+$/, "")}` : ""}. Press Start the next round to try again.`,
+    },
     acceptedTitle: (stage: string) => `Accepted at the ${stage} stage`,
     acceptedBy: (by: string, why: string) =>
       `Accepted by ${by}: ${why.trim().replace(/[.!?]+$/, "")}.`,

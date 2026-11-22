@@ -1,8 +1,17 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { personOnlyWhy } from "@maycombhq/ai";
-import { Api, assistantActor, type Finding } from "@maycombhq/core";
-import type { ChangeContext } from "@maycombhq/changes";
+import { Api, assistantActor, runsDirOf, type Finding } from "@maycombhq/core";
+import { changeFolder, type ChangeContext } from "@maycombhq/changes";
 import { assistantOf, readRound, roundsOf, stageGateOf } from "@maycombhq/naysayer";
-import { acceptableStageRule, readAccepted, wayOnKind } from "@maycombhq/planner";
+import {
+  acceptableStageRule,
+  readAccepted,
+  readStageLoop,
+  wayOnKind,
+  type Stage,
+} from "@maycombhq/planner";
+import type { StepRunner } from "./handoff-resume.js";
 
 /**
  * ADR 0203 A, the app's half: a stage's own blocking findings (the built-in gate
@@ -103,4 +112,83 @@ export async function stageGateViews(
     findings,
     problems: r.bad.map((b) => ({ file: `${o.rel}/${b.path}`, message: b.message })),
   };
+}
+
+/**
+ * The app's own Done of a run (ui-api.ts's doneRun: the answer checked, and the step's kept
+ * resume run), by server, so the accept route checks an answer again through the same function
+ * as Done and the app's own check, never a copy of it.
+ */
+const appDones = new WeakMap<object, (runId: string) => Promise<unknown>>();
+export function setAppDone(ctx: object, done: (runId: string) => Promise<unknown>): void {
+  appDones.set(ctx, done);
+}
+export const appDoneOf = (ctx: object) => appDones.get(ctx);
+
+/** A run's state, read off its run.json; undefined when it isn't there or doesn't read. */
+async function runState(root: string, change: string, runId: string) {
+  const text = await readFile(join(runsDirOf(root), change, runId, "run.json"), "utf8").catch(
+    () => undefined,
+  );
+  try {
+    return text === undefined ? undefined : (JSON.parse(text) as { state?: string }).state;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * ADR 0203 A (addendum 2026-11-22): after an Accept the app goes on with the stage, whoever
+ * started it, so the person presses nothing else. While another open blocking finding or open
+ * question holds the stage it doesn't (a new round would draft over what the person is still
+ * deciding), but the stage's resume is kept for a prompt still with the assistant. Otherwise it
+ * runs the stage's step as Start the next round does (prepareStep): a draft handed in and not yet
+ * read in is read in, a stage that stopped is run again (done with no new draft when nothing else
+ * blocks), and the stage's resume is kept for the run it waits on, so the app finishes the run
+ * once its answer passes. An answer that failed its checks is checked again at once, by Done.
+ */
+export async function goOnAfterAccept(
+  root: string,
+  change: string,
+  stage: Stage,
+  thread: Api.StageThreadViewT,
+  o: { runStep: StepRunner; done?: (runId: string) => Promise<unknown> },
+): Promise<Api.StageAcceptThenT> {
+  if (thread.state === "done") return { kind: "done" };
+  const held = thread.items.filter(
+    (i) =>
+      (i.kind === "finding" &&
+        i.view.finding.state === "open" &&
+        i.view.finding.severity === "blocking") ||
+      (i.kind === "question" && i.question.state === "open"),
+  ).length;
+  const dir = changeFolder(root, change);
+  const before = await readStageLoop(dir, change, stage).catch(() => undefined);
+  const waitedOn = before?.present && before.loop.state === "waiting" ? before.loop.run : undefined;
+  const was = waitedOn ? await runState(root, change, waitedOn) : undefined;
+  // A prompt still with the assistant, or an answer to fix: going on only keeps its resume.
+  const withAssistant = was === "waiting" || was === "prepared" || was === "failed";
+  if (held && !withAssistant) return { kind: "held", held };
+  const { prepareStep } = await import("./handoff-resume.js");
+  let lines: string[];
+  try {
+    lines = (await prepareStep(root, o.runStep, thread.step)).prepared.lines;
+  } catch (e) {
+    return { kind: "not-resumed", lines: [(e as Error).message] };
+  }
+  if (held) return { kind: "held", held };
+  if (waitedOn && was === "failed" && o.done) await o.done(waitedOn).catch(() => undefined);
+  const after = await readStageLoop(dir, change, stage).catch(() => undefined);
+  const said = lines.length ? { lines } : {};
+  if (!after?.present) return { kind: "not-resumed", ...said };
+  const state = after.loop.state;
+  if (state === "done") return { kind: "done", ...said };
+  if (state === "questions") return { kind: "questions", ...said };
+  if (state === "stopped") return { kind: "stopped", ...said };
+  const run = state === "waiting" ? after.loop.run : undefined;
+  if (!run) return { kind: "not-resumed", ...said };
+  if (run !== waitedOn) return { kind: "drafting", runId: run, ...said };
+  return (await runState(root, change, run)) === "failed"
+    ? { kind: "failed", runId: run, ...said }
+    : { kind: "waiting", runId: run, ...said };
 }

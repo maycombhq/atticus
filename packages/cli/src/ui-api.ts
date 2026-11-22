@@ -94,6 +94,7 @@ import {
   unmarkCheckedByApp,
   type AutoDoneOptions,
 } from "./handoff-autodone.js";
+import { setAppDone } from "./ui-api-accept.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -925,6 +926,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   // ADR 0189: the answer arrives by itself: a waiting hand-off is checked once its file is complete.
   startAutoDone(ctx, (runId) => doneRun(runId, "app"), deps.autoDone ?? {});
+  // ADR 0203 A (addendum 2026-11-22): an Accept checks the answer its stage waits on again, by
+  // the same Done.
+  setAppDone(ctx, (runId) => doneRun(runId, "app"));
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.

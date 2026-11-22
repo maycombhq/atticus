@@ -31,7 +31,8 @@ import {
 import { stageGateOf } from "@maycombhq/naysayer";
 import { findingAction } from "./critic-commands.js";
 import { checkedByApp } from "./handoff-autodone.js";
-import { sessionRefusal, type AppPerson } from "./ui-api-accept.js";
+import { appDoneOf, goOnAfterAccept, sessionRefusal, type AppPerson } from "./ui-api-accept.js";
+import type { StepRunner } from "./handoff-resume.js";
 import { missingChangeWords } from "./change-problems.js";
 import { allRuns, answerOf, item, type Stored } from "./runs-view.js";
 import { stageReviewView } from "./ui-api-stages.js";
@@ -381,9 +382,25 @@ function stageOf(v: string): ThreadStage {
 export function uiThreadRoutes(
   r: Router,
   ctx: ServerContext,
-  deps: { now?: () => Date; env?: Record<string, string | undefined> } = {},
+  deps: {
+    now?: () => Date;
+    env?: Record<string, string | undefined>;
+    /** Run `atticus <args>` (the command line's own code, in this process, by default). */
+    runStep?: StepRunner;
+  } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
+  const runStep: StepRunner =
+    deps.runStep ??
+    (async (args) => {
+      const { main, capturedIo } = await import("./main.js");
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main([...args, "--root", ctx.root], capturedIo(out, err), {
+        quiet: true,
+      });
+      return { code, out, err };
+    });
   const env = deps.env ?? process.env;
   const who: AppPerson = { user: ctx.user, env };
   const changeOf = async (v: string) => {
@@ -528,6 +545,15 @@ export function uiThreadRoutes(
         throw new HttpError(403, "Not allowed", said);
       }
       ctx.events.publish({ type: "file.changed", path: f.file });
+      // ADR 0203 A (addendum 2026-11-22): the app goes on with the stage, whoever started it.
+      const goesOn = await goOnAfterAccept(
+        ctx.root,
+        change,
+        stage as Stage,
+        await stageThreadView(ctx.root, change, stage, who),
+        { runStep, ...(appDoneOf(ctx) ? { done: appDoneOf(ctx)! } : {}) },
+      );
+      ctx.events.publish({ type: "file.changed", path: changesRelOf(ctx.root) });
       const thread = await stageThreadView(ctx.root, change, stage, who);
       const seen = thread.items.find(
         (i): i is Extract<Item, { kind: "finding" }> =>
@@ -537,6 +563,7 @@ export function uiThreadRoutes(
         files: [f.file],
         accepted: seen?.view.accepted ?? { by: ctx.user, why: b.data.reason, at },
         thread,
+        goesOn,
       };
       return { status: 200, body: result };
     });

@@ -732,6 +732,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   accepted one says who, why and when (`accepted`). POST /api/changes/{id}/stages/{stage}/accept
  *   (`StageAcceptRequest`, `StageAcceptResult`) accepts one as `atticus finding … waive` does,
  *   in the app's person's name, and refuses what that refuses. Additive only.
+ *   Also in 3.19.0 (ADR 0203 A, addendum 2026-11-22): the Accept's result says what the app did
+ *   with the stage next, whoever started it (`StageAcceptResult.goesOn`, `StageAcceptThen`): it
+ *   goes on once nothing else holds the stage. Additive only.
  *   Also in 3.19.0 (ADR 0203 C.3): a finding row's `lens` may be `persona`, and then it carries
  *   `persona`, the name of the persona whose naysayer raised it; `GET /api/findings?lens=persona`
  *   lists those, and no question's lens does. Additive only.
@@ -3687,11 +3690,37 @@ export const StageAcceptRequest = z.strictObject({
   finding: z.string().regex(/^stage-[0-9a-f]{12}$/),
   reason: z.string().trim().min(1),
 });
+/**
+ * What the app did with the stage after an Accept (ADR 0203 A, addendum 2026-11-22), whoever
+ * started it: `done`, `questions` (it went on and waits on a question), `stopped` (it went on and
+ * stopped again), `drafting` (a new prompt waits for the assistant, `runId`), `waiting` (the
+ * prompt it waited on still waits for its answer, `runId`), `failed` (that answer still fails its
+ * checks, `runId`), `held` (`held` other open blocking findings and questions still hold it, so it
+ * didn't go on) or `not-resumed` (it couldn't; `lines` say why). `lines`: what the stage said, in
+ * the app's words.
+ */
+export const StageAcceptThen = z.object({
+  kind: z.enum([
+    "done",
+    "questions",
+    "stopped",
+    "drafting",
+    "waiting",
+    "failed",
+    "held",
+    "not-resumed",
+  ]),
+  runId: z.string().optional(),
+  held: z.number().int().positive().optional(),
+  lines: z.array(z.string()).optional(),
+});
 export const StageAcceptResult = z.object({
   /** The finding's file, from the metarepo's root. */
   files: z.array(z.string()),
   accepted: StageAcceptance,
   thread: StageThreadView,
+  /** What the app did with the stage next. Optional: an older server says nothing. */
+  goesOn: StageAcceptThen.optional(),
 });
 export type ThreadStageT = z.infer<typeof ThreadStage>;
 export type ThreadItemT = z.infer<typeof ThreadItem>;
@@ -3700,6 +3729,7 @@ export type StageThreadPostT = z.infer<typeof StageThreadPost>;
 export type StageThreadPostResultT = z.infer<typeof StageThreadPostResult>;
 export type StageAcceptRequestT = z.infer<typeof StageAcceptRequest>;
 export type StageAcceptResultT = z.infer<typeof StageAcceptResult>;
+export type StageAcceptThenT = z.infer<typeof StageAcceptThen>;
 export type StageAcceptRefusalT = z.infer<typeof StageAcceptRefusal>;
 export type StageFindingViewT = z.infer<typeof StageFindingView>;
 export type StageCommentResultT = z.infer<typeof StageCommentResult>;

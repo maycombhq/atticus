@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Api, Finding } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import {
+  acceptedNote,
   acceptPreview,
   AcceptForm,
   StageThreadView,
@@ -339,5 +340,54 @@ describe("the Accept form", () => {
     expect(h).toMatch(/role="alert"/);
     expect(h).not.toContain(`>${esc(A.submit)}<`);
     expect(h).toContain(`>${esc(A.close)}<`);
+  });
+});
+
+describe("after an Accept: what the app did with the stage (ADR 0203 A, addendum 2026-11-22)", () => {
+  const ID = REPO.id;
+  it("says it went on, in the copy file's words, for each thing the server did", () => {
+    expect(acceptedNote(ID, "feature", { kind: "done" })).toBe(A.went.done("feature"));
+    expect(A.went.done("feature")).toBe(
+      "Accepted. The app went on with the feature stage, and it is done.",
+    );
+    for (const kind of ["questions", "stopped", "drafting", "waiting", "failed"] as const)
+      expect(acceptedNote(ID, "feature", { kind, runId: "run-1" })).toBe(A.went[kind]("feature"));
+    // Every one starts as an acceptance does, and none names a command to type.
+    for (const words of [
+      ...(["done", "questions", "stopped", "drafting", "waiting", "failed"] as const).map((k) =>
+        A.went[k]("feature"),
+      ),
+      A.went.held("feature", 1),
+      A.went.held("feature", 2),
+      A.went.notResumed("feature"),
+    ]) {
+      expect(words).toMatch(/^Accepted[.,]/);
+      expect(words).not.toMatch(/atticus /);
+    }
+  });
+
+  it("when it can't go on, says exactly what to press", () => {
+    expect(acceptedNote(ID, "feature", { kind: "held", held: 1 })).toBe(A.went.held("feature", 1));
+    expect(A.went.held("feature", 1)).toContain(T.startNext);
+    expect(A.went.held("feature", 2)).toMatch(/2 more findings or questions/);
+    const why = "The step wasn't prepared.";
+    expect(acceptedNote(ID, "feature", { kind: "not-resumed", lines: [why] })).toBe(
+      A.went.notResumed("feature", why),
+    );
+    expect(A.went.notResumed("feature", why)).toContain(why);
+    expect(A.went.notResumed("feature")).toContain(T.startNext);
+  });
+
+  it("an older server that says nothing of it: the acceptance alone", () => {
+    expect(acceptedNote(ID, "feature", undefined)).toBe(A.done(ID, "feature"));
+  });
+
+  it("the preview says the app goes on at once, so nothing is left to type", () => {
+    expect(A.previewDone("feature", `atticus change feature ${CHANGE}`)).toMatch(
+      /^Nothing else blocks the feature stage: the app runs it again as soon as you accept it/,
+    );
+    expect(A.previewWaiting("feature")).toMatch(
+      /^Nothing else blocks the feature stage: the app goes on with it as soon as you accept it/,
+    );
   });
 });

@@ -85,6 +85,28 @@ export function acceptPreview(o: AcceptContext & { rule: string; file: string })
   ];
 }
 
+/**
+ * The status line after an Accept (ADR 0203 A, addendum 2026-11-22): what the app did with the
+ * stage, whoever started it; where it couldn't go on, what to press. An older server says nothing
+ * of it, and the line says the acceptance alone.
+ */
+export function acceptedNote(
+  id: string,
+  stage: string,
+  goesOn: Api.StageAcceptThenT | undefined,
+): string {
+  if (!goesOn) return A.done(id, stage);
+  if (goesOn.kind === "held") return A.went.held(stage, goesOn.held ?? 1);
+  if (goesOn.kind === "not-resumed") return A.went.notResumed(stage, goesOn.lines?.[0]);
+  return A.went[goesOn.kind](stage);
+}
+
+/** The `goesOn` of an Accept's answer, when the server sent one. */
+const goesOnOf = (r: unknown): Api.StageAcceptThenT | undefined =>
+  r && typeof r === "object" && "goesOn" in r
+    ? ((r as { goesOn?: Api.StageAcceptThenT }).goesOn ?? undefined)
+    : undefined;
+
 type AcceptState = "idle" | "invalid" | "busy" | "error" | "refused";
 
 /**
@@ -323,7 +345,7 @@ function FindingCardInThread(p: {
   onReplyTo: (it: FindingItem) => void;
   onAct?: ThreadHandlers["onAct"];
   onAccept?: ThreadHandlers["onAccept"];
-  onAccepted?: (id: string) => void;
+  onAccepted?: (id: string, result: unknown) => void;
   onFixToAssistant: (it: FindingItem) => void;
   reason: string;
   accept: AcceptContext;
@@ -445,8 +467,8 @@ function FindingCardInThread(p: {
           {...p.accept}
           onCancel={() => setAccepting(false)}
           onAccept={async (reason) => {
-            await (p.onAccept?.(p.it, reason) ?? Promise.resolve());
-            p.onAccepted?.(f.id);
+            const r = await (p.onAccept?.(p.it, reason) ?? Promise.resolve());
+            p.onAccepted?.(f.id, r);
           }}
         />
       )}
@@ -555,7 +577,7 @@ function ThreadItemView(p: {
   handlers: ThreadHandlers;
   onReplyTo: (it: FindingItem) => void;
   onFixToAssistant: (it: FindingItem) => void;
-  onAccepted: (id: string) => void;
+  onAccepted: (id: string, result: unknown) => void;
   reason: string;
   accept: (it: FindingItem) => AcceptContext;
 }) {
@@ -759,12 +781,12 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
   const [about, setAbout] = useState<FindingItem | undefined>();
   const [text, setText] = useState("");
   const [starting, setStarting] = useState<{ busy: boolean; error?: string }>({ busy: false });
-  const [acceptedNote, setAcceptedNote] = useState<string | undefined>();
+  const [acceptedSaid, setAcceptedNote] = useState<string | undefined>();
   const noteAt = useRef<HTMLParagraphElement>(null);
   const acceptedId = useId();
   useEffect(() => {
-    if (acceptedNote) focusIfLost(noteAt.current);
-  }, [acceptedNote]);
+    if (acceptedSaid) focusIfLost(noteAt.current);
+  }, [acceptedSaid]);
   const box = useRef<HTMLTextAreaElement>(null);
   const replyTo = (it: FindingItem) => {
     setAbout(it);
@@ -840,7 +862,7 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                   )}
                 </div>
               )}
-              {acceptedNote && (
+              {acceptedSaid && (
                 <p
                   ref={noteAt}
                   tabIndex={-1}
@@ -848,7 +870,7 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                   className="work-say"
                   style={{ margin: 0 }}
                 >
-                  {acceptedNote}
+                  {acceptedSaid}
                 </p>
               )}
               {timeline.length === 0 ? (
@@ -868,7 +890,9 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                         handlers={handlers}
                         onReplyTo={replyTo}
                         onFixToAssistant={fixToAssistant}
-                        onAccepted={(id) => setAcceptedNote(A.done(id, v.stage))}
+                        onAccepted={(id, r) =>
+                          setAcceptedNote(acceptedNote(id, v.stage, goesOnOf(r)))
+                        }
                         accept={acceptOf}
                         reason={
                           about &&
@@ -980,11 +1004,13 @@ export function StageThreadPanel({ change, stage }: { change: string; stage: Sta
   };
   // ADR 0203 A: the command line's own waive, in the name of the person using the app.
   const onAccept: ThreadHandlers["onAccept"] = async (it, reason) => {
-    await api(`/api/changes/${encodeURIComponent(change)}/stages/${stage}/accept`, {
+    // ADR 0203 A (addendum 2026-11-22): the server goes on with the stage, and says how.
+    const r = await api(`/api/changes/${encodeURIComponent(change)}/stages/${stage}/accept`, {
       method: "POST",
       body: { finding: it.view.finding.id, reason },
     });
     view.reload();
+    return r;
   };
   return (
     <StageThreadView

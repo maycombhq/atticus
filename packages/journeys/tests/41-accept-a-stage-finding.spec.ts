@@ -20,8 +20,9 @@ import {
  * 0203 A, addendum 2026-11-22): the stage's thread shows it with Accept, after one hand-in. The
  * tech lead knows better than the map (the repo is created in this release): Accept asks why,
  * says who it records and previews what accepting does; the acceptance is written as `atticus
- * finding … waive` writes it; the thread lists it apart, by whom and why; the stage reads the
- * draft in and ends done, with no new draft. Axe runs on each state. Invented names only
+ * finding … waive` writes it; the thread lists it apart, by whom and why; and the app goes on
+ * with the stage, though a terminal started it: it reads the draft in and the stage ends done,
+ * with no new draft and nothing else pressed. Axe runs on each state. Invented names only
  * (CLAUDE.md rule 3).
  */
 
@@ -39,6 +40,8 @@ newFlows:
 `;
 
 let app: App | undefined;
+/** The one run the stage handed to the assistant. */
+let handedIn = "";
 const a = () => {
   if (!app) throw new Error("The journey's app hasn't started.");
   return app;
@@ -75,6 +78,7 @@ test.beforeAll(async () => {
   const root = await forgeMetarepo();
   atticus(root, "change", "feature", CHANGE);
   const first = await waitingRun(root);
+  handedIn = first.id;
   await writeFile(first.out, ANSWER);
   expect(atticus(root, "handoff", "done", first.id)).toContain(
     "feature-answer.yaml is handed in for a person",
@@ -102,7 +106,7 @@ test("a tech lead accepts the stage's finding with a reason, and the stage ends 
   await expect(form).toBeVisible();
   await expect(form.getByText("priya, your Git user as the app knows it")).toBeVisible();
   await expect(
-    form.getByText(/^Nothing else blocks the feature stage: your assistant's next answer/),
+    form.getByText(/^Nothing else blocks the feature stage: the app goes on with it as soon as/),
   ).toBeVisible();
   await expect(form.getByText(/^The later stages know the repo as a new one/)).toBeVisible();
   await accessible(page, "the Accept form");
@@ -127,25 +131,18 @@ test("a tech lead accepts the stage's finding with a reason, and the stage ends 
   const accepted = thread.getByRole("region", { name: "Accepted at the feature stage" });
   await expect(accepted.getByText(`Accepted by priya: ${REASON}.`, { exact: true })).toBeVisible();
   await expect(thread.getByRole("button", { name: `Accept ${id}…` })).toHaveCount(0);
-  await expect(thread.getByRole("status").filter({ hasText: /^Accepted\./ })).toBeVisible();
+  // The stage was started in a terminal, and the app goes on with it all the same: it reads the
+  // draft the assistant handed in, which passes now, and the stage ends done with no new draft,
+  // no new prompt for the assistant, and nothing else for the tech lead to press.
+  await expect(
+    thread.getByRole("status").filter({
+      hasText: "Accepted. The app went on with the feature stage, and it is done.",
+    }),
+  ).toBeVisible({ timeout: 60_000 });
+  const loop = await readFile(join(dir(), "stage/feature.yaml"), "utf8");
+  expect(/^state: (\S+)$/m.exec(loop)?.[1]).toBe("done");
+  expect(await readdir(join(a().root, ".runs", CHANGE))).toEqual([handedIn]);
   await accessible(page, "a stage's thread with an accepted finding");
-
-  // The stage was started in a terminal: the tech lead goes on in the app. The next round reads
-  // the draft the assistant handed in, which passes now, and the stage ends done with no new
-  // draft and no new prompt for the assistant.
-  const runs = await readdir(join(a().root, ".runs", CHANGE));
-  const again = thread.getByRole("button", { name: "Start the next round", exact: true });
-  await again.click();
-  await expect
-    .poll(
-      async () => {
-        const loop = await readFile(join(dir(), "stage/feature.yaml"), "utf8");
-        return /^state: (\S+)$/m.exec(loop)?.[1];
-      },
-      { timeout: 60_000 },
-    )
-    .toBe("done");
-  expect(await readdir(join(a().root, ".runs", CHANGE))).toEqual(runs);
   await expect(thread.getByText(/^The stage is done/)).toBeVisible({ timeout: 30_000 });
   await expect(accepted.getByText(`Accepted by priya: ${REASON}.`, { exact: true })).toBeVisible();
   // The command line says the same of the change.

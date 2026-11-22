@@ -206,6 +206,7 @@ export function extendUiRoutes(
           ctx,
         ),
         ctx,
+        deps.runStep ? { runStep: deps.runStep } : {},
       ),
       ctx,
       deps.openFolder ? { openFolder: deps.openFolder } : {},
