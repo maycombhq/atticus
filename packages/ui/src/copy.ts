@@ -8448,7 +8448,7 @@ export const COPY = {
     findNotBuiltRead: (b: string) =>
       `Saved, not built: ${b}'s read is saved, and its build waits for you to confirm what it lists. Then find the arrow again.`,
     findReadFailed: (b: string) =>
-      `Read ${b} again, then find the arrow again: its read ended before it finished, so the find stopped before the caller's session. What it said is below.`,
+      `Read ${b} again, then find the arrow again: its read ended before it finished, or didn't start, so the find stopped before the caller's session. What it said is below.`,
     findNotVerified: (a: string) =>
       `Saved, not built: verify refused ${a}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again.`,
     outcome: {

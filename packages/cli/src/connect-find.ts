@@ -278,6 +278,9 @@ const verifyWrite = async (
   return verifyCommand(root, repo, { ...findHooks.verifyOptions, ...o, write: true }, io);
 };
 
+/** map --all's exit for a usage error or a refusal before it reads anything. */
+const READ_NOT_STARTED = 2;
+
 /** B read whole, as any read: atticus map --all --repos <B> through the assistant. */
 const readWhole = async (
   root: string,
@@ -553,6 +556,9 @@ export async function runFind(
           command: again,
         },
       };
+    // Exit 2 is map --all's usage or refusal before it reads anything (the model's limit not
+    // known, a plan it refuses, assistant files edited by hand): the read never started.
+    const how = code === READ_NOT_STARTED ? "didn't start" : "ended before it finished";
     if (code !== 0 && code !== APPLIED_WITH_LEFT_OUT)
       return {
         brief: files.brief,
@@ -560,7 +566,7 @@ export async function runFind(
         notBuilt: {
           repo: b,
           readFailed: true,
-          message: `Not read: the read of ${b} ended before it finished (exit ${code}), so the find stopped before reading ${o.from}. What it said is below; read ${b} again (${read}), then find the arrow again: ${again}`,
+          message: `Not read: the read of ${b} ${how} (exit ${code}), so the find stopped before reading ${o.from}. What it said is below; read ${b} again (${read}), then find the arrow again: ${again}`,
           lines: lines.slice(-50),
           command: again,
         },
