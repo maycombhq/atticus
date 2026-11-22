@@ -96,10 +96,22 @@ describe("pinned files", () => {
     await expect(fetchSource(other, { cacheDir, get })).rejects.toThrow(
       /HTTP 404.*cdn\.jsdelivr\.net\/gh\/forge\/runtime@v9\.9\.9\/LICENSE has sha256 [0-9a-f]{64}, not the pinned 2{64}: refused/s,
     );
-    // A source anywhere else has no copy to try.
+    // When the source and its copy both fail, the source's own error is the cause (the plugin's
+    // fetch step reads its code to say what the proxy did).
+    const refused = Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+    const down = async (url: string) => {
+      throw url.startsWith("https://raw.githubusercontent.com/") ? refused : new Error("also down");
+    };
+    const both = await fetchSource(
+      { url: raw, sha256: "4".repeat(64) },
+      { cacheDir, get: down },
+    ).catch((e: unknown) => e as Error);
+    expect((both as Error & { cause?: unknown }).cause).toBe(refused);
+    expect((both as Error).message).toBe("fetch failed; also down");
+    // A source anywhere else has no copy to try, and its error is thrown as it is.
     const plain = async (url: string) => {
       calls.push(url);
-      throw new Error(`${url}: HTTP 404`);
+      throw refused;
     };
     calls.length = 0;
     await expect(
@@ -107,7 +119,7 @@ describe("pinned files", () => {
         { url: "https://example.invalid/x", sha256: "3".repeat(64) },
         { cacheDir, get: plain },
       ),
-    ).rejects.toThrow(/HTTP 404/);
+    ).rejects.toBe(refused);
     expect(calls).toEqual(["https://example.invalid/x"]);
   });
 

@@ -79,7 +79,9 @@ export async function fetchSource(
   if (kept && sha256Of(kept) === src.sha256) return { bytes: kept, cached: true };
   if (o.offline) throw new PinError(`${src.url} isn't in the cache and this run may not download`);
   // The source, then its copies (copiesOf): the first whose bytes are the pinned ones.
-  const tried: string[] = [];
+  // A source with no copy throws its own error, as it is; with copies, the source's error is the
+  // cause (its code says what the network did) and the message names each one tried.
+  const failed: unknown[] = [];
   let bytes: Uint8Array | undefined;
   for (const url of [src.url, ...copiesOf(src.url)]) {
     try {
@@ -88,10 +90,15 @@ export async function fetchSource(
       bytes = got;
       break;
     } catch (e) {
-      tried.push(e instanceof Error ? e.message : String(e));
+      failed.push(e);
     }
   }
-  if (!bytes) throw new PinError(tried.join("; "));
+  if (!bytes) {
+    if (failed.length === 1) throw failed[0];
+    throw new PinError(failed.map((e) => (e instanceof Error ? e.message : String(e))).join("; "), {
+      cause: failed[0],
+    });
+  }
   await mkdir(o.cacheDir, { recursive: true });
   await writeFile(`${file}.part`, bytes);
   await rename(`${file}.part`, file);
