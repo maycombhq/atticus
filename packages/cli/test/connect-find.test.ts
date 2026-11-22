@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, parseDocument } from "yaml";
 import {
   Api,
   declareArrow,
@@ -16,6 +16,7 @@ import {
   findAgainLabel,
   findBrief,
   findHooks,
+  runFind,
   type FindInputs,
 } from "../src/connect-find.js";
 import { acpPathsOf } from "@maycombhq/ai";
@@ -347,6 +348,58 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       findHooks.verifyOptions = undefined;
       findHooks.verify = verifyAll;
     }
+  }, 300_000);
+
+  it("a repo id from a request or a profile item never reaches a path (the second review)", async () => {
+    const outside = () =>
+      [
+        join(g.root, "x.find.md"),
+        join(g.root, "x.find.yaml"),
+        join(g.root, "..", "x.find.md"),
+        join(g.root, "..", "x.find.yaml"),
+        join(g.root, `x--repo-${B}.yaml`),
+        join(g.root, "facts", "forge-gone.find.md"),
+        join(g.root, "facts", "forge-gone.find.yaml"),
+      ].filter((f) => existsSync(f));
+    // A request: refused before anything is read.
+    const r = await g.call("/api/connect/find", "POST", { from: "../../x", to: { repo: B } });
+    expect(r.status).toBe(400);
+    expect(
+      (await g.call("/api/reading-rules/from-find", "POST", { repo: "../x", to: { repo: B } }))
+        .status,
+    ).toBe(400);
+    // A profile item, written by hand: from.repo "../../x" fails the profile's own check, and an
+    // item whose repo is no longer in the manifests (kept, 1.8) is no repo to find in.
+    const p = PROFILE();
+    const was = readFileSync(p, "utf8");
+    const item = (repo: string) => {
+      const doc = parseDocument(was);
+      (doc.get("links") as { add(x: unknown): void }).add(
+        doc.createNode({
+          from: { repo },
+          to: { repo: B },
+          why: "Written by hand.",
+          by: "pat",
+          at: "2026-11-18T10:02:00Z",
+        }),
+      );
+      return doc.toString();
+    };
+    try {
+      for (const from of ["../../x", "forge-gone"]) {
+        writeFileSync(p, item(from));
+        await expect(
+          runFind(g.root, { from, to: { repo: B }, mode: "hand-off" }),
+        ).rejects.toThrow();
+      }
+      expect(
+        (await g.call("/api/connect/find", "POST", { from: "forge-gone", to: { repo: B } })).status,
+      ).toBe(404);
+    } finally {
+      writeFileSync(p, was);
+    }
+    expect(outside()).toEqual([]);
+    expect(readFileSync(p, "utf8")).toBe(profileBytes);
   }, 300_000);
 });
 

@@ -11,15 +11,16 @@ import {
   parseFacts,
   proposalsDirOf,
   proposalsRelOf,
+  RecordId,
   writeFileAtomic,
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
 import { estateFacts, estateRepos, factsSlotPaths } from "@maycombhq/scanner";
-import { conflict, notFound } from "@maycombhq/server";
+import { badRequest, conflict, notFound } from "@maycombhq/server";
 import type { Output } from "./commands.js";
 import { copilotAcpAllowed, copilotAcpByDefault, type AcpStepRunner } from "./copilot-acp-steps.js";
-import { arrowOf, boxWords, realCalls } from "./connect-arrows.js";
+import { arrowOf, boxWords, knownEnd, realCalls } from "./connect-arrows.js";
 import { dataBlock } from "./rules-commands.js";
 import type { VerifyCommandOptions } from "./verify-commands.js";
 import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
@@ -436,7 +437,20 @@ export async function runFind(
 ): Promise<Api.FindResultT> {
   const io = o.io ?? { out: () => undefined, err: () => undefined };
   const step = o.step ?? (() => Promise.resolve());
+  // The second review: a repo id from a request, the command line or a profile reaches a path
+  // only once it is an id (the record id rule) and a repo of the manifests; the callee too.
+  const to = o.to.repo ?? o.to.system ?? "";
+  if (!RecordId.safeParse(o.from).success || !RecordId.safeParse(to).success)
+    throw badRequest(
+      `${JSON.stringify(RecordId.safeParse(o.from).success ? to : o.from)} isn't a repo or system id.`,
+    );
   const op = await loadOrgPack(orgPackDirOf(root));
+  if (!knownEnd(op, { repo: o.from }))
+    throw notFound(
+      `${o.from} isn't a repo of the manifests: Atticus finds an arrow only in a repo's code.`,
+    );
+  if (!knownEnd(op, o.to))
+    throw notFound(`${to} isn't a repo of the manifests or a system of the profiles.`);
   const arrow = arrowOf(root, op, { repo: o.from }, o.to);
   if (!arrow)
     throw notFound(`No arrow ${o.from} → ${boxWords(o.to)} is declared: declare it first.`);

@@ -6785,7 +6785,8 @@ export type ReposRunPartT = z.infer<typeof ReposRunPart>;
 export type ReposRunResultT = z.infer<typeof ReposRunResult>;
 /** 3.19.0 (ADR 0204 A.9): POST /api/connect/find, a job; its result `answer` is FindResult. */
 export const ConnectFindRequest = z.strictObject({
-  from: z.string().min(1).max(200),
+  /** The second review: a repo id (the record id rule), so it never reaches a path as `../x`. */
+  from: RecordId,
   to: LinkBox,
   mode: z.enum(["copilot-acp", "hand-off"]).optional(),
   /** Hand-off: the person's assistant wrote the answer; read it and go on. */
@@ -6818,7 +6819,7 @@ export const FindResult = z.object({
 });
 /** 3.19.0 (ADR 0204 A.8): POST /api/reading-rules/from-find, a draft rule from a find's call. */
 export const RuleFromFindRequest = z.strictObject({
-  repo: z.string().min(1).max(200),
+  repo: RecordId,
   to: LinkBox,
 });
 export type FindEntryViewT = z.infer<typeof FindEntryView>;
