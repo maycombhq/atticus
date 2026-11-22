@@ -11,10 +11,29 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
-import { parseFacts, staleCite, type FileChange } from "@maycombhq/core";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { loadOrgPack, parseFacts, staleCite, type FileChange } from "@maycombhq/core";
 import { scanEstate, writeFactsSlot } from "../src/index.js";
-import { changesOfBothSides } from "../src/facts-scan.js";
+import { changesOfBothSides, factsSlotAt } from "../src/facts-scan.js";
+import { parseFactsSnapshot, serializeFactsSnapshot, sha256Of } from "../src/slots.js";
+
+/**
+ * Verify's accepted facts as they can stand in memory, unlike the parse of their serialization
+ * (in another order, a key held undefined): only for the test that says a carried slot holds the
+ * parse of its bytes.
+ */
+const inMemory = vi.hoisted(() => ({ on: false }));
+vi.mock("@maycombhq/verify", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@maycombhq/verify")>();
+  return {
+    ...real,
+    verifyFacts: async (o: Parameters<typeof real.verifyFacts>[0]) => {
+      const r = await real.verifyFacts(o);
+      if (!inMemory.on) return r;
+      return { ...r, accepted: [...r.accepted].reverse().map((f) => ({ ...f, held: undefined })) };
+    },
+  };
+});
 
 /**
  * A check at a later commit (the code-against-design check on a task branch, ADR 0114) scans
@@ -85,7 +104,7 @@ async function branch(file: string) {
       scannedAt: "2026-11-12T09:00:00Z",
       ...(carryFacts ? { carryFacts: true } : {}),
     });
-  return { scan };
+  return { scan, root, dir, head };
 }
 
 /** The records projected from facts that cite `file`. */
@@ -116,6 +135,29 @@ describe("a scan with carryFacts carries the facts snapshot to the commit read",
       const carried = await scan(true);
       expect(carried.basis?.[REPO]).toEqual({ from: "facts", unread: [] });
       expect(citing(carried.records, FLOW).length).toBeGreaterThan(0);
+    },
+    T,
+  );
+
+  it(
+    "holds the parse of the bytes its hash is of, never verify's facts as they stand in memory (ADR 0205 addendum, step 1)",
+    async () => {
+      // With the kept projection on, a later Apply reading a slot of the same bytes takes the
+      // projection made from this one: so its facts must be exactly those bytes' parse.
+      const { root, dir, head } = await branch("README.md");
+      const op = await loadOrgPack(join(root, "org-pack"));
+      inMemory.on = true;
+      const at = await factsSlotAt(root, op, REPO, { dir, commit: head }).finally(() => {
+        inMemory.on = false;
+      });
+      const slot = at?.slot;
+      if (!slot?.ok) throw new Error("no carried slot");
+      const text = serializeFactsSnapshot(slot.facts);
+      expect(sha256Of(text)).toBe(slot.sha);
+      expect(slot.sha).toBe(slot.meta.factsHash);
+      const parsed = parseFactsSnapshot(text);
+      if (!parsed.ok) throw new Error("the carried facts don't read");
+      expect(slot.facts).toStrictEqual(parsed.facts);
     },
     T,
   );

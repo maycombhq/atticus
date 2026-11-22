@@ -18,6 +18,7 @@ import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verif
 import { changedFiles, changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
 import type { FactsSlotRead } from "./build.js";
 import {
+  parseFactsSnapshot,
   readFactsSlot,
   serializeFactsSlotMeta,
   serializeFactsSnapshot,
@@ -97,6 +98,12 @@ export async function factsSlotAt(
     ...(exclude.length ? { exclude } : {}),
   }).files.map((f) => f.path);
   const text = serializeFactsSnapshot(report.accepted);
+  // The slot holds the parse of the bytes its hash is of, as a slot read from disk does, never
+  // verify's facts as they stand in memory (in its order, with what the serialization drops): with
+  // the kept projection on (ADR 0205 addendum, step 1), a later build reading a slot of these
+  // very bytes takes the projection made from this one. Bytes that don't read back: no slot.
+  const facts = parseFactsSnapshot(text);
+  if (!facts.ok) return { unread: [] };
   // Carried to another commit, some facts left out to be read again: no longer a complete read.
   const { readComplete: _complete, ...kept } = snap.meta;
   const meta = { ...kept, commit: at.commit, factsHash: sha256Of(text) };
@@ -104,7 +111,7 @@ export async function factsSlotAt(
     slot: {
       ok: true,
       meta,
-      facts: report.accepted,
+      facts: facts.facts,
       sha: meta.factsHash,
       metaSha: sha256Of(serializeFactsSlotMeta(meta)),
     },
