@@ -59,6 +59,13 @@ export interface Faults {
    * for hand edits (they match the interrupted build's manifest, kept in its undo copy).
    */
   crash?: "after-slots" | "mid-records";
+  /**
+   * ADR 0205 step 2 (the app's Apply, `verify --write` with `app`): the process stops after the
+   * result is given and before its local caches are written (core's `afterResultHooks.die`). The
+   * catalog was written whole, so the outcome is the write's own; its lock is left as a process
+   * that stopped leaves it, marked `caches`, and the next writer takes it over.
+   */
+  dieAfterResult?: boolean;
 }
 
 /** Why a guard refused (ADR point 4). Any other refusal of a command the model expects to succeed fails. */
@@ -153,7 +160,20 @@ export interface CatalogSystem {
    * the assistant wrote. With `write` and nothing rejected: the facts snapshot, then a build.
    * With facts rejected: refused (not a guard), nothing written. Without `write`: nothing written.
    */
-  verify(root: string, repo: string, o: { write: boolean } & Confirm & Faults): Promise<Outcome>;
+  verify(
+    root: string,
+    repo: string,
+    o: {
+      write: boolean;
+      /**
+       * ADR 0205: as the app's Apply runs it (POST /api/facts/{repo}/apply): in this process,
+       * its local caches written after its result (step 2), with the app's memory on (step 4)
+       * where the harness turned it on.
+       */
+      app?: boolean;
+    } & Confirm &
+      Faults,
+  ): Promise<Outcome>;
   /**
    * `atticus repo rename <from> <to>`: everything computed first (the new slot files, the
    * manifest entry, the facts, questions and curated decisions under the new id), a build from

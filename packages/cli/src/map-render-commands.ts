@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   acquireLock,
+  runAfterResult,
   catalogDirOf,
   currentSignal,
   stoppableSignal,
@@ -58,6 +59,7 @@ import {
   phaseClock,
   buildCatalog,
   buildLines,
+  diffCatalogFiles,
   diffCatalogs,
   factsSnapshotWrites,
   forgetKeptReads,
@@ -593,7 +595,9 @@ export async function projectFactsIntoCatalog(
     ...(mine?.answerMisses.length ? { answerMisses: mine.answerMisses } : {}),
   };
   const targets = mine?.targets ?? {};
-  const diff = diffCatalogs([...existing], result.records);
+  // ADR 0205 step 1: the whole comparison only when it is read (a preview's, or a write whose
+  // catalog read no longer matched the files); a write compares the files it changed.
+  let whole: CatalogDiff | undefined;
   const links = linkChanges(repo, result.join, existing, result.records);
   return {
     op,
@@ -604,7 +608,9 @@ export async function projectFactsIntoCatalog(
     ruled,
     estate,
     result,
-    diff,
+    get diff(): CatalogDiff {
+      return (whole ??= diffCatalogs([...existing], result.records));
+    },
     links,
     build,
     snap,
@@ -634,7 +640,13 @@ async function readContractsCompanion(root: string, repo: string) {
 }
 
 /** Tests hear each apply as it starts, under the lock (map-loop-count.test.ts counts them). */
-export const writeFactsHooks: { onWrite?: (repo: string) => void } = {};
+export const writeFactsHooks: {
+  onWrite?: (repo: string) => void;
+  /** ADR 0205 step 1, the way before it: the comparison over the whole catalog. */
+  fullDiff?: boolean;
+  /** The equivalence tests: each write's comparison of its changed files and of the whole catalog. */
+  onDiffs?: (changed: CatalogDiff, whole: CatalogDiff) => void;
+} = {};
 
 export async function writeFactsIntoCatalog(
   root: string,
@@ -655,6 +667,11 @@ export async function writeFactsIntoCatalog(
     discardEdits?: number;
     /** Told the refused build, when a guard refused it (the app's and --json's report). */
     onRefused?: (r: BuildAndWrite) => void;
+    /**
+     * ADR 0205 step 2 (the app's Apply): the local caches are written after this returns, still
+     * under the scan's lock (`runAfterResult`), so "done" shows first.
+     */
+    cachesAfterResult?: boolean;
     /**
      * The app's confirm (no flag takes it): the plan of the refusal the counts confirm, worked
      * out again under the lock; another list writes nothing (the review of beta.27).
@@ -681,6 +698,10 @@ export async function writeFactsIntoCatalog(
     title: "The write",
     ...(signal ? { signal } : {}),
   });
+  /** ADR 0205 step 2: the caches the build hands over to write after the result. */
+  const later: (() => Promise<void>)[] = [];
+  /** Whether the write gave its result: only then is a stop during its caches harmless. */
+  let gave = false;
   try {
     writeFactsHooks.onWrite?.(repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
@@ -728,20 +749,7 @@ export async function writeFactsIntoCatalog(
     await progress.step("Reading the repo's contract files");
     const contracts = await repoContractsOf(root, repo, o.dir, facts, (n) => io.err(n));
     const snapshotCommit = o.commit ?? snapshotCommitOf(facts);
-    const {
-      answered,
-      everyTarget,
-      targets,
-      ruled,
-      estate,
-      result,
-      diff,
-      links,
-      evidenceProblems,
-      sharedMaps,
-      build,
-      snap,
-    } = await projectFactsIntoCatalog(root, repo, facts, {
+    const projected = await projectFactsIntoCatalog(root, repo, facts, {
       op,
       existing: existing.records,
       contracts,
@@ -750,6 +758,19 @@ export async function writeFactsIntoCatalog(
       step: (what, brief) => progress.step(what, brief),
       tick: () => progress.tick(),
     });
+    const {
+      answered,
+      everyTarget,
+      targets,
+      ruled,
+      estate,
+      result,
+      links,
+      evidenceProblems,
+      sharedMaps,
+      build,
+      snap,
+    } = projected;
     mark("projection");
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
@@ -763,6 +784,7 @@ export async function writeFactsIntoCatalog(
       build,
       slots: snap,
       read: existing,
+      ...(o.cachesAfterResult ? { cachesAfter: (w: () => Promise<void>) => later.push(w) } : {}),
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined
@@ -798,6 +820,13 @@ export async function writeFactsIntoCatalog(
     await progress.step("Writing specs");
     await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const w = built.write!;
+    // ADR 0205 step 1: what the write changed, compared record by record where the catalog read
+    // still matched the files; the whole catalog otherwise, or with the hook (the way before).
+    const fast = !writeFactsHooks.fullDiff && built.changedFiles !== undefined;
+    const diff = fast
+      ? diffCatalogFiles(existing, result.records, built.changedFiles!)
+      : projected.diff;
+    if (fast) writeFactsHooks.onDiffs?.(diff, projected.diff);
     const snapshot = {
       path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
       status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))
@@ -1129,6 +1158,7 @@ export async function writeFactsIntoCatalog(
     const map = await renderRepoMap(root, repo, io, built.catalog);
     mark("map");
     progress.end({ done: true });
+    gave = true;
     return {
       written,
       flows: flowPaths,
@@ -1148,7 +1178,23 @@ export async function writeFactsIntoCatalog(
     };
   } finally {
     progress.end();
-    await lock.release();
+    // ADR 0205 step 2: the caches after the result, then the lock let go. The lock says so
+    // meanwhile: a process stopped then left the catalog whole and its caches unsaved. A write
+    // that threw after the catalog (its specs, its map) gave no result: its lock says it stopped
+    // before it finished (the review of cbab428f).
+    if (later.length) {
+      if (gave) await lock.caching();
+      runAfterResult(
+        async () => {
+          try {
+            for (const w of later) await w();
+          } finally {
+            await lock.release();
+          }
+        },
+        { root, name: "scan" },
+      );
+    } else await lock.release();
   }
 }
 

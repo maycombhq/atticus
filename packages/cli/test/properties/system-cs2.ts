@@ -1,5 +1,7 @@
+import { afterResultHooks } from "@maycombhq/core";
 import { buildWriteHooks } from "@maycombhq/scanner";
 import { main } from "../../src/main.js";
+import { verifyCommand } from "../../src/verify-commands.js";
 import { renameHooks } from "../../src/repo-rename.js";
 import type { CatalogSystem, Confirm, Faults, Guard, Outcome, RemovalReason } from "./seam.js";
 import { freshFromSlots } from "./system.js";
@@ -130,6 +132,41 @@ const crashing = (o: Faults) => {
   if (o.crash) buildWriteHooks.crash = o.crash;
 };
 
+/**
+ * ADR 0205: one repo's Apply as the app's server runs it: `verifyCommand` in this process with
+ * its caches after its result (the next writer's lock waits for them, as in the server), and,
+ * with `dieAfterResult`, the process stopping after the result before they are written.
+ */
+async function applyAsTheApp(
+  root: string,
+  repo: string,
+  o: Confirm & Faults,
+): Promise<Omit<Outcome, "wrote" | "refused"> & { crashed?: true }> {
+  const out: string[] = [];
+  const err: string[] = [];
+  if (o.dieAfterResult) afterResultHooks.die = true;
+  try {
+    const code = await verifyCommand(
+      root,
+      repo,
+      {
+        write: true,
+        verbose: false,
+        json: true,
+        cachesAfterResult: true,
+        ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+        ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+      },
+      { out: (l) => out.push(l), err: (l) => err.push(l) },
+    );
+    return { code, out, err };
+  } finally {
+    // A write that refused, or wrote nothing after its result, never met the fault.
+    delete afterResultHooks.die;
+    buildWriteHooks.crash = undefined;
+  }
+}
+
 export const cs2Writers: CatalogSystem = {
   name: "CS2: slots and the build",
   async scan(root, o) {
@@ -148,14 +185,16 @@ export const cs2Writers: CatalogSystem = {
   },
   async verify(root, repo, o) {
     if (o.write) crashing(o);
-    const r = await run([
-      "verify",
-      repo,
-      "--root",
-      root,
-      "--json",
-      ...(o.write ? ["--write", ...flags(o)] : []),
-    ]);
+    const r = o.app
+      ? await applyAsTheApp(root, repo, o)
+      : await run([
+          "verify",
+          repo,
+          "--root",
+          root,
+          "--json",
+          ...(o.write ? ["--write", ...flags(o)] : []),
+        ]);
     const report = reportOf(r.out) as Report & { written?: { removed?: Removed[] } };
     if (!o.write) return { ...r, wrote: false, refused: false };
     // Facts rejected: refused, but by no guard (the facts aren't the build's to judge).

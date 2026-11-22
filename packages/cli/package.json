@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000 --exclude test/home-speed.test.ts --exclude test/field-estate-speed.test.ts --exclude test/map-loop-speed.test.ts",
     "test:speed": "vitest run --config ../../vitest.shared.mjs --testTimeout=300000 --hookTimeout=300000 test/home-speed.test.ts test/field-estate-speed.test.ts test/map-loop-speed.test.ts",
-    "test:properties:nightly": "node test/properties/nightly.mjs"
+    "test:properties:nightly": "node test/properties/nightly.mjs",
+    "test:apply-budget": "vitest run --config ../../vitest.shared.mjs --testTimeout=1800000 --hookTimeout=1800000 test/apply-budget.test.ts"
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",

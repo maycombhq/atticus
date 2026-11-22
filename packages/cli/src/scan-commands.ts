@@ -371,10 +371,10 @@ export async function scanCommand(
       }
       throw e;
     }
-    if (lock.interrupted)
-      io.err(
-        `The last scan (started ${lock.interrupted.startedAt}) stopped before it finished; this one brings the catalog up to date.`,
-      );
+    if (lock.interrupted) {
+      const { interruptedLine } = await import("./lock-words.js");
+      io.err(interruptedLine(lock.interrupted));
+    }
   }
   try {
     if (o.ref) {

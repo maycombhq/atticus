@@ -1,0 +1,58 @@
+name: Apply budget (nightly)
+
+# ADR 0205 (the owner's answer of 2026-11-19): one repo's Apply in 15 seconds on the field-shaped
+# estate at 60 repos, as a CI budget: the app's Apply (in the server's process, to "done") and the
+# command's (`atticus verify <repo> --write`, its own process, to its end), each the median of
+# three. A wall-clock budget, so it runs here, every night and on demand, and never in
+# `pnpm check` or the shared CI jobs (packages/cli/test/apply-budget.test.ts skips unless
+# ATTICUS_APPLY_BUDGET is set).
+#
+# The machine is a GitHub-hosted runner (ubuntu-24.04), as the repo's other jobs use; none of our
+# own. No other job of ours shares it, but it is a virtual machine on a shared host, so its clock
+# can be slowed by its neighbours. The run prints each Apply's time with its CPU time and the load:
+# a median over 15 s whose CPU time is well under it was the runner's noise (run it again), one
+# whose CPU time is over it is the code's. The margin, from ADR 0205's measurements at 60 repos
+# (2 CPUs): the app's Apply takes about 5.7 CPU s, two fifths of the budget, and the command about
+# 10 CPU s, two thirds of it; on an idle runner the clock is about the CPU time, so a runner
+# slowed by half again still passes the app's and is at the edge for the command's. The big
+# estate's times, a stress test, go in the release notes from the bench
+# (packages/cli/test/big-estate-bench.test.ts). No secret is used, and nothing reaches the network
+# but the install (CLAUDE.md rule 5).
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: "The estate's repos in all"
+        type: string
+        default: "60"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-budget-nightly
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  budget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter=@maycombhq/cli...
+      - name: One repo's Apply on the field-shaped estate, median of three, under 15 s
+        run: pnpm --filter @maycombhq/cli test:apply-budget
+        env:
+          ATTICUS_APPLY_BUDGET: "1"
+          ATTICUS_BUDGET_REPOS: ${{ inputs.repos || '60' }}

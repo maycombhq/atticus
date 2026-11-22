@@ -2,6 +2,17 @@ import { cp, mkdtemp, readdir, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
+import {
+  appMemory,
+  factsParseHooks,
+  forgetFactsParses,
+  recordCacheHooks,
+  releaseAppMemory,
+  settleAfterResult,
+  startAppMemory,
+  stopAppMemory,
+} from "@maycombhq/core";
+import { buildCacheHooks, projectionHooks } from "@maycombhq/scanner";
 import type { Desc } from "./commands.js";
 import { commitCode, writeOrgPack, type Estate } from "./estate.js";
 import { Model, type Changes } from "./model.js";
@@ -148,6 +159,8 @@ export class World {
   steps = 0;
   /** The outcome of the last command that called the system. */
   lastOutcome: Outcome | undefined;
+  /** ADR 0205: an app's server runs here (its memory on, from the sequence's first Apply). */
+  serving = false;
 
   private constructor(
     readonly top: string,
@@ -170,6 +183,7 @@ export class World {
 
   /** The same metarepo, clones and model, in a folder of its own. */
   async copy(): Promise<World> {
+    await settleAfterResult();
     const top = await mkdtemp(join(tmpdir(), "cs4-"));
     await cp(this.top, top, { recursive: true });
     const w = new World(top, this.model.clone());
@@ -196,7 +210,47 @@ export class World {
     return { generated, sources, facts, curated, undo };
   }
 
+  /**
+   * ADR 0205: the app's server, from now on in this sequence: its memory on (step 4), and, while
+   * it is, every kept text a build takes, every kept facts parse and every catalog parse taken
+   * from memory checked against what it stands for (a throw if not).
+   */
+  serve(): void {
+    if (this.serving) return;
+    this.serving = true;
+    // The machine's memory as roomy, whatever else runs on it: the server keeps what it keeps.
+    appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+    startAppMemory();
+    buildCacheHooks.checkTexts = true;
+    // ADR 0205's addendum, step 1: off by default (the owner's decision of 2026-11-22), on in
+    // the harness's server as its setting turns it on, and each kept projection checked against
+    // the projection made now.
+    projectionHooks.on = true;
+    projectionHooks.check = true;
+    factsParseHooks.check = true;
+    recordCacheHooks.checkMemory = true;
+  }
+
+  /** The server gone (it stopped, or the sequence ended): what it kept in memory with it. */
+  async stopServing(): Promise<void> {
+    if (!this.serving) return;
+    this.serving = false;
+    await settleAfterResult();
+    stopAppMemory();
+    releaseAppMemory();
+    forgetFactsParses();
+    delete appMemory.system;
+    delete projectionHooks.on;
+    delete projectionHooks.check;
+    delete buildCacheHooks.checkTexts;
+    delete factsParseHooks.check;
+    delete recordCacheHooks.checkMemory;
+  }
+
   async dispose(): Promise<void> {
+    // A write's caches after its result end before the folder goes.
+    await settleAfterResult();
+    await this.stopServing();
     await rm(this.top, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

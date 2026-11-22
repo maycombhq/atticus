@@ -174,6 +174,35 @@ describe("each invariant, by a hand-written example", () => {
   }
 });
 
+describe("ADR 0205's addendum, step 1, in the harness's server", () => {
+  it(
+    "is off by default and on in the server's Applies, each kept projection checked",
+    async () => {
+      const { projectionMemoOn, projectionStats } = await import("@maycombhq/scanner");
+      expect(projectionMemoOn(), "off by default").toBe(false);
+      const was = projectionStats.kept;
+      let during: boolean | undefined;
+      await runSequence(
+        TWO,
+        [],
+        [
+          new Cmd({ t: "scan" }),
+          new Cmd({ t: "apply-app", slot: 0 }),
+          new Cmd({ t: "apply-app", slot: 1 }),
+        ],
+        new Set(INVARIANTS),
+        async () => {
+          during = projectionMemoOn();
+        },
+      );
+      expect(during, "on in the server").toBe(true);
+      expect(projectionStats.kept - was, "projections taken from memory").toBeGreaterThan(0);
+      expect(projectionMemoOn(), "off again once the server is gone").toBe(false);
+    },
+    T,
+  );
+});
+
 describe("the oracle's own rules (model.ts)", () => {
   // ADR 0195 point 6: a legacy join leaves joins.json only when current inputs derive it again.
   // forge-ledger (slot 0) is called by forge-payments (slot 1) on GET /accounts.

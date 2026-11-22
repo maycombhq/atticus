@@ -2317,10 +2317,12 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const { verifyCommand } = await import("./verify-commands.js");
     const counts = countFlags(v.values, io);
     if (counts === undefined) return 2;
-    return withBuildConfirm(io, counts, (c) =>
+    // --write is a switch, so a --root right after it is read (it once took --root as its value).
+    const at = text(v.values.root) ? resolve(text(v.values.root)!) : root;
+    const write = v.values.write === true;
+    const code = await withBuildConfirm(io, counts, (c) =>
       verifyCommand(
-        // --write is a switch, so a --root right after it is read (it once took --root as its value).
-        text(v.values.root) ? resolve(text(v.values.root)!) : root,
+        at,
         repo,
         {
           ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
@@ -2333,15 +2335,21 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
                   .filter(Boolean),
               }
             : {}),
-          write: v.values.write === true,
+          write,
           verbose: v.values.verbose === true,
           json: v.values.json === true,
           ...(v.values.skipped === true ? { skipped: true } : {}),
+          // ADR 0205 step 2: the command prints its lines, then writes its local caches under
+          // the scan's lock, before it ends (below).
+          ...(write ? { cachesAfterResult: true } : {}),
           ...c,
         },
         io,
       ),
     );
+    if (write)
+      await (await import("@maycombhq/core")).settleAfterResult({ root: at, name: "scan" });
+    return code;
   }
   if (group === "scan" && command === "verify") {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);

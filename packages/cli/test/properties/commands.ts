@@ -7,6 +7,7 @@ import { parse, stringify } from "yaml";
 import {
   CancelledError,
   correctionLine,
+  readLock,
   HOSTS_NONE,
   HOSTS_STEP,
   listQuestions,
@@ -136,7 +137,20 @@ export type Desc =
       slot: number;
     }
   | { t: "upgrade"; yes: boolean }
-  | { t: "again" };
+  | { t: "again" }
+  /**
+   * ADR 0205: one repo's Apply as the app's server runs it (`verify <repo> --write` in its
+   * process, the caches after its result, the app's memory on): the first in a sequence starts
+   * the server's memory, so every later one, and every command after it, runs in a server that
+   * kept its caches from an earlier Apply.
+   */
+  | { t: "apply-app"; slot: number }
+  /**
+   * ADR 0205 step 2: the app's Apply, and the process stops after its result and before its
+   * caches are written: the catalog stands written whole, its lock is left marked `caches`, and
+   * what the server kept in memory is gone with it.
+   */
+  | { t: "crash-after-result"; slot: number };
 
 export type CommandType = Desc["t"];
 
@@ -505,6 +519,8 @@ async function verify(
   w: World,
   confirm: Confirm,
   crash?: "after-slots" | "mid-records",
+  /** ADR 0205: as the app's Apply, and with `die` its process stopping after the result. */
+  app?: { die?: boolean },
 ): Promise<Acted | undefined> {
   const r = live(m, d.slot);
   if (!r) return undefined;
@@ -525,6 +541,7 @@ async function verify(
     write,
     ...confirm,
     ...(crash ? { crash } : {}),
+    ...(app ? { app: true, ...(app.die ? { dieAfterResult: true } : {}) } : {}),
   });
   if (!write) return { outcome, expect: { kind: "neutral" } };
   const facts = { code: r.code, commit: r.commit, id: r.id };
@@ -1286,6 +1303,35 @@ export async function act(
       };
     }
 
+    case "apply-app":
+    case "crash-after-result": {
+      // The server: its memory on from the first Apply of the sequence (World.dispose stops it).
+      w.serve();
+      const die = d.t === "crash-after-result";
+      const first = await verify(
+        { t: "verify-write", slot: d.slot, ok: true },
+        m,
+        w,
+        confirm,
+        undefined,
+        {
+          die,
+        },
+      );
+      if (!first) return undefined;
+      if (die && first.outcome?.wrote) {
+        // The catalog was written whole, and the lock says so to the next writer.
+        const lock = await readLock(w.root, "scan");
+        if (!lock?.stale || lock.phase !== "caches")
+          throw new Error(
+            `ADR 0205 step 2: after the app's Apply stopped after its result, the scan's lock is ${lock ? `${lock.stale ? "stale" : "held"}${lock.phase ? `, marked ${lock.phase}` : ", not marked caches"}` : "gone"}; it must be left stale and marked caches`,
+          );
+        // What the server kept in memory went with its process; the next Apply starts another.
+        await w.stopServing();
+      }
+      return { ...first, rerun: d };
+    }
+
     case "again": {
       if (!w.lastWriter) return undefined;
       const acted = await act(w.lastWriter, ctx, w, before, {});
@@ -1454,6 +1500,10 @@ export function commandArbs(): fc.Arbitrary<Cmd>[] {
         }),
       ),
     ),
+    // ADR 0205 (beta.30): last, as the pairings were. Twice the app's Apply, so a sequence often
+    // has a second one in the server the first started.
+    ...times(2, d(fc.record({ t: fc.constant("apply-app" as const), slot }))),
+    d(fc.record({ t: fc.constant("crash-after-result" as const), slot })),
   ];
 }
 
@@ -1488,4 +1538,6 @@ export const GENERATED: readonly CommandType[] = [
   "crash",
   "upgrade",
   "again",
+  "apply-app",
+  "crash-after-result",
 ];
