@@ -366,9 +366,11 @@ describe("atticus selfcheck on the invented field estate", () => {
       // build starts. It holds no number of the estate: only the band and the table's words.
       const dir = join(e.root, "catalog", "generated", "system");
       await mkdir(dir, { recursive: true });
-      await Promise.all(
-        Array.from({ length: 10_000 }, (_, k) => writeFile(join(dir, `forge-${k}.yaml`), "")),
-      );
+      // In batches: ten thousand files opened at once run out of handles on Windows (EMFILE).
+      for (let k = 0; k < 10_000; k += 250)
+        await Promise.all(
+          Array.from({ length: 250 }, (_, i) => writeFile(join(dir, `forge-${k + i}.yaml`), "")),
+        );
       const big = await run(["selfcheck", "--root", e.root]);
       expect(big.err[0]).toBe(
         "build-is-repeatable builds the catalog twice in memory. An estimate for 10k-50k records: about half a minute and under 1 GB. atticus selfcheck --quick leaves it out.",
