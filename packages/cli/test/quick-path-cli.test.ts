@@ -860,7 +860,26 @@ describe("what is next for a quick change", () => {
       expect(second.own[0]!.step).toBe("quick-define");
       expect(second.own[0]!.why).toContain("design.md isn't written yet");
 
+      // ADR 0206 part B1 (f1eb2214): a quick change's design.md says what the code will have,
+      // in its ## In the code; the staged change's design.md has none, so that is still to write.
       await cp(join(FORGE_CHANGE, "design.md"), join(dir, "design.md"));
+      const table = await steps();
+      expect(table.c.quick?.missing).toEqual(["design.md's ## In the code"]);
+      expect(table.own[0]!.step).toBe("quick-define");
+      await writeFile(
+        join(dir, "design.md"),
+        `${await readFile(join(dir, "design.md"), "utf8")}
+## In the code
+
+| Repo             | Task | Has       | What                         | Spec                                   |
+| ---------------- | ---- | --------- | ---------------------------- | -------------------------------------- |
+| forge-ledger     | 1.1  | migration | \`V3__add_daily_limit.sql\`  | transfer-limits: Daily transfer limit  |
+| forge-ledger     | 1.2  | other     | The limit checked in the transfer transaction. | transfer-limits: Daily transfer limit |
+| forge-ledger     | 1.3  | other     | Northwind Pay's velocity check. | transfer-limits: Daily transfer limit |
+| forge-portal-bff | 2.1  | other     | The remaining limit shown.   | transfer-limits: Remaining limit       |
+| forge-portal-bff | 2.2  | other     | Limit-refused events sent to audit-svc. | transfer-limits: Daily transfer limit |
+`,
+      );
       const third = await steps();
       expect(third.c.quick?.missing).toEqual([]);
       // All four are there: what blocks its gate (as today), else the hand-off, a person's step.
