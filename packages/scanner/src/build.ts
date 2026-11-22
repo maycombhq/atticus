@@ -56,6 +56,7 @@ import {
   unsetHostOf,
   oldLooseEndId,
   oldIdOfLooseEnd,
+  deserializeRecord,
 } from "@maycombhq/core";
 import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -232,7 +233,78 @@ export interface BuildInputs {
   curatedDir: string;
   /** Pairings not written yet (a preview's), by repo, over those on file. */
   extraPairs?: Map<string, Record<string, PersonPair>>;
+  /**
+   * ADR 0124 addendum E-ids, its dated part of 2026-11-21: for each loose end's id from before
+   * beta.30 a current change of yours still names, the repos its old record cited, from the
+   * committed catalog (`oldLooseEndsCited`); an id with no such record isn't here.
+   */
+  oldCited?: Record<string, string[]>;
   problems: string[];
+}
+
+/**
+ * The repos the old record of each loose end's id from before beta.30 cited, where a committed
+ * catalog still has it: catalog/generated (until the build that names it again with its repo)
+ * and the copy the upgrade to stored reads kept (`legacy/generated-before-upgrade/`). Only files
+ * of the metarepo, never this machine's undo copies or build report, so the same commit builds
+ * the same catalog.
+ */
+export async function oldLooseEndsCited(
+  root: string,
+  targets: Iterable<string>,
+): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  for (const t of [...new Set(targets)].sort(cmpText))
+    for (const dir of [generatedDirOf(root), generatedBeforeUpgradeDirOf(root)]) {
+      const text = await readText(join(dir, "unresolved", `${t}.yaml`));
+      const p = text === undefined ? undefined : deserializeRecord(text);
+      if (!p?.ok || p.record.kind !== "Unresolved" || p.record.id !== t) continue;
+      out[t] = [...new Set(p.record.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort(
+        cmpText,
+      );
+      break;
+    }
+  return out;
+}
+
+/**
+ * ADR 0124 addendum E-ids, its dated part of 2026-11-21 (the owner: every gap closed): a current
+ * change of yours whose target is a loose end's id from before beta.30 that this build names
+ * again with its repo applies, in memory, to the loose end it is now, by the upgrade step's rule:
+ * the repo its old record cited (`cited`), else the first repo by id (as beta.28.5's merge cited
+ * a shared id; a suppressed loose end had no record). So what a person took off the map stays off
+ * until `atticus upgrade` carries the change; the change's file is never written by a build. Not
+ * where no loose end of the cited repo is there, nor onto an id another change already names.
+ */
+export function carriedTargets(
+  records: readonly CatalogRecord[],
+  decisions: readonly CatalogRecord[],
+  cited: Readonly<Record<string, readonly string[]>>,
+): { decisions: CatalogRecord[]; carried: { decision: string; from: string; to: string }[] } {
+  const present = new Set(records.map((r) => r.id));
+  const byOld = new Map<string, { id: string; repo: string }[]>();
+  for (const r of records) {
+    const o = oldIdOfLooseEnd(r);
+    if (!o || present.has(o)) continue;
+    const part = r.id.slice("unresolved.".length).split(".")[0]!;
+    const repo = r.evidence.find((e) => e.repo && factIdPart(e.repo) === part)?.repo;
+    if (repo) byOld.set(o, [...(byOld.get(o) ?? []), { id: r.id, repo }]);
+  }
+  const current = (d: CatalogRecord): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
+    d.kind === "CuratedDecision" && d.status === "current";
+  const named = new Set(decisions.filter(current).map((d) => d.target));
+  const carried: { decision: string; from: string; to: string }[] = [];
+  const out = decisions.map((d) => {
+    if (!current(d) || d.action === "alias" || !oldLooseEndId(d.target) || present.has(d.target))
+      return d;
+    const cs = [...(byOld.get(d.target) ?? [])].sort((a, b) => cmpText(a.repo, b.repo));
+    const was = cited[d.target];
+    const to = was ? cs.find((c) => was.includes(c.repo)) : cs[0];
+    if (!to || named.has(to.id)) return d;
+    carried.push({ decision: d.id, from: d.target, to: to.id });
+    return { ...d, target: to.id } as CatalogRecord;
+  });
+  return { decisions: out, carried: carried.sort((a, b) => cmpText(a.decision, b.decision)) };
 }
 
 const sha = (text: string) => sha256Of(text);
@@ -520,6 +592,12 @@ export async function loadBuildInputs(
   for (const f of federated)
     put(`federated/${f.id}`, await treeHash(f.dir, (r) => r.startsWith(".") || r === "workspace"));
   mark("the other inputs");
+  const oldTargets = curated.records.flatMap((d) =>
+    d.kind === "CuratedDecision" && d.status === "current" && oldLooseEndId(d.target)
+      ? [d.target]
+      : [],
+  );
+  const oldCited = oldTargets.length ? await oldLooseEndsCited(root, oldTargets) : {};
   return {
     root,
     op,
@@ -535,6 +613,7 @@ export async function loadBuildInputs(
     inputsDir,
     inputHashes,
     curatedDir,
+    ...(Object.keys(oldCited).length ? { oldCited } : {}),
     problems,
   };
 }
@@ -649,6 +728,8 @@ export interface Build {
   orphanedDecisions: string[];
   /** Each of them, by its id, with its target (ADR 0124 addendum E-ids: an old loose end's id). */
   orphanedTargets?: Record<string, string>;
+  /** Changes of yours that still name an old loose end's id, applied to its new one (`carriedTargets`). */
+  carriedTargets?: { decision: string; from: string; to: string }[];
   linkEvidence?: LinkEvidenceResult;
   shared?: SharedJoinResult;
   terms?: TermsResult;
@@ -1573,9 +1654,12 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
   // refused by applyCurated like any other protected field.
   const sorted = [...records].sort(byKindId);
-  const applied = applyCurated(sorted, i.curated.records);
+  // ADR 0124 addendum E-ids (2026-11-21): a change of an old loose end's id applies to the one
+  // this build names again with its repo, in memory, until the upgrade carries it.
+  const carry = carriedTargets(sorted, i.curated.records, i.oldCited ?? {});
+  const applied = applyCurated(sorted, carry.decisions);
   const present = new Set(sorted.map((r) => r.id));
-  const orphanedOf = i.curated.records
+  const orphanedOf = carry.decisions
     .filter(
       (d): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
         d.kind === "CuratedDecision" && d.status === "current",
@@ -1690,6 +1774,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     },
     orphanedDecisions,
     orphanedTargets,
+    ...(carry.carried.length ? { carriedTargets: carry.carried } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(shared ? { shared } : {}),
     ...(projection ? { terms: projection.terms } : {}),
@@ -4288,6 +4373,10 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
   // where this build has that loose end under its repo's id has the upgrade something to carry:
   // a legacy repo's loose ends keep their old ids (ADR 0195 point 6) until it is read from facts.
   const carriable = new Set(r.build.records.flatMap((x) => oldIdOfLooseEnd(x) ?? []));
+  for (const c of r.build.carriedTargets ?? [])
+    out.push(
+      `Your change ${c.decision} still names ${c.from}: run atticus upgrade to carry it (this build applies it to ${c.to}).`,
+    );
   for (const d of r.build.orphanedDecisions) {
     const target = r.build.orphanedTargets?.[d];
     out.push(

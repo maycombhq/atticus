@@ -310,13 +310,25 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       const root = await metarepo();
       const b = quiet();
       expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
-      // Until the upgrade, a decision of an old id says to run it, never that its target returns.
+      // Until the upgrade, a change of an old id applies to the loose end the build renamed (so
+      // nothing a person took off the map shows again), and says to run it.
       const said = b.out.join("\n");
       expect(said).toContain(
-        "Your change dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
+        "Your change dec-suppress-fees still names unresolved.c-7: run atticus upgrade to carry it (this build applies it to unresolved.forge-notify.c-7).",
       );
-      expect(said).not.toMatch(/dec-suppress-fees targets a record that isn't in the build/);
+      expect(said).not.toMatch(/dec-suppress-fees targets/);
+      expect(unresolvedIds(await generated(root))).toEqual(unresolvedIds(await generated(direct)));
+      // A second build keeps them off.
+      const genBuilt = await generated(root);
+      const b2 = quiet();
+      expect(await main(["catalog", "build", "--root", root], b2.io), b2.err.join("\n")).toBe(0);
+      expect(await generated(root)).toEqual(genBuilt);
+      expect(b2.out.join("\n")).toContain(
+        "Your change dec-suppress-fees still names unresolved.c-7",
+      );
       expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      // The map the same before and after the upgrade carried them.
+      expect(unresolvedIds(await generated(root))).toEqual(unresolvedIds(genBuilt));
       expect(await generated(root)).toEqual(await generated(direct));
       const ins = (m: Map<string, string>) => [...m].filter(([p]) => !p.startsWith("catalog/"));
       expect(ins(await tree(root))).toEqual(ins(await tree(direct)));
@@ -541,19 +553,74 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         await rm(join(root, "catalog", "sources", "readers", f));
       const r = quiet();
       expect(await main(["catalog", "build", "--root", root], r.io), r.err.join("\n")).toBe(0);
-      expect(r.out.join("\n")).toContain(
-        "Your change dec-suppress-fees targets unresolved.c-7, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.",
-      );
+      // What a person took off the map stays off: each change of an old id applies to the loose
+      // end the build renamed, only in the repo the old one was (c-7: the first by id, as
+      // beta.28.5's merge cited it), and the build says to run the upgrade.
+      const read = r.out.join("\n");
+      for (const [d, from, to] of [
+        ["dec-suppress-fees", "unresolved.c-7", "unresolved.forge-notify.c-7"],
+        ["dec-suppress-risk", "unresolved.c-risk", "unresolved.forge-ledger.c-risk"],
+        [
+          "dec-suppress-listen",
+          "unresolved.forge-payments.on-forge-ledger-refunded",
+          "unresolved.forge-payments.forge-payments.on-forge-ledger-refunded",
+        ],
+      ])
+        expect(read).toContain(
+          `Your change ${d} still names ${from}: run atticus upgrade to carry it (this build applies it to ${to}).`,
+        );
+      const direct = await metarepo();
+      expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+      const beforeUpgrade = await generated(root);
+      expect(unresolvedIds(beforeUpgrade)).toEqual(unresolvedIds(await generated(direct)));
       expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual([STEP]);
       expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
       expect((await upgradeCheck(root, B30)).pending).toEqual([]);
-      const direct = await metarepo();
-      expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+      // The upgrade carries them, and the map is the same.
+      expect(await generated(root)).toEqual(beforeUpgrade);
       const now = await tree(root);
       const want = await tree(direct);
       expect(unresolvedIds(await generated(root))).toEqual(unresolvedIds(await generated(direct)));
       expect(ins(now)).toEqual(ins(want));
       expect(curatedOf(now)).toEqual(curatedOf(want));
+    },
+    T,
+  );
+
+  it(
+    "takes a shared id off the map only in the repo its old record cited, before the upgrade too",
+    async () => {
+      // The old record of unresolved.c-1 cites forge-payments (not the first by id), and a person
+      // took it off the map.
+      const setUp = async () => {
+        const root = await metarepo();
+        await citePayments(root);
+        await writeFile(
+          join(root, ...DEC("dec-suppress-c1").split("/")),
+          decision("dec-suppress-c1", "unresolved.c-1", "the rates call is known"),
+        );
+        return root;
+      };
+      const root = await setUp();
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", root], b.io), b.err.join("\n")).toBe(0);
+      expect(b.out.join("\n")).toContain(
+        "Your change dec-suppress-c1 still names unresolved.c-1: run atticus upgrade to carry it (this build applies it to unresolved.forge-payments.c-1).",
+      );
+      const built = unresolvedIds(await generated(root));
+      expect(built).toContain("unresolved.forge-ledger.c-1");
+      expect(built).not.toContain("unresolved.forge-payments.c-1");
+      expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      expect((await yamlOf(root, DEC("dec-suppress-c1"))).target).toBe(
+        "unresolved.forge-payments.c-1",
+      );
+      expect(unresolvedIds(await generated(root))).toEqual(built);
+      const direct = await setUp();
+      expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+      expect(await generated(root)).toEqual(await generated(direct));
+      expect(await files(join(root, "catalog", "curated"))).toEqual(
+        await files(join(direct, "catalog", "curated")),
+      );
     },
     T,
   );
