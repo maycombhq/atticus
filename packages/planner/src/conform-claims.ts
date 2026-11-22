@@ -146,7 +146,7 @@ export interface ClaimsInput {
    */
   elsewhere?: readonly { repo: string; facts: readonly Fact[]; basis: ClaimBasis }[];
   /** A file's line at the commit, for a value the verifier doesn't check on it. */
-  lineAt?: (path: string, line: number) => string | undefined;
+  lineAt?: (path: string, line: number, repo?: string) => string | undefined;
   /**
    * What the branch adds that no claim names is out of the design (ADR 0114's `unexpected`):
    * for a change whose whole design is its claims (a quick change, or operations only).
@@ -420,7 +420,7 @@ export function conformClaims(input: ClaimsInput): {
   /** The cited line and its `with` parts' lines, at the commit. */
   const citedLines = (f: Fact): string[] =>
     input.lineAt
-      ? [f.cite, ...(f.cite.with ?? [])].flatMap((p) => input.lineAt!(p.file, p.line) ?? [])
+      ? [f.cite, ...(f.cite.with ?? [])].flatMap((p) => input.lineAt!(p.file, p.line, f.repo) ?? [])
       : [];
   /** Which claimed values are written on the fact's cited lines, and which are its reading. */
   const writtenWhy = (f: Fact, values: [string, string | undefined][]): string | undefined => {

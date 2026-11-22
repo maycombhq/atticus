@@ -274,9 +274,7 @@ export async function branchFactsAt(
   op: OrgPack,
   text: string | undefined,
   at: { dir: string; commit: string; context?: readonly Fact[] },
-): Promise<
-  { facts: Fact[]; rejected: number; problems: string[]; unknown: string[] } | undefined
-> {
+): Promise<{ facts: Fact[]; rejected: number; problems: string[]; unknown: string[] } | undefined> {
   if (text === undefined) return undefined;
   const parsed = parseFacts(text);
   if (!parsed.ok)

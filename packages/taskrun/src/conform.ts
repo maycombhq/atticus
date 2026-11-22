@@ -469,6 +469,48 @@ export async function conformChange(
     problems.push(`No target flow of ${change} is in ${o.repo}; only what it adds is checked.`);
   const scanAt = o.scanAt ?? gitScanAt(root, git, dirOfChange);
   const results: Api.ConformRepoResultT[] = [];
+  /** Each repo's branch commit scanned once, for its own check and another repo's claims. */
+  const scans = new Map<string, ReturnType<ScanAt>>();
+  const branchScan = (repo: string, commit: string) => {
+    const key = `${repo}@${commit}`;
+    if (!scans.has(key)) scans.set(key, scanAt(repo, commit, { branch: true }));
+    return scans.get(key)!;
+  };
+  const manifest = await loadRepos(root).catch(() => []);
+  /**
+   * ADR 0206 point 2: the other repos a deployment's or a route's operation names, at their
+   * branch's commit, for a deploy fact there whose `exposes` names this repo. A repo with no clone
+   * here or no branch yet has nothing on the branch to say, and isn't read.
+   */
+  const elsewhereOf = async (mine: readonly Claim[], ref: string) => {
+    const out: {
+      repo: string;
+      facts: readonly Fact[];
+      basis: FactBasis;
+      lines?: Map<string, string[]>;
+    }[] = [];
+    for (const other of [...new Set(mine.flatMap((c) => c.with ?? []))].sort()) {
+      const base = baseClonePath(root, other);
+      if (!existsSync(base)) continue;
+      let commit = "";
+      for (const r of [...new Set([ref, changeBranch(change)])]) {
+        commit = await git(["rev-parse", "--verify", "--quiet", `${r}^{commit}`], base).then(
+          (x) => x.stdout.trim(),
+          () => "",
+        );
+        if (commit) break;
+      }
+      if (!commit) continue;
+      const s = await branchScan(other, commit);
+      out.push({
+        repo: other,
+        facts: s.facts ?? [],
+        basis: s.basis,
+        ...(s.lines ? { lines: s.lines } : {}),
+      });
+    }
+    return out;
+  };
 
   for (const repo of repos) {
     const ref = o.ref ?? (o.task ? taskBranch(change, o.task.toLowerCase()) : changeBranch(change));
@@ -554,7 +596,7 @@ export async function conformChange(
       (x) => x.stdout.trim() || commit,
       () => commit,
     );
-    const after = await scanAt(repo, commit, { branch: true });
+    const after = await branchScan(repo, commit);
     const before = from === commit ? after : await scanAt(repo, from);
     const scope = o.task
       ? [...tasks]
@@ -579,6 +621,8 @@ export async function conformChange(
         })
       : { items: [] as ConformItem[], unchecked: [] };
     // ADR 0206: each claim in this repo, looked for in the facts at the commit.
+    const own = manifest.find((m) => m.id === repo)?.component;
+    const elsewhere = mine.length ? await elsewhereOf(mine, ref) : [];
     const judged = mine.length
       ? conformClaims({
           change,
@@ -587,9 +631,14 @@ export async function conformChange(
           claims: mine,
           before: before.facts ?? [],
           after: after.facts ?? [],
+          ...(own ? { names: [own] } : {}),
+          elsewhere,
           files: after.files,
           basis: after.basis,
-          lineAt: (path, line) => after.lines?.get(path)?.[line - 1],
+          lineAt: (path, line, at) =>
+            (at && at !== repo ? elsewhere.find((x) => x.repo === at)?.lines : after.lines)?.get(
+              path,
+            )?.[line - 1],
           // A change whose whole design is its claims: what the branch adds and no claim names.
           unexpected: !deltas.length,
         })
