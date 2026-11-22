@@ -227,9 +227,25 @@ describe("atticus upgrade to beta.30: org-flow 3, and a change done through stor
   );
 });
 
+/** Every file of the metarepo but git's own, with the sha-256 of its bytes. */
+async function everyFile(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const f of ((await readdir(root, { recursive: true })) as string[]).sort()) {
+    const rel = f.replace(/\\/g, "/");
+    if (rel === ".git" || rel.startsWith(".git/")) continue;
+    const data = await readFile(join(root, f)).catch(() => undefined);
+    if (data) out.set(rel, createHash("sha256").update(data).digest("hex"));
+  }
+  return out;
+}
+
 /**
  * ADR 0206, Migration: a stored conformance check as beta.28.5 wrote it (no claims) reads as it
- * did after the upgrade, byte for byte; and a result this release writes, with claims, still
+ * did, after the upgrade too: `--latest` prints what beta.28.5 itself printed for it (its output,
+ * kept in fixtures/upgrade-b30/conform-28.5.latest.txt, made by the CLI built from the tag
+ * v2.0.0-beta.28.5 on this metarepo), and every file the upgrade isn't meant to write (all but
+ * the files its steps name, the folder of each, and its own record) is byte for byte the same; and
+ * a result this release writes, with claims, still
  * parses with beta.28.5's shape of ConformRepoResult (a copy, kept here as that version had it:
  * a plain object, so an older reader drops the keys it doesn't know).
  */
@@ -297,15 +313,32 @@ describe("a stored conformance check from beta.28.5 (ADR 0206)", () => {
         ).toBe(0);
         return c.out;
       };
+      // What beta.28.5 printed for it, line for line.
+      const b285 = (await readFile(join(FIXTURES, "upgrade-b30/conform-28.5.latest.txt"), "utf8"))
+        .split("\n")
+        .filter(Boolean);
       const said = await latest();
-      expect(said[0]).toMatch(
-        /^forge-ledger at change\/add-fraud-check \(3c1f0a9b2d4e, from 9e8d7c6b5a4f\): 1 found/,
-      );
+      expect(said).toEqual(b285);
       const before = await bytesOf(root);
+      const every = await everyFile(root);
+      const meant = new Set((await upgradeCheck(root, B30)).pending.flatMap((p) => p.files));
+      expect(meant.size).toBeGreaterThan(0);
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
       expect(await bytesOf(root)).toEqual(before);
+      const now = await everyFile(root);
+      // What the upgrade is meant to write: the files its steps name (org-flow's step names the
+      // schema and writes its folder, the templates beside it), and its own record of what ran.
+      const folders = [...meant].map((f) => f.slice(0, f.lastIndexOf("/") + 1));
+      const own = (f: string) =>
+        f === ".index/upgraded.json" || f.startsWith(".atticus/") || meant.has(f);
+      const moved = [...new Set([...every.keys(), ...now.keys()])].filter(
+        (f) => every.get(f) !== now.get(f),
+      );
+      expect(moved.filter((f) => !own(f) && !folders.some((d) => f.startsWith(d)))).toEqual([]);
+      // And it did write what it is meant to.
+      expect(moved).toContain(`${ORG_FLOW}/schema.yaml`);
       expect(changedPaths(root).filter((f) => f.includes("/conform/"))).toEqual([]);
-      expect(await latest()).toEqual(said);
+      expect(await latest()).toEqual(b285);
 
       const stored = parse(await readFile(file, "utf8")) as Record<string, unknown>;
       const newer = {
