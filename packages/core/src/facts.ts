@@ -251,8 +251,9 @@ export function forgetFactsParses(): void {
   factsParses.clear();
   factsParseBytes = 0;
 }
-// ADR 0205 step 4: the app's server lets them go after ten idle minutes or when memory runs low.
-onAppMemoryRelease(forgetFactsParses);
+// ADR 0205 step 4: the app's server lets them go ten minutes after its last Apply or when memory
+// runs low.
+onAppMemoryRelease(forgetFactsParses, () => ({ "facts parses (core's memo)": factsParseBytes }));
 
 function keepFactsParse(key: string, kept: Uint8Array): void {
   if (kept.byteLength > FACTS_PARSES_MAX / 4) return;
@@ -267,8 +268,8 @@ function keepFactsParse(key: string, kept: Uint8Array): void {
 
 export function parseFacts(text: string): ParseFactsResult {
   if (factsParseHooks.off) return parseFactsText(text);
-  // In the app's server, a use keeps them for ten more idle minutes (or lets them go, memory low).
-  if (appMemory.on) appMemoryInUse();
+  // In the app's server, memory low: everything let go, and nothing kept now (ADR 0205 step 4).
+  const keep = !appMemory.on || appMemoryInUse();
   const key = createHash("sha256").update(text, "utf8").digest("hex");
   const kept = factsParses.get(key) ?? factsParseHooks.store?.get(key);
   if (kept) {
@@ -279,8 +280,9 @@ export function parseFacts(text: string): ParseFactsResult {
       copy = undefined;
     }
     if (copy) {
-      if (!factsParses.has(key)) keepFactsParse(key, kept);
-      else {
+      if (!factsParses.has(key)) {
+        if (keep) keepFactsParse(key, kept);
+      } else {
         factsParseHooks.store?.used(key);
         // The latest used goes last, so the memo lets the oldest go first.
         factsParses.delete(key);
@@ -296,7 +298,7 @@ export function parseFacts(text: string): ParseFactsResult {
   factsParseStats.parsed++;
   try {
     const bytes = serialize(parsed);
-    keepFactsParse(key, bytes);
+    if (keep) keepFactsParse(key, bytes);
     factsParseHooks.store?.put(key, bytes);
   } catch {
     // Not kept: the next read parses it again.

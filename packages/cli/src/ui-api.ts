@@ -1,7 +1,7 @@
 import { answerAsJob, tracked, trackedLocal } from "./ui-api-activity.js";
 import { uiCatalogRoutes } from "./ui-api-catalog.js";
 import { uiStepRoutes } from "./ui-api-steps.js";
-import { printToCurrent } from "@maycombhq/core";
+import { appMemoryApplied, printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
@@ -973,6 +973,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 io,
               ),
             );
+            // ADR 0205 step 4: what the server keeps is kept ten minutes from its last Apply.
+            appMemoryApplied();
             if (ran.code === 0) return ran;
             // Beta.28.1: written, with rejected facts left out (exit 3): the Apply is done, and its
             // lines name each fact left out and the file to fix it in.

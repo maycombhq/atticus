@@ -4,6 +4,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  appMemory,
   appMemoryInUse,
   cmpText,
   factsParseHooks,
@@ -48,6 +49,8 @@ export const buildCacheHooks: {
   checkTexts?: boolean;
   /** The tests: the Node a facts parse on disk is kept for, in place of this one's. */
   nodeVersion?: string;
+  /** The tests: the size limit of the texts kept in memory, in place of `TEXTS_IN_MEMORY_MAX`. */
+  textsMaxBytes?: number;
 } = {};
 
 const stats = {
@@ -497,6 +500,8 @@ export const factsParseStore = {
   },
   put(textSha: string, bytes: Uint8Array): void {
     if (!cacheOn() || !factsDir) return;
+    // In the app's server with memory low, nothing more is held (ADR 0205 step 4).
+    if (appMemory.on && !appMemoryInUse()) return;
     const key = factsKeyOf(textSha);
     if (freshFactsBytes + bytes.byteLength > FRESH_FACTS_MAX) {
       freshFacts.clear();
@@ -511,6 +516,15 @@ export const factsParseStore = {
   },
 };
 factsParseHooks.store = factsParseStore;
+// ADR 0205 step 4: in the app's server, let go by the app's rule (ten minutes after its last
+// Apply, or memory low): a parse not yet on disk is then no cache, and parsed again if needed.
+onAppMemoryRelease(
+  () => {
+    freshFacts.clear();
+    freshFactsBytes = 0;
+  },
+  () => ({ "facts parses not yet on disk (the build cache's)": freshFactsBytes }),
+);
 
 /** The checked reads a build used and the folder it loaded them from, as they are now. */
 export interface ReadersUsed {
@@ -702,10 +716,24 @@ let textsInMemory:
       stamp: string | undefined;
       key: string;
       texts: KeptTexts;
+      /** Their size: the characters of every text (about bytes: the texts are YAML, mostly ASCII). */
+      bytes: number;
       manifest?: { path: string; sha256: string };
     }
   | undefined;
-onAppMemoryRelease(() => (textsInMemory = undefined));
+onAppMemoryRelease(
+  () => (textsInMemory = undefined),
+  () => ({ "the last build's texts (the build cache's)": textsInMemory?.bytes ?? 0 }),
+);
+
+/**
+ * The most the last build's texts are kept in memory at, in characters (about bytes). The owner's
+ * answer of 2026-11-19 allows the app about 1 GB more at 100,000 records for all it keeps; the
+ * facts parses may take 256 MB of it (core's memo) and their copies not yet on disk as much
+ * again, so the texts may have the rest, about half. A larger build's texts aren't kept in
+ * memory, and the next build reads them from disk, as before step 4 (ADR 0205 measures them).
+ */
+const TEXTS_IN_MEMORY_MAX = 512 * 1024 * 1024;
 
 /** What a build loads of the last build: whole when its key is this one, else its texts. */
 export async function loadKept<B>(
@@ -878,18 +906,26 @@ export async function keepBuild(
       parts.push(JSON.stringify([path, text, s.keys.get(path) ?? ""]));
     await writeFileAtomic(join(dir, MEMO), `${parts.join("\n")}\n`);
     // ADR 0205 step 4: the texts this build wrote, kept in the app's server for the next build.
+    // The last build's are let go first: one build's texts are kept at a time.
+    textsInMemory = undefined;
     if (appMemoryInUse()) {
       const texts: KeptTexts = new Map();
+      let bytes = 0;
       for (const [path, text] of build.files) {
         const k = s.keys.get(path);
-        if (k) texts.set(k, text);
+        if (k) {
+          texts.set(k, text);
+          bytes += text.length;
+        }
       }
-      textsInMemory = {
-        stamp: codeStamp(),
-        key: s.key,
-        texts,
-        ...(header.manifest ? { manifest: header.manifest } : {}),
-      };
+      if (bytes <= (buildCacheHooks.textsMaxBytes ?? TEXTS_IN_MEMORY_MAX))
+        textsInMemory = {
+          stamp: codeStamp(),
+          key: s.key,
+          texts,
+          bytes,
+          ...(header.manifest ? { manifest: header.manifest } : {}),
+        };
     }
   } catch {
     // A build that can't be kept (too big for one string, not plain data) or a cache that can't
