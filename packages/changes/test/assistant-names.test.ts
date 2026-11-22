@@ -9,7 +9,8 @@ import { BUILT_IN_AGENTS } from "../src/index.js";
  * ADR 0203 A.4: every agent Atticus defines is an assistant, never the one who accepts or waives.
  * The ids are read from the code that defines them, not from a list kept by hand: each
  * `AgentDefinition.parse({ id: … })` (a string, or a constant the sources give a string), each
- * exported `…_AGENT` constant, and the Copilot agents Atticus writes (`COPILOT_AGENTS`).
+ * exported `…_AGENT` constant, every key of `STEP_CLASS_BY_AGENT`, every name of the app's
+ * `AUTO_AGENTS`, and the Copilot agents Atticus writes (`COPILOT_AGENTS`).
  */
 
 const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -46,6 +47,23 @@ function definedAgents(): Map<string, string> {
     for (const m of text.matchAll(/export const [A-Z0-9_]*_AGENT = "([a-z0-9-]+)"/g))
       out.set(m[1]!, where);
   }
+  // The agents a model step's class is set for, and those whose hand-off the app checks itself.
+  const block = (file: string, start: string, end: string) => {
+    const t = readFileSync(join(PACKAGES, file), "utf8");
+    const from = t.indexOf(start);
+    if (from < 0) throw new Error(`${start} is no longer in ${file}`);
+    return t.slice(from, t.indexOf(end, from));
+  };
+  for (const m of block(
+    "ai/src/step-class.ts",
+    "export const STEP_CLASS_BY_AGENT",
+    "\n};",
+  ).matchAll(/\n\s+"?([a-z0-9-]+)"?: "[a-z]+",/g))
+    out.set(m[1]!, "ai/src/step-class.ts");
+  for (const m of block("cli/src/handoff-autodone.ts", "const AUTO_AGENTS", "]);").matchAll(
+    /"([a-z0-9-]+)"/g,
+  ))
+    out.set(m[1]!, "cli/src/handoff-autodone.ts");
   // The Copilot agents Atticus writes for the person's assistant.
   const copilot = readFileSync(join(PACKAGES, "assistant-files/src/copilot-agents.ts"), "utf8");
   const list = copilot.slice(copilot.indexOf("export const COPILOT_AGENTS"));
@@ -69,6 +87,10 @@ describe("every agent Atticus defines is an assistant (ADR 0203 A.4)", () => {
     ])
       expect([...agents.keys()]).toContain(id);
     expect(agents.size).toBeGreaterThan(20);
+    // Every key of the step classes and every agent the app's hand-off check knows.
+    const from = (file: string) => [...agents].filter(([, f]) => f === file).map(([id]) => id);
+    expect(from("ai/src/step-class.ts").length).toBeGreaterThan(0);
+    expect(from("cli/src/handoff-autodone.ts").length).toBeGreaterThan(0);
   });
 
   it.each([...definedAgents()].sort())("%s (%s) is an assistant", (id) => {
