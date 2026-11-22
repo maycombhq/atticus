@@ -1,3 +1,3 @@
-# Curated decisions
+# Your changes
 
-People's decisions (aliases, names, confirmations) applied over every scan.
+What people told Atticus (aliases, names, confirmations, kept edits), which every build keeps.
