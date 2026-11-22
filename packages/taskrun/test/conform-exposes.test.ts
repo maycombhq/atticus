@@ -43,10 +43,12 @@ const DESCRIPTOR = [
   "  platform: anvil",
   "  env: prod",
   "  host: ledger.anvil.forge.example",
+  "  app: ledger-api",
   "",
 ].join("\n");
 
-async function setup() {
+/** `link`: the fact cites the line that names what it exposes (line 8), as a link must. */
+async function setup(link = true) {
   const { root } = await speckitRoot({ repos: ["forge-ledger", "forge-infra"] });
   await mkdir(join(root, CHANGES, "target-flows"), { recursive: true });
   await writeFile(join(root, CHANGES, "target-flows/_operations.yaml"), OPERATIONS);
@@ -78,6 +80,7 @@ async function setup() {
           { file: "k8s/ledger-anvil.yaml", line: 5, value: "anvil" },
           { file: "k8s/ledger-anvil.yaml", line: 6, value: "prod" },
           { file: "k8s/ledger-anvil.yaml", line: 7, value: "ledger.anvil.forge.example" },
+          ...(link ? [{ file: "k8s/ledger-anvil.yaml", line: 8, value: "ledger-api" }] : []),
         ],
       },
     }) + "\n",
@@ -105,6 +108,24 @@ describe("a deployment declared in another repo the operation names (ADR 0206 po
       expect(by("route-anvil").outcome).toBe("present");
       // An operation that names only forge-ledger isn't read in forge-infra.
       expect(by("route-other").outcome).not.toBe("present");
+    },
+    T,
+  );
+
+  it(
+    "is couldn't confirm when no line it cites names the link to the repo (the re-review's blocker)",
+    async () => {
+      const { root } = await setup(false);
+      const run = await conformChange(root, CHANGE, {
+        repo: "forge-ledger",
+        git,
+        now: "2026-11-22T09:00:00Z",
+      });
+      const deploy = run.results[0]!.claims!.find((c) => c.from.operation === "deploy-anvil")!;
+      expect(deploy.outcome).toBe("unconfirmed");
+      expect(deploy.what).toContain(
+        "forge-infra:k8s/ledger-anvil.yaml:4 says it exposes ledger-api, but no line it cites names ledger-api or forge-ledger",
+      );
     },
     T,
   );

@@ -17,25 +17,30 @@ describe("a deployment read in another repo the operation names (the review's po
     exposes: "ledger-api",
     host: "ledger.anvil.forge.example",
     resourceName: "ledger",
-    cite: { file: "anvil/ledger.yaml", line: 3, value: "ledger", quote: "name: ledger" },
+    cite: {
+      file: "anvil/ledger.yaml",
+      line: 3,
+      value: "ledger",
+      quote: "name: ledger",
+      with: [{ file: "anvil/ledger.yaml", line: 4, value: "ledger-api" }],
+    },
   });
+  /** The descriptor's lines: its name, then the component it exposes. */
+  const DESCRIPTOR = {
+    "anvil/ledger.yaml": ["kind: Service", "platform: anvil", "name: ledger", "app: ledger-api"],
+  };
   const withOther = (x: Partial<Claim> = {}) => [
     claim("deployment", { platform: "anvil", env: "prod" }, { with: ["forge-deploy"], ...x }),
     claim("route", { host: "ledger.anvil.forge.example" }, { with: ["forge-deploy"], ...x }),
   ];
 
   it("a deploy fact with exposes naming the repo's component is present, cited in that repo", () => {
-    const r = run(
-      withOther(),
-      [],
-      {},
-      {
-        names: ["ledger-api"],
-        elsewhere: [
-          { repo: "forge-deploy", facts: [deployRepoFact], basis: { from: "facts", unread: [] } },
-        ],
-      },
-    );
+    const r = run(withOther(), [], DESCRIPTOR, {
+      names: ["ledger-api"],
+      elsewhere: [
+        { repo: "forge-deploy", facts: [deployRepoFact], basis: { from: "facts", unread: [] } },
+      ],
+    });
     expect(r.claims.map((c) => c.outcome)).toEqual(["present", "present"]);
     expect(r.claims[0]!.at).toEqual([
       { source: "code", repo: "forge-deploy", path: "anvil/ledger.yaml", line: 3 },
@@ -43,17 +48,12 @@ describe("a deployment read in another repo the operation names (the review's po
   });
 
   it("only a repo the operation names is read for it", () => {
-    const r = run(
-      withOther({ with: [] }),
-      [],
-      {},
-      {
-        names: ["ledger-api"],
-        elsewhere: [
-          { repo: "forge-deploy", facts: [deployRepoFact], basis: { from: "facts", unread: [] } },
-        ],
-      },
-    );
+    const r = run(withOther({ with: [] }), [], DESCRIPTOR, {
+      names: ["ledger-api"],
+      elsewhere: [
+        { repo: "forge-deploy", facts: [deployRepoFact], basis: { from: "facts", unread: [] } },
+      ],
+    });
     expect(r.claims.map((c) => c.outcome)).toEqual(["missing", "missing"]);
   });
 
@@ -113,5 +113,40 @@ describe("a deployment read in another repo the operation names (the review's po
       },
     );
     expect(r.claims.map((c) => c.outcome)).toEqual(["present-differently", "present-differently"]);
+  });
+
+  it("a link to the repo that no cited line writes is couldn't confirm, never present (the re-review's blocker)", () => {
+    const banana = fact({
+      repo: "forge-portal-bff",
+      kind: "deploy",
+      id: "d-1",
+      env: "prod",
+      platform: "anvil",
+      exposes: "ledger-api",
+      host: "ledger.anvil.forge.example",
+      resourceName: "banana",
+      cite: { file: "deploy/anvil.yaml", line: 3, value: "banana", quote: "name: banana" },
+    });
+    const r = run(
+      withOther({ with: ["forge-portal-bff"] }),
+      [],
+      { "deploy/anvil.yaml": ["kind: Service", "platform: anvil", "name: banana"] },
+      {
+        names: ["ledger-api"],
+        elsewhere: [
+          { repo: "forge-portal-bff", facts: [banana], basis: { from: "facts", unread: [] } },
+        ],
+      },
+    );
+    expect(r.claims.map((c) => c.outcome)).toEqual(["unconfirmed", "unconfirmed"]);
+    expect(r.claims[0]!.what).toBe(
+      "Atticus couldn't confirm that forge-ledger runs on anvil in prod: forge-portal-bff:deploy/anvil.yaml:3 says it exposes ledger-api, but no line it cites names ledger-api or forge-ledger, so the link to forge-ledger is only the assistant's reading.",
+    );
+    expect(r.claims[0]!.at[0]).toEqual({
+      source: "code",
+      repo: "forge-portal-bff",
+      path: "deploy/anvil.yaml",
+      line: 3,
+    });
   });
 });

@@ -400,10 +400,30 @@ export function conformClaims(input: ClaimsInput): {
       !x.facts.some((f) => f.kind === "entry");
     lead = (sure(basis) && away.find((x) => declares(x) && !sure(x.basis))) || { repo, basis };
     decisive = sure(lead.basis);
-    return [
-      ...of("deploy"),
-      ...away.flatMap((x) => x.facts.filter((f): f is F<"deploy"> => exposed(f))),
-    ];
+    // The re-review: the verifier checks only that `exposes` names a component of the estate,
+    // so a fact read in another repo counts for this one only when a line it cites names the
+    // link (what it exposes, this repo or one of its components). One that doesn't is kept apart.
+    const theirs = away.flatMap((x) => x.facts.filter((f): f is F<"deploy"> => exposed(f)));
+    const linked = (f: F<"deploy">) =>
+      citedLines(f).some((l) => [f.exposes!, ...names].some((n) => wordOn(l, n)));
+    unlinked = theirs.filter((f) => !linked(f));
+    return [...of("deploy"), ...theirs.filter(linked)];
+  };
+  /** The deploy facts of other repos whose link to this one no cited line writes (per claim). */
+  let unlinked: F<"deploy">[] = [];
+  /** A claim another repo's fact may answer, whose link isn't written: couldn't confirm. True when said. */
+  const unlinkedDoubt = (c: Claim, expected: string, says: string) => {
+    const f = unlinked[0];
+    if (!f) return false;
+    push(c, {
+      outcome: "unconfirmed",
+      expected,
+      what: `Atticus couldn't confirm that ${bare(says)}: ${f.repo}:${f.cite.file}:${f.cite.line} says it exposes ${f.exposes}, but no line it cites names ${[...new Set([f.exposes!, ...names])].join(" or ")}, so the link to ${repo} is only the assistant's reading.`,
+      at: [codeCite(f), claimCite(c)],
+      fact: f.id,
+      next: `Have your assistant cite the line that names ${repo} or its component in ${f.repo}'s fact ${f.id} (its exposes, in cite.with), in ${input.changesRel}/${change}/conform/facts/${f.repo}.jsonl, then check again: ${conformCmd}. Or check it by hand.`,
+    });
+    return true;
   };
   const matched = new Set<string>();
   const results: ClaimResult[] = [];
@@ -581,6 +601,7 @@ export function conformClaims(input: ClaimsInput): {
   for (const c of input.claims.filter((x) => x.repo === repo)) {
     lead = { repo, basis };
     decisive = sure(basis);
+    unlinked = [];
     const e = c.expect;
     const op = c.from.operation;
     const pairs = (keys: Key[]) =>
@@ -665,6 +686,7 @@ export function conformClaims(input: ClaimsInput): {
         const says = e.platform
           ? `${repo} runs on ${e.platform}${e.env ? ` in ${e.env}` : ""}`
           : `${repo} has a deployment in ${e.env}`;
+        if (!hit && unlinkedDoubt(c, expected, says)) break;
         if (!hit && noEnv(c, expected, says, sameEnv, deploys)) break;
         const o = hit ? undefined : (sameEnv[0] ?? deploys[0]);
         judge(
@@ -697,6 +719,7 @@ export function conformClaims(input: ClaimsInput): {
         const hit = hosts.find(
           (f) => (!e.host || same(f.host, e.host)) && (!e.basePath || f.basePath === e.basePath),
         );
+        if (!hit && unlinkedDoubt(c, expected, `${repo} is served at ${at}`)) break;
         const o = hit ? undefined : hosts[0];
         judge(
           c,
