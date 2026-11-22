@@ -154,6 +154,34 @@ describe("a writer's read of the catalog kept in the app's memory (ADR 0205 step
     expect(Object.isFrozen(next[0]!.value)).toBe(true);
   });
 
+  it("a writer's keepParses neither freezes what its read handed out nor keeps it in place of its JSON (the review of cbab428f)", async () => {
+    const { root, dir, files } = await folder(3);
+    startAppMemory();
+    const r = reader(root, dir, files);
+    // Every file parsed now: handed to the reader as parsed, not frozen.
+    const first = await r.read();
+    const own = first[1]!.value!;
+    expect(Object.isFrozen(own)).toBe(false);
+    // The writer rewrites another file and keeps its parses.
+    await writeFile(join(dir, "r0.yaml"), "id: r0\nn: 500\n");
+    const s = await stat(join(dir, "r0.yaml"));
+    await keepParses(r.kept()!, {
+      files: [
+        {
+          rel: "r0.yaml",
+          value: { id: "r0", n: 500, gone: undefined, tags: ["b"] },
+          at: { size: s.size, mtimeMs: Math.floor(s.mtimeMs), writtenAt: Date.now() + 10_000 },
+        },
+      ],
+      removed: [],
+    });
+    expect(Object.isFrozen(own), "the first read's own parse is still its own").toBe(false);
+    const next = await r.read();
+    expect(next[1]!.value, "memory keeps its JSON copy, not the reader's object").not.toBe(own);
+    expect("gone" in next[1]!.value!, "as the cache on disk gives it").toBe(false);
+    expect(Object.isFrozen(next[1]!.value)).toBe(true);
+  });
+
   it("is let go by the app's rule, kept only up to its size, and not kept outside a server", async () => {
     const { root, dir, files } = await folder(4);
     // Outside a server: nothing kept in memory.

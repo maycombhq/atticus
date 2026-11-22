@@ -700,6 +700,8 @@ export async function writeFactsIntoCatalog(
   });
   /** ADR 0205 step 2: the caches the build hands over to write after the result. */
   const later: (() => Promise<void>)[] = [];
+  /** Whether the write gave its result: only then is a stop during its caches harmless. */
+  let gave = false;
   try {
     writeFactsHooks.onWrite?.(repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
@@ -1156,6 +1158,7 @@ export async function writeFactsIntoCatalog(
     const map = await renderRepoMap(root, repo, io, built.catalog);
     mark("map");
     progress.end({ done: true });
+    gave = true;
     return {
       written,
       flows: flowPaths,
@@ -1176,9 +1179,11 @@ export async function writeFactsIntoCatalog(
   } finally {
     progress.end();
     // ADR 0205 step 2: the caches after the result, then the lock let go. The lock says so
-    // meanwhile: a process stopped then left the catalog whole and its caches unsaved.
+    // meanwhile: a process stopped then left the catalog whole and its caches unsaved. A write
+    // that threw after the catalog (its specs, its map) gave no result: its lock says it stopped
+    // before it finished (the review of cbab428f).
     if (later.length) {
-      await lock.caching();
+      if (gave) await lock.caching();
       runAfterResult(
         async () => {
           try {

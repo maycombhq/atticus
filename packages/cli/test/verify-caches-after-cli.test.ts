@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { afterResultPending, readLock } from "@maycombhq/core";
+import { mkdir, writeFile } from "node:fs/promises";
+import { afterResultHooks, afterResultPending, readLock, specRelOf } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { BIG_COMMIT, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
@@ -77,5 +78,46 @@ describe("atticus verify <repo> --write: its lines, then its caches (ADR 0205 st
     const after = await keptKey(root);
     expect(after).toBeDefined();
     expect(after).not.toBe(before);
+  }, 300_000);
+
+  it("marks its lock caches only once it gave its result: a write that threw after the catalog says it stopped (the review of cbab428f)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-verify-caches-"));
+    made.push(dir);
+    const { root, options } = await makeBigEstate(dir, {
+      repos: 3,
+      entries: 12,
+      calls: 8,
+      tables: 3,
+      settings: 6,
+      seed: 4,
+      checkouts: 3,
+    });
+    expect(
+      (await buildAndWrite(root, { command: "atticus catalog build" })).guard.refused,
+    ).toBeUndefined();
+    await writeBigRepo(root, 1, options, 2, true, false);
+    const repo = bigRepoId(1);
+    // The repo's specs folder is a file: the write throws after the catalog is written.
+    const specs = join(root, ...specRelOf(root, repo).split("/"));
+    await rm(specs, { recursive: true, force: true });
+    await mkdir(join(specs, ".."), { recursive: true });
+    await writeFile(specs, "not a folder\n");
+    const lines: string[] = [];
+    const io = { out: (l: string) => void lines.push(l), err: (l: string) => void lines.push(l) };
+    // The process stops after the write, before its caches: the lock is left as it was then.
+    afterResultHooks.die = true;
+    try {
+      await main(["verify", repo, "--write", "--commit", BIG_COMMIT, "--root", root], io).catch(
+        () => 1,
+      );
+    } finally {
+      delete afterResultHooks.die;
+    }
+    const lock = await readLock(root, "scan");
+    expect(lock, lines.join("\n")).toBeDefined();
+    expect(
+      lock!.phase,
+      "no result was given: not 'the catalog whole, only its caches'",
+    ).toBeUndefined();
   }, 300_000);
 });

@@ -172,6 +172,46 @@ describe("the machine's and the container's memory (ADR 0205 step 4)", () => {
     ).toEqual({ free: 6000 * MB, total: 8000 * MB });
   });
 
+  it("is the process's own cgroup's, nested, and the lowest limit above it (the review of cbab428f)", () => {
+    // cgroup v2 without its own namespace (a systemd slice, a container run with the host's):
+    // the root's files are the machine's; the process's cgroup, from /proc/self/cgroup, limits it.
+    expect(
+      systemMemoryOf(
+        files({
+          "/proc/self/cgroup": "0::/user.slice/atticus.scope\n",
+          "/sys/fs/cgroup/user.slice/atticus.scope/memory.max": "max\n",
+          "/sys/fs/cgroup/user.slice/atticus.scope/memory.current": `${1200 * MB}\n`,
+          "/sys/fs/cgroup/user.slice/atticus.scope/memory.stat": `inactive_file ${200 * MB}\n`,
+          "/sys/fs/cgroup/user.slice/memory.max": `${3000 * MB}\n`,
+          "/sys/fs/cgroup/user.slice/memory.current": `${2500 * MB}\n`,
+        }),
+        os,
+      ),
+    ).toEqual({ free: 500 * MB, total: 3000 * MB });
+    // cgroup v1: the memory controller's line.
+    expect(
+      systemMemoryOf(
+        files({
+          "/proc/self/cgroup": "12:cpu,cpuacct:/docker/abc\n4:memory:/docker/abc\n",
+          "/sys/fs/cgroup/memory/docker/abc/memory.limit_in_bytes": `${2000 * MB}\n`,
+          "/sys/fs/cgroup/memory/docker/abc/memory.usage_in_bytes": `${500 * MB}\n`,
+        }),
+        os,
+      ),
+    ).toEqual({ free: 1500 * MB, total: 2000 * MB });
+    // Inside its own namespace the process's cgroup is the root: as before.
+    expect(
+      systemMemoryOf(
+        files({
+          "/proc/self/cgroup": "0::/\n",
+          "/sys/fs/cgroup/memory.max": `${2000 * MB}\n`,
+          "/sys/fs/cgroup/memory.current": `${1500 * MB}\n`,
+        }),
+        os,
+      ),
+    ).toEqual({ free: 500 * MB, total: 2000 * MB });
+  });
+
   it("is the machine's free memory when that is less than the container's room", () => {
     expect(
       systemMemoryOf(

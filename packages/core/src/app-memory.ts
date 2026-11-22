@@ -54,7 +54,8 @@ const num = (t: string | undefined): number | undefined => {
 
 /**
  * The memory this process may still use and the most it may, in bytes: the machine's
- * (`os.freemem`, `os.totalmem`), or its container's where a cgroup limits it lower (Linux:
+ * (`os.freemem`, `os.totalmem`), or its container's where a cgroup limits it lower (Linux: the
+ * process's own cgroup, from /proc/self/cgroup, and those above it, the one with the least room:
  * cgroup v2's memory.max and memory.current, less the file cache it can give back, or v1's
  * limit_in_bytes and usage_in_bytes). Windows and macOS have no cgroup files: the machine's.
  */
@@ -65,23 +66,55 @@ export function systemMemoryOf(
   const machine = { free: os.freemem(), total: os.totalmem() };
   const fileCache = (stat: string | undefined, key: string) =>
     num(new RegExp(`^${key} (\\d+)$`, "m").exec(stat ?? "")?.[1]) ?? 0;
-  let limit: number | undefined;
-  let used: number | undefined;
-  const v2 = read("/sys/fs/cgroup/memory.max");
-  if (v2 !== undefined) {
-    limit = v2.trim() === "max" ? undefined : num(v2);
-    const current = num(read("/sys/fs/cgroup/memory.current"));
-    if (current !== undefined)
-      used = current - fileCache(read("/sys/fs/cgroup/memory.stat"), "inactive_file");
+  // The process's own cgroup (the review of cbab428f): /proc/self/cgroup names it, v2's line
+  // `0::<path>`, v1's the memory controller's; inside its own namespace it is the root. Its
+  // limit is the lowest of its own and every cgroup above it.
+  const own = read("/proc/self/cgroup") ?? "";
+  const v2Path = /^0::(\/.*)$/m.exec(own)?.[1]?.trim();
+  const v1Path = /^\d+:(?:[^:]*,)?memory(?:,[^:]*)?:(\/.*)$/m.exec(own)?.[1]?.trim();
+  /** The cgroup's folder and each above it, the process's own first. */
+  const upFrom = (base: string, path: string | undefined) => {
+    const parts = (path ?? "/").split("/").filter(Boolean);
+    const out: string[] = [];
+    for (let n = parts.length; n >= 0; n--) out.push([base, ...parts.slice(0, n)].join("/"));
+    return out;
+  };
+  let best: { limit: number; used: number } | undefined;
+  const consider = (limit: number | undefined, used: number | undefined) => {
+    if (limit === undefined || used === undefined) return;
+    if (!best || limit - Math.max(0, used) < best.limit - Math.max(0, best.used))
+      best = { limit, used };
+  };
+  const v2Root = read("/sys/fs/cgroup/memory.max") !== undefined || v2Path !== undefined;
+  if (v2Root && v1Path === undefined) {
+    for (const d of upFrom("/sys/fs/cgroup", v2Path)) {
+      const max = read(`${d}/memory.max`);
+      if (max === undefined || max.trim() === "max") continue;
+      const current = num(read(`${d}/memory.current`));
+      consider(
+        num(max),
+        current === undefined
+          ? undefined
+          : current - fileCache(read(`${d}/memory.stat`), "inactive_file"),
+      );
+    }
   } else {
-    limit = num(read("/sys/fs/cgroup/memory/memory.limit_in_bytes"));
-    const usage = num(read("/sys/fs/cgroup/memory/memory.usage_in_bytes"));
-    if (usage !== undefined)
-      used = usage - fileCache(read("/sys/fs/cgroup/memory/memory.stat"), "total_inactive_file");
+    for (const d of upFrom("/sys/fs/cgroup/memory", v1Path)) {
+      const usage = num(read(`${d}/memory.usage_in_bytes`));
+      consider(
+        num(read(`${d}/memory.limit_in_bytes`)),
+        usage === undefined
+          ? undefined
+          : usage - fileCache(read(`${d}/memory.stat`), "total_inactive_file"),
+      );
+    }
   }
   // No limit, or one above the machine's (v1 writes "no limit" as a huge number): the machine's.
-  if (limit === undefined || limit >= machine.total || used === undefined) return machine;
-  return { free: Math.max(0, Math.min(machine.free, limit - Math.max(0, used))), total: limit };
+  if (!best || best.limit >= machine.total) return machine;
+  return {
+    free: Math.max(0, Math.min(machine.free, best.limit - Math.max(0, best.used))),
+    total: best.limit,
+  };
 }
 
 /** This machine's (or container's) memory now. */

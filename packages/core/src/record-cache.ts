@@ -240,12 +240,26 @@ function remember(
       return;
     }
     const held = was?.entries.get(rel);
-    const same = held !== undefined && held.value === e.value && held.problem === e.problem;
+    // The memory's own entry for the same file as kept (its size, time, clock and hash): kept as
+    // it is. A writer's keepParses passes its read's entries, whose fresh parses that read handed
+    // out as parsed; the memory holds their JSON copy, and must neither take the reader's object
+    // in its place nor freeze it under the reader (the review of cbab428f).
+    const kept = held !== undefined && held.value === e.value && held.problem === e.problem;
+    const sameFile =
+      held !== undefined &&
+      !raw.has(rel) &&
+      held.size === e.size &&
+      held.mtimeMs === e.mtimeMs &&
+      held.at === e.at &&
+      held.sha === e.sha &&
+      held.problem === e.problem;
     out.set(
       rel,
-      same || e.problem !== undefined
+      kept || e.problem !== undefined
         ? e
-        : { ...e, value: raw.has(rel) ? asKept(e.value) : deepFreeze(e.value) },
+        : sameFile
+          ? held
+          : { ...e, value: raw.has(rel) ? asKept(e.value) : deepFreeze(e.value) },
     );
   }
   inMemory.set(file, { v, dir: resolve(dir), entries: out, bytes });
