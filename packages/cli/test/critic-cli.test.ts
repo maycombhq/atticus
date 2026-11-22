@@ -157,8 +157,10 @@ describe("atticus critic", () => {
 
     c = capture();
     expect(await critic(r, CHANGE, {}, c.io, { runtime: await replay(), now: NOW })).toBe(1);
+    // Ten risks: the Forge change's tasks.md has work in forge-ledger and forge-portal-bff, which
+    // only the built-in readers mapped (change-links-known, the persona check of beta.30).
     expect(c.out[0]).toBe(
-      "Critic round 1 of 2 at the plan gate for add-transfer-limit: 12 blocking, 14 gaps, 8 risks, 0 ideas.",
+      "Critic round 1 of 2 at the plan gate for add-transfer-limit: 12 blocking, 14 gaps, 10 risks, 0 ideas.",
     );
     expect(c.out[1]).toMatch(/^SEVERITY\s+LAYER\s+ID\s+WHERE\s+SUMMARY$/);
     expect(
@@ -181,7 +183,7 @@ describe("atticus critic", () => {
     c = capture();
     expect(await findings(r, CHANGE, {}, c.io)).toBe(0);
     expect(c.out[0]).toBe("plan gate, round 1:");
-    expect(c.out.length).toBe(2 + 34 + 1);
+    expect(c.out.length).toBe(2 + 36 + 1);
 
     c = capture();
     expect(

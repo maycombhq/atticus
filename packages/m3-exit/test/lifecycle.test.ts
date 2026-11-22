@@ -459,10 +459,21 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         open: { blocking: number; gaps: number };
         findings: { rule: string; severity: string; state: string }[];
       }>(await run("critic", CHANGE, "--gate", "plan", "--json"));
-      expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 2, ideas: 0 });
+      // The persona check of beta.30: change-links-known also says each repo tasks.md has work in
+      // that only the built-in readers mapped (no facts here, ADR 0074), a risk per repo.
+      const risks = r.findings.filter((f) => f.severity === "risk" && f.state === "open");
+      const readerOnly = risks.filter((f) => f.rule === "constitution.change-links-known");
+      expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 2 + readerOnly.length, ideas: 0 });
+      expect(readerOnly.length).toBeGreaterThan(0);
       expect(
-        r.findings.filter((f) => f.severity === "risk" && f.state === "open").map((f) => f.rule),
-      ).toEqual(["review.store-write-rollback", "review.store-write-rollback"]);
+        readerOnly.every((f) =>
+          (f as { summary?: string }).summary?.includes("which only the built-in readers mapped"),
+        ),
+      ).toBe(true);
+      expect(risks.filter((f) => !readerOnly.includes(f)).map((f) => f.rule)).toEqual([
+        "review.store-write-rollback",
+        "review.store-write-rollback",
+      ]);
       const gaps = r.findings.filter((f) => f.severity === "gap");
       expect(gaps).toHaveLength(12);
       expect(gaps.every((f) => f.state === "asked")).toBe(true);
