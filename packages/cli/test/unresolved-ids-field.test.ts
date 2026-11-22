@@ -12,8 +12,8 @@ import { makeFieldEstate } from "./field-estate.js";
 /**
  * ADR 0124 addendum E-ids (the owner, 2026-11-19), found by the field-shaped estate: a loose
  * call's record was `unresolved.<fact id>`, so two repos' loose calls with one fact id made one
- * record and the other repo's call had none; impact's "loose end Atticus couldn't follow"
- * (packages/index/src/graph.ts) never named it. With the repo in the id, every loose call has its
+ * record and the other repo's call had none; impact's "call with no arrow" (beta.30's words;
+ * "loose end Atticus couldn't follow" before, packages/index/src/graph.ts) never named it. With the repo in the id, every loose call has its
  * own record, and impact names each.
  */
 
@@ -182,7 +182,7 @@ describe("every repo's loose call has a record of its own, and impact names it",
       const gaps = await impactGaps(root, ["forge-ledger", "forge-notify", "forge-payments"]);
       expect(want.filter((id) => !gaps.has(id))).toEqual([]);
       expect(gaps.get("unresolved.forge-payments.c-1")).toMatch(
-        /forge-payments has a loose end Atticus couldn't follow \(GET .*\/v1\/rates\/forge-payments\)/,
+        /forge-payments has a call with no arrow \(GET .*\/v1\/rates\/forge-payments\)/,
       );
     },
     T,
