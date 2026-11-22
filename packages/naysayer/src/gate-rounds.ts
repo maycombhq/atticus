@@ -27,9 +27,19 @@ export interface RoundWrite {
   findings: StoredFinding[];
 }
 
-const sig = (fs: Finding[]) =>
+/**
+ * What a round says, to tell whether a new one is due. By the C3 fingerprint, or, for a gate whose
+ * ids say exactly what each finding is (`carryById`), by the id and the words: the fingerprint's
+ * summary is the message's first 197 characters and, for a rule with no record, doesn't hold the
+ * target, so two findings it can't tell apart would be read as one.
+ */
+const sig = (fs: Finding[], byId = false) =>
   fs
-    .map((f) => `${fingerprint(f)}|${f.state}|${f.severity}`)
+    .map((f) =>
+      byId
+        ? `${f.id}|${f.state}|${f.severity}|${f.why}`
+        : `${fingerprint(f)}|${f.state}|${f.severity}`,
+    )
     .sort()
     .join("\n");
 
@@ -40,8 +50,10 @@ export async function writeGateRound(
   fresh: Finding[],
   now: string,
   /**
-   * ADR 0203 A: also carry a finding's state and resolution by its id, for a gate whose ids say
-   * exactly what each finding is (a stage's, `stage-<fingerprint>`): its words may change.
+   * ADR 0203 A: carry a finding's state and resolution by its id only, for a gate whose ids say
+   * exactly what each finding is (a stage's, `stage-<fingerprint>`, the stage's rule and target):
+   * its words may change, and another finding's words may agree with them for as long as the C3
+   * fingerprint reads, so the fingerprint is never used to match one there.
    */
   o: { carryById?: boolean } = {},
 ): Promise<RoundWrite> {
@@ -55,7 +67,7 @@ export async function writeGateRound(
   const taken = new Set<string>();
   const next: Finding[] = [];
   for (const f of fresh) {
-    const before = byPrint.get(fingerprint(f)) ?? (o.carryById ? byId.get(f.id) : undefined);
+    const before = o.carryById ? byId.get(f.id) : byPrint.get(fingerprint(f));
     let id = f.id;
     for (let i = 2; taken.has(id); i++) id = `${f.id}-${i}`;
     taken.add(id);
@@ -67,7 +79,8 @@ export async function writeGateRound(
     });
     next.push(merged.success ? merged.data : { ...f, id });
   }
-  if (sig(next) === sig(prev) && (last !== undefined || next.length === 0)) {
+  const byIds = !!o.carryById;
+  if (sig(next, byIds) === sig(prev, byIds) && (last !== undefined || next.length === 0)) {
     const findings = last ? (await readRound(root, change, gate, last)).findings : [];
     return { gate, ...(last ? { round: last } : {}), unchanged: true, findings };
   }
