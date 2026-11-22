@@ -17,6 +17,7 @@ import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
+import { steadyWriteCpu } from "./write-cpu.js";
 import {
   BIG_COMMIT,
   bigGatewayId,
@@ -214,3 +215,38 @@ describe("the build's time grows with the estate (beta.28.1)", () => {
 
 /** The phases the squared searches were in (buildPhases' names). */
 const PASSES = /facts projection|joins applied|3 merge|3 features/;
+
+/**
+ * ADR 0205: one repo's write on the big estate at 60 repos and 30 proxies (about 100,000 records),
+ * the stress test whose time the release notes give. A CPU budget of the median of three steady
+ * writes, about three times what ADR 0205 measured on this build machine after its steps (the
+ * table "One repo's Apply, before and after"), for a slow runner; a return of the whole
+ * comparison or of every facts file parsed twice would still pass it, a return of a squared
+ * search would not. It builds an estate of 100,000 records cold (minutes, about 3 GB), so it
+ * runs only with ATTICUS_BENCH=1 (ATTICUS_BENCH_REPOS for another size), never in `pnpm check`.
+ */
+const BENCH = !!process.env.ATTICUS_BENCH;
+const BENCH_REPOS = Number(process.env.ATTICUS_BENCH_REPOS ?? 60);
+const BIG_60_WRITE_CPU_S = 110;
+
+describe.skipIf(!BENCH)(`one repo's write at ${BENCH_REPOS} repos (ADR 0205's budget)`, () => {
+  it(`takes under ${BIG_60_WRITE_CPU_S} CPU s, the median of three`, async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-big-budget-"));
+    try {
+      const made = await makeBigEstate(at, {
+        repos: BENCH_REPOS,
+        gateways: Math.round(BENCH_REPOS / 2),
+        checkouts: 2,
+      });
+      const cold = await buildAndWrite(made.root, { command: "atticus catalog build" });
+      expect(cold.guard.refused).toBeUndefined();
+      const { median } = await steadyWriteCpu(made.root, made.options, "big-estate-speed");
+      console.log(
+        `big-estate-speed at ${BENCH_REPOS} repos: ${median.toFixed(1)} CPU s, the median (budget ${BIG_60_WRITE_CPU_S})`,
+      );
+      expect(median).toBeLessThan(BIG_60_WRITE_CPU_S);
+    } finally {
+      await rm(at, { recursive: true, force: true });
+    }
+  }, 3_600_000);
+});
