@@ -741,6 +741,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
  */
+// Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
+// repo is that one (Impact asked of a repo box lists its components). Additive only.
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
 
@@ -2557,7 +2559,7 @@ export const FactsApplyResult = z.object({
 });
 export type FactsApplyResultT = z.infer<typeof FactsApplyResult>;
 /**
- * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to source slots as a dry run,
+ * 3.12.0 (ADR 0195 point 6): GET /api/build/upgrade, the upgrade to stored reads (source slots) as a dry run,
  * exactly what `atticus upgrade --json` lists under `slots`: every file `atticus upgrade --yes`
  * writes with its size and hash, the copy of catalog/generated kept in
  * generated-before-upgrade/, and what the first build would change (nothing; else each file,
@@ -7486,6 +7488,7 @@ const OPS: Record<string, Record<string, Op>> = {
         p("kind", { schema: { type: "string", enum: RECORD_KINDS } }),
         q("status"),
         q("system"),
+        q("repo", str, "3.19.0: only records of this repo (a component's own repo field)"),
         q("q", str, "Text search over id and name"),
         q("confidence", str, "2.63.0: only records of this confidence (verified, inferred, ...)"),
         q("limit", { type: "integer", minimum: 1, maximum: 500 }),
@@ -7642,7 +7645,8 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/triage/{itemId}/decide": {
     post: {
       id: "decideTriage",
-      summary: "Choose a triage item's option as the signed-in person; writes a curated decision",
+      summary:
+        "Choose a triage item's option as the signed-in person; writes your choice (one of your changes)",
       tag: "views",
       params: [p("itemId")],
       body: TriageDecideRequest,
@@ -8389,7 +8393,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "curateHandEdits",
       summary:
-        "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
+        "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a kept edit (one of the person's changes) in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
       tag: "scans",
       body: CatalogEditsRequest,
       ok: {
@@ -8428,7 +8432,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getCatalogUpgrade",
       summary:
-        "3.12.0 (ADR 0195 point 6): the upgrade to source slots as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
+        "3.12.0 (ADR 0195 point 6): the upgrade to stored reads (source slots) as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
       tag: "scans",
       ok: { status: 200, schema: "CatalogUpgradeView", description: "OK" },
     },
@@ -9241,7 +9245,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "matchLinks",
       summary:
-        "Start a Copilot session that proposes pairings of A's loose calls with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
+        "Start a Copilot session that proposes pairings of A's calls with no arrow with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
       tag: "views",
       body: MatchLinksRequest,
       ok: { status: 202, schema: "MatchLinksView", description: "Accepted" },

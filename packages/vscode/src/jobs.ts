@@ -306,7 +306,7 @@ const RULES: { test: RegExp; command: string; says: string }[] = [
   {
     test: /\b(stale|fresh|freshness|out of date)\b/,
     command: "atticus.estateFresh",
-    says: "atticus estate fresh lists every repo whose clone moved past its facts, most stale first, with the facts to read again; Map › Trust shows it under Freshness.",
+    says: "atticus estate fresh lists every repo whose clone moved past its facts, most stale first, with the facts to read again; Map › Read status shows it under Freshness.",
   },
   {
     test: /\bpropos/,
@@ -326,7 +326,7 @@ const RULES: { test: RegExp; command: string; says: string }[] = [
   {
     test: /\b(audit|precision|precise)\b/,
     command: "atticus.auditReport",
-    says: "atticus verify audit <repo> --report gives a sample audit's precision per kind of fact and for links, with a 95% interval; Map › Trust shows it.",
+    says: "atticus verify audit <repo> --report gives a sample audit's precision per kind of fact and for links, with a 95% interval; Map › Read status shows it.",
   },
   {
     test: /\b(measure|recall|reference)\b/,

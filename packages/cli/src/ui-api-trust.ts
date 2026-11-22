@@ -485,7 +485,7 @@ async function refFiles(dir: string): Promise<string[]> {
  */
 export function trustOfRepo(all: View, repo: string, rejected: boolean): View {
   const row = all.repos.find((r) => r.repo === repo);
-  if (!row) throw notFound(`There is no repo ${repo} on Map › Trust.`);
+  if (!row) throw notFound(`There is no repo ${repo} on Map › Read status.`);
   if (!rejected) return { ...all, repos: [row] };
   return {
     factsDir: all.factsDir,

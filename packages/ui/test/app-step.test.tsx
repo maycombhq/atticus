@@ -173,7 +173,9 @@ describe("a command on a page", () => {
     expect(calls).toEqual([
       { path: "/api/runs/handoff", method: "POST", body: { args: ["map", "forge-ledger"] } },
     ]);
-    expect(all(m.tree).find((e) => e.type === "a")!.props.href).toBe("#/runs?run=run-7");
+    expect(all(m.tree).find((e) => e.type === "a")!.props.href).toBe(
+      "#/activity?tab=runs&run=run-7",
+    );
   });
 });
 

@@ -441,6 +441,8 @@ export class CatalogIndex {
     o: {
       status?: string;
       system?: string;
+      /** 3.19.0 (v30 slice 8, additive): only records whose own `repo` is this one. */
+      repo?: string;
       q?: string;
       confidence?: string;
       limit?: number;
@@ -460,6 +462,10 @@ export class CatalogIndex {
     if (o.system) {
       where.push("system = ?");
       params.push(o.system);
+    }
+    if (o.repo) {
+      where.push("json_extract(json, '$.repo') = ?");
+      params.push(o.repo);
     }
     if (o.q) {
       where.push("(lower(id) LIKE ? OR lower(name) LIKE ?)");

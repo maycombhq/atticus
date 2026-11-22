@@ -109,7 +109,7 @@ describe("a page's stage drafts", () => {
     expect(html).toContain(D.title);
     expect(html).toContain(`${REL}/${FLOW}`);
     expect(html).toContain(`<span class="chip ai">${D.draftedByAi}</span>`);
-    expect(html).toContain('href="#/runs?run=run-arch-0001"');
+    expect(html).toContain('href="#/activity?tab=runs&amp;run=run-arch-0001"');
     expect(html).toContain(D.draftedByAiRun("run-arch-0001"));
     expect(html).toContain(esc(D.editedBy("Sam Okafor", "2026-11-08")));
     expect(html).toContain(D.editedByPerson);

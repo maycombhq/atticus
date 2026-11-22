@@ -493,8 +493,7 @@ async function renameLocked(
     if (o.json) io.out(JSON.stringify({ renamed: false, refused: written.guard.refused }, null, 2));
     return 1;
   }
-  if (decisions)
-    said.push(`${decisions} curated decision${decisions === 1 ? "" : "s"} (repo ${to})`);
+  if (decisions) said.push(`${decisions} of your change${decisions === 1 ? "" : "s"} (repo ${to})`);
   for (const l of buildLines(root, written)) said.push(l);
   forgetCatalogs();
 

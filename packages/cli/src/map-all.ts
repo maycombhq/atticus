@@ -1319,7 +1319,12 @@ async function mapAllRun(
   const mode = o.mode ?? (copilotAcpByDefault(op) ? "copilot-acp" : allowed ? "model" : "copilot");
   if (mode === "copilot-acp" && !copilotAcpAllowed(op) && !deps.acp) {
     io.err(
-      "runtime.yaml doesn't allow copilot-acp here (schemaVersion 3, copilot-acp in modes.allowed and copilot in assistants.allowed): map the estate through Copilot Chat (atticus map --all without --mode copilot-acp), or ask for it in a pull request (ADR 0171).",
+      // v30 slice 8: what to do first, then what happened, then that nothing changed.
+      [
+        "Map the estate through Copilot Chat instead: atticus map --all (without --mode copilot-acp). Or ask for copilot-acp in a pull request to runtime.yaml (ADR 0171).",
+        "runtime.yaml doesn't allow copilot-acp here (it needs schemaVersion 3, copilot-acp in modes.allowed and copilot in assistants.allowed).",
+        "Nothing was changed.",
+      ].join("\n"),
     );
     return 2;
   }

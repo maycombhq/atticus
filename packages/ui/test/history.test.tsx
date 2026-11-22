@@ -134,12 +134,12 @@ describe("the prompt history's turns", () => {
   it("offers the changes the history is about, and links to them", () => {
     expect(changesOf(turns)).toEqual(["add-transfer-limit", "refunds-through-northwind-pay"]);
     expect(historyHref({ change: "add-transfer-limit" })).toBe(
-      "#/history?change=add-transfer-limit",
+      "#/activity?tab=history&change=add-transfer-limit",
     );
     expect(historyHref({ session: "9e9e9e9e", q: "brief" })).toBe(
-      "#/history?session=9e9e9e9e&q=brief",
+      "#/activity?tab=history&session=9e9e9e9e&q=brief",
     );
-    expect(historyHref({})).toBe("#/history");
+    expect(historyHref({})).toBe("#/activity?tab=history");
   });
 });
 
@@ -159,7 +159,7 @@ describe("the Prompt history screen", () => {
     expect(out).toContain(H.noResponse);
     expect(out).toContain(esc(H.truncated(80000)));
     expect(out).toContain(H.masked);
-    expect(out).toContain('href="#/history?change=add-transfer-limit"');
+    expect(out).toContain('href="#/activity?tab=history&amp;change=add-transfer-limit"');
     expect(out).toContain("/atticus-needs");
     // Newest session first.
     expect(out.indexOf("5f1d7c0e")).toBeLessThan(out.indexOf("9e9e9e9e"));

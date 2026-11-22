@@ -99,7 +99,10 @@ describe("a stamp this Atticus can't read (round 49)", () => {
     const r = io();
     expect(await upgradeCommand(root, {}, r.io, "1.0.0")).toBe(1);
     expect(r.err.join("\n")).toMatch(/upgraded by a newer or unknown Atticus/);
-    expect(r.err.join("\n")).toMatch(/Install it/);
+    // v30 slice 8: the install first, then what happened, then that nothing changed.
+    expect(r.err.join("\n")).toMatch(
+      /Install the newer Atticus[^\n]*\nThis metarepo was upgraded by a newer or unknown Atticus[^\n]*\nNothing was changed\./,
+    );
     expect(await readFile(join(root, STAMP_FILE), "utf8")).toBe(text);
     const d = await doctorUpgrade(root);
     expect(d).toMatchObject({ status: "fail" });

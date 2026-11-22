@@ -112,7 +112,7 @@ function PromptItem({ it }: { it: Extract<Item, { kind: "prompt" }> }) {
             </li>
           )}
           <li>
-            <a href={`#/runs?run=${encodeURIComponent(it.runId)}`}>{T.adminView}</a>
+            <a href={`#/activity?tab=runs&run=${encodeURIComponent(it.runId)}`}>{T.adminView}</a>
           </li>
         </ul>
       </details>

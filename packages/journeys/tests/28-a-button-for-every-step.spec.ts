@@ -113,14 +113,14 @@ test.describe("reading a repo from the app, with the person's own assistant", ()
     // An empty catalog offers the page where a repo is read, never a command to type.
     await open(page, a, "canvas");
     await expect(page.locator("main")).not.toContainText("atticus map <repo>");
-    await page.getByRole("link", { name: "Read a repo on Map › Trust" }).first().click();
+    await page.getByRole("link", { name: "Read a repo on Map › Read status" }).first().click();
     await expect(page).toHaveURL(/#\/trust/);
     const row = page.getByRole("article", { name: "forge-studio" });
     const read = row.getByRole("button", { name: "Read with my assistant" });
     await expect(read).toBeVisible();
     // The command is there for a terminal, folded.
     await expect(row.locator("details.work-terminal summary").first()).toHaveText("In a terminal");
-    await accessible(page, "Map › Trust with a repo to read");
+    await accessible(page, "Map › Read status with a repo to read");
     await read.click();
     const prompt = row.getByRole("link", { name: "Open the prompt and Done" });
     await expect(prompt).toBeVisible({ timeout: 60_000 });

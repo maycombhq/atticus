@@ -203,7 +203,7 @@ export const CANARY_WORDS = {
   unknownNext: (n: number, file: string) =>
     `Next: read the ${n} unknown ${n === 1 ? "file" : "files"} (listed in ${file}). A file you read and found nothing to record in goes in reviewed.jsonl beside the facts ({"path": "<file or glob>", "why": "..."} per line).`,
   joined:
-    " (its links counted as the join makes them now; Map › Trust and atticus canary report count a link's answer as given)",
+    " (its links counted as the join makes them now; Map › Read status and atticus canary report count a link's answer as given)",
   cleanWhich:
     "Say which canary to delete: atticus canary clean <repo>, or atticus canary clean --all for every one this metarepo planted on this machine.",
   cleanBoth: "Give a repo or --all, not both.",

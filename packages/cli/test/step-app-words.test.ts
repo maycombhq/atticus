@@ -74,10 +74,10 @@ describe("a step's reason in the app's words", async () => {
     ).toBe("Answer 2 questions on Questions, then run the design stage again.");
     expect(
       say(
-        "forge-ledger: no facts were read at 1a2b3c4: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+        "forge-ledger: no facts were read at 1a2b3c4: read it again (Map › Read status › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
       ),
     ).toBe(
-      "forge-ledger: no facts were read at 1a2b3c4: read it again (Map › Trust › Freshness: Read again), so the catalog says what shipped.",
+      "forge-ledger: no facts were read at 1a2b3c4: read it again (Map › Read status › Freshness: Read again), so the catalog says what shipped.",
     );
     expect(
       say(
@@ -158,8 +158,8 @@ describe("a step's reason in the app's words", async () => {
     // next-commands.ts: a gate its hand-off would refuse, the archive gate, the change's steps
     "add-transfer-limit's design stage is done, but the design gate is blocked, so its hand-off would be refused: Knowledge gap f-1. Ask its owner (atticus finding add-transfer-limit f-1 ask --asked-of <who>), or fill it in (atticus finding add-transfer-limit f-1 edit-and-apply).",
     "add-transfer-limit's design stage is done, but the design gate is blocked, so its hand-off would be refused: A blocking finding. Fix it (atticus finding add-transfer-limit f-1 edit-and-apply), or record why it doesn't apply (not-relevant --reason, or waive); 2 more after it.",
-    "add-transfer-limit is released, and the archive gate needs what shipped read: forge-ledger: no facts were read at 1a2b3c4, the commit its release merged into main: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
-    "add-transfer-limit is released, and the archive gate needs what shipped read: forge-ledger: its facts were read at 9f8e7d6, not at 1a2b3c4, the commit its release merged into main: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+    "add-transfer-limit is released, and the archive gate needs what shipped read: forge-ledger: no facts were read at 1a2b3c4, the commit its release merged into main: read it again (Map › Read status › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+    "add-transfer-limit is released, and the archive gate needs what shipped read: forge-ledger: its facts were read at 9f8e7d6, not at 1a2b3c4, the commit its release merged into main: read it again (Map › Read status › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
     "add-transfer-limit is released, and the archive gate needs the catalog written from what shipped: forge-ledger: its facts are of the merged commit 1a2b3c4, but 2 catalog records still cite another commit: write them into the catalog (atticus verify forge-ledger --write, or Apply on the Map).",
     "add-transfer-limit is released, but the archive gate doesn't pass yet: forge-ledger: no release PR from change/add-transfer-limit into main was raised, so the code never reached main: raise the release PRs (Release › Raise the release PRs, or atticus change release-prs add-transfer-limit --approve), and merge them on the Git host.",
     "add-transfer-limit is released, but the archive gate doesn't pass yet: forge-ledger: the change branch moved past release PR #12 after it merged, so the newer work isn't in main: raise the release PRs again (atticus change release-prs add-transfer-limit --approve) and merge the new one.",

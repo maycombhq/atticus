@@ -6,6 +6,7 @@ import {
   landingOf,
   morePages,
   OLD_ADDRESSES,
+  pageTitle,
   SCREENS,
   screenOf,
   SECTIONS,
@@ -116,7 +117,8 @@ describe("no page lost in the IDE layout", () => {
     expect(html.match(/<main /g)).toHaveLength(1);
     expect(html).toMatch(/<main id="main"[^>]*class="sh-main"/);
     expect(html).toMatch(/role="tabpanel" aria-labelledby="sh-tab-[^"]+" class="sh-page"/);
-    expect(html).toContain(`<h1 class="sr">${s.label.replace(/&/g, "&amp;")}</h1>`);
+    // v30 slice 8: the page's title names Activity's tab too (pageTitle).
+    expect(html).toContain(`<h1 class="sr">${pageTitle(s, hash).replace(/&/g, "&amp;")}</h1>`);
     expect(html).toContain(COPY.shell.skipToContent);
     expect(html).toContain('<nav aria-label="Main" class="sh-activity">');
     expect(html).toContain('role="tablist"');
@@ -145,6 +147,8 @@ describe("no page lost in the classic layout", () => {
     expect(html).toContain('<main id="main" class="main" tabindex="-1">');
     expect(html).toContain('<nav aria-label="Main" class="nav">');
     expect(html).toContain('role="search" class="ask-form"');
-    expect(html).toContain(`<h1 class="sr">${screenOf(hash).label.replace(/&/g, "&amp;")}</h1>`);
+    expect(html).toContain(
+      `<h1 class="sr">${pageTitle(screenOf(hash), hash).replace(/&/g, "&amp;")}</h1>`,
+    );
   });
 });

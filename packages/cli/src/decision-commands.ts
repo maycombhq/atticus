@@ -125,7 +125,7 @@ export async function decisionsCli(
     );
     if (r.rule)
       io.out(
-        `Apply to similar: ${r.rule.derived ? "the rule derived from it" : "your rule"} is ${r.rule.match} (${r.rule.kind}); give another with --match, or --no-similar for this one alone.`,
+        `Write to similar: ${r.rule.derived ? "the rule derived from it" : "your rule"} is ${r.rule.match} (${r.rule.kind}); give another with --match, or --no-similar for this one alone.`,
       );
     if (r.noRule) io.out(`Nothing spreads: ${r.noRule}.`);
     for (const s of r.spread)

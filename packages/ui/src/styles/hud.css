@@ -365,6 +365,26 @@ a:hover {
   padding: 12px 12px 4px;
 }
 
+/* v30 slice 8: a page's "what next", one line under its tabs; it wraps, never scrolls. */
+.page-next {
+  margin: -6px 0 12px;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+/* The Activity page's own tabs (Model runs, Prompt history, Scans, Catalog builds). */
+.activity-page > .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 6px;
+}
+.activity-page > .tabs a[aria-current="page"] {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 /* A section's tabs above its page (ADR 0119): where you are, then every page of the section, a
    change's grouped by phase. They wrap on a narrow window instead of scrolling sideways. */
 .section-tabs {

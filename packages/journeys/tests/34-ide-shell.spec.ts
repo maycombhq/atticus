@@ -58,19 +58,13 @@ test("opens a tab per page, focuses one already open, closes one, and follows Ba
   const tabs = page.getByRole("tablist", { name: "Open pages" });
   await bar.getByRole("link", { name: "Map" }).click();
   await expect(page).toHaveURL(/#\/canvas$/);
-  await expect(tabs.getByRole("tab", { name: "Estate canvas" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(tabs.getByRole("tab", { name: "Map" })).toHaveAttribute("aria-selected", "true");
   await bar.getByRole("link", { name: /^Questions/ }).click();
   await expect(tabs.getByRole("tab")).toHaveCount(3);
   // The Map again: its tab, not a new one.
   await bar.getByRole("link", { name: "Map" }).click();
   await expect(tabs.getByRole("tab")).toHaveCount(3);
-  await expect(tabs.getByRole("tab", { name: "Estate canvas" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(tabs.getByRole("tab", { name: "Map" })).toHaveAttribute("aria-selected", "true");
   // A change's stages share the change's tab.
   await page.goto(`${app().url}/#/stories?change=${CHANGE}`);
   await expect(tabs.getByRole("tab", { name: CHANGE })).toHaveAttribute("aria-selected", "true");
@@ -95,14 +89,10 @@ test("opens a tab per page, focuses one already open, closes one, and follows Ba
   // A reload keeps the tabs and the one shown.
   await page.reload();
   await expect(page.locator(".panel").first()).toBeVisible();
-  await expect(tabs.getByRole("tab")).toHaveText([
-    /^Home$/,
-    /^Estate canvas/,
-    new RegExp(`^${CHANGE}`),
-  ]);
+  await expect(tabs.getByRole("tab")).toHaveText([/^Home$/, /^Map/, new RegExp(`^${CHANGE}`)]);
   await expect(tabs.getByRole("tab", { name: CHANGE })).toHaveAttribute("aria-selected", "true");
   // Back goes to the page before, in its tab.
-  await tabs.getByRole("tab", { name: "Estate canvas" }).click();
+  await tabs.getByRole("tab", { name: "Map" }).click();
   await expect(page).toHaveURL(/#\/canvas$/);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`#/architecture\\?change=${CHANGE}$`));
@@ -126,7 +116,7 @@ test("keeps what was typed into a page, and what was opened, when its tab comes 
   await box.fill("teller");
   await tabs.getByRole("tab", { name: /^Questions/ }).click();
   await expect(page.locator("#questions-filter")).toHaveValue("ledger");
-  await tabs.getByRole("tab", { name: "Estate canvas" }).click();
+  await tabs.getByRole("tab", { name: "Map" }).click();
   await expect(page.locator(".canvas-tools-body input[type=search]").first()).toHaveValue("teller");
 });
 
@@ -147,7 +137,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
   // No repo is cloned here, so the scan writes nothing and says so in the page, each repo with why
   // and what to do; the catalog is as it was (ADR 0195 point 4: a scan that read nothing).
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+  await expect(page.getByText("The catalog wasn't changed.")).toBeVisible({
     timeout: 60_000,
   });
   await expect(
@@ -169,7 +159,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   );
   // ADR 0195 point 4: the nothing-read guard writes no slot either, and says so.
   await expect(panel.getByRole("log")).toContainText(
-    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
+    "The catalog wasn't changed: the scan read no repo in full, so the catalog and every stored read are as they were",
   );
   await expect(panel.getByRole("log")).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
@@ -185,7 +175,8 @@ test("More pages and Settings are in the activity bar, and the classic layout a 
   const more = bar.getByRole("button", { name: /^More pages \d+$/ });
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await more.click();
-  await expect(page.locator("#more-pages a")).toHaveCount(21);
+  // v30 slice 8: Contracts, Impact and Decided by AI joined More pages; the Ecosystem map left.
+  await expect(page.locator("#more-pages a")).toHaveCount(23);
   await accessible(page, "More pages open in the activity bar");
   // Escape closes it and gives the focus back.
   await page.keyboard.press("Escape");
@@ -265,7 +256,8 @@ test("in an editor's panel there is no second activity bar, and every page is st
   await expect(page.getByRole("contentinfo", { name: "Status" })).toHaveCount(0);
   const tools = page.getByRole("group", { name: "Page tools" });
   await tools.getByRole("button", { name: /^More pages/ }).click();
-  await expect(page.locator("#more-pages a")).toHaveCount(21);
+  // v30 slice 8: Contracts, Impact and Decided by AI joined More pages; the Ecosystem map left.
+  await expect(page.locator("#more-pages a")).toHaveCount(23);
   await page.keyboard.press("Escape");
   await tools.getByRole("button", { name: /^Search the estate/ }).click();
   await expect(page.getByRole("dialog", { name: "Go to anything" })).toBeVisible();

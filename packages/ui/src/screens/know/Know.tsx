@@ -1,3 +1,4 @@
+import { CATALOG_BUILDS_HREF } from "../../app/ways-on.js";
 import { useEffect, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useJobPoll, useLiveEvents, type Loaded } from "../../api/client.js";
@@ -168,60 +169,35 @@ export function FactsByRepo({ of }: { of: Loaded<RepoFactsCount[]> }) {
   );
 }
 
-export function EcosystemMap() {
-  const graph = useApi<Graph>("/api/graph");
+/**
+ * What the catalog knows, by system and area, and a system's guide (v30 slice 8: on Systems; it
+ * was the Ecosystem map's foot, under a second drawing of the Map).
+ */
+export function CatalogCoverage() {
   const cov = useView<Coverage>("coverage");
-  const qs = useView<Questions>("questions");
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
   // No System record: the facts say what the catalog knows, by repo.
   const noSystems =
     kinds.state === "ready" && !kinds.data.some((k) => k.kind === "System" && k.count > 0);
   const byRepo = useFactsByRepo(noSystems);
-  const [focus, setFocus] = useState<string | undefined>();
+  const qs = useView<Questions>("questions");
   return (
-    <div className="bento">
-      <Panel
-        title={focus ? T.around(focus) : T.ecosystemMap}
-        kind="hero"
-        span="1 / -1"
-        meta={
-          focus ? (
-            <button type="button" className="btn" onClick={() => setFocus(undefined)}>
-              {T.showAll}
-            </button>
-          ) : (
-            T.clickANodeTo
-          )
-        }
-      >
-        <View
-          of={graph}
-          empty={(g) => g.nodes.length === 0}
-          emptyContent={<CatalogEmpty text={T.theCatalogIsEmpty} />}
-        >
-          {(g) => <GraphView g={g} {...(focus ? { focus } : {})} onPick={setFocus} height={520} />}
-        </View>
-      </Panel>
-      <Panel title={T.systems} span="span 4" rows="span 2">
+    <>
+      <Panel title={T.verifiedBySystem} span="span 4" rows="span 2">
         <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
           {(c) => (
             <div className="stack">
               {c.systems.map((s) => {
                 const total = s.verified + s.documentOnly + s.unknown;
                 return (
-                  <button
+                  <a
                     key={s.system}
-                    type="button"
-                    onClick={() => setFocus(s.system)}
+                    href={`#/systems?system=${encodeURIComponent(s.system)}`}
                     className="stack"
                     style={{
                       gap: 4,
-                      background: "transparent",
-                      border: 0,
                       color: "inherit",
-                      textAlign: "left",
-                      font: "inherit",
-                      cursor: "pointer",
+                      textDecoration: "none",
                       padding: "6px 0",
                       borderBottom: "1px solid var(--rule)",
                     }}
@@ -239,16 +215,13 @@ export function EcosystemMap() {
                       max={Math.max(total, 1)}
                       label={T.factsVerifiedFromCode(s.system)}
                     />
-                  </button>
+                  </a>
                 );
               })}
             </div>
           )}
         </View>
       </Panel>
-      {focus && cov.state === "ready" && cov.data.systems.some((x) => x.system === focus) && (
-        <SystemGuide system={focus} link />
-      )}
       <Panel title={T.whatTheCatalogKnows} span="span 8">
         {noSystems ? (
           <FactsByRepo of={byRepo} />
@@ -390,7 +363,7 @@ export function EcosystemMap() {
           )}
         </View>
       </Panel>
-    </div>
+    </>
   );
 }
 
@@ -455,8 +428,84 @@ interface Impact {
   gaps: { record: string; field: string; question: string }[];
 }
 
+/** v30 slice 8: a repo's components, by id, for Impact asked of a repo (a repo box's panel). */
+export function componentsOfRepo<C extends { id: string; repo?: string }>(
+  items: readonly C[],
+  repo: string,
+): C[] {
+  return items.filter((c) => c.repo === repo).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** The request for a repo's components: by its own repo field (3.19.0), never by words. */
+export const repoComponentsPath = (repo: string) =>
+  `/api/catalog/Component?limit=500&repo=${encodeURIComponent(repo)}`;
+
+type RepoComponentList = { items: { id: string; repo?: string; name?: string }[] };
+
+/**
+ * A repo's components, every page of them: the list follows the `next` cursor to its end, so a
+ * repo with more than one page of components lists them all, never a silent first 500.
+ */
+export async function loadRepoComponents(
+  path: string,
+  signal: AbortSignal,
+): Promise<RepoComponentList> {
+  const items: RepoComponentList["items"] = [];
+  let next: string | undefined;
+  do {
+    const page = await api<RepoComponentList & { next?: string }>(
+      next ? `${path}&cursor=${encodeURIComponent(next)}` : path,
+      { signal },
+    );
+    items.push(...page.items);
+    next = page.next;
+  } while (next && !signal.aborted);
+  return { items };
+}
+
+/** The repo's components as loaded (loading, error, none, or each opening its impact). */
+export function RepoComponentsView({
+  repo,
+  list,
+}: {
+  repo: string;
+  list: Loaded<RepoComponentList> & { reload?: () => void };
+}) {
+  return (
+    <Panel title={T.impactOfRepo(repo)} span="1 / -1">
+      <View
+        of={list}
+        empty={(d) => componentsOfRepo(d.items, repo).length === 0}
+        emptyText={T.noComponentsIn(repo)}
+      >
+        {(d) => (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {componentsOfRepo(d.items, repo).map((c) => (
+              <li key={c.id}>
+                <a href={`#/impact?q=${encodeURIComponent(c.id)}`}>
+                  {c.name && c.name !== c.id ? `${c.id} · ${c.name}` : c.id}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
+/**
+ * Impact asked of a repo (`?repo=`, from a repo box's panel): a repo has no record of its own,
+ * so its components are listed, each opening its impact.
+ */
+function RepoComponents({ repo }: { repo: string }) {
+  const list = useApi<RepoComponentList>(repoComponentsPath(repo), { load: loadRepoComponents });
+  return <RepoComponentsView repo={repo} list={list} />;
+}
+
 export function ImpactExplorer({ hash }: { hash: string }) {
   const q = queryParam(hash, "q") ?? "";
+  const repo = q ? undefined : queryParam(hash, "repo");
   const [text, setText] = useState(q);
   // A link to another id while on this page: the box follows the hash.
   useEffect(() => setText(q), [q]);
@@ -483,6 +532,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
   const blast: Graph | undefined = imp.state === "ready" ? blastGraph(imp.data) : undefined;
   return (
     <div className="bento">
+      {repo && <RepoComponents repo={repo} />}
       <Panel title={T.whatBreaksIfThis} span="1 / -1">
         <form onSubmit={submit} className="row" style={{ flexWrap: "wrap" }}>
           <label htmlFor="impact-id" className="sr">
@@ -1538,7 +1588,7 @@ export function Scans() {
           {/* ADR 0195 (CS3): the readers' cross-check, and the build's confirm, undo and prune. */}
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {SS.links} <a href="#/crosscheck">{COPY.crossCheck.title}</a> ·{" "}
-            <a href="#/catalog-builds">{COPY.catalogBuild.openFromScans}</a>
+            <a href={CATALOG_BUILDS_HREF}>{COPY.catalogBuild.openFromScans}</a>
           </p>
           {job && (
             <div className="stack" role="status" aria-live="polite">

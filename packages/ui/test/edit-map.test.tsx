@@ -585,7 +585,7 @@ describe("the list beside the canvas, and Apply my changes", () => {
     expect(page).toContain(esc(COPY.panelResults.waitsRemovals(2)));
     expect(page).toMatch(
       new RegExp(
-        `<a class="btn primary" href="${CATALOG_BUILDS_HREF}">${esc(COPY.panelResults.reviewRemovals(2))}</a>`,
+        `<a class="btn primary" href="${CATALOG_BUILDS_HREF.replace("?", "\\?")}">${esc(COPY.panelResults.reviewRemovals(2))}</a>`,
       ),
     );
     // No removal list or confirm here: that is the full-width page's.

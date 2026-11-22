@@ -1331,7 +1331,7 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
             step: "findings",
             command: `atticus change status ${id}`,
             where: METAREPO,
-            why: `Every task of ${id} is ticked, but ${plural(c.blocking, "blocking finding")} hold${c.blocking === 1 ? "s" : ""} its ${c.state} hand-off: a person resolves each (Apply fix, Not relevant or Waive, on the change's page), then raises the hand-off PR.`,
+            why: `Every task of ${id} is ticked, but ${plural(c.blocking, "blocking finding")} hold${c.blocking === 1 ? "s" : ""} its ${c.state} hand-off: a person resolves each (Write the fix, Not relevant or Waive, on the change's page), then raises the hand-off PR.`,
             change: id,
             person: true,
           },

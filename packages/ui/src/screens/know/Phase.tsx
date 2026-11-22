@@ -1227,7 +1227,9 @@ function TasksByRepo({
                             <span role="status" style={{ fontSize: 12 }}>
                               {ran[x.id]}{" "}
                               {runOf[x.id] && (
-                                <a href={`#/runs?run=${encodeURIComponent(runOf[x.id]!)}`}>
+                                <a
+                                  href={`#/activity?tab=runs&run=${encodeURIComponent(runOf[x.id]!)}`}
+                                >
                                   {T.openTheRun}
                                 </a>
                               )}
@@ -1284,7 +1286,7 @@ function RunsPanel({ change }: { change: string }) {
                   <a
                     className="mono"
                     style={{ fontSize: 11.5 }}
-                    href={`#/runs?run=${encodeURIComponent(x.runId)}`}
+                    href={`#/activity?tab=runs&run=${encodeURIComponent(x.runId)}`}
                   >
                     {x.runId}
                   </a>
