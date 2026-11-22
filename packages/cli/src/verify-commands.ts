@@ -234,7 +234,7 @@ function questionLines(text: string): { lines: unknown[]; problems: QuestionProb
 }
 
 /** The files beside a repo's facts that are not its facts. */
-const FACTS_SIDE_FILES = /\.(questions|reviewed|rejected|corrections)\.jsonl$/;
+export const FACTS_SIDE_FILES = /\.(questions|reviewed|rejected|corrections)\.jsonl$/;
 
 /** The repos with a facts file here (`<repo>.jsonl`), in id order: those read so far. */
 export async function factsRepos(root: string): Promise<string[]> {

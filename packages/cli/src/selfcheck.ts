@@ -547,10 +547,10 @@ export async function selfcheck(
   return { checks, card, names, exact, twins };
 }
 
-/** atticus selfcheck [--names] [--json]. 0 when none failed, 1 when one did, 2 for no metarepo. */
+/** atticus selfcheck [--names] [--quick] [--timing] [--json]. 0 when none failed, 1 when one did, 2 for no metarepo. */
 export async function selfcheckCommand(
   root: string,
-  o: { json?: boolean; names?: boolean; quick?: boolean; platform?: string },
+  o: { json?: boolean; names?: boolean; quick?: boolean; timing?: boolean; platform?: string },
   io: Output,
 ): Promise<number> {
   if (!isMetarepo(root)) {
@@ -568,6 +568,30 @@ export async function selfcheckCommand(
       return 2;
     }
     throw e;
+  }
+  if (o.timing) {
+    // Gate 1 of the v31 plan: one build in memory, timed (selfcheck-timing.ts). The four
+    // checks don't run: this is the number to read off the screen, on its own.
+    const { timeOneBuild, factsRepoCount, timingLines, TIMING_WORDS } =
+      await import("./selfcheck-timing.js");
+    try {
+      const t = await timeOneBuild(root);
+      if (o.json) {
+        io.out(JSON.stringify({ phases: t.phases, totalMs: t.totalMs, cpuMs: t.cpuMs }, null, 2));
+        return 0;
+      }
+      const repos = o.names ? await factsRepoCount(root) : undefined;
+      for (const l of timingLines(t, repos)) io.out(l);
+      return 0;
+    } catch (e) {
+      // A held file's message names its path: the fixed sentence, the message with --names only.
+      if (o.json) io.out(JSON.stringify({ error: TIMING_WORDS.failed }, null, 2));
+      else io.err(TIMING_WORDS.failed);
+      if (o.names && !o.json) io.err(`  ${e instanceof Error ? e.message : String(e)}`);
+      return 2;
+    } finally {
+      await lock.release();
+    }
   }
   let r: Selfcheck;
   try {
