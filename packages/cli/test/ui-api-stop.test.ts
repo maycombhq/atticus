@@ -61,7 +61,9 @@ async function metarepo() {
       "gitHost: { type: mock, settings: { metarepo: forge-meta } }",
     ),
   );
-  g(base, "init", "-q", "--bare", remote);
+  // -b main: the remote's HEAD names main on a machine with no init.defaultBranch too (a CI
+  // runner), so a teammate's clone checks main out.
+  g(base, "init", "-q", "--bare", "-b", "main", remote);
   await writeFile(join(root, ".gitignore"), "/workspace/\n/.index/\n/.runs/\n/.atticus/\n");
   g(root, "init", "-q", "-b", "main");
   g(root, "add", "-A");
