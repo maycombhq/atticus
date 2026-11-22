@@ -33,7 +33,7 @@ export const WORDS = {
   healthFailed: (why: string) => `Atticus couldn't check this machine and the metarepo: ${why}`,
   wholeEstate: "The whole estate",
   saveExport: (name: string) => `Save ${name}`,
-  diagramPick: "Open which repo on the Architecture canvas?",
+  diagramPick: "Open which repo on the Map?",
   changeDiagramPick: "Open the diagram of which change?",
   estimatePick: "Open the estimate of which change?",
   /**

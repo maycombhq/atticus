@@ -27,7 +27,9 @@ import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work
 import "./knowledge/knowledge.css";
 import "./setup/setup.css";
 import { ChangeWork } from "./work/cw.js";
-import { SCREENS } from "../app/screens.js";
+import { SCREENS, type ActivityTab } from "../app/screens.js";
+import { ActivityPage } from "./activity/ActivityPage.js";
+import { Scans } from "./know/Know.js";
 
 /**
  * Screen id (screens.ts) → component. Each screen gets the current hash so it can read its own
@@ -59,8 +61,6 @@ export const LOOKS: Readonly<Record<string, "kn" | "st">> = {
   repos: "st",
   ai: "st",
   orgpack: "st",
-  scans: "st",
-  "catalog-builds": "st",
   intake: "st",
 };
 
@@ -93,9 +93,10 @@ const BARE: Record<string, Screen> = {
   mismatches: Mismatches,
   // ADR 0181: what the AI decided, Correct, and each batch's Undo.
   decisions: Decisions,
-  // ADR 0195 (CS3): the readers' cross-check, and the catalog's builds (confirm, undo, prune).
+  // ADR 0195 (CS3): the readers' cross-check.
   crosscheck: CrossCheck,
-  "catalog-builds": ({ hash }) => <CatalogBuilds hash={hash} />,
+  // v30 slice 8: Model runs, Prompt history, Scans and Catalog builds, as Activity's tabs.
+  activity: ({ hash }) => <ActivityPage hash={hash} tabs={ACTIVITY} />,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).
@@ -106,9 +107,6 @@ const BARE: Record<string, Screen> = {
   ...KNOW_SCREENS,
   ...KNOWLEDGE_SCREENS,
   ...RUN_SCREENS,
-  runs: Runs,
-  // ADR 0110: what people asked their assistant, and what it answered.
-  history: History,
   "change-diagram": ChangeDiagram,
   estimate: Estimate,
   cockpit: ChangeCockpit,
@@ -118,29 +116,45 @@ const BARE: Record<string, Screen> = {
 
 /**
  * beta.26: the change and work screens in the IDE look. Every page of a change (but the two that
- * hold the map's canvas, which keep the map's own look) and Model runs, History and Flows sit in
- * ChangeWork, the scope of cw.css.
+ * hold the map's canvas, which keep the map's own look) and Flows sit in ChangeWork, the scope of
+ * cw.css; Activity's Model runs and Prompt history tabs too (ACTIVITY).
  */
 export const CW_SCREENS: ReadonlySet<string> = new Set([
   ...SCREENS.filter(
     (s) => s.section === "Change" && s.id !== "architecture" && s.id !== "change-diagram",
   ).map((s) => s.id),
-  "runs",
-  "history",
   "flows",
 ]);
+
+/** A screen in the IDE look of a change's work (cw.css). */
+function inChangeWork(S: Screen, id: string): Screen {
+  const Wrapped: Screen = (p) => (
+    <ChangeWork>
+      <S {...p} />
+    </ChangeWork>
+  );
+  Wrapped.displayName = `ChangeWork(${id})`;
+  return Wrapped;
+}
+
+/**
+ * v30 slice 8: Activity's tabs, each the page it was, in the look it had (Model runs and Prompt
+ * history in ChangeWork, Scans and Catalog builds in Set up's).
+ */
+const ACTIVITY: Record<ActivityTab, Screen> = {
+  runs: inChangeWork(Runs, "runs"),
+  // ADR 0110: what people asked their assistant, and what it answered.
+  history: inChangeWork(History, "history"),
+  scans: withLook("st", () => <Scans />),
+  // ADR 0195 (CS3): the catalog's builds (confirm, undo, prune).
+  "catalog-builds": withLook("st", ({ hash }) => <CatalogBuilds hash={hash} />),
+};
 
 export const SCREEN_COMPONENTS: Record<string, Screen> = Object.fromEntries(
   Object.entries(BARE).map(([id, S]): [string, Screen] => {
     const look = LOOKS[id];
     if (look) return [id, withLook(look, S)];
     if (!CW_SCREENS.has(id)) return [id, S];
-    const Wrapped: Screen = (p) => (
-      <ChangeWork>
-        <S {...p} />
-      </ChangeWork>
-    );
-    Wrapped.displayName = `ChangeWork(${id})`;
-    return [id, Wrapped];
+    return [id, inChangeWork(S, id)];
   }),
 );

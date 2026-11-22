@@ -25,7 +25,7 @@ const esc = (s: string) =>
 /** The three ways on, as every error state shows them. */
 function offersUndoAndBundle(out: string) {
   expect(out).toContain(`role="group" aria-label="${esc(W.label)}"`);
-  expect(out).toContain(`href="${UNDO_HREF}"`);
+  expect(out).toContain(`href="${UNDO_HREF.replace(/&/g, "&amp;")}"`);
   expect(out).toContain(`>${esc(W.undoLast)}<`);
   expect(out).toContain(`<code class="mono">${esc(W.supportCommand)}</code>`);
   expect(out).toContain(`aria-label="${esc(W.copySupportLabel(W.supportCommand))}"`);
@@ -33,11 +33,11 @@ function offersUndoAndBundle(out: string) {
 
 describe("the ways on from an error", () => {
   it("Undo the last build goes to Catalog builds' undo", () => {
-    expect(UNDO_HREF).toBe("#/catalog-builds?at=undo");
+    expect(UNDO_HREF).toBe("#/activity?tab=catalog-builds&at=undo");
     expect(panelAsked(UNDO_HREF)).toBe(UNDO_PANEL);
-    expect(panelAsked("#/catalog-builds?at=upgrade")).toBe(UPGRADE_PANEL);
-    expect(panelAsked("#/catalog-builds")).toBeUndefined();
-    expect(panelAsked("#/catalog-builds?at=else")).toBeUndefined();
+    expect(panelAsked("#/activity?tab=catalog-builds&at=upgrade")).toBe(UPGRADE_PANEL);
+    expect(panelAsked("#/activity?tab=catalog-builds")).toBeUndefined();
+    expect(panelAsked("#/activity?tab=catalog-builds&at=else")).toBeUndefined();
   });
 
   it("offers Undo and the support bundle's command; Build again only where it applies", () => {
@@ -52,8 +52,10 @@ describe("the ways on from an error", () => {
     expect(short).not.toContain(esc(W.supportWhy));
     const again = html(<ErrorWaysOn onAgain={() => undefined} />);
     expect(again).toContain(`<button type="button" class="btn">${esc(W.buildAgain)}</button>`);
-    const linked = html(<ErrorWaysOn againHref="#/catalog-builds" />);
-    expect(linked).toContain(`<a class="btn" href="#/catalog-builds">${esc(W.buildAgainOn)}</a>`);
+    const linked = html(<ErrorWaysOn againHref="#/activity?tab=catalog-builds" />);
+    expect(linked).toContain(
+      `<a class="btn" href="#/activity?tab=catalog-builds">${esc(W.buildAgainOn)}</a>`,
+    );
   });
 });
 
@@ -101,6 +103,6 @@ describe("every error state offers them", () => {
     );
     expect(out).toContain(esc(COPY.editMap.failed("The build stopped.")));
     offersUndoAndBundle(out);
-    expect(out).toContain(`href="#/catalog-builds">${esc(W.buildAgainOn)}<`);
+    expect(out).toContain(`href="#/activity?tab=catalog-builds">${esc(W.buildAgainOn)}<`);
   });
 });

@@ -177,7 +177,7 @@ describe("Questions: answered by AI", () => {
     const out = html(<QuestionDetail question={QUESTION} onAnswered={() => undefined} />);
     expect(out).toContain(esc(D.answeredByAi("2026-11-08")));
     expect(out).toContain(esc(D.chip));
-    expect(out).toContain('href="#/runs?run=run-propose-0003"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-propose-0003"');
     expect(out).toContain(esc(D.correctOf(ANSWER.what)));
     expect(out).not.toContain("AI, run");
   });
@@ -190,7 +190,7 @@ describe("Questions: answered by AI", () => {
       />,
     );
     expect(out).toContain(esc(D.chip));
-    expect(out).not.toContain('href="#/runs?run=run-propose-0003"');
+    expect(out).not.toContain('href="#/activity?tab=runs&amp;run=run-propose-0003"');
   });
 
   it("splits the questions three ways: from code, by a person, by AI", () => {
@@ -339,7 +339,7 @@ describe("Map › Impact explorer (ninth UX walk)", () => {
   it("marks an Interface the AI joined with the chip and its run, as a change's Impact page does", () => {
     const out = html(<ImpactExplorer hash="#/impact?q=ledger-api" />);
     expect(out).toContain(esc(D.chip));
-    expect(out).toContain('href="#/runs?run=run-match-0007"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
     expect(out.split(esc(D.chip)).length - 1).toBe(1);
   });
 });
@@ -420,7 +420,7 @@ describe("the canvas", () => {
       />,
     );
     expect(out).toContain(esc(D.chip));
-    expect(out).toContain('href="#/runs?run=run-match-0007"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
     expect(out).toContain(esc(COPY.corrections.kinds.unlink!));
   });
 
@@ -442,7 +442,7 @@ describe("the canvas", () => {
     const out = html(<JoinView join={join} />);
     expect(out).toContain(esc(D.whyLinked));
     expect(out).toContain(esc(D.chip));
-    expect(out).toContain('href="#/runs?run=run-match-0007"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
     expect(out).toContain(esc(D.correctOf(LINK.what)));
     expect(out).not.toContain(esc(COPY.why.how.unknown!));
   });

@@ -126,7 +126,9 @@ describe("a stage's critic lenses in one prompt (ADR 0185)", () => {
     expect(out).toContain(R.batch.parts);
     expect(out).toContain(esc(R.batch.partsSay));
     expect(out).toContain(esc(R.batch.lens("true")));
-    expect(out).toContain(`href="${runsHref({ run: "run-20261023034007-0001" })}"`);
+    expect(out).toContain(
+      `href="${runsHref({ run: "run-20261023034007-0001" }).replace(/&/g, "&amp;")}"`,
+    );
     expect(out).toContain(R.states.validated);
     expect(out).toContain(R.states.failed);
     // A plain run lists no lenses.
@@ -150,7 +152,7 @@ describe("a stage's critic lenses in one prompt (ADR 0185)", () => {
       />,
     );
     expect(out).toContain(R.batch.askedIn);
-    expect(out).toContain(`href="${runsHref({ run: batch.runId })}"`);
+    expect(out).toContain(`href="${runsHref({ run: batch.runId }).replace(/&/g, "&amp;")}"`);
   });
 });
 
@@ -169,7 +171,7 @@ describe("the list of model runs", () => {
     );
     expect(out).toContain(`placeholder="${F.placeholder}"`);
     for (const c of Object.values(R.cols)) expect(out).toContain(c);
-    expect(out).toContain(`href="#/runs?run=${runs[1]!.runId}"`);
+    expect(out).toContain(`href="#/activity?tab=runs&amp;run=${runs[1]!.runId}"`);
     expect(out.indexOf(runs[0]!.runId)).toBeLessThan(out.indexOf(runs[2]!.runId));
     expect(out).toContain(R.states.waiting);
     expect(out).toContain(R.problems(2));
@@ -199,14 +201,16 @@ describe("the list of model runs", () => {
     const one = at({ state: "ready", data: { runs: [], serverModel: null } }, "add-transfer-limit");
     expect(one).toContain(esc(R.emptyFor("add-transfer-limit")));
     expect(one).toContain(esc(R.onlyFor("add-transfer-limit")));
-    expect(one).toContain('href="#/runs"');
+    expect(one).toContain('href="#/activity?tab=runs"');
   });
 
   it("links a step's page to its runs", () => {
-    expect(runsHref({ change: "add-transfer-limit" })).toBe("#/runs?change=add-transfer-limit");
-    expect(runsHref({ q: "knowledge" })).toBe("#/runs?q=knowledge");
-    expect(runsHref({ run: "run-1-0001" })).toBe("#/runs?run=run-1-0001");
-    expect(runsHref({})).toBe("#/runs");
+    expect(runsHref({ change: "add-transfer-limit" })).toBe(
+      "#/activity?tab=runs&change=add-transfer-limit",
+    );
+    expect(runsHref({ q: "knowledge" })).toBe("#/activity?tab=runs&q=knowledge");
+    expect(runsHref({ run: "run-1-0001" })).toBe("#/activity?tab=runs&run=run-1-0001");
+    expect(runsHref({})).toBe("#/activity?tab=runs");
   });
 });
 
@@ -339,8 +343,10 @@ describe("one model run", () => {
 
   it("links the rounds of the step, marking this one", () => {
     const out = html(<RunDetail of={{ state: "ready", data: transcript }} />);
-    expect(out).toContain(`href="#/runs?run=${runs[2]!.runId}"`);
-    expect(out).toMatch(new RegExp(`href="#/runs\\?run=${runs[1]!.runId}" aria-current="page"`));
+    expect(out).toContain(`href="#/activity?tab=runs&amp;run=${runs[2]!.runId}"`);
+    expect(out).toMatch(
+      new RegExp(`href="#/activity\\?tab=runs&amp;run=${runs[1]!.runId}" aria-current="page"`),
+    );
   });
 
   it("says when there is no answer yet, nothing handed back, or no such run", () => {
@@ -534,7 +540,7 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
     expect(ended).not.toContain("disabled");
     expect(ended).toContain(esc(S.ends.done!));
     expect(ended).toContain("Wrote brief.md");
-    expect(ended).toContain('href="#/runs?run=run-20261023034001-0001"');
+    expect(ended).toContain('href="#/activity?tab=runs&amp;run=run-20261023034001-0001"');
     expect(ended).toContain(S.openRun);
     const noRun = html(
       <RunStepView
@@ -543,7 +549,7 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
       />,
     );
     expect(noRun).toContain(S.ended("weird"));
-    expect(noRun).toContain('href="#/runs"');
+    expect(noRun).toContain('href="#/activity?tab=runs"');
   });
 
   it("says in words when the extension refused the step or couldn't start it, with no run link", () => {
@@ -559,7 +565,7 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
         />,
       );
       expect(out).toContain(esc(S.refused("--force would be read as an option")));
-      expect(out).not.toContain('href="#/runs');
+      expect(out).not.toContain('href="#/activity?tab=runs');
     }
     const long = html(
       <RunStepView

@@ -316,7 +316,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
         // Keep the edits: each made a curated decision, then the build with them (which writes
         // what the edited files hold, so nothing is overwritten), in one job.
         return asJob(
-          "Make the hand edits curated, then build",
+          "Keep the hand edits as yours, then build",
           () =>
             captured(async (io) => {
               const code = await catalogEdits(

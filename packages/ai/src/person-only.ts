@@ -76,11 +76,11 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   },
   {
     test: (w, a) => w[0] === "catalog" && w[1] === "edits" && switchOn(a, "--curate"),
-    why: "a person makes their hand edits curated decisions (ADR 0195)",
+    why: "a person keeps their hand edits as their own (ADR 0195)",
   },
   {
     test: (w, a) => w[0] === "upgrade" && (switchOn(a, "--yes") || flag(a, "--accept-changes")),
-    why: "a person confirms the upgrade to source slots after reading what it writes (ADR 0195)",
+    why: "a person confirms the upgrade to stored reads after reading what it writes (ADR 0195)",
   },
   { test: (w) => w[0] === "triage" && w[1] === "decide", why: "a person decides a triage item" },
   { test: (w) => w[0] === "finding", why: "a person acts on a finding (it is recorded with them)" },

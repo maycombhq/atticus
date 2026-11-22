@@ -342,12 +342,12 @@ describe("atticus verify: long lists are counted, shown in part and pointed to (
     expect(await verifyCommand(root, "forge-gates", { commit: "6a7e5c0" }, o.io)).toBe(0);
     const text = o.out.join("\n");
     expect(text).toMatch(
-      /12 entries' auth rests on no cited line \(all under authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\)\./,
+      /12 entries' auth rests on no cited line \(all under authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\):/,
     );
     // A-uncited: it says what is kept where, and what to do, not only that something is amiss.
     expect(text).toContain("kept in .atticus/facts/forge-gates.jsonl");
     expect(text).toContain("left out of the catalog");
-    expect(text).toMatch(/give each entry an authCite/);
+    expect(text).toMatch(/give each entry below an authCite/);
     const shown = o.out.filter((l) => /^ {2}e-g\d+ \(oauth2, /.test(l));
     expect(shown).toHaveLength(5);
     expect(shown[0]).toBe(`  e-g0 (oauth2, ${CTRL}:8)`);
@@ -616,7 +616,7 @@ describe("atticus verify: files read with nothing to record, and a read that is 
       },
     ];
     expect(o.out.join("\n")).toMatch(/1 entry's auth rests on no cited line/);
-    expect(o.out.join("\n")).toMatch(/give each entry an authCite/);
+    expect(o.out.join("\n")).toMatch(/give each entry below an authCite/);
     expect(report(root).authUncited).toEqual(noted);
     expect(readFileSync(facts, "utf8")).toContain('"auth":"mtls"');
 

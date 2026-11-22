@@ -56,7 +56,7 @@ vi.mock("../src/api/client.js", async () => ({
         errors: [],
         result: {
           code: 1,
-          lines: ["Nothing written: catalog/generated and every slot are as they were."],
+          lines: ["The catalog wasn't changed: catalog/generated is as it was."],
           refused: {
             reasons: ["large-removals"],
             message: "This would remove 2 records (2 of forge-small's 12).",
@@ -93,7 +93,7 @@ vi.mock("../src/api/client.js", async () => ({
         errors: [],
         result: {
           code: 1,
-          lines: ["Nothing written: catalog/generated and every slot are as they were."],
+          lines: ["The catalog wasn't changed: catalog/generated is as it was."],
           refused: {
             reasons: ["hand-edits"],
             message: "1 file under catalog/generated was changed by hand since the last build.",

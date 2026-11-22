@@ -109,7 +109,10 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
       const before = generated(root);
       const r = await run(["scan", "--root", root, "--no-drift"]);
       expect(r.code).toBe(1);
-      expect(r.err).toMatch(/was written before beta\.27.*run atticus upgrade/);
+      // v30 slice 8: the catalog unchanged said once, then the command first, then what happened.
+      expect(r.err).toMatch(
+        /The catalog wasn't changed: catalog\/generated is as it was\.\n(?:[^\n]*\n)*Move its \d+ record files[^\n]*: atticus upgrade[^\n]*\n[^\n]*was written before beta\.27/,
+      );
       expect(generated(root)).toEqual(before);
       expect(existsSync(join(root, "catalog", "sources"))).toBe(false);
     },
@@ -192,7 +195,7 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
       const everything = metarepo();
       const dry = await run(["upgrade", "--root", root]);
       expect(dry.code, dry.err).toBe(0);
-      expect(dry.out).toMatch(/Adopt the catalog into source slots/);
+      expect(dry.out).toMatch(/Move the catalog into stored reads/);
       expect(dry.out).toMatch(/The first build changes nothing/);
       expect(dry.out).toMatch(/atticus upgrade --yes applies this step/);
       expect(dry.out).not.toMatch(/Recorded Atticus/);
@@ -230,7 +233,7 @@ describe("atticus upgrade adopts a catalog from before the slots, shown first (A
       expect((await run(["catalog", "build", "--root", root, "--check"])).code).toBe(0);
       const again = await run(["upgrade", "--root", root, "--yes"]);
       expect(again.code).toBe(0);
-      expect(again.out).not.toMatch(/Adopt the catalog/);
+      expect(again.out).not.toMatch(/Move the catalog/);
       expect(sources(root)).toEqual(s);
       // A scan then replaces each legacy slot with a full read; every cross-repo arrow stays.
       const arrows = Object.keys(before).filter((p) => p.startsWith("interface/"));
@@ -267,7 +270,7 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
       const undo = await run(["catalog", "undo", "--root", root, "--yes"]);
       expect(undo.code, undo.err).toBe(0);
       const said =
-        "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
+        "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again.";
       expect(undo.out).toContain(said);
       expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
       expect(generated(root)).toEqual(before);
@@ -343,7 +346,7 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
       const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
       expect(refused.code, refused.err).toBe(1);
       expect(refused.err).toBe(
-        `Nothing undone: 1 file was changed since atticus catalog undo wrote it: ${pick!.path}. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again (or Undo on Set up › Catalog builds).`,
+        `Nothing undone: 1 file was changed since atticus catalog undo wrote it: ${pick!.path}. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again (or Undo on Set up › Activity › Catalog builds).`,
       );
       // atticus upgrade is no way out here: with files under catalog/sources it counts as done.
       expect(refused.err).not.toMatch(/atticus upgrade/);
@@ -376,7 +379,7 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
       const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
       expect(refused.code, refused.err).toBe(1);
       expect(refused.err).toBe(
-        "Nothing undone: 1 file was changed since atticus catalog undo wrote it: catalog/sources/build.json. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again (or Undo on Set up › Catalog builds).",
+        "Nothing undone: 1 file was changed since atticus catalog undo wrote it: catalog/sources/build.json. Put it back as atticus catalog undo left it (a file it removed: delete it), then run atticus catalog undo again (or Undo on Set up › Activity › Catalog builds).",
       );
       // Not the build's words for hand edits under catalog/generated: curate refuses here, and
       // discarding would replace the whole catalog with a build from no slots.
@@ -465,7 +468,7 @@ describe("catalog undo never overwrites a hand edit while build.json reads (revi
       const refused = await run(["catalog", "undo", "--root", root, "--yes", "--json"]);
       expect(refused.code, refused.err).toBe(1);
       expect(refused.err.split("\n")[0]).toBe(
-        `Nothing undone: 1 file was changed since ${copy.command} wrote it: ${slot!.path}. Put it back as ${copy.command} left it, then run atticus catalog undo again (or Undo on Set up › Catalog builds).`,
+        `Nothing undone: 1 file was changed since ${copy.command} wrote it: ${slot!.path}. Put it back as ${copy.command} left it, then run atticus catalog undo again (or Undo on Set up › Activity › Catalog builds).`,
       );
       const body = JSON.parse(refused.out) as Refused;
       expect(body.refused).toMatchObject({
@@ -509,7 +512,7 @@ describe("catalog undo never overwrites a hand edit while build.json reads (revi
       const kept = `.index/build-undo/${copy.n}/next-build.json`;
       const paths = ["catalog/sources/build.json", record!.path].sort();
       expect(refused.err.split("\n")[0]).toBe(
-        `Nothing undone: 2 files were changed since ${copy.command} wrote them: ${paths.join(", ")}. Put them back as ${copy.command} left them; the build.json it left is kept at ${kept}, then run atticus catalog undo again (or Undo on Set up › Catalog builds).`,
+        `Nothing undone: 2 files were changed since ${copy.command} wrote them: ${paths.join(", ")}. Put them back as ${copy.command} left them; the build.json it left is kept at ${kept}, then run atticus catalog undo again (or Undo on Set up › Activity › Catalog builds).`,
       );
       expect(refused.err.split("\n")[0]).not.toMatch(/--curate|--discard-edits|atticus upgrade/);
       const body = JSON.parse(refused.out) as Refused;
@@ -668,7 +671,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const curatedBefore = files(join(root, "catalog", "curated"));
       const curate = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
       expect(curate.code).toBe(1);
-      expect(curate.err).toMatch(/an added record can't be a curated decision/);
+      expect(curate.err).toMatch(/An added record can't be kept as your edit/);
       expect(curate.err).toMatch(/a fact in facts\/<repo>\.jsonl/);
       expect(files(join(root, "catalog", "curated"))).toEqual(curatedBefore);
       const build = await run(["catalog", "build", "--root", root]);
@@ -697,7 +700,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         stringify({ ...doc, auth: "mtls", evidence: [{ source: "manual", by: "pat" }] }),
       );
       const list = await run(["catalog", "edits", "--root", root]);
-      expect(list.out).toMatch(/changes evidence, which a curated decision can't set/);
+      expect(list.out).toMatch(/changes evidence, which a kept edit can't set/);
       expect(list.out).toMatch(/atticus catalog edits --curate --drop-fields 1/);
       const curatedBefore = files(join(root, "catalog", "curated"));
       const plain = await run(["catalog", "edits", "--curate", "--root", root, "--by", "pat"]);
@@ -731,7 +734,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
         "pat",
       ]);
       expect(ok.code, ok.err).toBe(0);
-      expect(ok.out).toMatch(/made curated without evidence/);
+      expect(ok.out).toMatch(/kept as your edit without evidence/);
       expect((await run(["catalog", "build", "--root", root])).code).toBe(0);
       const now = readFileSync(path, "utf8");
       expect(now).toMatch(/^auth: mtls$/m);

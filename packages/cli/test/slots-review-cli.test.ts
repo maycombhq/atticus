@@ -397,7 +397,7 @@ describe("a second catalog edits --curate of a record is its own decision (the r
       await writeFile(path, original.replace("target: ledger-api\n", ""));
       const only = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
       expect(only.code).toBe(1);
-      expect(only.all()).toMatch(/it only removes target, which a curated decision can't remove/);
+      expect(only.all()).toMatch(/it only removes target, which a kept edit can't remove/);
       expect(only.all()).not.toMatch(/says the same as the build's/);
       expect(files(join(root, ...DECISIONS))).toEqual(decisionsBefore);
       // A deletion with a change: listed, and made curated only with --drop-fields <count>.
@@ -406,7 +406,7 @@ describe("a second catalog edits --curate of a record is its own decision (the r
         original.replace("target: ledger-api\n", "").replace("5000ms", "7000ms"),
       );
       const list = await atticus(root, "catalog", "edits");
-      expect(list.all()).toMatch(/removes target, which a curated decision can't remove/);
+      expect(list.all()).toMatch(/removes target, which a kept edit can't remove/);
       expect(list.all()).toMatch(/atticus catalog edits --curate --drop-fields 1/);
       const plain = await atticus(root, "catalog", "edits", "--curate", "--by", "pat");
       expect(plain.code).toBe(1);
@@ -424,7 +424,7 @@ describe("a second catalog edits --curate of a record is its own decision (the r
         "pat",
       );
       expect(ok.code, ok.all()).toBe(0);
-      expect(ok.all()).toMatch(/made curated without target/);
+      expect(ok.all()).toMatch(/kept as your edit without target/);
       const b = await atticus(root, "catalog", "build");
       expect(b.code, b.all()).toBe(0);
       const built = await readFile(path, "utf8");

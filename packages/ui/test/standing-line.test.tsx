@@ -42,7 +42,7 @@ describe("Home's line: where the metarepo stands", () => {
       }),
     });
     expect(h).toContain("Do: atticus upgrade");
-    expect(h).toContain(`href="${UPGRADE_HREF}"`);
+    expect(h).toContain(`href="${UPGRADE_HREF.replace(/&/g, "&amp;")}"`);
     expect(h).toContain(">Upgrade the metarepo</a>");
     expect(h).not.toContain("<button");
   });

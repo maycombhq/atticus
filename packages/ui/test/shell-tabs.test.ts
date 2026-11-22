@@ -58,8 +58,8 @@ describe("a tab per page", () => {
 
   it("names a tab by its page, a change's by the change", () => {
     expect(tabLabel({ key: "canvas", hash: "#/canvas", used: 1 })).toEqual({
-      label: "Estate canvas",
-      title: "Estate canvas",
+      label: "Map",
+      title: "Map",
     });
     expect(
       tabLabel({
@@ -119,13 +119,14 @@ describe("a tab per page", () => {
   it("caps the open tabs, closing the least recently used one, never Home or the one shown", () => {
     let s = initialTabs();
     const pages = ["canvas", "flows", "contracts", "impact", "trust", "decisions", "questions"];
-    const more = ["knowledge", "wikis", "documents", "wiki-search", "repos", "ai", "runs"];
+    // v30 slice 8: Model runs is Activity's first tab.
+    const more = ["knowledge", "wikis", "documents", "wiki-search", "repos", "ai", "activity"];
     for (const p of [...pages, ...more]) s = openTab(s, `#/${p}`);
     expect(s.tabs).toHaveLength(MAX_TABS);
     expect(s.tabs[0]!.key).toBe(HOME_KEY);
     // The three used longest ago went: canvas, flows and contracts.
     for (const gone of ["canvas", "flows", "contracts"]) expect(keys(s)).not.toContain(gone);
-    expect(s.active).toBe("runs");
+    expect(s.active).toBe("activity");
     // Using impact again keeps it past the next page; trust goes instead.
     s = openTab(s, "#/impact");
     s = openTab(s, "#/orgpack");
