@@ -3552,9 +3552,19 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     }
     // In a coding assistant's terminal with no --by, the assistant is acting, not the Git user
     // (ADR 0115 addendum, 2026-10-25): on a blocking or risk finding that is a proposal.
-    const session = given
-      ? undefined
-      : (await import("./assistant-session.js")).assistantSession(process.env);
+    const assistant = (await import("./assistant-session.js")).assistantSession(process.env);
+    // The owner's decision of 2026-11-22 (ADR 0115 and ADR 0203, addenda of that day): accepting
+    // a stage's finding or waiving a critic's is a person's, and --by names who is recorded, never
+    // whose terminal this is. In an assistant's terminal it is refused even with --by, as the app
+    // refuses an Accept where it would record an assistant. With no --by the assistant is
+    // recorded, as before, and what it may do is decided there.
+    if (assistant && given && action === "waive") {
+      io.err(
+        `Accept or waive it in a terminal of your own, or in the app: this terminal is a coding assistant's (${assistant.because}), and only a person accepts or waives a finding. --by names who is recorded; it doesn't make this terminal a person's. Nothing was written.`,
+      );
+      return 1;
+    }
+    const session = given ? undefined : assistant;
     if (session) io.err(`Recorded as ${session.by}: ${session.because}.`);
     return findingAction(
       root,

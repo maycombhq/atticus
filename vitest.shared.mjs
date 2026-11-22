@@ -8,6 +8,15 @@ export default {
   test: {
     globalSetup: ["../../scripts/vitest-temp.mjs"],
     maxWorkers: "50%",
-    env: { ATTICUS_EMBEDDINGS: "off" },
+    // The tests run as in a person's own terminal, whatever runs them: a coding assistant's marks
+    // (which make Atticus record the assistant, and refuse what only a person does) are emptied,
+    // and a test of an assistant's terminal sets its own.
+    env: {
+      ATTICUS_EMBEDDINGS: "off",
+      ATTICUS_ASSISTANT: "",
+      CLAUDECODE: "",
+      GEMINI_CLI: "",
+      CURSOR_AGENT: "",
+    },
   },
 };
