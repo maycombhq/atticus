@@ -459,7 +459,7 @@ describe("atticus mcp (ADR 0104)", () => {
       const other = await call("changes", {}, async () => ({ code: 1, out: "[]", err: "" }));
       expect(other.result.isError).toBe(true);
       expect(MCP_TOOLS.find((t) => t.name === "conflicts")!.description).toBe(
-        "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, only the pairs that overlap on it. It lists overlaps between open changes, not every change that touches the id; changes lists them all (atticus change conflicts).",
+        "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, the pairs that overlap on it, then each open change whose tasks.md or target flows name it, with the file, line and heading or task (so a change not open yet still sees who has work there). changes, then show <change id>, gives every change's repos (atticus change conflicts).",
       );
     });
 

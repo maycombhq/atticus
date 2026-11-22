@@ -319,8 +319,28 @@ describe("conflicts, show and the lists", () => {
           },
         },
       ]);
-      expect(await json("conflicts", { id: API })).toEqual(pairs);
-      expect(await json("conflicts", { id: WEB })).toEqual([]);
+      // The persona check of beta.30: with an id, the pairs, then each open change whose
+      // tasks.md names it, with its heading and tasks.
+      expect(await json("conflicts", { id: API })).toEqual([
+        ...pairs,
+        {
+          change: PORTAL,
+          touches: API,
+          where: [{ file: "tasks.md", line: 3, heading: API, tasks: ["t1"], text: `## ${API}` }],
+        },
+        {
+          change: RATES,
+          touches: API,
+          where: [{ file: "tasks.md", line: 3, heading: API, tasks: ["t1"], text: `## ${API}` }],
+        },
+      ]);
+      expect(await json("conflicts", { id: WEB })).toEqual([
+        {
+          change: PORTAL,
+          touches: WEB,
+          where: [{ file: "tasks.md", line: 7, heading: WEB, tasks: ["t2"], text: `## ${WEB}` }],
+        },
+      ]);
       const said = await run(["change", "conflicts"]);
       expect(said.code).toBe(1);
       expect(said.out).toBe(`${PORTAL} and ${RATES} both touch records ${API}; repos ${API}`);

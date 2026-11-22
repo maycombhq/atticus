@@ -33,3 +33,4 @@ export * from "./outside.js";
 export * from "./merge-record.js";
 export * from "./owners.js";
 export * from "./edit-hash.js";
+export * from "./touching.js";

@@ -38,6 +38,8 @@ import {
   parseRequirements,
   unadoptedChanges,
   detectConflicts,
+  changesTouching,
+  touchPlaceLine,
   handoff,
   loadChangeContext,
   newChange,
@@ -1293,8 +1295,9 @@ const bracketed = (cites: readonly string[] | undefined): string => {
 
 /**
  * atticus change conflicts [--touching <id>]: open changes touching the same records or repos;
- * with an id, only the overlaps that id is in (ADR 0201; an id the map lacks is fine: two changes
- * may plan the same repo). Exit 1 when any overlap.
+ * with an id, the overlaps that id is in, then each open change whose tasks.md or target flows
+ * name it, with where (ADR 0201, addendum 2026-11-22; an id the map lacks is fine: two changes
+ * may plan the same repo). Exit 1 when any overlap; a change that only names the id is none.
  */
 export async function changeConflicts(
   root: string,
@@ -1312,19 +1315,27 @@ export async function changeConflicts(
   const pairs = o.touching
     ? all.filter((p) => Object.values(p.overlap).some((v) => v.includes(o.touching!)))
     : all;
+  // The persona check of beta.30: while a change is being written it isn't open, so no pair has
+  // it; with an id, each open change whose tasks.md or target flows name it is listed too, after
+  // the pairs. Only a pair is an overlap (exit 1).
+  const touches = o.touching ? await changesTouching(root, o.touching) : [];
   if (o.json) {
-    io.out(JSON.stringify(pairs, null, 2));
+    io.out(JSON.stringify([...pairs, ...touches], null, 2));
     return pairs.length ? 1 : 0;
   }
-  if (pairs.length === 0) {
+  if (pairs.length === 0)
     io.out(o.touching ? `No open changes both touch ${o.touching}.` : "No open changes overlap.");
-    return 0;
-  }
   for (const p of pairs) {
     const parts = Object.entries(p.overlap)
       .filter(([, v]) => v.length > 0)
       .map(([k, v]) => `${k} ${v.join(", ")}`);
     io.out(`${p.changes[0]} and ${p.changes[1]} both touch ${parts.join("; ")}`);
   }
-  return 1;
+  if (touches.length) {
+    io.out(
+      `Open changes whose tasks or flows name ${o.touching} (changes, then show <change id>, lists every change's repos):`,
+    );
+    for (const t of touches) io.out(`- ${t.change}: ${t.where.map(touchPlaceLine).join("; ")}`);
+  }
+  return pairs.length ? 1 : 0;
 }
