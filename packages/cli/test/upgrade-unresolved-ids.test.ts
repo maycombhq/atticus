@@ -133,6 +133,21 @@ async function citePayments(root: string): Promise<void> {
   m.files.find((f) => f.path === rel)!.sha256 = sha256Of(text);
   await writeFile(manifest, JSON.stringify(m, null, 2) + "\n");
 }
+/** A call of fact id c-1 in forge-notify too, after the last build (its facts read again). */
+async function addNotifyC1(root: string): Promise<void> {
+  const dir = join(root, "catalog", "sources", "facts");
+  const pay = (await readFile(join(dir, "forge-payments.jsonl"), "utf8"))
+    .split("\n")
+    .find((l) => l.includes('"id":"c-1"'))!;
+  const line = pay.replaceAll("forge-payments", "forge-notify").replace('"line":4', '"line":40');
+  const file = join(dir, "forge-notify.jsonl");
+  const text = (await readFile(file, "utf8")).replace(/\n?$/, "\n") + line + "\n";
+  await writeFile(file, text);
+  const meta = join(dir, "forge-notify.meta.json");
+  const m = JSON.parse(await readFile(meta, "utf8")) as { factsHash: string };
+  m.factsHash = sha256Of(text);
+  await writeFile(meta, JSON.stringify(m, null, 2) + "\n");
+}
 /** The undo copies taken away (a machine that pruned them), the latest build's report kept. */
 async function dropUndoCopies(root: string): Promise<void> {
   const dir = await undoDirOf(root);
@@ -610,6 +625,16 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       const built = unresolvedIds(await generated(root));
       expect(built).toContain("unresolved.forge-ledger.c-1");
       expect(built).not.toContain("unresolved.forge-payments.c-1");
+      // A second build no longer has the old record, and doesn't guess: the catalog the first
+      // one wrote shows which loose end the change took off (forge-ledger's is there, not
+      // forge-payments'), so it keeps that one off. Nothing changes.
+      const genFirst = await generated(root);
+      const b2 = quiet();
+      expect(await main(["catalog", "build", "--root", root], b2.io), b2.err.join("\n")).toBe(0);
+      expect(await generated(root)).toEqual(genFirst);
+      expect(b2.out.join("\n")).toContain(
+        "Your change dec-suppress-c1 still names unresolved.c-1: run atticus upgrade to carry it (this build applies it to unresolved.forge-payments.c-1).",
+      );
       expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
       expect((await yamlOf(root, DEC("dec-suppress-c1"))).target).toBe(
         "unresolved.forge-payments.c-1",
@@ -621,6 +646,43 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await files(join(root, "catalog", "curated"))).toEqual(
         await files(join(direct, "catalog", "curated")),
       );
+    },
+    T,
+  );
+
+  it(
+    "refuses a build that would have to guess which repo's loose end a change took off, until the upgrade",
+    async () => {
+      const root = await metarepo();
+      await citePayments(root);
+      await writeFile(
+        join(root, ...DEC("dec-suppress-c1").split("/")),
+        decision("dec-suppress-c1", "unresolved.c-1", "the rates call is known"),
+      );
+      expect(await main(["catalog", "build", "--root", root], quiet().io)).toBe(0);
+      // A third repo's call of c-1 since: the catalog on disk can't tell which of forge-notify's
+      // and forge-payments' loose ends the change took off; this machine's copy of the first
+      // build knows (forge-payments'), and the first by id would be forge-ledger's.
+      await addNotifyC1(root);
+      const before = await tree(root);
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", root], b.io)).toBe(1);
+      const said = [...b.out, ...b.err].join("\n");
+      expect(said).toContain(
+        "Run atticus upgrade first: your change dec-suppress-c1 names unresolved.c-1, a loose end three repos now have; the upgrade knows which one you saw.",
+      );
+      expect(await tree(root)).toEqual(before);
+      // The upgrade carries it to the repo the old record cited; then the build goes through.
+      expect(await upgradeCommand(root, { by: "pat" }, quiet().io, B30)).toBe(0);
+      expect((await yamlOf(root, DEC("dec-suppress-c1"))).target).toBe(
+        "unresolved.forge-payments.c-1",
+      );
+      const a = quiet();
+      expect(await main(["catalog", "build", "--root", root], a.io), a.err.join("\n")).toBe(0);
+      const ids = unresolvedIds(await generated(root));
+      expect(ids).toContain("unresolved.forge-ledger.c-1");
+      expect(ids).toContain("unresolved.forge-notify.c-1");
+      expect(ids).not.toContain("unresolved.forge-payments.c-1");
     },
     T,
   );

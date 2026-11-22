@@ -205,24 +205,6 @@ interface Plan {
   refused?: string;
 }
 
-/**
- * The loose ends an earlier build wrote under an old id, from the undo copies of the builds since
- * (a beta.30 build that ran before the upgrade renamed them; its copy keeps the files as they
- * were): each old id with the repos its record cited, the newest copy first.
- */
-async function oldRecordsInUndo(root: string): Promise<CatalogRecord[]> {
-  const { listUndo, undoDirOf } = await import("@maycombhq/scanner");
-  const dir = await undoDirOf(root);
-  const out: CatalogRecord[] = [];
-  for (const u of await listUndo(dir))
-    for (const f of u.files)
-      if (f.before === "file" && /(^|\/)generated\/unresolved\/[^/]+\.ya?ml$/.test(f.path)) {
-        const r = recordOf(await readText(join(dir, String(u.n), "files", ...f.path.split("/"))));
-        if (r && isOld(r)) out.push(r);
-      }
-  return out;
-}
-
 /** Whether a scalar may name a loose end by an id of the old form (no build to tell by). */
 function mayBeOld(v: string, now: ReadonlySet<string>, repoParts: ReadonlySet<string>): boolean {
   const id = idOfValue(v);
@@ -271,23 +253,45 @@ async function planOf(root: string): Promise<Plan | undefined> {
     const repo = r.evidence.find((e) => e.repo && factIdPart(e.repo) === repoPartOf(r.id))?.repo;
     if (repo) candidates.set(o, [...(candidates.get(o) ?? []), { id: r.id, repo }]);
   }
-  // The repos the old catalog's record of each old id cited: on disk, else in an undo copy.
+  // The repos the old catalog's record of each old id cited: on disk, else what this machine
+  // knows (an undo copy of the build that renamed it, else that build's report).
   const cited = new Map<string, string[]>();
-  for (const r of [...renamedGen.map((g) => g.r), ...(await oldRecordsInUndo(root))])
-    if (!cited.has(r.id))
-      cited.set(r.id, [...new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort());
-  // With the undo copies gone, the latest build's report: a beta.30 build that renamed them
-  // listed each as `renamed Unresolved/<id>`, with the repos its old record cited.
-  for (const x of (await scanner.readBuildReport(root))?.removed ?? [])
-    if (x.kind === "Unresolved" && !cited.has(x.id) && scanner.renamedIdsOf(x.explainedBy[0] ?? ""))
-      cited.set(x.id, [...x.repos].sort());
+  for (const g of renamedGen)
+    if (!cited.has(g.r.id))
+      cited.set(g.r.id, [...new Set(g.r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort());
+  for (const [id, repos] of await scanner.oldLooseEndsKnownHere(
+    root,
+    await scanner.undoDirOf(root),
+  ))
+    if (!cited.has(id)) cited.set(id, repos);
+  // With neither, the catalog a build of this Atticus wrote (committed): the one loose end of the
+  // fact id a suppress of the old id left out of it, as that build applied it (`carriedTargets`).
+  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
+  const suppressed = new Set(
+    curatedNow.records.flatMap((d) =>
+      d.kind === "CuratedDecision" && d.status === "current" && d.action === "suppress"
+        ? [d.target]
+        : [],
+    ),
+  );
+  const shown = await scanner.oldLooseEndsShown(
+    root,
+    [...candidates.keys()].filter((o) => !cited.has(o) && suppressed.has(o)),
+  );
   const map = new Map<string, string>();
   for (const [o, cs] of candidates) {
     const sorted = [...cs].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
     const was = cited.get(o);
-    // The repo the old record cited; with none on record, the one beta.28.5's merge cited (the
-    // first by id). A record that cited a repo that no longer has the call carries to none.
-    const to = was ? sorted.find((c) => was.includes(c.repo)) : sorted[0];
+    const seen = shown[o] ?? [];
+    const left = seen.length ? sorted.filter((c) => !seen.includes(c.id)) : [];
+    // The repo the old record cited; else the one a build left out; else the one beta.28.5's
+    // merge cited (the first by id). A record that cited a repo that no longer has the call
+    // carries to none.
+    const to = was
+      ? sorted.find((c) => was.includes(c.repo))
+      : left.length === 1
+        ? left[0]
+        : sorted[0];
     if (to) map.set(o, to.id);
   }
 
@@ -308,7 +312,6 @@ async function planOf(root: string): Promise<Plan | undefined> {
     if (next !== undefined) carried.set(path, next);
   }
   const curatedNext: CatalogRecord[] = [];
-  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
   for (const r of curatedNow.records) {
     const from = join(curatedDir, ...recordPath(r).split("/"));
     const next = carried.has(from) ? recordOf(carried.get(from)) : undefined;

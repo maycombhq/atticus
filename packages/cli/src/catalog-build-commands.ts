@@ -45,6 +45,7 @@ import {
   UNRESOLVED_IDS_COMMAND,
   unresolvedIdsUndoneWords,
   undoneFiles,
+  UPGRADE_FIRST,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -137,6 +138,9 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   // Beta.28.2 (ADR 0197): its own words, never the upgrade's.
   if (r.reasons.includes("newer-atticus"))
     return r.message.split("\n").slice(1).join(" ") || r.message;
+  // ADR 0124 addendum E-ids (2026-11-21): a change of an old loose end's id the build won't guess.
+  const first = r.message.split("\n").filter((l) => l.startsWith(UPGRADE_FIRST));
+  if (first.length) return first.join(" ");
   if (r.reasons.includes("not-upgraded"))
     return "This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).";
   // ADR 0197 review: build.json doesn't read; building again is the only way on, never curate.

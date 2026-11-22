@@ -34,12 +34,36 @@ const targetOf = (r: { decisions: CatalogRecord[] }, id: string) =>
   (r.decisions.find((d) => d.id === id) as { target: string }).target;
 
 describe("a change of an old loose end's id applies to the one the build renamed", () => {
-  it("to the repo the old record cited, else the first by id; never onto a named id", () => {
+  it("to the repo the old record cited, else the one the last catalog left out, else the first by id; never onto a named id", () => {
     const first = carriedTargets(records, [suppress("d1", "unresolved.c-1")], {});
     expect(targetOf(first, "d1")).toBe("unresolved.forge-ledger.c-1");
     expect(first.carried).toEqual([
-      { decision: "d1", from: "unresolved.c-1", to: "unresolved.forge-ledger.c-1" },
+      {
+        decision: "d1",
+        from: "unresolved.c-1",
+        to: "unresolved.forge-ledger.c-1",
+        toRepo: "forge-ledger",
+        by: "first",
+        repos: ["forge-ledger", "forge-payments"],
+      },
     ]);
+    // With no old record: the one a suppress left out of the catalog the last build wrote.
+    const shown = carriedTargets(
+      records,
+      [suppress("d1", "unresolved.c-1")],
+      {},
+      { "unresolved.c-1": ["unresolved.forge-ledger.c-1"] },
+    );
+    expect(targetOf(shown, "d1")).toBe("unresolved.forge-payments.c-1");
+    expect(shown.carried[0]?.by).toBe("shown");
+    // The last catalog showing both (or neither) tells nothing: the first by id.
+    const both = carriedTargets(
+      records,
+      [suppress("d1", "unresolved.c-1")],
+      {},
+      { "unresolved.c-1": ["unresolved.forge-ledger.c-1", "unresolved.forge-payments.c-1"] },
+    );
+    expect(both.carried[0]?.by).toBe("first");
     const cited = carriedTargets(records, [suppress("d1", "unresolved.c-1")], {
       "unresolved.c-1": ["forge-payments"],
     });

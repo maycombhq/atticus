@@ -1290,8 +1290,12 @@ export const COPY = {
         `${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build.`,
       "unexplained-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
+      // ADR 0124 addendum E-ids (2026-11-21): with no record file to count, it is one of your
+      // changes naming a loose end by its id from before beta.30 that the build won't guess.
       "not-upgraded": (n: number) =>
-        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`,
+        n > 0
+          ? `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`
+          : "One of your changes names a loose end by its id from before beta.30, which more than one repo now has: run atticus upgrade (or Upgrade on Set up › Activity › Catalog builds), which knows which one you saw. The upgrade lists every file it writes first.",
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
