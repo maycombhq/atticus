@@ -1,0 +1,106 @@
+schemaVersion: 5
+kind: Capability
+id: feature.statement-payments
+status: current
+confidence: inferred
+entryPoints:
+  - forge-ledger.get-ledger-0
+  - forge-ledger.post-ledger-1
+  - forge-ledger.put-ledger-2
+  - forge-notify.get-notify-0
+  - forge-notify.post-notify-1
+  - forge-notify.put-notify-2
+  - forge-payments.get-payments-0
+  - forge-payments.post-payments-1
+  - forge-payments.put-payments-2
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+externalRefs: []
+name: Statement payments
+namedBy: detected
+records:
+  - forge-ledger
+  - forge-ledger.get-ledger-0
+  - forge-ledger.post-ledger-1
+  - forge-ledger.put-ledger-2
+  - forge-notify
+  - forge-notify.get-notify-0
+  - forge-notify.post-notify-1
+  - forge-notify.put-notify-2
+  - forge-payments
+  - forge-payments.get-payments-0
+  - forge-payments.post-payments-1
+  - forge-payments.put-payments-2
+  - if-0029a51496a8a2a2
+  - if-59452b9e2f224ace
+  - if-68c46e0e20f1ab34
+  - if-6ee4f6ac4f5546c2
+  - if-7a03a88fe4c10d77
+  - if-9a84bf4949e7275d
+  - if-a50462d66b7e1957
+  - if-c0d5c0713cf14dc4
+  - if-c9d01ccff75951ba
+  - if-e1d90046be65fc53
+tags: []

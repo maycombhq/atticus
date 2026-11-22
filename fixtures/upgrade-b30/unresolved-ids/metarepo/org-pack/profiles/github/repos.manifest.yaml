@@ -1,0 +1,21 @@
+schemaVersion: 3
+platform: github
+repos:
+  - id: forge-ledger
+    url: https://git.example.test/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-ledger
+    hosts: [forge-ledger.forge.example]
+  - id: forge-notify
+    url: https://git.example.test/forge/forge-notify.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-notify
+    hosts: [forge-notify.forge.example]
+  - id: forge-payments
+    url: https://git.example.test/forge/forge-payments.git
+    type: spring-boot
+    owner: team-forge
+    system: forge-payments
+    hosts: [forge-payments.forge.example]

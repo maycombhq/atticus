@@ -9,6 +9,7 @@ import {
   callTargetQuestion,
   declaredCallsOf,
   factIdPart,
+  unresolvedIdOf,
   joinCallers,
   joinFacts,
   joinTerms,
@@ -1233,7 +1234,8 @@ export function factsRecords(input: {
       extra.push({
         kind: "Unresolved",
         schemaVersion: 2,
-        id: `unresolved.${id}`,
+        // ADR 0124 addendum E-ids: the repo in the id, as a call's loose end has it.
+        id: unresolvedIdOf(f.repo, id),
         status: "current",
         confidence: ep.confidence,
         unresolvedKind: "event-subscribe",

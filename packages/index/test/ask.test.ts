@@ -166,7 +166,7 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     expect(translate("who calls forge-ledger?", look).query).toBe("kind:interface to:ledger-api");
   });
 
-  it("asks of every component of a repo of two for its calls, and walks or owns neither", () => {
+  it("asks of every component of a repo of two for its calls", () => {
     const look = askLookup(
       fieldIndex({ components: { "forge-portal": ["portal-web", "portal-bff"] } }),
     );
@@ -182,8 +182,74 @@ describe("Ask: plain questions become catalog queries, and the query is always s
     expect(translate("what does forge-portal call?", look).query).toBe(
       "kind:interface from:portal-bff,portal-web",
     );
-    expect(translate("what breaks if forge-portal changes", look).action).not.toBe("impact");
-    expect(translate("who owns forge-portal", look).action).not.toBe("owner");
+  });
+
+  // The review of b30/unresolved-ids: a question that walks, owns or receives a repo of two
+  // components never falls through to a search of one of them: it says the repo has two, walks
+  // (or owns) the first, and names the other.
+  it("says a repo has two components when a question walks, owns or receives one, and names the other", () => {
+    const look = askLookup(
+      fieldIndex({ components: { "forge-portal": ["portal-web", "portal-bff"] } }),
+    );
+    expect(translate("what breaks if forge-portal changes", look)).toEqual({
+      action: "impact",
+      id: "portal-bff",
+      query: "impact portal-bff",
+      explanation:
+        "Read as: what a change to forge-portal reaches, hop by hop, with owners. forge-portal has 2 components (portal-bff, portal-web): the query walks portal-bff; impact portal-web walks the other.",
+    });
+    expect(translate("who owns forge-portal", look)).toEqual({
+      action: "owner",
+      id: "portal-bff",
+      query: "portal-bff",
+      explanation:
+        "Read as: the owner recorded for forge-portal. forge-portal has 2 components (portal-bff, portal-web): the query asks of portal-bff; who owns portal-web asks of the other.",
+    });
+    expect(translate("who receives forge-portal?", look)).toEqual({
+      action: "impact",
+      id: "portal-bff",
+      also: ["portal-web"],
+      named: "forge-portal",
+      query: "impact portal-bff",
+      explanation:
+        "Read as: who receives what forge-portal sends, at each of its 2 components (portal-bff, portal-web): the receivers first, then what a change reaches past them. The query walks the first; impact portal-web walks the other.",
+      receivers: true,
+    });
+  });
+
+  it("names every Endpoint of a topic its publishers are asked of", () => {
+    const look = askLookup(
+      fieldIndex({
+        topics: {
+          "forge.items.settled": ["svc-03.on-forge-items-settled", "svc-00.on-forge-items-settled"],
+        },
+      }),
+    );
+    expect(translate("who publishes to the topic forge.items.settled?", look).explanation).toBe(
+      'Read as: the interfaces that publish to forge.items.settled, at each of its 2 Endpoints (svc-00.on-forge-items-settled, svc-03.on-forge-items-settled); each one\'s "from" is the publisher.',
+    );
+  });
+
+  it("walks the topic, not the like-named component, for what the topic X reaches", () => {
+    const look = askLookup(
+      fieldIndex({
+        components: { "forge.events": ["forge-events"] },
+        topics: { "forge.events": ["forge-audit.on-forge-events"] },
+      }),
+    );
+    expect(translate("what does the topic forge.events reach?", look)).toMatchObject({
+      action: "impact",
+      id: "forge-audit.on-forge-events",
+    });
+    expect(translate("what breaks if the topic forge.events changes", look)).toMatchObject({
+      action: "impact",
+      id: "forge-audit.on-forge-events",
+    });
+    // Without the word topic, the repo's component, as before.
+    expect(translate("what does forge.events reach?", look)).toMatchObject({
+      action: "impact",
+      id: "forge-events",
+    });
   });
 
   it("a repo id that is also a topic's name: the topic for who receives or publishes, the repo otherwise", () => {

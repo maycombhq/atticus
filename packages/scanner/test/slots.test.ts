@@ -416,7 +416,10 @@ describe("build.json lists each source once (ADR 0197)", () => {
     const p = parseBuildManifest(v1);
     expect(p.ok, p.ok ? "" : JSON.stringify(p.issues)).toBe(true);
     if (!p.ok) return;
-    expect(serializeBuildManifest(p.slot)).toBe(readV2());
+    // The same build, but the build's own version: beta.28.1 wrote v1, and the v2 golden is what
+    // today's build writes (2.0.0-beta.30, ADR 0124 addendum E-ids), the same files and sources.
+    const same = (t: string) => t.replace(/"buildVersion": "[^"]*"/, '"buildVersion": "*"');
+    expect(same(serializeBuildManifest(p.slot))).toBe(same(readV2()));
     expect(serializeBuildManifestV1(manifestToV1(p.slot))).toBe(v1);
     // A Windows checkout's CRLF reads the same.
     const crlf = parseBuildManifest(readV2().replace(/\n/g, "\r\n"));

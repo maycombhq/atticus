@@ -117,7 +117,10 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
     // answer a call leave it loose too, and say so.
     const loose = records.filter((r) => r.kind === "Unresolved").map((r) => r.id);
     expect(loose).toEqual(
-      expect.arrayContaining(["unresolved.c-risk-score", "unresolved.c-get-account"]),
+      expect.arrayContaining([
+        "unresolved.forge-customers.c-risk-score",
+        "unresolved.forge-web.c-get-account",
+      ]),
     );
   });
 
@@ -186,7 +189,7 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
       estate: [],
     });
     const stale = first.flows.find((f) => f.name === "Create a customer")!;
-    expect(stale.steps[3]!.to?.component).toBe("unresolved.c-open-account");
+    expect(stale.steps[3]!.to?.component).toBe("unresolved.forge-customers.c-open-account");
     // forge-ledger is read later; its write joins the call into it again.
     const second = catalogWithFacts({
       repo: "forge-ledger",

@@ -56,6 +56,13 @@ import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
 import { recordUpgraded } from "./propose.js";
 import { refusalEnds } from "./standing.js";
 import { installCommand, VERSION } from "./version.js";
+import {
+  legacyLooseEndsWords,
+  UNRESOLVED_IDS_STEP,
+  unresolvedIdsApply,
+  UnresolvedIdsRefused,
+  unresolvedIdsPending,
+} from "./upgrade-unresolved-ids.js";
 
 /**
  * `atticus upgrade` (ADR 0051): bring a metarepo's files up to what this Atticus writes, after
@@ -72,7 +79,23 @@ export interface Migration {
   summary: string;
   /** Files (relative to the root, "/"-separated) it would change; none means nothing to do. */
   pending(root: string): Promise<string[]>;
-  apply(root: string): Promise<string[]>;
+  /**
+   * `o.allowRemovals`: a step that builds the catalog (ADR 0195 point 4: any command that builds
+   * takes `--allow-removals <count>`) confirms the removals its refusal listed.
+   */
+  apply(
+    root: string,
+    o?: {
+      allowRemovals?: number;
+      /** The files the upgrade listed and backed up for the step: it writes no other. */
+      listed?: readonly string[];
+      /**
+       * The app's confirm (API 3.19.0): the plan of the removals its refusal listed, worked out
+       * again under the lock; another list writes nothing, as POST /api/build's confirm.
+       */
+      plan?: string;
+    },
+  ): Promise<string[]>;
   /**
    * Round 49: the step can list a file that isn't there yet (it makes it), so a backup finds
    * nothing to keep. For any other step, a listed file that isn't there stops the upgrade.
@@ -431,6 +454,17 @@ export const MIGRATIONS: Migration[] = [
       "Corrections lines at version 2 where they use its fields: an AI pairing, a batch, a rule, an unlink (ADR 0181); the number only",
     pending: (root) => migrateCorrections(root, { dryRun: true }),
     apply: (root) => migrateCorrections(root),
+  },
+  {
+    // ADR 0124 addendum E-ids (the owner, 2026-11-19): last, so it builds once every other step
+    // has written. One build, through the guards, in the build's one write (undo takes it back).
+    id: UNRESOLVED_IDS_STEP,
+    // It may write a file that isn't there yet (a knowledge gap's owner question, re-keyed).
+    creates: true,
+    summary:
+      "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; your changes, change folders, questions, spec flows and dismissals that cite one carried to the new id (ADR 0124 addendum E-ids)",
+    pending: (root) => unresolvedIdsPending(root),
+    apply: (root, o) => unresolvedIdsApply(root, o),
   },
 ];
 
@@ -862,6 +896,17 @@ export async function newerCatalogOf(
     : undefined;
 }
 
+/**
+ * A step whose build its guards refused (`atticus upgrade` exits 1): its words, and where the only
+ * reason is removals over the limits, the count and the plan that confirm exactly them
+ * (`--allow-removals <count>`; the app sends both back to POST /api/upgrade).
+ */
+export interface UpgradeStepRefusal {
+  step: string;
+  message: string;
+  confirm?: { allowRemovals: number; plan: string };
+}
+
 /** atticus upgrade [--check] [--dry-run] [--openspec-store] [--by you] [--json]; the person defaults to the Git user. */
 export async function upgradeCommand(
   root: string,
@@ -877,6 +922,12 @@ export async function upgradeCommand(
     yes?: boolean;
     /** With --yes: accept the first build's changes, naming their count (`--accept-changes`). */
     acceptChanges?: number;
+    /** ADR 0195 point 4: the count of the removals a step's build listed, confirmed. */
+    allowRemovals?: number;
+    /** With allowRemovals, the app's: the plan of the list it confirms (`UpgradeStepRefusal`). */
+    plan?: string;
+    /** Told a step's refused build (the app's job result: what a person may confirm). */
+    onRefused?: (r: UpgradeStepRefusal) => void;
   },
   io: Output,
   version = VERSION,
@@ -901,6 +952,8 @@ export async function upgradeCommand(
   let slots = await planUpgradeToSlots(root);
   // CS3: every file --yes writes, with its hash, the same list the app's upgrade screen shows.
   let view = await upgradeSlotsView(root, slots);
+  // ADR 0124 addendum E-ids: what the adoption leaves of the loose ends' ids for that step.
+  const legacyIds = slots.pending ? await legacyLooseEndsWords(root) : undefined;
   const slotsJson = () => (slots.pending ? { slots: view } : {});
   const slotsLines = (): string[] => [
     `Move the catalog into stored reads (ADR 0195): ${slots.records} records, nothing lost:`,
@@ -917,6 +970,7 @@ export async function upgradeCommand(
           `  Accept exactly these with: atticus upgrade --yes --accept-changes ${slots.differs.length}`,
         ]
       : ["  The first build changes nothing: catalog/generated stays byte for byte."]),
+    ...(legacyIds ? [`  ${legacyIds}`] : []),
     ...slots.verifiable.map(
       (r) =>
         `  ${r}: its facts passed verify as they are; atticus verify ${r} --write puts them on the map.`,
@@ -1014,8 +1068,31 @@ export async function upgradeCommand(
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       try {
-        changed.push(...(await m.apply(root)));
+        changed.push(
+          ...(await m.apply(root, {
+            ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+            ...(o.plan !== undefined ? { plan: o.plan } : {}),
+            listed: p.files,
+          })),
+        );
       } catch (e) {
+        // A step's build its guards refused wrote nothing: said, with how to go on, no stack.
+        if (e instanceof UnresolvedIdsRefused) {
+          const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
+          await keep().catch(() => undefined);
+          io.err(e.message);
+          io.err(
+            `The files as they were before this upgrade are in ${relative(root, backup).split(sep).join("/")}${done.length ? `; these steps had already run: ${done.join(", ")}` : ""}.`,
+          );
+          const refused: UpgradeStepRefusal = {
+            step: p.id,
+            message: e.message,
+            ...(e.confirm ? { confirm: e.confirm } : {}),
+          };
+          o.onRefused?.(refused);
+          if (o.json) io.out(JSON.stringify({ refused }, null, 2));
+          return 1;
+        }
         // Said with where the files as they were are kept, and which steps already ran.
         const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
         await keep().catch(() => undefined);

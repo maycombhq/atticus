@@ -632,7 +632,7 @@ writers:
 ---
 schemaVersion: 5
 kind: Unresolved
-id: unresolved.c-notify
+id: unresolved.forge-ledger.c-notify
 status: current
 confidence: inferred
 evidence:
@@ -649,7 +649,7 @@ unresolvedKind: http-call
 ---
 schemaVersion: 5
 kind: Unresolved
-id: unresolved.ledger-api.on-forge-payments-settled
+id: unresolved.forge-ledger.ledger-api.on-forge-payments-settled
 status: current
 confidence: verified
 evidence:

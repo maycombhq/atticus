@@ -12582,10 +12582,32 @@
       },
       "post": {
         "operationId": "runUpgrade",
-        "summary": "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review",
+        "summary": "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review. 3.19.0: a step whose build waits only for its removals over the limits ends the job refused, its result's `confirm` giving the count and the plan; sent back, they confirm exactly that list (--allow-removals), any other refuses again and writes nothing",
         "tags": [
           "run"
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "plan": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Job started",
@@ -12593,6 +12615,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -45562,6 +45594,15 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "newer": {
                     "type": "array",
                     "items": {
@@ -45951,6 +45992,15 @@
               "unreadableManifest": {
                 "type": "boolean",
                 "const": true
+              },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "newer": {
                 "type": "array",
@@ -50905,6 +50955,15 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "newer": {
                     "type": "array",
                     "items": {
@@ -51233,6 +51292,15 @@
                   "unreadableManifest": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "newer": {
                     "type": "array",
@@ -52146,6 +52214,15 @@
                 "type": "boolean",
                 "const": true
               },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "newer": {
                 "type": "array",
                 "items": {
@@ -52568,6 +52645,15 @@
               "unreadableManifest": {
                 "type": "boolean",
                 "const": true
+              },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "newer": {
                 "type": "array",

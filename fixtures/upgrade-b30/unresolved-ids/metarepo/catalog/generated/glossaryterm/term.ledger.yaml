@@ -1,0 +1,46 @@
+schemaVersion: 5
+kind: GlossaryTerm
+id: term.ledger
+status: current
+confidence: inferred
+definition: "Not defined yet. Found in code: forge-ledger.delete-ledger-3, forge-ledger.delete-ledger-7, forge-ledger.get-ledger-0, forge-ledger.get-ledger-4, forge-ledger.post-ledger-1."
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 4
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-payments
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 8
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 1
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 5
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+fields: []
+flags:
+  - undefined
+term: Ledger

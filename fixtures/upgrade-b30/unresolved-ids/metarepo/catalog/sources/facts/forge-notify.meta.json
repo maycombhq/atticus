@@ -1,0 +1,9 @@
+{
+  "slotVersion": 1,
+  "kind": "facts",
+  "repo": "forge-notify",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "factsSchemaVersion": 5,
+  "factsHash": "ae0017c497c52593cd8d729f8adcfa31d7ae1a2da299fa35a36c975cfdafccef",
+  "contracts": null
+}

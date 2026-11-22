@@ -43,6 +43,11 @@ import {
   undoDirOf,
   undoHandEdits,
   UPGRADE_UNDONE,
+  UNRESOLVED_IDS_COMMAND,
+  unresolvedIdsUndoneWords,
+  undoneFiles,
+  UPGRADE_RENAMES,
+  refusedBeforeSlots,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -127,6 +132,10 @@ export function buildJson(r: BuildAndWrite) {
   };
 }
 
+/** How the loose ends' step goes on (the final review of b30/unresolved-ids, I1). */
+export const UPGRADE_DRY_RUN_WORDS =
+  "atticus upgrade --dry-run shows what it would write; atticus upgrade does it.";
+
 /**
  * How the app says a refused build (ADR 0195 point 4; CS3 adds its confirm steps): the reason
  * in plain words and the command that goes on, so an action never just fails.
@@ -135,8 +144,14 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   // Beta.28.2 (ADR 0197): its own words, never the upgrade's.
   if (r.reasons.includes("newer-atticus"))
     return r.message.split("\n").slice(1).join(" ") || r.message;
-  if (r.reasons.includes("not-upgraded"))
-    return "This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).";
+  // ADR 0124 addendum E-ids (2026-11-22): a build that waits for the loose ends' step says it.
+  // The final review of b30/unresolved-ids (I1): plain atticus upgrade does that step (backed up,
+  // undoable) and --dry-run shows it; --yes is only the adoption of a catalog from before the slots.
+  const renames = r.message.split("\n").find((l) => l.startsWith(UPGRADE_RENAMES));
+  const beforeSlots = refusedBeforeSlots(r);
+  if (renames && !beforeSlots) return `${renames} ${UPGRADE_DRY_RUN_WORDS}`;
+  if (beforeSlots)
+    return `${renames ? `${renames} ` : ""}This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).`;
   // ADR 0197 review: build.json doesn't read; building again is the only way on, never curate.
   if (r.unreadableManifest)
     return `catalog/sources/build.json doesn't read (edited or merged by hand): build again, replacing every record file with this build: ${command} --discard-edits ${r.discardEdits ?? 0}.`;
@@ -370,7 +385,7 @@ export async function catalogUndo(
       // What the newest copy touching each file says it left there, and which command that was.
       const left = new Map<string, { after: string | null; command: string; n: number }>();
       for (const c of plan.copies)
-        for (const f of c.files)
+        for (const f of undoneFiles(c))
           if (f.after !== undefined && !left.has(f.path))
             left.set(f.path, { after: f.after, command: c.command, n: c.n });
       const commands = [...new Set(edited.map((p) => left.get(p)!.command))];
@@ -435,7 +450,17 @@ export async function catalogUndo(
       );
       if (r.undo !== undefined)
         io.out(`This undo can be undone too: atticus catalog undo --yes (copy ${r.undo}).`);
-      if (plan.copies.some((c) => c.command.startsWith("atticus upgrade"))) io.out(UPGRADE_UNDONE);
+      // ADR 0195's addendum of 2026-11-21: the upgrade step that named loose ends with their
+      // repo is taken back with the inputs it carried, and says which; the slots' adoption says
+      // its own words.
+      for (const c of plan.copies.filter((x) => x.command === UNRESOLVED_IDS_COMMAND))
+        io.out(unresolvedIdsUndoneWords((c.inputs ?? []).map((x) => x.path)));
+      if (
+        plan.copies.some(
+          (c) => c.command.startsWith("atticus upgrade") && c.command !== UNRESOLVED_IDS_COMMAND,
+        )
+      )
+        io.out(UPGRADE_UNDONE);
       for (const x of renames) io.out(x.message);
       if (bad.length)
         io.out(
@@ -776,7 +801,8 @@ async function planEdits(
   // A catalog with no build.json (written before beta.27, or an undo took the upgrade back): no
   // file under it is a hand edit yet, and `atticus upgrade` adopts every one of them.
   Object.defineProperty(out, "notUpgraded", {
-    value: !!g.refused?.reasons.includes("not-upgraded"),
+    // ADR 0124 addendum E-ids (2026-11-22): not a build that waits for the loose ends' step.
+    value: !!g.refused && refusedBeforeSlots(g.refused),
     enumerable: false,
   });
   // ADR 0197 review: a build.json that doesn't read lists every file as a hand edit; none is one

@@ -185,12 +185,15 @@ export function RefusalView(p: {
   const removals = r.removals ?? [];
   const edits = r.edits ?? [];
   const nEdits = r.discardEdits ?? edits.length;
+  // API 3.19.0 (ADR 0124 addendum E-ids): a not-upgraded refusal is a catalog from before the
+  // slots unless it says it waits only for the loose ends' step (`renames`, no `beforeSlots`).
+  const beforeSlots = r.beforeSlots === true || r.renames === undefined;
   const n = (reason: string) =>
     reason === "large-removals" || reason === "unexplained-removals"
       ? reason === "large-removals"
         ? (r.allowRemovals ?? removals.length)
         : (r.unexplained?.length ?? 0)
-      : reason === "hand-edits" || reason === "not-upgraded"
+      : reason === "hand-edits" || (reason === "not-upgraded" && beforeSlots)
         ? nEdits
         : 0;
   // Beta.28.3: a newer Atticus's catalog under its own heading (nothing there to confirm).
@@ -364,7 +367,12 @@ export function RefusalView(p: {
           <p className="work-say" style={{ margin: 0 }}>
             {p.upgradeHere ? B.upgradeTodo : B.inTerminalSay}
           </p>
-          <Command text="atticus upgrade --yes" label={COPY.runNext.copy} noRun />
+          {/* The final review of b30/unresolved-ids (I1): --yes adopts the slots only. */}
+          <Command
+            text={beforeSlots ? "atticus upgrade --yes" : "atticus upgrade"}
+            label={COPY.runNext.copy}
+            noRun
+          />
         </div>
       )}
       {error && (
@@ -575,7 +583,10 @@ export function LastBuild({ last: l }: { last: Api.BuildReportViewT }) {
         ? (r.allowRemovals ?? 0)
         : x === "unexplained-removals"
           ? (r.unexplained?.length ?? 0)
-          : (r.discardEdits ?? r.edits?.length ?? 0);
+          : // API 3.19.0: a build that waits only for the loose ends' step counts no file.
+            x === "not-upgraded" && r.renames !== undefined && !r.beforeSlots
+            ? 0
+            : (r.discardEdits ?? r.edits?.length ?? 0);
   return (
     <div className="stack" style={{ gap: 6 }}>
       <p style={{ margin: 0 }}>

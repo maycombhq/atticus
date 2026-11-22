@@ -1,0 +1,31 @@
+schemaVersion: 5
+kind: Interface
+id: if-e1d90046be65fc53
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+endpoint: forge-ledger.post-ledger-1
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/client/Client.java
+    repo: forge-notify
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 2
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+flags:
+  - joined-by-host
+from: forge-notify
+method: POST
+normalizedPath: /v1/entrys/{}/ledger-1
+sync: sync
+to: forge-ledger
+via: direct

@@ -91,57 +91,52 @@ describe("fixtures/forge-field", () => {
   });
 
   /**
-   * KNOWN BUG, found by this fixture (beta.30 slice 9; reported, not fixed here): a call the join
-   * leaves loose is the catalog's `Unresolved` record `unresolved.<fact id>`
-   * (packages/core/src/facts.ts, projectFacts), with no repo in it. Two repos whose facts both
-   * have a call `c-1` left loose make one record: the other repo's loose end is in no record,
-   * so impact's "loose end Atticus couldn't follow" (packages/index/src/graph.ts) never names it.
-   * The tidy Forge fixture's fact ids are unique across repos, so nothing found it there. When
-   * the ids carry their repo (the owner's decision; another change builds it) this passes, and
-   * `it.fails` says so: make it `it`.
+   * Found by this fixture (beta.30 slice 9), fixed by ADR 0124 addendum E-ids (the owner,
+   * 2026-11-19): a call the join leaves loose was the catalog's `Unresolved` record
+   * `unresolved.<fact id>`, with no repo in it, so two repos whose facts both had a loose call
+   * `c-1` made one record and impact's "loose end Atticus couldn't follow"
+   * (packages/index/src/graph.ts) never named the other. The id is `unresolved.<repo>.<fact id>`
+   * now. Checked by what each record cites, never by its id.
    */
-  it.fails(
-    "has a record for every repo's loose call, when two repos have a call of the same id",
-    async () => {
-      const corrections = new Set<string>();
-      const facts: {
-        repo: string;
-        id: string;
-        host?: string;
-        kind: string;
-        cite: { file: string; line: number };
-      }[] = [];
-      for (const n of await readdir(join(e.root, "facts"))) {
-        const text = await readFile(join(e.root, "facts", n), "utf8");
-        const lines = text
-          .split("\n")
-          .filter(Boolean)
-          .map((l) => JSON.parse(l) as Record<string, string>);
-        if (n.endsWith(".corrections.jsonl"))
-          for (const l of lines) corrections.add(`${n.split(".corrections")[0]} ${l.fact}`);
-        else if (/^[^]+\.jsonl$/.test(n) && !n.includes(".reviewed."))
-          facts.push(...(lines as unknown as typeof facts));
-      }
-      // Calls to the outside vendor and to deploy tokens nothing sets, that no person paired.
-      const want = facts
-        .filter(
-          (f) =>
-            f.kind === "call" &&
-            /^(@forgeTargetUrl\d@|api\.northwind-pay\.example)$/.test(f.host ?? ""),
-        )
-        .filter((f) => !corrections.has(`${f.repo} ${f.id}`))
-        .map((f) => `${f.repo} ${f.cite.file}:${f.cite.line}`);
-      // By what each Unresolved record cites (repo, file and line), never by its id, so this
-      // holds whatever the ids become.
-      const got = new Set(
-        records
-          .filter((r) => r.kind === "Unresolved")
-          .flatMap((r) => ev(r).map((x) => `${x.repo} ${x.path}:${x.line}`)),
-      );
-      expect(want.length).toBeGreaterThan(0);
-      expect(want.filter((w) => !got.has(w))).toEqual([]);
-    },
-  );
+  it("has a record for every repo's loose call, when two repos have a call of the same id", async () => {
+    const corrections = new Set<string>();
+    const facts: {
+      repo: string;
+      id: string;
+      host?: string;
+      kind: string;
+      cite: { file: string; line: number };
+    }[] = [];
+    for (const n of await readdir(join(e.root, "facts"))) {
+      const text = await readFile(join(e.root, "facts", n), "utf8");
+      const lines = text
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Record<string, string>);
+      if (n.endsWith(".corrections.jsonl"))
+        for (const l of lines) corrections.add(`${n.split(".corrections")[0]} ${l.fact}`);
+      else if (/^[^]+\.jsonl$/.test(n) && !n.includes(".reviewed."))
+        facts.push(...(lines as unknown as typeof facts));
+    }
+    // Calls to the outside vendor and to deploy tokens nothing sets, that no person paired.
+    const want = facts
+      .filter(
+        (f) =>
+          f.kind === "call" &&
+          /^(@forgeTargetUrl\d@|api\.northwind-pay\.example)$/.test(f.host ?? ""),
+      )
+      .filter((f) => !corrections.has(`${f.repo} ${f.id}`))
+      .map((f) => `${f.repo} ${f.cite.file}:${f.cite.line}`);
+    // By what each Unresolved record cites (repo, file and line), never by its id, so this
+    // holds whatever the ids become.
+    const got = new Set(
+      records
+        .filter((r) => r.kind === "Unresolved")
+        .flatMap((r) => ev(r).map((x) => `${x.repo} ${x.path}:${x.line}`)),
+    );
+    expect(want.length).toBeGreaterThan(0);
+    expect(want.filter((w) => !got.has(w))).toEqual([]);
+  });
 
   it("has a topic with consumers in two repos, both drawn", () => {
     const t = e.topic!;

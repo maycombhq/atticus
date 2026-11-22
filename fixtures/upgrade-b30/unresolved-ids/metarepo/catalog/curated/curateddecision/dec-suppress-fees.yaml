@@ -1,0 +1,12 @@
+schemaVersion: 5
+kind: CuratedDecision
+id: dec-suppress-fees
+status: current
+confidence: asserted
+action: suppress
+at: 2026-11-12T00:00:00Z
+by: pat
+evidence: []
+reason: fees are another team's
+target: unresolved.c-7
+value: null

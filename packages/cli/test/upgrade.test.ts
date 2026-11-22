@@ -252,6 +252,8 @@ describe("atticus upgrade", () => {
         "catalog-schema-v5",
         "runtime-v4",
         "corrections-v2",
+        // ADR 0124 addendum E-ids: a catalog never built from slots has no loose end to rename.
+        "unresolved-ids-repo",
       ].filter((m) => m !== "starter-personas" || starters),
     );
     // runtime.yaml at version 2 (ADR 0121 addendum): the number only, every line else as it was,

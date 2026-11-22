@@ -1291,8 +1291,13 @@ export const COPY = {
         `${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build.`,
       "unexplained-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
+      // ADR 0124 addendum E-ids (2026-11-22): with no record file to count, it is a build that
+      // would name again with their repo loose ends your changes name by their old ids (the page
+      // passes 0 for a refusal with `renames` and not `beforeSlots`, whatever its hand edits).
       "not-upgraded": (n: number) =>
-        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`,
+        n > 0
+          ? `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`
+          : "Your changes name loose ends by their ids from before beta.30, which this build would name again with their repo: run atticus upgrade (or Upgrade on Set up › Activity › Catalog builds), which renames them and carries your changes in one write. atticus upgrade --dry-run shows what it would write; atticus upgrade does it.",
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
@@ -5030,6 +5035,13 @@ export const COPY = {
       "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): propose the stamp so everyone's Atticus sees this upgrade.",
     failed: "The upgrade stopped.",
     terminal: "Or in a terminal:",
+    /**
+     * The review of 5cc4ce87 (API 3.19.0): a step whose build waits only for its removals to be
+     * confirmed, as `atticus upgrade --allow-removals <n>` confirms them.
+     */
+    confirmRemovals: (n: number) => `Confirm these ${n} removal${n === 1 ? "" : "s"} and upgrade`,
+    confirmHint:
+      "The step's build removes more than the limits let a build remove unasked; it is listed above. Confirm exactly that list, or run the command in a terminal.",
   },
   settings: {
     connectedChip: "CONNECTED",

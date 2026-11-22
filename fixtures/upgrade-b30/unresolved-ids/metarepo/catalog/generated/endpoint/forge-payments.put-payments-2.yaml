@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-payments.put-payments-2
+status: current
+confidence: verified
+component: forge-payments
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-payments
+    side: callee
+    source: code
+method: PUT
+normalizedPath: /v1/holds/{}/payments-2
+pathOrTopic: /v1/holds/{id}/payments-2
+schemaRefs: []

@@ -1,0 +1,38 @@
+schemaVersion: 2
+kind: Flow
+id: forge-ledger.read-the-rates
+status: current
+confidence: verified
+component: forge-ledger
+errors: []
+evidence: []
+family: []
+name: Read the rates
+steps:
+  - kind: call-out
+    confirmedBy: check
+    evidence:
+      - by: assistant
+        commit: 0123456789abcdef0123456789abcdef01234567
+        line: 6
+        path: src/main/java/forge/client/Client.java
+        repo: forge-ledger
+        source: code
+    refs:
+      - unresolved.c-solo
+    to:
+      component: unresolved.c-solo
+      entry: GET /v1/fx/{id}
+    what: Fetch the fx rate
+template: facts@1
+trigger:
+  kind: endpoint
+  evidence:
+    - by: assistant
+      commit: 0123456789abcdef0123456789abcdef01234567
+      line: 1
+      path: src/main/java/forge/web/Controller.java
+      repo: forge-ledger
+      source: code
+  ref: forge-ledger.get-v1-accounts-id-ledger-0
+  what: GET /v1/accounts/{id}/ledger-0

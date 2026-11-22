@@ -351,14 +351,20 @@ export function translate(
         return h?.id === hit.id || h?.topic?.id === hit.id;
       });
   // The calls and events on an entry or a topic are the Interfaces that name it as `endpoint`.
-  const onEndpoint = (id: string, publish: boolean, also: string[] = []): Asked => ({
-    action: "query",
-    // A topic with one Endpoint per consumer: the interfaces on any of them.
-    query: `kind:interface endpoint:${[id, ...also].join(",")}`,
-    explanation: publish
-      ? `Read as: the interfaces that publish to ${id}; each one's "from" is the publisher.`
-      : `Read as: the interfaces that call ${id}; each one's "from" is the caller.`,
-  });
+  const onEndpoint = (id: string, publish: boolean, also: string[] = [], name?: string): Asked => {
+    const ids = [id, ...also];
+    // A topic with one Endpoint per consumer: the interfaces on any of them, each named.
+    const at = also.length
+      ? `${name ?? id}, at each of its ${ids.length} Endpoints (${ids.join(", ")})`
+      : id;
+    return {
+      action: "query",
+      query: `kind:interface endpoint:${ids.join(",")}`,
+      explanation: publish
+        ? `Read as: the interfaces that publish to ${at}; each one's "from" is the publisher.`
+        : `Read as: the interfaces that call ${at}; each one's "from" is the caller.`,
+    };
+  };
   // A name the map lacks: said so, with the query that would have answered (ADR 0201).
   const missing = (name: string, query: string, read: string): Asked => {
     // "Not in the map" only of a map that was read whole (ADR 0201 amendment).
@@ -374,9 +380,14 @@ export function translate(
   // A repo's id that is a topic's name too (beta.30): who receives or publishes to it is the
   // topic's, before any reading of the repo's component.
   // "What does X consume (or send)?" asks what the repo does: the repo's reading, not the topic's.
-  const both = has(/\bwhat does\b/) ? undefined : named(words, (w) => lookup(w)?.topic);
+  // "The topic X" names the topic whatever the verb (the review of b30/unresolved-ids).
+  const topicSaid = words.some((w) => TOPIC_NOUNS.has(w));
+  const asTopic = topicSaid ? named(words, (w) => lookup(w)?.topic) : undefined;
+  const both =
+    asTopic ?? (has(/\bwhat does\b/) ? undefined : named(words, (w) => lookup(w)?.topic));
   if (both && has(RECEIVES)) return receivers(both, both.also?.length ? wordOf(both) : undefined);
-  if (both && has(PUBLISHES)) return onEndpoint(both.id, true, both.also);
+  if (both && has(PUBLISHES))
+    return onEndpoint(both.id, true, both.also, both.also?.length ? wordOf(both) : undefined);
 
   // A system only the calls name has no record to walk or own: what reaches it are its callers.
   if (rec?.kind === OUTSIDE)
@@ -388,13 +399,32 @@ export function translate(
   // A repo of several components: who calls it or what it calls asks of every one of them.
   const all = rec ? (rec.ids ?? [rec.id]).join(",") : "";
   const one = !!rec && !(rec.ids && rec.ids.length > 1);
+  /**
+   * The review of b30/unresolved-ids: a question that walks or owns one record, of a repo of
+   * several components, is asked of the first, and says so with the command for the others.
+   */
+  const several = (how: (id: string) => string, does: string): string => {
+    if (!rec || one) return "";
+    const ids = rec.ids!;
+    const rest = ids.filter((x) => x !== rec.id);
+    return ` ${wordOf(rec) ?? rec.id} has ${ids.length} components (${ids.join(", ")}): the query ${does} ${rec.id}; ${rest.map(how).join(", ")} ${does} the other${rest.length === 1 ? "" : "s"}.`;
+  };
+  const label = (hit: Hit) => (hit.ids && hit.ids.length > 1 ? (wordOf(hit) ?? hit.id) : hit.id);
   if (has(/\b(break|breaks|affected|impacted|impact|reach|reaches|depends? on)\b/)) {
-    if (rec && one)
+    // "The topic X": the topic's walk, never the like-named component's.
+    if (asTopic)
+      return {
+        action: "impact",
+        id: asTopic.id,
+        query: `impact ${asTopic.id}`,
+        explanation: `Read as: what a change to the topic ${wordOf(asTopic) ?? asTopic.id} reaches, hop by hop, with owners.${asTopic.also?.length ? ` The query walks ${asTopic.id}; impact ${asTopic.also.join(", impact ")} walk${asTopic.also.length === 1 ? "s" : ""} the other${asTopic.also.length === 1 ? "" : "s"}.` : ""}`,
+      };
+    if (rec && rec.kind !== OUTSIDE)
       return {
         action: "impact",
         id: rec.id,
         query: `impact ${rec.id}`,
-        explanation: `Read as: what a change to ${rec.id} reaches, hop by hop, with owners.`,
+        explanation: `Read as: what a change to ${label(rec)} reaches, hop by hop, with owners.${several((x) => `impact ${x}`, "walks")}`,
       };
   }
   if (rec && has(/\bwhat does\b.*\b(call|use|depend|talk|send|publish|emit|produce)/))
@@ -421,12 +451,12 @@ export function translate(
       explanation: `Read as: the interfaces whose callee is ${one ? rec.id : `one of ${all}`}.`,
     };
   }
-  if (rec && one && has(/\bwho owns\b|\bowner of\b/))
+  if (rec && has(/\bwho owns\b|\bowner of\b/))
     return {
       action: "owner",
       id: rec.id,
       query: rec.id,
-      explanation: `Read as: the owner recorded for ${rec.id}.`,
+      explanation: `Read as: the owner recorded for ${label(rec)}.${several((x) => `who owns ${x}`, "asks of")}`,
     };
 
   const terms: string[] = [];
@@ -480,9 +510,29 @@ export function translate(
   // No older reading matched: who subscribes to, receives or listens to a topic the map holds.
   const end = has(RECEIVES) ? topic() : undefined;
   if (end?.kind === "Endpoint") return receivers(end, end.also?.length ? wordOf(end) : undefined);
+  // Who receives what a repo of several components sends: each component's receivers.
+  if (end && end.ids && end.ids.length > 1) {
+    const also = end.ids.filter((x) => x !== end.id);
+    const name = wordOf(end) ?? end.id;
+    return {
+      action: "impact",
+      id: end.id,
+      also,
+      named: name,
+      query: `impact ${end.id}`,
+      explanation: `Read as: who receives what ${name} sends, at each of its ${end.ids.length} components (${end.ids.join(", ")}): the receivers first, then what a change reaches past them. The query walks the first; impact ${also.join(", impact ")} walk${also.length === 1 ? "s" : ""} the other${also.length === 1 ? "" : "s"}.`,
+      receivers: true,
+    };
+  }
   // Who publishes to a topic the map holds, by its id or its name (b30 proof run).
   const published = has(PUBLISHES) ? topic() : undefined;
-  if (published?.kind === "Endpoint") return onEndpoint(published.id, true, published.also);
+  if (published?.kind === "Endpoint")
+    return onEndpoint(
+      published.id,
+      true,
+      published.also,
+      published.also?.length ? wordOf(published) : undefined,
+    );
   // The same two questions about a name the map lacks were a word search that found nothing.
   if (!rec && !topic()) {
     const received = has(RECEIVES)

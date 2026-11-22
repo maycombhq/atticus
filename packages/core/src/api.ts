@@ -747,6 +747,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   (`ProposePlanView.raisesProfileUnread`). An Interface's join says who declared it
  *   (`HierJoin.declaredBy`), and the build's report lists the declared arrows the code now
  *   shows (`declaredSuperseded`). Additive only.
+ *   Also in 3.19.0 (ADR 0124 addendum E-ids, the final review of b30/unresolved-ids): a
+ *   `not-upgraded` refusal (`BuildRefusalView`) says which it is: `beforeSlots`, a catalog from
+ *   before the slots (`atticus upgrade --yes` adopts it), and `renames`, the count of loose ends
+ *   `atticus upgrade` renames and carries your changes to (`atticus upgrade --dry-run` shows what
+ *   it would write); a `not-upgraded` refusal with neither is one from before the slots.
+ *   Additive only.
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
@@ -2130,6 +2136,18 @@ export const BuildRefusalView = z.object({
    * record file); its edits are not to be made curated.
    */
   unreadableManifest: z.literal(true).optional(),
+  /**
+   * 3.19.0 (ADR 0124 addendum E-ids): a `not-upgraded` refusal of a catalog from before the slots
+   * (no build.json, or an undo took the upgrade back): `atticus upgrade --yes` adopts it.
+   */
+  beforeSlots: z.literal(true).optional(),
+  /**
+   * 3.19.0 (ADR 0124 addendum E-ids): a `not-upgraded` refusal of a build that would name again
+   * with their repo loose ends your changes name by their old ids: how many. `atticus upgrade`
+   * renames them and carries your changes in one write (`--dry-run` shows what it would write).
+   * A `not-upgraded` refusal with neither field is one from before the slots.
+   */
+  renames: z.number().int().optional(),
   /**
    * 3.15.0 (beta.28.2, ADR 0197): a `newer-atticus` refusal's files a newer Atticus wrote
    * (build.json, a slot), each with its version field, the version it has and the newest one
@@ -6124,6 +6142,20 @@ export const UpgradeView = z.object({
   newerCatalog: z.string().optional(),
 });
 /**
+ * 3.19.0 (ADR 0124 addendum E-ids; the review of 5cc4ce87): POST /api/upgrade confirms a step whose
+ * build waits only for its removals over the limits, as `atticus upgrade --allow-removals <n>`
+ * does: the count and the plan the refused run's job result gave (`confirm`), the plan worked out
+ * again under the lock; another list writes nothing. Additive: no body runs it as before.
+ */
+export const UpgradeRequest = z.strictObject({
+  allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
+  /** The refused run's `confirm.plan`: required with a count (the list it confirms). */
+  plan: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+/**
  * 3.19.0 (ADR 0202 point 8): GET /api/status and `atticus status --json`: where a metarepo
  * stands against this Atticus, and the one thing to do about it.
  */
@@ -9461,10 +9493,12 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "runUpgrade",
       summary:
-        "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review",
+        "Run atticus upgrade as a local job on the person's click: it backs up every file it changes, runs each pending step and stamps the metarepo; the changes are files to propose for review. 3.19.0: a step whose build waits only for its removals over the limits ends the job refused, its result's `confirm` giving the count and the plan; sent back, they confirm exactly that list (--allow-removals), any other refuses again and writes nothing",
       tag: "run",
+      body: UpgradeRequest,
+      bodyOptional: true,
       ok: { status: 202, schema: "JobAccepted", description: "Job started" },
-      errors: [409],
+      errors: [400, 409],
     },
   },
   // ADR 0190: settings and setup in the app, "Edit, then Propose".

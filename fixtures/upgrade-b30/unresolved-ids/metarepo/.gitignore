@@ -1,0 +1,6 @@
+# Atticus local state
+/workspace/
+/.index/
+/.runs/
+/.atticus/*
+!/.atticus/metarepo.yaml

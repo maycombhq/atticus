@@ -804,7 +804,7 @@ const sameSegments = (a: string[] | undefined, b: string[] | undefined) =>
 
 /** The path part of a URL (`https://host/forge/limits` gives `/forge/limits`), when it has one. */
 function urlPathOf(s: string | undefined): string | undefined {
-  const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(s.trim()) : null;
+  const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(schemeAside(s.trim())) : null;
   return m && m[1] !== "/" ? m[1] : undefined;
 }
 
@@ -950,14 +950,24 @@ export function registrableDomain(host: string): string | undefined {
 const joinPaths = (base: string | undefined, path: string | undefined) =>
   base ? `${base.replace(/\/+$/, "")}/${(path ?? "").replace(/^\/+/, "")}` : path;
 
+/**
+ * A scheme written as a placeholder, as the whole scheme (`${scheme}://`): the final review of
+ * b30/unresolved-ids. The host after it is read as any URL's is; its port is the one written.
+ */
+const SCHEME_PLACEHOLDER = /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}:\/\//;
+/** A URL whose scheme is a placeholder, with the scheme read as an unknown one (no port of its own). */
+const schemeAside = (s: string) => s.replace(/^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}(?=:\/\/)/, "scheme");
+
 /** A host written as a URL or as `name[:port]`; `named` is the port the text writes, if any. */
 function hostIn(
   s: string | undefined,
 ): { host: string; port?: number; named?: number } | undefined {
-  if (!s || SECRETISH.test(s.trim())) return undefined;
-  const u = urlHostPort(s.trim());
+  if (!s) return undefined;
+  const t = schemeAside(s.trim());
+  if (SECRETISH.test(t)) return undefined;
+  const u = urlHostPort(t);
   if (u) {
-    const named = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?[^/?#:]*:(\d+)/i.exec(s.trim())?.[1];
+    const named = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?[^/?#:]*:(\d+)/i.exec(t)?.[1];
     // A host still written as a token (`https://{{ host }}/v1`) is no host yet.
     return u.host && !/[{}@$\s]/.test(u.host)
       ? { ...u, ...(named ? { named: Number(named) } : {}) }
@@ -1015,6 +1025,125 @@ interface Node {
  */
 const WHOLE_HOST_TOKEN = /^(?:[a-z][a-z0-9+.-]*:\/\/)?@[A-Za-z_][A-Za-z0-9_.-]*@(?:[/:?#]|$)/i;
 
+/**
+ * ADR 0195, the beta.28.1 addendum's sub-addendum (the owner, 2026-11-19): a host written as an
+ * environment or config placeholder that nothing sets is a deploy token nothing sets too, as
+ * `@name@` is: `${NAME}` (with no default, or an empty one: `${NAME:}`, `${NAME:-}`), the shell's
+ * `$NAME`, and `%NAME%` (a Windows or CI variable). Only as the whole host, and only where the
+ * join reached nothing: a placeholder something sets, or whose default names a host, is resolved
+ * first (`resolve`), and a host it is only part of (`ledger-${ENV}.forge.internal`) is not one.
+ * The review of 5cc4ce87 (I2): `$NAME`, `%NAME%` and `$env:NAME` are resolved by a setting of that
+ * NAME as `${NAME}` is (`placeholderIn`), so here they are unset; and a scheme written as a
+ * placeholder (`${scheme}://${host}/v1`) is a scheme, so the host part is the one asked about.
+ */
+const WHOLE_HOST_PLACEHOLDER =
+  /^(?:(?:[a-z][a-z0-9+.-]*|\$\{[A-Za-z_][A-Za-z0-9_.-]*\}):\/\/)?(\$\{[A-Za-z_][A-Za-z0-9_.[\]-]*(?::[^}]*)?\}|\$env:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)(?=[/:?#]|$)/i;
+
+/** A `${…}` that names code, not a setting: `this.x`, `process.env.X`, a camelCase name. */
+const CODE_VARIABLE = /^(?:this\.|process\.env\.|import\.meta\.env\.)|^[a-z][a-zA-Z0-9]*$/;
+
+/** How a host nothing the join reads gives a value is worded (`unsetHostOf`). */
+export type UnsetHostForm = "token" | "variable" | "setting" | "set";
+
+/**
+ * What the join knows of the settings when it words an unset host: the names its settings have
+ * (`settingNameKey` of each config fact's key, the estate's), and whether the call's repo has
+ * settings with camelCase keys (the review of 5cc4ce87: then a camelCase name is a setting's).
+ */
+export interface UnsetHostSettings {
+  names?: ReadonlySet<string>;
+  camel?: boolean;
+}
+
+/** A setting's key in camelCase (`ledgerUrl`, `forge.ledgerUrl`): a lower letter, then an upper. */
+export const camelSettingKey = (key: string) => /[a-z][A-Z]/.test(key);
+
+/**
+ * The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): a host nothing the
+ * join reads gives a value, by how it is written. `token`: a build, deploy or config token
+ * (`@name@`, `${NAME}`, `${forge.ledger.url}`, `$NAME`, `%NAME%`), asked about as "a deploy token
+ * nothing sets". `variable`: a variable of the code's (`${baseUrl}`, `${this.cfg.url}`,
+ * `${process.env.X}`, Kotlin's and Groovy's `$baseUrl`, PowerShell's `$env:X`), asked about as "a
+ * variable Atticus couldn't find the value of". Only as the whole host (the scheme aside), read at
+ * the start of the value or after a scheme or a space (a loose end's raw names its method first).
+ * Camel Simple's names (`${header.x}`, `${body}`) are the route's message, and none.
+ *
+ * The review of 5cc4ce87 (I2), given what the join knows of the settings: `set`, a name a setting
+ * of the estate has (`settings.names`), whatever its form: never "a deploy token nothing sets",
+ * since a setting has that key, but one that gave no host for this call; and `setting`, a
+ * camelCase name (`${ledgerUrl}`, `$ledgerUrl`) nothing sets, where the call's repo has settings
+ * with camelCase keys (`settings.camel`): worded as a setting, else as a variable of the code's.
+ * `name` is the setting's name the host is written with (`FORGE_LEDGER_URL` of
+ * `%FORGE_LEDGER_URL%`).
+ */
+export function unsetHostOf(
+  value: string | undefined,
+  settings: UnsetHostSettings = {},
+): { host: string; form: UnsetHostForm; name: string } | undefined {
+  const v = (value ?? "").trim();
+  const by = (host: string, name: string, form: "token" | "variable") => ({
+    host,
+    name,
+    form: settings.names?.has(settingNameKey(name))
+      ? ("set" as const)
+      : form === "variable" && settings.camel && /^[a-z][a-zA-Z0-9]*$/.test(name)
+        ? ("setting" as const)
+        : form,
+  });
+  for (const start of [0, ...[...v.matchAll(/\s/g)].map((m) => m.index! + 1)]) {
+    const rest = v.slice(start);
+    const at = WHOLE_HOST_TOKEN.exec(rest);
+    if (at) {
+      const host = /@[A-Za-z_][A-Za-z0-9_.-]*@/.exec(rest)![0];
+      return by(host, host.slice(1, -1), "token");
+    }
+    const m = WHOLE_HOST_PLACEHOLDER.exec(rest);
+    if (!m) continue;
+    const host = m[1]!;
+    if (host.startsWith("${")) {
+      const inner = host.slice(2, -1);
+      const name = inner.split(":")[0]!.trim();
+      if (CAMEL_SIMPLE.test(name)) return undefined;
+      return by(
+        host,
+        name.replace(ENV_PREFIX, ""),
+        CODE_VARIABLE.test(name) ? "variable" : "token",
+      );
+    }
+    if (/^\$env:/i.test(host)) return by(host, host.slice("$env:".length), "variable");
+    if (host.startsWith("$"))
+      return by(host, host.slice(1), /^\$[A-Z_][A-Z0-9_]*$/.test(host) ? "token" : "variable");
+    return by(host, host.slice(1, -1), "token");
+  }
+  return undefined;
+}
+
+/** The question for a call whose whole host nothing gives a value, worded by its form. */
+export function unsetHostQuestion(
+  host: string,
+  form: UnsetHostForm,
+  repo: string,
+  name?: string,
+): string {
+  if (form === "set")
+    return `${hostQuestionText(host)} A setting ${name ?? host} is read, but Atticus couldn't take a host from it for this call of ${repo}. Name the repo or the outside system that answers, or read the repo that sets it again with your assistant.`;
+  if (form === "setting")
+    return `${hostQuestionText(host)} It is a setting nothing sets, in a call of ${repo}. Name the repo or the outside system that answers, or read the repo that sets it with your assistant.`;
+  return form === "variable"
+    ? `${hostQuestionText(host)} It is a variable Atticus couldn't find the value of, in the code of ${repo}. Name the repo or the outside system that answers, or read ${repo} again with your assistant if a setting gives its value.`
+    : `${hostQuestionText(host)} It is a deploy token nothing sets, in a call of ${repo}. Name the repo or the outside system that answers, or read the repo that sets it with your assistant.`;
+}
+
+/** An environment variable read in code by its name (`process.env.NAME`): the NAME it reads. */
+const ENV_PREFIX = /^(?:process\.env|import\.meta\.env)\./;
+
+/**
+ * The review of 5cc4ce87 (I2): the shell's `$NAME`, PowerShell's `$env:NAME` and a Windows or CI
+ * `%NAME%`, as the whole host (the scheme aside), name a setting by NAME as `${NAME}` does.
+ */
+const BARE_PLACEHOLDER =
+  /^((?:[a-z][a-z0-9+.-]*:\/\/)?)(\$env:([A-Za-z_][A-Za-z0-9_]*)|\$([A-Za-z_][A-Za-z0-9_]*)|%([A-Za-z_][A-Za-z0-9_]*)%)(?=[/:?#]|$)/i;
+
 const TOKEN_FORMS: readonly RegExp[] = [
   /@([A-Za-z_][A-Za-z0-9_.-]*)@/,
   /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/,
@@ -1052,15 +1181,31 @@ export function placeholderIn(
     const colon = inner.indexOf(":");
     const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name) || CAMEL_SIMPLE.test(name)) continue;
-    const fallback = colon < 0 ? undefined : inner.slice(colon + 1).trim();
-    dollar = { at: i, end: j + 1, name, ...(fallback ? { fallback } : {}) };
+    // The owner, 2026-11-19: the shell's operators. `${NAME:-default}` and `${NAME:=default}`
+    // default to what follows the operator; `${NAME:?message}` has no default (it fails when
+    // unset), nor has an empty one. Spring's `${name:default}` is as it was.
+    const given = colon < 0 ? undefined : inner.slice(colon + 1).trim();
+    const fallback = given?.startsWith("?")
+      ? undefined
+      : given?.replace(/^[-=]/, "").trim() || undefined;
+    // The review of 5cc4ce87 (I2): `${process.env.NAME}` reads the setting NAME.
+    dollar = {
+      at: i,
+      end: j + 1,
+      name: name.replace(ENV_PREFIX, ""),
+      ...(fallback ? { fallback } : {}),
+    };
   }
+  const b = BARE_PLACEHOLDER.exec(t);
+  const bare: Found | undefined = b
+    ? { at: b[1]!.length, end: b[1]!.length + b[2]!.length, name: (b[3] ?? b[4] ?? b[5])! }
+    : undefined;
   // The token forms, each set by the same config facts by its name: the first in the value.
   const token = TOKEN_FORMS.flatMap((re) => {
     const m = re.exec(t);
     return m ? [{ at: m.index, end: m.index + m[0].length, name: m[1]! } as Found] : [];
   }).sort((a, b) => a.at - b.at)[0];
-  const first = [dollar, token].filter((x): x is Found => !!x).sort((a, b) => a.at - b.at)[0];
+  const first = [dollar, token, bare].filter((x): x is Found => !!x).sort((a, b) => a.at - b.at)[0];
   if (!first) return undefined;
   return {
     name: first.name,
@@ -1183,6 +1328,8 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
     if (m) m.push(n);
     else configsByName.set(k, [n]);
   }
+  /** The names the estate's settings have (`settingNameKey`), for how an unset host is worded. */
+  const settingNames: ReadonlySet<string> = new Set(configsByName.keys());
   /** The calls made from each entry (`from`, a gateway route's forwarding calls), by repo. */
   const callsFrom = new Map<string, (Node & { fact: Call })[]>();
   for (const n of nodes) {
@@ -1303,7 +1450,12 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
     if (placeholderIn(p.after)) {
       // Two or more in one value: each is resolved on its own, and kept only with one value.
-      const head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth, own);
+      let head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth, own);
+      // The final review of b30/unresolved-ids (a nit): a scheme written as a placeholder that
+      // nothing sets (`${scheme}://${host}/v1`) is set aside as written, so the host part a
+      // setting gives (`host: ledger.apps.forge.internal`) still resolves and joins by host.
+      if (!head.length && SCHEME_PLACEHOLDER.test(v.slice(0, v.length - p.after.length + 3)))
+        head = [{ value: v.slice(0, v.length - p.after.length), through: [], guesses: [] }];
       const tail = resolve(p.after, owner, seen, depth, own);
       if (new Set(head.map((r) => r.value)).size !== 1) return [];
       if (new Set(tail.map((r) => r.value)).size !== 1) return [];
@@ -2768,6 +2920,34 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
           reason: "ambiguous",
           question: callTargetQuestion(f, call.component),
           candidates: viaBase.map(end).sort((x, y) => cmp(x.repo, y.repo) || cmp(x.fact, y.fact)),
+        });
+        continue;
+      }
+      // The owner, 2026-11-19 (ADR 0195, the beta.28.1 addendum's sub-addendum): a host written
+      // as `${NAME}`, `$NAME` or `%NAME%` that nothing sets is asked about as `@name@` is, never
+      // joined by its path alone (`WHOLE_HOST_PLACEHOLDER`). A gateway's BasePath that starts the
+      // whole path it sends still joins it, as beta.25 decided (above): that is a cited line.
+      // The review of 5cc4ce87 (I2): never "a deploy token nothing sets" where a setting has
+      // that name; a camelCase name is a setting's where the repo's settings are camelCase.
+      const hostSettings = {
+        names: settingNames,
+        camel: (configsByRepo.get(call.repo) ?? []).some((c) => camelSettingKey(c.fact.key)),
+      };
+      const unsetHost = [f.host, f.base, ...keyed.map((t) => t.fact.value ?? t.fact.source)]
+        .map((v) => unsetHostOf(v, hostSettings))
+        .find((x) => !!x);
+      if (namesHost && unsetHost) {
+        asks.push({
+          call: end(call),
+          reason: "unknown-host",
+          host: f.host ?? unsetHost.host,
+          question: unsetHostQuestion(
+            f.host ?? unsetHost.host,
+            unsetHost.form,
+            call.repo,
+            unsetHost.name,
+          ),
+          candidates: [],
         });
         continue;
       }

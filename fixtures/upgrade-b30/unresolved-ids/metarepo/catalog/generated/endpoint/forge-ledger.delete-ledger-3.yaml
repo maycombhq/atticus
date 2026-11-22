@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-ledger.delete-ledger-3
+status: current
+confidence: verified
+component: forge-ledger
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 4
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: DELETE
+normalizedPath: /v1/statements/{}/ledger-3
+pathOrTopic: /v1/statements/{id}/ledger-3
+schemaRefs: []

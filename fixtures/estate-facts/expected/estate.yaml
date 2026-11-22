@@ -1199,35 +1199,35 @@ records:
   - confidence: verified
     evidence:
       - by: assistant
-        commit: 1111aaa
-        line: 14
-        path: src/app/accounts/account.service.ts
-        repo: forge-web
-        side: caller
-        source: code
-    id: unresolved.c-get-account
-    kind: Unresolved
-    owner: web-app
-    raw: GET /api/accounts/{id}
-    schemaVersion: 5
-    status: current
-    unresolvedKind: call
-  - confidence: verified
-    evidence:
-      - by: assistant
         commit: 2222bbb
         line: 20
         path: src/main/java/forge/customers/RiskClient.java
         repo: forge-customers
         side: caller
         source: code
-    id: unresolved.c-risk-score
+    id: unresolved.forge-customers.c-risk-score
     kind: Unresolved
     owner: customers-api
     raw: POST http://risk.vendor.example/v2/score
     schemaVersion: 5
     status: current
     unresolvedKind: http-call
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 14
+        path: src/app/accounts/account.service.ts
+        repo: forge-web
+        side: caller
+        source: code
+    id: unresolved.forge-web.c-get-account
+    kind: Unresolved
+    owner: web-app
+    raw: GET /api/accounts/{id}
+    schemaVersion: 5
+    status: current
+    unresolvedKind: call
 specs:
   - flows:
       - component: web-app
@@ -1331,9 +1331,9 @@ specs:
                 source: code
             kind: call-out
             refs:
-              - unresolved.c-get-account
+              - unresolved.forge-web.c-get-account
             to:
-              component: unresolved.c-get-account
+              component: unresolved.forge-web.c-get-account
               entry: GET /api/accounts/{id}
             what: GET the customer's account
           - confirmedBy: check
@@ -1396,9 +1396,9 @@ specs:
                 source: code
             kind: call-out
             refs:
-              - unresolved.c-risk-score
+              - unresolved.forge-customers.c-risk-score
             to:
-              component: unresolved.c-risk-score
+              component: unresolved.forge-customers.c-risk-score
               entry: POST /v2/score
             what: The risk score is asked of the vendor
           - confirmedBy: check

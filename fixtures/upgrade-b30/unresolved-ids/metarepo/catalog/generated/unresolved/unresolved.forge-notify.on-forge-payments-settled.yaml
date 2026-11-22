@@ -1,0 +1,16 @@
+schemaVersion: 5
+kind: Unresolved
+id: unresolved.forge-notify.on-forge-payments-settled
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 3
+    path: src/main/java/forge/events/Listener.java
+    repo: forge-notify
+    side: callee
+    source: code
+owner: forge-notify
+raw: forge.payments.settled
+unresolvedKind: event-subscribe

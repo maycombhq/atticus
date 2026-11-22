@@ -1,0 +1,15 @@
+schemaVersion: 5
+kind: Component
+id: forge-ledger
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 4
+    path: src/main/java/forge/client/Client.java
+    repo: forge-ledger
+    source: code
+repo: forge-ledger
+system: forge-ledger
+type: service

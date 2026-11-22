@@ -170,15 +170,11 @@ async function check(k: ShapeSketch): Promise<void> {
       const tos = arrows.map((r) => (r as { to?: string }).to);
       if ((c.via === "host" || c.via === "forward") && c.to && !tos.includes(c.to))
         route(`names ${c.to}'s host, and its arrows go to ${tos.join(", ") || "nothing"}`);
-      // An arrow's flags are every call's on it: an unset `${NAME}` call guessed to the same API
-      // (the held bug below) flags it joined-by-path. Until that is fixed, this part holds only
-      // where no such call is.
-      const guessed = e.calls.some((x) => x.via === "token" && !x.host.startsWith("@"));
-      if (c.via === "proxy" && (!drawn || (!guessed && flags.has("joined-by-path"))))
+      if (c.via === "proxy" && (!drawn || flags.has("joined-by-path")))
         route("goes through the proxy, and no arrow cites it but one guessed by its path");
-      // An unset `${NAME}` host is drawn by its path today: held apart, as it.fails below. When
-      // that is fixed, the `c.host.startsWith("@")` exemption here goes too.
-      if (c.via === "token" && c.host.startsWith("@") && drawn && !flags.has("joined-by-person"))
+      // A deploy token nothing sets, `@name@` or `${NAME}` alike (ADR 0195, the beta.28.1
+      // addendum's sub-addendum of 2026-11-19), is asked about: never drawn unless a person joined it.
+      if (c.via === "token" && drawn && !flags.has("joined-by-person"))
         route("names a deploy token nothing sets, and is drawn though no person joined it");
       if (c.via === "outside" && l.status !== "outside" && l.status !== "asked")
         route("names the outside vendor, and is neither placed outside nor asked");
@@ -244,43 +240,37 @@ describe("the estate's shape: every call accounted for, every refusal with a nex
   });
 
   /**
-   * Found by the shape generator (beta.30 slice 9), held before its fix (the owner's rule, in
-   * packages/core/src/facts-join.ts: a host written as a deploy token nothing sets is asked
-   * about, since a path guess would be an arrow no line cites). `WHOLE_HOST_TOKEN` matches only
-   * `@name@`, so a call to `${FORGE_LEDGER_URL}` that nothing sets is drawn by its path, an
-   * inferred arrow flagged joined-by-path, where `@forgeLedgerUrl@` is asked. When the join asks
-   * about it too, this passes and `it.fails` says so: make it `it`, and drop the
-   * `c.host.startsWith("@")` exemption from the token route of `check` above.
+   * Found by the shape generator (beta.30 slice 9), fixed by ADR 0195's beta.28.1 sub-addendum
+   * (the owner, 2026-11-19): a call to `${FORGE_LEDGER_URL}` that nothing sets was drawn by its
+   * path, an inferred arrow flagged joined-by-path, where `@forgeLedgerUrl@` was asked
+   * (`WHOLE_HOST_TOKEN` matched only `@name@`). The join asks about both now.
    */
-  it.fails(
-    "a host written as ${NAME} that nothing sets is asked about, never drawn by its path",
-    async () => {
-      const k: ShapeSketch = {
-        services: 2,
-        dotted: false,
-        noSystem: false,
-        proxy: "none",
-        nested: false,
-        calls: [{ from: 1, to: 0, ep: 0, via: "token" }],
-        token: "dollar",
-      };
-      const root = await mkdtemp(join(tmpdir(), "b30-fd-shape-"));
-      dirs.push(root);
-      const e = await writeShapeEstate(root, k, snapshot);
-      await buildAndWrite(root, { command: "atticus catalog build" });
-      const c = e.calls.find((x) => x.via === "token")!;
-      expect(c.host).toMatch(/^\$\{/);
-      const records = (await readCatalog(join(root, "catalog", "generated"))).records;
-      const drawn = records.filter(
-        (r) =>
-          r.kind === "Interface" &&
-          (r.evidence as { repo?: string; path?: string; line?: number }[]).some(
-            (x) => x.repo === c.repo && x.path === c.file && x.line === c.line,
-          ),
-      );
-      expect(drawn.map((r) => (r as { flags?: string[] }).flags)).toEqual([]);
-    },
-  );
+  it("a host written as ${NAME} that nothing sets is asked about, never drawn by its path", async () => {
+    const k: ShapeSketch = {
+      services: 2,
+      dotted: false,
+      noSystem: false,
+      proxy: "none",
+      nested: false,
+      calls: [{ from: 1, to: 0, ep: 0, via: "token" }],
+      token: "dollar",
+    };
+    const root = await mkdtemp(join(tmpdir(), "b30-fd-shape-"));
+    dirs.push(root);
+    const e = await writeShapeEstate(root, k, snapshot);
+    await buildAndWrite(root, { command: "atticus catalog build" });
+    const c = e.calls.find((x) => x.via === "token")!;
+    expect(c.host).toMatch(/^\$\{/);
+    const records = (await readCatalog(join(root, "catalog", "generated"))).records;
+    const drawn = records.filter(
+      (r) =>
+        r.kind === "Interface" &&
+        (r.evidence as { repo?: string; path?: string; line?: number }[]).some(
+          (x) => x.repo === c.repo && x.path === c.file && x.line === c.line,
+        ),
+    );
+    expect(drawn.map((r) => (r as { flags?: string[] }).flags)).toEqual([]);
+  });
 
   it("the shapes the generator makes each appear in a fixed seed's runs", () => {
     const seen = new Set<string>();

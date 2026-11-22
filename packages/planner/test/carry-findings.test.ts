@@ -380,7 +380,9 @@ describe("an outside system a call fact names (5)", () => {
     ]);
     // The estate's own step names the vendor it can't resolve; a target flow may name it too.
     expect(
-      rules(callOut({ component: "unresolved.c-risk-score", entry: "POST /v2/score" })),
+      rules(
+        callOut({ component: "unresolved.forge-customers.c-risk-score", entry: "POST /v2/score" }),
+      ),
     ).toEqual([]);
     // A name nothing gives is still refused.
     expect(rules(callOut({ component: "nowhere", entry: "POST /x" }))).toEqual([

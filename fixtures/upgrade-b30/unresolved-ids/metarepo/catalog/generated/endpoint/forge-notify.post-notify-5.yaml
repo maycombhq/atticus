@@ -1,0 +1,19 @@
+schemaVersion: 5
+kind: Endpoint
+id: forge-notify.post-notify-5
+status: current
+confidence: verified
+component: forge-notify
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123456789abcdef0123456789abcdef01234567
+    line: 6
+    path: src/main/java/forge/web/Controller.java
+    repo: forge-notify
+    side: callee
+    source: code
+method: POST
+normalizedPath: /v1/rates/{}/notify-5
+pathOrTopic: /v1/rates/{id}/notify-5
+schemaRefs: []

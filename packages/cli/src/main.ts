@@ -587,6 +587,7 @@ Usage:
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
           [--yes]                      Apply the step that moves a catalog from before beta.27 into stored reads (ADR 0195); without it the step only shows what it would write
           [--accept-changes <n>]       With --yes: accept the record files the first build would change, with the count the step listed
+          [--allow-removals <n>]       Confirm the removals a step's build listed (more than 10% of a repo's records, or 200), with the count it named
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
@@ -2520,10 +2521,14 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     );
     return 2;
   }
-  if (group === "upgrade")
+  if (group === "upgrade") {
+    // ADR 0195 point 4: a step that builds (ADR 0124 addendum E-ids) takes --allow-removals.
+    const counts = countFlags(values, io);
+    if (!counts) return 2;
     return upgradeCommand(
       root,
       {
+        ...(counts.allowRemovals !== undefined ? { allowRemovals: counts.allowRemovals } : {}),
         check: values.check === true,
         dryRun: values["dry-run"] === true,
         ...(values.check === true || values["dry-run"] === true ? {} : { by: who() }),
@@ -2537,6 +2542,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
   if (group === "support" && command === "bundle")
     return supportBundleCommand(
       root,
