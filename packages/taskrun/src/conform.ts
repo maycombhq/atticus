@@ -9,28 +9,40 @@ import {
   Api,
   ChecklistPack,
   changeBranch,
+  changesRelOf,
   Finding,
+  loadOrgPack,
+  orgPackDirOf,
   readRepoSpec,
   stateDirOf,
   taskBranch,
   toCanonicalYaml,
   type CatalogRecord,
   type ChecklistRule,
+  type Fact,
   type FlowRecord,
 } from "@maycombhq/core";
 import { readChangeFiles, readRound, roundsOf } from "@maycombhq/naysayer";
 import {
+  BRANCH_FACTS_DIR,
+  claimCounts,
+  claimFindingId,
+  claimRule,
   conform,
+  conformClaims,
+  readClaims,
   readConformDeltas,
   readOperations,
   readTaskSteps,
+  type Claim,
+  type ClaimResult,
   type ConformDelta,
   type ConformItem,
 } from "@maycombhq/planner";
-import { scanEstate, type FactBasis } from "@maycombhq/scanner";
+import { branchFactsAt, scanEstate, type FactBasis } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { slug, writeGateRound } from "@maycombhq/testgen";
-import { baseClonePath, createGit, type GitRunner } from "@maycombhq/workspace";
+import { baseClonePath, createGit, loadRepos, type GitRunner } from "@maycombhq/workspace";
 
 /**
  * Does the code do what the design says? (ADR 0114.) A repo's branch for a change (the change
@@ -62,7 +74,24 @@ export class ConformError extends Error {
 export type ScanAt = (
   repo: string,
   commit: string,
-) => Promise<{ records: CatalogRecord[]; files: string[]; problems: string[]; basis: FactBasis }>;
+  /**
+   * The review of ADR 0206: `branch` for the branch's own commit, the only scan that reads the
+   * branch's facts from the change folder; the base's never does.
+   */
+  o?: { branch?: boolean },
+) => Promise<{
+  records: CatalogRecord[];
+  files: string[];
+  problems: string[];
+  basis: FactBasis;
+  /**
+   * ADR 0206: the verified facts the records rest on at the commit, with the branch's own facts
+   * from the change folder (`conform/facts/<repo>.jsonl`) for the files they cover.
+   */
+  facts?: readonly Fact[];
+  /** The lines of the files the facts cite, at the commit, for a value the verifier doesn't check. */
+  lines?: Map<string, string[]>;
+}>;
 
 export interface ConformOptions {
   /** Only this repo; default every repo the target flows name. */
@@ -84,6 +113,8 @@ export interface ConformRun {
   problems: string[];
   /** How many target flows the change has. */
   flows: number;
+  /** ADR 0206: how many claims the change states (operations by repo, design.md's rows). */
+  claims: number;
 }
 
 const stamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -97,9 +128,18 @@ export function conformScanDir(root: string, repo: string, commit: string): stri
   return join(stateDirOf(root), ".index", "conform", `${repo}-${commit.slice(0, 12)}-${own}`);
 }
 
-/** Scan a repo at a commit from a detached worktree of its base clone, then remove the worktree. */
-function gitScanAt(root: string, git: GitRunner): ScanAt {
-  return async (repo, commit) => {
+/** The files the facts cite (their own lines and their parts'), each once. */
+const citedFiles = (facts: readonly Fact[]) => [
+  ...new Set(facts.flatMap((f) => [f.cite.file, ...(f.cite.with ?? []).map((w) => w.file)])),
+];
+
+/**
+ * Scan a repo at a commit from a detached worktree of its base clone, then remove the worktree.
+ * ADR 0206: the branch's own facts, kept in the change folder, are verified in that worktree and
+ * cover the files they cite; they are never written to the catalog.
+ */
+export function gitScanAt(root: string, git: GitRunner, changeDir?: string): ScanAt {
+  return async (repo, commit, o = {}) => {
     const base = baseClonePath(root, repo);
     const dir = conformScanDir(root, repo, commit);
     await rm(dir, { recursive: true, force: true });
@@ -120,19 +160,64 @@ function gitScanAt(root: string, git: GitRunner): ScanAt {
         .split("\n")
         .map((l) => l.trim())
         .filter(Boolean);
-      return {
-        records: s.records,
-        files,
-        basis: s.basis?.[repo] ?? { from: "readers" },
-        problems: s.problems
-          .filter((p) => !p.repo || p.repo === repo)
-          .map((p) => `${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`),
-      };
+      let basis: FactBasis = s.basis?.[repo] ?? { from: "readers" };
+      let facts = [...(s.facts?.[repo] ?? [])];
+      const problems = s.problems
+        .filter((p) => !p.repo || p.repo === repo)
+        .map((p) => `${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
+      // The branch's facts: verified here, at the branch's commit only, for the files they cite.
+      const own =
+        changeDir && o.branch
+          ? await readFile(
+              join(changeDir, ...BRANCH_FACTS_DIR.split("/"), `${repo}.jsonl`),
+              "utf8",
+            ).catch(() => undefined)
+          : undefined;
+      if (own !== undefined) {
+        const op = await loadOrgPack(orgPackDirOf(root));
+        const b = await branchFactsAt(op, own, { dir, commit, context: facts, repo });
+        if (b) {
+          for (const p of b.problems) problems.push(`${BRANCH_FACTS_DIR}/${repo}.jsonl: ${p}`);
+          ({ facts, basis } = withBranchFacts({ facts, basis }, b));
+        }
+      }
+      // The lines a claim's value may be written on, read in the worktree before it goes.
+      const lines = new Map<string, string[]>();
+      for (const f of citedFiles(facts.filter((x) => x.kind === "deploy" || x.kind === "config")))
+        lines.set(
+          f,
+          (await readFile(join(dir, ...f.split("/")), "utf8").catch(() => "")).split(/\r?\n/),
+        );
+      return { records: s.records, files, basis, problems, facts, lines };
     } finally {
       await git(["worktree", "remove", "--force", "--", dir], base).catch(() => undefined);
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       await git(["worktree", "prune"], base).catch(() => undefined);
     }
+  };
+}
+
+/**
+ * A repo's facts at the branch's commit with the branch's own (ADR 0206 as built, and its
+ * review): a fact of the snapshot citing a file the branch's facts cite gives way to them, and
+ * those files are no longer unread. A repo nobody read into facts before (the built-in readers
+ * only) is read by the branch's facts alone where they reach: what no fact cites (`unknown`, the
+ * verifier's coverage) stays unread, so its claims are never said missing or different on facts
+ * that don't cover it.
+ */
+export function withBranchFacts(
+  at: { facts: readonly Fact[]; basis: FactBasis },
+  b: { facts: readonly Fact[]; unknown: readonly string[] },
+): { facts: Fact[]; basis: FactBasis } {
+  if (!b.facts.length) return { facts: [...at.facts], basis: at.basis };
+  const covered = new Set(b.facts.map((f) => f.cite.file));
+  const cited = new Set(citedFiles(b.facts));
+  return {
+    facts: [...at.facts.filter((f) => !covered.has(f.cite.file)), ...b.facts],
+    basis:
+      at.basis.from === "facts"
+        ? { from: "facts", unread: at.basis.unread.filter((f) => !cited.has(f)) }
+        : { from: "facts", unread: [...b.unknown].sort() },
   };
 }
 
@@ -169,6 +254,49 @@ export function conformFindingId(i: ConformItem): string {
       ? slug(i.record ?? i.what)
       : `${slug(i.flow ?? "")}-${i.item ?? "trigger"}${column}`;
   return `conform-${i.status}-${i.check}-${subject}`.slice(0, 120).replace(/-+$/, "");
+}
+
+/** A claim's outcome as a C3 finding on the conform gate (ADR 0206); none for present and unconfirmed. */
+function claimFinding(
+  change: string,
+  c: Api.ConformClaimT,
+  rules: Map<string, ChecklistRule>,
+  now: string,
+): Finding | undefined {
+  const id = claimRule(c.outcome as ClaimResult["outcome"]);
+  const rule = id ? rules.get(id) : undefined;
+  if (!rule) return undefined;
+  const summary = c.what.length <= 200 ? c.what : `${c.what.slice(0, 197)}...`;
+  return Finding.parse({
+    schemaVersion: 1,
+    id: claimFindingId(c as ClaimResult),
+    kind: "issue",
+    change,
+    gate: CONFORM_GATE,
+    round: 1,
+    rule: rule.id,
+    layer: rule.layer,
+    lens: rule.lens,
+    severity: rule.severity,
+    artifact: c.from.file,
+    locator: { line: c.from.line },
+    summary,
+    why: rule.description ?? rule.title,
+    fix: { text: c.next },
+    evidence: c.at.map((x) =>
+      x.source === "artifact"
+        ? { source: "artifact", path: x.path, ...(x.line ? { line: x.line } : {}) }
+        : {
+            source: "code",
+            repo: x.repo ?? c.repo,
+            path: x.path,
+            ...(x.line ? { line: x.line } : {}),
+          },
+    ),
+    waivable: rule.waivable,
+    state: "open",
+    createdAt: now,
+  });
 }
 
 /** What is missing, still there or unexpected, as C3 findings on the conform gate. */
@@ -223,6 +351,11 @@ export async function conformFindings(
           createdAt: now,
         }),
       );
+    }
+  for (const r of results)
+    for (const c of r.claims ?? []) {
+      const f = claimFinding(change, c, rules, now);
+      if (f) out.push(f);
     }
   return out;
 }
@@ -297,36 +430,152 @@ export async function conformChange(
   const git = o.git ?? createGit();
   const now = o.now ?? stamp();
   const { deltas, problems } = await deltasOf(root, change);
-  if (!deltas.length) return { results: [], problems, flows: 0 };
+  // ADR 0206: what the change states its code will have, beside its target flows.
+  const dirOfChange = changeFolder(root, change);
+  const stated = await readClaims(dirOfChange);
+  problems.push(...stated.problems);
+  if (!deltas.length && !stated.claims.length)
+    return { results: [], problems, flows: 0, claims: 0 };
 
-  const tasks = await readTaskSteps(changeFolder(root, change));
+  const tasks = await readTaskSteps(dirOfChange);
   let taskRepo: string | undefined;
+  /** A task's claims: an operation's task by its label, a row by its task; else its repo's. */
+  let taskClaims: Claim[] | undefined;
   if (o.task) {
     const t = o.task.toLowerCase();
-    const listed = readChangeTasks(await readChangeFiles(changeFolder(root, change))).find(
-      (x) => x.id === t,
-    );
+    const listed = readChangeTasks(await readChangeFiles(dirOfChange)).find((x) => x.id === t);
     const flow = [...tasks].find(([, v]) => v === t)?.[0].split("#")[0];
-    taskRepo = listed?.repo ?? deltas.find((d) => d.delta.flow === flow)?.delta.repo;
+    const own = stated.claims.filter((c) => c.label === t || c.from.task === t);
+    taskRepo =
+      listed?.repo ?? deltas.find((d) => d.delta.flow === flow)?.delta.repo ?? own[0]?.repo;
+    if (taskRepo) taskClaims = own.length ? own : stated.claims.filter((c) => c.repo === taskRepo);
     if (!taskRepo)
       throw new ConformError(
         "not-found",
         `There is no task ${o.task} in ${change}'s tasks.md or stories.`,
       );
   }
+  const claims = taskClaims ?? stated.claims;
   const repos = o.repo
     ? [o.repo]
     : taskRepo
       ? [taskRepo]
-      : [...new Set(deltas.map((d) => d.delta.repo))].sort();
-  if (o.repo && !deltas.some((d) => d.delta.repo === o.repo))
+      : [...new Set([...deltas.map((d) => d.delta.repo), ...claims.map((c) => c.repo)])].sort();
+  if (
+    o.repo &&
+    !deltas.some((d) => d.delta.repo === o.repo) &&
+    !claims.some((c) => c.repo === o.repo)
+  )
     problems.push(`No target flow of ${change} is in ${o.repo}; only what it adds is checked.`);
-  const scanAt = o.scanAt ?? gitScanAt(root, git);
+  const scanAt = o.scanAt ?? gitScanAt(root, git, dirOfChange);
   const results: Api.ConformRepoResultT[] = [];
+  /** Each repo's branch commit scanned once, for its own check and another repo's claims. */
+  const scans = new Map<string, ReturnType<ScanAt>>();
+  const branchScan = (repo: string, commit: string) => {
+    const key = `${repo}@${commit}`;
+    if (!scans.has(key)) scans.set(key, scanAt(repo, commit, { branch: true }));
+    return scans.get(key)!;
+  };
+  const manifest = await loadRepos(root).catch(() => []);
+  /**
+   * ADR 0206 point 2: the other repos a deployment's or a route's operation names, at their
+   * branch's commit, for a deploy fact there whose `exposes` names this repo. A repo with no clone
+   * here or no branch yet has nothing on the branch to say, and isn't read.
+   */
+  const elsewhereOf = async (mine: readonly Claim[], ref: string) => {
+    const out: {
+      repo: string;
+      facts: readonly Fact[];
+      basis: FactBasis;
+      lines?: Map<string, string[]>;
+    }[] = [];
+    for (const other of [...new Set(mine.flatMap((c) => c.with ?? []))].sort()) {
+      const base = baseClonePath(root, other);
+      if (!existsSync(base)) continue;
+      let commit = "";
+      for (const r of [...new Set([ref, changeBranch(change)])]) {
+        commit = await git(["rev-parse", "--verify", "--quiet", `${r}^{commit}`], base).then(
+          (x) => x.stdout.trim(),
+          () => "",
+        );
+        if (commit) break;
+      }
+      if (!commit) continue;
+      const s = await branchScan(other, commit);
+      out.push({
+        repo: other,
+        facts: s.facts ?? [],
+        basis: s.basis,
+        ...(s.lines ? { lines: s.lines } : {}),
+      });
+    }
+    return out;
+  };
 
   for (const repo of repos) {
     const ref = o.ref ?? (o.task ? taskBranch(change, o.task.toLowerCase()) : changeBranch(change));
     const base = baseClonePath(root, repo);
+    const mine = claims.filter((c) => c.repo === repo);
+    // ADR 0206: a repo only claims name, with no clone here: its claims are said, never thrown.
+    if (!existsSync(base) && mine.length && !deltas.some((d) => d.delta.repo === repo)) {
+      const listed = await loadRepos(root).then(
+        (rs) => rs.some((r) => r.id === repo),
+        () => false,
+      );
+      const why = listed
+        ? `${repo} has no clone here, so nothing of it was scanned: run atticus workspace sync, then check again.`
+        : `${repo} isn't a repo of the estate yet: if it is new, create it on your Git host, then add it (atticus repo add <its clone URL> --id ${repo}), and check again.`;
+      const judged = conformClaims({
+        change,
+        changesRel: changesRelOf(root),
+        repo,
+        claims: mine,
+        before: [],
+        after: [],
+        files: [],
+        basis: { from: "none" },
+      });
+      const result: Api.ConformRepoResultT = {
+        schemaVersion: 1,
+        change,
+        repo,
+        ref: o.ref ?? (o.task ? taskBranch(change, o.task.toLowerCase()) : changeBranch(change)),
+        commit: "",
+        base: "",
+        ...(o.task ? { task: o.task.toLowerCase() } : {}),
+        checkedAt: now,
+        counts: {
+          found: 0,
+          missing: 0,
+          stillThere: 0,
+          unexpected: 0,
+          claims: claimCounts(judged.claims),
+        },
+        items: [],
+        unchecked: [],
+        claims: judged.claims,
+        problems: [why],
+      };
+      await writeFileAtomic(
+        join(changeFolder(root, change), CONFORM_DIR, `${repo}.yaml`),
+        toCanonicalYaml(result, [
+          "schemaVersion",
+          "change",
+          "repo",
+          "ref",
+          "commit",
+          "base",
+          "task",
+          "checkedAt",
+          "counts",
+          "outcome",
+          "check",
+          "from",
+        ]),
+      );
+      results.push(result);
+      continue;
+    }
     if (!existsSync(base))
       throw new ConformError(
         "refused",
@@ -347,7 +596,7 @@ export async function conformChange(
       (x) => x.stdout.trim() || commit,
       () => commit,
     );
-    const after = await scanAt(repo, commit);
+    const after = await branchScan(repo, commit);
     const before = from === commit ? after : await scanAt(repo, from);
     const scope = o.task
       ? [...tasks]
@@ -355,20 +604,46 @@ export async function conformChange(
           .map(([k]) => ({ flow: k.split("#")[0]!, item: Number(k.split("#")[1]) }))
       : undefined;
     const repoProblems = [...new Set([...before.problems, ...after.problems])];
-    if (o.task && !scope?.length)
+    if (o.task && deltas.length && !scope?.length)
       repoProblems.push(
         `The stories don't say which target-flow steps task ${o.task} builds, so every step of ${repo}'s target flows is checked.`,
       );
-    const r = conform({
-      repo,
-      deltas,
-      ...(scope?.length ? { scope } : {}),
-      tasks,
-      before: before.records,
-      after: after.records,
-      files: after.files,
-      basis: after.basis,
-    });
+    const r = deltas.length
+      ? conform({
+          repo,
+          deltas,
+          ...(scope?.length ? { scope } : {}),
+          tasks,
+          before: before.records,
+          after: after.records,
+          files: after.files,
+          basis: after.basis,
+        })
+      : { items: [] as ConformItem[], unchecked: [] };
+    // ADR 0206: each claim in this repo, looked for in the facts at the commit.
+    const own = manifest.find((m) => m.id === repo)?.component;
+    const elsewhere = mine.length ? await elsewhereOf(mine, ref) : [];
+    const judged = mine.length
+      ? conformClaims({
+          change,
+          changesRel: changesRelOf(root),
+          repo,
+          claims: mine,
+          before: before.facts ?? [],
+          after: after.facts ?? [],
+          ...(own ? { names: [own] } : {}),
+          elsewhere,
+          files: after.files,
+          basis: after.basis,
+          lineAt: (path, line, at) =>
+            (at && at !== repo ? elsewhere.find((x) => x.repo === at)?.lines : after.lines)?.get(
+              path,
+            )?.[line - 1],
+          // A change whose whole design is its claims: what the branch adds and no claim names.
+          unexpected: !deltas.length,
+        })
+      : { claims: [], unexpected: [] };
+    r.items.push(...judged.unexpected);
     const count = (s: ConformItem["status"]) => r.items.filter((i) => i.status === s).length;
     const result: Api.ConformRepoResultT = {
       schemaVersion: 1,
@@ -384,9 +659,11 @@ export async function conformChange(
         missing: count("missing"),
         stillThere: count("still-there"),
         unexpected: count("unexpected"),
+        ...(judged.claims.length ? { claims: claimCounts(judged.claims) } : {}),
       },
       items: r.items,
       unchecked: r.unchecked,
+      ...(judged.claims.length ? { claims: judged.claims } : {}),
       problems: repoProblems,
     };
     await writeFileAtomic(
@@ -405,6 +682,9 @@ export async function conformChange(
         "check",
         "flow",
         "item",
+        "outcome",
+        "repo",
+        "from",
       ]),
     );
     results.push(result);
@@ -425,6 +705,7 @@ export async function conformChange(
     ...(round.round ? { round: round.round } : {}),
     problems,
     flows: deltas.length,
+    claims: stated.claims.length,
   };
 }
 
@@ -440,6 +721,8 @@ export async function conformanceOf(
   const { deltas, problems } = await readConformDeltas(changeFolder(root, change));
   // ADR 0203: the operations, which this check doesn't look at, counted so the app says so.
   const operations = (await readOperations(changeFolder(root, change))).file?.operations.length;
+  // ADR 0206: the claims the change states, which the check looks for.
+  const claims = (await readClaims(changeFolder(root, change))).claims.length;
   const stored = await readConformResults(root, change);
   const rounds = await roundsOf(root, change, CONFORM_GATE).catch(() => [] as number[]);
   const round = rounds.at(-1);
@@ -452,6 +735,7 @@ export async function conformanceOf(
     title: c.title,
     flows: deltas.length,
     ...(operations ? { operations } : {}),
+    ...(claims ? { claims } : {}),
     results: stored.results.map((r) => ({
       ...r,
       items: r.items.map((i) => {
@@ -459,6 +743,15 @@ export async function conformanceOf(
         const id = conformFindingId(i);
         return { ...i, finding: { id, state: states.get(id) ?? "open" } };
       }),
+      ...(r.claims
+        ? {
+            claims: r.claims.map((c) => {
+              if (!claimRule(c.outcome as ClaimResult["outcome"])) return c;
+              const id = claimFindingId(c as ClaimResult);
+              return { ...c, finding: { id, state: states.get(id) ?? "open" } };
+            }),
+          }
+        : {}),
     })),
     gate: CONFORM_GATE,
     ...(round ? { round } : {}),
@@ -480,7 +773,10 @@ export interface BuiltTask {
  * flows (the task's steps), and say what came of it in the run's notes. A change with no target
  * flows has nothing to check; a check that can't run is a note, never a failed run.
  */
-export async function conformAfterBuild(c: BuiltTask): Promise<void> {
+export async function conformAfterBuild(
+  c: BuiltTask,
+  o: Pick<ConformOptions, "scanAt"> = {},
+): Promise<void> {
   if (c.record.state !== "built" || !c.record.commit) return;
   const change = c.t.change.id;
   const task = c.t.task.id;
@@ -493,8 +789,9 @@ export async function conformAfterBuild(c: BuiltTask): Promise<void> {
         .now()
         .toISOString()
         .replace(/\.\d{3}Z$/, "Z"),
+      ...(o.scanAt ? { scanAt: o.scanAt } : {}),
     });
-    if (!r.flows) return;
+    if (!r.flows && !r.claims) return;
     const x = r.results[0];
     const cmd = `atticus change conform ${change} --task ${task}`;
     if (!x) {
@@ -504,15 +801,22 @@ export async function conformAfterBuild(c: BuiltTask): Promise<void> {
       return;
     }
     const n = x.counts;
+    const k = n.claims;
+    const claimsOf = (m: number, words: string) =>
+      m ? `${m} claim${m === 1 ? "" : "s"} ${words}` : "";
     const parts = [
       n.missing ? `${n.missing} missing` : "",
       n.stillThere ? `${n.stillThere} still there` : "",
       n.unexpected ? `${n.unexpected} not in the design` : "",
+      claimsOf(k?.missing ?? 0, "missing"),
+      claimsOf(k?.differs ?? 0, "present differently"),
+      claimsOf(k?.notCheckable ?? 0, "to check by hand"),
+      claimsOf(k?.unconfirmed ?? 0, "not confirmed"),
     ].filter(Boolean);
     c.record.notes.push(
       parts.length
         ? `Checked against the design: ${parts.join(", ")}; the findings are on the conform gate (${cmd}).`
-        : `Checked against the design: ${n.found} found, nothing missing or unexpected (${cmd}).`,
+        : `Checked against the design: ${n.found + (k?.present ?? 0)} found, nothing missing or unexpected (${cmd}).`,
     );
   } catch (e) {
     c.record.notes.push(

@@ -30,7 +30,9 @@ export type ReasonCode =
   /** Review round 48: the change branch has commits since its release PR merged. */
   | "release-pr-stale"
   /** App-only audit: a task branch has commits the change branch hasn't, here or on the Git host. */
-  | "task-not-merged";
+  | "task-not-merged"
+  /** ADR 0206: a quick change's design.md In the code is missing or doesn't read. */
+  | "design.code-table";
 
 export interface Reason {
   code: ReasonCode;

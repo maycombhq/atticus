@@ -264,6 +264,9 @@ function prBody(
     a.privacy.touched
       ? `Touches personal data (${a.privacy.records.map((r) => r.id).join(", ")}); review it with the ${a.privacy.phase} hand-off.`
       : "No personal data touched.",
+    // ADR 0206: what a reviewer reads beside the files: the spec deltas' names no In the code row
+    // states, and the claims Atticus couldn't confirm against the code.
+    ...(a.notes?.length ? ["", "### Notes", "", ...a.notes.map((n) => `- ${n}`)] : []),
     ...(review?.trim() ? ["", review.trim()] : []),
   ];
   return lines.join("\n") + "\n";

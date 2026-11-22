@@ -1,0 +1,2 @@
+{"repo":"forge-orders","commit":"aaaaaaa","verified":"line","by":"assistant","conf":"declared","kind":"deploy","id":"d-0","env":"prod","platform":"hosts","resourceName":"orders","cite":{"file":"deploy/hosts.yaml","line":2,"value":"orders","quote":"name: orders"}}
+{"repo":"forge-orders","commit":"aaaaaaa","verified":"line","by":"assistant","conf":"declared","kind":"config","id":"k-0","settingKind":"retry","key":"orders.retry.max","env":"prod","value":"3","cite":{"file":"deploy/values-prod.yaml","line":1,"value":"orders.retry.max","quote":"orders.retry.max: 3"}}

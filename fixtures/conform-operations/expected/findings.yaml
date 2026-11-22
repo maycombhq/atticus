@@ -1,0 +1,9 @@
+# The findings both repos' results make on the conform gate (ADR 0206): id, rule, severity, artifact
+# and line. Present and couldn't-confirm make none.
+- { id: conform-differs-config-retry-setting-forge-orders, rule: conform.differs, severity: blocking, artifact: target-flows/_operations.yaml, line: 18 }
+- { id: conform-not-checked-cut-over-switch-forge-orders, rule: conform.not-checked, severity: blocking, artifact: target-flows/_operations.yaml, line: 37 }
+- { id: conform-differs-deployment-deploy-anvil-forge-ledger, rule: conform.differs, severity: blocking, artifact: target-flows/_operations.yaml, line: 8 }
+- { id: conform-differs-secret-ledger-key-forge-ledger, rule: conform.differs, severity: blocking, artifact: target-flows/_operations.yaml, line: 23 }
+- { id: conform-missing-pipeline-anvil-pipeline-forge-ledger, rule: conform.missing, severity: blocking, artifact: target-flows/_operations.yaml, line: 28 }
+- { id: conform-not-checked-config-notify-forge-ledger, rule: conform.not-checked, severity: blocking, artifact: target-flows/_operations.yaml, line: 33 }
+- { id: conform-not-checked-cut-over-switch-forge-ledger, rule: conform.not-checked, severity: blocking, artifact: target-flows/_operations.yaml, line: 37 }

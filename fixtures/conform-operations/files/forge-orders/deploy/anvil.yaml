@@ -1,0 +1,7 @@
+kind: Service
+metadata:
+  name: orders-anvil
+  platform: anvil
+spec:
+  host: orders.anvil.forge.example
+  path: /orders

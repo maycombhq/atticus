@@ -1,0 +1,26 @@
+schemaVersion: 1
+change: add-fraud-check
+repo: forge-ledger
+ref: change/add-fraud-check
+commit: 3c1f0a9b2d4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a
+base: 9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d
+checkedAt: 2026-11-17T09:00:00Z
+counts:
+  found: 1
+  missing: 0
+  stillThere: 0
+  unexpected: 0
+items:
+  - status: found
+    check: call
+    flow: ledger-api.create-transfer
+    item: 2
+    what: ledger-api calls fraud-svc POST /checks.
+    record: if-ledger-api-fraud-svc-post-checks
+    at:
+      - source: code
+        repo: forge-ledger
+        path: src/main/java/forge/ledger/FraudClient.java
+        line: 14
+unchecked: []
+problems: []

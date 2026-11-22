@@ -341,7 +341,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "change_conformance",
     description:
-      "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with every call, table, column, migration and endpoint found, missing, still there or not in the design, each citing its file and line, and the finding's state; it reads the stored check and scans nothing (atticus change conform --latest).",
+      "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with every call, table, column, migration and endpoint found, missing, still there or not in the design, and each claim the change states (its operations, a quick change's In the code) present, present differently, missing, not checkable or not confirmed, each citing its file and line, and the finding's state; it reads the stored check and scans nothing (atticus change conform --latest).",
     args: [change],
     argv: (a) => ["change", "conform", String(a.change), "--latest", "--json"],
   },

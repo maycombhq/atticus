@@ -90,7 +90,31 @@ const delta = (requirements: { name: string; shall: string; scenarios: [string, 
     ]),
   ].join("\n");
 
-const design = (o: { context: string; decisions: string[]; rollout: string; risks: string }) =>
+/**
+ * ADR 0206: what the code will have, a row each (Repo, Task, Has, What, Spec), as the spec writer
+ * writes it under design.md's "## In the code".
+ */
+export type CodeRowIn = [repo: string, task: string, has: string, what: string, spec: string];
+export const IN_THE_CODE = "## In the code";
+const inTheCode = (rows: CodeRowIn[]) => [
+  IN_THE_CODE,
+  "",
+  "| Repo | Task | Has | What | Spec |",
+  "| --- | --- | --- | --- | --- |",
+  ...rows.map((r) => `| ${r.join(" | ")} |`),
+  "",
+];
+/** A design.md without its In the code, as one written before ADR 0206. */
+export const withoutCodeTable = (design: string): string =>
+  design.replace(/## In the code\n[\s\S]*?(?=\n## |$)/, "").replace(/\n{3,}/g, "\n\n");
+
+const design = (o: {
+  context: string;
+  decisions: string[];
+  rollout: string;
+  risks: string;
+  code: CodeRowIn[];
+}) =>
   [
     "# Design",
     "",
@@ -106,6 +130,7 @@ const design = (o: { context: string; decisions: string[]; rollout: string; risk
     "",
     o.rollout,
     "",
+    ...inTheCode(o.code),
     "## Risks",
     "",
     o.risks,
@@ -118,6 +143,8 @@ const design = (o: { context: string; decisions: string[]; rollout: string; risk
 
 export const PORTAL_API = "forge-approvals-api";
 export const PORTAL_WEB = "forge-approvals-web";
+
+const APPROVAL_REQUIREMENT = "A refund over the desk limit waits for its branch manager";
 
 export const NEW_PRODUCT: Archetype = {
   id: "approvals-portal",
@@ -204,7 +231,7 @@ export const NEW_PRODUCT: Archetype = {
     }),
     "specs/refund-approvals/spec.md": delta([
       {
-        name: "A refund over the desk limit waits for its branch manager",
+        name: APPROVAL_REQUIREMENT,
         shall:
           "The approvals portal SHALL keep every refund over the desk limit as an open request until the branch manager of its branch approves or refuses it.",
         scenarios: [
@@ -238,6 +265,36 @@ export const NEW_PRODUCT: Archetype = {
         "The service is released first with no page calling it; the pages follow. Rolling back removes the pages, then the service; no existing store is written.",
       risks:
         "The gateway route is a later change, so the portal is reachable inside the estate only until then.",
+      code: [
+        [
+          PORTAL_API,
+          "1.1",
+          "table",
+          "`approval_requests`",
+          `refund-approvals: ${APPROVAL_REQUIREMENT}`,
+        ],
+        [
+          PORTAL_API,
+          "1.2",
+          "serves",
+          "`POST /v1/approvals/{id}/decision`",
+          `refund-approvals: ${APPROVAL_REQUIREMENT}`,
+        ],
+        [
+          PORTAL_API,
+          "1.2",
+          "calls",
+          `\`${bigRepoId(0)} GET /v1/refunds/{id}\``,
+          `refund-approvals: ${APPROVAL_REQUIREMENT}`,
+        ],
+        [
+          PORTAL_WEB,
+          "2.1",
+          "calls",
+          `\`${PORTAL_API} GET /v1/approvals\``,
+          `refund-approvals: ${APPROVAL_REQUIREMENT}`,
+        ],
+      ],
     }),
     "tasks.md": [
       `## ${PORTAL_API}`,
@@ -258,6 +315,7 @@ export const NEW_PRODUCT: Archetype = {
 // ---------------------------------------------------------------------------------------------
 
 export const MOVED = [bigRepoId(0), bigRepoId(1), bigRepoId(4)] as const;
+const HOSTING_REQUIREMENT = "A moved service is served from the Anvil platform";
 
 export const MIGRATION: Archetype = {
   id: "move-to-anvil",
@@ -331,7 +389,7 @@ export const MIGRATION: Archetype = {
     }),
     "specs/service-hosting/spec.md": delta([
       {
-        name: "A moved service is served from the Anvil platform",
+        name: HOSTING_REQUIREMENT,
         shall:
           "Each moved service SHALL be served from the Anvil platform only once its health entry answers there, and SHALL be served from its old host again within one deployment if it stops answering.",
         scenarios: [
@@ -364,6 +422,29 @@ export const MIGRATION: Archetype = {
       rollout:
         "A wave is released when every service in it answers its health entry on Anvil. Rolling a wave back routes its services to their old hosts, which stay up until the change is released; no store is written, so nothing is undone in data.",
       risks: `Between the waves ${MOVED[2]} calls across platforms; the second wave follows within a day.`,
+      code: [
+        ...MOVED.map((r, i): CodeRowIn => [
+          r,
+          `m${i + 1}`,
+          "deployment",
+          "platform anvil, env prod",
+          `service-hosting: ${HOSTING_REQUIREMENT}`,
+        ]),
+        [
+          EMPTY_REPO,
+          "m4",
+          "route",
+          "host anvil.forge.example",
+          `service-hosting: ${HOSTING_REQUIREMENT}`,
+        ],
+        [
+          EMPTY_REPO,
+          "m4",
+          "cut-over",
+          "undo: route the three services back to their old hosts, which stay up until the release",
+          "-",
+        ],
+      ],
     }),
     "tasks.md": [
       `## ${MOVED[0]}`,
@@ -491,6 +572,22 @@ export const NEW_EVENT: Archetype = {
       ],
       rollout: `${UNREAD_REPO} is released first, so the kind is handled before it is sent. Rolling back stops the publish; events already sent are ignored by a listener rolled back.`,
       risks: `Nobody has read ${UNREAD_REPO}, so another listener in it would not be seen.`,
+      code: [
+        [
+          NEW_PUBLISHER,
+          "e2",
+          "publishes",
+          `\`${TOPIC}\``,
+          "settled-refunds: A settled refund is published",
+        ],
+        [
+          UNREAD_REPO,
+          "e1",
+          "listens",
+          `\`${TOPIC}\``,
+          "settled-refunds: A settled refund is published",
+        ],
+      ],
     }),
     // The publisher's repo is written first and waits for the listener's: the order to run them
     // in is (after …)'s, not the file's.

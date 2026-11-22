@@ -41,7 +41,8 @@ export const FORGE_FIELD_SHAPE =
 /**
  * The fixture's options beside its shape: one more service, so both of the topic's consumers are
  * read from facts (the last service is the legacy one); the topic, the empty repo and the unread
- * repo of the archetypes (archetypes-changes.ts), so its new event is a change of this estate.
+ * repo of the archetypes (archetypes-changes.ts), so its new event is a change of this estate;
+ * and the services' deployments and a setting (ADR 0206), what conformance of operations reads.
  */
 export const FORGE_FIELD_OPTIONS: FieldEstateOptions = {
   shape: FORGE_FIELD_SHAPE,
@@ -52,6 +53,8 @@ export const FORGE_FIELD_OPTIONS: FieldEstateOptions = {
   unreadRepo: UNREAD_REPO,
   dollarTokens: 1,
   wrongBox: true,
+  // ADR 0206: the services' prod deployments and a setting, read from facts.
+  deployments: [0, 1, 2, 3],
   seed: 1,
 };
 
