@@ -302,3 +302,45 @@ describe("Remove it's words outlive the view it reloads (ADR 0204 1.7, journey 3
     expect(text(m.tree)).toContain(W.retired);
   });
 });
+
+describe("a find whose build refused (ADR 0204 A.2, the second review)", () => {
+  it("says saved, not built, tells no outcome, and reads the answer again on", async () => {
+    const { FindButton } = await import("../src/screens/architecture/ConnectAB.js");
+    const asked: Api.ConnectFindRequestT[] = [];
+    let reloads = 0;
+    const notBuilt = {
+      message: "Saved, not built",
+      lines: ["The build found records edited by hand."],
+      refused: {
+        reasons: ["hand-edits" as const],
+        message: "edited by hand",
+        command: "atticus verify forge-edge-proxy --write --discard-edits 1",
+      },
+      command: "atticus connect find forge-edge-proxy --to forge-ledger-svc --read",
+    };
+    const m = mount(
+      FindButton as never,
+      {
+        v: { ...v, mechanism: "declared" },
+        reload: () => void reloads++,
+        io: {
+          find: (body: Api.ConnectFindRequestT) => {
+            asked.push(body);
+            return Promise.resolve({ brief: "facts/x.find.md", leftOut: [], notBuilt });
+          },
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(W.findNotBuilt("forge-edge-proxy"));
+    expect(text(m.tree)).toContain("The build found records edited by hand.");
+    expect(reloads).toBe(0);
+    (button(W.readAnswer)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    expect(asked.at(-1)).toMatchObject({ read: true });
+  });
+});

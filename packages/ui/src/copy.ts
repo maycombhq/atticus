@@ -8237,6 +8237,11 @@ export const COPY = {
     handoff:
       "Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code:",
     readAnswer: "Read the answer",
+    // The second review: a find whose build refused tells no outcome; it waits for the build.
+    findNotBuilt: (a: string) =>
+      `Saved, not built: ${a}'s facts and the answer are saved, and the build waits for you to confirm what it lists. Then read the answer again.`,
+    findNotVerified: (a: string) =>
+      `Saved, not built: verify refused ${a}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again.`,
     outcome: {
       found: (date: string) => `confirmed by code on ${date}`,
       "found-loose": (at: string, what: string, b: string) =>

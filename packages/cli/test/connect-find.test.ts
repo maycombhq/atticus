@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -100,6 +100,15 @@ const WRONG = call(
   "return nowhere();",
 );
 
+/** verify --write with every removal confirmed, as the person would on Catalog builds. */
+const verifyAll = (root: string, repo: string) =>
+  verifyConfirmed(
+    root,
+    repo,
+    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true },
+    { out: () => undefined, err: () => undefined },
+  );
+
 let g: ReconnectEstate;
 const PROFILE = () => join(g.root, "org-pack", "profiles", "forge", "profile.yaml");
 let profileBytes = "";
@@ -138,13 +147,7 @@ beforeAll(async () => {
   const b = await buildAndWrite(g.root, { command: "atticus catalog build" });
   expect(b.guard.refused).toBeUndefined();
   profileBytes = readFileSync(PROFILE(), "utf8");
-  findHooks.verify = (root, repo) =>
-    verifyConfirmed(
-      root,
-      repo,
-      { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true },
-      { out: () => undefined, err: () => undefined },
-    );
+  findHooks.verify = verifyAll;
 }, 300_000);
 afterAll(async () => {
   findHooks.runner = undefined;
@@ -266,6 +269,35 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       read: true,
     });
     expect(Api.FindResult.parse(read.body).entry?.outcome).toBe("found");
+  }, 300_000);
+
+  it("a refused build stops the find: saved, not built, with the refusal and its way on (the second review)", async () => {
+    // Through verify --write itself (no hook in its place): a record edited by hand refuses it.
+    findHooks.verify = undefined;
+    findHooks.verifyOptions = { commit: COMMIT[A]!, dir: join(g.root, "workspace", A) };
+    const gen = join(g.root, "catalog", "generated");
+    const rec = join(gen, "system", readdirSync(join(gen, "system")).sort()[0]!);
+    const was = readFileSync(rec, "utf8");
+    const reportFile = join(g.root, "facts", `${A}.find.yaml`);
+    const report = readFileSync(reportFile, "utf8");
+    try {
+      writeFileSync(rec, `${was}# edited by hand\n`);
+      const r = await find([], { looked: [FILE], found: [HOLD.id] });
+      expect(r.entry).toBeUndefined();
+      expect(r.report).toBeUndefined();
+      expect(r.notBuilt?.message).toMatch(/^Saved, not built:/);
+      expect(r.notBuilt?.refused?.reasons).toContain("hand-edits");
+      expect(r.notBuilt?.command).toBe(`atticus connect find ${A} --to ${B} --read`);
+      // No outcome from the catalog before this build: the report is as it was.
+      expect(readFileSync(reportFile, "utf8")).toBe(report);
+      // The session's answer is kept for the way on.
+      expect(existsSync(join(g.root, "proposals", "find", `${A}--repo-${B}.yaml`))).toBe(true);
+      expect(readFileSync(PROFILE(), "utf8")).toBe(profileBytes);
+    } finally {
+      writeFileSync(rec, was);
+      findHooks.verifyOptions = undefined;
+      findHooks.verify = verifyAll;
+    }
   }, 300_000);
 });
 

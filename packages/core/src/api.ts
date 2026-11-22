@@ -6800,6 +6800,21 @@ export const FindResult = z.object({
   report: z.string().optional(),
   /** What of the answer was left out (an id that is no call fact of A, a file A doesn't have). */
   leftOut: z.array(z.string()),
+  /**
+   * The second review: `verify <A> --write` didn't build (its build refused, or verify refused the
+   * facts). The session's facts and answer are saved; no outcome is told from the catalog before
+   * this build, and the report isn't written. `refused` is the build's refusal (its listing, which
+   * Set up › Scans › Catalog builds confirms); `lines` what verify said; `command` the way on once
+   * it is confirmed or fixed (the find's --read, which checks the answer and builds again).
+   */
+  notBuilt: z
+    .object({
+      message: z.string(),
+      lines: z.array(z.string()),
+      refused: BuildRefusalView.optional(),
+      command: z.string(),
+    })
+    .optional(),
 });
 /** 3.19.0 (ADR 0204 A.8): POST /api/reading-rules/from-find, a draft rule from a find's call. */
 export const RuleFromFindRequest = z.strictObject({

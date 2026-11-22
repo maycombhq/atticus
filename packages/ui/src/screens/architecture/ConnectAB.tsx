@@ -479,12 +479,21 @@ export function DeclaredArrowLink(p: {
   );
 }
 
-/** ADR 0204 A.1, A.7: Find it in the code, as one job; a hand-off pauses with what to paste. */
-function FindButton(p: { v: Api.ConnectViewT; io: Omit<ConnectIo, "read">; reload(): void }) {
+/**
+ * ADR 0204 A.1, A.7: Find it in the code, as one job; a hand-off pauses with what to paste. A
+ * build that refused (the second review) is said as saved, not built, with its listing's page and
+ * Read the answer to go on once it is confirmed; no outcome is told before that build.
+ */
+export function FindButton(p: {
+  v: Api.ConnectViewT;
+  io: Omit<ConnectIo, "read">;
+  reload(): void;
+}) {
   const { v } = p;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [handoff, setHandoff] = useState<string | undefined>();
+  const [notBuilt, setNotBuilt] = useState<Api.FindResultT["notBuilt"]>();
   const go = (read: boolean) => {
     setBusy(true);
     setError(undefined);
@@ -492,8 +501,9 @@ function FindButton(p: { v: Api.ConnectViewT; io: Omit<ConnectIo, "read">; reloa
       .find({ from: v.from.repo!, to: v.to, ...(read ? { read: true } : {}) })
       .then(
         (r) => {
+          setNotBuilt(r.notBuilt);
           if (r.handoff) setHandoff(r.handoff.command);
-          else {
+          else if (!r.notBuilt) {
             setHandoff(undefined);
             p.reload();
           }
@@ -523,6 +533,20 @@ function FindButton(p: { v: Api.ConnectViewT; io: Omit<ConnectIo, "read">; reloa
           <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
             {W.readAnswer}
           </button>
+        </div>
+      )}
+      {notBuilt && (
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {notBuilt.refused ? W.findNotBuilt(v.fromName) : W.findNotVerified(v.fromName)}
+          </p>
+          {notBuilt.refused && <RefusalLink refused={notBuilt.refused} />}
+          {notBuilt.lines.length > 0 && <pre className="mono">{notBuilt.lines.join("\n")}</pre>}
+          {!handoff && (
+            <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
+              {W.readAnswer}
+            </button>
+          )}
         </div>
       )}
       {error && (

@@ -21,6 +21,8 @@ import type { Output } from "./commands.js";
 import { copilotAcpAllowed, copilotAcpByDefault, type AcpStepRunner } from "./copilot-acp-steps.js";
 import { arrowOf, boxWords, realCalls } from "./connect-arrows.js";
 import { dataBlock } from "./rules-commands.js";
+import type { VerifyCommandOptions } from "./verify-commands.js";
+import { APPLIED_WITH_LEFT_OUT } from "./verify-left-out.js";
 
 /**
  * ADR 0204 addendum A: find a declared arrow in the code. The profile's `links` item is a hint of
@@ -239,16 +241,20 @@ export function findAgainLabel(
   return "anyway";
 }
 
-/** Test hooks: the assistant's session (the mock provider) and the repo's verify --write. */
+/**
+ * Test hooks: the assistant's session (the mock provider), the repo's verify --write in its
+ * place, or the options the real verify --write is given (a fixture's commit and checkout).
+ */
 export const findHooks: {
   runner?: AcpStepRunner;
   verify?: (root: string, repo: string) => Promise<number>;
+  verifyOptions?: Omit<VerifyCommandOptions, "write">;
 } = {};
 
 const verifyWrite = async (root: string, repo: string, io: Output) => {
   if (findHooks.verify) return findHooks.verify(root, repo);
   const { verifyCommand } = await import("./verify-commands.js");
-  return verifyCommand(root, repo, { write: true }, io);
+  return verifyCommand(root, repo, { ...findHooks.verifyOptions, write: true }, io);
 };
 
 /** A's working facts (what the session wrote too). */
@@ -478,7 +484,38 @@ export async function runFind(
   await step(
     `Checking ${o.from}'s facts on their lines and building (atticus verify ${o.from} --write)`,
   );
-  await verifyWrite(root, o.from, io);
+  // The second review: a build that refused, or facts verify refused, end the find here: saved,
+  // not built. No outcome is told from a catalog this build didn't make, and the report waits.
+  const { lastBuildOf } = await import("./build-report.js");
+  const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+  const said: string[] = [];
+  const code = await verifyWrite(root, o.from, {
+    ...io,
+    err: (l) => {
+      said.push(l);
+      io.err(l);
+    },
+  });
+  if (code !== 0 && code !== APPLIED_WITH_LEFT_OUT) {
+    const last = await lastBuildOf(root);
+    const refused =
+      last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before
+        ? last.refused
+        : undefined;
+    const command = `atticus connect find ${o.from} ${o.to.repo ? `--to ${o.to.repo}` : `--system ${o.to.system}`} --read`;
+    return {
+      brief: files.brief,
+      leftOut: checked.leftOut,
+      notBuilt: {
+        message: refused
+          ? `Saved, not built: ${o.from}'s facts and the answer are saved, and the build waits for you to confirm what it lists (Set up › Scans › Catalog builds). Then read the answer again: ${command}`
+          : `Saved, not built: verify refused ${o.from}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again: ${command}`,
+        lines: said.slice(0, 50),
+        ...(refused ? { refused } : {}),
+        command,
+      },
+    };
+  }
   await step("Telling the outcome from the catalog");
   const out = await outcomeOf(root, op, { from: o.from, to: o.to, ...checked });
   const commit = (await builtFacts(root, o.from))[0]?.commit;
@@ -558,6 +595,10 @@ export async function connectFindCommand(
   if (r.handoff) {
     io.out(`In a NEW Copilot Chat (agent mode) or Claude Code session: ${r.handoff.command}`);
     return 0;
+  }
+  if (r.notBuilt) {
+    io.err(r.notBuilt.message);
+    return 1;
   }
   const e = r.entry!;
   io.out(
