@@ -61,7 +61,7 @@ beforeAll(async () => {
 afterAll(async () => g?.close(), 120_000);
 
 describe("upgrade of a beta.28.5 metarepo (ADR 0204, Migration)", () => {
-  it("builds the catalog beta.28.5 built, byte for byte (its hashes, built by the base)", async () => {
+  it("builds the catalog beta.28.5 built, byte for byte (its hashes, built by the tag v2.0.0-beta.28.5)", async () => {
     const golden = JSON.parse(
       readFileSync(join(FIX, "expected", "catalog-beta28.5.json"), "utf8"),
     ) as { files: Record<string, string> };

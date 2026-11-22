@@ -1,5 +1,5 @@
 {
-  "about": "The catalog files of the reconnect estate with a beta.28.5 profile (version 2, a topic and a declared route), as built by the base of beta.30 (f60e805f, 2.0.0-beta.28.5's build), each by its sha256. ADR 0204's upgrade test builds the same with beta.30 and compares.",
+  "about": "The catalog files of the reconnect estate with a beta.28.5 profile (version 2, a topic and a declared route), as built by the release tag v2.0.0-beta.28.5 itself (7c0766a3; the base of beta.30, f60e805f, builds the same hashes), each by its sha256. ADR 0204's upgrade test builds the same with beta.30 and compares.",
   "files": {
     "catalog/generated/capability/feature.entries.yaml": "a6469bdc7c28e5945d06a8d3129e467ea474eca2c13d84bab5d537499da65900",
     "catalog/generated/capability/feature.hold-release.yaml": "189a1e34cda7ce25d9a695475ff80970ae9c1ff2c1c0098df9ec9c205709e74f",
