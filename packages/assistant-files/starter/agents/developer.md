@@ -62,8 +62,8 @@ plainly enough to be copied.
 - `walk <id>` and `impact <id>`: what else in the repo, and in others, moves when this does.
   Everything `impact` names is either in a wave or said to be untouched.
 - `similar` and `search`: an earlier change that did the same kind of work. Copy its shape.
-- `conflicts <id>` for each repo, planned ones too: the open changes with tasks or flows in it,
-  each with its task or heading (yours isn't open yet, so that list is your overlap; `changes`,
+- `conflicts <id>` for each repo, planned ones too: each open change whose tasks or flows name
+  it, with its task or heading (yours isn't open yet, so that list is your overlap; `changes`,
   then `show <change id>`, is the other way). Work in the same repo means the same files and a
   merge.
 
