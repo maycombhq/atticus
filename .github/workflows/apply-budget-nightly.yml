@@ -1,12 +1,21 @@
 name: Apply budget (nightly)
 
 # ADR 0205 (the owner's answer of 2026-11-19): one repo's Apply in 15 seconds on the field-shaped
-# estate at 60 repos, as a CI budget. A wall-clock budget needs a machine of its own, so it runs
-# here, every night and on demand, on a dedicated runner, and never in `pnpm check` or the shared
-# CI jobs (packages/cli/test/apply-budget.test.ts skips unless ATTICUS_BENCH is set). The run
-# prints each Apply's time, its CPU time and the load; the big estate's times, a stress test, go
-# in the release notes from the bench (packages/cli/test/big-estate-bench.test.ts). No secret is
-# used, and nothing reaches the network but the install (CLAUDE.md rule 5).
+# estate at 60 repos, as a CI budget: the app's Apply (in the server's process, to "done") and the
+# command's (`atticus verify <repo> --write`, its own process, to its end), each the median of
+# three. A wall-clock budget, so it runs here, every night and on demand, and never in
+# `pnpm check` or the shared CI jobs (packages/cli/test/apply-budget.test.ts skips unless
+# ATTICUS_APPLY_BUDGET is set).
+#
+# The machine is a GitHub-hosted runner (ubuntu-24.04), as the repo's other jobs use; none of our
+# own. No other job of ours shares it, but it is a virtual machine on a shared host, so its clock
+# can be slowed by its neighbours. The run prints each Apply's time with its CPU time and the load:
+# a median over 15 s whose CPU time is well under it was the runner's noise (run it again), one
+# whose CPU time is over it is the code's. The margin, from ADR 0205's measurements at 60 repos:
+# the app's Apply uses about a third of the budget in CPU time and the command about half. The big
+# estate's times, a stress test, go in the release notes from the bench
+# (packages/cli/test/big-estate-bench.test.ts). No secret is used, and nothing reaches the network
+# but the install (CLAUDE.md rule 5).
 on:
   schedule:
     - cron: "41 3 * * *"
@@ -43,5 +52,5 @@ jobs:
       - name: One repo's Apply on the field-shaped estate, median of three, under 15 s
         run: pnpm --filter @maycombhq/cli test:apply-budget
         env:
-          ATTICUS_BENCH: "1"
+          ATTICUS_APPLY_BUDGET: "1"
           ATTICUS_BUDGET_REPOS: ${{ inputs.repos || '60' }}
