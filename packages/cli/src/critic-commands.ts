@@ -23,6 +23,7 @@ import {
   act,
   completeLensBatch,
   completeLensRun,
+  failLens,
   gateStatus,
   checkRoundRule,
   ownerWaitsLine,
@@ -378,12 +379,30 @@ async function resumeLenses(
       ];
       for (const w of out) {
         any = true;
-        let run = await rt.result(w.runId);
+        const had = await rt.result(w.runId).catch(() => undefined);
         const file = join(runsDirOf(root), changeId, w.runId, `findings-${w.lens}.yaml`);
         const written = await stat(file).then(
           () => true,
           () => false,
         );
+        // ADR 0203 C: a persona lens whose run is gone, cancelled or failed with no answer is
+        // recorded as skipped (failLens), said once, and never listed as still out again.
+        if (
+          w.persona &&
+          !written &&
+          (!had || had.state === "cancelled" || had.state === "failed")
+        ) {
+          const why = !had
+            ? `its run ${w.runId} is no longer there`
+            : `its run ${w.runId} ${had.state === "cancelled" ? "was cancelled" : "failed"}`;
+          await failLens(root, changeId, gate, w.round, w.runId, why);
+          io.out(
+            `${w.persona} (a persona lens) of round ${w.round} didn't review (${why}); nothing waits for it.`,
+          );
+          continue;
+        }
+        // Any other lens: as before, a run that can't be read is an error.
+        let run = had ?? (await rt.result(w.runId));
         if (written && run.state !== "validated") run = await rt.done(w.runId);
         if (run.state === "failed" && written) {
           for (const e of run.errors) io.err(e);

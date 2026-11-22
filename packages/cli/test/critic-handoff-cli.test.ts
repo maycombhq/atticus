@@ -294,6 +294,38 @@ describe("atticus critic --mode hand-off", () => {
     expect(said).not.toMatch(new RegExp(`${NAYSAYER} lens is still with your assistant`));
   });
 
+  it("--resume records a persona lens whose run was cancelled as skipped, and doesn't say it is still out", async () => {
+    const r = await root();
+    const NAYSAYER = "ledger-architect-naysayer";
+    await writeFile(
+      join(r, "org-pack/agents", `${NAYSAYER}.md`),
+      `---\nname: ${NAYSAYER}\ndescription: Asks what the ledger section left out.\nrole: architect\nowns: Ledger architect\ngates: [plan]\n---\n\nAsk who else reads the account's daily limit.\n`,
+    );
+    const { j } = await start(r);
+    const persona = j.lenses.find((l) => l.agent === NAYSAYER)!;
+    await new HandoffRuntime({ root: r, validate: async () => [] }).cancel(persona.runId!);
+    const c = capture();
+    await critic(r, CHANGE, { gate: "plan", resume: true }, c.io, { env: {}, now: LATER });
+    const said = c.out.join("\n");
+    expect(said).toContain(
+      `${NAYSAYER} (a persona lens) of round 1 didn't review (its run ${persona.runId} was cancelled); nothing waits for it.`,
+    );
+    expect(said).not.toContain(
+      `${NAYSAYER} (a persona lens) of round 1 is still with your assistant`,
+    );
+    const meta = parse(
+      await readFile(join(r, "openspec/changes", CHANGE, "review/plan/1/meta/round.yaml"), "utf8"),
+    ) as { lenses: { runId?: string; state: string; reason?: string }[] };
+    expect(meta.lenses.find((l) => l.runId === persona.runId)).toMatchObject({
+      state: "skipped",
+      reason: `${NAYSAYER} didn't review (its run ${persona.runId} was cancelled); a persona lens never holds the gate`,
+    });
+    // Asked again, it is no longer listed at all.
+    const d = capture();
+    await critic(r, CHANGE, { gate: "plan", resume: true }, d.io, { env: {}, now: LATER });
+    expect(d.out.join("\n")).not.toContain(NAYSAYER);
+  });
+
   it("--resume with nothing started says so", async () => {
     const r = await root();
     const c = capture();
