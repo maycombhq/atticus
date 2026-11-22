@@ -245,19 +245,43 @@ export function findAgainLabel(
 
 /**
  * Test hooks: the assistant's session (the mock provider), the repo's verify --write in its
- * place, or the options the real verify --write is given (a fixture's commit and checkout).
+ * place, the options the real verify --write is given (a fixture's commit and checkout), and B's
+ * read whole (a mock assistant's).
  */
 export const findHooks: {
   runner?: AcpStepRunner;
-  verify?: (root: string, repo: string) => Promise<number>;
+  verify?: (
+    root: string,
+    repo: string,
+    o: Pick<VerifyCommandOptions, "onBuildRefused">,
+  ) => Promise<number>;
   verifyOptions?: Omit<VerifyCommandOptions, "write">;
 } = {};
 
-const verifyWrite = async (root: string, repo: string, io: Output) => {
-  if (findHooks.verify) return findHooks.verify(root, repo);
+const verifyWrite = async (
+  root: string,
+  repo: string,
+  io: Output,
+  o: Pick<VerifyCommandOptions, "onBuildRefused">,
+) => {
+  if (findHooks.verify) return findHooks.verify(root, repo, o);
   const { verifyCommand } = await import("./verify-commands.js");
-  return verifyCommand(root, repo, { ...findHooks.verifyOptions, write: true }, io);
+  return verifyCommand(root, repo, { ...findHooks.verifyOptions, ...o, write: true }, io);
 };
+
+/** B read whole, as any read: atticus map --all --repos <B> through the assistant. */
+const readWhole = async (root: string, repo: string, io: Output, signal?: AbortSignal) => {
+  const { mapAllCommand } = await import("./map-all.js");
+  return mapAllCommand(root, { repos: [repo], mode: "copilot-acp" }, io, signal ? { signal } : {});
+};
+
+/** Text from an answer or a verifier, shown on a terminal: its control characters escaped. */
+export const visible = (s: string) =>
+  s.replace(
+    // eslint-disable-next-line no-control-regex -- the control characters are what is escaped
+    /[\u0000-\u001f\u007f-\u009f]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 
 /** A's working facts (what the session wrote too). */
 async function workingFacts(root: string, repo: string): Promise<Fact[]> {
@@ -532,30 +556,36 @@ export async function runFind(
   );
   // The second review: a build that refused, or facts verify refused, end the find here: saved,
   // not built. No outcome is told from a catalog this build didn't make, and the report waits.
-  const { lastBuildOf } = await import("./build-report.js");
-  const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+  // The third review: the refusal as verify --write's build tells it, not read back from disk.
+  const { refusalView } = await import("./build-report.js");
+  let refused: Api.BuildRefusalViewT | undefined;
   const said: string[] = [];
-  const code = await verifyWrite(root, o.from, {
-    ...io,
-    err: (l) => {
-      said.push(l);
-      io.err(l);
+  const code = await verifyWrite(
+    root,
+    o.from,
+    {
+      ...io,
+      err: (l) => {
+        said.push(l);
+        io.err(l);
+      },
     },
-  });
+    { onBuildRefused: (r) => (refused = refusalView(root, r, `atticus verify ${o.from} --write`)) },
+  );
   if (code !== 0 && code !== APPLIED_WITH_LEFT_OUT) {
-    const last = await lastBuildOf(root);
-    const refused =
-      last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before
-        ? last.refused
-        : undefined;
     const command = `atticus connect find ${o.from} ${o.to.repo ? `--to ${o.to.repo}` : `--system ${o.to.system}`} --read`;
+    // What happened, as verify said it: a build that waits for a confirm, facts refused, or
+    // verify --write ending another way (the build's lock, a catalog a newer Atticus built).
+    const rejected = said.some((l) => l.includes("Nothing written:"));
     return {
       brief: files.brief,
       leftOut: checked.leftOut,
       notBuilt: {
         message: refused
           ? `Saved, not built: ${o.from}'s facts and the answer are saved, and the build waits for you to confirm what it lists (Set up › Scans › Catalog builds). Then read the answer again: ${command}`
-          : `Saved, not built: verify refused ${o.from}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again: ${command}`,
+          : rejected
+            ? `Saved, not built: verify refused ${o.from}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again: ${command}`
+            : `Saved, not built: atticus verify ${o.from} --write ended without building (exit ${code}), so no outcome is told. What it said is below; once that is put right, read the answer again: ${command}`,
         lines: said.slice(0, 50),
         ...(refused ? { refused } : {}),
         command,
@@ -610,12 +640,20 @@ export async function connectFindCommand(
   o: { to?: string; system?: string; mode?: string; read?: boolean; json?: boolean },
   io: Output,
 ): Promise<number> {
+  const usage =
+    "Usage: atticus connect find <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]";
   if (!from || !!o.to === !!o.system) {
-    io.err(
-      "Usage: atticus connect find <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]",
-    );
+    io.err(usage);
     return 2;
   }
+  // The third review: an id that is no id is a usage error, before anything is read.
+  for (const id of [from, o.to ?? o.system!])
+    if (!RecordId.safeParse(id).success) {
+      io.err(
+        `${visible(JSON.stringify(id))} isn't a repo or system id (lowercase letters, digits and dashes). ${usage}`,
+      );
+      return 2;
+    }
   if (o.mode !== undefined && o.mode !== "copilot-acp" && o.mode !== "hand-off") {
     io.err("--mode is copilot-acp or hand-off.");
     return 2;
@@ -644,13 +682,14 @@ export async function connectFindCommand(
   }
   if (r.notBuilt) {
     io.err(r.notBuilt.message);
+    for (const x of r.leftOut) io.err(`  left out: ${visible(x)}`);
     return 1;
   }
   const e = r.entry!;
   io.out(
     `${from} → ${boxWords(to)}: ${e.outcome}${e.facts.length ? ` (${e.facts.join(", ")})` : ""}${e.other ? `; the code shows ${e.other}` : ""}. Atticus looked at ${e.looked.length} files. The report: ${r.report}.`,
   );
-  for (const x of r.leftOut) io.out(`  left out: ${x}`);
-  for (const x of e.rejected ?? []) io.out(`  rejected: ${x.fact}: ${x.why}`);
+  for (const x of r.leftOut) io.out(`  left out: ${visible(x)}`);
+  for (const x of e.rejected ?? []) io.out(`  rejected: ${visible(x.fact)}: ${visible(x.why)}`);
   return 0;
 }

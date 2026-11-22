@@ -21,8 +21,12 @@ import {
   type OrgPack,
 } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
+import { linksJobHooks } from "../src/ui-api-links.js";
+import type { VerifyCommandOptions } from "../src/verify-commands.js";
 import {
   checkFindAnswer,
+  connectFindCommand,
+  visible,
   findAgainLabel,
   findBrief,
   findHooks,
@@ -117,11 +121,15 @@ const WRONG = call(
 );
 
 /** verify --write with every removal confirmed, as the person would on Catalog builds. */
-const verifyAll = (root: string, repo: string) =>
+const verifyAll = (
+  root: string,
+  repo: string,
+  o: Pick<VerifyCommandOptions, "onBuildRefused"> = {},
+) =>
   verifyConfirmed(
     root,
     repo,
-    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true },
+    { commit: COMMIT[repo]!, dir: join(root, "workspace", repo), write: true, ...o },
     { out: () => undefined, err: () => undefined },
   );
 
@@ -409,6 +417,12 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       // The session's answer is kept for the way on.
       expect(existsSync(join(g.root, "proposals", "find", `${A}--repo-${B}.yaml`))).toBe(true);
       expect(readFileSync(PROFILE(), "utf8")).toBe(profileBytes);
+      // The third review: on the command line, --json too, it is no success.
+      const said: string[] = [];
+      const io = { out: (l: string) => said.push(l), err: () => undefined };
+      expect(await connectFindCommand(g.root, A, { to: B, read: true, json: true }, io)).toBe(1);
+      const json = said.at(-1)!;
+      expect(Api.FindResult.parse(JSON.parse(json)).notBuilt?.refused).toBeDefined();
     } finally {
       writeFileSync(rec, was);
       findHooks.verifyOptions = undefined;
@@ -466,6 +480,13 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     }
     expect(outside()).toEqual([]);
     expect(readFileSync(p, "utf8")).toBe(profileBytes);
+    // The third review: on the command line a bad id is a usage error (2), before any read.
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    expect(await connectFindCommand(g.root, "../../x", { to: B }, io)).toBe(2);
+    expect(await connectFindCommand(g.root, A, { to: "Forge Ledger" }, io)).toBe(2);
+    expect(said.join("\n")).toMatch(/isn't a repo or system id/);
+    expect(outside()).toEqual([]);
   }, 300_000);
 });
 
@@ -592,6 +613,11 @@ describe("the brief, the answer and the label (ADR 0204 A.3, A.4, A.7)", () => {
     // Both are there, each in a fence, as written.
     expect(b).toContain(`\`\`\`\nqx-by${inject}\n\`\`\``);
     expect(b).toContain(`\`\`\`\nQx Name${inject}\n\`\`\``);
+  });
+
+  it("escapes control characters in what the command line prints from an answer (the third review)", () => {
+    expect(visible("call.x\u001b[31m\nforged line")).toBe("call.x\\u001b[31m\\u000aforged line");
+    expect(visible("plain text, kept")).toBe("plain text, kept");
   });
 
   it("checks the answer: only A's call facts and A's files", () => {

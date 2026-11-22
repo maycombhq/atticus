@@ -1083,7 +1083,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           body: {
             ...plan,
             applyFirst: await applyFirstOf(root, plan.files),
-            ...(raises.length ? { raisesProfile: raises } : {}),
+            ...(raises.raised.length ? { raisesProfile: raises.raised } : {}),
+            ...(raises.unread.length ? { raisesProfileUnread: raises.unread } : {}),
           },
         };
       })

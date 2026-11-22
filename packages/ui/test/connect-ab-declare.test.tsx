@@ -338,6 +338,10 @@ describe("a find whose build refused (ADR 0204 A.2, the second review)", () => {
     m.render();
     expect(text(m.tree)).toContain(W.findNotBuilt("forge-edge-proxy"));
     expect(text(m.tree)).toContain("The build found records edited by hand.");
+    // WCAG 1.4.10: verify's lines wrap.
+    expect(all(m.tree).find((e) => e.type === "pre")?.props.style).toMatchObject({
+      whiteSpace: "pre-wrap",
+    });
     expect(reloads).toBe(0);
     (button(W.readAnswer)!.props.onClick as () => void)();
     for (let n = 0; n < 4; n++) await tick();

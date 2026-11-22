@@ -541,7 +541,12 @@ export function FindButton(p: {
             {notBuilt.refused ? W.findNotBuilt(v.fromName) : W.findNotVerified(v.fromName)}
           </p>
           {notBuilt.refused && <RefusalLink refused={notBuilt.refused} />}
-          {notBuilt.lines.length > 0 && <pre className="mono">{notBuilt.lines.join("\n")}</pre>}
+          {notBuilt.lines.length > 0 && (
+            // WCAG 1.4.10: long lines wrap, never a page that scrolls sideways.
+            <pre className="mono" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {notBuilt.lines.join("\n")}
+            </pre>
+          )}
           {!handoff && (
             <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
               {W.readAnswer}

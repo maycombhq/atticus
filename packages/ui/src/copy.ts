@@ -8196,6 +8196,8 @@ export const COPY = {
     shownCount: (n: number) =>
       `${n} declared arrow${n === 1 ? "" : "s"} the code now shows: retire ${n === 1 ? "it" : "them"} when you agree.`,
     shownOpen: (a: string, b: string) => `${a} → ${b}`,
+    raisesUnread: (file: string, target: string) =>
+      `Atticus couldn't read ${file} on ${target}, so it can't say whether this raises its profile version. An Atticus older than 2.0.0-beta.30 refuses version 3: check it before this merges.`,
     raisesProfile: (file: string, from: number, to: number) =>
       `This raises ${file} from profile version ${from} to ${to}: an Atticus older than 2.0.0-beta.30 refuses it. Upgrade everyone who works in this metarepo before it merges.`,
     retireConfirm: (label: string) => `${label}: take these lines out and build`,

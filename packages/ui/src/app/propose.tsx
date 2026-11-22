@@ -169,6 +169,8 @@ export interface Plan {
   applyFirst?: string[];
   /** API 3.19.0 (ADR 0204): the profiles this proposal raises to a version older Atticus refuses. */
   raisesProfile?: { file: string; from: number; to: number }[];
+  /** API 3.19.0 (the third review): profiles whose version on the target couldn't be read. */
+  raisesProfileUnread?: { file: string; target: string }[];
 }
 
 /** Beta.28.1: how many rejected facts an Apply's job left out (verify's exit 3), or 0. */
@@ -440,6 +442,11 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
             // ADR 0204 (Migration): an older Atticus refuses the raised profile by its version.
             <p key={x.file} className="run-note bad" role="note">
               {COPY.connectAB.raisesProfile(x.file, x.from, x.to)}
+            </p>
+          ))}
+          {(plan.raisesProfileUnread ?? []).map((x) => (
+            <p key={x.file} className="run-note" role="note">
+              {COPY.connectAB.raisesUnread(x.file, x.target)}
             </p>
           ))}
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>

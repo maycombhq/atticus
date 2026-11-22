@@ -4453,6 +4453,11 @@ export const ProposePlanView = z.object({
   raisesProfile: z
     .array(z.object({ file: z.string(), from: z.number().int(), to: z.number().int() }))
     .optional(),
+  /**
+   * 3.19.0 (the third review): a profile at version 3 whose version on the proposal's target
+   * branch couldn't be read, so whether this raises it isn't known: each with the target.
+   */
+  raisesProfileUnread: z.array(z.object({ file: z.string(), target: z.string() })).optional(),
 });
 
 /**
