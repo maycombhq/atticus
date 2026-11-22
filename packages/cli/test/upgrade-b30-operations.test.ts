@@ -244,7 +244,8 @@ async function everyFile(root: string): Promise<Map<string, string>> {
  * did, after the upgrade too: `--latest` prints what beta.28.5 itself printed for it (its output,
  * kept in fixtures/upgrade-b30/conform-28.5.latest.txt, made by the CLI built from the tag
  * v2.0.0-beta.28.5 on this metarepo), and every file the upgrade isn't meant to write (all but
- * the files its steps name, the folder of each, and its own record) is byte for byte the same; and
+ * the files its steps name, the folder of each, its stamp, its backup and its record) is byte for
+ * byte the same; and
  * a result this release writes, with claims, still
  * parses with beta.28.5's shape of ConformRepoResult (a copy, kept here as that version had it:
  * a plain object, so an older reader drops the keys it doesn't know).
@@ -327,10 +328,14 @@ describe("a stored conformance check from beta.28.5 (ADR 0206)", () => {
       expect(await bytesOf(root)).toEqual(before);
       const now = await everyFile(root);
       // What the upgrade is meant to write: the files its steps name (org-flow's step names the
-      // schema and writes its folder, the templates beside it), and its own record of what ran.
+      // schema and writes its folder, the templates beside it), its stamp (.atticus/metarepo.yaml),
+      // the backup it takes first (.atticus/backups/) and its record of what ran.
       const folders = [...meant].map((f) => f.slice(0, f.lastIndexOf("/") + 1));
       const own = (f: string) =>
-        f === ".index/upgraded.json" || f.startsWith(".atticus/") || meant.has(f);
+        f === ".index/upgraded.json" ||
+        f === ".atticus/metarepo.yaml" ||
+        f.startsWith(".atticus/backups/") ||
+        meant.has(f);
       const moved = [...new Set([...every.keys(), ...now.keys()])].filter(
         (f) => every.get(f) !== now.get(f),
       );
