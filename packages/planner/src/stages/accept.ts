@@ -165,9 +165,18 @@ export async function readAccepted(
   return out;
 }
 
-/** The ids people accepted (a repo, a component, a consumer), as knownToChange reads them. */
-export const acceptedIds = (accepted: ReadonlyMap<string, Accepted>): Map<string, Accepted> =>
-  new Map([...accepted.values()].filter((a) => a.record).map((a) => [a.record!, a]));
+/**
+ * The ids people accepted (a repo, a component, a consumer), as knownToChange reads them: one an
+ * acceptance, by rule and id, so one id accepted under two rules is known as both.
+ */
+export const acceptedIds = (
+  accepted: ReadonlyMap<string, Accepted>,
+): (Accepted & { id: string })[] => {
+  const out = new Map<string, Accepted & { id: string }>();
+  for (const a of accepted.values())
+    if (a.record) out.set(`${a.rule}|${a.record}`, { ...a, id: a.record });
+  return [...out.values()];
+};
 
 /** What the projection needs of a stage beyond its findings. */
 export interface ProjectOptions {

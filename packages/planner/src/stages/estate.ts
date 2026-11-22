@@ -58,9 +58,11 @@ export interface Estate {
   /**
    * ADR 0203 A.4: the ids people accepted at a stage of this change (a repo, a component, a
    * consumer the map doesn't hold), with who and why, set by the stage that read them. Each is
-   * known to every check, with that standing. Absent: none accepted.
+   * known to every check, with that standing, as the kind its rule says (a repo, a consumer, a
+   * call's target). One a list, by rule and id: one id accepted under two rules is both. Absent:
+   * none accepted.
    */
-  accepted?: ReadonlyMap<string, { by: string; why: string; rule: string }>;
+  accepted?: readonly { id: string; by: string; why: string; rule: string }[];
   /** ADR 0203 A: every acceptance of the change's stages, by fingerprint, for what they render. */
   acceptedFindings?: ReadonlyMap<string, Accepted>;
 }

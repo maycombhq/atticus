@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { loadChangeContext } from "@maycombhq/changes";
 import {
+  acceptedIds,
+  acceptedRepos,
   checkDeltas,
   checkStories,
   consumerIssues,
@@ -19,6 +21,7 @@ import {
   shapeTarget,
   StoriesAnswerSchema,
   unreadConsumer,
+  type Accepted,
   type DeltaStory,
   type Estate,
 } from "../src/index.js";
@@ -162,11 +165,11 @@ describe("an id accepted under one rule is not known under another", () => {
       flows: [],
       records: [],
       manifestRepos: new Set<string>(),
-      accepted: new Map([
-        ["forge-ghost-svc", { by: "pat", why: "New.", rule: "delta.unknown-component" }],
-        ["forge-ghost-app", { by: "pat", why: "New.", rule: "delta.unknown-consumer" }],
-        ["forge-ghost-repo", { by: "pat", why: "New.", rule: "feature.unknown-repo" }],
-      ]),
+      accepted: [
+        { id: "forge-ghost-svc", by: "pat", why: "New.", rule: "delta.unknown-component" },
+        { id: "forge-ghost-app", by: "pat", why: "New.", rule: "delta.unknown-consumer" },
+        { id: "forge-ghost-repo", by: "pat", why: "New.", rule: "feature.unknown-repo" },
+      ],
     };
     expect([...knownToChange([], e).keys()]).toEqual(["forge-ghost-app"]);
     expect(unreadConsumer("forge-ghost-svc", [], e)).toBeUndefined();
@@ -177,5 +180,42 @@ describe("an id accepted under one rule is not known under another", () => {
     expect(issueFingerprint("delta.unknown-component", "f#1:forge-ghost-svc")).not.toBe(
       issueFingerprint("delta.unknown-component", "f#1:forge-evil-svc"),
     );
+  });
+});
+
+describe("one id accepted under two rules is known under both", () => {
+  it("a repo accepted as one and as a consumer is a repo and a consumer", () => {
+    const one = (rule: string, target: string): Accepted => ({
+      finding: `stage-${issueFingerprint(rule, target)}`,
+      fingerprint: issueFingerprint(rule, target),
+      stage: rule.startsWith("feature.") ? "feature" : "architecture",
+      rule,
+      by: "pat",
+      why: "Created this week",
+      at: "2026-11-21T10:00:00Z",
+      record: "forge-screening",
+      message: "Not known.",
+    });
+    // In both orders: the one read last never hides the other.
+    for (const order of [
+      ["feature.unknown-repo", "delta.unknown-consumer"],
+      ["delta.unknown-consumer", "feature.unknown-repo"],
+    ]) {
+      const accepted = new Map(
+        order.map((rule) => {
+          const a = one(rule, `x:forge-screening`);
+          return [a.fingerprint, a] as const;
+        }),
+      );
+      const e = {
+        ids: new Set<string>(),
+        flows: [],
+        records: [],
+        manifestRepos: new Set<string>(),
+        accepted: acceptedIds(accepted),
+      };
+      expect([...acceptedRepos(e)]).toEqual(["forge-screening"]);
+      expect(knownToChange([], e).get("forge-screening")).toMatchObject({ standing: "accepted" });
+    }
   });
 });

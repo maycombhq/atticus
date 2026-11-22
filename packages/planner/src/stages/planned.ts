@@ -66,8 +66,8 @@ export function knownToChange(
 ): Map<string, { standing: Standing; by?: string; why?: string }> {
   const out = new Map<string, { standing: Standing; by?: string; why?: string }>();
   // Only a consumer a person accepted as one: an id accepted under another rule is no consumer.
-  for (const [id, a] of e.accepted ?? [])
-    if (CONSUMER_RULES.has(a.rule)) out.set(id, { standing: "accepted", by: a.by, why: a.why });
+  for (const a of e.accepted ?? [])
+    if (CONSUMER_RULES.has(a.rule)) out.set(a.id, { standing: "accepted", by: a.by, why: a.why });
   for (const p of plannedComponents(deltas, e).values())
     if (p.action === "new") out.set(p.component, { standing: "planned" });
   // A repo that was read is known by its component: only one nobody read is named by its repo.
@@ -123,4 +123,4 @@ export const acceptedRepos = (
   e: Pick<Estate, "accepted">,
   rules: readonly string[] = REPO_RULES,
 ): Set<string> =>
-  new Set([...(e.accepted ?? [])].filter(([, a]) => rules.includes(a.rule)).map(([id]) => id));
+  new Set((e.accepted ?? []).filter((a) => rules.includes(a.rule)).map((a) => a.id));
