@@ -60,6 +60,12 @@ export interface ActOptions {
   /** Only look in this gate. */
   gate?: string;
   now?: string;
+  /**
+   * Why the terminal this runs in is a coding assistant's (assistantSession's `because`), when a
+   * person's name was given with --by there (ADR 0115 addendum, 2026-11-22): what would close a
+   * blocking or risk finding with nothing in the draft changed is refused.
+   */
+  terminal?: string;
 }
 
 export interface ActResult {
@@ -234,6 +240,34 @@ export async function act(
             : "marked applied"
       }. ${f.fix.text}`,
     );
+  // ADR 0115 addendum (2026-11-22, extended by the second review): in an assistant's terminal a
+  // person's --by never closes a blocking or risk finding with nothing in the draft changed. A
+  // dismissal opens the gate as a waiver does; so does a fix recorded where nothing changed. A
+  // patch, or a file of the change edited, changes the draft, and the next round checks it.
+  if (o.terminal && !ai && PERSON_CLOSES.has(f.severity)) {
+    const here = `this terminal is a coding assistant's (${o.terminal})`;
+    const tail = ` --by names who is recorded; it doesn't make this terminal a person's. Nothing was written.`;
+    const unchanged = `would close a ${f.severity} finding with nothing in the draft changed; only a person does that.`;
+    if (act === "not-relevant")
+      throw new CriticError(
+        "refused",
+        `Decide it in a terminal of your own, or in the app: ${here}, and only a person dismisses a blocking or risk finding as not relevant.${tail}`,
+      );
+    if (act === "apply" && !f.fix.patch)
+      throw new CriticError(
+        "refused",
+        `Record the fix in a terminal of your own, or in the app: ${here}, and ${f.id} has no patch, so marking it applied ${unchanged}${tail}`,
+      );
+    if (
+      act === "edit-and-apply" &&
+      !o.edit &&
+      !(await editedByPerson(changeFolder(root, change.id))).length
+    )
+      throw new CriticError(
+        "refused",
+        `Record the fix in a terminal of your own, or in the app: ${here}, and no file of the change was edited and no patch was given, so recording ${f.id} as fixed ${unchanged}${tail}`,
+      );
+  }
 
   // A gap has no fix to apply, only a fact to write in: a person who already wrote it by hand
   // records that with edit-and-apply and a reason, no patch needed.

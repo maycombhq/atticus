@@ -511,7 +511,15 @@ export async function findingAction(
   changeId: string | undefined,
   findingId: string | undefined,
   action: string | undefined,
-  o: { by?: string; reason?: string; askedOf?: string; edit?: string; gate?: string },
+  o: {
+    by?: string;
+    reason?: string;
+    askedOf?: string;
+    edit?: string;
+    gate?: string;
+    /** Why this terminal is a coding assistant's, when --by named a person there. */
+    terminal?: string;
+  },
   io: Output,
   deps: CriticDeps = {},
 ): Promise<number> {
@@ -537,6 +545,7 @@ export async function findingAction(
       ...(o.askedOf ? { askedOf: o.askedOf } : {}),
       ...(edit ? { edit } : {}),
       ...(o.gate ? { gate: o.gate } : {}),
+      ...(o.terminal ? { terminal: o.terminal } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(r.message);
