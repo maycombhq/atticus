@@ -4174,7 +4174,10 @@ export const ChangeImpact = z.object({
   /**
    * 3.19.0 (ADR 0206, additive): a change with no target flow is read from design.md's In the
    * code: for each row, the records of the map it names and who receives them, never counted
-   * as breaks (a quick change states no fields). Empty before the table is written.
+   * as breaks (a quick change states no fields). Empty before the table is written. A
+   * `deployment` row's reach (the persona check of beta.30): its `name` is every component the
+   * repo deploys, comma-joined (`ids` those the catalog has), and its `receivers` the components
+   * outside them linked to one of them, `events` where every such link is async.
    */
   from: z.literal("design").optional(),
   reaches: z

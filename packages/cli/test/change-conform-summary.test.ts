@@ -53,7 +53,20 @@ describe("the summary of a check of the code", () => {
         },
       ),
     ).toBe(
-      "The code has everything its target flows add, and nothing they don't name, and everything the change states it will have.",
+      "The code has everything its target flows add and everything the change states it will have; 1 thing in the code that the design doesn't name was dismissed by a person.",
+    );
+    expect(
+      conformSummary(
+        [
+          result(
+            [],
+            [item("found"), item("unexpected", "dismissed"), item("unexpected", "dismissed")],
+          ),
+        ],
+        { flows: 1 },
+      ),
+    ).toBe(
+      "The code has everything its target flows add; 2 things in the code that the design doesn't name were dismissed by a person.",
     );
     expect(
       conformSummary([result([claim("present")], [item("missing", "waived")])], {

@@ -146,6 +146,8 @@ export function conformSummary(
     (i) => i.status !== "found" && i.status !== "unexpected" && !open(i),
   ).length;
   const settled = settledClaims + settledItems;
+  // In the code and not in the design, dismissed by a person: no part of what the change states.
+  const dismissedExtra = items.filter((i) => i.status === "unexpected" && !open(i)).length;
   if (unconfirmed || left) {
     const parts = [
       unconfirmed ? `${unconfirmed} couldn't be confirmed` : "",
@@ -163,6 +165,12 @@ export function conformSummary(
       .filter(Boolean)
       .join(" and ");
     return `The code has everything else the change states it will have; ${what} ${settled === 1 ? "was" : "were"} waived or dismissed by a person.`;
+  }
+  if (dismissedExtra) {
+    const things = `${dismissedExtra} ${dismissedExtra === 1 ? "thing" : "things"} in the code that the design doesn't name ${dismissedExtra === 1 ? "was" : "were"} dismissed by a person`;
+    return run.flows
+      ? `The code has everything its target flows add${run.claims ? " and everything the change states it will have" : ""}; ${things}.`
+      : `The code has everything the change states it will have; ${things}.`;
   }
   return run.flows
     ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`

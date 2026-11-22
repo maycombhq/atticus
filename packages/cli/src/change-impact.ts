@@ -165,37 +165,7 @@ async function quickReaches(
         });
         continue;
       } else if (row.has === "deployment") {
-        // The persona check of beta.30: who calls what a deployment moves (every component of
-        // the repo), from the map; one whose every link is async only sends it events.
-        const mine = records
-          .filter((r) => r.kind === "Component" && (r as { repo?: string }).repo === row.repo)
-          .map((r) => r.id)
-          .sort();
-        const moved = mine.length ? mine : [comp];
-        const links = records.filter(
-          (r) =>
-            r.kind === "Interface" &&
-            moved.includes(String((r as { to?: string }).to)) &&
-            !moved.includes(String((r as { from?: string }).from)),
-        ) as unknown as { from: string; sync?: string }[];
-        const callers = [...new Set(links.map((l) => l.from).filter(Boolean))].sort();
-        out.push({
-          line: row.line,
-          has: row.has,
-          name: moved.join(", "),
-          ids: moved.filter((id) => rec(id)),
-          receivers: callers.map((id) => {
-            const owner = ownerOf(id);
-            const events = links.filter((l) => l.from === id).every((l) => l.sync === "async");
-            return {
-              id,
-              kind: rec(id)?.kind ?? "Component",
-              ...(owner ? { owner } : {}),
-              ...(events ? { events: true } : {}),
-            };
-          }),
-          further: 0,
-        });
+        out.push(deploymentReach(records, row, ownerOf));
         continue;
       } else {
         operations.push({ line: row.line, has: row.has });
@@ -272,6 +242,49 @@ export async function changeImpactOf(
     ...(reaches ? { from: "design" as const, reaches } : {}),
     ...(reaches && operations.length ? { operations } : {}),
     problems,
+  };
+}
+
+/**
+ * The persona check of beta.30: a deployment row's reach. Its `name` is every Component of the
+ * repo, comma-joined (`ids` those the catalog has; the repo's own id where it has none), and its
+ * `receivers` the components outside them that the map shows linked to one of them, with owners;
+ * one whose every link is async only sends them events (`events`). Pure.
+ */
+export function deploymentReach(
+  records: readonly CatalogRecord[],
+  row: { line: number; has: string; repo: string },
+  ownerOf: (id: string) => string | undefined,
+): Reach {
+  const mine = records
+    .filter((r) => r.kind === "Component" && (r as { repo?: string }).repo === row.repo)
+    .map((r) => r.id)
+    .sort();
+  const moved = mine.length ? mine : [componentOfRepo(records, row.repo)];
+  const links = records.filter(
+    (r) =>
+      r.kind === "Interface" &&
+      moved.includes(String((r as { to?: string }).to)) &&
+      !moved.includes(String((r as { from?: string }).from)),
+  ) as unknown as { from: string; sync?: string }[];
+  const kindOf = (id: string) => records.find((r) => r.id === id)?.kind ?? "Component";
+  const callers = [...new Set(links.map((l) => l.from).filter(Boolean))].sort();
+  return {
+    line: row.line,
+    has: row.has,
+    name: moved.join(", "),
+    ids: moved.filter((id) => records.some((r) => r.id === id)),
+    receivers: callers.map((id) => {
+      const owner = ownerOf(id);
+      const events = links.filter((l) => l.from === id).every((l) => l.sync === "async");
+      return {
+        id,
+        kind: kindOf(id),
+        ...(owner ? { owner } : {}),
+        ...(events ? { events: true } : {}),
+      };
+    }),
+    further: 0,
   };
 }
 

@@ -460,16 +460,20 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         findings: { rule: string; severity: string; state: string }[];
       }>(await run("critic", CHANGE, "--gate", "plan", "--json"));
       // The persona check of beta.30: change-links-known also says each repo tasks.md has work in
-      // that only the built-in readers mapped (no facts here, ADR 0074), a risk per repo.
+      // that only the built-in readers mapped (no facts here, ADR 0074), a risk per repo: the
+      // fixture's forge-ledger and forge-portal-bff, and forge-portal-ui, which this run's tasks.md
+      // also has by the plan gate.
       const risks = r.findings.filter((f) => f.severity === "risk" && f.state === "open");
       const readerOnly = risks.filter((f) => f.rule === "constitution.change-links-known");
       expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 2 + readerOnly.length, ideas: 0 });
-      expect(readerOnly.length).toBeGreaterThan(0);
       expect(
-        readerOnly.every((f) =>
-          (f as { summary?: string }).summary?.includes("which only the built-in readers mapped"),
+        readerOnly.map(
+          (f) =>
+            /has work in (\S+), which only the built-in readers mapped/.exec(
+              (f as { summary?: string }).summary ?? "",
+            )?.[1],
         ),
-      ).toBe(true);
+      ).toEqual(["forge-ledger", "forge-portal-bff", "forge-portal-ui"]);
       expect(risks.filter((f) => !readerOnly.includes(f)).map((f) => f.rule)).toEqual([
         "review.store-write-rollback",
         "review.store-write-rollback",
