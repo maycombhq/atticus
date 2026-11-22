@@ -267,28 +267,21 @@ const archivedOperation = (o: { kind: string; what: string }, repo: string): Sta
  * ADR 0203 B addendum: the work feature.yaml and the target flows put in a repo the manifest
  * marks archived, checked again at every stage after the feature stage: a repo archived since is
  * refused there as at the feature stage, with the same rule and target (so the same finding),
- * which a person can't accept. A target flow in such a repo is one more.
+ * which a person can't accept. A target flow in such a repo is one more, unless it moves the
+ * work out (movesOut below).
  */
 export function archivedWorkIssues(
   p: Pick<FeaturePlacement, "newFlows"> & Partial<Pick<FeaturePlacement, "operations">>,
-  e: Pick<Estate, "archivedRepos"> & Partial<Pick<Estate, "byId">>,
+  e: Pick<Estate, "archivedRepos">,
   deltas: readonly FlowDelta[] = [],
 ): StageIssue[] {
-  // A target flow that moves work out of an archived repo does what the finding would ask: the
-  // flow removed (a retire or absorb stroke of the sketch, ADR 0189, ADR 0193), or a change whose
-  // steps are only removed or sent to a component of a repo that isn't archived.
-  const repoOf = (component: string) =>
-    (e.byId?.get(component) as { repo?: unknown } | undefined)?.repo;
+  // A target flow that moves work out of an archived repo does what the finding asks: the flow
+  // removed (a retire or absorb stroke of the sketch, ADR 0189, ADR 0193), or a modify that only
+  // removes steps. Anything else is code work in the archived repo, whose tasks are written there
+  // (a step sent to another component included); an empty modify moves nothing, so it blocks.
   const movesOut = (d: FlowDelta) =>
     d.change === "remove" ||
-    (d.change === "modify" &&
-      d.steps.every(
-        (s) =>
-          s.op === "remove" ||
-          (s.op === "change" &&
-            !!s.to &&
-            (s.to.new || !e.archivedRepos.has(String(repoOf(s.to.component) ?? "")))),
-      ));
+    (d.change === "modify" && d.steps.length > 0 && d.steps.every((s) => s.op === "remove"));
   return [
     ...p.newFlows.filter((n) => e.archivedRepos.has(n.repo)).map(archivedNewFlow),
     ...(p.operations ?? []).flatMap((o) =>
@@ -302,7 +295,7 @@ export function archivedWorkIssues(
         message: archivedRepoWords(
           `Target flow ${d.flow} puts work in`,
           d.repo,
-          "Put it in the repo that took over its work",
+          "Move the work out: remove the flow here (change: remove), or only remove its steps, and draw what it does as a new or changed flow of the repo that took over its work",
         ),
         blocking: true,
       })),

@@ -986,7 +986,7 @@ describe("the review's other refusals", () => {
     ).toEqual(archivedWorkIssues(placed, e).map((i) => [i.target, i.message]));
   });
 
-  it("work moved out of an archived repo isn't refused; work added to it is", () => {
+  it("work moved out of an archived repo (the flow or its steps removed) isn't refused; any other work there is", () => {
     const e = {
       archivedRepos: new Set(["forge-stock"]),
       byId: new Map([
@@ -1016,10 +1016,35 @@ describe("the review's other refusals", () => {
       raised(
         delta("modify", [
           { op: "remove", step: 3 },
-          { op: "change", step: 2, to: { component: "forge-orders", entry: "POST /reserve" } },
+          { op: "remove", step: 2 },
         ]),
       ),
     ).toEqual([]);
+    // Anything else is code work in the archived repo (its tasks are written there), so it blocks:
+    // a step sent to another component is still a change of the archived repo's code.
+    for (const to of [
+      { component: "forge-orders", entry: "POST /reserve" },
+      { component: "forge-screening", entry: "POST /screen", new: true },
+      { component: "forge-nowhere", entry: "POST /x" },
+    ])
+      expect(raised(delta("modify", [{ op: "change", step: 2, to }])), to.component).toEqual(
+        blocked,
+      );
+    expect(
+      raised(
+        delta("modify", [
+          { op: "remove", step: 3 },
+          {
+            op: "change",
+            step: 2,
+            what: "Reserve on the new service.",
+            to: { component: "forge-orders", entry: "POST /reserve" },
+          },
+        ]),
+      ),
+    ).toEqual(blocked);
+    // A modify with no steps moves nothing out: it blocks (delta.empty says it is empty too).
+    expect(raised(delta("modify", []))).toEqual(blocked);
     // New work in it still blocks.
     expect(
       raised(delta("modify", [{ op: "add", after: 1, kind: "call-out", what: "Ask." }])),
