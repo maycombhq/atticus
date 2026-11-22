@@ -954,6 +954,10 @@ const joinPaths = (base: string | undefined, path: string | undefined) =>
  * A scheme written as a placeholder, as the whole scheme (`${scheme}://`): the final review of
  * b30/unresolved-ids. The host after it is read as any URL's is; its port is the one written.
  */
+/** A scheme part alone, written out (`https`) or as a placeholder nothing sets (`${scheme}`). */
+const SCHEME_PART = /^(?:[A-Za-z][A-Za-z0-9+.-]*|\$\{[A-Za-z_][A-Za-z0-9_.-]*\})$/;
+/** What follows a scheme part when the host part's setting held a whole URL: `://https://host…`. */
+const SCHEME_THEN_URL = /^:\/\/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]/;
 const SCHEME_PLACEHOLDER = /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}:\/\//;
 /** A URL whose scheme is a placeholder, with the scheme read as an unknown one (no port of its own). */
 const schemeAside = (s: string) => s.replace(/^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}(?=:\/\/)/, "scheme");
@@ -1459,6 +1463,17 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
       const tail = resolve(p.after, owner, seen, depth, own);
       if (new Set(head.map((r) => r.value)).size !== 1) return [];
       if (new Set(tail.map((r) => r.value)).size !== 1) return [];
+      // The review of beta.30: a host part whose setting holds a whole URL
+      // (`host: https://ledger.apps.forge.internal`) brings its own scheme, so the scheme part
+      // before it, set or not, is dropped: the host is the setting's URL's, never "https:".
+      if (SCHEME_PART.test(head[0]!.value) && SCHEME_THEN_URL.test(tail[0]!.value))
+        return [
+          {
+            value: tail[0]!.value.slice("://".length),
+            through: tail.flatMap((r) => r.through),
+            guesses: guessList(tail.flatMap((r) => r.guesses)),
+          },
+        ];
       return [
         {
           value: `${head[0]!.value}${tail[0]!.value}`,

@@ -309,6 +309,49 @@ describe("a host by NAME in any of its forms is resolved by a setting of that NA
     }
   });
 
+  // The review of beta.30: a host setting holding a whole URL made `${scheme}://https://…/v1`,
+  // whose host read as "https:" ("Which repo answers on https:?"). The setting's own URL gives
+  // the host: joined by it when a repo lists it, asked about by its real name when none does.
+  it("takes the host from a host setting that holds a whole URL, scheme unset", () => {
+    for (const url of [
+      "https://ledger.apps.forge.internal",
+      "https://ledger.apps.forge.internal/",
+      "http://ledger.apps.forge.internal:8080",
+    ]) {
+      const host = setting("host", url, "cfg-host");
+      const joined = join1([put({ base: "${scheme}://${host}/v1" }), host], listed);
+      expect(joined.asks, url).toEqual([]);
+      expect(
+        joined.joins.map((j) => [j.call.fact, j.how]),
+        url,
+      ).toEqual([["c-put-statement", "host"]]);
+      expect(
+        joined.joins[0]!.through?.map((t) => t.fact),
+        url,
+      ).toContain("cfg-host");
+      // The same with the scheme part set: the setting's URL's own scheme stands.
+      const both = join1(
+        [put({ base: "${scheme}://${host}/v1" }), host, setting("scheme", "https", "cfg-scheme")],
+        listed,
+      );
+      expect(both.asks, url).toEqual([]);
+      expect(
+        both.joins.map((j) => j.how),
+        url,
+      ).toEqual(["host"]);
+      // No repo lists it: asked about the real host, never the setting's scheme.
+      const asked = join1([put({ base: "${scheme}://${host}/v1" }), host]);
+      expect(asked.joins, url).toEqual([]);
+      // A port the URL names stays with the host, as for any host asked about.
+      const name = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      expect(
+        asked.asks.map((a) => a.host),
+        url,
+      ).toEqual([name]);
+      expect(asked.asks[0]!.question.startsWith(`Which repo answers on ${name}?`), url).toBe(true);
+    }
+  });
+
   it("words a camelCase name nothing sets as a setting where the repo's settings are camelCase", () => {
     const camel = setting("ledgerTimeout", "30", "cfg-timeout");
     const asSetting = join1([put({ base: "${ledgerUrl}" }), camel]);
