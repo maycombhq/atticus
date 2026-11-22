@@ -57,11 +57,21 @@ export function catalogFiles(root: string): Record<string, string> {
   return out;
 }
 
+/**
+ * The environment of a person's own terminal, never a coding assistant's, whatever runs the
+ * journeys: an assistant's marks make Atticus record the assistant, which accepts nothing.
+ */
+export function personEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const k of ["ATTICUS_ASSISTANT", "CLAUDECODE", "GEMINI_CLI", "CURSOR_AGENT"]) delete env[k];
+  return env;
+}
+
 /** Run the atticus command line against a metarepo, as a person would from a terminal. */
 export function atticus(root: string, ...args: string[]): string {
   const r = spawnSync(process.execPath, [BIN, ...args, "--root", root], {
     encoding: "utf8",
-    env: { ...process.env, ATTICUS_RUNTIME: "hand-off" },
+    env: { ...personEnv(), ATTICUS_RUNTIME: "hand-off" },
   });
   return `${r.stdout}${r.stderr}`;
 }
@@ -456,10 +466,8 @@ const stopping = new WeakSet<ChildProcess>();
 
 /** Start `atticus ui` on a free port and wait for its address. */
 export async function startApp(root: string): Promise<App> {
-  // The person's own app: started from their terminal, never a coding assistant's, whatever runs
-  // the journeys (an assistant's marks make the app record the assistant, which accepts nothing).
-  const env = { ...process.env };
-  for (const k of ["ATTICUS_ASSISTANT", "CLAUDECODE", "GEMINI_CLI", "CURSOR_AGENT"]) delete env[k];
+  // The person's own app: started from their terminal, never a coding assistant's.
+  const env = personEnv();
   const server = spawn(process.execPath, [BIN, "ui", "--port", "0", "--root", root], {
     stdio: ["ignore", "pipe", "pipe"],
     env,

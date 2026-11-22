@@ -106,7 +106,13 @@ test("a stage round in its thread only: Start, the answer arrives by itself, a r
     .getByRole("textbox", { name: "Tell the assistant…" })
     .fill("Name the team that owns the limit in Impact.");
   await thread.getByRole("button", { name: "Send and start the next round" }).click();
-  await expect(thread.getByText("Name the team that owns the limit in Impact.")).toBeVisible();
+  // In the reply's own item: the next round's prompt card carries the same words, and can arrive
+  // with it (two matches in strict mode).
+  await expect(
+    thread
+      .locator("article.thread-reply")
+      .getByText("Name the team that owns the limit in Impact.", { exact: true }),
+  ).toBeVisible();
   await expect
     .poll(
       async () => {
