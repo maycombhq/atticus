@@ -9,6 +9,7 @@ import { writeGateRound } from "@maycombhq/naysayer";
 import { issueFingerprint, stageFinding, type LoopFinding } from "@maycombhq/planner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { findingAction } from "../src/critic-commands.js";
+import { uiStageRoutes } from "../src/ui-api-stages.js";
 import { uiThreadRoutes } from "../src/ui-api-thread.js";
 
 /**
@@ -117,7 +118,8 @@ async function serve(root: string, user: string, env: Record<string, string> = {
     port: 0,
     user,
     watch: false,
-    extend: (r, ctx) => uiThreadRoutes(r, ctx, { now: () => NOW, env }),
+    extend: (r, ctx) =>
+      uiStageRoutes(uiThreadRoutes(r, ctx, { now: () => NOW, env }), ctx, { now: () => NOW, env }),
   });
   servers.push(s);
   const call = async (method: string, path: string, body?: unknown) => {
@@ -132,9 +134,12 @@ async function serve(root: string, user: string, env: Record<string, string> = {
     Api.StageThreadView.parse(
       (await call("GET", `/api/changes/${CHANGE}/stages/feature/thread`)).body,
     );
+  /** The stage's tab (GET /api/changes/{id}/stages/{stage}): the same findings, the same Accept. */
+  const tab = async () =>
+    Api.StageReviewView.parse((await call("GET", `/api/changes/${CHANGE}/stages/feature`)).body);
   const accept = (finding: string, reason: string) =>
     call("POST", `/api/changes/${CHANGE}/stages/feature/accept`, { finding, reason });
-  return { call, thread, accept };
+  return { call, thread, tab, accept };
 }
 afterAll(async () => {
   for (const s of servers) await s.close();
@@ -281,6 +286,38 @@ describe("POST .../stages/{stage}/accept", () => {
     expect(r.status).toBe(403);
     expect(String(r.body.detail)).toMatch(/Copilot session that Atticus started/);
     expect(await readFile(join(app, file(ids.repo)), "utf8")).toBe(before);
+  });
+
+  it.each([
+    [{ CLAUDECODE: "1" }, "claude-code", "CLAUDECODE is set"],
+    [{ GEMINI_CLI: "1" }, "gemini-cli", "GEMINI_CLI is set"],
+    [{ CURSOR_AGENT: "1" }, "cursor", "CURSOR_AGENT is set"],
+    [{ ATTICUS_ASSISTANT: "helper" }, "helper-assistant", "ATTICUS_ASSISTANT is set"],
+  ] as const)(
+    "refuses in a coding assistant's terminal (%o) as the command line does: it would record the assistant",
+    async (env, by, because) => {
+      const app = await metarepo();
+      const before = await readFile(join(app, file(ids.repo)), "utf8");
+      const api = await serve(app, "priya", { ...env });
+      const refused = { can: false, why: "assistant", as: by };
+      expect(findingOf(await api.thread(), ids.repo)!.view.accept).toEqual(refused);
+      // The stage's tab says the same of it.
+      const onTab = (await api.tab()).findings.find((f) => f.finding.id === ids.repo);
+      expect(onTab?.accept).toEqual(refused);
+      const r = await api.accept(ids.repo, REASON);
+      expect(r.status).toBe(403);
+      expect(String(r.body.detail)).toBe(
+        `Recorded as ${by}: ${because}. ${by} is an assistant: only a person accepts a finding. The person accepts it in an app or a terminal of their own.`,
+      );
+      expect(await readFile(join(app, file(ids.repo)), "utf8")).toBe(before);
+    },
+  );
+
+  it("the stage's tab and its thread agree inside a Copilot session Atticus started", async () => {
+    const api = await serve(await metarepo(), "priya", { ATTICUS_ACP_SESSION: "1" });
+    const onTab = (await api.tab()).findings.find((f) => f.finding.id === ids.repo);
+    expect(onTab?.accept).toEqual(findingOf(await api.thread(), ids.repo)!.view.accept);
+    expect(onTab?.accept?.why).toBe("assistant-session");
   });
 
   it("needs a reason, a finding of the stage's own gate, and a stage that has one", async () => {

@@ -91,6 +91,10 @@ export function uiModelRunRoutes(
       // assistant (`--handoff`): the run's page shows its prompt, and Done checks the answer.
       .add("POST", "/api/runs/handoff", async ({ body }) => {
         const words = stepWords(body);
+        // The review of 3aa297bd: a stage's next round never starts beside a step that runs.
+        const { stepBusy } = await import("./ui-api-accept.js");
+        const busy = stepBusy(ctx, words);
+        if (busy) throw conflict(busy);
         const { prepareStep } = await import("./handoff-resume.js");
         const { code, prepared } = await prepareStep(root, runStep, words);
         ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });

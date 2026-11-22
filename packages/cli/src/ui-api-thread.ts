@@ -31,7 +31,13 @@ import {
 import { stageGateOf } from "@maycombhq/naysayer";
 import { findingAction } from "./critic-commands.js";
 import { checkedByApp } from "./handoff-autodone.js";
-import { appDoneOf, goOnAfterAccept, sessionRefusal, type AppPerson } from "./ui-api-accept.js";
+import {
+  appDoneOf,
+  goOnAfterAccept,
+  sessionRefusal,
+  stepBusy,
+  type AppPerson,
+} from "./ui-api-accept.js";
 import type { StepRunner } from "./handoff-resume.js";
 import { missingChangeWords } from "./change-problems.js";
 import { allRuns, answerOf, item, type Stored } from "./runs-view.js";
@@ -546,15 +552,42 @@ export function uiThreadRoutes(
       }
       ctx.events.publish({ type: "file.changed", path: f.file });
       // ADR 0203 A (addendum 2026-11-22): the app goes on with the stage, whoever started it.
-      const goesOn = await goOnAfterAccept(
-        ctx.root,
-        change,
-        stage as Stage,
-        await stageThreadView(ctx.root, change, stage, who),
-        { runStep, ...(appDoneOf(ctx) ? { done: appDoneOf(ctx)! } : {}) },
-      );
+      // The acceptance is written: whatever fails from here is said, never a 500 over it.
+      const firstLine = (e: unknown) => String((e as Error)?.message ?? e).split("\n")[0]!;
+      let goesOn: Api.StageAcceptThenT;
+      try {
+        goesOn = await goOnAfterAccept(
+          ctx.root,
+          change,
+          stage as Stage,
+          await stageThreadView(ctx.root, change, stage, who),
+          {
+            runStep,
+            ...(appDoneOf(ctx) ? { done: appDoneOf(ctx)! } : {}),
+            busy: () => stepBusy(ctx, stageStep(stage, change)),
+          },
+        );
+      } catch (e) {
+        goesOn = { kind: "not-resumed", lines: [firstLine(e)] };
+      }
       ctx.events.publish({ type: "file.changed", path: changesRelOf(ctx.root) });
-      const thread = await stageThreadView(ctx.root, change, stage, who);
+      let thread: Api.StageThreadViewT;
+      try {
+        thread = await stageThreadView(ctx.root, change, stage, who);
+      } catch (e) {
+        const why = firstLine(e);
+        if (goesOn.kind !== "not-resumed") goesOn = { kind: "not-resumed", lines: [why] };
+        thread = {
+          change,
+          stage,
+          state: "drafting",
+          headline: `The ${stage} stage's thread couldn't be read: ${why}`,
+          items: [],
+          step: stageStep(stage, change),
+          reply: { open: false, why },
+          problems: [{ file: `${changesRelOf(ctx.root)}/${change}`, message: why }],
+        };
+      }
       const seen = thread.items.find(
         (i): i is Extract<Item, { kind: "finding" }> =>
           i.kind === "finding" && i.view.finding.id === id,

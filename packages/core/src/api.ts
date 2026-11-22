@@ -734,7 +734,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   in the app's person's name, and refuses what that refuses. Additive only.
  *   Also in 3.19.0 (ADR 0203 A, addendum 2026-11-22): the Accept's result says what the app did
  *   with the stage next, whoever started it (`StageAcceptResult.goesOn`, `StageAcceptThen`): it
- *   goes on once nothing else holds the stage. Additive only.
+ *   goes on once nothing else holds the stage and no step of it runs. POST /api/runs/handoff
+ *   answers 409 for a stage's step while an AI step runs on the server or the same stage runs.
  *   Also in 3.19.0 (ADR 0203 C.3): a finding row's `lens` may be `persona`, and then it carries
  *   `persona`, the name of the persona whose naysayer raised it; `GET /api/findings?lens=persona`
  *   lists those, and no question's lens does. Additive only.
@@ -9377,11 +9378,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "prepareStep",
       summary:
-        "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+        "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done. 3.19.0: a stage's step is refused (409) while an AI step runs on the server or the same stage of the change runs",
       tag: "ai",
       body: StartStepRequest,
       ok: { status: 201, schema: "PreparedStepView", description: "Prepared" },
-      errors: [400, 422],
+      errors: [400, 409, 422],
     },
   },
   "/api/links/candidates": {
@@ -10856,12 +10857,12 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "acceptStageFinding",
       summary:
-        "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant, or inside a Copilot session Atticus started; 409 when it is no longer open. Returns the file written and the thread",
+        "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant (a coding assistant's terminal included), or inside a Copilot session Atticus started; 409 when it is no longer open. Then the app goes on with the stage, whoever started it, once nothing else holds it and no step of it runs, and says what it did (goesOn). Returns the file written, the thread and goesOn",
       tag: "changes",
       params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...THREAD_STAGES] } })],
       body: StageAcceptRequest,
       ok: { status: 200, schema: "StageAcceptResult", description: "Accepted" },
-      errors: [400, 403, 404, 409, 422],
+      errors: [400, 403, 404, 409],
     },
   },
   "/api/changes/{changeId}/knowledge": {

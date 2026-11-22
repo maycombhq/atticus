@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { Api, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { startServer, type RunningServer } from "@maycombhq/server";
+import { Api, parseRecord, recordPath, serializeRecord, startTerminalRun } from "@maycombhq/core";
+import { startServer, type RunningServer, type ServerContext } from "@maycombhq/server";
 import { main } from "../src/main.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 
@@ -104,12 +104,17 @@ afterAll(async () => {
   for (const s of servers) await s.close();
 });
 async function app(root: string) {
+  let context: ServerContext | undefined;
   const s = await startServer({
     root,
     port: 0,
     user: "priya",
     watch: false,
-    extend: (r, ctx) => extendUiRoutes(r, ctx, { autoDone: { off: true } }),
+    // A person's own terminal: no coding assistant's marks, whatever the test runs under.
+    extend: (r, ctx) => {
+      context = ctx;
+      return extendUiRoutes(r, ctx, { autoDone: { off: true }, env: {} });
+    },
   });
   servers.push(s);
   const call = async (method: string, path: string, body?: unknown) => {
@@ -141,7 +146,7 @@ async function app(root: string) {
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     return Api.StageAcceptResult.parse(r.body);
   };
-  return { call, thread, open, accept };
+  return { call, thread, open, accept, ctx: () => context! };
 }
 
 const T = 300_000;
@@ -228,6 +233,76 @@ describe("after an Accept the app goes on with a stage started in a terminal", (
       const done = await a.call("POST", `/api/runs/${second}/done`);
       expect(done.status, JSON.stringify(done.body)).toBe(200);
       expect(await loopState(root)).toBe("done");
+    },
+    T,
+  );
+
+  it(
+    "while a step of the stage runs, it doesn't go on and says so; Start the next round refuses too",
+    async () => {
+      const root = await metarepo();
+      const run = await started(root, ANSWER);
+      await terminal(root, "handoff", "done", run);
+      const a = await app(root);
+      // The stage run again in a terminal, still running.
+      const rec = startTerminalRun(root, {
+        positionals: ["change", "feature", CHANGE],
+        flags: ["handoff"],
+      })!;
+      const step = { args: ["change", "feature", CHANGE] };
+      try {
+        const r = await a.accept((await a.open())[0]!.id);
+        expect(r.goesOn?.kind).toBe("not-resumed");
+        expect(r.goesOn?.lines?.[0]).toMatch(
+          /^A step of the feature stage is running \(.+\): wait for it to finish, then press Start the next round\.$/,
+        );
+        expect(await loopState(root)).toBe("waiting");
+        const start = await a.call("POST", "/api/runs/handoff", step);
+        expect(start.status).toBe(409);
+        expect(String(start.body.detail)).toMatch(/^A step of the feature stage is running/);
+      } finally {
+        rec.end(0);
+      }
+      // It ended: Start the next round goes on, reads the draft in, and the stage is done.
+      const start = await a.call("POST", "/api/runs/handoff", step);
+      expect(start.status, JSON.stringify(start.body)).toBe(201);
+      expect(await loopState(root)).toBe("done");
+    },
+    T,
+  );
+
+  it(
+    "while an AI step runs on the server, it doesn't go on and says so; Start the next round refuses too",
+    async () => {
+      const root = await metarepo();
+      const run = await started(root, ANSWER);
+      await terminal(root, "handoff", "done", run);
+      const a = await app(root);
+      let finish = () => {};
+      const held = new Promise<void>((r) => (finish = r));
+      a.ctx().jobs.start(
+        "step",
+        async () => {
+          await held;
+          return { result: {}, errors: [] };
+        },
+        { title: "atticus change architecture add-gift-note" },
+      );
+      try {
+        const r = await a.accept((await a.open())[0]!.id);
+        expect(r.goesOn?.kind).toBe("not-resumed");
+        expect(r.goesOn?.lines?.[0]).toMatch(
+          /^An AI step is running on this server \(job-\d+\): wait for it to finish, then press Start the next round\.$/,
+        );
+        expect(await loopState(root)).toBe("waiting");
+        const start = await a.call("POST", "/api/runs/handoff", {
+          args: ["change", "feature", CHANGE],
+        });
+        expect(start.status).toBe(409);
+        expect(String(start.body.detail)).toMatch(/^An AI step is running on this server/);
+      } finally {
+        finish();
+      }
     },
     T,
   );

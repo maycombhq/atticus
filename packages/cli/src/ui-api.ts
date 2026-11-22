@@ -171,6 +171,11 @@ export interface UiDeps {
   taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
   /** Tests: the in-process atticus a step's resume runs with (fourth UX walk). */
   runStep?: import("./handoff-resume.js").StepRunner;
+  /**
+   * Tests: the environment the app reads who acts from (a Copilot session, a coding assistant's
+   * terminal) for a stage's Accept; otherwise this process's.
+   */
+  env?: Record<string, string | undefined>;
   /** Tests: the machine's checks (otherwise atticus doctor's). */
   doctor?: (root: string) => Promise<import("./doctor.js").DoctorCheck[]>;
   /** ADR 0189: how the app checks an answer once its file is complete (tests: quick, or off). */

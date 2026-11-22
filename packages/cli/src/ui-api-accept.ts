@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { personOnlyWhy } from "@maycombhq/ai";
-import { Api, assistantActor, runsDirOf, type Finding } from "@maycombhq/core";
+import { Api, assistantActor, readTerminalRuns, runsDirOf, type Finding } from "@maycombhq/core";
 import { changeFolder, type ChangeContext } from "@maycombhq/changes";
 import { assistantOf, readRound, roundsOf, stageGateOf } from "@maycombhq/naysayer";
 import {
@@ -11,6 +11,7 @@ import {
   wayOnKind,
   type Stage,
 } from "@maycombhq/planner";
+import { assistantSession } from "./assistant-session.js";
 import type { StepRunner } from "./handoff-resume.js";
 
 /**
@@ -36,9 +37,16 @@ export interface AppPerson {
  * with (person-only.ts), in the command line's own words.
  */
 export function sessionRefusal(env: Record<string, string | undefined>, change: string) {
-  if (!env.ATTICUS_ACP_SESSION) return undefined;
-  const why = personOnlyWhy(["finding", change, "stage-000000000000", "waive"]);
-  return `This runs inside a Copilot session that Atticus started, so it is refused: ${why}. The person runs it, in the app or their own terminal.`;
+  if (env.ATTICUS_ACP_SESSION) {
+    const why = personOnlyWhy(["finding", change, "stage-000000000000", "waive"]);
+    return `This runs inside a Copilot session that Atticus started, so it is refused: ${why}. The person runs it, in the app or their own terminal.`;
+  }
+  // The review of 3aa297bd: in a coding assistant's terminal the command line records the
+  // assistant (`atticus finding` with no --by, assistant-session.ts), which never accepts.
+  const s = assistantSession(env);
+  if (s)
+    return `Recorded as ${s.by}: ${s.because}. ${s.by} is an assistant: only a person accepts a finding. The person accepts it in an app or a terminal of their own.`;
+  return undefined;
 }
 
 /** The fix in words, without the command line's own way to accept it or why it can't be. */
@@ -58,6 +66,9 @@ export function acceptOf(
   if (!f.waivable || !acceptableStageRule(f.rule))
     return no(wayOnKind(f.rule) ?? "next-stage-needs");
   if (who.env?.ATTICUS_ACP_SESSION) return no("assistant-session");
+  // In a coding assistant's terminal the command line would record the assistant, as here.
+  const session = who.env ? assistantSession(who.env) : undefined;
+  if (session) return { can: false, why: "assistant", as: session.by };
   if (ctx ? assistantOf(ctx, who.user) : assistantActor(who.user)) return no("assistant");
   return { can: true, as };
 }
@@ -137,6 +148,43 @@ async function runState(root: string, change: string, runId: string) {
   }
 }
 
+/** What the stages' steps are, by their words (`change <stage> <id>`, `plan stories <id>`). */
+const STAGE_STEP: Record<string, string> = {
+  "change feature": "feature",
+  "change architecture": "architecture",
+  "change small": "small",
+  "plan stories": "stories",
+};
+
+/**
+ * The review of 3aa297bd: why a stage's step can't start now, or undefined: an AI step runs on
+ * this server (one at a time, as POST /api/runs holds), or the same stage of the same change
+ * runs, in a terminal, an editor or this app (its run record, ADR 0187, alive on this machine). A
+ * loop file left `drafting` by a run that ended without saying is no run: Start the next round
+ * must still start it again.
+ */
+export function stepBusy(
+  ctx: { root: string; jobs?: { runningOf?: (kind: "step") => { id: string } | undefined } },
+  step: readonly string[],
+): string | undefined {
+  const stage = STAGE_STEP[`${step[0]} ${step[1]}`];
+  if (!stage) return undefined;
+  const job = ctx.jobs?.runningOf?.("step");
+  if (job)
+    return `An AI step is running on this server (${job.id}): wait for it to finish, then press Start the next round.`;
+  const live = readTerminalRuns(ctx.root).find(
+    (r) =>
+      r.state === "running" &&
+      !r.stale &&
+      r.command[0] === step[0] &&
+      r.command[1] === step[1] &&
+      r.command[2] === step[2],
+  );
+  if (live)
+    return `A step of the ${stage} stage is running (${live.title}): wait for it to finish, then press Start the next round.`;
+  return undefined;
+}
+
 /**
  * ADR 0203 A (addendum 2026-11-22): after an Accept the app goes on with the stage, whoever
  * started it, so the person presses nothing else. While another open blocking finding or open
@@ -152,9 +200,16 @@ export async function goOnAfterAccept(
   change: string,
   stage: Stage,
   thread: Api.StageThreadViewT,
-  o: { runStep: StepRunner; done?: (runId: string) => Promise<unknown> },
+  o: {
+    runStep: StepRunner;
+    done?: (runId: string) => Promise<unknown>;
+    /** Why a step can't start now (stepBusy), checked before anything runs. */
+    busy?: () => string | undefined;
+  },
 ): Promise<Api.StageAcceptThenT> {
   if (thread.state === "done") return { kind: "done" };
+  const busy = o.busy?.();
+  if (busy) return { kind: "not-resumed", lines: [busy] };
   const held = thread.items.filter(
     (i) =>
       (i.kind === "finding" &&

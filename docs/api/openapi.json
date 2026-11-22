@@ -11524,7 +11524,7 @@
     "/api/runs/handoff": {
       "post": {
         "operationId": "prepareStep",
-        "summary": "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+        "summary": "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done. 3.19.0: a stage's step is refused (409) while an AI step runs on the server or the same stage of the change runs",
         "tags": [
           "ai"
         ],
@@ -11574,6 +11574,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21615,7 +21625,7 @@
     "/api/changes/{changeId}/stages/{stage}/accept": {
       "post": {
         "operationId": "acceptStageFinding",
-        "summary": "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant, or inside a Copilot session Atticus started; 409 when it is no longer open. Returns the file written and the thread",
+        "summary": "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant (a coding assistant's terminal included), or inside a Copilot session Atticus started; 409 when it is no longer open. Then the app goes on with the stage, whoever started it, once nothing else holds it and no step of it runs, and says what it did (goesOn). Returns the file written, the thread and goesOn",
         "tags": [
           "changes"
         ],
@@ -21722,16 +21732,6 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {

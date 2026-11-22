@@ -6,6 +6,7 @@ import {
   acceptedNote,
   acceptPreview,
   AcceptForm,
+  FindingCardInThread,
   StageThreadView,
   withoutAccepted,
 } from "../src/screens/work/StageThread.js";
@@ -389,5 +390,62 @@ describe("after an Accept: what the app did with the stage (ADR 0203 A, addendum
     expect(A.previewWaiting("feature")).toMatch(
       /^Nothing else blocks the feature stage: the app goes on with it as soon as you accept it/,
     );
+  });
+});
+
+describe("said once, and no Accept that would be refused again (the review of 3aa297bd)", () => {
+  const count = (h: string, words: string) => h.split(esc(words)).length - 1;
+  const card = (initial?: { refused?: string }) =>
+    renderToStaticMarkup(
+      <FindingCardInThread
+        it={item(REPO, { accept: { can: true, as: "priya" } })}
+        change={CHANGE}
+        onReplyTo={() => undefined}
+        onFixToAssistant={() => undefined}
+        reason=""
+        accept={{
+          stage: "feature",
+          command: `atticus change feature ${CHANGE}`,
+          others: 0,
+          waiting: false,
+        }}
+        {...(initial ? { initial } : {})}
+      />,
+    );
+
+  it("after a refusal (403), the card offers no Accept to press again, and keeps the refusal's words", () => {
+    expect(card()).toContain(`aria-label="${esc(A.acceptFor(REPO.id))}"`);
+    const words = "Recorded as claude-code: CLAUDECODE is set. claude-code is an assistant.";
+    const h = card({ refused: words });
+    expect(h).not.toContain(`aria-label="${esc(A.acceptFor(REPO.id))}"`);
+    expect(h).toContain(esc(A.refused(words)));
+  });
+
+  it("the accept note is the one thing announced: the headline isn't a live region beside it", () => {
+    const note = A.went.done("feature");
+    const h = renderToStaticMarkup(
+      <StageThreadView of={{ state: "ready", data: VIEW }} stage="feature" initialNote={note} />,
+    );
+    expect(h.match(/role="status"/g)).toHaveLength(1);
+    expect(h).toMatch(new RegExp(`role="status"[^>]*>${esc(note).replace(/[.()]/g, "\\$&")}<`));
+    // With no note, the headline is the stage's live status, as before.
+    expect(page()).toMatch(/role="status" aria-live="polite" class="thread-headline"/);
+  });
+
+  it("no Undo is said once: by the accepted list when there is one, else by the form", () => {
+    expect(count(page(), A.noUndo)).toBe(1);
+    expect(count(form(), A.noUndo)).toBe(1);
+    const shown = renderToStaticMarkup(
+      <AcceptForm
+        it={item(REPO, { accept: { can: true, as: "priya" } })}
+        stage="feature"
+        command={`atticus change feature ${CHANGE}`}
+        others={0}
+        waiting={false}
+        noUndoShown
+        onCancel={() => undefined}
+      />,
+    );
+    expect(count(shown, A.noUndo)).toBe(0);
   });
 });

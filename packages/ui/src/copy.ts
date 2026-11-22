@@ -7584,6 +7584,8 @@ export const COPY = {
       notResumed: (stage: string, why?: string) =>
         `Accepted, but the app couldn't go on with the ${stage} stage${why ? `: ${why.replace(/[.!?]+$/, "")}` : ""}. Press Start the next round to try again.`,
     },
+    /** A refusal (403) the card keeps once the form is closed, with no Accept to press again. */
+    refused: (words: string) => `Not accepted: ${words}`,
     acceptedTitle: (stage: string) => `Accepted at the ${stage} stage`,
     acceptedBy: (by: string, why: string) =>
       `Accepted by ${by}: ${why.trim().replace(/[.!?]+$/, "")}.`,

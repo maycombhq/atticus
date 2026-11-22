@@ -57,6 +57,8 @@ interface AcceptContext {
    * be fixed); otherwise it stopped, and its next run checks its files with no new draft.
    */
   waiting: boolean;
+  /** The accepted list is on the page and says there is no Undo: the form doesn't say it again. */
+  noUndoShown?: boolean;
 }
 
 /**
@@ -119,6 +121,8 @@ export function AcceptForm(
     it: FindingItem;
     onAccept?: (reason: string) => Promise<unknown>;
     onCancel: () => void;
+    /** A 403: the server's words, which the card keeps once the form is closed. */
+    onRefused?: (words: string) => void;
     initial?: { reason?: string; state?: AcceptState; error?: string };
   },
 ) {
@@ -143,8 +147,11 @@ export function AcceptForm(
     void (p.onAccept?.(reason.trim()) ?? Promise.resolve()).then(
       () => setState("idle"),
       (err: unknown) => {
-        setError(message(err));
-        setState(err instanceof ApiError && err.problem.status === 403 ? "refused" : "error");
+        const words = message(err);
+        setError(words);
+        const refused = err instanceof ApiError && err.problem.status === 403;
+        setState(refused ? "refused" : "error");
+        if (refused) p.onRefused?.(words);
       },
     );
   };
@@ -205,9 +212,11 @@ export function AcceptForm(
             <li key={l}>{l}</li>
           ))}
         </ul>
-        <p className="muted" style={{ margin: 0 }}>
-          {A.noUndo}
-        </p>
+        {!p.noUndoShown && (
+          <p className="muted" style={{ margin: 0 }}>
+            {A.noUndo}
+          </p>
+        )}
       </div>
       {alert && (
         <p id={`${id}-e`} ref={said} tabIndex={-1} role="alert" className="state error">
@@ -339,7 +348,7 @@ function AnswerItem({ it }: { it: Extract<Item, { kind: "answer" }> }) {
   );
 }
 
-function FindingCardInThread(p: {
+export function FindingCardInThread(p: {
   it: FindingItem;
   change: string;
   onReplyTo: (it: FindingItem) => void;
@@ -349,6 +358,8 @@ function FindingCardInThread(p: {
   onFixToAssistant: (it: FindingItem) => void;
   reason: string;
   accept: AcceptContext;
+  /** Tests: the card as it is after a refusal. */
+  initial?: { refused?: string };
 }) {
   const f = p.it.view.finding;
   const o = p.it.view.options;
@@ -356,6 +367,8 @@ function FindingCardInThread(p: {
   const ac = p.it.view.accept;
   const [editing, setEditing] = useState(false);
   const [accepting, setAccepting] = useState(false);
+  // A refusal (403) is the server's last word on it: no Accept to press again, until it reads.
+  const [refused, setRefused] = useState<string | undefined>(p.initial?.refused);
   const acceptAt = useRef<HTMLButtonElement>(null);
   const wasAccepting = useRef(false);
   useEffect(() => {
@@ -443,7 +456,7 @@ function FindingCardInThread(p: {
               {T.notRelevant}
             </button>
           )}
-          {ac?.can && !accepting && (
+          {ac?.can && !accepting && !refused && (
             <button
               ref={acceptAt}
               type="button"
@@ -461,10 +474,12 @@ function FindingCardInThread(p: {
           {ac.why === "assistant" && ac.as ? A.cantAssistant(ac.as) : A.cant[ac.why]}
         </p>
       )}
+      {open && refused && !accepting && <p className="work-say">{A.refused(refused)}</p>}
       {open && ac?.can && accepting && (
         <AcceptForm
           it={p.it}
           {...p.accept}
+          onRefused={setRefused}
           onCancel={() => setAccepting(false)}
           onAccept={async (reason) => {
             const r = await (p.onAccept?.(p.it, reason) ?? Promise.resolve());
@@ -777,11 +792,17 @@ export function ReplacePersonFiles(p: { files: string[]; args: string[]; asking?
 }
 
 /** The thread from loaded data, so tests can render every state. */
-export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadHandlers) {
+export function StageThreadView(
+  p: {
+    of: Loaded<View_>;
+    stage: Stage;
+    /** Tests: the note an Accept left. */ initialNote?: string;
+  } & ThreadHandlers,
+) {
   const [about, setAbout] = useState<FindingItem | undefined>();
   const [text, setText] = useState("");
   const [starting, setStarting] = useState<{ busy: boolean; error?: string }>({ busy: false });
-  const [acceptedSaid, setAcceptedNote] = useState<string | undefined>();
+  const [acceptedSaid, setAcceptedNote] = useState<string | undefined>(p.initialNote);
   const noteAt = useRef<HTMLParagraphElement>(null);
   const acceptedId = useId();
   useEffect(() => {
@@ -809,6 +830,7 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
           );
           const timeline = v.items.filter((i) => !(i.kind === "finding" && i.view.accepted));
           const acceptOf = (it: FindingItem): AcceptContext => ({
+            noUndoShown: accepted.length > 0,
             stage: v.stage,
             command: `atticus ${v.step.join(" ")}`,
             waiting: !!v.waiting || (v.state !== "stopped" && v.state !== "questions"),
@@ -823,7 +845,13 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
           });
           return (
             <div className="stack" style={{ gap: 10 }}>
-              <p role="status" aria-live="polite" className="thread-headline" style={{ margin: 0 }}>
+              {/* Announced once: after an Accept its note says what happened, so the headline,
+                  which changes with it, is no live region beside it. */}
+              <p
+                {...(acceptedSaid ? {} : { role: "status", "aria-live": "polite" as const })}
+                className="thread-headline"
+                style={{ margin: 0 }}
+              >
                 {v.headline}
               </p>
               {v.byPerson && v.byPerson.length > 0 && (
@@ -1005,11 +1033,11 @@ export function StageThreadPanel({ change, stage }: { change: string; stage: Sta
   // ADR 0203 A: the command line's own waive, in the name of the person using the app.
   const onAccept: ThreadHandlers["onAccept"] = async (it, reason) => {
     // ADR 0203 A (addendum 2026-11-22): the server goes on with the stage, and says how.
+    // A refusal reads the thread again too, so its Accept says what the server says now.
     const r = await api(`/api/changes/${encodeURIComponent(change)}/stages/${stage}/accept`, {
       method: "POST",
       body: { finding: it.view.finding.id, reason },
-    });
-    view.reload();
+    }).finally(() => view.reload());
     return r;
   };
   return (

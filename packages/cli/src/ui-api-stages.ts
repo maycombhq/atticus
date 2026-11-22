@@ -253,9 +253,11 @@ function tabOf(v: string): Tab {
 export function uiStageRoutes(
   r: Router,
   ctx: ServerContext,
-  deps: { now?: () => Date } = {},
+  deps: { now?: () => Date; env?: Record<string, string | undefined> } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
+  // Who acts, as the stage's thread reads it (ui-api-thread.ts): the two views agree on Accept.
+  const env = deps.env ?? process.env;
   const changeOf = async (v: string) => {
     if (!ID.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a change id.`);
     if (!(await exists(join(changeFolder(ctx.root, v), "change.yaml"))))
@@ -332,7 +334,7 @@ export function uiStageRoutes(
       const change = await changeOf(params.changeId!);
       return {
         status: 200,
-        body: await stageReviewView(ctx.root, change, stage, { user: ctx.user }),
+        body: await stageReviewView(ctx.root, change, stage, { user: ctx.user, env }),
       };
     })
     .add("POST", "/api/changes/{changeId}/stages/{stage}/comments", async ({ params, body }) => {
