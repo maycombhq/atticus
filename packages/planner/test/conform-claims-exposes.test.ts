@@ -76,4 +76,42 @@ describe("a deployment read in another repo the operation names (the review's po
     expect(r.claims.map((c) => c.outcome)).toEqual(["unconfirmed", "unconfirmed"]);
     expect(r.claims[0]!.what).toContain("forge-deploy");
   });
+
+  it("another repo that serves something of its own, and declares no other's deployment, doesn't hold this one's outcome", () => {
+    const service = fact({
+      repo: "forge-deploy",
+      kind: "entry",
+      id: "e-1",
+      entryType: "rest",
+      method: "GET",
+      path: "/v1/health",
+      cite: { file: "src/Health.java", line: 3, value: "/v1/health" },
+    });
+    const r = run(
+      withOther(),
+      [
+        fact({
+          kind: "deploy",
+          id: "d-0",
+          env: "prod",
+          platform: "hosts",
+          resourceName: "ledger",
+          host: "ledger.hosts.forge.example",
+          cite: { file: "deploy/hosts.yaml", line: 2, value: "ledger", quote: "name: ledger" },
+        }),
+      ],
+      {},
+      {
+        names: ["ledger-api"],
+        elsewhere: [
+          {
+            repo: "forge-deploy",
+            facts: [service],
+            basis: { from: "facts", unread: ["deploy/anvil.yaml"] },
+          },
+        ],
+      },
+    );
+    expect(r.claims.map((c) => c.outcome)).toEqual(["present-differently", "present-differently"]);
+  });
 });

@@ -392,7 +392,13 @@ export function conformClaims(input: ClaimsInput): {
   /** A deployment's or a route's deploy facts: this repo's, and those read in its other repos. */
   const deploysOf = (c: Claim): F<"deploy">[] => {
     const away = (input.elsewhere ?? []).filter((x) => c.with?.includes(x.repo));
-    lead = (sure(basis) && away.find((x) => !sure(x.basis))) || { repo, basis };
+    // Another repo's unread files hold this one's outcome only where that repo may declare
+    // another's deployment: as the verifier reads it, its facts serve nothing of their own, or
+    // one of its deploy facts names what it exposes. A service of its own declares only its own.
+    const declares = (x: (typeof away)[number]) =>
+      x.facts.some((f) => f.kind === "deploy" && !!(f as F<"deploy">).exposes) ||
+      !x.facts.some((f) => f.kind === "entry");
+    lead = (sure(basis) && away.find((x) => declares(x) && !sure(x.basis))) || { repo, basis };
     decisive = sure(lead.basis);
     return [
       ...of("deploy"),
