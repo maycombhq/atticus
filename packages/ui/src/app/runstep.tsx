@@ -310,7 +310,13 @@ export function RunStepView(p: {
               </pre>
             )}
             {!NOT_RUN.has(s.end.state) && (
-              <a href={s.end.runId ? `#/runs?run=${encodeURIComponent(s.end.runId)}` : "#/runs"}>
+              <a
+                href={
+                  s.end.runId
+                    ? `#/activity?tab=runs&run=${encodeURIComponent(s.end.runId)}`
+                    : "#/activity?tab=runs"
+                }
+              >
                 {s.end.runId ? T.openRun : T.openRuns}
               </a>
             )}
@@ -451,7 +457,10 @@ export function HandoffStep({ args }: { args: string[] }) {
     return (
       <p role="status" className="work-say" style={{ margin: 0 }}>
         {state.still ? T.handoffStill : T.handoffReady}{" "}
-        <a className="btn primary" href={`#/runs?run=${encodeURIComponent(state.runId)}`}>
+        <a
+          className="btn primary"
+          href={`#/activity?tab=runs&run=${encodeURIComponent(state.runId)}`}
+        >
           {T.handoffOpen}
         </a>
       </p>
@@ -508,7 +517,9 @@ export function HandoffStep({ args }: { args: string[] }) {
         <p role="alert" className="run-note bad">
           {T.cantStart(forceWords(args, state.why))}{" "}
           {state.runId && (
-            <a href={`#/runs?run=${encodeURIComponent(state.runId)}`}>{T.handoffOpenWaiting}</a>
+            <a href={`#/activity?tab=runs&run=${encodeURIComponent(state.runId)}`}>
+              {T.handoffOpenWaiting}
+            </a>
           )}
         </p>
       )}

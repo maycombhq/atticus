@@ -248,6 +248,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const o = {
         ...(strParam(query, "status") ? { status: strParam(query, "status")! } : {}),
         ...(strParam(query, "system") ? { system: strParam(query, "system")! } : {}),
+        ...(strParam(query, "repo") ? { repo: strParam(query, "repo")! } : {}),
         ...(strParam(query, "q") ? { q: strParam(query, "q")! } : {}),
         ...(strParam(query, "confidence") ? { confidence: strParam(query, "confidence")! } : {}),
         ...(strParam(query, "cursor") ? { cursor: strParam(query, "cursor")! } : {}),

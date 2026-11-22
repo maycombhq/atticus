@@ -79,7 +79,9 @@ export function uiLinkMatchRoutes(
         const { from, to } = b.data;
         const { view, facts } = await candidatesOf(ctx.root, from, to);
         if (!view.calls.some((c) => c.status !== "paired"))
-          throw conflict(`${from} has no loose call to match with ${view.toName}.`);
+          throw conflict(
+            `Every call of ${from} has an arrow: there is nothing to match with ${view.toName}.`,
+          );
         if (!view.apis.length)
           throw conflict(
             `${view.toName} has no API on record${view.noApis ? `: ${view.noApis.command}` : ""}.`,

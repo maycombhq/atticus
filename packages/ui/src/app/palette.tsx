@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
-import { groupLabel, sectionLabel, SCREENS } from "./screens.js";
+import {
+  ACTIVITY_LABELS,
+  ACTIVITY_TABS,
+  activityHref,
+  groupLabel,
+  sectionLabel,
+  SCREENS,
+} from "./screens.js";
 import { COPY } from "../copy.js";
 
 const T = COPY.palette;
@@ -115,6 +122,14 @@ export function paletteItems(
         : sectionLabel(s.section),
       href: `#/${s.id}`,
       also: [s.id, ...(s.also ?? [])],
+    })),
+    // v30 slice 8: Activity's tabs, each by the name of the page it was, opening on that tab.
+    ...ACTIVITY_TABS.filter((a) => hit(ACTIVITY_LABELS[a]) || hit(a)).map((a) => ({
+      kind: "screen" as const,
+      label: ACTIVITY_LABELS[a],
+      detail: `${sectionLabel("SetUp")} · ${COPY.nav.screens.activity}`,
+      href: activityHref(a),
+      also: [a],
     })),
     ...changes
       .filter((c) => hit(c.id) || hit(c.title))

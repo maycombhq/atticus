@@ -212,7 +212,8 @@ test("one run: the prompt and answer as text, and what the checks handed back", 
 }) => {
   await open(page, a(), "runs");
   await page.getByRole("link", { name: new RegExp(ids[1]!) }).click();
-  await expect(page).toHaveURL(new RegExp(`#/runs\\?run=${ids[1]}$`));
+  // v30 slice 8: Model runs is a tab of Activity; its old address opens it there.
+  await expect(page).toHaveURL(new RegExp(`#/activity\\?tab=runs&run=${ids[1]}$`));
   await expect(
     page.getByRole("heading", { level: 2, name: "knowledge-scan, round 2" }),
   ).toBeVisible();
@@ -260,7 +261,7 @@ test("one run: the prompt and answer as text, and what the checks handed back", 
   ).toBeVisible();
   await expect(back).toContainText("request firewall-rule-request: owner: Required");
   await page.getByRole("link", { name: "Back to every run" }).click();
-  await expect(page).toHaveURL(/#\/runs$/);
+  await expect(page).toHaveURL(/#\/activity\?tab=runs$/);
 });
 
 test("the list in the light theme, and a run that isn't there", async ({ page }) => {
@@ -280,7 +281,7 @@ test("a step's page links to its runs; without a model a step stays a command to
   await open(page, a(), "stories?change=add-transfer-limit");
   await expect(
     page.getByRole("link", { name: "Model runs for add-transfer-limit" }).first(),
-  ).toHaveAttribute("href", "#/runs?change=add-transfer-limit");
+  ).toHaveAttribute("href", "#/activity?tab=runs&change=add-transfer-limit");
   const next = page.locator("section[aria-labelledby=run-next]");
   // Seventh UX walk: the command is under "Or in a terminal", after the in-app action.
   await next.getByText("Or in a terminal").first().click();
@@ -308,7 +309,7 @@ test("a step's page links to its runs; without a model a step stays a command to
   await open(page, a(), "knowledge");
   await expect(
     page.getByRole("link", { name: "Model runs of the knowledge steps" }).first(),
-  ).toHaveAttribute("href", "#/runs?q=knowledge");
+  ).toHaveAttribute("href", "#/activity?tab=runs&q=knowledge");
   await page.getByRole("link", { name: "Model runs of the knowledge steps" }).first().click();
   await expect(page.getByLabel("Filter")).toHaveValue("knowledge");
   await expect(

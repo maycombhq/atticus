@@ -648,6 +648,15 @@
             "required": false
           },
           {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "3.19.0: only records of this repo (a component's own repo field)",
+            "required": false
+          },
+          {
             "name": "q",
             "in": "query",
             "schema": {
@@ -1332,7 +1341,7 @@
     "/api/triage/{itemId}/decide": {
       "post": {
         "operationId": "decideTriage",
-        "summary": "Choose a triage item's option as the signed-in person; writes a curated decision",
+        "summary": "Choose a triage item's option as the signed-in person; writes your choice (one of your changes)",
         "tags": [
           "views"
         ],
@@ -5730,7 +5739,7 @@
     "/api/build/edits/curate": {
       "post": {
         "operationId": "curateHandEdits",
-        "summary": "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a curated decision in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
+        "summary": "3.12.0 (ADR 0195 point 4): atticus catalog edits --curate then atticus catalog build, as one local job: each hand edit listed becomes a kept edit (one of the person's changes) in catalog/curated/ (an edit to propose), and the build with them keeps what the edited files hold. 409 when the edits are no longer the count listed",
         "tags": [
           "scans"
         ],
@@ -5940,7 +5949,7 @@
     "/api/build/upgrade": {
       "get": {
         "operationId": "getCatalogUpgrade",
-        "summary": "3.12.0 (ADR 0195 point 6): the upgrade to source slots as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
+        "summary": "3.12.0 (ADR 0195 point 6): the upgrade to stored reads (source slots) as a dry run, as atticus upgrade --json lists it: every file atticus upgrade --yes writes with its size and hash, the copy kept in generated-before-upgrade/, and the first build's changes (none, or it refuses). Writes nothing",
         "tags": [
           "scans"
         ],
@@ -11765,7 +11774,7 @@
       },
       "post": {
         "operationId": "matchLinks",
-        "summary": "Start a Copilot session that proposes pairings of A's loose calls with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
+        "summary": "Start a Copilot session that proposes pairings of A's calls with no arrow with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
         "tags": [
           "views"
         ],

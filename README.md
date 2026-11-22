@@ -37,7 +37,7 @@ The app (`atticus ui`) has six entries:
 | Entry     | What it shows                                                   |
 | --------- | --------------------------------------------------------------- |
 | Home      | What needs you, what is read and trusted, changes in flight     |
-| Map       | Estate canvas, flows, contracts, impact, trust                  |
+| Map       | Map, Flows, Read status (contracts, impact from a box's panel)  |
 | Change    | All changes, at a glance, feature, architecture, stories, tasks |
 | Questions | Open questions                                                  |
 | Knowledge | Items, sources, documents, search                               |

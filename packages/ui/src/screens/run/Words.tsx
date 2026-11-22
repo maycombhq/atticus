@@ -14,7 +14,15 @@ export function Words() {
             <dt>
               <strong>{t.term}</strong>
             </dt>
-            <dd style={{ margin: "2px 0 10px" }}>{t.says}</dd>
+            <dd style={{ margin: "2px 0 10px" }}>
+              {t.says}
+              {"was" in t && t.was && (
+                <>
+                  <br />
+                  <span className="muted">{G.was(t.was)}</span>
+                </>
+              )}
+            </dd>
           </div>
         ))}
       </dl>

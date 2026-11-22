@@ -59,8 +59,9 @@ describe("featureFlows", () => {
       ["one-end", records[7]!.id],
       ["loose-end", "scoring.http-call.abc"],
     ]);
+    // v30 slice 8 (docs/guide/words.md): an HTTP call's loose end is a call with no arrow.
     expect(f!.looseEnds[1]!.text).toBe(
-      "scoring has a loose end Atticus couldn't follow (POST ${bureau.url}/loans/check)",
+      "scoring has a call with no arrow (POST ${bureau.url}/loans/check): Atticus couldn't tell where it goes",
     );
     // A link a person paired cites both ends: no "one end seen".
     const paired = records.map((r, i) =>
@@ -68,5 +69,38 @@ describe("featureFlows", () => {
     );
     const [g] = featureFlows([...paired, ...detectFeatures(paired)]);
     expect(g!.looseEnds.map((e) => e.kind)).toEqual(["loose-end"]);
+    // A webhook the component sends (an outbound HTTP call, a vendor spec's) is a call too.
+    const hook = records.map((r) =>
+      r.kind === "Unresolved"
+        ? ({ ...r, unresolvedKind: "webhook-send", raw: "POST loans.checked" } as typeof r)
+        : r,
+    );
+    const [w] = featureFlows([...hook, ...detectFeatures(hook)]);
+    expect(w!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
+      "scoring has a call with no arrow (POST loans.checked): Atticus couldn't tell where it goes",
+    );
+    // A GraphQL or a gRPC call is a call too.
+    for (const [kind, raw] of [
+      ["graphql-call", "QUERY Query.loansChecked"],
+      ["grpc-call", "loans.Checks/Check"],
+    ]) {
+      const other = records.map((r) =>
+        r.kind === "Unresolved" ? ({ ...r, unresolvedKind: kind, raw } as typeof r) : r,
+      );
+      const [o] = featureFlows([...other, ...detectFeatures(other)]);
+      expect(o!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
+        `scoring has a call with no arrow (${raw}): Atticus couldn't tell where it goes`,
+      );
+    }
+    // Any other kind (a topic listened to, a table) stays a loose end in words.
+    const topic = records.map((r) =>
+      r.kind === "Unresolved"
+        ? ({ ...r, unresolvedKind: "event-subscribe", raw: "loans.checked" } as typeof r)
+        : r,
+    );
+    const [t] = featureFlows([...topic, ...detectFeatures(topic)]);
+    expect(t!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
+      "scoring has a loose end Atticus couldn't follow (loans.checked)",
+    );
   });
 });

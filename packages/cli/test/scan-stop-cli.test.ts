@@ -150,7 +150,7 @@ describe("atticus scan keeps each repo's last good read (ADR 0195 point 1, CS2)"
       await rm(join(root, "workspace", "forge-events"), { recursive: true, force: true });
       expect(await main(["scan", "--root", root, "--no-drift"], t.io)).toBe(1);
       expect(t.out.join("\n")).toMatch(
-        /forge-ledger: its readers slot keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here/,
+        /forge-ledger: keeps its last good read \(commit [0-9a-f]{7}\): it isn't cloned here/,
       );
     },
     T,

@@ -96,7 +96,7 @@ async function factsAtMerge(
   catalog: () => Promise<{ evidence: { repo?: string; commit?: string }[] }[]>,
 ): Promise<GateBlocker | undefined> {
   const where = `${short(merged)}, the commit its release merged into ${r.base}`;
-  const readAgain = `read it again (Map › Trust › Freshness: Read again, or atticus map ${r.id}), then atticus verify ${r.id} --write, so the catalog says what shipped.`;
+  const readAgain = `read it again (Map › Read status › Freshness: Read again, or atticus map ${r.id}), then atticus verify ${r.id} --write, so the catalog says what shipped.`;
   const text = await readFile(join(factsDirOf(root), `${r.id}.jsonl`), "utf8").catch(() => "");
   const parsed = text.trim() ? parseFacts(text) : undefined;
   const facts = parsed?.ok ? parsed.facts : [];

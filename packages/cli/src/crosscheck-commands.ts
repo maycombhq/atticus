@@ -35,11 +35,12 @@ const short = (c?: string) => (c && /^[0-9a-f]{8,}$/.test(c) ? c.slice(0, 7) : (
 
 const STATE_WORDS: Record<RepoCrossCheck["state"], string> = {
   compared: "compared",
-  "no-facts": "no facts slot: its records come from the readers, so there is nothing to check",
-  "no-readers": "no readers slot yet: scan it to compare (atticus scan --repos <repo>)",
+  "no-facts": "no facts: its records come from the readers, so there is nothing to check",
+  "no-readers":
+    "not read by the built-in readers yet: scan it to compare (atticus scan --repos <repo>)",
   legacy:
-    "its readers slot is the upgrade's copy of the old catalog, not compared until a scan reads it",
-  unusable: "a slot doesn't read",
+    "its built-in readers' read is the upgrade's copy of the old catalog, not compared until a scan reads it",
+  unusable: "its stored read can't be opened",
 };
 
 const valueWords = (v: unknown): string =>

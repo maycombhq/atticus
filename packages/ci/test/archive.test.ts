@@ -193,7 +193,7 @@ describe("archive gate", () => {
       {
         code: "needs-reading",
         message:
-          "forge-ledger: no facts were read at bbbbbbbbbbbb, the commit its release merged into main: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+          "forge-ledger: no facts were read at bbbbbbbbbbbb, the commit its release merged into main: read it again (Map › Read status › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
       },
     ]);
     await facts(root, "c".repeat(40));

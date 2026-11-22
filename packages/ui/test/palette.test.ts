@@ -25,16 +25,22 @@ describe("the command palette", () => {
       paletteItems(text, [], [])
         .filter((i) => i.kind === "screen")
         .map((i) => i.href);
+    // v30 slice 8: Model runs and Prompt history are tabs of Activity, in Set up.
     expect(paletteItems("model runs", [], [])[0]).toMatchObject({
       kind: "screen",
-      href: "#/runs",
-      detail: "Set up",
+      href: "#/activity?tab=runs",
+      detail: "Set up · Activity",
     });
     expect(paletteItems("prompt history", [], [])[0]).toMatchObject({
       kind: "screen",
-      href: "#/history",
-      // ADR 0188: a tab of Set up, beside Model runs.
-      detail: "Set up",
+      href: "#/activity?tab=history",
+      detail: "Set up · Activity",
+    });
+    expect(paletteItems("activity", [], [])[0]).toMatchObject({ href: "#/activity" });
+    // Trust is Read status now; its old name still finds it.
+    expect(paletteItems("read status", [], [])[0]).toMatchObject({
+      kind: "screen",
+      href: "#/trust",
     });
     expect(paletteItems("trust", [], [])[0]).toMatchObject({ kind: "screen", href: "#/trust" });
     expect(paletteItems("at a glance", [], [])[0]).toMatchObject({ href: "#/cockpit" });

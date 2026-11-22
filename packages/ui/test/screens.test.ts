@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_LABELS,
+  ACTIVITY_TABS,
   changeOf,
   FULL_SECTIONS,
   groupLabel,
   landingOf,
   morePages,
+  movedHash,
+  MOVED,
   OLD_ADDRESSES,
   PHASES,
   SCREENS,
@@ -77,7 +81,10 @@ const BEFORE = [
  * and a tab with --full. Model runs isn't: it is a tab of Set up.
  */
 const UNDER_MORE = [
-  "map",
+  // v30 slice 8: from a box's panel, for that box; estate-wide under More pages.
+  "contracts",
+  "impact",
+  "decisions",
   "features",
   "mappings",
   "diagrams",
@@ -126,8 +133,9 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     // ADR 0188: the manual steps are a tab of Home, Release of Change, Scans and Prompt
     // history of Set up, by default (More pages alone was too far for daily use).
     expect(of("Home")).toEqual(["home", "todo"]);
-    // ADR 0181: Decided by AI, beside Trust, which audits it.
-    expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust", "decisions"]);
+    // v30 slice 8: the Map keeps Map, Flows and Read status. Contracts, Impact and Decided by AI
+    // open from the box's panel, for that box (and from Ctrl+K).
+    expect(of("Map")).toEqual(["canvas", "flows", "trust"]);
     // The product owner, 2026-10-24: the list and At a glance are tabs, before the stages.
     expect(of("Change")).toEqual([
       "changes",
@@ -144,8 +152,9 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     ]);
     expect(of("Questions")).toEqual(["questions"]);
     expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search"]);
-    // Model runs beside AI: what the AI was asked, where a person looks for it (2026-10-25).
-    expect(of("SetUp")).toEqual(["repos", "ai", "runs", "orgpack", "scans", "history"]);
+    // v30 slice 8: Model runs, Prompt history, Scans and Catalog builds are one Activity page,
+    // beside AI (what the AI was asked, where a person looks for it, 2026-10-25).
+    expect(of("SetUp")).toEqual(["repos", "ai", "activity", "orgpack"]);
     expect(of("Atticus")).toEqual([]);
   });
 
@@ -166,7 +175,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     const listed = more.flatMap((g) => g.pages.map((p) => p.id));
     expect([...listed].sort()).toEqual([...UNDER_MORE].sort());
     expect(new Set(listed).size).toBe(listed.length);
-    expect(listed).not.toContain("runs");
+    expect(listed).not.toContain("activity");
     const byId = (s: string) => more.find((g) => g.section === s)!.pages.map((p) => p.id);
     expect(byId("Knowledge")).toEqual(["parties", "orgpack-draft"]);
     // Seventh UX walk: pages across every change with Home, the org pack's checks in Set up.
@@ -192,8 +201,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     const aside = SCREENS.filter((s) => s.aside).map((s) => s.id);
     expect(aside.sort()).toEqual(
       [
-        // ADR 0195 (CS3): from Trust and Scans.
-        "catalog-builds",
+        // ADR 0195 (CS3): from Read status.
         "crosscheck",
         "change-diagram",
         "explore",
@@ -211,13 +219,16 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(of("Atticus", true)).toEqual(["evals", "learning"]);
     const all = new Set(FULL_SECTIONS.flatMap((s) => of(s, true)));
     expect(SCREENS.filter((s) => !s.under && !all.has(s.id)).map((s) => s.id)).toEqual([]);
-    expect(of("Map", true).slice(0, 5)).toEqual([
+    expect(of("Map", true).slice(0, 6)).toEqual([
       "canvas",
       "flows",
+      "trust",
       "contracts",
       "impact",
-      "trust",
+      "decisions",
     ]);
+    // Activity is one page in Set up, with or without --full.
+    expect(of("SetUp", true)).toContain("activity");
     expect(landingOf("Change", true).id).toBe("changes");
     const phase = (g: string) =>
       tabsOf("Change", true)
@@ -245,8 +256,57 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(screenOf("#/questions/q-1").id).toBe("questions");
   });
 
+  it("v30 slice 8: a page folded away keeps its address, which opens its new place", () => {
+    expect(Object.keys(MOVED).sort()).toEqual(
+      ["catalog-builds", "history", "map", "runs", "scans"].sort(),
+    );
+    for (const id of Object.keys(MOVED)) {
+      expect(
+        SCREENS.some((s) => s.id === id),
+        id,
+      ).toBe(false);
+      expect(OLD_ADDRESSES[id]).toBe(MOVED[id]!.to);
+    }
+    // Each tab of Activity, its own query kept.
+    expect(movedHash("#/runs")).toBe("#/activity?tab=runs");
+    expect(movedHash("#/runs?run=run-1")).toBe("#/activity?tab=runs&run=run-1");
+    expect(movedHash("#/history?change=add-transfer-limit")).toBe(
+      "#/activity?tab=history&change=add-transfer-limit",
+    );
+    expect(movedHash("#/scans")).toBe("#/activity?tab=scans");
+    expect(movedHash("#/catalog-builds?at=undo")).toBe("#/activity?tab=catalog-builds&at=undo");
+    // The duplicate Ecosystem map opens the Map, as Ctrl+K's "Ecosystem map" does; its coverage
+    // and guides are on Systems.
+    expect(movedHash("#/map")).toBe("#/canvas");
+    // A page that stays is not moved.
+    expect(movedHash("#/canvas")).toBeUndefined();
+    expect(movedHash("#/activity?tab=runs")).toBeUndefined();
+    expect(movedHash("")).toBeUndefined();
+    expect(screenOf("#/runs?run=x").id).toBe("activity");
+    expect(screenOf("#/map").id).toBe("canvas");
+  });
+
+  it("v30 slice 8: the Map's pages are named Map, Flows and Read status", () => {
+    const label = (id: string) => SCREENS.find((s) => s.id === id)!.label;
+    expect(label("canvas")).toBe("Map");
+    expect(label("trust")).toBe("Read status");
+    expect(label("crosscheck")).toBe("Cross-check");
+    expect(label("activity")).toBe("Activity");
+    // Ctrl+K still finds a page by the name it had.
+    const also = (id: string) => SCREENS.find((s) => s.id === id)!.also ?? [];
+    expect(also("canvas")).toEqual(expect.arrayContaining(["Estate canvas", "Ecosystem map"]));
+    expect(also("trust")).toContain("Trust");
+    // Activity's tabs are offered by Ctrl+K by their own names (palette.test.ts).
+    expect(ACTIVITY_TABS.map((t) => ACTIVITY_LABELS[t])).toEqual([
+      "Model runs",
+      "Prompt history",
+      "Scans",
+      "Catalog builds",
+    ]);
+  });
+
   it("merges the Overview into Home: its address opens Home, and it is in no list, even --full", () => {
-    expect(OLD_ADDRESSES).toEqual({ dashboard: "home" });
+    expect(OLD_ADDRESSES.dashboard).toBe("home");
     expect(SCREENS.some((s) => s.id === "dashboard")).toBe(false);
     expect(screenOf("#/dashboard").id).toBe("home");
     expect(screenOf("#/dashboard?x=1").id).toBe("home");
@@ -260,8 +320,9 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(screenOf("#/explore?q=daily").id).toBe("explore");
     expect(screenOf("#/canvas?lens=data").id).toBe("canvas");
     expect(screenOf("#/trust").id).toBe("trust");
-    expect(screenOf("#/runs?run=run-20261023034001-0001").id).toBe("runs");
-    expect(screenOf("#/history?change=add-transfer-limit").id).toBe("history");
+    expect(screenOf("#/runs?run=run-20261023034001-0001").id).toBe("activity");
+    expect(screenOf("#/history?change=add-transfer-limit").id).toBe("activity");
+    expect(screenOf("#/activity?tab=scans").id).toBe("activity");
     expect(screenOf("#/flows?repo=forge-web&flow=forge-web.save-customer").id).toBe("flows");
     expect(screenOf("#/stories?change=add-transfer-limit").id).toBe("stories");
     expect(screenOf("").id).toBe("home");

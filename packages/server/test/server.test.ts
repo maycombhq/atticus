@@ -246,6 +246,12 @@ describe("the local server (ADR 0015)", () => {
     const idOf = (r: unknown) => (r as { id: string }).id;
     expect(idOf(next.items[0]) > idOf(page.items[1])).toBe(true);
 
+    // v30 slice 8 (3.19.0, additive): ?repo= lists the repo's own records.
+    const ofRepo = RecordPage.parse(
+      (await call("/api/catalog/Component?repo=forge-portal-bff&limit=500")).body,
+    );
+    expect(ofRepo.items.map(idOf)).toEqual(["portal-bff"]);
+
     const one = await call(`/api/catalog/Component/${encodeURIComponent(idOf(page.items[0]))}`);
     expect(one.status).toBe(200);
     expect(one.body).toMatchObject({ kind: "Component", id: idOf(page.items[0]) });
@@ -834,6 +840,49 @@ describe("the index on a fresh metarepo", () => {
         ),
       );
       expect(await Promise.all(calls)).toEqual([200, 200, 200, 200, 200, 200, 200]);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
+describe("a repo's components (v30 slice 8, Impact of a repo box)", () => {
+  it("?repo= lists both of a repo's two components, page by page", async () => {
+    const root = await forgeMetarepo();
+    // The invented second component of forge-ledger.
+    const worker = parseRecord({
+      schemaVersion: 1,
+      status: "current",
+      kind: "Component",
+      id: "ledger-worker",
+      confidence: "verified",
+      system: "ledger",
+      repo: "forge-ledger",
+      type: "forge-service",
+      evidence: [{ source: "config", repo: "forge-ledger", path: "worker/forge.yaml", line: 2 }],
+    });
+    if (!worker.ok) throw new Error(JSON.stringify(worker.issues));
+    const f = join(root, "catalog/generated", recordPath(worker.record));
+    await mkdir(dirname(f), { recursive: true });
+    await writeFile(f, serializeRecord(worker.record));
+    const s = await startServer({ root, port: 0, watch: false });
+    const get = async (path: string) =>
+      RecordPage.parse(
+        await (await fetch(`${s.url}${path}`, { headers: { "X-Atticus-Token": s.token } })).json(),
+      );
+    const idOf = (r: unknown) => (r as { id: string }).id;
+    try {
+      const all = await get("/api/catalog/Component?limit=500&repo=forge-ledger");
+      expect(all.items.map(idOf)).toEqual(["ledger-api", "ledger-worker"]);
+      expect(all.total).toBe(2);
+      expect(all.next).toBeUndefined();
+      const p1 = await get("/api/catalog/Component?limit=1&repo=forge-ledger");
+      expect(p1.items.map(idOf)).toEqual(["ledger-api"]);
+      const p2 = await get(
+        `/api/catalog/Component?limit=1&repo=forge-ledger&cursor=${encodeURIComponent(p1.next!)}`,
+      );
+      expect(p2.items.map(idOf)).toEqual(["ledger-worker"]);
+      expect(p2.next).toBeUndefined();
     } finally {
       await s.close();
     }

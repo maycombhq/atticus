@@ -138,7 +138,7 @@ test("Run with anthropic starts the step, says it is running, then shows the end
   await expect(run).toBeEnabled();
   await expect(next.getByRole("link", { name: "Open Model runs" })).toHaveAttribute(
     "href",
-    "#/runs",
+    "#/activity?tab=runs",
   );
   await accessible(page, "a step that ended");
 });

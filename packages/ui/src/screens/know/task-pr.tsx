@@ -373,7 +373,9 @@ export function TaskRunState(p: { change: string; task: Task; onDone?: () => voi
         >
           {chip}
         </span>
-        {t.run && <a href={`#/runs?run=${encodeURIComponent(t.run)}`}>{T.openItsRun}</a>}
+        {t.run && (
+          <a href={`#/activity?tab=runs&run=${encodeURIComponent(t.run)}`}>{T.openItsRun}</a>
+        )}
       </span>
       {tr.state === "built" && tr.commit && <span>{T.taskBuilt(tr.branch, tr.commit)}</span>}
       {notRaised && <span>{T.taskPrNotRaised}</span>}

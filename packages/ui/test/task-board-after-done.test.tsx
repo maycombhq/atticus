@@ -49,7 +49,7 @@ describe("a task that has run, on the Task board", () => {
   it("drafted and built: says so, links its run and offers Raise the task's PR", () => {
     const html = renderToStaticMarkup(<TaskRunState change={CHANGE} task={built("1.1")} />);
     expect(html).toContain(T.taskState.built!);
-    expect(html).toContain('href="#/runs?run=run-20261108140003-0001"');
+    expect(html).toContain('href="#/activity?tab=runs&amp;run=run-20261108140003-0001"');
     expect(html).toContain(esc(T.taskBuilt(`task/${CHANGE}/1.1`, "0123456")));
     expect(html).toContain(esc(T.raiseTaskPr));
     expect(html).toContain(esc(T.raiseTaskPrWhy));

@@ -78,6 +78,7 @@ import { WORDS } from "./words.js";
 import { flash } from "../../app/flash.js";
 import { CorrectionsToApply } from "../../app/propose.js";
 import "./box-panel.css";
+import { boxPages } from "../map/box-pages.js";
 
 const LENSES = ["architecture", "repo", "data", "integration", "infrastructure"] as const;
 type Lens = (typeof LENSES)[number];
@@ -1462,6 +1463,7 @@ export function Inspector({
         {WORDS.repoCounts}
       </a>
     ),
+    ...boxPages(node),
     // WP7.7: a system's page, its guide, questions and changes. Only a System record has a page:
     // a system the manifest or a call names has none yet.
     node.kind === "system" && node.id.startsWith("system:") && node.record && (

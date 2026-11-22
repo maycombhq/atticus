@@ -44,17 +44,18 @@ const ready = <T,>(data: T) => ({ state: "ready" as const, data });
 const never = () => Promise.reject(new Error("no write in a render"));
 
 describe("the page in the app's map", () => {
-  it("is a Map page reached from Trust, and Catalog builds a Set up page reached from Scans", () => {
+  it("is a Map page reached from Read status, and Catalog builds a tab of Set up › Activity", () => {
     expect(screenOf("#/crosscheck?repo=forge-ledger").id).toBe("crosscheck");
     expect(SCREENS.find((s) => s.id === "crosscheck")).toMatchObject({
       section: "Map",
       aside: true,
       label: X.title,
     });
-    expect(SCREENS.find((s) => s.id === "catalog-builds")).toMatchObject({
-      section: "SetUp",
-      aside: true,
-    });
+    // v30 slice 8: Catalog builds is a tab of Activity; its old address opens it.
+    expect(SCREENS.find((s) => s.id === "catalog-builds")).toBeUndefined();
+    expect(screenOf("#/catalog-builds").id).toBe("activity");
+    expect(screenOf("#/catalog-builds").section).toBe("SetUp");
+    expect(X.title).toBe("Cross-check");
   });
 
   it("is linked from each repo on Trust that has facts", () => {
