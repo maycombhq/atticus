@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { CatalogRecord } from "@maycombhq/core";
 import {
   detectFeaturesWithReport,
+  traceHooks,
+  traceStats,
+  Tracer,
   featureMergeDecision,
   featureSplitDecisions,
   FeatureError,
@@ -208,5 +211,111 @@ describe("the features' grouping by number gives what main's grouping gave (beta
     // The estates exercise what changed: features of several entry points, and pins.
     expect(grouped).toBeGreaterThan(RUNS / 3);
     expect(pinned).toBeGreaterThan(RUNS / 3);
+  });
+});
+
+/**
+ * ADR 0205's addendum (accepted 2026-11-22), step 3b: the entry points that start at the same
+ * component with the same words and mode share one breadth-first trace, each with its own head
+ * (its id, the calls into it and who makes them, or the event and its publisher) put first. The
+ * proof: over the random estates, with and without decisions, kept flows and not, the features,
+ * every flow's records, reached, visits and hops are what tracing each entry point alone gives;
+ * and the breadth-first part reads nothing of its entry point but its start (a recording view).
+ */
+/**
+ * The estate with a twin of each POST and GET endpoint: the same component, file, line and path
+ * (so the same words), another method of the same mode (PATCH, HEAD), called by the same callers.
+ * Each twin is an entry point with its original's start, as a big estate's entry points often are.
+ */
+function withTwins(records: CatalogRecord[]): CatalogRecord[] {
+  const out = [...records];
+  const ids = new Set(records.map((r) => `${r.kind}|${r.id}`));
+  for (const r of records) {
+    if (r.kind !== "Endpoint" || r.endpointType !== "rest") continue;
+    const method = r.method === "POST" ? "PATCH" : r.method === "GET" ? "HEAD" : undefined;
+    if (!method) continue;
+    const at = r.evidence[0]!;
+    const twin = build.endpoint(
+      r.component,
+      method,
+      r.pathOrTopic,
+      at.path!.slice(r.component.length + 1),
+      at.line,
+    );
+    if (ids.has(`Endpoint|${twin.id}`)) continue;
+    ids.add(`Endpoint|${twin.id}`);
+    out.push(twin);
+    for (const c of records)
+      if (c.kind === "Interface" && c.endpoint === r.id) {
+        const call = build.call(c.from, c.to, method, c.normalizedPath ?? r.pathOrTopic, {
+          endpoint: twin.id,
+          via: c.via,
+        });
+        if (!ids.has(`Interface|${call.id}`)) {
+          ids.add(`Interface|${call.id}`);
+          out.push(call);
+        }
+      }
+  }
+  return out;
+}
+
+describe("the same start traced once (ADR 0205 addendum, step 3b)", () => {
+  it(`${RUNS} random estates: each flow what tracing it alone gives`, () => {
+    let shared = 0;
+    for (let seed = 1; seed <= RUNS; seed++) {
+      const records = seed % 2 ? withTwins(estate(seed)) : estate(seed);
+      const ds = seed % 3 === 0 ? [] : decisions(seed, records);
+      const was = traceStats.shared;
+      const on = detectFeaturesWithReport(records, { decisions: ds });
+      shared += traceStats.shared - was;
+      traceHooks.off = true;
+      let off: ReturnType<typeof detectFeaturesWithReport>;
+      try {
+        off = detectFeaturesWithReport(records, { decisions: ds });
+      } finally {
+        delete traceHooks.off;
+      }
+      expect(on.features, `seed ${seed}`).toEqual(off.features);
+      expect(on.problems, `seed ${seed}`).toEqual(off.problems);
+      expect([...on.flows.keys()]).toEqual([...off.flows.keys()]);
+      for (const [id, f] of on.flows) {
+        const w = off.flows.get(id)!;
+        expect([...f.records], `seed ${seed} ${id}`).toEqual([...w.records]);
+        expect([...f.reached], `seed ${seed} ${id}`).toEqual([...w.reached]);
+        expect(f.visits.map((v) => [v.component, [...v.tokens]])).toEqual(
+          w.visits.map((v) => [v.component, [...v.tokens]]),
+        );
+        expect(f.hops.map((h) => h.id)).toEqual(w.hops.map((h) => h.id));
+      }
+      expect(
+        detectFeaturesWithReport(records, { decisions: ds, keepFlows: false }).features,
+      ).toEqual(off.features);
+    }
+    // The estates have entry points that share a start, so the step is exercised.
+    expect(shared).toBeGreaterThan(RUNS / 2);
+  });
+
+  it("the breadth-first part reads only its entry point's component, words and mode", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const records = withTwins(estate(seed));
+      const tracer = new Tracer(records);
+      const list = tracer.detectEntries();
+      tracer.useEntries(list);
+      const read = new Set<string>();
+      traceHooks.onBreadthFirst = (entry) =>
+        new Proxy(entry, {
+          get(t, k, r) {
+            read.add(String(k));
+            return Reflect.get(t, k, r) as unknown;
+          },
+        });
+      try {
+        for (const e of list) tracer.traceIx(e, true);
+      } finally {
+        delete traceHooks.onBreadthFirst;
+      }
+      for (const k of read) expect(["component", "tokens", "mode"], `seed ${seed}`).toContain(k);
+    }
   });
 });

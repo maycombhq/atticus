@@ -21,6 +21,7 @@ import {
   projectionHooks,
   projectionStats,
 } from "@maycombhq/scanner";
+import { traceHooks, traceStats } from "@maycombhq/features";
 import type { CatalogDiff } from "@maycombhq/scanner";
 import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { bigRepoFacts, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
@@ -99,10 +100,12 @@ function stepsOff(off: boolean): void {
     writeFactsHooks.fullDiff = true;
     factsParseHooks.off = true;
     projectionHooks.off = true;
+    traceHooks.off = true;
   } else {
     delete writeFactsHooks.fullDiff;
     delete factsParseHooks.off;
     delete projectionHooks.off;
+    delete traceHooks.off;
   }
 }
 
@@ -193,6 +196,8 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       // made now each time it is taken from memory.
       projectionHooks.check = true;
       const projectionsKept = projectionStats.kept;
+      // Step 3b: the traces that share a start take one breadth-first part (on both estates).
+      const tracesShared = traceStats.shared;
       const parsesFromMemory = recordCacheStats.fromMemory;
       const kept = factsParseStats.kept;
       const fromMemory = buildCacheStats().textsFromMemory;
@@ -205,6 +210,7 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       delete projectionHooks.check;
       // Every write after the first kept the projections of the repos it didn't change.
       expect(projectionStats.kept - projectionsKept, "projections kept").toBeGreaterThan(8);
+      expect(traceStats.shared - tracesShared, "traces sharing a start").toBeGreaterThan(0);
       // Every write after the first read the catalog's parses from the server's memory.
       expect(
         recordCacheStats.fromMemory - parsesFromMemory,

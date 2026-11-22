@@ -17,6 +17,7 @@ import {
   serializeBuildManifestV1,
 } from "@maycombhq/scanner";
 import { setFlagsFromString, getHeapStatistics } from "node:v8";
+import { traceHooks } from "@maycombhq/features";
 import { runInNewContext } from "node:vm";
 import {
   appMemory,
@@ -169,7 +170,10 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       writeFactsHooks.fullDiff = true;
       factsParseHooks.off = true;
     }
-    if (ADDENDUM_OFF || STEPS_OFF) projectionHooks.off = true;
+    if (ADDENDUM_OFF || STEPS_OFF) {
+      projectionHooks.off = true;
+      traceHooks.off = true;
+    }
     if (APP && !STEPS_OFF) {
       if (ROOMY) appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
       startAppMemory();

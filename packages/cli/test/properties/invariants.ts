@@ -1,3 +1,5 @@
+import { traceHooks } from "@maycombhq/features";
+import { projectionHooks } from "@maycombhq/scanner";
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1227,7 +1229,16 @@ export async function settleAndCompare(ctx: Ctx, run: (d: Desc) => Promise<void>
   const top = await mkdtemp(join(tmpdir(), "cs4-fresh-"));
   try {
     const fresh = join(top, "metarepo");
-    await sut().freshBuild(w.root, fresh, m);
+    // ADR 0205's addendum: the fresh build with each of its steps off (every repo projected,
+    // every entry point traced alone), so the steps the sequence ran with are judged by it.
+    projectionHooks.off = true;
+    traceHooks.off = true;
+    try {
+      await sut().freshBuild(w.root, fresh, m);
+    } finally {
+      delete projectionHooks.off;
+      delete traceHooks.off;
+    }
     const there = await readTree(join(fresh, "catalog", "generated"));
     if (!sameTree(here, there)) {
       const d = changedPaths(here, there);
