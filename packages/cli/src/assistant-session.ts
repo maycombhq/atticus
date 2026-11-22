@@ -1,4 +1,5 @@
 import { assistantActor } from "@maycombhq/core";
+import { ASSISTANT_TERMINAL_VARS } from "./assistant-env.js";
 
 /**
  * The coding assistant a command runs under, read from what the assistants set in the terminals
@@ -17,11 +18,7 @@ export function assistantSession(
       by: assistantActor(named) ? named : `${named}-assistant`,
       because: "ATTICUS_ASSISTANT is set",
     };
-  const known: [string, string][] = [
-    ["CLAUDECODE", "claude-code"],
-    ["GEMINI_CLI", "gemini-cli"],
-    ["CURSOR_AGENT", "cursor"],
-  ];
-  for (const [k, by] of known) if (env[k] && env[k] !== "0") return { by, because: `${k} is set` };
+  for (const [k, by] of ASSISTANT_TERMINAL_VARS)
+    if (env[k] && env[k] !== "0") return { by, because: `${k} is set` };
   return undefined;
 }

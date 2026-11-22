@@ -70,10 +70,11 @@ describe.skipIf(typeof (nodeModule as { registerHooks?: unknown }).registerHooks
       // run's title is checked against (cite, which imports nothing). Beta.27 re-review: and
       // process-trees, the registry of Atticus's own signal handlers (node built-ins only).
       // Beta.28.5: and cancel (node:async_hooks only), which fs asks whether a wait for a held
-      // file was stopped.
+      // file was stopped. Beta.30: and version-order (imports nothing), which the line after a
+      // refusal (ADR 0202 point 8) compares versions with.
       for (const f of r.files.filter((x) => owner(x) === "packages/core"))
         expect(f).toMatch(
-          /\/core\/dist\/(light|log|fs|cancel|run-log|cite|printer|kept-files|process-trees|schema\/version)\.js$/,
+          /\/core\/dist\/(light|log|fs|cancel|run-log|cite|printer|kept-files|process-trees|version-order|schema\/version)\.js$/,
         );
     });
 
