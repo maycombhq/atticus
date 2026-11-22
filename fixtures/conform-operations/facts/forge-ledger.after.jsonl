@@ -1,0 +1,2 @@
+{"repo":"forge-ledger","commit":"bbbbbbb","verified":"line","by":"assistant","conf":"declared","kind":"deploy","id":"d-0","env":"prod","platform":"hosts","resourceName":"ledger","cite":{"file":"deploy/hosts.yaml","line":2,"value":"ledger","quote":"name: ledger"}}
+{"repo":"forge-ledger","commit":"bbbbbbb","verified":"line","by":"assistant","conf":"declared","kind":"config","id":"k-0","settingKind":"config","key":"ledger.client.key","value":"set-in-file","cite":{"file":"deploy/values-prod.yaml","line":1,"value":"ledger.client.key","quote":"ledger.client.key: set-in-file"}}
