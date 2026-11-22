@@ -30,6 +30,36 @@ describe("assistantActor", () => {
     expect(assistantActor("feature-placer")).toBeUndefined();
   });
 
+  it("matches the known names exactly, never as part of a person's name or address", () => {
+    const known = ["judge", "critic", "naysayer", "feature-placer", "ledger-architect"];
+    for (const by of ["judge", "Judge", "critic", "feature-placer", "ledger-architect"])
+      expect(assistantActor(by, known), by).toBe(by);
+    for (const by of [
+      "m.judge@forge.example",
+      "judge.smith",
+      "judge@forge.example",
+      "critic.anna@forge.example",
+      "feature-placer.fan",
+      "pat.naysayer",
+      "ledger-architect-team",
+    ])
+      expect(assistantActor(by, known), by).toBeUndefined();
+  });
+
+  it("knows a handle ending -critic or -naysayer, but not an address or a dotted name", () => {
+    for (const by of ["true-critic", "application-architect-naysayer", "ledger-api-critic"])
+      expect(assistantActor(by), by).toBe(by);
+    for (const by of [
+      "pat-critic@forge.example",
+      "anna.critic",
+      "j.naysayer",
+      "film critic",
+      "pat_critic",
+      "critical-path-team",
+    ])
+      expect(assistantActor(by), by).toBeUndefined();
+  });
+
   it("reads an email's local part", () => {
     expect(assistantActor("copilot@forge.example")).toBe("copilot@forge.example");
     expect(assistantActor("pat@forge.example")).toBeUndefined();
