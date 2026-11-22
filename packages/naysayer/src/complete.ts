@@ -253,7 +253,14 @@ export async function completeLensRun(
       taken: new Set(existing.findings.map((s) => s.finding.id)),
       skip: new Set(
         existing.findings
-          .filter((s) => into !== round || carriedAi.has(s.finding.id))
+          // A persona's hit the round already has (its answer to another round's ask, read in
+          // here) is written once: by the hit's identity, its fingerprint (ADR 0203 C).
+          .filter(
+            (s) =>
+              into !== round ||
+              carriedAi.has(s.finding.id) ||
+              (!!persona && s.finding.persona === persona),
+          )
           .map((s) => fingerprint(s.finding)),
       ),
     });

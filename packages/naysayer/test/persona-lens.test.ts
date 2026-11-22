@@ -197,6 +197,41 @@ describe("a persona lens never holds a gate (ADR 0203 C, the owner's decision of
     });
   });
 
+  it.each([
+    ["the old round's answer first", ["old", "new"]],
+    ["the newest round's answer first", ["new", "old"]],
+  ])(
+    "two answers of one persona raising the same, %s, are one finding in the newest round",
+    async (_, order) => {
+      const r = await root("[plan]");
+      const rt = new HandoffRuntime({
+        root: r,
+        validate: async () => [],
+        now: () => new Date(NOW),
+      });
+      const first = await runCritic(r, CHANGE, { now: NOW, runtime: rt, gate: "plan" });
+      const second = await runCritic(r, CHANGE, {
+        now: "2026-10-21T09:00:00Z",
+        runtime: rt,
+        gate: "plan",
+      });
+      const runs = {
+        old: first.lenses.find((l) => l.persona === NAYSAYER)!.runId!,
+        new: second.lenses.find((l) => l.persona === NAYSAYER)!.runId!,
+      };
+      for (const k of order as ("old" | "new")[]) {
+        await writeFile(join(r, ".runs", CHANGE, runs[k], `findings-${NAYSAYER}.yaml`), ASKED);
+        await completeLensRun(r, await rt.done(runs[k]), { now: "2026-10-21T10:00:00Z" });
+      }
+      const newest = (await readRound(r, CHANGE, "plan", 2)).findings.map((x) => x.finding);
+      expect(newest.filter((f) => f.lens === "persona").map((f) => f.summary)).toEqual([
+        "Nothing says who else reads the daily limit.",
+      ]);
+      const meta = await readRoundMeta(r, CHANGE, "plan", 2);
+      expect(meta?.findings.filter((f) => f.rule === `persona.${NAYSAYER}`)).toHaveLength(1);
+    },
+  );
+
   it("a persona run that is cancelled or gone is recorded as skipped, with why, never failed", async () => {
     const r = await root("[plan]");
     const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
