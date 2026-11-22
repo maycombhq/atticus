@@ -6,7 +6,7 @@ import {
   asksOfFinding,
   fastPathOf,
   quickPathOf,
-  Lens,
+  FindingLens,
   questionOfLens,
   rolesOfPerson,
   RECORD_KINDS,
@@ -469,7 +469,8 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         throw badRequest(`${change} isn't a change id.`);
       const gate = strParam(query, "gate");
       const state = strParam(query, "state");
-      const lens = enumParam(query, "lens", Lens.options);
+      // ADR 0203 C.3: a finding's lens may be persona, a rule's never.
+      const lens = enumParam(query, "lens", FindingLens.options);
       const severity = enumParam(query, "severity", Severity.options);
       // ADR 0191: each finding says what it asks (business, design, delivery); `asks=` keeps one.
       const asks = enumParam(query, "asks", ["business", "design", "delivery"] as const);
@@ -482,7 +483,11 @@ export function apiRoutes(r: Router, ctx: Context): Router {
             (!gate || f.gate === gate) &&
             (!state || f.state === state) &&
             // A lens filter asks its question: an old lens name finds what its question raised.
-            (!lens || questionOfLens(f.lens) === questionOfLens(lens)) &&
+            // ADR 0203 C.3: a persona's finding is found by lens persona only.
+            (!lens ||
+              (f.lens === "persona" || lens === "persona"
+                ? f.lens === lens
+                : questionOfLens(f.lens) === questionOfLens(lens))) &&
             (!severity || f.severity === severity) &&
             (!asks || level === asks)
           )

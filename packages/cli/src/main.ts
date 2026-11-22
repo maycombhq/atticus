@@ -704,6 +704,7 @@ Usage:
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
+  atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
@@ -897,7 +898,7 @@ function num(v: unknown): number | undefined {
 }
 
 /** The commands that are one word: what follows it on the line is never a command word. */
-const ONE_WORD = new Set(["selfcheck", "status", "doctor"]);
+const ONE_WORD = new Set(["selfcheck", "status", "doctor", "review"]);
 
 /**
  * The command as the log names it (ADR 0050): its words, never a value. The first two
@@ -3505,6 +3506,19 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       io,
     );
   }
+  // ADR 0203 C.4: a requirements file reviewed, never refused.
+  if (group === "review")
+    return (await import("./review-commands.js")).reviewCommand(
+      root,
+      command,
+      {
+        noAi: values["no-ai"] === true,
+        write: values.write === true,
+        json,
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+      },
+      io,
+    );
   if (group === "findings") {
     if (!command) {
       io.err("findings needs a change id");

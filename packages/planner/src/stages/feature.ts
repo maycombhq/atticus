@@ -21,6 +21,7 @@ import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
 import {
+  archivedRepoWords,
   estateIndex,
   estateRepos,
   loadEstate,
@@ -42,7 +43,7 @@ import {
   withoutResume,
 } from "./loop.js";
 import { runsTodaySource } from "./operations.js";
-import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
+import { FeaturePlacement, STAGE_SCHEMA_VERSION, type FlowDelta } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
 import { openspecInstructionSource, renderProposal, writeProposal } from "./openspec-files.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
@@ -238,6 +239,70 @@ export async function writePlacement(
   return [FEATURE_FILE, "feature.md", ...(wrote ? ["proposal.md"] : [])];
 }
 
+/** ADR 0203 B addendum: a new flow feature.yaml puts in an archived repo. */
+const archivedNewFlow = (n: { name: string; repo: string }): StageIssue => ({
+  rule: "feature.archived-repo",
+  target: `${n.name}:${n.repo}`,
+  message: archivedRepoWords(
+    `New flow "${n.name}" is put in`,
+    n.repo,
+    "Put it in the repo that took over its work",
+  ),
+  blocking: true,
+});
+
+/** ADR 0203 B addendum: an operation feature.yaml puts in an archived repo. */
+const archivedOperation = (o: { kind: string; what: string }, repo: string): StageIssue => ({
+  rule: "feature.archived-repo",
+  target: `${o.kind}:${repo}`,
+  message: archivedRepoWords(
+    `Operation "${o.what}" is put in`,
+    repo,
+    "Put it in the repo that took over its work",
+  ),
+  blocking: true,
+});
+
+/**
+ * ADR 0203 B addendum: the work feature.yaml and the target flows put in a repo the manifest
+ * marks archived, checked again at every stage after the feature stage: a repo archived since is
+ * refused there as at the feature stage, with the same rule and target (so the same finding),
+ * which a person can't accept. A target flow in such a repo is one more, unless it moves the
+ * work out (movesOut below).
+ */
+export function archivedWorkIssues(
+  p: Pick<FeaturePlacement, "newFlows"> & Partial<Pick<FeaturePlacement, "operations">>,
+  e: Pick<Estate, "archivedRepos">,
+  deltas: readonly FlowDelta[] = [],
+): StageIssue[] {
+  // A target flow that moves work out of an archived repo does what the finding asks: the flow
+  // removed (a retire or absorb stroke of the sketch, ADR 0189, ADR 0193), or a modify that only
+  // removes steps. Anything else is code work in the archived repo, whose tasks are written there
+  // (a step sent to another component included); an empty modify moves nothing, so it blocks. A
+  // remove delta's steps count too: the stories stage writes tasks from them in d.repo.
+  const onlyRemovals = (d: FlowDelta) => d.steps.every((s) => s.op === "remove");
+  const movesOut = (d: FlowDelta) =>
+    onlyRemovals(d) && (d.change === "remove" || (d.change === "modify" && d.steps.length > 0));
+  return [
+    ...p.newFlows.filter((n) => e.archivedRepos.has(n.repo)).map(archivedNewFlow),
+    ...(p.operations ?? []).flatMap((o) =>
+      o.repos.filter((r) => e.archivedRepos.has(r)).map((r) => archivedOperation(o, r)),
+    ),
+    ...deltas
+      .filter((d) => e.archivedRepos.has(d.repo) && !movesOut(d))
+      .map((d): StageIssue => ({
+        rule: "feature.archived-repo",
+        target: `${d.flow}:${d.repo}`,
+        message: archivedRepoWords(
+          `Target flow ${d.flow} puts work in`,
+          d.repo,
+          "Move the work out: remove the flow here (change: remove), or only remove its steps, and draw what it does as a new or changed flow of the repo that took over its work",
+        ),
+        blocking: true,
+      })),
+  ];
+}
+
 export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRead): StageIssue[] {
   const out: StageIssue[] = [];
   const issue = (rule: string, target: string, message: string, repo?: string) =>
@@ -260,8 +325,9 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // passes with a note; anything else is refused.
   const repos = estateRepos(e);
   for (const n of p.newFlows)
-    if (repos.has(n.repo)) continue;
-    else if (n.newRepo && !e.archivedRepos.has(n.repo))
+    if (e.archivedRepos.has(n.repo)) out.push(archivedNewFlow(n));
+    else if (repos.has(n.repo)) continue;
+    else if (n.newRepo)
       out.push({
         rule: "feature.planned-repo",
         target: `${n.name}:${n.repo}`,
@@ -278,7 +344,8 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // catalog doesn't have.
   for (const o of p.operations ?? [])
     for (const repo of o.repos.filter((r) => !repos.has(r) || e.archivedRepos.has(r)))
-      if (o.newRepo && !e.archivedRepos.has(repo))
+      if (e.archivedRepos.has(repo)) out.push(archivedOperation(o, repo));
+      else if (o.newRepo)
         out.push({
           rule: "feature.planned-repo",
           target: `${o.kind}:${repo}`,

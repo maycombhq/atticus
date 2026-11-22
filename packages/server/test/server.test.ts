@@ -14,6 +14,7 @@ import {
   Api,
   API_VERSION,
   Finding,
+  toCanonicalYaml,
   SCHEMA_VERSION,
   parseRecord,
   recordPath,
@@ -371,6 +372,49 @@ describe("the local server (ADR 0015)", () => {
     const one = await call("/api/findings/add-transfer-limit/b04-no-timeout");
     expect(Finding.parse(one.body).summary).toBe("The call to Northwind Pay has no timeout.");
     expect((await call("/api/findings/add-transfer-limit/nope")).status).toBe(404);
+  });
+
+  it("ADR 0203 C.3: ?lens=persona lists a persona's findings, and a question's lens doesn't", async () => {
+    const f = Finding.parse({
+      schemaVersion: 1,
+      id: "p-1",
+      kind: "issue",
+      change: "add-transfer-limit",
+      gate: "persona-probe",
+      round: 1,
+      rule: "persona.qa-naysayer",
+      layer: "org",
+      lens: "persona",
+      persona: "qa-naysayer",
+      severity: "risk",
+      artifact: "design.md",
+      locator: { line: 3 },
+      summary: "Nothing says who runs it at night.",
+      why: "Someone is paged.",
+      fix: { text: "Say it." },
+      evidence: [{ source: "artifact", path: "design.md", line: 3 }],
+      waivable: false,
+      createdAt: "2026-11-19T09:00:00Z",
+    });
+    const dir = join(root, "openspec/changes/add-transfer-limit/review/persona-probe");
+    await mkdir(join(dir, "1"), { recursive: true });
+    await writeFile(join(dir, "1", "p-1.yaml"), toCanonicalYaml(f, ["schemaVersion", "id"]));
+    try {
+      const persona = await call("/api/findings?lens=persona");
+      expect(persona.status).toBe(200);
+      expect(
+        z
+          .array(Api.FindingView)
+          .parse(persona.body)
+          .map((x) => [x.id, x.persona]),
+      ).toEqual([["p-1", "qa-naysayer"]]);
+      const complete = z
+        .array(Api.FindingView)
+        .parse((await call("/api/findings?lens=complete")).body);
+      expect(complete.map((x) => x.id)).not.toContain("p-1");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("org pack summary", async () => {

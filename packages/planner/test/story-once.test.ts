@@ -105,7 +105,7 @@ describe("a criterion written once accepts several tasks (B-once)", () => {
     const issues = check(a);
     const of = (rule: string) => issues.filter((i) => i.rule === rule).map((i) => i.target);
     expect(of("stories.no-criteria")).toEqual(["1.4"]);
-    expect(of("stories.field-not-checked")).toEqual(["1.3"]);
+    expect(of("stories.field-not-checked")).toEqual(["1.3:deliver_by"]);
     // deliver_by is 1.3's field: 1.1's criterion may check it only while it accepts 1.3
     expect(of("stories.unknown-check")).toEqual(["1.1:deliver_by"]);
   });

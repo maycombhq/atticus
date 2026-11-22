@@ -1,6 +1,7 @@
 import { isAssistantResolution, type FindingAction } from "@maycombhq/core";
 import type { z } from "zod";
 import { readRound, reviewedGates, roundsOf } from "./findings.js";
+import { BUILT_IN_AGENTS } from "./proposals.js";
 
 /**
  * Facts a person recorded for a change (ADR 0115 addendum, W2): what they wrote on a finding at
@@ -33,7 +34,12 @@ export function decidedReason(reason: string): { reason: string; gate?: string }
 
 const RECORDED: ReadonlySet<string> = new Set(["edit-and-apply", "waive", "not-relevant"]);
 
-export async function recordedFacts(root: string, change: string): Promise<RecordedFact[]> {
+export async function recordedFacts(
+  root: string,
+  change: string,
+  /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+  known: readonly string[] = BUILT_IN_AGENTS,
+): Promise<RecordedFact[]> {
   const out = new Map<string, RecordedFact>();
   for (const gate of await reviewedGates(root, change))
     for (const n of await roundsOf(root, change, gate))
@@ -42,7 +48,7 @@ export async function recordedFacts(root: string, change: string): Promise<Recor
         if (!r?.reason || !RECORDED.has(r.action) || f.state === "open") continue;
         // What an assistant wrote isn't what people recorded (ADR 0115 addendum, 2026-10-25): a
         // live run's drafter dismissed a finding, and its words reached the lenses as a person's.
-        if (isAssistantResolution(r)) continue;
+        if (isAssistantResolution(r, known)) continue;
         const d = decidedReason(r.reason);
         const key = [f.id, r.action, r.by, r.at].join("|");
         // A carried copy is the same decision: its reason names the gate it was made at.

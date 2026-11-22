@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChangeHandoff, ChangeLifecycle, ChangeType, LifecycleState } from "@maycombhq/core";
 import { prApprovers, privacyImpact, type PrivacyImpact } from "./approvals.js";
+import { assistantNames } from "./assistant-names.js";
 import { changeTypeOf, loadChangeContext, type ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
 import { changeFootprint, type Footprint } from "./footprint.js";
@@ -94,7 +95,12 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     if (change.state === "released")
       return { ...base, next: "archived", blockers: [], reasons: [] };
     if (change.state === "post-release-review") {
-      const blockers = await checkFindings(ctx.root, change, ["post-release-review"]);
+      const blockers = await checkFindings(
+        ctx.root,
+        change,
+        ["post-release-review"],
+        assistantNames(ctx),
+      );
       return { ...base, next: "archived", blockers, reasons: blockers };
     }
     const reasons: Reason[] = [
@@ -122,7 +128,7 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const blockers: Reason[] = [
     ...stageReasons,
     ...(await checkArtifacts(ctx.root, change, due)),
-    ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase))),
+    ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase), assistantNames(ctx))),
     ...(stageReasons.length
       ? []
       : await checkMandatoryRounds(

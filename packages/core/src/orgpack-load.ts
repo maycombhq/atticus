@@ -120,6 +120,12 @@ async function listFiles(dir: string, re: RegExp): Promise<string[]> {
 }
 
 /**
+ * ADR 0203 A.1: the prefix of the built-in gates a stage's own blocking findings are written to
+ * (`stage-feature`, `stage-architecture`, …). A gates.yaml gate may not take it.
+ */
+export const STAGE_GATE_PREFIX = "stage-";
+
+/**
  * Read and validate a whole org pack. Never throws for content problems: every schema or
  * cross-file problem is listed in `problems` with its file, so a team sees all of them at
  * once. Missing files fall back to the built-in defaults.
@@ -496,6 +502,13 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     }
   });
   gates.gates.forEach((g) => {
+    // ADR 0203 A.1: stage-<stage> is the stages' own gate; no C6 schema change, said here.
+    if (g.id.startsWith(STAGE_GATE_PREFIX))
+      problems.push({
+        file: "gates.yaml",
+        path: `${g.id}.id`,
+        message: `rename the gate: ${STAGE_GATE_PREFIX}<stage> is the name Atticus keeps for a stage's own findings (ADR 0203).`,
+      });
     for (const r of g.approvers)
       if (!roleIds.has(r))
         problems.push({

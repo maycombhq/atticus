@@ -308,6 +308,10 @@ export function breakingChanges(deltas: FlowDelta[], e: Estate): BreakingChange[
  * catalog doesn't have is handed back; one the map doesn't show using it is a note. A breaking
  * change whose flow names no endpoint as its trigger is a note too: the map can't name callers.
  */
+/** The target of a consumer-missing finding: the change and the consumers left out, sorted. */
+export const consumerMissingTarget = (target: string, missing: readonly string[]) =>
+  `${target}:${[...missing].sort().join(",")}`;
+
 export function consumerIssues(deltas: FlowDelta[], e: Estate): StageIssue[] {
   const out: StageIssue[] = [];
   const breaking = breakingChanges(deltas, e);
@@ -325,7 +329,9 @@ export function consumerIssues(deltas: FlowDelta[], e: Estate): StageIssue[] {
     if (missing.length)
       out.push({
         rule: "delta.consumer-missing",
-        target: c.target,
+        // ADR 0203 A: the consumers left out are in the target, so one more left out later is
+        // another finding, never covered by an acceptance of these.
+        target: consumerMissingTarget(c.target, missing),
         message:
           c.kind === "endpoint"
             ? `Flow ${c.flow} changes ${c.name} in a way that breaks who calls it today (${why}), but doesn't list ${all(missing)}, which the map shows calling it. List every caller under consumers: [${c.consumers.join(", ")}].`

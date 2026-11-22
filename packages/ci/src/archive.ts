@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   assess,
+  assistantNames,
   changeStore,
   checkFindings,
   loadChangeContext,
@@ -148,7 +149,9 @@ export async function archiveGate(
 
   // ---- findings on every gate it was reviewed at
   const gates = await reviewedGates(root, change.id);
-  for (const r of await checkFindings(root, change, gates))
+  // An assistant's resolution closes nothing: Atticus's own agents and the org pack's are known.
+  const known = assistantNames(await loadChangeContext(root));
+  for (const r of await checkFindings(root, change, gates, known))
     blockers.push({ code: "finding", message: r.message });
 
   // ---- repos: release PRs merged (ADR 0184), builds passed
