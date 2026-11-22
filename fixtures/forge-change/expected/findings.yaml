@@ -283,6 +283,24 @@ alsoExpected:
     artifact: snow.md
     line: 12
     what: snow.md now reaches the ship lens (its service-desk check retired); nothing says what the release does if the gateway proxy request isn't done in time (Part 4, can it ship; judgement).
+  # The persona check of beta.30 (ADR 0201 addendum, 2026-11-22): tasks.md has work in two repos
+  # that only the built-in readers mapped (no facts, ADR 0074), each said as a risk at its heading.
+  - id: r-ledger-reader-only
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: constitution.change-links-known
+    artifact: tasks.md
+    line: 3
+    what: tasks.md has work in forge-ledger, which only the built-in readers mapped; read it with /atticus-map forge-ledger, then atticus verify forge-ledger --write.
+  - id: r-bff-reader-only
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: constitution.change-links-known
+    artifact: tasks.md
+    line: 9
+    what: tasks.md has work in forge-portal-bff, which only the built-in readers mapped; read it with /atticus-map forge-portal-bff, then atticus verify forge-portal-bff --write.
 
 # Retired with the four questions (ADR 0124 addendum, Part 4). The critic must not raise these any
 # more; each line says why. The golden tests check that none of them comes back.

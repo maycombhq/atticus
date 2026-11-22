@@ -8,8 +8,8 @@ import { CHANGE, NOW, changeDir, forgeChangeRoot, write } from "./helpers.js";
  * The persona check of beta.30: the critic said nothing of a repo nobody read that the change has
  * work in. A repo a manifest lists that no one has read into facts, named by a `## <repo>` heading
  * of tasks.md or a row of design.md's In the code, is a risk (never blocking) with the way on. A
- * repo no manifest lists (a new one), a read repo and one the built-in readers mapped (the map has
- * it: forge-ledger, whose tasks the Forge change has) say nothing here. The Forge change.
+ * repo the built-in readers alone mapped is not read either (ADR 0074), said in its own words. A
+ * repo no manifest lists (a new one) and a read repo say nothing here. The Forge change.
  */
 
 const RULE = "constitution.change-links-known";
@@ -74,8 +74,14 @@ describe("a change with work in a repo nobody read says so", () => {
         "tasks.md",
         "The change has work in forge-infra, which nobody has read into the map, so what it says of forge-infra can't be checked against its code.",
       ],
+      [
+        "issue",
+        "risk",
+        "tasks.md",
+        "The change has work in forge-ledger, which only the built-in readers mapped: it wasn't read into facts, so what the change says of forge-ledger isn't checked against its code.",
+      ],
     ]);
-    const infra = f.find((x) => x.finding.artifact === "tasks.md")!;
+    const infra = f.find((x) => x.finding.summary.includes("forge-infra"))!;
     expect(infra.finding.locator.line).toBe(7);
     expect(infra.finding.fix.text).toBe(
       "Read it into the map before its tasks run: /atticus-map forge-infra, then atticus verify forge-infra --write, and run the critic again.",
@@ -83,7 +89,22 @@ describe("a change with work in a repo nobody read says so", () => {
     expect(infra.finding.waivable).toBe(false);
   });
 
-  it("says nothing on the Forge change, whose repos the map has", async () => {
-    expect(of(await runCritic(await forgeChangeRoot(), CHANGE, { now: NOW }))).toEqual([]);
+  it("says of the Forge change's repos that the map has only the readers' view of them", async () => {
+    const f = of(await runCritic(await forgeChangeRoot(), CHANGE, { now: NOW }));
+    expect(f.map((x) => [x.finding.severity, x.finding.locator.line, x.finding.summary])).toEqual([
+      [
+        "risk",
+        3,
+        "The change has work in forge-ledger, which only the built-in readers mapped: it wasn't read into facts, so what the change says of forge-ledger isn't checked against its code.",
+      ],
+      [
+        "risk",
+        9,
+        "The change has work in forge-portal-bff, which only the built-in readers mapped: it wasn't read into facts, so what the change says of forge-portal-bff isn't checked against its code.",
+      ],
+    ]);
+    expect(f[0]!.finding.fix.text).toBe(
+      "The map has only the built-in readers' view of forge-ledger: read it with /atticus-map forge-ledger, then atticus verify forge-ledger --write, and run the critic again.",
+    );
   });
 });
