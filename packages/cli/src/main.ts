@@ -3559,7 +3559,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     // refuses an Accept where it would record an assistant. With no --by the assistant is
     // recorded, as before, and what it may do is decided there. With --by there, the action
     // itself checks the finding: a dismissal of a blocking or risk finding, or a fix recorded
-    // with nothing changed, is refused too (the second review of beta.30; act.ts `terminal`).
+    // with nothing changed, is refused too (the second review of beta.30; act.ts `assistantHere`).
     if (assistant && given && action === "waive") {
       io.err(
         `Accept or waive it in a terminal of your own, or in the app: this terminal is a coding assistant's (${assistant.because}), and only a person accepts or waives a finding. --by names who is recorded; it doesn't make this terminal a person's. Nothing was written.`,
@@ -3579,7 +3579,13 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ...(str(values["asked-of"]) ? { askedOf: str(values["asked-of"])! } : {}),
         ...(str(values.edit) ? { edit: str(values.edit)! } : {}),
         ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
-        ...(assistant && given ? { terminal: assistant.because } : {}),
+        ...(assistant && given
+          ? {
+              assistantHere: {
+                here: `this terminal is a coding assistant's (${assistant.because})`,
+              },
+            }
+          : {}),
       },
       io,
     );

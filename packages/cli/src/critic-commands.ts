@@ -517,8 +517,8 @@ export async function findingAction(
     askedOf?: string;
     edit?: string;
     gate?: string;
-    /** Why this terminal is a coding assistant's, when --by named a person there. */
-    terminal?: string;
+    /** Where an assistant works though a person's name is recorded (act's `assistantHere`). */
+    assistantHere?: { here: string; app?: boolean };
   },
   io: Output,
   deps: CriticDeps = {},
@@ -545,7 +545,7 @@ export async function findingAction(
       ...(o.askedOf ? { askedOf: o.askedOf } : {}),
       ...(edit ? { edit } : {}),
       ...(o.gate ? { gate: o.gate } : {}),
-      ...(o.terminal ? { terminal: o.terminal } : {}),
+      ...(o.assistantHere ? { assistantHere: o.assistantHere } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(r.message);
