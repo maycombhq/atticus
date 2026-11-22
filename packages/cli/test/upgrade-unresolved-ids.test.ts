@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -179,6 +179,29 @@ async function dropPaymentsC1(root: string): Promise<void> {
   const m = JSON.parse(await readFile(meta, "utf8")) as { factsHash: string };
   m.factsHash = sha256Of(text);
   await writeFile(meta, JSON.stringify(m, null, 2) + "\n");
+}
+/**
+ * A checkout of a repo under workspace/ with the lines its facts file cites (a copy, as a sync
+ * leaves one where git isn't used), so `atticus verify <repo>` checks them as a clone would.
+ */
+async function checkoutFromFacts(root: string, repo: string): Promise<void> {
+  const files = new Map<string, string[]>();
+  for (const l of (await readFile(join(root, "facts", `${repo}.jsonl`), "utf8")).split("\n")) {
+    if (!l.trim()) continue;
+    const f = JSON.parse(l) as {
+      cite?: { file: string; line: number; quote?: string; value: string };
+    };
+    if (!f.cite) continue;
+    const lines = files.get(f.cite.file) ?? [];
+    while (lines.length < f.cite.line) lines.push("");
+    lines[f.cite.line - 1] = f.cite.quote ?? f.cite.value;
+    files.set(f.cite.file, lines);
+  }
+  for (const [file, lines] of files) {
+    const to = join(root, "workspace", repo, ...file.split("/"));
+    await mkdir(dirname(to), { recursive: true });
+    await writeFile(to, lines.join("\n") + "\n");
+  }
 }
 /** What a command said, out and err, with the metarepo's folder as <root>. */
 const saidBy = (q: { out: string[]; err: string[] }, root: string) =>
@@ -717,6 +740,96 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         expect(await generated(x)).toEqual(g);
       }
       expect(await tree(fresh)).toEqual(await tree(root));
+    },
+    T,
+  );
+  it(
+    "a metarepo from before slots: a real verify --write that would rename waits, and the upgrade applies that read and carries, the same on a fresh clone",
+    async () => {
+      const root = await metarepo();
+      await rm(join(root, "catalog", "sources"), { recursive: true, force: true });
+      expect(await upgradeCommand(root, { by: "pat", yes: true }, quiet().io, B30)).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      await checkoutFromFacts(root, "forge-notify");
+      // atticus verify forge-notify --write: its facts verify, and the build would name the
+      // loose ends two of your changes name with forge-notify's id, so it waits, the catalog
+      // unchanged.
+      const catalogBefore = await files(join(root, "catalog"));
+      const v = quiet();
+      expect(await main(["verify", "forge-notify", "--write", "--root", root], v.io)).toBe(1);
+      expect(saidBy(v, root)).toContain(RENAMES(2));
+      expect(await files(join(root, "catalog"))).toEqual(catalogBefore);
+      // The step has work: the read verify checked, as forge-notify's facts slot, and the carry.
+      const fresh = await clone(root);
+      await cp(join(root, "workspace"), join(fresh, "workspace"), { recursive: true });
+      const c = await upgradeCheck(root, B30);
+      expect(c.pending.map((p) => p.id)).toEqual([STEP]);
+      expect(c.pending[0]!.files).toEqual(
+        expect.arrayContaining([
+          "catalog/sources/facts/forge-notify.jsonl",
+          "catalog/sources/facts/forge-notify.meta.json",
+          DEC("dec-suppress-fees"),
+        ]),
+      );
+      // A checkout whose lines no longer hold what the facts cite: the read doesn't verify, so
+      // the step refuses in verify's words and writes nothing.
+      const broken = await clone(root);
+      await cp(join(root, "workspace"), join(broken, "workspace"), { recursive: true });
+      await writeFile(
+        join(
+          broken,
+          "workspace",
+          "forge-notify",
+          "src",
+          "main",
+          "java",
+          "forge",
+          "client",
+          "Client.java",
+        ),
+        "// moved\n",
+      );
+      const brokenBefore = await tree(broken);
+      const bq = quiet();
+      expect(await unresolvedIdsPending(broken)).toEqual(
+        expect.arrayContaining(["catalog/sources/facts/forge-notify.jsonl"]),
+      );
+      expect(await upgradeCommand(broken, { by: "pat" }, bq.io, B30)).toBe(1);
+      expect(bq.err.join("\n")).toMatch(
+        /^forge-notify's facts \(facts\/forge-notify\.jsonl\) don't verify as atticus verify forge-notify --write checks them: \d+ facts? (was|were) rejected\. Nothing of this step was written: run atticus verify forge-notify to see why/m,
+      );
+      expect(await tree(broken)).toEqual(brokenBefore);
+      for (const r of [root, fresh]) {
+        const u = quiet();
+        expect(await upgradeCommand(r, { by: "pat" }, u.io, B30), u.err.join("\n")).toBe(0);
+        expect((await yamlOf(r, DEC("dec-suppress-fees"))).target).toBe(
+          "unresolved.forge-notify.c-7",
+        );
+        expect(unresolvedIds(await generated(r))).not.toContain("unresolved.forge-notify.c-7");
+        expect(await readFile(join(r, "catalog/sources/facts/forge-notify.jsonl"), "utf8")).toBe(
+          await readFile(join(r, "facts/forge-notify.jsonl"), "utf8"),
+        );
+      }
+      // The same read, carried the same, byte for byte on either.
+      expect(await tree(fresh)).toEqual(await tree(root));
+      // The next verify --write goes through, and nothing waits.
+      for (const r of [root, fresh]) {
+        const again = quiet();
+        expect(
+          await main(["verify", "forge-notify", "--write", "--root", r], again.io),
+          [...again.out, ...again.err].join("\n"),
+        ).toBe(0);
+        expect((await upgradeCheck(r, B30)).pending).toEqual([]);
+      }
+      // As alike again, but for when verify raised its questions (a clock it reads).
+      const unclocked = async (r: string) =>
+        new Map(
+          [...(await tree(r))].map(([k, t]) => [
+            k,
+            k.startsWith("questions/") ? t.replace(/^ {2}at: .*$/gm, "  at: <time>") : t,
+          ]),
+        );
+      expect(await unclocked(fresh)).toEqual(await unclocked(root));
     },
     T,
   );

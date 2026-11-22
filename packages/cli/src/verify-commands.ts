@@ -411,6 +411,92 @@ export async function verifyInputsOf(root: string, repo: string, dir?: string) {
   };
 }
 
+/**
+ * ADR 0124 addendum E-ids, its dated part of 2026-11-22 (the coordinator's decision for the
+ * owner, option b): a repo's facts file checked exactly as `atticus verify <repo> --write` checks
+ * it before it writes (the same reading of the file, the same verifier and inputs, the same commit
+ * stamp), with nothing written: what `atticus upgrade`'s loose ends step takes as the repo's facts
+ * slot when that read would name a loose end your changes name with its repo, and verify's build
+ * waits for the step. `ok: false` says why in verify's words; the step then refuses.
+ */
+export async function verifiedReadOf(
+  root: string,
+  repo: string,
+): Promise<
+  | {
+      ok: true;
+      facts: import("@maycombhq/core").Fact[];
+      /** The snapshot's commit, as verify --write stamps it. */
+      commit: string;
+      readComplete: boolean;
+      contracts: import("@maycombhq/core").ContractsFileT | null;
+    }
+  | { ok: false; lines: string[] }
+> {
+  const rel = factsRelOf(root);
+  const file = join(factsDirOf(root), `${repo}.jsonl`);
+  const again = `run atticus verify ${repo} to see why, fix it, then run atticus upgrade again`;
+  if (!existsSync(file))
+    return { ok: false, lines: [`No facts for ${repo} at ${rel}/${repo}.jsonl.`] };
+  const off = stackHelpersOff();
+  let parsed;
+  try {
+    parsed = await streamFacts(file, roomGuard({ what: `${repo}'s facts` }));
+  } catch (e) {
+    if (!(e instanceof NoRoomError)) throw e;
+    return { ok: false, lines: [`atticus verify ${repo}: ${e.message}`] };
+  }
+  const repaired = repairFormSlips(parsed.facts, parsed.bad);
+  const dir = await checkoutOf(root, repo);
+  if (!dir) return { ok: false, lines: [noCheckoutLine(repo)] };
+  const ownGit = dir === root || existsSync(join(dir, ".git"));
+  const commit = ownGit ? await headOf(dir) : undefined;
+  const { carry } = await carryOf(dir, repaired.facts, commit);
+  const inputs = await verifyInputsOf(root, repo, dir);
+  const report = await verifyFacts({
+    facts: repaired.facts,
+    source: dirSource(dir),
+    ...(off.has("derived-names") ? { derivedNames: false } : {}),
+    ...(off.has("readers") ? { readers: false } : {}),
+    ...(commit ? { commit, carry } : {}),
+    exclude: inputs.exclude,
+    corrections: inputs.corrections.corrections,
+    reviewed: inputs.reviewed.entries,
+    ...(inputs.estate ? { estate: inputs.estate } : {}),
+    conventions: inputs.conventions,
+    notes: inputs.notes,
+    componentTypes: inputs.componentTypes,
+    notReached: inputs.notReached,
+  });
+  const reviewedBad = reviewedProblemsOf(inputs.reviewed.bad, report);
+  const n = report.rejected.length;
+  if (repaired.bad.length || n || reviewedBad.length || !report.accepted.length)
+    return {
+      ok: false,
+      lines: [
+        `${repo}'s facts (${rel}/${repo}.jsonl) don't verify as atticus verify ${repo} --write checks them: ${
+          n
+            ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected`
+            : repaired.bad.length
+              ? `${repaired.bad.length} ${repaired.bad.length === 1 ? "line isn't a fact" : "lines aren't facts"}`
+              : reviewedBad.length
+                ? `${rel}/${repo}.reviewed.jsonl has lines that were refused`
+                : "no fact was kept"
+        }. Nothing of this step was written: ${again}.`,
+      ],
+    };
+  const { repoContractsOf } = await import("./link-evidence-files.js");
+  const contracts = await repoContractsOf(root, repo, dir, report.accepted);
+  const commits = [...new Set(report.accepted.map((f) => f.commit))];
+  return {
+    ok: true,
+    facts: report.accepted,
+    commit: commit ?? (commits.length === 1 ? commits[0]! : "unknown"),
+    readComplete: report.coverage.unknown.length === 0,
+    contracts: contracts.entries.length ? contracts : null,
+  };
+}
+
 export async function verifyCommand(
   root: string,
   repo: string,

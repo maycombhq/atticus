@@ -177,6 +177,11 @@ export class UnresolvedIdsRefused extends Error {
 interface Plan {
   /** Every input file the step writes (null: removed), by absolute path. */
   writes: { path: string; text: string | null; input: true }[];
+  /**
+   * The owner's option b (2026-11-22): the facts slots of the reads verify checked that this
+   * step applies (a repo's verified facts file whose read names loose ends your changes name).
+   */
+  reads?: { path: string; text: string | null }[];
   /** The files it lists: those, the loose ends on disk it names again, build.json. */
   files: string[];
   /** Whether it has a build to run (a catalog of an earlier build's, or an input carried). */
@@ -195,6 +200,96 @@ interface Plan {
 function mayBeOld(v: string, now: ReadonlySet<string>, repoParts: ReadonlySet<string>): boolean {
   const id = idOfValue(v);
   return id.startsWith(PREFIX) && !now.has(id) && mayBeOldLooseEndId(id, repoParts);
+}
+
+/**
+ * ADR 0124 addendum E-ids, its dated part of 2026-11-22 (option b): the reads verify checked that
+ * wait. A repo whose facts file (`facts/<repo>.jsonl`, committed) a verify passed (its report,
+ * `<repo>.verify.yaml`, rejected nothing) isn't its facts slot yet, and
+ * whose read would name with its repo a loose end an input names by its old id: verify --write's
+ * build waits for the upgrade (`oldIdsNamedOf`), so the step takes that read as the repo's slot
+ * in its one write. Told first from the file as written (which repos it concerns), then checked
+ * exactly as verify --write checks it (`verifiedReadOf`); one that doesn't verify refuses the
+ * step in verify's words. Only files of the metarepo and the repo's checkout are read.
+ */
+async function waitingReads(
+  root: string,
+  op: Awaited<ReturnType<typeof loadOrgPack>>,
+  curated: readonly CatalogRecord[],
+  curatedDir: string,
+): Promise<{
+  reads: { path: string; text: string | null }[];
+  /** Why a read the step needs doesn't verify, and the slot files it would have written. */
+  refused?: { why: string; files: string[] };
+}> {
+  const scanner = await import("@maycombhq/scanner");
+  const { parseFactsLines, factsDirOf } = await import("@maycombhq/core");
+  const unapplied = new Map<string, { path: string; text: string | null }[]>();
+  for (const r of scanner.productionRepos(op)) {
+    if (scanner.isPrototypeRepo(op, r.id)) continue;
+    // A read verify checked: its report (`<repo>.verify.yaml`, committed) says nothing was
+    // rejected. A facts file no verify passed is no read anyone asked to apply.
+    const report = await readText(join(factsDirOf(root), `${r.id}.verify.yaml`));
+    const passed = (() => {
+      try {
+        return (parse(report ?? "") as { rejected?: unknown } | null)?.rejected === 0;
+      } catch {
+        return false;
+      }
+    })();
+    if (!passed) continue;
+    const text = await readText(join(factsDirOf(root), `${r.id}.jsonl`));
+    if (text === undefined) continue;
+    const facts = parseFactsLines(text).facts;
+    if (!facts.length) continue;
+    const snap = scanner.factsSnapshotWrites(root, r.id, facts, {
+      commit: "unknown",
+      contracts: null,
+    });
+    if ((await readText(snap[0]!.path)) === snap[0]!.text) continue;
+    unapplied.set(r.id, snap);
+  }
+  if (!unapplied.size) return { reads: [] };
+  const named = await scanner.looseEndIdsNamed(root, { curatedDir, curated });
+  const repoOfPart = new Map(scanner.productionRepos(op).map((r) => [factIdPart(r.id), r.id]));
+  const concerned = async (snaps: { path: string; text: string | null }[]) => {
+    scanner.forgetKeptReads();
+    const inputs = await scanner.loadBuildInputs(root, { op, curated: [] });
+    const b = await scanner.buildCatalog({
+      ...inputs,
+      slots: await scanner.withSlotWrites(root, inputs.slots, snaps),
+    });
+    const out = new Set<string>();
+    for (const x of scanner.oldIdsNamedOf(b.records, named))
+      for (const id of x.ids) {
+        const repo = repoOfPart.get(repoPartOf(id));
+        if (repo) out.add(repo);
+      }
+    return out;
+  };
+  const asWritten = await concerned([...unapplied.values()].flat());
+  const repos = [...unapplied.keys()].filter((r) => asWritten.has(r)).sort();
+  if (!repos.length) return { reads: [] };
+  const { verifiedReadOf } = await import("./verify-commands.js");
+  const reads: { path: string; text: string | null }[] = [];
+  for (const repo of repos) {
+    const v = await verifiedReadOf(root, repo);
+    // Listed (so the step is pending and says why), never written: the write refuses.
+    if (!v.ok)
+      return {
+        reads: [],
+        refused: { why: v.lines.join("\n"), files: unapplied.get(repo)!.map((w) => w.path) },
+      };
+    const snap = scanner.factsSnapshotWrites(root, repo, v.facts, {
+      commit: v.commit,
+      contracts: v.contracts,
+      ...(v.readComplete ? { readComplete: true } : {}),
+    });
+    let same = true;
+    for (const w of snap) if ((await readText(w.path)) !== w.text) same = false;
+    if (!same) reads.push(...snap);
+  }
+  return { reads };
 }
 
 /**
@@ -225,9 +320,19 @@ async function planOf(root: string): Promise<Plan | undefined> {
     }
   if (!(before && oldGen.length) && !named) return { writes: [], files: [], builds: false };
 
+  // ---- the reads verify checked that wait for this step (option b, 2026-11-22)
+  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
+  const waiting = named
+    ? await waitingReads(root, op, curatedNow.records, curatedDir)
+    : { reads: [] as { path: string; text: string | null }[] };
+
   // ---- what each old id is now: the loose ends a build makes with no decision applied
   scanner.forgetKeptReads();
-  const raw = await scanner.buildCatalog(await scanner.loadBuildInputs(root, { op, curated: [] }));
+  const rawInputs = await scanner.loadBuildInputs(root, { op, curated: [] });
+  const raw = await scanner.buildCatalog({
+    ...rawInputs,
+    slots: await scanner.withSlotWrites(root, rawInputs.slots, waiting.reads),
+  });
   const rawIds = new Set(raw.records.filter((r) => r.kind === "Unresolved").map((r) => r.id));
   const candidates = new Map<string, { id: string; repo: string }[]>();
   for (const r of raw.records) {
@@ -262,7 +367,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
   }
 
   // ---- the inputs, carried in memory
-  let refused: string | undefined;
+  let refused: string | undefined = waiting.refused?.why;
   const refuse = (why: string) => {
     refused ??= why;
   };
@@ -277,7 +382,6 @@ async function planOf(root: string): Promise<Plan | undefined> {
     const next = carriedText(t, map);
     if (next !== undefined) carried.set(path, next);
   }
-  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
   const curatedNext: CatalogRecord[] = [];
   for (const r of curatedNow.records) {
     const from = join(curatedDir, ...recordPath(r).split("/"));
@@ -372,15 +476,19 @@ async function planOf(root: string): Promise<Plan | undefined> {
   }
   // Pending (the owner, 2026-11-22): a catalog an earlier build wrote, or an input that names an
   // old id a build would rename. A loose end no input names a normal build renames as now.
-  const builds = (before && renamedGen.length > 0) || writes.length > 0 || !!refused;
+  const builds =
+    (before && renamedGen.length > 0) || writes.length > 0 || waiting.reads.length > 0 || !!refused;
   if (!builds) return { writes: [], files: [], builds: false };
   const files = [
     ...writes.map((w) => posix(relative(root, w.path))),
+    ...waiting.reads.map((w) => posix(relative(root, w.path))),
+    ...(waiting.refused?.files ?? []).map((p) => posix(relative(root, p))),
     ...renamedGen.map((g) => posix(relative(root, g.path))),
-    ...(renamedGen.length ? ["catalog/sources/build.json"] : []),
+    ...(renamedGen.length || waiting.reads.length ? ["catalog/sources/build.json"] : []),
   ];
   return {
     writes,
+    ...(waiting.reads.length ? { reads: waiting.reads } : {}),
     files: [...new Set(files)].sort(),
     builds,
     curatedNext,
@@ -445,7 +553,7 @@ export async function unresolvedIdsApply(
     if (!plan?.builds) return [];
     if (o.listed) {
       const listed = new Set(o.listed);
-      const not = plan.writes
+      const not = [...plan.writes, ...(plan.reads ?? [])]
         .map((w) => posix(relative(root, w.path)))
         .filter((f) => !listed.has(f));
       if (not.length)
@@ -454,19 +562,22 @@ export async function unresolvedIdsApply(
         );
     }
     const pending = new Map<string, string | null>(plan.writes.map((w) => [w.path, w.text]));
-    const build = await scanner.buildCatalog(
-      await scanner.loadBuildInputs(root, {
-        ...(plan.op ? { op: plan.op } : {}),
-        ...(plan.curatedNext ? { curated: plan.curatedNext } : {}),
-        pending,
-        ...(plan.questions ? { questions: plan.questions } : {}),
-      }),
-    );
+    const inputs = await scanner.loadBuildInputs(root, {
+      ...(plan.op ? { op: plan.op } : {}),
+      ...(plan.curatedNext ? { curated: plan.curatedNext } : {}),
+      pending,
+      ...(plan.questions ? { questions: plan.questions } : {}),
+    });
+    // Option b: the reads verify checked, as their repos' facts slots, in the same build.
+    const build = await scanner.buildCatalog({
+      ...inputs,
+      slots: await scanner.withSlotWrites(root, inputs.slots, plan.reads ?? []),
+    });
     const { buildPlanOf, refusalPlanOf } = await import("./build-report.js");
     const written = await scanner.buildAndWrite(root, {
       command: scanner.UNRESOLVED_IDS_COMMAND,
       build,
-      slots: plan.writes,
+      slots: [...plan.writes, ...(plan.reads ?? [])],
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       // The app's confirm: the list it confirms, worked out again under the lock.
       ...(o.plan !== undefined
