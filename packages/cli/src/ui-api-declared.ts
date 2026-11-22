@@ -206,7 +206,7 @@ export function uiDeclaredRoutes(
           );
         const op = await loadOrgPack(orgPackDirOf(ctx.root));
         if (op.profiles.some((p) => (p.profile?.systems ?? []).some((s) => s.id === b.data.id)))
-          throw conflict(`A system of the profiles is ${b.data.id} already: it is on the picture.`);
+          throw conflict(`A system of the profiles is ${b.data.id} already: it is on the Map.`);
         const anyRepo = estateRepos(op)[0];
         if (!anyRepo)
           throw conflict("No repo is in a manifest yet, so there is no profile to add it to.");

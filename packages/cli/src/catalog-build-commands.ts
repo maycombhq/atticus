@@ -1819,7 +1819,7 @@ export async function undoMapEdits(
     }
     if (changed.length) {
       io.err(
-        `Nothing was undone: ${changed.join(", ")} changed since. Look at ${changed.length === 1 ? "it" : "them"} under Corrections and declarations and undo there.`,
+        `Undo it under Your changes on the box: nothing was undone here, because ${changed.join(", ")} changed since.`,
       );
       return 1;
     }

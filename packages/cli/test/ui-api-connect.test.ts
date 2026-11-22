@@ -170,7 +170,10 @@ describe("a declared arrow (ADR 0204 1.4 to 1.7, 2.2, 2.4)", () => {
     writeFileSync(join(g.root, ...PROFILE), profile().replace(WHY, `${WHY} Checked again.`));
     const u = await job("/api/map/edits/undo", { wrote: written });
     expect(u.result.code).toBe(1);
-    expect((u.result.lines as string[]).join("\n")).toContain("Nothing was undone");
+    // Plain words (slice 8): the refusal leads with what to do, under Your changes.
+    expect((u.result.lines as string[]).join("\n")).toMatch(
+      /^Undo it under Your changes on the box: nothing was undone here, because /m,
+    );
     expect(profile()).toContain("Checked again.");
     const r = await g.call("/api/declared-links/undo", "POST", {
       kind: "link",

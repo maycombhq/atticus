@@ -611,7 +611,7 @@ export async function runFind(
       leftOut: checked.leftOut,
       notBuilt: {
         message: refused
-          ? `Saved, not built: ${o.from}'s facts and the answer are saved, and the build waits for you to confirm what it lists (Set up › Scans › Catalog builds). Then read the answer again: ${command}`
+          ? `Saved, not built: ${o.from}'s facts and the answer are saved, and the build waits for you to confirm what it lists (Set up › Activity › Catalog builds). Then read the answer again: ${command}`
           : rejected
             ? `Saved, not built: verify refused ${o.from}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again: ${command}`
             : `Saved, not built: atticus verify ${o.from} --write ended without building (exit ${code}), so no outcome is told. What it said is below; once that is put right, read the answer again: ${command}`,
