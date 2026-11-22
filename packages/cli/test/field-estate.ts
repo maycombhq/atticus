@@ -103,6 +103,13 @@ export interface FieldEstateOptions {
    */
   topicListeners?: number[];
   /**
+   * ADR 0206: the services, by number, whose prod deployment and a setting are read from facts:
+   * a `deploy` fact (platform `hosts`, env `prod`, the host it is reached at) and a `config` fact
+   * (its retry count in prod), each cited on its line. What the conformance of operations reads
+   * at a branch's commit. None by default.
+   */
+  deployments?: number[];
+  /**
    * Beta.30 (slice 9): the last `dollarTokens` gateway proxies write their target URL as
    * `${TARGET_URL}` (a setting their deploy file sets per environment by that name) instead of
    * the deploy token `@targetUrl@`. None by default.
@@ -395,6 +402,55 @@ async function writeTopic(
     await addFacts(root, bigRepoId(r), [{ quote, fact }], r < checkouts);
 }
 
+/** The host a service's prod deployment is reached at today (ADR 0206's shape). */
+export const fieldHostOf = (repo: string) => `${repo}.hosts.forge.example`;
+
+/**
+ * ADR 0206: a service's prod deployment on the old hosts and its retry setting, each a fact cited
+ * on its line; in a repo with a clone the lines are written there too.
+ */
+async function writeDeployment(root: string, r: number, checkouts: number): Promise<void> {
+  const repo = bigRepoId(r);
+  const deploy = `name: ${repo} host: ${fieldHostOf(repo)}`;
+  const retry = "forge.retry.max: 3";
+  await addFacts(
+    root,
+    repo,
+    [
+      {
+        quote: deploy,
+        fact: {
+          kind: "deploy",
+          id: "d-prod",
+          env: "prod",
+          platform: "hosts",
+          resourceName: repo,
+          host: fieldHostOf(repo),
+          cite: { file: "deploy/hosts-prod.yaml", line: 1, value: repo, quote: deploy },
+        },
+      },
+      {
+        quote: retry,
+        fact: {
+          kind: "config",
+          id: "k-retry",
+          settingKind: "retry",
+          key: "forge.retry.max",
+          env: "prod",
+          value: "3",
+          cite: {
+            file: "deploy/values-prod.yaml",
+            line: 1,
+            value: "forge.retry.max",
+            quote: retry,
+          },
+        },
+      },
+    ],
+    r < checkouts,
+  );
+}
+
 /**
  * A change's files as a person or their personas write them (ADR 0201): each path, with forward
  * slashes, under the change's folder, with LF line ends on every platform. Returns the folder.
@@ -497,6 +553,7 @@ export async function makeFieldEstate(
   if (given.emptyRepo)
     await mkdir(join(root, "workspace", given.emptyRepo, ".git"), { recursive: true });
   if (given.topic) await writeTopic(root, given.topic, checkouts, given.topicListeners);
+  for (const r of given.deployments ?? []) await writeDeployment(root, r, checkouts);
   // ---- beta.30 (slice 9): gateway proxies whose target URL is `${TARGET_URL}`, a setting
   //      their deploy file names, instead of the deploy token `@targetUrl@`
   for (let g = Math.max(0, gateways - (given.dollarTokens ?? 0)); g < gateways; g++) {

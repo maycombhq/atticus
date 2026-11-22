@@ -27,6 +27,10 @@ import { fileStepStore } from "@maycombhq/adapters";
 import { stepClassOfNextStep } from "@maycombhq/ai";
 import {
   artifactFiles,
+  checkCodeTable,
+  CODE_TABLE_FILE,
+  parseCodeTable,
+  specDeltas,
   assess,
   changeStore,
   isManualPrUrl as isManualPr,
@@ -733,6 +737,19 @@ async function quickState(
   for (const a of artifacts)
     if (a !== "data" && (await artifactFiles(dir, a)).length === 0)
       missing.push(QUICK_FILE[a] ?? `${a}.md`);
+  // ADR 0206: a design.md that doesn't say, in a table that reads, what the code will have. The
+  // map's ids are the hand-off's to check (atticus change status names each problem).
+  const design = await readFile(join(dir, CODE_TABLE_FILE), "utf8").catch(() => undefined);
+  if (design !== undefined && artifacts.includes("design")) {
+    const tasks = await readFile(join(dir, "tasks.md"), "utf8").catch(() => "");
+    const shaped = checkCodeTable(parseCodeTable(design), {
+      tasks,
+      specs: await specDeltas(dir),
+      has: () => true,
+      planned: [],
+    });
+    if (shaped.length) missing.push("design.md's ## In the code");
+  }
   return { missing, ...(existsSync(join(dir, REQUIREMENTS_FILE)) ? { requirements: true } : {}) };
 }
 

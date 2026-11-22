@@ -48,6 +48,7 @@ import {
   TOPIC,
   UNREAD_REPO,
   type Archetype,
+  withoutCodeTable,
 } from "./archetypes-changes.js";
 import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
 
@@ -308,9 +309,39 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     );
 
     it(
+      "without design.md's In the code, next asks for it and the plan hand-off is refused with what to fix (ADR 0206)",
+      async () => {
+        await writeChangeFiles(m.root, a.id, {
+          ...a.files,
+          "design.md": withoutCodeTable(a.files["design.md"]!),
+        });
+        const step = (await nextFor(m.root, a.id)).find((s) => s.step === "quick-define");
+        expect(step, "no quick-define step without the table").toBeDefined();
+        expect(step!.why).toContain("design.md's ## In the code");
+        const status = await run(["change", "status", a.id, "--root", m.root]);
+        expect(status.out).toContain(
+          "  - design.md doesn't say what the code will have: add ## In the code with the columns Repo, Task, Has, What, Spec, a row for each thing a repo's code or deployment will have. A repo whose work no scan can see gets a row with Has other.",
+        );
+        const h = await run(["change", "handoff", a.id, "--root", m.root]);
+        expect(h.code).not.toBe(0);
+        expect([...h.out, ...h.err].join("\n")).toContain(
+          "design.md doesn't say what the code will have",
+        );
+      },
+      T,
+    );
+
+    it(
       "its four files pass openspec validate --strict, and next offers the hand-off",
       async () => {
         await writeChangeFiles(m.root, a.id, a.files);
+        // ADR 0206: its In the code reads, and nothing is refused for it.
+        const status = await run(["change", "status", a.id, "--json", "--root", m.root]);
+        const said = JSON.parse(status.out.join("\n")) as {
+          reasons: { code: string; message: string }[];
+          notes?: string[];
+        };
+        expect(said.reasons.filter((r) => r.code === "design.code-table")).toEqual([]);
         expect(Object.keys(a.files).sort()).toEqual(
           ["design.md", "proposal.md", a.spec, "tasks.md"].sort(),
         );
