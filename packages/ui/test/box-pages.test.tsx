@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { boxPages } from "../src/screens/map/box-pages.js";
@@ -89,5 +89,111 @@ describe("Impact asked of a repo", () => {
     expect(repoComponentsPath("forge-portal-bff")).toBe(
       "/api/catalog/Component?limit=500&repo=forge-portal-bff",
     );
+  });
+});
+
+describe("Impact asked of a repo, as the page shows it", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const ready = <T,>(data: T) => ({ state: "ready" as const, data });
+  /** A fake server: the repo's components, `per` to a page, with the next cursor while more. */
+  const server = (
+    all: { id: string; kind: string; repo: string; name?: string }[],
+    per: number,
+  ) => {
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(url);
+        const at = Number(new URL(url, "http://x").searchParams.get("cursor") ?? "0");
+        const items = all.slice(at, at + per);
+        const more = at + per < all.length ? { next: String(at + per) } : {};
+        return new Response(JSON.stringify({ items, total: all.length, ...more }), {
+          status: 200,
+        });
+      }),
+    );
+    return asked;
+  };
+  const LEDGER = [
+    { id: "ledger-api", kind: "Component", repo: "forge-ledger", name: "Ledger API" },
+    { id: "ledger-worker", kind: "Component", repo: "forge-ledger" },
+  ];
+
+  it("a repo with two components: both listed, each opening its impact", async () => {
+    const asked = server(LEDGER, 500);
+    const { loadRepoComponents, repoComponentsPath, RepoComponentsView } =
+      await import("../src/screens/know/Know.js");
+    const { setSessionToken } = await import("../src/api/client.js");
+    setSessionToken("t");
+    const data = await loadRepoComponents(
+      repoComponentsPath("forge-ledger"),
+      new AbortController().signal,
+    );
+    expect(asked).toEqual(["/api/catalog/Component?limit=500&repo=forge-ledger"]);
+    const out = renderToStaticMarkup(<RepoComponentsView repo="forge-ledger" list={ready(data)} />);
+    expect(out).toContain(COPY.know.impactOfRepo("forge-ledger"));
+    expect(out).toContain('href="#/impact?q=ledger-api">ledger-api · Ledger API<');
+    expect(out).toContain('href="#/impact?q=ledger-worker">ledger-worker<');
+    expect(out.match(/<li>/g)).toHaveLength(2);
+  });
+
+  it("follows the next cursor: a repo with more than one page of components lists them all", async () => {
+    const many = Array.from({ length: 5 }, (_, n) => ({
+      id: `ledger-${n}`,
+      kind: "Component",
+      repo: "forge-ledger",
+    }));
+    const asked = server(many, 2);
+    const { loadRepoComponents, repoComponentsPath, RepoComponentsView } =
+      await import("../src/screens/know/Know.js");
+    const { setSessionToken } = await import("../src/api/client.js");
+    setSessionToken("t");
+    const data = await loadRepoComponents(
+      repoComponentsPath("forge-ledger"),
+      new AbortController().signal,
+    );
+    expect(asked).toEqual([
+      "/api/catalog/Component?limit=500&repo=forge-ledger",
+      "/api/catalog/Component?limit=500&repo=forge-ledger&cursor=2",
+      "/api/catalog/Component?limit=500&repo=forge-ledger&cursor=4",
+    ]);
+    const out = renderToStaticMarkup(<RepoComponentsView repo="forge-ledger" list={ready(data)} />);
+    expect(out.match(/<li>/g)).toHaveLength(5);
+    expect(out).toContain('href="#/impact?q=ledger-4"');
+  });
+
+  it("the Impact page opened from a repo box shows the repo's components, not an id to type", async () => {
+    server(LEDGER, 500);
+    const { ImpactExplorer } = await import("../src/screens/know/Know.js");
+    // Rendered once, before any answer: the repo's panel, loading.
+    const out = renderToStaticMarkup(<ImpactExplorer hash="#/impact?repo=forge-ledger" />);
+    expect(out).toContain(COPY.know.impactOfRepo("forge-ledger"));
+    expect(out).toContain('aria-busy="true"');
+    const byId = renderToStaticMarkup(<ImpactExplorer hash="#/impact?q=ledger-api" />);
+    expect(byId).not.toContain(COPY.know.impactOfRepo("forge-ledger"));
+  });
+
+  it("says when the repo has no component, while it loads, and why it couldn't load", async () => {
+    const { RepoComponentsView } = await import("../src/screens/know/Know.js");
+    const empty = renderToStaticMarkup(
+      <RepoComponentsView repo="forge-none" list={ready({ items: [] })} />,
+    );
+    expect(empty).toContain(COPY.know.noComponentsIn("forge-none"));
+    expect(empty).not.toContain("<li>");
+    const loading = renderToStaticMarkup(
+      <RepoComponentsView repo="forge-ledger" list={{ state: "loading" }} />,
+    );
+    expect(loading).toContain('aria-busy="true"');
+    expect(loading).toContain(COPY.know.impactOfRepo("forge-ledger"));
+    const failed = renderToStaticMarkup(
+      <RepoComponentsView
+        repo="forge-ledger"
+        list={{ state: "error", error: "the index is locked", reload: () => undefined }}
+      />,
+    );
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("the index is locked");
+    expect(failed).toContain(COPY.app.tryAgain);
   });
 });

@@ -140,6 +140,35 @@ describe("the local index", () => {
     ix.close();
   });
 
+  it("lists a repo's components by its repo, both of them, page by page (Impact of a repo box)", async () => {
+    // v30 slice 8: a repo with two components; ledger-worker is the invented second.
+    const worker = parseRecord({
+      schemaVersion: 1,
+      status: "current",
+      kind: "Component",
+      id: "ledger-worker",
+      confidence: "verified",
+      system: "ledger",
+      repo: "forge-ledger",
+      type: "forge-service",
+      evidence: [{ source: "config", repo: "forge-ledger", path: "worker/forge.yaml", line: 2 }],
+    });
+    if (!worker.ok) throw new Error(JSON.stringify(worker.issues));
+    const ix = await openIndex(await forgeRoot([worker.record]));
+    const all = ix.list("Component", { repo: "forge-ledger", limit: 500 });
+    expect(all.items.map((r) => r.id)).toEqual(["ledger-api", "ledger-worker"]);
+    expect(all.total).toBe(2);
+    expect(all.next).toBeUndefined();
+    // One to a page: the cursor keeps to the repo.
+    const p1 = ix.list("Component", { repo: "forge-ledger", limit: 1 });
+    expect(p1.items.map((r) => r.id)).toEqual(["ledger-api"]);
+    expect(p1.total).toBe(2);
+    const p2 = ix.list("Component", { repo: "forge-ledger", limit: 1, cursor: p1.next! });
+    expect(p2.items.map((r) => r.id)).toEqual(["ledger-worker"]);
+    expect(p2.next).toBeUndefined();
+    ix.close();
+  });
+
   it("lists one kind page by page", async () => {
     const ix = await openIndex(await forgeRoot());
     const p1 = ix.list("Column", { limit: 4 });

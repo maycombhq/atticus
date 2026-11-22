@@ -440,14 +440,37 @@ export function componentsOfRepo<C extends { id: string; repo?: string }>(
 export const repoComponentsPath = (repo: string) =>
   `/api/catalog/Component?limit=500&repo=${encodeURIComponent(repo)}`;
 
+type RepoComponentList = { items: { id: string; repo?: string; name?: string }[] };
+
 /**
- * Impact asked of a repo (`?repo=`, from a repo box's panel): a repo has no record of its own,
- * so its components are listed, each opening its impact.
+ * A repo's components, every page of them: the list follows the `next` cursor to its end, so a
+ * repo with more than one page of components lists them all, never a silent first 500.
  */
-function RepoComponents({ repo }: { repo: string }) {
-  const list = useApi<{ items: { id: string; repo?: string; name?: string }[] }>(
-    repoComponentsPath(repo),
-  );
+export async function loadRepoComponents(
+  path: string,
+  signal: AbortSignal,
+): Promise<RepoComponentList> {
+  const items: RepoComponentList["items"] = [];
+  let next: string | undefined;
+  do {
+    const page = await api<RepoComponentList & { next?: string }>(
+      next ? `${path}&cursor=${encodeURIComponent(next)}` : path,
+      { signal },
+    );
+    items.push(...page.items);
+    next = page.next;
+  } while (next && !signal.aborted);
+  return { items };
+}
+
+/** The repo's components as loaded (loading, error, none, or each opening its impact). */
+export function RepoComponentsView({
+  repo,
+  list,
+}: {
+  repo: string;
+  list: Loaded<RepoComponentList> & { reload?: () => void };
+}) {
   return (
     <Panel title={T.impactOfRepo(repo)} span="1 / -1">
       <View
@@ -469,6 +492,15 @@ function RepoComponents({ repo }: { repo: string }) {
       </View>
     </Panel>
   );
+}
+
+/**
+ * Impact asked of a repo (`?repo=`, from a repo box's panel): a repo has no record of its own,
+ * so its components are listed, each opening its impact.
+ */
+function RepoComponents({ repo }: { repo: string }) {
+  const list = useApi<RepoComponentList>(repoComponentsPath(repo), { load: loadRepoComponents });
+  return <RepoComponentsView repo={repo} list={list} />;
 }
 
 export function ImpactExplorer({ hash }: { hash: string }) {
