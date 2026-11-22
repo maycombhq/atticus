@@ -180,7 +180,8 @@ test.describe("fixtures/reconnect", () => {
     await expect(page.locator(RIGHT)).toHaveAttribute("aria-label", /paired by a person/);
     await accessible(page, "Connect after Undo, the build waiting");
     await panel.getByRole("link", { name: /^Review the \d+ removals?$/ }).click();
-    await expect(page).toHaveURL(/#\/catalog-builds$/);
+    // Plain words (slice 8): Catalog builds is a tab of Set up › Activity; its old address opens it.
+    await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds$/);
     const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
     const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
     await review.click();
