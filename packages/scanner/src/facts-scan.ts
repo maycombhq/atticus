@@ -254,3 +254,38 @@ export async function estateFacts(
   }
   return { repos, targets, pairs, notes, unverified, aiTargets };
 }
+
+/**
+ * ADR 0206 (as built): the facts a change's branch adds, kept in the change folder at
+ * `conform/facts/<repo>.jsonl`, verified against the branch's checkout at its commit (each claim
+ * on its line, as `atticus verify` checks it) and never written to a snapshot or the catalog.
+ * `atticus verify <repo> --write` reads the base clone at its own HEAD, so it can't speak for a
+ * task branch's files; this is how a check of claims reads them. Undefined when the file isn't
+ * there; what doesn't read or is rejected is said, never used.
+ */
+export async function branchFactsAt(
+  op: OrgPack,
+  text: string | undefined,
+  at: { dir: string; commit: string },
+): Promise<{ facts: Fact[]; rejected: number; problems: string[] } | undefined> {
+  if (text === undefined) return undefined;
+  const parsed = parseFacts(text);
+  if (!parsed.ok)
+    return {
+      facts: [],
+      rejected: 0,
+      problems: parsed.issues.map((i) => `${i.line ? `line ${i.line}: ` : ""}${i.message}`),
+    };
+  const report = await verifyFacts({
+    facts: parsed.facts,
+    source: dirSource(at.dir),
+    commit: at.commit,
+    conventions: conventionsOf(op),
+    componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
+  });
+  return {
+    facts: report.accepted,
+    rejected: report.rejected.length,
+    problems: report.rejected.slice(0, 5).map((r) => `${r.fact.id}: ${r.message}`),
+  };
+}

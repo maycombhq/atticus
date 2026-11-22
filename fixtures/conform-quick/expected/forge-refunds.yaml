@@ -60,5 +60,5 @@ claims:
 unexpected:
   - check: call
     what: forge-refunds calls forge-audit POST /v1/audit/events, which no row of design.md's In the code names.
-    record: c-1
+    record: forge-refunds#c-1
     at: [forge-refunds:src/main/java/forge/refunds/AuditClient.java:20]

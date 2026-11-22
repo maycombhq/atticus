@@ -196,6 +196,8 @@ describe("does the code do what the design says? (ADR 0114)", () => {
         results: [],
         problems: [],
         flows: 0,
+        // ADR 0206: nor any claim (no operations, no In the code).
+        claims: 0,
       });
       await withDesign(root);
       const r = await conformChange(root, CHANGE, { git, ref: "task/add-transfer-limit/9.9" });

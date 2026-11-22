@@ -1,6 +1,4 @@
 import type { Api } from "@maycombhq/core";
-import { changeFolder } from "@maycombhq/changes";
-import { readOperations } from "@maycombhq/planner";
 import { conformanceOf, conformChange, ConformError } from "@maycombhq/taskrun";
 import type { Output } from "./commands.js";
 
@@ -11,8 +9,11 @@ import type { Output } from "./commands.js";
  * the target flows, keeps the result and writes the findings on the conform gate. --latest
  * shows the stored result and scans nothing (the MCP tool uses it). No AI, no network.
  *
- * Exit 0 nothing missing, still there or unexpected (or --latest), 1 something is, or there is
- * nothing to check yet, 2 no such change, task or base clone.
+ * ADR 0206: and the claims the change states (each operation in each of its repos, each row of a
+ * quick change's design.md In the code), each with its outcome, its cite and what to do next.
+ *
+ * Exit 0 nothing missing, still there, unexpected, different or to check by hand (or --latest),
+ * 1 something is, or there is nothing to check yet, 2 no such change, task or base clone.
  */
 
 const CITE = (c: Api.ConformItemT["at"][number]) =>
@@ -24,6 +25,41 @@ const LABEL: Record<Api.ConformItemT["status"], string> = {
   "still-there": "STILL THERE",
   unexpected: "NOT IN THE DESIGN",
 };
+
+const CLAIM: Record<Api.ConformClaimT["outcome"], string> = {
+  present: "PRESENT",
+  "present-differently": "PRESENT DIFFERENTLY",
+  missing: "MISSING",
+  "not-checkable": "NOT CHECKABLE",
+  unconfirmed: "COULDN'T CONFIRM",
+};
+
+/** The claims' outcomes in words: `2 present, 1 missing`. */
+export function claimCountWords(
+  n: NonNullable<Api.ConformRepoResultT["counts"]["claims"]>,
+): string {
+  return [
+    `${n.present} present`,
+    `${n.differs} present differently`,
+    `${n.missing} missing`,
+    `${n.notCheckable} to check by hand`,
+    `${n.unconfirmed} not confirmed`,
+  ].join(", ");
+}
+
+function printClaims(r: Api.ConformRepoResultT, io: Output): void {
+  if (!r.claims?.length) return;
+  io.out(`  Claims: ${claimCountWords(r.counts.claims!)}.`);
+  for (const file of [...new Set(r.claims.map((c) => c.from.file))]) {
+    io.out(`  Stated in ${file}:`);
+    for (const c of r.claims.filter((x) => x.from.file === file)) {
+      const state = c.finding && c.finding.state !== "open" ? ` (${c.finding.state})` : "";
+      io.out(`  ${CLAIM[c.outcome]}  ${c.what}  ${c.at.map(CITE).join(", ")}${state}`);
+      if (c.why) io.out(`    ${c.why}`);
+      if (c.outcome !== "present") io.out(`    Next: ${c.next}`);
+    }
+  }
+}
 
 function print(results: Api.ConformRepoResultT[], io: Output): void {
   for (const r of results) {
@@ -40,21 +76,22 @@ function print(results: Api.ConformRepoResultT[], io: Output): void {
       for (const u of r.unchecked)
         io.out(`    ${u.flow}${u.item ? ` item ${u.item}` : " trigger"} (${u.kind}): ${u.why}`);
     }
+    printClaims(r, io);
     for (const p of r.problems) io.err(`${r.repo}: ${p}`);
   }
 }
 
-/**
- * ADR 0203 (review): operations are not checked against the code in this release, and that is
- * said: alone for a change whose work is operations only, beside the flows' result otherwise.
- */
-const NOT_CHECKED = "Atticus doesn't check operations against the code in this release.";
-async function operationsOf(root: string, change: string): Promise<number> {
-  return (await readOperations(changeFolder(root, change))).file?.operations.length ?? 0;
-}
-const alsoOperations = (n: number) =>
-  `${n} operation${n === 1 ? " is" : "s are"} not checked: ${NOT_CHECKED}`;
-const onlyOperations = (n: number) => `This change's work is operations (${n}): ${NOT_CHECKED}`;
+/** ADR 0206: a change with nothing to check yet, flows or claims. */
+const nothingYet = (change: string) =>
+  `${change} has no target flows and states no claims yet, so there is nothing to check the code against: the architecture stage writes target flows and operations (atticus change architecture ${change}); a quick change's design.md says what the code will have under ## In the code.`;
+/** What a check that ran found to act on: flows' and claims'. */
+const toActOn = (r: Api.ConformRepoResultT) =>
+  r.counts.missing +
+  r.counts.stillThere +
+  r.counts.unexpected +
+  (r.counts.claims
+    ? r.counts.claims.missing + r.counts.claims.differs + r.counts.claims.notCheckable
+    : 0);
 
 export async function changeConformCommand(
   root: string,
@@ -84,17 +121,13 @@ export async function changeConformCommand(
       return 0;
     }
     for (const p of v.problems) io.err(p);
-    const ops = await operationsOf(root, change);
     if (!v.results.length)
       io.out(
-        v.flows
-          ? `${change} hasn't been checked against its target flows yet: atticus change conform ${change}.`
-          : ops
-            ? onlyOperations(ops)
-            : `${change} has no target flows yet, so there is nothing to check the code against.`,
+        v.flows || v.claims
+          ? `${change} hasn't been checked against its design yet: atticus change conform ${change}.`
+          : nothingYet(change),
       );
     print(v.results, io);
-    if (ops && v.flows) io.out(alsoOperations(ops));
     return 0;
   }
   try {
@@ -103,23 +136,14 @@ export async function changeConformCommand(
       ...(o.ref ? { ref: o.ref } : {}),
       ...(o.task ? { task: o.task } : {}),
     });
-    const bad = run.results.some(
-      (r) => r.counts.missing + r.counts.stillThere + r.counts.unexpected > 0,
-    );
+    const bad = run.results.some((r) => toActOn(r) > 0);
     if (o.json) {
       io.out(JSON.stringify(await conformanceOf(root, change), null, 2));
       return run.results.length && !bad ? 0 : 1;
     }
     for (const p of run.problems) io.err(p);
-    const ops = o.json ? 0 : await operationsOf(root, change);
-    if (!run.flows && ops) {
-      io.out(onlyOperations(ops));
-      return 0;
-    }
-    if (!run.flows) {
-      io.err(
-        `${change} has no target flows yet, so there is nothing to check the code against: the architecture stage writes them (atticus change architecture ${change}).`,
-      );
+    if (!run.flows && !run.claims) {
+      io.err(nothingYet(change));
       return 1;
     }
     if (!run.results.length) return 1;
@@ -127,9 +151,10 @@ export async function changeConformCommand(
     io.out(
       bad
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`
-        : "The code has everything its target flows add, and nothing they don't name.",
+        : run.flows
+          ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
+          : "The code has everything the change states it will have, and nothing its design doesn't name.",
     );
-    if (ops) io.out(alsoOperations(ops));
     return bad && !o.findingsAnswer ? 1 : 0;
   } catch (e) {
     if (e instanceof ConformError) {

@@ -1,5 +1,6 @@
 # forge-ledger again, with deploy/anvil.yaml changed on the branch and no fact covering it: what
-# would be present differently or missing from facts can't be told, and is said so. A file in the
+# would be present differently or missing from facts can't be told (a reference may be in the
+# file no fact covers), and is said so. A file in the
 # commit's tree is git's to say, so the pipeline file is still missing.
 - outcome: unconfirmed
   check: deployment
@@ -9,13 +10,13 @@
   found: platform hosts, env prod
   what: "Atticus couldn't confirm that forge-ledger runs on anvil in prod: no fact covers deploy/anvil.yaml, which changed since forge-ledger was read."
   at: [forge-ledger:deploy/hosts.yaml:2, artifact:target-flows/_operations.yaml:8]
-- outcome: present-differently
+- outcome: unconfirmed
   check: secret
   operation: ledger-key
   line: 23
   expected: key ledger.client.key
   found: key ledger.client.key, set to a literal
-  what: forge-ledger sets ledger.client.key to a literal in the repo, not a reference to where secrets are kept.
+  what: "Atticus couldn't confirm that forge-ledger keeps ledger.client.key by a reference to where secrets are kept: no fact covers deploy/anvil.yaml, which changed since forge-ledger was read."
   at: [forge-ledger:deploy/values-prod.yaml:1, artifact:target-flows/_operations.yaml:23]
 - outcome: missing
   check: pipeline

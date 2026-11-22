@@ -9,8 +9,8 @@ import { Command } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 
 /**
- * Code against design (ADR 0114): the newest check of each repo's branch against the change's
- * target flows. Every call, table, column, migration and endpoint found, missing, still there
+ * Code against design (ADR 0114, ADR 0206): the newest check of each repo's branch against the
+ * change's target flows and the claims it states (its operations, a quick change's In the code). Every call, table, column, migration and endpoint found, missing, still there
  * or not in the design, with the file and line it cites and its finding's state. It reads the
  * stored check; a person checks again with a click (a local job on the server, eighth UX walk)
  * or the command.
@@ -21,9 +21,64 @@ const C = COPY.conformance;
 const cite = (c: Api.ConformItemT["at"][number]) =>
   `${c.repo ? `${c.repo}:` : ""}${c.path}${c.line ? `:${c.line}` : ""}`;
 
+/**
+ * ADR 0206: what the change states for this repo (its operations, its In the code), each with
+ * its outcome, where it is stated, its cite, and what the person does next.
+ */
+function Claims({ r }: { r: Api.ConformRepoResultT }) {
+  if (!r.claims?.length) return null;
+  const head = `claims-${r.repo}`;
+  return (
+    <>
+      <h4 id={head} className="hud">
+        {C.claimsTitle}
+      </h4>
+      <p className="muted">{C.claimsIntro}</p>
+      {r.counts.claims && <p>{C.claimCounts(r.counts.claims)}</p>}
+      <table className="run-table" aria-labelledby={head}>
+        <caption className="sr">{C.claimsCaption(r.repo)}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{C.claimCol.outcome}</th>
+            <th scope="col">{C.claimCol.what}</th>
+            <th scope="col">{C.claimCol.from}</th>
+            <th scope="col">{C.claimCol.at}</th>
+            <th scope="col">{C.claimCol.next}</th>
+            <th scope="col">{C.claimCol.finding}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {r.claims.map((c, n) => (
+            <tr key={`${c.check}.${c.from.file}.${c.from.line}.${n}`}>
+              <td>
+                {c.outcome === "present" ? (
+                  C.outcome[c.outcome]
+                ) : (
+                  <strong>{C.outcome[c.outcome]}</strong>
+                )}
+              </td>
+              <td>
+                {c.what}
+                {c.why ? <span className="muted"> {c.why}</span> : null}
+              </td>
+              <td className="mono">{`${c.from.file}:${c.from.line}`}</td>
+              <td className="mono">{c.at.map(cite).join(", ")}</td>
+              <td>{c.outcome === "present" ? "" : c.next}</td>
+              <td className="mono">{c.finding ? `${c.finding.id} (${c.finding.state})` : ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 /** One repo's check: the counts, every item with its citation, and what a scan can't show. */
 function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
-  const bad = r.counts.missing + r.counts.stillThere + r.counts.unexpected > 0;
+  const k = r.counts.claims;
+  const bad =
+    r.counts.missing + r.counts.stillThere + r.counts.unexpected > 0 ||
+    (!!k && k.missing + k.differs + k.notCheckable + k.unconfirmed > 0);
   const head = `conf-${r.repo}`;
   return (
     <section aria-labelledby={head} className="est-band">
@@ -64,6 +119,7 @@ function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
           ))}
         </tbody>
       </table>
+      <Claims r={r} />
       {r.unchecked.length > 0 && (
         <>
           <h4 className="hud">{C.unchecked}</h4>
@@ -122,15 +178,11 @@ function CheckAgain({ change }: { change: string }) {
 
 /** A change's newest checks. */
 export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
-  // ADR 0203: a change whose work is operations has nothing this check looks at, and says so.
-  if (!c.flows && c.operations) return <p>{C.onlyOperations(c.operations)}</p>;
-  const notChecked = c.operations ? (
-    <p role="note">{C.operationsNotChecked(c.operations)}</p>
-  ) : null;
-  if (!c.flows)
+  // ADR 0206: a change is checked against its target flows and the claims it states.
+  if (!c.flows && !c.claims)
     return (
       <>
-        <p>{C.noTargets(c.change)}</p>
+        <p>{C.nothingYet(c.change)}</p>
         <Command text={`atticus change architecture ${c.change}`} label={COPY.runNext.copy} />
       </>
     );
@@ -138,7 +190,6 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
     return (
       <>
         <p>{C.notChecked(c.change)}</p>
-        {notChecked}
         <CheckAgain change={c.change} />
       </>
     );
@@ -147,7 +198,6 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
       {c.results.map((r) => (
         <RepoResult key={r.repo} r={r} />
       ))}
-      {notChecked}
       <p>{C.gate(c.round)}</p>
       <CheckAgain change={c.change} />
       {c.problems.length > 0 && (

@@ -103,17 +103,17 @@ describe("design.md's In the code (ADR 0206)", () => {
       "| forge-refunds | r1 | table |",
     );
     expect(messages(text)).toEqual([
-      "5: design.md:5: Repo names forge-nowhere, which tasks.md doesn't have under a ## heading.",
-      "6: design.md:6: Task names r9, which tasks.md doesn't have under ## forge-refunds.",
-      '7: design.md:7: Has is "builds", which is none of serves, listens, calls, publishes, table, column, migration, deployment, route, config, secret, pipeline, cut-over, other.',
-      "8: design.md:8: a serves row needs METHOD /path, for example GET /v1/refunds/{id}.",
-      '9: design.md:9: the row names forge-nobody, which is not in the map and not listed under "## Planned". Name an id the map has (atticus query forge-nobody), or list it under Planned in requirements.md.',
-      '10: design.md:10: the row names forge.never.heard, which is not in the map and not listed under "## Planned". Name an id the map has (atticus query forge.never.heard), or list it under Planned in requirements.md.',
-      "11: design.md:11: Spec names refund-receipts: A requirement nobody wrote, which specs/ doesn't have as a ### Requirement: under specs/refund-receipts/.",
-      "12: design.md:12: a cut-over row needs undo: and one or two sentences that say how it is taken back.",
-      "13: design.md:13: a secret row never gives a value: name its key, and keep the value where secrets are kept.",
-      "14: design.md:14: a deployment row needs pairs from platform, env, for example platform anvil, env prod.",
-      "15: design.md:15: this row has 3 cells, not the five Repo, Task, Has, What, Spec.",
+      "7: design.md:7: Repo names forge-nowhere, which tasks.md doesn't have under a ## heading.",
+      "8: design.md:8: Task names r9, which tasks.md doesn't have under ## forge-refunds.",
+      '9: design.md:9: Has is "builds", which is none of serves, listens, calls, publishes, table, column, migration, deployment, route, config, secret, pipeline, cut-over, other.',
+      "10: design.md:10: a serves row needs METHOD /path, for example GET /v1/refunds/{id}.",
+      '11: design.md:11: the row names forge-nobody, which is not in the map and not listed under "## Planned". Name an id the map has (atticus query forge-nobody), or list it under Planned in requirements.md.',
+      '12: design.md:12: the row names forge.never.heard, which is not in the map and not listed under "## Planned". Name an id the map has (atticus query forge.never.heard), or list it under Planned in requirements.md.',
+      "13: design.md:13: Spec names refund-receipts: A requirement nobody wrote, which specs/ doesn't have as a ### Requirement: under specs/refund-receipts/.",
+      "14: design.md:14: a cut-over row needs undo: and one or two sentences that say how it is taken back.",
+      "15: design.md:15: a secret row never gives a value: name its key, and keep the value where secrets are kept.",
+      "16: design.md:16: a deployment row needs pairs from platform, env, for example platform anvil, env prod.",
+      "17: design.md:17: this row has 3 cells, not the five Repo, Task, Has, What, Spec.",
     ]);
   });
 

@@ -1,14 +1,14 @@
-# The conformance check's rules (ADR 0114): does the code on a branch do what the change's
-# target flows say? Contract C3. Built in, in the org layer: a person can dismiss a finding as
+# The conformance check's rules (ADR 0114, ADR 0206): does the code on a branch do what the
+# change's target flows and claims (an operation's sets, a quick change's In the code) say? Contract C3. Built in, in the org layer: a person can dismiss a finding as
 # not relevant (with a reason) or waive a blocking one, as with any other finding.
 schemaVersion: 1
 name: conform
-version: 1.0.0
-description: The code on a change's branch has every call, table, column, migration and endpoint its target flows add, none of the calls they remove, and nothing they don't name.
+version: 1.1.0
+description: The code on a change's branch has every call, table, column, migration and endpoint its target flows add, none of the calls they remove, and nothing they don't name; and everything its operations and its design's In the code say it will have, as they say it.
 rules:
   - id: conform.missing
     title: The code has what the target flows add
-    description: A call, table, column, migration or endpoint a target flow adds isn't in the scan of the branch's commit, so the task doesn't do what the approved design says yet.
+    description: A call, table, column, migration or endpoint a target flow adds, or what a claim states (ADR 0206), isn't in the scan of the branch's commit, so the task doesn't do what the approved design says yet.
     layer: org
     lens: code-and-test
     appliesTo: { artifacts: [design, code] }
@@ -36,3 +36,24 @@ rules:
     check: { type: deterministic, check: conform }
     waivable: false
     source: Does the code do what the design says? (ADR 0114)
+  # ADR 0206 (1.1.0, additive): claims, an operation's sets or a row of a quick change's design.md.
+  - id: conform.differs
+    title: The code has what a claim says, as it says it
+    description: A verified fact of the branch's commit says something else of what a claim states (another platform for that environment, another host, a setting in another environment or with another value, a secret's key set to a literal in the repo).
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [design, code] }
+    severity: blocking
+    check: { type: deterministic, check: conform }
+    waivable: true
+    source: Operations and quick changes checked against the code (ADR 0206)
+  - id: conform.not-checked
+    title: A person checks what no scan can see, and says how
+    description: A claim nothing a fact holds can show (a cut-over, an operation with no sets, a pipeline with no file, a row a person checks). Waive it with a reason that says how it was checked.
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [design, code] }
+    severity: blocking
+    check: { type: deterministic, check: conform }
+    waivable: true
+    source: Operations and quick changes checked against the code (ADR 0206)
