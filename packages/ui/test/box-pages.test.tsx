@@ -163,6 +163,49 @@ describe("Impact asked of a repo, as the page shows it", () => {
     expect(out).toContain('href="#/impact?q=ledger-4"');
   });
 
+  it("stops at a cursor the server gave already, and says the list may be missing some", async () => {
+    // A server that gives the same next cursor again: never followed for ever.
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(url);
+        const at = new URL(url, "http://x").searchParams.get("cursor");
+        const items = [{ id: `ledger-${at ?? "first"}`, kind: "Component", repo: "forge-ledger" }];
+        return new Response(JSON.stringify({ items, next: "2" }), { status: 200 });
+      }),
+    );
+    const { loadRepoComponents, repoComponentsPath, RepoComponentsView } =
+      await import("../src/screens/know/Know.js");
+    const { setSessionToken } = await import("../src/api/client.js");
+    setSessionToken("t");
+    const data = await loadRepoComponents(
+      repoComponentsPath("forge-ledger"),
+      new AbortController().signal,
+    );
+    expect(asked).toEqual([
+      "/api/catalog/Component?limit=500&repo=forge-ledger",
+      "/api/catalog/Component?limit=500&repo=forge-ledger&cursor=2",
+    ]);
+    expect(data.items.map((c) => c.id)).toEqual(["ledger-first", "ledger-2"]);
+    expect(data.repeated).toBe(true);
+    const out = renderToStaticMarkup(<RepoComponentsView repo="forge-ledger" list={ready(data)} />);
+    expect(out.match(/<li>/g)).toHaveLength(2);
+    const said = COPY.know.componentsCursorRepeated("forge-ledger").replace(/'/g, "&#x27;");
+    expect(out).toContain(said);
+    // A list that ended as it should says nothing of the kind.
+    server(LEDGER, 500);
+    const whole = await loadRepoComponents(
+      repoComponentsPath("forge-ledger"),
+      new AbortController().signal,
+    );
+    expect(whole.repeated).toBeUndefined();
+    const fine = renderToStaticMarkup(
+      <RepoComponentsView repo="forge-ledger" list={ready(whole)} />,
+    );
+    expect(fine).not.toContain(said);
+  });
+
   it("the Impact page opened from a repo box shows the repo's components, not an id to type", async () => {
     server(LEDGER, 500);
     const { ImpactExplorer } = await import("../src/screens/know/Know.js");

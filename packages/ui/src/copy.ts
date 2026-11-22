@@ -3763,6 +3763,9 @@ export const COPY = {
     impactOfRepo: (repo: string) => `Impact of ${repo}: pick one of its components`,
     noComponentsIn: (repo: string) =>
       `No component of ${repo} is in the catalog yet: read the repo, then Apply it.`,
+    /** A server that gave the same page's cursor twice: the list stopped, never looping. */
+    componentsCursorRepeated: (repo: string) =>
+      `The list of ${repo}'s components stopped where the server gave a page it had given already, so it may be missing some. Reload to ask again.`,
     /** v30 slice 8: the coverage's list on Systems, beside the system picker (named apart). */
     verifiedBySystem: "Verified, by system",
     coverageBySystemAnd: "Coverage by system and area",
