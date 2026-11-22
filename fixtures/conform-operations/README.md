@@ -11,5 +11,6 @@ forge-ledger to the Anvil platform. Everything here is invented: the Forge platf
 | `files/<repo>/`                  | The files the facts cite, for the check of a value on its line                                    |
 | `expected/`                      | Each repo's result and the findings, written by hand; never regenerate them from the check's output |
 
-The secret's literal in forge-ledger is a plain word, not a secret's shape; the test checks it is
-in no output.
+forge-ledger's secret is written as a literal, as `/atticus-map` writes one: `source:
+literal:<file>`, never its value. The word on its line is a plain word, not a secret's shape; the
+test checks it is in no output.

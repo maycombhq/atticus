@@ -15,7 +15,7 @@
   operation: ledger-key
   line: 23
   expected: key ledger.client.key
-  found: key ledger.client.key, set to a literal
+  found: key ledger.client.key, set to a literal in deploy/values-prod.yaml
   what: "Atticus couldn't confirm that forge-ledger keeps ledger.client.key by a reference to where secrets are kept: no fact covers deploy/anvil.yaml, which changed since forge-ledger was read."
   at: [forge-ledger:deploy/values-prod.yaml:1, artifact:target-flows/_operations.yaml:23]
 - outcome: missing

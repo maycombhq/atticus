@@ -13,8 +13,8 @@
   operation: ledger-key
   line: 23
   expected: key ledger.client.key
-  found: key ledger.client.key, set to a literal
-  what: forge-ledger sets ledger.client.key to a literal in the repo, not a reference to where secrets are kept.
+  found: key ledger.client.key, set to a literal in deploy/values-prod.yaml
+  what: "forge-ledger sets ledger.client.key to a literal in deploy/values-prod.yaml: keep it in the secret store."
   at: [forge-ledger:deploy/values-prod.yaml:1, artifact:target-flows/_operations.yaml:23]
 - outcome: missing
   check: pipeline

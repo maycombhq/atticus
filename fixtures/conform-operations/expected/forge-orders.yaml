@@ -31,6 +31,7 @@
   expected: key ledger.client.key
   what: forge-orders keeps ledger.client.key by a reference to where secrets are kept.
   at: [forge-orders:deploy/values-prod.yaml:2]
+  why: "Written on the cited lines: source vault:forge/ledger/client."
 - outcome: present
   check: pipeline
   operation: anvil-pipeline

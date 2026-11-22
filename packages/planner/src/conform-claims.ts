@@ -313,6 +313,20 @@ const TOPICS = new Set(["event-topic", "mq-queue"]);
 const sentence = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`);
 const bare = (s: string) => s.replace(/[.\s]+$/, "");
 const lastPart = (s: string) => s.split(".").pop() ?? s;
+/**
+ * Whether a value is written on a line as a word of its own (the review of ADR 0206): never as a
+ * part of a longer one, so `anvil` isn't on `name: ledger-anvil`, `prod` isn't on `production`,
+ * and `anvil.forge.example` isn't on `orders.anvil.forge.example`. Case is ignored.
+ */
+export function wordOn(line: string, value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  const esc = v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?<![A-Za-z0-9_-]|[A-Za-z0-9_][./])${esc}(?![A-Za-z0-9_-]|[./][A-Za-z0-9_-])`,
+    "i",
+  ).test(line);
+}
 const same = (a: string | undefined, b: string | undefined) =>
   (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
 const shown = (xs: readonly string[]) =>
@@ -608,24 +622,54 @@ export function conformClaims(input: ClaimsInput): {
         const inEnv = e.env ? keyed.filter((f) => same(f.env, e.env)) : keyed;
         const envWords = e.env ? ` in ${e.env}` : "";
         if (secret) {
-          const hit = inEnv.find((f) => f.value === undefined);
-          const lit = hit ? undefined : inEnv.find((f) => f.value !== undefined);
+          // The review of ADR 0206: a literal is `source: literal:<file>` with no value (the
+          // /atticus-map rules; the verifier refuses a secret-shaped value), or a value; a
+          // reference counts only when it is written on the cited lines, as the verifier doesn't
+          // check a source there. The value is never read into a result.
+          const literal = (f: F<"config">) =>
+            f.value !== undefined || /^literal:/i.test(f.source ?? "");
+          const literalIn = (f: F<"config">) =>
+            /^literal:(.+)$/i.exec(f.source ?? "")?.[1]?.trim() || f.cite.file;
+          const shownOn = (f: F<"config">) => {
+            const s = f.source?.trim();
+            if (!s || !input.lineAt) return false;
+            const name = /^[a-z][a-z0-9+.-]*:(.+)$/i.exec(s)?.[1]?.trim();
+            return citedLines(f).some((l) => wordOn(l, s) || (!!name && wordOn(l, name)));
+          };
+          const says = `${repo} keeps ${e.key}${envWords} by a reference to where secrets are kept`;
+          const lit = inEnv.find(literal);
+          const hit = lit ? undefined : inEnv.find((f) => f.source && shownOn(f));
+          const doubt = lit || hit ? undefined : inEnv.find((f) => !literal(f));
+          if (doubt) {
+            matched.add(doubt.id);
+            push(c, {
+              outcome: "unconfirmed",
+              expected,
+              what: doubt.source
+                ? `Atticus couldn't confirm that ${bare(says)}: ${doubt.cite.file}:${doubt.cite.line} doesn't show ${doubt.source}, so the reference is only the assistant's reading.`
+                : `Atticus couldn't confirm that ${bare(says)}: the fact at ${doubt.cite.file}:${doubt.cite.line} gives no source.`,
+              at: [codeCite(doubt), claimCite(c)],
+              fact: doubt.id,
+            });
+            break;
+          }
           const o = hit ? undefined : (lit ?? keyed[0]);
           judge(
             c,
             expected,
-            `${repo} keeps ${e.key}${envWords} by a reference to where secrets are kept`,
+            says,
             hit,
             o && {
               fact: o,
               found: lit
-                ? `key ${e.key}, set to a literal`
+                ? `key ${e.key}, set to a literal in ${literalIn(lit)}`
                 : `key ${e.key}, env ${o.env ?? "none"}`,
               what: lit
-                ? `${repo} sets ${e.key} to a literal in the repo, not a reference to where secrets are kept`
+                ? `${repo} sets ${e.key} to a literal in ${literalIn(lit)}: keep it in the secret store`
                 : `${repo} sets ${e.key} in ${o.env ?? "no env"}, not in ${e.env}`,
             },
             `${repo} doesn't set ${e.key}${envWords}`,
+            hit ? `Written on the cited lines: source ${hit.source}.` : undefined,
           );
           break;
         }
