@@ -94,6 +94,7 @@ import {
   unmarkCheckedByApp,
   type AutoDoneOptions,
 } from "./handoff-autodone.js";
+import { setAppDone } from "./ui-api-accept.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -170,6 +171,11 @@ export interface UiDeps {
   taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
   /** Tests: the in-process atticus a step's resume runs with (fourth UX walk). */
   runStep?: import("./handoff-resume.js").StepRunner;
+  /**
+   * Tests: the environment the app reads who acts from (a Copilot session, a coding assistant's
+   * terminal) for a stage's Accept; otherwise this process's.
+   */
+  env?: Record<string, string | undefined>;
   /** Tests: the machine's checks (otherwise atticus doctor's). */
   doctor?: (root: string) => Promise<import("./doctor.js").DoctorCheck[]>;
   /** ADR 0189: how the app checks an answer once its file is complete (tests: quick, or off). */
@@ -925,6 +931,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   // ADR 0189: the answer arrives by itself: a waiting hand-off is checked once its file is complete.
   startAutoDone(ctx, (runId) => doneRun(runId, "app"), deps.autoDone ?? {});
+  // ADR 0203 A (addendum 2026-11-22): an Accept checks the answer its stage waits on again, by
+  // the same Done.
+  setAppDone(ctx, (runId) => doneRun(runId, "app"));
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.

@@ -9,6 +9,7 @@ import {
   personWrittenPlanning,
 } from "@maycombhq/changes";
 import {
+  acceptableStageRule,
   commentOnFinding,
   keepDroppedQuestion,
   PlannerError,
@@ -27,7 +28,17 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { stageGateOf } from "@maycombhq/naysayer";
+import { findingAction } from "./critic-commands.js";
 import { checkedByApp } from "./handoff-autodone.js";
+import {
+  appDoneOf,
+  goOnAfterAccept,
+  sessionRefusal,
+  stepBusy,
+  type AppPerson,
+} from "./ui-api-accept.js";
+import type { StepRunner } from "./handoff-resume.js";
 import { missingChangeWords } from "./change-problems.js";
 import { allRuns, answerOf, item, type Stored } from "./runs-view.js";
 import { stageReviewView } from "./ui-api-stages.js";
@@ -139,6 +150,8 @@ export async function stageThreadView(
   root: string,
   change: string,
   stage: ThreadStage,
+  /** ADR 0203 A: who the app records, for whether they may accept a stage's own finding. */
+  who?: AppPerson,
 ): Promise<Api.StageThreadViewT> {
   const rel = `${changesRelOf(root)}/${change}`;
   const dir = changeFolder(root, change);
@@ -194,6 +207,8 @@ export async function stageThreadView(
     });
   }
   let state: Api.StageThreadViewT["state"] = runs.length ? "drafting" : "not-started";
+  /** ADR 0203 A (addendum 2026-11-22): the stage stopped for a person to accept its findings. */
+  let forAPerson = 0;
   let replyOpen = stage === "proposal";
   let replyWhy: string | undefined;
   if (stage !== "proposal") {
@@ -203,9 +218,24 @@ export async function stageThreadView(
     if (!present)
       replyWhy = `The ${stage} stage hasn't run for ${change} yet: start it, then reply to its assistant here.`;
     if (present) state = loop.state === "waiting" ? "waiting" : loop.state;
+    if (present && loop.state === "stopped") {
+      const stopped = loop.findings.filter(
+        (f) => f.stoppedAt === loop.iteration && f.seenIn.at(-1) === loop.iteration,
+      );
+      if (
+        stopped.length &&
+        stopped.every((f) => f.source === "stage" && acceptableStageRule(f.rule))
+      )
+        forAPerson = stopped.length;
+    }
     // The critic's latest round at the stage's gate, its findings with their options, and the
     // stage's own questions (as the stage tab showed them, ADR 0124 addendum D-app).
-    const review = await stageReviewView(root, change, loopStage as Api.StageReviewViewT["stage"]);
+    const review = await stageReviewView(
+      root,
+      change,
+      loopStage as Api.StageReviewViewT["stage"],
+      who,
+    );
     problems.push(...review.problems);
     const writes = new Set(Object.keys(loop.written ?? {}));
     const source = loop.source;
@@ -213,7 +243,9 @@ export async function stageThreadView(
       const at =
         f.finding.createdAt ?? (await fileTime(join(root, ...f.file.split("/")))) ?? loop.updatedAt;
       const art = f.finding.artifact;
+      // A stage's own finding (ADR 0203 A) is about the stage's source, which its assistant drafts.
       const assistantWrites =
+        f.finding.gate === stageGateOf(loopStage) ||
         writes.has(art) ||
         (!!source && (art === source || art.startsWith(`${source.replace(/\/$/, "")}/`)));
       const edit = assistantWrites ? undefined : editOf(art, f.finding.locator.line);
@@ -319,11 +351,13 @@ export async function stageThreadView(
             ? "Your assistant's last answer didn't pass its checks: the problems are below. Tell the assistant, or fix the file and the app checks it again."
             : state === "questions"
               ? `The stage waits on ${questions === 1 ? "the question" : `${questions} questions`} below.`
-              : state === "stopped"
-                ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
-                : state === "done"
-                  ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
-                  : "Ready for the next round: tell the assistant what to change, or start the round.";
+              : state === "stopped" && forAPerson
+                ? `The stage stopped for a person: its draft has ${forAPerson === 1 ? "a finding" : `${forAPerson} findings`} below that you may accept. Accept ${forAPerson === 1 ? "it" : "each"} with a reason, or tell the assistant how to fix the draft.`
+                : state === "stopped"
+                  ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
+                  : state === "done"
+                    ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
+                    : "Ready for the next round: tell the assistant what to change, or start the round.";
   if (dropped)
     items.push({
       kind: "note",
@@ -354,9 +388,27 @@ function stageOf(v: string): ThreadStage {
 export function uiThreadRoutes(
   r: Router,
   ctx: ServerContext,
-  deps: { now?: () => Date } = {},
+  deps: {
+    now?: () => Date;
+    env?: Record<string, string | undefined>;
+    /** Run `atticus <args>` (the command line's own code, in this process, by default). */
+    runStep?: StepRunner;
+  } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
+  const runStep: StepRunner =
+    deps.runStep ??
+    (async (args) => {
+      const { main, capturedIo } = await import("./main.js");
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main([...args, "--root", ctx.root], capturedIo(out, err), {
+        quiet: true,
+      });
+      return { code, out, err };
+    });
+  const env = deps.env ?? process.env;
+  const who: AppPerson = { user: ctx.user, env };
   const changeOf = async (v: string) => {
     if (!ID.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a change id.`);
     if (!(await stat(join(changeFolder(ctx.root, v), "change.yaml")).catch(() => undefined)))
@@ -372,7 +424,7 @@ export function uiThreadRoutes(
     .add("GET", "/api/changes/{changeId}/stages/{stage}/thread", async ({ params }) => {
       const stage = stageOf(params.stage!);
       const change = await changeOf(params.changeId!);
-      return { status: 200, body: await stageThreadView(ctx.root, change, stage) };
+      return { status: 200, body: await stageThreadView(ctx.root, change, stage, who) };
     })
     .add("POST", "/api/changes/{changeId}/stages/{stage}/thread", async ({ params, body }) => {
       const stage = stageOf(params.stage!);
@@ -439,8 +491,113 @@ export function uiThreadRoutes(
       for (const p of files) ctx.events.publish({ type: "file.changed", path: p });
       const body2: Api.StageThreadPostResultT = {
         files,
-        thread: await stageThreadView(ctx.root, change, stage),
+        thread: await stageThreadView(ctx.root, change, stage, who),
       };
       return { status: 200, body: body2 };
+    })
+    .add("POST", "/api/changes/{changeId}/stages/{stage}/accept", async ({ params, body }) => {
+      // ADR 0203 A: accept a stage's own blocking finding, through the command line's own
+      // `atticus finding <change> <id> waive --reason <why>`, in the name of the app's person.
+      const stage = stageOf(params.stage!);
+      if (stage === "proposal")
+        throw badRequest(
+          "The proposal has no findings of its own to accept: accept a finding on the feature, architecture, stories or small step's thread.",
+        );
+      const change = await changeOf(params.changeId!);
+      const b = Api.StageAcceptRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest(
+          "Say which of the stage's findings and why you accept it: { finding: stage-<12 hex>, reason }.",
+          { errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })) },
+        );
+      const id = b.data.finding;
+      const session = sessionRefusal(env, change);
+      if (session) throw new HttpError(403, "Only a person accepts a finding", session);
+      const gate = stageGateOf(stage);
+      const v = await stageReviewView(
+        ctx.root,
+        change,
+        stage as Api.StageReviewViewT["stage"],
+        who,
+      );
+      const f = v.findings.find((x) => x.finding.id === id && x.finding.gate === gate);
+      if (!f)
+        throw notFound(
+          `The ${stage} stage of ${change} has no finding ${id} in its own gate's newest round: open the stage's thread again to see what it found.`,
+        );
+      if (f.finding.state !== "open")
+        throw conflict(
+          `${id} is already ${f.accepted ? `accepted by ${f.accepted.by}` : `${f.finding.state} (by ${f.finding.resolution?.by ?? "someone"})`}: it no longer blocks the ${stage} stage.`,
+        );
+      const out: string[] = [];
+      const err: string[] = [];
+      const at = now()
+        .toISOString()
+        .replace(/\.\d{3}Z$/, "Z");
+      const code = await findingAction(
+        ctx.root,
+        change,
+        id,
+        "waive",
+        { by: ctx.user, reason: b.data.reason, gate },
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        { now: at },
+      );
+      const said = (err.length ? err : out).join("\n") || "Atticus refused.";
+      if (code === 2) throw new HttpError(400, "The request isn't valid", said);
+      if (code !== 0) {
+        if (/^No finding /.test(said)) throw notFound(said);
+        if (/ is already /.test(said)) throw conflict(said);
+        throw new HttpError(403, "Not allowed", said);
+      }
+      ctx.events.publish({ type: "file.changed", path: f.file });
+      // ADR 0203 A (addendum 2026-11-22): the app goes on with the stage, whoever started it.
+      // The acceptance is written: whatever fails from here is said, never a 500 over it.
+      const firstLine = (e: unknown) => String((e as Error)?.message ?? e).split("\n")[0]!;
+      let goesOn: Api.StageAcceptThenT;
+      try {
+        goesOn = await goOnAfterAccept(
+          ctx.root,
+          change,
+          stage as Stage,
+          await stageThreadView(ctx.root, change, stage, who),
+          {
+            runStep,
+            ...(appDoneOf(ctx) ? { done: appDoneOf(ctx)! } : {}),
+            busy: () => stepBusy(ctx, stageStep(stage, change)),
+          },
+        );
+      } catch (e) {
+        goesOn = { kind: "not-resumed", lines: [firstLine(e)] };
+      }
+      ctx.events.publish({ type: "file.changed", path: changesRelOf(ctx.root) });
+      let thread: Api.StageThreadViewT;
+      try {
+        thread = await stageThreadView(ctx.root, change, stage, who);
+      } catch (e) {
+        const why = firstLine(e);
+        if (goesOn.kind !== "not-resumed") goesOn = { kind: "not-resumed", lines: [why] };
+        thread = {
+          change,
+          stage,
+          state: "drafting",
+          headline: `The ${stage} stage's thread couldn't be read: ${why}`,
+          items: [],
+          step: stageStep(stage, change),
+          reply: { open: false, why },
+          problems: [{ file: `${changesRelOf(ctx.root)}/${change}`, message: why }],
+        };
+      }
+      const seen = thread.items.find(
+        (i): i is Extract<Item, { kind: "finding" }> =>
+          i.kind === "finding" && i.view.finding.id === id,
+      );
+      const result: Api.StageAcceptResultT = {
+        files: [f.file],
+        accepted: seen?.view.accepted ?? { by: ctx.user, why: b.data.reason, at },
+        thread,
+        goesOn,
+      };
+      return { status: 200, body: result };
     });
 }

@@ -726,6 +726,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   installs exactly that version. Additive only.
  *   Also in 3.19.0 (ADR 0203): a change's conformance says how many operations it has, which
  *   the check doesn't look at (`operations`), so the app says they aren't checked. Additive only.
+ *   Also in 3.19.0 (ADR 0203 A, the app's half): a stage's thread shows the stage's own blocking
+ *   findings (the built-in gate `stage-<stage>`): each open one says whether the person using the
+ *   app may accept it and, if not, why (`StageFindingView.accept`, `StageAcceptRefusal`); an
+ *   accepted one says who, why and when (`accepted`). POST /api/changes/{id}/stages/{stage}/accept
+ *   (`StageAcceptRequest`, `StageAcceptResult`) accepts one as `atticus finding … waive` does,
+ *   in the app's person's name, and refuses what that refuses. Additive only.
+ *   Also in 3.19.0 (ADR 0203 A, addendum 2026-11-22): the Accept's result says what the app did
+ *   with the stage next, whoever started it (`StageAcceptResult.goesOn`, `StageAcceptThen`): it
+ *   goes on once nothing else holds the stage and no step of it runs. POST /api/runs/handoff
+ *   answers 409 for a stage's step while an AI step runs on the server or the same stage runs.
  *   Also in 3.19.0 (ADR 0203 C.3): a finding row's `lens` may be `persona`, and then it carries
  *   `persona`, the name of the persona whose naysayer raised it; `GET /api/findings?lens=persona`
  *   lists those, and no question's lens does. Additive only.
@@ -3410,6 +3420,28 @@ export const StageComment = z.object({
   /** A draft of the stage has read it. */
   read: z.boolean(),
 });
+/**
+ * 3.19.0 (ADR 0203 A): why a stage's finding can't be accepted here: a constitution rule (rule
+ * 6), an assistant recorded as the app's person, a Copilot session Atticus started, or the row
+ * of the ADR's table its rule is in (the planner's `wayOnKind`).
+ */
+export const StageAcceptRefusal = z.enum([
+  "constitution",
+  "assistant",
+  "assistant-session",
+  "document-over-code",
+  "nothing-to-plan",
+  "needs-catalog",
+  "contradicts-fact",
+  "data-safety",
+  "archived-repo",
+  "cites-missing-code",
+  "order",
+  "answer-shape",
+  "next-stage-needs",
+]);
+/** 3.19.0 (ADR 0203 A): an acceptance of a stage's finding, as its file records it. */
+export const StageAcceptance = z.object({ by: z.string(), why: z.string(), at: z.string() });
 export const StageFindingView = z.object({
   finding: Finding,
   /** The finding's file, from the metarepo's root. */
@@ -3440,6 +3472,23 @@ export const StageFindingView = z.object({
       reason: z.string().optional(),
     })
     .optional(),
+  /**
+   * 3.19.0 (ADR 0203 A): on an open blocking finding of a stage's own gate (`stage-<stage>`),
+   * whether the person using the app may accept it (POST .../stages/{stage}/accept), and if not,
+   * why (`StageAcceptRefusal`); `as` is who an acceptance would be recorded as. Optional.
+   */
+  accept: z
+    .object({
+      can: z.boolean(),
+      why: StageAcceptRefusal.optional(),
+      as: z.string(),
+    })
+    .optional(),
+  /**
+   * 3.19.0 (ADR 0203 A): a stage's finding a person accepted, as the stages read it (never an
+   * assistant's resolution): who, why and when. Optional.
+   */
+  accepted: StageAcceptance.optional(),
 });
 export const StageReviewView = z.object({
   change: z.string(),
@@ -3651,11 +3700,56 @@ export const StageThreadPostResult = z.object({
   files: z.array(z.string()),
   thread: StageThreadView,
 });
+/**
+ * 3.19.0 (ADR 0203 A): accept a stage's blocking finding, as `atticus finding <change> <id> waive
+ * --reason <why>` does, in the name of the person using the app. The reason is required (as the
+ * command line's); no `by`: the app records its person, never a name typed here.
+ */
+export const StageAcceptRequest = z.strictObject({
+  finding: z.string().regex(/^stage-[0-9a-f]{12}$/),
+  reason: z.string().trim().min(1),
+});
+/**
+ * What the app did with the stage after an Accept (ADR 0203 A, addendum 2026-11-22), whoever
+ * started it: `done`, `questions` (it went on and waits on a question), `stopped` (it went on and
+ * stopped again), `drafting` (a new prompt waits for the assistant, `runId`), `waiting` (the
+ * prompt it waited on still waits for its answer, `runId`), `failed` (that answer still fails its
+ * checks, `runId`), `held` (`held` other open blocking findings and questions still hold it, so it
+ * didn't go on) or `not-resumed` (it couldn't; `lines` say why). `lines`: what the stage said, in
+ * the app's words.
+ */
+export const StageAcceptThen = z.object({
+  kind: z.enum([
+    "done",
+    "questions",
+    "stopped",
+    "drafting",
+    "waiting",
+    "failed",
+    "held",
+    "not-resumed",
+  ]),
+  runId: z.string().optional(),
+  held: z.number().int().positive().optional(),
+  lines: z.array(z.string()).optional(),
+});
+export const StageAcceptResult = z.object({
+  /** The finding's file, from the metarepo's root. */
+  files: z.array(z.string()),
+  accepted: StageAcceptance,
+  thread: StageThreadView,
+  /** What the app did with the stage next. Optional: an older server says nothing. */
+  goesOn: StageAcceptThen.optional(),
+});
 export type ThreadStageT = z.infer<typeof ThreadStage>;
 export type ThreadItemT = z.infer<typeof ThreadItem>;
 export type StageThreadViewT = z.infer<typeof StageThreadView>;
 export type StageThreadPostT = z.infer<typeof StageThreadPost>;
 export type StageThreadPostResultT = z.infer<typeof StageThreadPostResult>;
+export type StageAcceptRequestT = z.infer<typeof StageAcceptRequest>;
+export type StageAcceptResultT = z.infer<typeof StageAcceptResult>;
+export type StageAcceptThenT = z.infer<typeof StageAcceptThen>;
+export type StageAcceptRefusalT = z.infer<typeof StageAcceptRefusal>;
 export type StageFindingViewT = z.infer<typeof StageFindingView>;
 export type StageCommentResultT = z.infer<typeof StageCommentResult>;
 
@@ -9316,11 +9410,11 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "prepareStep",
       summary:
-        "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+        "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done. 3.19.0: a stage's step is refused (409) while an AI step runs on the server or the same stage of the change runs",
       tag: "ai",
       body: StartStepRequest,
       ok: { status: 201, schema: "PreparedStepView", description: "Prepared" },
-      errors: [400, 422],
+      errors: [400, 409, 422],
     },
   },
   "/api/links/candidates": {
@@ -10793,6 +10887,18 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409, 422],
     },
   },
+  "/api/changes/{changeId}/stages/{stage}/accept": {
+    post: {
+      id: "acceptStageFinding",
+      summary:
+        "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant (a coding assistant's terminal included), or inside a Copilot session Atticus started; 409 when it is no longer open. Then the app goes on with the stage, whoever started it, once nothing else holds it and no step of it runs, and says what it did (goesOn). Returns the file written, the thread and goesOn",
+      tag: "changes",
+      params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...THREAD_STAGES] } })],
+      body: StageAcceptRequest,
+      ok: { status: 200, schema: "StageAcceptResult", description: "Accepted" },
+      errors: [400, 403, 404, 409],
+    },
+  },
   "/api/changes/{changeId}/knowledge": {
     get: {
       id: "getChangeKnowledge",
@@ -11035,6 +11141,7 @@ export function openApiDocument(): Record<string, unknown> {
     StageCommentResult,
     StageThreadView,
     StageThreadPostResult,
+    StageAcceptResult,
     ChangeProblems,
     PlacementView,
     StageDraftsView,

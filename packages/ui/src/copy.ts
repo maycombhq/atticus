@@ -7525,6 +7525,125 @@ export const COPY = {
         ? `The rule checks ran; ${waiting === 1 ? "an AI lens waits" : `${waiting} AI lenses wait`} for your assistant in the stage's thread.`
         : "The rule checks ran.",
   },
+  /**
+   * ADR 0203 A: a person accepts a stage's own blocking finding (the stage's thread). The command
+   * line's `atticus finding <change> <id> waive --reason` writes it; these are the app's words.
+   */
+  accept: {
+    stageFinding: "The stage's checks found",
+    accept: "Accept…",
+    acceptFor: (id: string) => `Accept ${id}…`,
+    title: (rule: string) => `Accept ${rule}`,
+    intro:
+      "Accept it when you know better than the map: what it names is real, or it doesn't matter for this change. Only a person accepts a finding.",
+    who: "Accepted by",
+    whoIs: (handle: string) => `${handle}, your Git user as the app knows it`,
+    whoHint:
+      "The app records the person using it, never a name typed here. To accept it in someone else's name, they accept it themselves.",
+    reason: "Why you accept it (required)",
+    reasonHint:
+      "What you know that the map doesn't. It is kept on the finding, shown in the stage's files, and listed in the stage's hand-off PR.",
+    needReason: "Write why you accept it first: an acceptance always has a reason.",
+    preview: "What accepting it does",
+    previewRecord: (file: string) =>
+      `It is written to ${file} with your name and your reason. The file goes with the stage's hand-off PR, where the Git host decides who approves it.`,
+    previewDone: (stage: string, command: string) =>
+      `Nothing else blocks the ${stage} stage: the app runs it again as soon as you accept it (${command}), and it checks its files and can end done, with no new draft.`,
+    previewWaiting: (stage: string) =>
+      `Nothing else blocks the ${stage} stage: the app goes on with it as soon as you accept it, checking your assistant's answer with the acceptance, and the stage can end done on it.`,
+    previewOthers: (stage: string, n: number) =>
+      `${n === 1 ? "One other blocking finding or question is" : `${n} other blocking findings or questions are`} still open at the ${stage} stage: it ends done once ${n === 1 ? "that is" : "they are"} settled too.`,
+    /** What the later stages do with an accepted case: the ADR's table, row by row. */
+    carries: {
+      "feature.unknown-repo":
+        "The later stages know the repo as a new one: the deploy order may name it, the stories put its tasks under it, and the task run says to create it and add it to the manifest.",
+      "operation.unknown-repo":
+        "The later stages know the repo as a new one: the deploy order may name it, the stories put its tasks under it, and the task run says to create it and add it to the manifest.",
+      "delta.unknown-component":
+        "The later stages know the call's target as accepted, as an outside system is, and its task names it. Conformance still checks that the code makes the call.",
+      "delta.unknown-entry":
+        "The later stages show the entry point as accepted, and its task names it. Conformance still checks that the code makes the call.",
+      "delta.unknown-consumer":
+        'The later stages know the consumer as accepted and pass it with a note; design.md lists it with "its use can\'t be checked". No task is made for it.',
+      "stories.unknown-consumer":
+        'The later stages know the consumer as accepted and pass it with a note; design.md lists it with "its use can\'t be checked". No task is made for it.',
+      "delta.consumer-missing":
+        "design.md lists the consumers the map knows and the draft leaves out as not affected, with your name and reason, and no task is made for them. The critic's lenses get the acceptance as a recorded fact.",
+      "delta.new-folder": "The task says the folder is new, and creates it.",
+      "stories.field-not-checked":
+        "The story file says under the task that it has no criterion for the field, accepted by you, and the hand-up's review gets the acceptance, so it isn't raised again.",
+      "stories.field-no-validation":
+        "The story file says under the task that it has no criterion for the field, accepted by you, and the hand-up's review gets the acceptance, so it isn't raised again.",
+      "stories.field-no-error-case":
+        "The story file says under the task that it has no criterion for the field, accepted by you, and the hand-up's review gets the acceptance, so it isn't raised again.",
+      "stories.shape-uncovered":
+        "The story file says under the task that it has no criterion for the shape, accepted by you, and the hand-up's review gets the acceptance, so it isn't raised again.",
+    } as Record<string, string>,
+    carriesDefault: "The later stages carry the acceptance, with your name and reason.",
+    noUndo:
+      "There is no Undo for an acceptance, in the app or on the command line: it is recorded in the finding's file, which goes with the stage's hand-off PR for review.",
+    submit: "Accept it",
+    busy: "Accepting…",
+    cancel: "Cancel",
+    close: "Close",
+    done: (id: string, stage: string) =>
+      `Accepted. ${id} no longer blocks the ${stage} stage, and the stage's next run reads your reason.`,
+    /** ADR 0203 A (addendum 2026-11-22): what the app did with the stage after the Accept. */
+    went: {
+      done: (stage: string) => `Accepted. The app went on with the ${stage} stage, and it is done.`,
+      questions: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage, which now waits on the question below.`,
+      stopped: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage, and it stopped again: what it says is below.`,
+      drafting: (stage: string) =>
+        `Accepted. The app went on with the ${stage} stage: something else needs a new draft, and its prompt for your assistant is below.`,
+      waiting: (stage: string) =>
+        `Accepted. The ${stage} stage goes on when your assistant's answer arrives: the app checks it with the acceptance, with nothing for you to press.`,
+      failed: (stage: string) =>
+        `Accepted. Your assistant's answer still doesn't pass the ${stage} stage's checks: its problems are below. Tell the assistant, or fix the file, and the app checks it again and goes on.`,
+      held: (stage: string, n: number) =>
+        `Accepted. ${n === 1 ? "One more finding or question still holds" : `${n} more findings or questions still hold`} the ${stage} stage, so the app didn't go on yet: accept ${n === 1 ? "it" : "each"} below and the app goes on by itself, or settle ${n === 1 ? "it" : "them"} another way and press Start the next round.`,
+      notResumed: (stage: string, why?: string) =>
+        `Accepted, but the app couldn't go on with the ${stage} stage${why ? `: ${why.replace(/[.!?]+$/, "")}` : ""}. Press Start the next round to try again.`,
+    },
+    /** A refusal (403) the card keeps once the form is closed, with no Accept to press again. */
+    refused: (words: string) => `Not accepted: ${words}`,
+    acceptedTitle: (stage: string) => `Accepted at the ${stage} stage`,
+    acceptedBy: (by: string, why: string) =>
+      `Accepted by ${by}: ${why.trim().replace(/[.!?]+$/, "")}.`,
+    acceptedOn: (at: string) => `On ${at.slice(0, 10)}`,
+    /** Why a finding can't be accepted, each leading with what to do. */
+    cant: {
+      constitution:
+        "Fix it: it comes from a constitution rule, which no one can accept or set aside (rule 6).",
+      assistant:
+        "Ask a person to accept it: the app is recording an assistant, and only a person accepts a finding.",
+      "assistant-session":
+        "Accept it in the app or a terminal of your own: this app runs inside a Copilot session Atticus started, and only a person accepts a finding.",
+      "document-over-code":
+        "Fix the note, or the code: a document never overrides a fact verified from code (rule 6), so this can't be accepted.",
+      "nothing-to-plan":
+        "Take the change on the quick path (atticus change new --from <requirements.md>): with no flow and no operation there is nothing left to plan, so accepting it can't help.",
+      "needs-catalog":
+        "Put it under newFlows or mark it new, or read the repo (atticus map <repo>): the next stage needs today's steps, or the column's type and classification, from the map, so this can't be accepted.",
+      "contradicts-fact":
+        "Take new off, or run the stage again: the draft contradicts a fact verified from code, and a document never overrides one, so this can't be accepted.",
+      "data-safety":
+        "Answer its question with a choice, or fix the draft as it says: it is about data safety, so this can't be accepted.",
+      "archived-repo":
+        "Put the work in the repo that took over the archived repo's work, or take archived off in the manifest: an archived repo takes no new work, so this can't be accepted.",
+      "cites-missing-code":
+        "Give new: <file> for new code, or cite the line that is there: the place cites code that isn't there, so this can't be accepted.",
+      order:
+        "Fix the order or the file as it says: a wrong order is not a matter of opinion, so this can't be accepted.",
+      "answer-shape":
+        "Fix the file it names: the answer doesn't read, or a design element is unmapped, so this can't be accepted.",
+      "next-stage-needs":
+        "Fix it as it says: the next stage can't do its work with it open, so this can't be accepted.",
+    } as Record<string, string>,
+    cantAssistant: (who: string) =>
+      `Ask a person to accept it: the app is recording ${who}, an assistant, and only a person accepts a finding.`,
+  },
   /** ADR 0181 part 4: each role answers its own questions on a change. */
   roles: {
     names: {

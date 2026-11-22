@@ -29,13 +29,18 @@ import {
 } from "@maycombhq/knowledge";
 import {
   STORY_PROSE_OUTPUT,
-  checkStageDraft,
+  draftForAPerson,
   formatDraftProblems,
+  recordDraftFindings,
+  rerunOf,
+  stageDraftIssues,
   stageOfOutput,
   DRAFT_OUTPUT,
   parseDraft,
   TEMPLATE_PROSE_CHANGE,
   TEMPLATE_PROSE_OUTPUT,
+  type Stage,
+  type StageIssue,
 } from "@maycombhq/planner";
 import { completeHandUpLens, handUpLensTask } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
@@ -288,10 +293,12 @@ export async function handoffDone(
   const before = await readRunJson(root, runId);
   const checks = before ? (before.state === "failed" ? before.attempt + 1 : before.attempt) : 1;
   let handedAsIs: number | undefined;
+  /** ADR 0203 A (addendum 2026-11-22): a draft handed in for a person to accept its findings. */
+  let forAPerson: { stage: Stage; issues: StageIssue[] } | undefined;
   const selfChecked = async (file: string, request: AiRequest): Promise<string[]> => {
     const stage = stageOfOutput(request.outputPath);
     if (!request.selfCheck || !stage) return [];
-    const problems = await checkStageDraft(
+    const issues: StageIssue[] = await stageDraftIssues(
       root,
       request.change,
       stage,
@@ -299,7 +306,14 @@ export async function handoffDone(
     ).catch((e: Error) => [
       { rule: "stage.check", target: stage, message: e.message, blocking: true },
     ]);
+    const problems = issues.filter((i) => i.blocking);
     if (!problems.length) return [];
+    // Every problem is one a person may accept: no check of the assistant's can settle it, so
+    // it is handed in on this check and goes to a person, as after the last check.
+    if (draftForAPerson(issues)) {
+      forAPerson = { stage, issues };
+      return [];
+    }
     if (checks >= request.selfCheck.limit) {
       handedAsIs = checks;
       return [];
@@ -412,6 +426,32 @@ export async function handoffDone(
       return 0;
     }
     if (kind === "step-answer") {
+      if (forAPerson) {
+        const at = (deps.now?.() ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+        const found = await recordDraftFindings(
+          root,
+          run.request.change,
+          forAPerson.stage,
+          forAPerson.issues,
+          at,
+        );
+        const one = found.length === 1;
+        io.out(
+          `${run.request.outputPath} is handed in for a person: the stage's checks found ${one ? "1 finding" : `${found.length} findings`} a person may accept (${[...new Set(found.map((f) => f.rule))].join(", ")}), so ${one ? "it is" : "they are"} on the stage's gate now.`,
+        );
+        // Said to the person who accepts, not to the assistant that handed the draft in.
+        for (const f of found)
+          io.out(
+            `  - ${f.message} A person accepts it in the app, or with: atticus finding ${run.request.change} ${f.id} waive --reason "<why>"`,
+          );
+        io.out(
+          "Or the person tells the assistant how to fix the draft, and the stage drafts again.",
+        );
+        io.out(
+          `Once ${one ? "it is" : "each is"} accepted, the stage goes on from this draft: in the app by itself, in a terminal with: ${rerunOf(forAPerson.stage, run.request.change)} --resume ${runId}`,
+        );
+        return 0;
+      }
       if (handedAsIs)
         io.out(
           run.request.change === "knowledge-scan"

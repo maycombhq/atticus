@@ -26,6 +26,8 @@ async function run(
     output?: string;
     batch?: string;
     parts?: { name: string; runId: string }[];
+    /** The answer its check read, as run.json records it (`output`). */
+    recorded?: string;
   } = {},
 ) {
   const dir = join(root, ".runs", CHANGE, id);
@@ -48,6 +50,7 @@ async function run(
       errors: [],
       ...(o.batch ? { batch: o.batch } : {}),
       ...(o.parts ? { parts: o.parts } : {}),
+      ...(o.recorded !== undefined ? { output: o.recorded } : {}),
     }),
   );
   return dir;
@@ -133,6 +136,29 @@ describe("the runs to check", () => {
     ]);
     expect((await dueRuns(root, { stableMs: 10, now: Date.now(), tried })).due).toEqual([
       "run-20261109090000-0003",
+    ]);
+    expect((await dueRuns(root, { stableMs: 10, now: Date.now(), tried })).due).toEqual([]);
+  });
+});
+
+describe("a failed answer fixed in its file", () => {
+  // ADR 0203 A's journey: a draft the stage's checks refused, then a person accepted the finding
+  // and the assistant handed it in again. run.json keeps the text its check read (`output`); the
+  // app's check reads the file, so the fixed answer is looked at, once.
+  it("is checked again once the file differs from the answer its check read", async () => {
+    const root = await metarepo();
+    const tried = new Map<string, string>();
+    const f = await run(root, "run-20261109090000-0004", {
+      state: "failed",
+      recorded: "summary: was wrong\n",
+    });
+    await writeFile(join(f, "feature-answer.yaml"), "summary: was wrong\n");
+    await old(join(f, "feature-answer.yaml"));
+    expect((await dueRuns(root, { stableMs: 10, now: Date.now(), tried })).due).toEqual([]);
+    await writeFile(join(f, "feature-answer.yaml"), "summary: handed in again\n");
+    await old(join(f, "feature-answer.yaml"));
+    expect((await dueRuns(root, { stableMs: 10, now: Date.now(), tried })).due).toEqual([
+      "run-20261109090000-0004",
     ]);
     expect((await dueRuns(root, { stableMs: 10, now: Date.now(), tried })).due).toEqual([]);
   });

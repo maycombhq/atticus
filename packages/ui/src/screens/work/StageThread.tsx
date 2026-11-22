@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { focusIfLost, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message } from "../know/common.js";
@@ -23,6 +23,7 @@ import { HandoffStep } from "../../app/runstep.js";
  */
 
 const T = COPY.thread;
+const A = COPY.accept;
 type View_ = Api.StageThreadViewT;
 type Item = Api.ThreadItemT;
 type Stage = Api.ThreadStageT;
@@ -40,6 +41,200 @@ export interface ThreadHandlers {
   ) => Promise<unknown>;
   onKeep?: (key: string) => Promise<unknown>;
   onAnswered?: () => void;
+  /** ADR 0203 A: accept a stage's own finding with a reason, as the person using the app. */
+  onAccept?: (item: FindingItem, reason: string) => Promise<unknown>;
+}
+
+/** What the Accept form needs of the thread around the finding. */
+interface AcceptContext {
+  stage: string;
+  /** The stage's command, to run it again. */
+  command: string;
+  /** Other open blocking findings and open questions at the stage. */
+  others: number;
+  /**
+   * The stage goes on from the assistant's next answer (a prompt waits, or its last answer is to
+   * be fixed); otherwise it stopped, and its next run checks its files with no new draft.
+   */
+  waiting: boolean;
+  /** The accepted list is on the page and says there is no Undo: the form doesn't say it again. */
+  noUndoShown?: boolean;
+}
+
+/**
+ * A stage's message once accepted ends "(accepted by <who>: <why>.)", which the accepted list
+ * says on its own line: said once.
+ */
+export const withoutAccepted = (summary: string) =>
+  summary.replace(/ \(accepted by [^)]*\)\.?$/, "");
+
+/** A stage's own finding (ADR 0203 A): one on the built-in gate `stage-<stage>`. */
+const ownFinding = (f: { gate: string }) => f.gate.startsWith("stage-");
+
+/**
+ * What accepting a stage's finding does, before anything is written (ADR 0203 A.5, A.6): where it
+ * is recorded, whether the stage can then end done, and what the later stages do with it.
+ */
+export function acceptPreview(o: AcceptContext & { rule: string; file: string }): string[] {
+  return [
+    A.previewRecord(o.file),
+    o.others > 0
+      ? A.previewOthers(o.stage, o.others)
+      : o.waiting
+        ? A.previewWaiting(o.stage)
+        : A.previewDone(o.stage, o.command),
+    A.carries[o.rule] ?? A.carriesDefault,
+  ];
+}
+
+/**
+ * The status line after an Accept (ADR 0203 A, addendum 2026-11-22): what the app did with the
+ * stage, whoever started it; where it couldn't go on, what to press. An older server says nothing
+ * of it, and the line says the acceptance alone.
+ */
+export function acceptedNote(
+  id: string,
+  stage: string,
+  goesOn: Api.StageAcceptThenT | undefined,
+): string {
+  if (!goesOn) return A.done(id, stage);
+  if (goesOn.kind === "held") return A.went.held(stage, goesOn.held ?? 1);
+  if (goesOn.kind === "not-resumed") return A.went.notResumed(stage, goesOn.lines?.[0]);
+  return A.went[goesOn.kind](stage);
+}
+
+/** The `goesOn` of an Accept's answer, when the server sent one. */
+const goesOnOf = (r: unknown): Api.StageAcceptThenT | undefined =>
+  r && typeof r === "object" && "goesOn" in r
+    ? ((r as { goesOn?: Api.StageAcceptThenT }).goesOn ?? undefined)
+    : undefined;
+
+type AcceptState = "idle" | "invalid" | "busy" | "error" | "refused";
+
+/**
+ * Accept a stage's finding: who (the person the app records, shown, never typed), why
+ * (required), and what accepting does. A refusal (403: the command line's own words) leaves no
+ * Accept to press again. `initial` lets tests render each state.
+ */
+export function AcceptForm(
+  p: AcceptContext & {
+    it: FindingItem;
+    onAccept?: (reason: string) => Promise<unknown>;
+    onCancel: () => void;
+    /** A 403: the server's words, which the card keeps once the form is closed. */
+    onRefused?: (words: string) => void;
+    initial?: { reason?: string; state?: AcceptState; error?: string };
+  },
+) {
+  const id = useId();
+  const f = p.it.view.finding;
+  const as = p.it.view.accept?.as ?? "";
+  const [reason, setReason] = useState(p.initial?.reason ?? "");
+  const [state, setState] = useState<AcceptState>(p.initial?.state ?? "idle");
+  const [error, setError] = useState(p.initial?.error);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const said = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (state === "invalid") box.current?.focus();
+    if (state === "error" || state === "refused") focusIfLost(said.current);
+  }, [state]);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (state === "busy" || state === "refused") return;
+    if (!reason.trim()) return setState("invalid");
+    setState("busy");
+    setError(undefined);
+    void (p.onAccept?.(reason.trim()) ?? Promise.resolve()).then(
+      () => setState("idle"),
+      (err: unknown) => {
+        const words = message(err);
+        setError(words);
+        const refused = err instanceof ApiError && err.problem.status === 403;
+        setState(refused ? "refused" : "error");
+        if (refused) p.onRefused?.(words);
+      },
+    );
+  };
+  const lines = acceptPreview({ ...p, rule: f.rule, file: p.it.view.file });
+  const alert =
+    state === "invalid"
+      ? A.needReason
+      : state === "error" || state === "refused"
+        ? error
+        : undefined;
+  return (
+    <form
+      className="stack thread-accept"
+      style={{ gap: 6, marginTop: 8 }}
+      aria-labelledby={`${id}-t`}
+      aria-busy={state === "busy" ? "true" : undefined}
+      onSubmit={submit}
+      noValidate
+    >
+      <h3 id={`${id}-t`} className="hud" style={{ margin: 0 }}>
+        {A.title(f.rule)}
+      </h3>
+      <p className="work-say" style={{ margin: 0 }}>
+        {A.intro}
+      </p>
+      <p style={{ margin: 0 }}>
+        <span className="hud">{A.who}</span> <strong>{A.whoIs(as)}</strong>
+      </p>
+      <p className="muted" style={{ margin: 0 }}>
+        {A.whoHint}
+      </p>
+      <label htmlFor={`${id}-r`} className="hud">
+        {A.reason}
+      </label>
+      <textarea
+        id={`${id}-r`}
+        ref={box}
+        className="field"
+        rows={3}
+        required
+        aria-required="true"
+        aria-invalid={state === "invalid" ? "true" : undefined}
+        aria-describedby={`${id}-h ${id}-p${alert ? ` ${id}-e` : ""}`}
+        value={reason}
+        disabled={state === "busy"}
+        onChange={(e) => {
+          setReason(e.target.value);
+          if (state === "invalid") setState("idle");
+        }}
+      />
+      <p id={`${id}-h`} className="work-say" style={{ margin: 0 }}>
+        {A.reasonHint}
+      </p>
+      <div id={`${id}-p`} className="stack" style={{ gap: 4 }}>
+        <span className="hud">{A.preview}</span>
+        <ul className="stage-comments">
+          {lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+        {!p.noUndoShown && (
+          <p className="muted" style={{ margin: 0 }}>
+            {A.noUndo}
+          </p>
+        )}
+      </div>
+      {alert && (
+        <p id={`${id}-e`} ref={said} tabIndex={-1} role="alert" className="state error">
+          {alert}
+        </p>
+      )}
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        {state !== "refused" && (
+          <button type="submit" className="btn primary" disabled={state === "busy"}>
+            {state === "busy" ? A.busy : A.submit}
+          </button>
+        )}
+        <button type="button" className="btn" onClick={p.onCancel}>
+          {state === "refused" ? A.close : A.cancel}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 /** A reply saved whose next round didn't start (review of beta.23): the reply isn't to be sent again. */
@@ -153,17 +348,33 @@ function AnswerItem({ it }: { it: Extract<Item, { kind: "answer" }> }) {
   );
 }
 
-function FindingCardInThread(p: {
+export function FindingCardInThread(p: {
   it: FindingItem;
   change: string;
   onReplyTo: (it: FindingItem) => void;
   onAct?: ThreadHandlers["onAct"];
+  onAccept?: ThreadHandlers["onAccept"];
+  onAccepted?: (id: string, result: unknown) => void;
   onFixToAssistant: (it: FindingItem) => void;
   reason: string;
+  accept: AcceptContext;
+  /** Tests: the card as it is after a refusal. */
+  initial?: { refused?: string };
 }) {
   const f = p.it.view.finding;
   const o = p.it.view.options;
+  const own = ownFinding(f);
+  const ac = p.it.view.accept;
   const [editing, setEditing] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  // A refusal (403) is the server's last word on it: no Accept to press again, until it reads.
+  const [refused, setRefused] = useState<string | undefined>(p.initial?.refused);
+  const acceptAt = useRef<HTMLButtonElement>(null);
+  const wasAccepting = useRef(false);
+  useEffect(() => {
+    if (!accepting && wasAccepting.current) acceptAt.current?.focus();
+    wasAccepting.current = accepting;
+  }, [accepting]);
   const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
   const open = f.state === "open";
   const where = `${f.artifact}${f.locator.line ? `:${f.locator.line}` : ""}`;
@@ -184,9 +395,12 @@ function FindingCardInThread(p: {
     );
   };
   return (
-    <article className="thread-item stage-finding" aria-label={`${T.finding}: ${f.id}`}>
+    <article
+      className="thread-item stage-finding"
+      aria-label={`${own ? A.stageFinding : T.finding}: ${f.id}`}
+    >
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <span className="hud">{T.finding}</span>
+        <span className="hud">{own ? A.stageFinding : T.finding}</span>
         <span
           className={`chip ${f.severity === "blocking" ? "blocking" : f.severity === "gap" ? "warn" : "dim"}`}
         >
@@ -242,7 +456,36 @@ function FindingCardInThread(p: {
               {T.notRelevant}
             </button>
           )}
+          {ac?.can && !accepting && !refused && (
+            <button
+              ref={acceptAt}
+              type="button"
+              className="btn"
+              aria-label={A.acceptFor(f.id)}
+              onClick={() => setAccepting(true)}
+            >
+              {A.accept}
+            </button>
+          )}
         </div>
+      )}
+      {open && ac && !ac.can && ac.why && (
+        <p className="work-say">
+          {ac.why === "assistant" && ac.as ? A.cantAssistant(ac.as) : A.cant[ac.why]}
+        </p>
+      )}
+      {open && refused && !accepting && <p className="work-say">{A.refused(refused)}</p>}
+      {open && ac?.can && accepting && (
+        <AcceptForm
+          it={p.it}
+          {...p.accept}
+          onRefused={setRefused}
+          onCancel={() => setAccepting(false)}
+          onAccept={async (reason) => {
+            const r = await (p.onAccept?.(p.it, reason) ?? Promise.resolve());
+            p.onAccepted?.(f.id, r);
+          }}
+        />
       )}
       {editing && p.it.edit && (
         <div className="stack" style={{ gap: 6, marginTop: 8 }}>
@@ -349,7 +592,9 @@ function ThreadItemView(p: {
   handlers: ThreadHandlers;
   onReplyTo: (it: FindingItem) => void;
   onFixToAssistant: (it: FindingItem) => void;
+  onAccepted: (id: string, result: unknown) => void;
   reason: string;
+  accept: (it: FindingItem) => AcceptContext;
 }) {
   const it = p.it;
   switch (it.kind) {
@@ -375,8 +620,11 @@ function ThreadItemView(p: {
           change={p.change}
           onReplyTo={p.onReplyTo}
           onFixToAssistant={p.onFixToAssistant}
+          onAccepted={p.onAccepted}
           reason={p.reason}
+          accept={p.accept(it)}
           {...(p.handlers.onAct ? { onAct: p.handlers.onAct } : {})}
+          {...(p.handlers.onAccept ? { onAccept: p.handlers.onAccept } : {})}
         />
       );
     case "question":
@@ -544,10 +792,22 @@ export function ReplacePersonFiles(p: { files: string[]; args: string[]; asking?
 }
 
 /** The thread from loaded data, so tests can render every state. */
-export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadHandlers) {
+export function StageThreadView(
+  p: {
+    of: Loaded<View_>;
+    stage: Stage;
+    /** Tests: the note an Accept left. */ initialNote?: string;
+  } & ThreadHandlers,
+) {
   const [about, setAbout] = useState<FindingItem | undefined>();
   const [text, setText] = useState("");
   const [starting, setStarting] = useState<{ busy: boolean; error?: string }>({ busy: false });
+  const [acceptedSaid, setAcceptedNote] = useState<string | undefined>(p.initialNote);
+  const noteAt = useRef<HTMLParagraphElement>(null);
+  const acceptedId = useId();
+  useEffect(() => {
+    if (acceptedSaid) focusIfLost(noteAt.current);
+  }, [acceptedSaid]);
   const box = useRef<HTMLTextAreaElement>(null);
   const replyTo = (it: FindingItem) => {
     setAbout(it);
@@ -564,9 +824,34 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
             setText(T.fixToAssistant(it.view.options.fix));
             box.current?.focus();
           };
+          // ADR 0203 A: an accepted finding of the stage is listed apart, with who and why.
+          const accepted = v.items.filter(
+            (i): i is FindingItem => i.kind === "finding" && !!i.view.accepted,
+          );
+          const timeline = v.items.filter((i) => !(i.kind === "finding" && i.view.accepted));
+          const acceptOf = (it: FindingItem): AcceptContext => ({
+            noUndoShown: accepted.length > 0,
+            stage: v.stage,
+            command: `atticus ${v.step.join(" ")}`,
+            waiting: !!v.waiting || (v.state !== "stopped" && v.state !== "questions"),
+            others: v.items.filter(
+              (i) =>
+                (i.kind === "finding" &&
+                  i.view.finding.id !== it.view.finding.id &&
+                  i.view.finding.state === "open" &&
+                  i.view.finding.severity === "blocking") ||
+                (i.kind === "question" && i.question.state === "open"),
+            ).length,
+          });
           return (
             <div className="stack" style={{ gap: 10 }}>
-              <p role="status" aria-live="polite" className="thread-headline" style={{ margin: 0 }}>
+              {/* Announced once: after an Accept its note says what happened, so the headline,
+                  which changes with it, is no live region beside it. */}
+              <p
+                {...(acceptedSaid ? {} : { role: "status", "aria-live": "polite" as const })}
+                className="thread-headline"
+                style={{ margin: 0 }}
+              >
                 {v.headline}
               </p>
               {v.byPerson && v.byPerson.length > 0 && (
@@ -605,16 +890,27 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                   )}
                 </div>
               )}
-              {v.items.length === 0 ? (
+              {acceptedSaid && (
+                <p
+                  ref={noteAt}
+                  tabIndex={-1}
+                  role="status"
+                  className="work-say"
+                  style={{ margin: 0 }}
+                >
+                  {acceptedSaid}
+                </p>
+              )}
+              {timeline.length === 0 ? (
                 // Beta.27 review: a stage done with nothing in its conversation (a proposal
                 // written outside the app) says so in its headline; "nothing has happened" under
                 // it would say it twice, and wrongly.
-                v.state === "done" ? null : (
+                v.state === "done" || accepted.length > 0 ? null : (
                   <div className="state">{T.empty}</div>
                 )
               ) : (
                 <ol className="thread" aria-label={T.title(p.stage)}>
-                  {v.items.map((it, i) => (
+                  {timeline.map((it, i) => (
                     <li key={`${it.kind}-${i}-${it.at}`}>
                       <ThreadItemView
                         it={it}
@@ -622,6 +918,10 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                         handlers={handlers}
                         onReplyTo={replyTo}
                         onFixToAssistant={fixToAssistant}
+                        onAccepted={(id, r) =>
+                          setAcceptedNote(acceptedNote(id, v.stage, goesOnOf(r)))
+                        }
+                        accept={acceptOf}
                         reason={
                           about &&
                           it.kind === "finding" &&
@@ -633,6 +933,33 @@ export function StageThreadView(p: { of: Loaded<View_>; stage: Stage } & ThreadH
                     </li>
                   ))}
                 </ol>
+              )}
+              {accepted.length > 0 && (
+                <section aria-labelledby={acceptedId} className="stack" style={{ gap: 6 }}>
+                  <h3 id={acceptedId} className="hud" style={{ margin: 0 }}>
+                    {A.acceptedTitle(v.stage)}
+                  </h3>
+                  <ul className="stage-comments">
+                    {accepted.map((it) => {
+                      const f = it.view.finding;
+                      const a = it.view.accepted!;
+                      return (
+                        <li key={f.id}>
+                          <span className="chip done">{f.rule}</span>{" "}
+                          <code className="mono muted">{f.id}</code>
+                          <p style={{ margin: "4px 0" }}>{withoutAccepted(f.summary)}</p>
+                          <p style={{ margin: 0 }}>{A.acceptedBy(a.by, a.why)}</p>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {A.acceptedOn(a.at)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {A.noUndo}
+                  </p>
+                </section>
               )}
               <ReplyBox
                 v={v}
@@ -703,6 +1030,16 @@ export function StageThreadPanel({ change, stage }: { change: string; stage: Sta
     await api(path, { method: "POST", body: { kind: "keep", key } });
     view.reload();
   };
+  // ADR 0203 A: the command line's own waive, in the name of the person using the app.
+  const onAccept: ThreadHandlers["onAccept"] = async (it, reason) => {
+    // ADR 0203 A (addendum 2026-11-22): the server goes on with the stage, and says how.
+    // A refusal reads the thread again too, so its Accept says what the server says now.
+    const r = await api(`/api/changes/${encodeURIComponent(change)}/stages/${stage}/accept`, {
+      method: "POST",
+      body: { finding: it.view.finding.id, reason },
+    }).finally(() => view.reload());
+    return r;
+  };
   return (
     <StageThreadView
       of={view}
@@ -711,6 +1048,7 @@ export function StageThreadPanel({ change, stage }: { change: string; stage: Sta
       onReply={onReply}
       onAct={onAct}
       onKeep={onKeep}
+      onAccept={onAccept}
       onAnswered={() => view.reload()}
     />
   );

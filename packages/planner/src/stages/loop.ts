@@ -92,6 +92,7 @@ import {
 } from "./finding-kind.js";
 import { STAGE_PHASE, STAGE_SCHEMA_VERSION, Stage, StageLoop, type LoopFinding } from "./schema.js";
 import {
+  acceptableStageRule,
   acceptanceOf,
   acceptedWords,
   readAccepted,
@@ -1742,6 +1743,29 @@ async function runLoop<A>(
         ...(answer !== undefined ? { answer } : {}),
         ...(waitingMore ? { moreQuestions: waitingMore } : {}),
       });
+    }
+    // ADR 0203 A (addendum 2026-11-22): in hand-off mode a draft whose every blocking finding a
+    // person may accept goes to a person, not back to the assistant: another draft can't say the
+    // map is behind. The stage stops; accepted, it is done on its next run with no new draft.
+    if (
+      o.runtime.kind === "hand-off" &&
+      blocking.length > 0 &&
+      heldIssues.length === 0 &&
+      blocking.every((f) => f.source === "stage" && acceptableStageRule(f.rule))
+    ) {
+      for (const f of blocking) f.stoppedAt = n;
+      const one = blocking.length === 1;
+      const rerun = rerunOf(spec.stage, change.id);
+      await stopNow(
+        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"} for a person: its draft has ${one ? "1 finding" : `${blocking.length} findings`} a person may accept.`,
+        [
+          ...blocking.map(
+            (f) =>
+              `  - ${f.message} (rule ${f.rule}; a person accepts it in the app, or with: atticus finding ${change.id} stage-${f.fingerprint} waive --reason "<why>")`,
+          ),
+          `Accept ${one ? "it" : "each"} with a reason when you know better than the map, then run ${rerun} again: the stage checks its files and is done with no new draft. Or tell your assistant how to fix ${rel}/${spec.source}, and run ${rerun} again for a new draft.`,
+        ],
+      );
     }
     if (blocking.length === 0 && heldIssues.length === 0) {
       // ADR 0115 addendum (2026-10-25): the critic's risks get one more draft, handed back with

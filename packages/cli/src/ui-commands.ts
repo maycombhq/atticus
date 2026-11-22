@@ -177,6 +177,7 @@ export function extendUiRoutes(
                     ctx,
                   ),
                   ctx,
+                  deps.env ? { env: deps.env } : {},
                 ),
                 ctx,
               ),
@@ -206,6 +207,10 @@ export function extendUiRoutes(
           ctx,
         ),
         ctx,
+        {
+          ...(deps.runStep ? { runStep: deps.runStep } : {}),
+          ...(deps.env ? { env: deps.env } : {}),
+        },
       ),
       ctx,
       deps.openFolder ? { openFolder: deps.openFolder } : {},

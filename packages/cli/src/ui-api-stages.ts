@@ -42,6 +42,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { stageGateViews, type AppPerson } from "./ui-api-accept.js";
 import { uiDraftRoutes } from "./ui-api-drafts.js";
 
 /**
@@ -85,8 +86,10 @@ const slashOf = (stage: Tab, change: string) => `/atticus-${stage} ${change}`;
 async function gateOf(root: string, change: string, stage: Tab) {
   const problems: { file: string; message: string }[] = [];
   let gate: string | undefined;
+  let ctx: Awaited<ReturnType<typeof loadChangeContext>> | undefined;
   try {
-    gate = stageGate(await loadChangeContext(root), stage);
+    ctx = await loadChangeContext(root);
+    gate = stageGate(ctx, stage);
   } catch (e) {
     problems.push({
       file: "org-pack",
@@ -96,7 +99,7 @@ async function gateOf(root: string, change: string, stage: Tab) {
   // No gate for the phase in gates.yaml: the review folder named for the phase, if there is one.
   if (!gate && (await reviewedGates(root, change)).includes(STAGE_PHASE[stage]))
     gate = STAGE_PHASE[stage];
-  return { gate, problems };
+  return { gate, problems, ctx };
 }
 
 async function latest(root: string, change: string, gate: string | undefined) {
@@ -122,9 +125,11 @@ export async function stageReviewView(
   root: string,
   change: string,
   stage: Tab,
+  /** ADR 0203 A: who the app records, for whether they may accept a stage's own finding. */
+  who?: AppPerson,
 ): Promise<Api.StageReviewViewT> {
   const rel = `${changesRelOf(root)}/${change}`;
-  const { gate, problems } = await gateOf(root, change, stage);
+  const { gate, problems, ctx } = await gateOf(root, change, stage);
   const l = await latest(root, change, gate);
   for (const b of l.bad) problems.push({ file: `${rel}/${b.path}`, message: b.message });
   const comments = await stageComments(root, change, stage);
@@ -133,8 +138,22 @@ export async function stageReviewView(
   // What an assistant proposed, waiting on a person (ADR 0115 addendum, 2026-10-25).
   const proposals =
     gate && l.round !== null ? await readProposals(root, change, gate, l.round) : [];
-  const findings = l.findings
-    .map((s) => {
+  // ADR 0203 A: the stage's own blocking findings, on its built-in gate, beside the critic's.
+  const own = await stageGateViews(root, change, stage, {
+    rel,
+    ctx,
+    who,
+    comments: (file) => comments.comments.filter((c) => c.about === file).map(view),
+  }).catch((e: unknown) => {
+    problems.push({
+      file: `${rel}/review/stage-${stage}`,
+      message: String((e as Error).message ?? e).split("\n")[0]!,
+    });
+    return { findings: [], problems: [] };
+  });
+  problems.push(...own.problems);
+  const findings = [
+    ...l.findings.map((s) => {
       const fileRel = `${rel}/${s.path}`;
       const p =
         s.finding.state === "open" ? proposals.find((x) => x.finding === s.finding.id) : undefined;
@@ -154,13 +173,14 @@ export async function stageReviewView(
             }
           : {}),
       };
-    })
-    .sort(
-      (a, b) =>
-        Number(a.finding.state !== "open") - Number(b.finding.state !== "open") ||
-        order[a.finding.severity] - order[b.finding.severity] ||
-        a.finding.id.localeCompare(b.finding.id),
-    );
+    }),
+    ...own.findings,
+  ].sort(
+    (a, b) =>
+      Number(a.finding.state !== "open") - Number(b.finding.state !== "open") ||
+      order[a.finding.severity] - order[b.finding.severity] ||
+      a.finding.id.localeCompare(b.finding.id),
+  );
   const questions: Question[] = [];
   for (const id of comments.others) {
     const q = await readQuestion(root, id).catch((e: unknown) => {
@@ -233,9 +253,11 @@ function tabOf(v: string): Tab {
 export function uiStageRoutes(
   r: Router,
   ctx: ServerContext,
-  deps: { now?: () => Date } = {},
+  deps: { now?: () => Date; env?: Record<string, string | undefined> } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
+  // Who acts, as the stage's thread reads it (ui-api-thread.ts): the two views agree on Accept.
+  const env = deps.env ?? process.env;
   const changeOf = async (v: string) => {
     if (!ID.test(v)) throw badRequest(`${JSON.stringify(v)} isn't a change id.`);
     if (!(await exists(join(changeFolder(ctx.root, v), "change.yaml"))))
@@ -310,7 +332,10 @@ export function uiStageRoutes(
     .add("GET", "/api/changes/{changeId}/stages/{stage}", async ({ params }) => {
       const stage = tabOf(params.stage!);
       const change = await changeOf(params.changeId!);
-      return { status: 200, body: await stageReviewView(ctx.root, change, stage) };
+      return {
+        status: 200,
+        body: await stageReviewView(ctx.root, change, stage, { user: ctx.user, env }),
+      };
     })
     .add("POST", "/api/changes/{changeId}/stages/{stage}/comments", async ({ params, body }) => {
       const stage = tabOf(params.stage!);

@@ -456,8 +456,13 @@ const stopping = new WeakSet<ChildProcess>();
 
 /** Start `atticus ui` on a free port and wait for its address. */
 export async function startApp(root: string): Promise<App> {
+  // The person's own app: started from their terminal, never a coding assistant's, whatever runs
+  // the journeys (an assistant's marks make the app record the assistant, which accepts nothing).
+  const env = { ...process.env };
+  for (const k of ["ATTICUS_ASSISTANT", "CLAUDECODE", "GEMINI_CLI", "CURSOR_AGENT"]) delete env[k];
   const server = spawn(process.execPath, [BIN, "ui", "--port", "0", "--root", root], {
     stdio: ["ignore", "pipe", "pipe"],
+    env,
   });
   const url = await new Promise<string>((resolve, reject) => {
     let out = "";

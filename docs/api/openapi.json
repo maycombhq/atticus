@@ -11524,7 +11524,7 @@
     "/api/runs/handoff": {
       "post": {
         "operationId": "prepareStep",
-        "summary": "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done",
+        "summary": "2.66.0 (UX review): prepare an AI step for the person's own assistant (`--handoff`): its run's page has the prompt to copy and Done. 3.19.0: a stage's step is refused (409) while an AI step runs on the server or the same stage of the change runs",
         "tags": [
           "ai"
         ],
@@ -11574,6 +11574,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21633,6 +21643,127 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stages/{stage}/accept": {
+      "post": {
+        "operationId": "acceptStageFinding",
+        "summary": "3.19.0 (ADR 0203 A): accept a blocking finding of the stage's own gate (stage-<stage>) with a reason, in the name of the person using the app, as atticus finding <change> <id> waive does; refused (403) for a constitution rule, a rule a person can't accept, an assistant (a coding assistant's terminal included), or inside a Copilot session Atticus started; 409 when it is no longer open. Then the app goes on with the stage, whoever started it, once nothing else holds it and no step of it runs, and says what it did (goesOn). Returns the file written, the thread and goesOn",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "stage",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "proposal",
+                "feature",
+                "architecture",
+                "stories",
+                "small"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "finding": {
+                    "type": "string",
+                    "pattern": "^stage-[0-9a-f]{12}$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "finding",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageAcceptResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -57467,6 +57598,60 @@
                     "at"
                   ],
                   "additionalProperties": false
+                },
+                "accept": {
+                  "type": "object",
+                  "properties": {
+                    "can": {
+                      "type": "boolean"
+                    },
+                    "why": {
+                      "type": "string",
+                      "enum": [
+                        "constitution",
+                        "assistant",
+                        "assistant-session",
+                        "document-over-code",
+                        "nothing-to-plan",
+                        "needs-catalog",
+                        "contradicts-fact",
+                        "data-safety",
+                        "archived-repo",
+                        "cites-missing-code",
+                        "order",
+                        "answer-shape",
+                        "next-stage-needs"
+                      ]
+                    },
+                    "as": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "can",
+                    "as"
+                  ],
+                  "additionalProperties": false
+                },
+                "accepted": {
+                  "type": "object",
+                  "properties": {
+                    "by": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "by",
+                    "why",
+                    "at"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -57914,6 +58099,60 @@
                             "at"
                           ],
                           "additionalProperties": false
+                        },
+                        "accept": {
+                          "type": "object",
+                          "properties": {
+                            "can": {
+                              "type": "boolean"
+                            },
+                            "why": {
+                              "type": "string",
+                              "enum": [
+                                "constitution",
+                                "assistant",
+                                "assistant-session",
+                                "document-over-code",
+                                "nothing-to-plan",
+                                "needs-catalog",
+                                "contradicts-fact",
+                                "data-safety",
+                                "archived-repo",
+                                "cites-missing-code",
+                                "order",
+                                "answer-shape",
+                                "next-stage-needs"
+                              ]
+                            },
+                            "as": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "can",
+                            "as"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "accepted": {
+                          "type": "object",
+                          "properties": {
+                            "by": {
+                              "type": "string"
+                            },
+                            "why": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "by",
+                            "why",
+                            "at"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -58191,6 +58430,82 @@
         },
         "required": [
           "files",
+          "thread"
+        ],
+        "additionalProperties": false
+      },
+      "StageAcceptResult": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accepted": {
+            "type": "object",
+            "properties": {
+              "by": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "by",
+              "why",
+              "at"
+            ],
+            "additionalProperties": false
+          },
+          "thread": {
+            "$ref": "#/components/schemas/StageThreadView"
+          },
+          "goesOn": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "questions",
+                  "stopped",
+                  "drafting",
+                  "waiting",
+                  "failed",
+                  "held",
+                  "not-resumed"
+                ]
+              },
+              "runId": {
+                "type": "string"
+              },
+              "held": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "files",
+          "accepted",
           "thread"
         ],
         "additionalProperties": false
