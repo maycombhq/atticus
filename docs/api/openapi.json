@@ -37469,6 +37469,18 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "from": {
+            "type": "string",
+            "enum": [
+              "design",
+              "tasks"
+            ]
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
           "problems": {
             "type": "array",
             "items": {
@@ -37548,6 +37560,14 @@
                 },
                 "source": {
                   "type": "string"
+                },
+                "from": {
+                  "type": "string",
+                  "enum": [
+                    "design",
+                    "operations",
+                    "tasks"
+                  ]
                 }
               },
               "required": [
@@ -37729,6 +37749,74 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "from": {
+            "type": "string",
+            "const": "design"
+          },
+          "reaches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "has": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "receivers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "owner": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "further": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "line",
+                "has",
+                "name",
+                "ids",
+                "receivers",
+                "further"
+              ],
+              "additionalProperties": false
+            }
           },
           "breaks": {
             "type": "integer",
@@ -40218,6 +40306,11 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "claims": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
           "results": {
             "type": "array",
             "items": {
@@ -40273,6 +40366,44 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "claims": {
+                      "type": "object",
+                      "properties": {
+                        "present": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "differs": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "missing": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "notCheckable": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unconfirmed": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "present",
+                        "differs",
+                        "missing",
+                        "notCheckable",
+                        "unconfirmed"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -40379,6 +40510,133 @@
                       "check",
                       "what",
                       "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "present",
+                          "present-differently",
+                          "missing",
+                          "not-checkable",
+                          "unconfirmed"
+                        ]
+                      },
+                      "check": {
+                        "type": "string"
+                      },
+                      "repo": {
+                        "type": "string"
+                      },
+                      "from": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "operation": {
+                            "type": "string"
+                          },
+                          "task": {
+                            "type": "string"
+                          },
+                          "spec": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "line"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "expected": {
+                        "type": "string"
+                      },
+                      "found": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "artifact",
+                                "code"
+                              ]
+                            },
+                            "repo": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "line": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "why": {
+                        "type": "string"
+                      },
+                      "next": {
+                        "type": "string"
+                      },
+                      "fact": {
+                        "type": "string"
+                      },
+                      "finding": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "check",
+                      "repo",
+                      "from",
+                      "expected",
+                      "what",
+                      "at",
+                      "next"
                     ],
                     "additionalProperties": false
                   }

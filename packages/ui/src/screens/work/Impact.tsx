@@ -18,8 +18,50 @@ type Owner = Api.ChangeImpactT["owners"][number]["owner"];
 export const ownerWords = (o: Owner) =>
   "none" in o ? I.noTeam(o.none) : o.name ? `${o.team} (${o.name})` : o.team;
 
+/** ADR 0206: a quick change's impact, from its design.md's In the code: who each row reaches. */
+function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
+  if (!i.reaches?.length) return <p>{I.quickNoTable(i.change)}</p>;
+  return (
+    <>
+      <p>{I.quick}</p>
+      <table className="run-table">
+        <caption className="sr">{I.reachesCaption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{I.reachCol.row}</th>
+            <th scope="col">{I.reachCol.names}</th>
+            <th scope="col">{I.reachCol.receivers}</th>
+            <th scope="col">{I.reachCol.further}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {i.reaches.map((r) => (
+            <tr key={`${r.line}.${r.has}`}>
+              <td className="mono">{`design.md:${r.line} (${r.has})`}</td>
+              <td className="mono">{r.name}</td>
+              <td>
+                {r.has === "calls"
+                  ? r.ids.length
+                    ? `${I.newCaller(r.ids[0]!)}${r.owner ? ` (${I.owned(r.owner)})` : ""}`
+                    : I.notInMap
+                  : !r.ids.length
+                    ? I.notInMap
+                    : r.receivers.length
+                      ? r.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", ")
+                      : I.nobodyReceives}
+              </td>
+              <td>{r.further || ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 /** One change's impact. */
 export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
+  if (!i.flows && i.from === "design") return <QuickImpact i={i} />;
   if (!i.flows)
     return (
       <>

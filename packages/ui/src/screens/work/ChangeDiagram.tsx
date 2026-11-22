@@ -87,7 +87,7 @@ export function ChangeDiagramView({ map, sketch }: { map: Api.ChangeMapT; sketch
   // The sketch panel sits at the same place in both states, so the first stroke (0 → 1 target
   // flows) and the last Undo don't remount it and lose the form and the "Drawn" message.
   const panel = sketch ? <SketchPanel key="sketch" change={map.change} map={map} /> : null;
-  if (!map.flows)
+  if (!map.flows && !map.from)
     return (
       <>
         <div key="body">
@@ -101,7 +101,16 @@ export function ChangeDiagramView({ map, sketch }: { map: Api.ChangeMapT; sketch
     <>
       <div key="body">
         <p className="muted" style={{ margin: "0 0 8px" }}>
-          {D.from(map.flows, map.source)} <a href={targetHref(map.change)}>{D.flows(map.change)}</a>
+          {map.from === "design" ? (
+            D.fromDesign(map.rows ?? 0, map.source)
+          ) : map.from === "tasks" ? (
+            D.fromTasks(map.source)
+          ) : (
+            <>
+              {D.from(map.flows, map.source)}{" "}
+              <a href={targetHref(map.change)}>{D.flows(map.change)}</a>
+            </>
+          )}
         </p>
         <Legend />
         <div className="cd-canvas">

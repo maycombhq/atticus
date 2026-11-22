@@ -1,6 +1,6 @@
 import { relative, sep } from "node:path";
 import { changeFolder, detectConflicts, outsideSystemsOf } from "@maycombhq/changes";
-import { loadEstimates, loadOrgPack, orgPackDirOf, type Api } from "@maycombhq/core";
+import { changesRelOf, loadEstimates, loadOrgPack, orgPackDirOf, type Api } from "@maycombhq/core";
 import { gateStatus, reviewedGates } from "@maycombhq/naysayer";
 import { readOperations } from "@maycombhq/planner";
 import {
@@ -8,8 +8,10 @@ import {
   loadRelease,
   releaseForecast,
   type EstimateFlow,
+  type StatedUnit,
 } from "@maycombhq/release";
 import { targetFlowsOf } from "./change-map.js";
+import { callOf, componentOfRepo, quickViewOf } from "./change-quick.js";
 import type { Output } from "./commands.js";
 
 /**
@@ -80,17 +82,71 @@ export async function estimateOf(
       ...(s.confirmedBy ? { confirmedBy: s.confirmedBy } : {}),
     })),
   }));
-  // ADR 0203 (review): the estimate sizes flow steps; a change's operation tasks are counted
-  // and said, never left out in silence.
+  // ADR 0206: each operation task is a unit of its own, class operation/<kind>, citing the file.
+  const rel = `${changesRelOf(root)}/${change}`;
   const ops = (await readOperations(changeFolder(root, change))).file?.operations ?? [];
-  const opTasks = ops.reduce((n, x) => n + x.repos.length, 0);
-  if (opTasks)
-    problems.push(
-      `${opTasks} operation task${opTasks === 1 ? " is" : "s are"} not in this estimate (${ops.length} operation${ops.length === 1 ? "" : "s"}): estimates.yaml has no class for operations yet.`,
-    );
+  const stated: StatedUnit[] = ops.flatMap((o, i) =>
+    o.repos.map((repo, k) => ({
+      flow: `o${i + 1}.${k + 1}`,
+      repo,
+      what: o.what,
+      class: `operation/${o.kind}`,
+      source: `${rel}/target-flows/_operations.yaml`,
+      from: "operations" as const,
+    })),
+  );
+  // A change with no target flow: its design.md's rows, else its tasks (ADR 0206).
+  const q = t.merged.length ? undefined : await quickViewOf(root, change);
+  let source = t.source;
+  if (q) {
+    source = q.source;
+    const tables = new Set(t.records.filter((r) => r.kind === "Table").map((r) => r.id));
+    const OPERATION_ROWS = new Set([
+      "deployment",
+      "route",
+      "config",
+      "secret",
+      "pipeline",
+      "cut-over",
+    ]);
+    if (q.from === "tasks")
+      for (const x of q.tasks)
+        stated.push({
+          flow: x.id,
+          repo: x.repo,
+          what: x.title,
+          class: "quick/task",
+          source: q.source,
+          from: "tasks",
+        });
+    else
+      for (const r of q.rows) {
+        const parts = OPERATION_ROWS.has(r.has) ? ["operation", r.has] : ["quick", r.has];
+        if (r.has === "calls") {
+          const target = componentOfRepo(t.records, callOf(r.what).target);
+          if (boundaryOf(target) === "vendor") parts.push("vendor");
+          else if (otherTeam(target)) parts.push("other-team");
+          if (q.planned.has(callOf(r.what).target)) parts.push("new-entry");
+        }
+        if (
+          (r.has === "table" || r.has === "column") &&
+          !tables.has(r.has === "column" ? r.what.slice(0, r.what.lastIndexOf(".")) : r.what)
+        )
+          parts.push("new-table");
+        stated.push({
+          flow: r.task ?? r.repo,
+          repo: r.repo,
+          what: r.what,
+          class: parts.join("/"),
+          source: q.source,
+          from: "design",
+        });
+      }
+  }
   const e = estimateChange({
     change,
     flows,
+    ...(stated.length ? { stated } : {}),
     ...(estimates ? { table: estimates } : {}),
     boundaryOf,
     otherTeam,
@@ -101,7 +157,7 @@ export async function estimateOf(
   return {
     ...e,
     title: t.title,
-    source: t.source,
+    source,
     ...(estimates
       ? { table: `${relative(root, orgPackDirOf(root)).split(sep).join("/")}/estimates.yaml` }
       : {}),
@@ -131,12 +187,6 @@ export async function changeEstimateCommand(
     return 0;
   }
   for (const p of e.problems) io.err(p);
-  // ADR 0203 (review): a change of operations only has nothing the estimate sizes, and said so.
-  if (
-    !e.units.length &&
-    e.problems.some((p) => / operation tasks? (is|are) not in this estimate/.test(p))
-  )
-    return 0;
   if (!e.units.length) {
     io.err(
       `${change} has no target flows yet, so there is nothing to size: the architecture stage writes them (atticus change architecture ${change}).`,
@@ -168,7 +218,7 @@ export async function changeEstimateCommand(
   io.out("Work:");
   for (const u of e.units)
     io.out(
-      `  ${u.repo}  ${u.flow}${u.step !== undefined ? ` step ${u.step}` : ""}  ${u.class}  ${u.days ? range(u.days) : "needs a class"}  ${u.what}`,
+      `  ${u.repo}  ${u.flow}${u.step !== undefined ? ` step ${u.step}` : ""}  ${u.class}  ${u.days ? range(u.days) : "needs a class"}  ${u.what}${u.from ? `  (${u.source})` : ""}`,
     );
   return 0;
 }

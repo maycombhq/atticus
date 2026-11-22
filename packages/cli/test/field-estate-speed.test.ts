@@ -14,6 +14,7 @@ import { writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { bigFieldShortens, bigRepoId, writeBigRepo } from "./big-estate.js";
 import { makeFieldEstate, termOfField, type FieldEstate } from "./field-estate.js";
+import { steadyWriteCpu } from "./write-cpu.js";
 
 /**
  * beta.28.4, the owner's field report of beta.28.3: `verify <repo> --write` of one repo, and the
@@ -203,4 +204,34 @@ describe("the build of that shape is the one before the fix, byte for byte (beta
       await rm(small, { recursive: true, force: true });
     }
   }, 600_000);
+});
+
+/**
+ * ADR 0205: one repo's write on the field-shaped estate at 60 repos in all, 3 in 8 of them
+ * gateway proxies (the owner's shape at the size the 15 s budget is for). A CPU budget of the
+ * median of three steady writes, about three times what ADR 0205 measured on this build machine
+ * after its steps, for a slow runner. Only with ATTICUS_BENCH=1 (ATTICUS_BENCH_REPOS for another
+ * size): the nightly's wall-clock budget (apply-budget.test.ts) is the one CI keeps.
+ */
+const BENCH = !!process.env.ATTICUS_BENCH;
+const BENCH_REPOS = Number(process.env.ATTICUS_BENCH_REPOS ?? 60);
+const FIELD_60_WRITE_CPU_S = 15;
+
+describe.skipIf(!BENCH)(`one repo's write at ${BENCH_REPOS} repos (ADR 0205's budget)`, () => {
+  it(`takes under ${FIELD_60_WRITE_CPU_S} CPU s, the median of three`, async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-field-budget-"));
+    try {
+      const gateways = Math.round((BENCH_REPOS * 3) / 8);
+      const e = await makeFieldEstate(at, { services: BENCH_REPOS - gateways, gateways });
+      const cold = await buildAndWrite(e.root, { command: "atticus catalog build" });
+      expect(cold.guard.refused).toBeUndefined();
+      const { median } = await steadyWriteCpu(e.root, e.options, "field-estate-speed");
+      console.log(
+        `field-estate-speed at ${BENCH_REPOS} repos: ${median.toFixed(1)} CPU s, the median (budget ${FIELD_60_WRITE_CPU_S})`,
+      );
+      expect(median).toBeLessThan(FIELD_60_WRITE_CPU_S);
+    } finally {
+      await rm(at, { recursive: true, force: true });
+    }
+  }, 3_600_000);
 });

@@ -1913,24 +1913,65 @@ export const COPY = {
   conformance: {
     title: "Code against design",
     intro:
-      "Does the code do what the design says? Each repo's branch is scanned at its commit and checked against the change's target flows: every call, table, column, migration and endpoint they add must be there, every call they remove gone, and nothing they don't name added. Every item cites its file and line. No AI; a person can dismiss a finding as not relevant.",
+      "Does the code do what the design says? Each repo's branch is scanned at its commit and checked against the change's target flows: every call, table, column, migration and endpoint they add must be there, every call they remove gone, and nothing they don't name added; and against what the change states (its operations, a quick change's In the code). Every item cites its file and line. No AI; a person can dismiss a finding as not relevant.",
     none: "No change yet. Start one from a brief, then run its architecture stage.",
-    noTargets: (id: string) =>
-      `${id} has no target flows yet, so there is nothing to check the code against. Its architecture stage writes them:`,
     notChecked: (id: string) =>
-      `${id}'s code hasn't been checked against its target flows yet. A task run checks it when its build passes, or run:`,
+      `${id}'s code hasn't been checked against its design yet. A task run checks it when its build passes, or run:`,
     repo: (repo: string, ref: string) => `${repo} at ${ref}`,
     commits: (commit: string, base: string) =>
       `Commit ${commit.slice(0, 12)}, compared with ${base.slice(0, 12)}`,
+    /** ADR 0206: a repo only claims name, with no clone here. */
+    notScanned: "Not scanned here: there is no clone of the repo. What couldn't be read says why.",
     task: (task: string) => `Only the steps task ${task} builds`,
     counts: (c: { found: number; missing: number; stillThere: number; unexpected: number }) =>
       `${c.found} found, ${c.missing} missing, ${c.stillThere} still there, ${c.unexpected} not in the design`,
     allGood: "Everything its target flows add is there, and nothing they don't name.",
-    /** ADR 0203: operations aren't checked against the code in this release, said as the CLI says it. */
-    onlyOperations: (n: number) =>
-      `This change's work is operations (${n}): Atticus doesn't check operations against the code in this release.`,
-    operationsNotChecked: (n: number) =>
-      `${n} operation${n === 1 ? " is" : "s are"} not checked: Atticus doesn't check operations against the code in this release.`,
+    /**
+     * ADR 0206: the claims a change states (an operation's sets, a quick change's In the code),
+     * each looked for in the verified facts of the branch's commit, as the CLI says them.
+     */
+    claimsTitle: "Stated in the design",
+    claimsIntro:
+      "What the change says its code will have: each operation in each of its repos, and each row of a quick change's design.md In the code. Present comes from verified facts only; what no scan can see is a person's to check, and the finding says how they checked it.",
+    claimsCaption: (repo: string) => `What the change states for ${repo}, and what the facts say`,
+    claimCounts: (n: {
+      present: number;
+      differs: number;
+      missing: number;
+      notCheckable: number;
+      unconfirmed: number;
+    }) =>
+      `${n.present} present, ${n.differs} present differently, ${n.missing} missing, ${n.notCheckable} to check by hand, ${n.unconfirmed} not confirmed`,
+    outcome: {
+      present: "Present",
+      "present-differently": "Present differently",
+      missing: "Missing",
+      "not-checkable": "Not checkable",
+      unconfirmed: "Couldn't confirm",
+    } as Record<string, string>,
+    claimCol: {
+      outcome: "Result",
+      what: "What",
+      from: "Stated at",
+      at: "Where",
+      next: "What to do next",
+      finding: "Finding",
+    },
+    /**
+     * The review of ADR 0206: how sure a claim's outcome is (the stored `why`: what is written on
+     * the cited lines, what is the assistant's reading), and a present claim's next step.
+     */
+    claimWhy: (why: string) => `How sure: ${why}`,
+    claimNextNone: "Nothing: the line is cited for the reviewer.",
+    /**
+     * The review of ADR 0206: a quick change with no In the code yet. Never a stage (ADR 0201):
+     * the spec writer writes the table, and status says whether it reads.
+     */
+    nothingYetQuick: (id: string) =>
+      `${id} is a quick change and its design.md doesn't say what the code will have yet, so there is nothing to check the code against. The spec writer writes its ## In the code (/define-change ${id}), or a person does; then this says whether it reads:`,
+    /** A change with no target flow and no claim yet. */
+    nothingYet: (id: string) =>
+      `${id} has no target flows and states no claims yet, so there is nothing to check the code against. Its architecture stage writes target flows and operations; a quick change's design.md says what the code will have under ## In the code.`,
     itemsCaption: (repo: string) => `What the check looked for in ${repo}, and what it found`,
     status: {
       found: "Found",
@@ -1965,6 +2006,16 @@ export const COPY = {
   /** ADR 0109: a change's estimate, from its target flows. */
   /** ADR 0144 (V1): a change's impact, as designed, on its Architecture tab. */
   changeImpact: {
+    /** ADR 0206: a quick change, read from its design.md's In the code. */
+    quick:
+      "A quick change says what its code will have, not which fields change, so Atticus can't tell what breaks. Here is who each part it names reaches; each owner confirms.",
+    quickNoTable: (id: string) =>
+      `${id}'s impact is read from design.md's In the code, which it doesn't have yet: the spec writer writes it.`,
+    reachesCaption: "What each row of In the code names, and who receives it",
+    reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },
+    newCaller: (target: string) => `A new caller of ${target}`,
+    notInMap: "Not in the map yet: planned, or nobody has read it",
+    nobodyReceives: "Nothing in the map receives it",
     title: "What this change breaks",
     intro:
       "From the change's target flows: each entry or table they break, who calls or uses it today, the fields that stop crossing and the gateway routes to update, each with the team that owns it. A link the map only guessed may break, and isn't counted as a break until someone confirms it.",
@@ -2072,6 +2123,11 @@ export const COPY = {
     none: "No change yet. Start one from a brief, then run its architecture stage.",
     noTargets: (id: string) =>
       `${id} has no target flows yet, so there is nothing to draw. Its architecture stage writes them:`,
+    /** ADR 0206: a quick change, drawn from its design.md's In the code or its tasks.md. */
+    fromDesign: (rows: number, source: string) =>
+      `Drawn from ${rows} row${rows === 1 ? "" : "s"} of design.md's In the code (${source}), not from target flows.`,
+    fromTasks: (source: string) =>
+      `Drawn from the repos of ${source}: design.md doesn't say what the code will have yet, so no line is drawn.`,
     legend: "Legend",
     legendNew: "+ New",
     legendModify: "◇ Changed",

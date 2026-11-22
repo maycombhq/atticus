@@ -21,4 +21,5 @@ export * from "./task-context.js";
 export * from "./task-knowledge.js";
 export * from "./knowledge-conflicts.js";
 export * from "./conform.js";
+export * from "./conform-claims.js";
 export * from "./stages/knowledge-applies.js";

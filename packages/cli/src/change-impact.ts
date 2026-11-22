@@ -1,8 +1,18 @@
-import { readTeams, type Api, type QuestionOwner, type Team } from "@maycombhq/core";
+import {
+  normalizePath,
+  readTeams,
+  type Api,
+  type CatalogRecord,
+  type QuestionOwner,
+  type Team,
+} from "@maycombhq/core";
+import { openIndex, receiversOfAll } from "@maycombhq/index";
 import { changeImpact, loadEstate, MAX_CHAIN_DEPTH } from "@maycombhq/planner";
 import { loadRepos } from "@maycombhq/workspace";
 import { targetFlowsOf } from "./change-map.js";
+import { callOf, componentOfRepo, quickViewOf } from "./change-quick.js";
 import type { Output } from "./commands.js";
+import { mapSides } from "./map-lacks.js";
 
 /**
  * atticus change impact <change> (ADR 0144, V1): what a change breaks across the estate, from its
@@ -54,7 +64,117 @@ export const CHANGE_IMPACT_WORDS = {
   teams: "Teams to involve:",
   team: (owner: string, repos: string[]) => `  ${owner}: ${repos.join(", ")}`,
   problem: (p: string) => `Note: ${p}`,
+  // ADR 0206: a quick change, from its design.md's In the code.
+  quick: (id: string) =>
+    `${id}: a quick change says what its code will have, not which fields change, so Atticus can't tell what breaks; here is who each part it names reaches. Each owner confirms.`,
+  quickNoTable: (id: string) =>
+    `${id}'s impact is read from design.md's ## In the code, which it doesn't have yet: the spec writer writes it (/define-change ${id}).`,
+  reach: (name: string, has: string, line: number) => `${name} (design.md:${line}, ${has}):`,
+  receivedBy: (who: string) => `  Received by ${who}.`,
+  newCaller: (target: string, owner: string) => `  A new caller of ${target}, owned by ${owner}.`,
+  nobodyReceives: "  Nothing in the map receives it.",
+  further: (n: number) => `  Further: ${n} more record${n === 1 ? "" : "s"} through a receiver.`,
+  notInMap: "  Not in the map yet: planned, or nobody has read it.",
 };
+
+/** ADR 0206: what a quick change's row names that the map has, and who receives it. */
+type Reach = NonNullable<Api.ChangeImpactT["reaches"]>[number];
+
+async function quickReaches(
+  root: string,
+  change: string,
+  records: CatalogRecord[],
+  problems: string[],
+): Promise<Reach[] | undefined> {
+  const q = await quickViewOf(root, change);
+  if (!q) return undefined;
+  if (q.from !== "design") return [];
+  const sides = await mapSides(root);
+  const ix = await openIndex(root, { embedOnOpen: 0 });
+  try {
+    for (const p of ix.problems) problems.push(`${p.file}: ${p.message} (left out of the index)`);
+    const rec = (id: string) =>
+      records.find((r) => r.id === id) as
+        (Record<string, unknown> & { id: string; kind: string }) | undefined;
+    const ownerOf = (id: string) => {
+      const r = rec(id);
+      return (
+        sides.owner({
+          kind: r?.kind ?? "Component",
+          id,
+          ...(typeof r?.system === "string" ? { system: r.system } : {}),
+        }) ??
+        (typeof r?.repo === "string" ? sides.owner({ kind: "Component", id: r.repo }) : undefined)
+      );
+    };
+    const out: Reach[] = [];
+    for (const row of q.rows) {
+      const comp = componentOfRepo(records, row.repo);
+      let ids: string[] = [];
+      if (row.has === "publishes" || row.has === "listens")
+        ids = records
+          .filter(
+            (r) =>
+              r.id === row.what ||
+              (r.kind === "Endpoint" && (r as { pathOrTopic?: string }).pathOrTopic === row.what),
+          )
+          .map((r) => r.id);
+      else if (row.has === "serves") {
+        const [method, path] = row.what.split(/\s+/);
+        ids = records
+          .filter((r) => {
+            const x = r as unknown as Record<string, unknown>;
+            return (
+              r.kind === "Endpoint" &&
+              x.component === comp &&
+              String(x.method ?? "").toUpperCase() === (method ?? "").toUpperCase() &&
+              normalizePath(String(x.normalizedPath ?? x.pathOrTopic ?? "")) ===
+                normalizePath(path ?? "")
+            );
+          })
+          .map((r) => r.id);
+      } else if (row.has === "table" || row.has === "column") {
+        const table =
+          row.has === "column" ? row.what.slice(0, row.what.lastIndexOf(".")) : row.what;
+        ids = records
+          .filter(
+            (r) =>
+              r.kind === "Table" && (r.id === table || (r as { name?: string }).name === table),
+          )
+          .map((r) => r.id);
+      } else if (row.has === "calls") {
+        const target = componentOfRepo(records, callOf(row.what).target);
+        const owner = ownerOf(target);
+        out.push({
+          line: row.line,
+          has: row.has,
+          name: row.what,
+          ids: rec(target) ? [target] : [],
+          ...(owner ? { owner } : {}),
+          receivers: [],
+          further: 0,
+        });
+        continue;
+      } else continue;
+      const walk = ids.length ? receiversOfAll(ix, ids, 4, { owner: sides.owner }) : undefined;
+      out.push({
+        line: row.line,
+        has: row.has,
+        name: row.what,
+        ids,
+        receivers: (walk?.receivers ?? []).map((a) => ({
+          id: a.id,
+          kind: a.kind,
+          ...(a.owner ? { owner: a.owner } : {}),
+        })),
+        further: walk?.further.length ?? 0,
+      });
+    }
+    return out;
+  } finally {
+    ix.close();
+  }
+}
 
 const GUESS_WORDS: Record<string, string> = {
   "joined-by-path": "by path",
@@ -83,6 +203,10 @@ export async function changeImpactOf(
   const t = await targetFlowsOf(root, change);
   if (!t) return undefined;
   const problems = [...t.problems];
+  // ADR 0206: a change with no target flow, read from its design.md's In the code.
+  const reaches = t.deltas.length
+    ? undefined
+    : await quickReaches(root, change, t.records, problems);
   const owners = new Map<string, string>();
   try {
     for (const r of await loadRepos(root)) owners.set(r.id, r.owner);
@@ -96,12 +220,40 @@ export async function changeImpactOf(
     owners,
     teams,
   });
-  return { ...impact, flows: t.deltas.length, problems };
+  return {
+    ...impact,
+    flows: t.deltas.length,
+    ...(reaches ? { from: "design" as const, reaches } : {}),
+    problems,
+  };
 }
 
 /** The impact in words, one line each. */
 export function impactLines(i: Api.ChangeImpactT): string[] {
   const W = CHANGE_IMPACT_WORDS;
+  if (!i.flows && i.from === "design") {
+    if (!i.reaches?.length) return [W.quickNoTable(i.change), ...i.problems.map(W.problem)];
+    const out = [W.quick(i.change)];
+    for (const r of i.reaches) {
+      out.push(W.reach(r.name, r.has, r.line));
+      if (r.has === "calls") {
+        out.push(
+          r.ids.length ? W.newCaller(r.ids[0]!, r.owner ?? "no team on record") : W.notInMap,
+        );
+        continue;
+      }
+      if (!r.ids.length) out.push(W.notInMap);
+      else if (!r.receivers.length) out.push(W.nobodyReceives);
+      else
+        out.push(
+          W.receivedBy(
+            r.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", "),
+          ),
+        );
+      if (r.further) out.push(W.further(r.further));
+    }
+    return [...out, ...i.problems.map(W.problem)];
+  }
   if (!i.flows) return [W.noTargets(i.change), ...i.problems.map(W.problem)];
   if (!i.items.length) return [W.nothing(i.change), ...i.problems.map(W.problem)];
   const out = [W.counts(i.change, i)];

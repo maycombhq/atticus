@@ -481,6 +481,10 @@ export const Operation = z.strictObject({
       env: safeText().optional(),
       host: safeText().optional(),
       key: safeText().optional(),
+      /** ADR 0206: the path a route sits under, a pipeline's file, a config value (never a secret's). */
+      basePath: safeText().optional(),
+      file: safeText().optional(),
+      value: safeText().optional(),
     })
     .optional(),
   after: z.array(Id).optional(),
@@ -496,6 +500,11 @@ export const Operations = z
   .refine(
     (ops) => new Set(ops.map((o) => o.id)).size === ops.length,
     "an operation's id is used twice",
+  )
+  // ADR 0206: a secret names its key and where its value is kept, never the value.
+  .refine(
+    (ops) => ops.every((o) => o.kind !== "secret" || o.sets?.value === undefined),
+    "a secret's value is never written here: name its key, and keep the value where secrets are kept",
   );
 
 /** `target-flows/_operations.yaml`, version 1 (no flow id can start with `_`). Atticus writes it. */

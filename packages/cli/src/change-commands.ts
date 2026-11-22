@@ -682,6 +682,7 @@ export async function changeStatus(
           nextStep: said.nextStep,
           ...(said.stepFirst ? { stepFirst: true } : {}),
           reasons: r.reasons,
+          ...(r.notes?.length ? { notes: r.notes } : {}),
           risk: r.risk,
           tests: r.tests,
           privacy: r.privacy,
@@ -734,6 +735,8 @@ export async function changeStatus(
     io.out("Blocked by:");
     for (const x of r.reasons) io.out(`  - ${x.message}`);
   }
+  // ADR 0206: notes, never refusals.
+  for (const n of r.notes ?? []) io.out(`Note: ${n}`);
   // A gate whose critic rounds are used up: what a person does next, in the critic's words.
   for (const line of critic) io.out(`Critic: ${line}`);
   return 0;

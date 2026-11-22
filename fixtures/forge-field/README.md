@@ -33,6 +33,7 @@ The shapes it holds, each one a field report named:
 | A topic with consumers in two repos         | `forge.items.settled`: `forge-svc-02` publishes, `forge-svc-03` and `forge-svc-00` listen   |
 | A call joined to the wrong box              | `estate.json` `wrongBox`: as fixtures/reconnect, its API also served where it really goes   |
 | A change on the quick path                  | `openspec/changes/publish-settled-refunds` (the archetypes' new event, its files written)   |
+| Deployments and settings read from facts    | `forge-svc-00` to `forge-svc-03`: a prod `deploy` fact on `hosts` with its host, and `forge.retry.max` (ADR 0206) |
 
 The rule (CONTRIBUTING.md, "Adding a field report's shape"): a field report adds its shape to the estate, as an invented
 Forge shape, before its fix.

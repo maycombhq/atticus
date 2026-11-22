@@ -1,0 +1,1 @@
+{"repo":"forge-ledger","commit":"aaaaaaa","verified":"line","by":"assistant","conf":"declared","kind":"deploy","id":"d-0","env":"prod","platform":"hosts","resourceName":"ledger","cite":{"file":"deploy/hosts.yaml","line":2,"value":"ledger","quote":"name: ledger"}}

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { deserialize, serialize } from "node:v8";
 import { z } from "zod";
 import type { CatalogRecord } from "./catalog.js";
 import { interfaceId, normalizePath, slugify } from "./identity.js";
@@ -16,6 +18,7 @@ import { hasSecretShape, redactSecrets } from "./cite.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 import { migrationOf, type MigrationFile } from "./migration-files.js";
 import { normalizeFactPaths } from "./fact-paths.js";
+import { appMemory, appMemoryInUse, onAppMemoryRelease } from "./app-memory.js";
 
 /**
  * The facts file (ADR 0124): read, write and project into catalog C1.
@@ -215,7 +218,95 @@ export function newerShapeOf(
   };
 }
 
+/**
+ * ADR 0205 step 3: a facts file is parsed once for its bytes. Each parse is kept, serialized
+ * (`v8.serialize`, which keeps -0 and fields set to undefined), by the SHA-256 of the text, in
+ * this process (a bounded memo) and, where a build installed one, in the build cache's store on
+ * disk; a text with the same bytes is the same parse, handed back as a fresh copy.
+ */
+export const factsParseHooks: {
+  /** The way before step 3: every text parsed. */
+  off?: boolean;
+  /** The equivalence tests: each kept parse checked against a parse of the text, or a throw. */
+  check?: boolean;
+  /** The build cache's store on disk, by the text's hash (installed by the scanner). */
+  store?: {
+    get(textSha: string): Uint8Array | undefined;
+    put(textSha: string, kept: Uint8Array): void;
+    /** A parse of this text was used from the memo: the store keeps its copy. */
+    used(textSha: string): void;
+  };
+} = {};
+
+/** How often a kept parse was used, and a text parsed (the tests). */
+export const factsParseStats = { kept: 0, parsed: 0 };
+
+const factsParses = new Map<string, Uint8Array>();
+let factsParseBytes = 0;
+/** About what the memo holds at most: the slots of a large estate twice over. */
+const FACTS_PARSES_MAX = 256 * 1024 * 1024;
+
+/** Forget this process's kept parses (a test of the store on disk; a server letting memory go). */
+export function forgetFactsParses(): void {
+  factsParses.clear();
+  factsParseBytes = 0;
+}
+// ADR 0205 step 4: the app's server lets them go ten minutes after its last Apply or when memory
+// runs low.
+onAppMemoryRelease(forgetFactsParses, () => ({ "facts parses (core's memo)": factsParseBytes }));
+
+function keepFactsParse(key: string, kept: Uint8Array): void {
+  if (kept.byteLength > FACTS_PARSES_MAX / 4) return;
+  factsParses.set(key, kept);
+  factsParseBytes += kept.byteLength;
+  for (const [k, v] of factsParses) {
+    if (factsParseBytes <= FACTS_PARSES_MAX) break;
+    factsParses.delete(k);
+    factsParseBytes -= v.byteLength;
+  }
+}
+
 export function parseFacts(text: string): ParseFactsResult {
+  if (factsParseHooks.off) return parseFactsText(text);
+  // In the app's server, memory low: everything let go, and nothing kept now (ADR 0205 step 4).
+  const keep = !appMemory.on || appMemoryInUse();
+  const key = createHash("sha256").update(text, "utf8").digest("hex");
+  const kept = factsParses.get(key) ?? factsParseHooks.store?.get(key);
+  if (kept) {
+    let copy: ParseFactsResult | undefined;
+    try {
+      copy = deserialize(kept) as ParseFactsResult;
+    } catch {
+      copy = undefined;
+    }
+    if (copy) {
+      if (!factsParses.has(key)) {
+        if (keep) keepFactsParse(key, kept);
+      } else {
+        factsParseHooks.store?.used(key);
+        // The latest used goes last, so the memo lets the oldest go first.
+        factsParses.delete(key);
+        factsParses.set(key, kept);
+      }
+      if (factsParseHooks.check && !isDeepStrictEqual(copy, parseFactsText(text)))
+        throw new Error(`ADR 0205 step 3: a kept facts parse differs from the parse of its text`);
+      factsParseStats.kept++;
+      return copy;
+    }
+  }
+  const parsed = parseFactsText(text);
+  factsParseStats.parsed++;
+  try {
+    const bytes = serialize(parsed);
+    if (keep) keepFactsParse(key, bytes);
+    factsParseHooks.store?.put(key, bytes);
+  } catch {
+    // Not kept: the next read parses it again.
+  }
+  return parsed;
+}
+
+function parseFactsText(text: string): ParseFactsResult {
   const trimmed = text.trim();
   const facts: Fact[] = [];
   const issues: FactIssue[] = [];

@@ -1,0 +1,109 @@
+# What conformClaims must say of forge-refunds at the branch's commit for the quick change
+# refund-receipts (ADR 0206), from design.md's "## In the code", written by hand. The facts cover
+# the commit with nothing unread.
+claims:
+  - outcome: present
+    check: listener
+    task: r1
+    line: 15
+    expected: topic forge.refunds.settled
+    what: forge-refunds listens to forge.refunds.settled.
+    at: [forge-refunds:src/main/java/forge/refunds/SettledListener.java:7]
+  - outcome: present
+    check: table
+    task: r1
+    line: 16
+    expected: table refund_receipts
+    what: forge-refunds has the table refund_receipts.
+    at: [forge-refunds:src/main/resources/db/migration/V7__refund_receipts.sql:1]
+  - outcome: missing
+    check: column
+    task: r1
+    line: 17
+    expected: column refund_receipts.issued_at
+    what: refund_receipts has no column issued_at in forge-refunds.
+    at: [artifact:design.md:17]
+  - outcome: present
+    check: migration
+    task: r1
+    line: 18
+    expected: file V7__refund_receipts.sql
+    what: forge-refunds has V7__refund_receipts.sql.
+    at: [forge-refunds:src/main/resources/db/migration/V7__refund_receipts.sql:1]
+  - outcome: present
+    check: publish
+    task: r1
+    line: 19
+    expected: topic forge.receipts.issued
+    what: forge-refunds publishes to forge.receipts.issued.
+    at: [forge-refunds:src/main/java/forge/refunds/ReceiptEvents.java:15]
+  - outcome: present
+    check: endpoint
+    task: r2
+    line: 20
+    expected: GET /v1/refunds/{id}/receipt
+    what: forge-refunds serves GET /v1/refunds/{id}/receipt.
+    at: [forge-refunds:src/main/java/forge/refunds/ReceiptApi.java:9]
+  - outcome: missing
+    check: call
+    task: r2
+    line: 21
+    expected: forge-ledger GET /v1/accounts/{id}
+    what: forge-refunds makes no call to forge-ledger GET /v1/accounts/{id}.
+    at: [artifact:design.md:21]
+  - outcome: not-checkable
+    check: other
+    line: 22
+    expected: Receipts are kept for seven years.
+    what: "The design says a person checks this in forge-refunds: Receipts are kept for seven years."
+    at: [artifact:design.md:22]
+  - outcome: present
+    check: deployment
+    task: r2
+    line: 23
+    expected: platform anvil, env prod
+    what: forge-refunds runs on anvil in prod.
+    at: [forge-refunds:deploy/anvil.yaml:2]
+    why: "Written on the cited lines: platform anvil, env prod."
+  - outcome: present
+    check: route
+    task: r2
+    line: 24
+    expected: host refunds.anvil.forge.example, basePath /refunds
+    what: forge-refunds is served at refunds.anvil.forge.example/refunds.
+    at: [forge-refunds:deploy/anvil.yaml:2]
+    why: "Written on the cited lines: host refunds.anvil.forge.example, basePath /refunds."
+  - outcome: present-differently
+    check: config
+    task: r1
+    line: 25
+    expected: key refunds.receipts.keep, env prod, value 7y
+    found: key refunds.receipts.keep, env prod, value 5y
+    what: forge-refunds sets refunds.receipts.keep in prod to 5y, not 7y.
+    at: [forge-refunds:deploy/values-prod.yaml:1, artifact:design.md:25]
+  - outcome: present
+    check: secret
+    task: r1
+    line: 26
+    expected: key refunds.signing.key, env prod
+    what: forge-refunds keeps refunds.signing.key in prod by a reference to where secrets are kept.
+    at: [forge-refunds:deploy/values-prod.yaml:2]
+    why: "Written on the cited lines: source vault:forge/refunds/signing."
+  - outcome: present
+    check: pipeline
+    task: r2
+    line: 27
+    expected: file .anvil/pipeline.yaml
+    what: forge-refunds has .anvil/pipeline.yaml.
+    at: [forge-refunds:.anvil/pipeline.yaml:1]
+  - outcome: not-checkable
+    check: cut-over
+    line: 28
+    expected: "undo: point the route back at the hosts, which stay up one release"
+    what: The cut-over in forge-refunds is an act in a live system, which Atticus never connects to.
+    at: [artifact:design.md:28]
+unexpected:
+  - check: call
+    what: forge-refunds calls forge-audit POST /v1/audit/events, which no row of design.md's In the code names.
+    record: forge-refunds#c-1
+    at: [forge-refunds:src/main/java/forge/refunds/AuditClient.java:20]

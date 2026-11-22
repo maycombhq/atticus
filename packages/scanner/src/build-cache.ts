@@ -3,7 +3,14 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmpText, writeFileAtomic } from "@maycombhq/core";
+import {
+  appMemory,
+  appMemoryInUse,
+  cmpText,
+  factsParseHooks,
+  onAppMemoryRelease,
+  writeFileAtomic,
+} from "@maycombhq/core";
 import { BUILD_VERSION, SLOT_VERSION } from "./slots.js";
 
 /**
@@ -35,9 +42,25 @@ export const BUILD_CACHE_FORMAT = 2;
  * A test's switches: with `off`, nothing is read from or written to the cache; `stamp` stands
  * for the code's stamp (null: there is none, so the cache is off).
  */
-export const buildCacheHooks: { off?: boolean; stamp?: string | null } = {};
+export const buildCacheHooks: {
+  off?: boolean;
+  stamp?: string | null;
+  /** ADR 0205 step 4's proof: each kept text a build uses is checked against its record's serialization, or a throw. */
+  checkTexts?: boolean;
+  /** The tests: the Node a facts parse on disk is kept for, in place of this one's. */
+  nodeVersion?: string;
+  /** The tests: the size limit of the texts kept in memory, in place of `TEXTS_IN_MEMORY_MAX`. */
+  textsMaxBytes?: number;
+} = {};
 
-const stats = { memoHits: 0, memoMisses: 0, textsReused: 0, readersTrusted: 0 };
+const stats = {
+  memoHits: 0,
+  memoMisses: 0,
+  textsReused: 0,
+  readersTrusted: 0,
+  /** ADR 0205 step 4: builds that took the last build's texts from the server's memory. */
+  textsFromMemory: 0,
+};
 /** How often the cache was used in this process (tests and the benchmark read it). */
 export function buildCacheStats(): typeof stats {
   return { ...stats };
@@ -415,17 +438,118 @@ export function keepReaders(key: string, slot: unknown): void {
   used.add(key);
 }
 
+/** The facts parses a build used, written to the folder it loaded them from; the others taken away. */
+async function keepFactsOnDisk(dir: string | undefined, keys: Set<string>): Promise<void> {
+  if (!dir) return;
+  for (const key of [...keys].sort(cmpText)) {
+    const bytes = freshFacts.get(key);
+    if (!bytes) continue;
+    await writeFileAtomic(join(dir, `${key}.v8`), bytes);
+    freshFacts.delete(key);
+    freshFactsBytes -= bytes.byteLength;
+  }
+  for (const n of await readdir(dir).catch(() => [] as string[]))
+    if (!keys.has(n.replace(/\.v8$/, "")) && /^[0-9a-f]{64}\.v8$/.test(n))
+      await rm(join(dir, n), { force: true });
+}
+
 /** Before a build reads its slots: the state folder whose cache it reads. */
 export async function loadReadersTrust(stateDir: string): Promise<void> {
   used.clear();
+  usedFacts.clear();
   readersDir = cacheOn() ? join(buildCacheDirOf(stateDir), "readers") : undefined;
+  factsDir = cacheOn() ? join(buildCacheDirOf(stateDir), "facts") : undefined;
   await Promise.resolve();
 }
 
+// ------------------------------------------------------------------ facts parses, by their bytes
+
+/**
+ * ADR 0205 step 3: each facts file's parse (core's `parseFacts`), kept by the hash of its text
+ * and the code, in `facts/<key>.v8` beside the readers slots: written with the build that used
+ * it, taken away when a build no longer does. The same bytes are the same parse.
+ */
+let factsDir: string | undefined;
+const freshFacts = new Map<string, Uint8Array>();
+let freshFactsBytes = 0;
+const usedFacts = new Set<string>();
+const FRESH_FACTS_MAX = 256 * 1024 * 1024;
+/**
+ * A parse's key: the text's hash, the code's stamp and the Node that parsed it. A refused file's
+ * issue carries JSON.parse's message, which is Node's own words (V8's), and Node's version isn't
+ * in the code's stamp, so a parse is kept for the Node that made it (the review of ADR 0205).
+ */
+const factsKeyOf = (textSha: string) =>
+  sha(
+    `${BUILD_CACHE_FORMAT}\u0000${codeStamp()}\u0000${buildCacheHooks.nodeVersion ?? process.version}\u0000facts\u0000${textSha}`,
+  );
+
+export const factsParseStore = {
+  get(textSha: string): Uint8Array | undefined {
+    if (!cacheOn() || !factsDir) return undefined;
+    const key = factsKeyOf(textSha);
+    let bytes = freshFacts.get(key);
+    if (!bytes)
+      try {
+        bytes = readFileSync(join(factsDir, `${key}.v8`));
+      } catch {
+        return undefined;
+      }
+    usedFacts.add(key);
+    return bytes;
+  },
+  put(textSha: string, bytes: Uint8Array): void {
+    if (!cacheOn() || !factsDir) return;
+    // In the app's server with memory low, nothing more is held (ADR 0205 step 4).
+    if (appMemory.on && !appMemoryInUse()) return;
+    const key = factsKeyOf(textSha);
+    if (freshFactsBytes + bytes.byteLength > FRESH_FACTS_MAX) {
+      freshFacts.clear();
+      freshFactsBytes = 0;
+    }
+    freshFacts.set(key, bytes);
+    freshFactsBytes += bytes.byteLength;
+    usedFacts.add(key);
+  },
+  used(textSha: string): void {
+    if (cacheOn() && factsDir) usedFacts.add(factsKeyOf(textSha));
+  },
+};
+factsParseHooks.store = factsParseStore;
+// ADR 0205 step 4: in the app's server, let go by the app's rule (ten minutes after its last
+// Apply, or memory low): a parse not yet on disk is then no cache, and parsed again if needed.
+onAppMemoryRelease(
+  () => {
+    freshFacts.clear();
+    freshFactsBytes = 0;
+  },
+  () => ({ "facts parses not yet on disk (the build cache's)": freshFactsBytes }),
+);
+
+/** The checked reads a build used and the folder it loaded them from, as they are now. */
+export interface ReadersUsed {
+  dir: string | undefined;
+  used: Set<string>;
+  factsDir?: string | undefined;
+  usedFacts?: Set<string>;
+}
+
+/**
+ * ADR 0205 step 2: the reads this build used, taken before its caches are written after the
+ * caller's result, so a build that loads its inputs meanwhile (a preview's) doesn't change them.
+ */
+export function readersUsedNow(): ReadersUsed {
+  return { dir: readersDir, used: new Set(used), factsDir, usedFacts: new Set(usedFacts) };
+}
+
 /** Write the checked reads this build used (to the state folder it loaded them from) and take away those it didn't. */
-async function keepReadersOnDisk(): Promise<void> {
-  if (!readersDir) return;
-  const dir = readersDir;
+async function keepReadersOnDisk(
+  r: ReadersUsed = { dir: readersDir, used, factsDir, usedFacts },
+): Promise<void> {
+  await keepFactsOnDisk(r.factsDir, r.usedFacts ?? new Set()).catch(() => undefined);
+  if (!r.dir) return;
+  const dir = r.dir;
+  const used = r.used;
   for (const key of [...used].sort(cmpText)) {
     const json = fresh.get(key);
     if (json === undefined) continue;
@@ -582,12 +706,50 @@ export async function buildKeyOf(o: KeyInputs): Promise<BuildKey | undefined> {
   return { key, unchanged: async () => JSON.stringify(await foldersOf(o)) === was };
 }
 
+/**
+ * ADR 0205 step 4: in the app's server, the texts of the last build kept, in memory, so the next
+ * build takes them without reading the last build back from disk. A text is the serialization of
+ * the record whose JSON hash keys it, whichever build kept it, so these are as good as the file's.
+ */
+let textsInMemory:
+  | {
+      stamp: string | undefined;
+      key: string;
+      texts: KeptTexts;
+      /** Their size: the characters of every text (about bytes: the texts are YAML, mostly ASCII). */
+      bytes: number;
+      manifest?: { path: string; sha256: string };
+    }
+  | undefined;
+onAppMemoryRelease(
+  () => (textsInMemory = undefined),
+  () => ({ "the last build's texts (the build cache's)": textsInMemory?.bytes ?? 0 }),
+);
+
+/**
+ * The most the last build's texts are kept in memory at, in characters (about bytes). The owner's
+ * answer of 2026-11-19 allows the app about 1 GB more at 100,000 records for all it keeps; the
+ * facts parses may take 256 MB of it (core's memo) and their copies not yet on disk as much
+ * again, so the texts may have the rest, about half. A larger build's texts aren't kept in
+ * memory, and the next build reads them from disk, as before step 4 (ADR 0205 measures them).
+ */
+const TEXTS_IN_MEMORY_MAX = 512 * 1024 * 1024;
+
 /** What a build loads of the last build: whole when its key is this one, else its texts. */
 export async function loadKept<B>(
   stateDir: string,
   key: string | undefined,
 ): Promise<{ hit?: B; texts?: KeptTexts }> {
   if (!cacheOn()) return {};
+  // ADR 0205 step 4: another build's texts from memory, in the app's server (a build of the same
+  // key is the last build whole, read from disk as before).
+  const mem = textsInMemory;
+  if (mem && mem.stamp === codeStamp() && key !== mem.key && appMemoryInUse()) {
+    if (mem.manifest) written.set(mem.manifest.path, mem.manifest.sha256);
+    stats.memoMisses++;
+    stats.textsFromMemory++;
+    return { texts: mem.texts };
+  }
   const text = await readFile(join(buildCacheDirOf(stateDir), MEMO), "utf8").catch(() => undefined);
   if (!text) return {};
   try {
@@ -712,9 +874,11 @@ export async function keepBuild(
   build: { records: unknown[]; files: Map<string, string> } & Record<string, unknown>,
   /** The build.json this build writes: its path and text. */
   manifest?: { path: string; text: string },
+  /** The reads it used, when kept later than it built (`readersUsedNow`). */
+  readers?: ReadersUsed,
 ): Promise<void> {
   if (!cacheOn()) return;
-  await keepReadersOnDisk().catch(() => undefined);
+  await keepReadersOnDisk(readers).catch(() => undefined);
   const s = staged.get(build);
   if (!s) return;
   staged.delete(build);
@@ -741,6 +905,28 @@ export async function keepBuild(
     for (const [path, text] of build.files)
       parts.push(JSON.stringify([path, text, s.keys.get(path) ?? ""]));
     await writeFileAtomic(join(dir, MEMO), `${parts.join("\n")}\n`);
+    // ADR 0205 step 4: the texts this build wrote, kept in the app's server for the next build.
+    // The last build's are let go first: one build's texts are kept at a time.
+    textsInMemory = undefined;
+    if (appMemoryInUse()) {
+      const texts: KeptTexts = new Map();
+      let bytes = 0;
+      for (const [path, text] of build.files) {
+        const k = s.keys.get(path);
+        if (k) {
+          texts.set(k, text);
+          bytes += text.length;
+        }
+      }
+      if (bytes <= (buildCacheHooks.textsMaxBytes ?? TEXTS_IN_MEMORY_MAX))
+        textsInMemory = {
+          stamp: codeStamp(),
+          key: s.key,
+          texts,
+          bytes,
+          ...(header.manifest ? { manifest: header.manifest } : {}),
+        };
+    }
   } catch {
     // A build that can't be kept (too big for one string, not plain data) or a cache that can't
     // be written is no cache: the last build kept, now out of date, is taken away.

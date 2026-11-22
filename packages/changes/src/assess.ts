@@ -1,10 +1,12 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "yaml";
 import type { ChangeHandoff, ChangeLifecycle, ChangeType, LifecycleState } from "@maycombhq/core";
 import { prApprovers, privacyImpact, type PrivacyImpact } from "./approvals.js";
 import { assistantNames } from "./assistant-names.js";
 import { changeTypeOf, loadChangeContext, type ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
+import { codeTableState } from "./code-table-check.js";
 import { changeFootprint, type Footprint } from "./footprint.js";
 import {
   checkArtifacts,
@@ -52,6 +54,12 @@ export interface Assessment {
   blockers: Reason[];
   /** What stops the change from advancing: blockers, then the hand-off PR until it merges. */
   reasons: Reason[];
+  /**
+   * ADR 0206: what a person reads beside the reasons, never a refusal: a quick change's spec
+   * deltas naming what its In the code doesn't, and, at Build, QA and Go/no-go, the claims
+   * Atticus couldn't confirm against the code.
+   */
+  notes?: string[];
 }
 
 export const liveHandoff = (c: ChangeLifecycle) =>
@@ -125,9 +133,16 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   // the gate's critic round itself once it does, so a person is never sent to run the critic on
   // a refused draft (its findings would only repeat the stage's).
   const stageReasons = stage ? await checkStage(ctx.root, change, stage) : [];
+  // ADR 0206: a quick change's plan hand-off needs design.md's In the code, read for sure.
+  const table =
+    phase === "plan" && due.includes("design")
+      ? await codeTableState(ctx, change, type)
+      : { reasons: [] as Reason[], notes: [] as string[] };
+  const notes = [...table.notes, ...(await unconfirmedNotes(ctx.root, change.id, phase))];
   const blockers: Reason[] = [
     ...stageReasons,
     ...(await checkArtifacts(ctx.root, change, due)),
+    ...table.reasons,
     ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase), assistantNames(ctx))),
     ...(stageReasons.length
       ? []
@@ -172,7 +187,37 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
           : `Waiting for PR #${live.pr.number} to be approved and merged on the Git host: ${live.pr.url}`,
     });
   }
-  return { ...base, phase, next, ...(live ? { handoff: live } : {}), blockers, reasons };
+  return {
+    ...base,
+    phase,
+    next,
+    ...(live ? { handoff: live } : {}),
+    blockers,
+    reasons,
+    ...(notes.length ? { notes } : {}),
+  };
+}
+
+/**
+ * ADR 0206 (the owner's answer 1): at Build, QA and Go/no-go, each stored claim Atticus couldn't
+ * confirm against the code, so the hand-off PR lists it for a reviewer. A note, never a refusal.
+ */
+async function unconfirmedNotes(root: string, change: string, phase: PhaseId): Promise<string[]> {
+  if (phase !== "build" && phase !== "qa" && phase !== "release") return [];
+  const dir = join(changeFolder(root, change), "conform");
+  const out: string[] = [];
+  for (const f of (await readdir(dir).catch(() => [] as string[])).sort()) {
+    if (!f.endsWith(".yaml")) continue;
+    const doc = (await readFile(join(dir, f), "utf8")
+      .then(parse)
+      .catch(() => undefined)) as
+      | { claims?: { outcome?: string; what?: string; from?: { file?: string; line?: number } }[] }
+      | undefined;
+    for (const c of doc?.claims ?? [])
+      if (c.outcome === "unconfirmed" && c.what)
+        out.push(`Not confirmed against the code: ${c.what} (${c.from?.file}:${c.from?.line})`);
+  }
+  return out;
 }
 
 export interface Readiness {

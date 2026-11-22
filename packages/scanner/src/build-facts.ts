@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
+  appMemory,
+  appMemoryInUse,
   cmpText,
   declaredCallsOf,
   factIdPart,
@@ -11,6 +15,7 @@ import {
   runStepsAsync,
   joinTerms,
   NO_TARGET,
+  onAppMemoryRelease,
   normalizePath,
   parseRecord,
   placeholderIn,
@@ -41,6 +46,136 @@ import {
 } from "./facts-catalog.js";
 import { estateRepos, isPrototypeRepo } from "./merge-input.js";
 
+// ------------------------------------------------------------------ each repo's projection kept
+
+/**
+ * ADR 0205's addendum (accepted 2026-11-22), step 1: in the app's server each repo's projection
+ * (`factsRecords`) is kept in memory between builds by exactly what it reads: its facts slot's
+ * hash (the facts are the parse of those bytes), its targets from the answers, its component
+ * renames (worked out over every repo, so a rename another repo brings or takes away reaches it)
+ * and its manifest entry (its component and system). A repo whose key is the last build's takes
+ * the projection from there; any other is projected. Outside a server, or with no slot hash
+ * (a caller that read no slot), nothing is kept. Let go by the app's rule, and kept only up to a
+ * count of records and facts.
+ *
+ * **Off by default** (the owner's decision of 2026-11-22): measured, it cuts its own phase every
+ * time but not the Apply's total beyond the runs' spread, and holds more memory. The code and its
+ * proof stay; it is switched on only by `ATTICUS_PROJECTION_MEMO=on` in the environment of the
+ * app's server (`atticus ui`), where measurements show a real gain (`projectionMemoOn`).
+ */
+export const projectionHooks: {
+  /** The way before the step: every repo projected (the equivalence tests' "off"); wins over `on`. */
+  off?: boolean;
+  /** The proof's tests: the step on, as its setting turns it on. */
+  on?: boolean;
+  /**
+   * The step's proof: each projection kept is frozen (a pass that changed one would throw), and
+   * each taken from memory is compared with a projection made now, or a throw.
+   */
+  check?: boolean;
+} = {};
+/** The setting that switches the step on: `ATTICUS_PROJECTION_MEMO=on` (any other value: off). */
+export const PROJECTION_MEMO_ENV = "ATTICUS_PROJECTION_MEMO";
+
+/** Whether the step is on: off by default, on by its setting or the tests' hook; `off` wins. */
+export function projectionMemoOn(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (projectionHooks.off) return false;
+  return !!projectionHooks.on || env[PROJECTION_MEMO_ENV] === "on";
+}
+
+/** How many repos were projected, and how many projections were taken from memory (the tests). */
+export const projectionStats = { projected: 0, kept: 0 };
+
+type Projected = ReturnType<typeof factsRecords>;
+const projections = new Map<string, { key: string; p: Projected; n: number }>();
+let projectionsN = 0;
+/** The most records and facts the kept projections hold (the big estate at 60 repos: about 1 in 2). */
+const PROJECTIONS_MAX = 400_000;
+onAppMemoryRelease(
+  () => {
+    projections.clear();
+    projectionsN = 0;
+  },
+  () => ({ "each repo's projection (records kept, a count)": projectionsN }),
+);
+
+/** A repo's projection's key: the hash of exactly what `factsRecords` reads for it. */
+function projectionKey(
+  op: OrgPack,
+  r: FactsEstateRepo,
+  renames: ReturnType<typeof componentRenames>,
+): string | undefined {
+  if (!r.sha) return undefined;
+  const manifest = estateRepos(op).find((m) => m.id === r.repo) ?? null;
+  const sortedEntries = (o: Readonly<Record<string, string>> | undefined) =>
+    Object.entries(o ?? {}).sort(([a], [b]) => cmpText(a, b));
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        r.repo,
+        r.sha,
+        manifest,
+        sortedEntries(r.targets),
+        sortedEntries(renames[r.repo]),
+      ]),
+    )
+    .digest("hex");
+}
+
+/** Every level frozen, a Map's and a Set's members too (the step's proof). */
+function deepFreeze(v: unknown, seen = new Set<unknown>()): void {
+  if (!v || typeof v !== "object" || seen.has(v)) return;
+  seen.add(v);
+  if (v instanceof Map)
+    for (const [k, x] of v) {
+      deepFreeze(k, seen);
+      deepFreeze(x, seen);
+    }
+  else if (v instanceof Set) for (const x of v) deepFreeze(x, seen);
+  else if (!ArrayBuffer.isView(v)) {
+    Object.freeze(v);
+    for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k], seen);
+  }
+}
+
+/** A repo's projection: the one kept for its key, or made now (and kept, in the app's server). */
+function projectionOf(
+  op: OrgPack,
+  r: FactsEstateRepo,
+  renames: ReturnType<typeof componentRenames>,
+): Projected {
+  const project = () =>
+    factsRecords({
+      repo: r.repo,
+      facts: r.facts,
+      op,
+      ...(r.targets ? { targets: r.targets } : {}),
+      renames,
+    });
+  const keeping = projectionMemoOn() && appMemory.on && appMemoryInUse();
+  const key = keeping ? projectionKey(op, r, renames) : undefined;
+  const had = projections.get(r.repo);
+  if (key !== undefined && had?.key === key) {
+    projectionStats.kept++;
+    if (projectionHooks.check && !isDeepStrictEqual(project(), had.p))
+      throw new Error(`ADR 0205 addendum step 1: the projection kept for ${r.repo} isn't its own`);
+    return had.p;
+  }
+  projectionStats.projected++;
+  const p = project();
+  if (had) {
+    projections.delete(r.repo);
+    projectionsN -= had.n;
+  }
+  if (key === undefined) return p;
+  const n = p.facts.length + p.projected.records.length + p.newRecords.length;
+  if (projectionsN + n > PROJECTIONS_MAX) return p;
+  if (projectionHooks.check) deepFreeze(p);
+  projections.set(r.repo, { key, p, n });
+  projectionsN += n;
+  return p;
+}
+
 /**
  * The repos read from their facts in one build (ADR 0195 point 2): every current facts slot
  * projected at once, with nothing read from the catalog and nothing patched. The component
@@ -59,6 +194,11 @@ export interface FactsEstateRepo {
   targets?: Readonly<Record<string, string>>;
   pairs?: Readonly<Record<string, PersonPair>>;
   aiTargets?: Readonly<Record<string, JoinAi>>;
+  /**
+   * The sha256 of the facts slot's bytes `facts` is the parse of (a build's slot): with it, the
+   * app's server keeps the repo's projection between builds (ADR 0205 addendum, step 1).
+   */
+  sha?: string;
 }
 
 export interface FactsEstateProjection {
@@ -119,13 +259,7 @@ function* factsEstateRecordsSteps(
   const per: FactsEstateProjection["per"] = new Map();
   const records: CatalogRecord[] = [];
   for (const r of list) {
-    const p = factsRecords({
-      repo: r.repo,
-      facts: r.facts,
-      op,
-      ...(r.targets ? { targets: r.targets } : {}),
-      renames,
-    });
+    const p = projectionOf(op, r, renames);
     per.set(r.repo, {
       facts: p.facts,
       projected: p.projected,

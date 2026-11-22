@@ -4050,6 +4050,12 @@ export const ChangeMap = z.object({
   mermaid: z.string(),
   /** How many target flows it is drawn from. */
   flows: z.number().int(),
+  /**
+   * 3.19.0 (ADR 0206, additive): a change with no target flow is drawn from its design.md's In
+   * the code (`design`, with how many rows) or, before that is written, tasks.md's repos.
+   */
+  from: z.enum(["design", "tasks"]).optional(),
+  rows: z.number().int().optional(),
   /** Target flows that don't read, or whose today isn't in the spec. */
   problems: z.array(z.string()),
 });
@@ -4072,6 +4078,11 @@ export const ChangeEstimate = z.object({
       class: z.string(),
       days: Days.optional(),
       source: z.string(),
+      /**
+       * 3.19.0 (ADR 0206, additive): a unit no target flow gives: a row of design.md's In the
+       * code, an operation's task, or a quick change's task before its table is written.
+       */
+      from: z.enum(["design", "operations", "tasks"]).optional(),
     }),
   ),
   needsClass: z.number().int(),
@@ -4116,6 +4127,27 @@ export const ChangeImpact = z.object({
   change: RecordId,
   /** How many target flows the change has; none means the architecture stage hasn't run. */
   flows: z.number().int(),
+  /**
+   * 3.19.0 (ADR 0206, additive): a change with no target flow is read from design.md's In the
+   * code: for each row, the records of the map it names and who receives them, never counted
+   * as breaks (a quick change states no fields). Empty before the table is written.
+   */
+  from: z.literal("design").optional(),
+  reaches: z
+    .array(
+      z.object({
+        line: z.number().int(),
+        has: z.string(),
+        name: z.string(),
+        ids: z.array(z.string()),
+        owner: z.string().optional(),
+        receivers: z.array(
+          z.object({ id: z.string(), kind: z.string(), owner: z.string().optional() }),
+        ),
+        further: z.number().int(),
+      }),
+    )
+    .optional(),
   breaks: z.number().int(),
   mayBreak: z.number().int(),
   /** 2.81.0 (ADR 0181): of the callers that break, those whose every link the AI decided. */
@@ -4216,6 +4248,36 @@ export const ConformItem = z.object({
 export type ConformItemT = z.infer<typeof ConformItem>;
 
 /**
+ * 3.19.0 (ADR 0206, additive): one thing a change states its code will have (an operation's
+ * `sets`, a quick change's row of design.md's In the code), looked for in the verified facts of
+ * the branch's commit, with its outcome, its cite and what the person does next.
+ */
+export const ConformClaim = z.object({
+  outcome: z.enum(["present", "present-differently", "missing", "not-checkable", "unconfirmed"]),
+  check: z.string(),
+  repo: z.string(),
+  /** Where the claim is stated: target-flows/_operations.yaml or design.md, and its line. */
+  from: z.object({
+    file: z.string(),
+    line: z.number().int().positive(),
+    operation: z.string().optional(),
+    task: z.string().optional(),
+    spec: z.string().optional(),
+  }),
+  expected: z.string(),
+  found: z.string().optional(),
+  what: z.string(),
+  at: z.array(ConformCite),
+  why: z.string().optional(),
+  next: z.string(),
+  /** The fact it rests on. */
+  fact: z.string().optional(),
+  /** The finding it became on the conform gate, and its state; none for present and unconfirmed. */
+  finding: z.object({ id: z.string(), state: z.string() }).optional(),
+});
+export type ConformClaimT = z.infer<typeof ConformClaim>;
+
+/**
  * The newest conformance check of one repo of a change (ADR 0114), as stored in the change
  * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows.
  */
@@ -4235,8 +4297,20 @@ export const ConformRepoResult = z.object({
     missing: z.number().int(),
     stillThere: z.number().int(),
     unexpected: z.number().int(),
+    /** 3.19.0 (ADR 0206): the claims' outcomes. */
+    claims: z
+      .object({
+        present: z.number().int(),
+        differs: z.number().int(),
+        missing: z.number().int(),
+        notCheckable: z.number().int(),
+        unconfirmed: z.number().int(),
+      })
+      .optional(),
   }),
   items: z.array(ConformItem),
+  /** 3.19.0 (ADR 0206): each claim of the change in this repo, with its outcome. */
+  claims: z.array(ConformClaim).optional(),
   /**
    * Steps no scan can show (a branch, a transform), and (2.76.0) what the facts don't cover at
    * the commit, so the code couldn't confirm it: a person or a test checks them.
@@ -4264,6 +4338,11 @@ export const ChangeConformance = z.object({
    * this check doesn't look at; absent when it has none. Additive only.
    */
   operations: z.number().int().positive().optional(),
+  /**
+   * 3.19.0 (ADR 0206): how many claims the change states (each operation in each of its repos,
+   * each row of design.md's In the code); absent when it states none. Additive only.
+   */
+  claims: z.number().int().positive().optional(),
   results: z.array(ConformRepoResult),
   /** The built-in gate the findings are on, and its newest round. */
   gate: z.literal("conform"),

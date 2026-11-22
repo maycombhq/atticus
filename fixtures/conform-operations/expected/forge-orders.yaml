@@ -1,0 +1,48 @@
+# What conformClaims must say of forge-orders at the branch's commit (ADR 0206), written by hand.
+# The facts cover the commit with nothing unread.
+- outcome: present
+  check: deployment
+  operation: deploy-anvil
+  line: 8
+  expected: platform anvil, env prod
+  what: forge-orders runs on anvil in prod.
+  at: [forge-orders:deploy/anvil.yaml:3]
+  why: "Written on the cited lines: platform anvil. The assistant's reading of deploy/anvil.yaml:3: env prod."
+- outcome: present
+  check: route
+  operation: route-anvil
+  line: 13
+  expected: host orders.anvil.forge.example, basePath /orders
+  what: forge-orders is served at orders.anvil.forge.example/orders.
+  at: [forge-orders:deploy/anvil.yaml:3]
+  why: "Written on the cited lines: host orders.anvil.forge.example, basePath /orders."
+- outcome: present-differently
+  check: config
+  operation: retry-setting
+  line: 18
+  expected: key orders.retry.max, env prod, value 5
+  found: key orders.retry.max, env prod, value 3
+  what: forge-orders sets orders.retry.max in prod to 3, not 5.
+  at: [forge-orders:deploy/values-prod.yaml:1, artifact:target-flows/_operations.yaml:18]
+- outcome: present
+  check: secret
+  operation: ledger-key
+  line: 23
+  expected: key ledger.client.key
+  what: forge-orders keeps ledger.client.key by a reference to where secrets are kept.
+  at: [forge-orders:deploy/values-prod.yaml:2]
+  why: "Written on the cited lines: source vault:forge/ledger/client."
+- outcome: present
+  check: pipeline
+  operation: anvil-pipeline
+  line: 28
+  expected: file .anvil/pipeline.yaml
+  what: forge-orders has .anvil/pipeline.yaml.
+  at: [forge-orders:.anvil/pipeline.yaml:1]
+- outcome: not-checkable
+  check: cut-over
+  operation: switch
+  line: 37
+  expected: "undo: Point the traffic back at the hosts, which stay up for one release."
+  what: "switch is a cut-over in forge-orders: an act in a live system, which Atticus never connects to."
+  at: [artifact:target-flows/_operations.yaml:37]
