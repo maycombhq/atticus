@@ -262,12 +262,21 @@ export async function estateFacts(
  * `atticus verify <repo> --write` reads the base clone at its own HEAD, so it can't speak for a
  * task branch's files; this is how a check of claims reads them. Undefined when the file isn't
  * there; what doesn't read or is rejected is said, never used.
+ *
+ * The review of ADR 0206: `context` is the repo's other facts at the commit (the snapshot's,
+ * carried there), verified beside them so a branch fact may lean on them (a repo that serves
+ * something, a fact another names); a context fact citing a file the branch's facts cite, or with
+ * the id of one of them, gives way to them. Only the branch's facts come back. `unknown` is the
+ * source files of the checkout that no fact, the branch's or the context's, cites: what is still
+ * unread for a repo nobody read before.
  */
 export async function branchFactsAt(
   op: OrgPack,
   text: string | undefined,
-  at: { dir: string; commit: string },
-): Promise<{ facts: Fact[]; rejected: number; problems: string[] } | undefined> {
+  at: { dir: string; commit: string; context?: readonly Fact[] },
+): Promise<
+  { facts: Fact[]; rejected: number; problems: string[]; unknown: string[] } | undefined
+> {
   if (text === undefined) return undefined;
   const parsed = parseFacts(text);
   if (!parsed.ok)
@@ -275,17 +284,23 @@ export async function branchFactsAt(
       facts: [],
       rejected: 0,
       problems: parsed.issues.map((i) => `${i.line ? `line ${i.line}: ` : ""}${i.message}`),
+      unknown: [],
     };
+  const own = new Set(parsed.facts.map((f) => f.id));
+  const files = new Set(parsed.facts.map((f) => f.cite.file));
+  const context = (at.context ?? []).filter((f) => !own.has(f.id) && !files.has(f.cite.file));
   const report = await verifyFacts({
-    facts: parsed.facts,
+    facts: [...context, ...parsed.facts],
     source: dirSource(at.dir),
     commit: at.commit,
     conventions: conventionsOf(op),
     componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
   });
+  const rejected = report.rejected.filter((r) => own.has(r.fact.id));
   return {
-    facts: report.accepted,
-    rejected: report.rejected.length,
-    problems: report.rejected.slice(0, 5).map((r) => `${r.fact.id}: ${r.message}`),
+    facts: report.accepted.filter((f) => own.has(f.id)),
+    rejected: rejected.length,
+    problems: rejected.slice(0, 5).map((r) => `${r.fact.id}: ${r.message}`),
+    unknown: report.coverage.unknown,
   };
 }

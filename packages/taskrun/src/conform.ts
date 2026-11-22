@@ -74,6 +74,11 @@ export class ConformError extends Error {
 export type ScanAt = (
   repo: string,
   commit: string,
+  /**
+   * The review of ADR 0206: `branch` for the branch's own commit, the only scan that reads the
+   * branch's facts from the change folder; the base's never does.
+   */
+  o?: { branch?: boolean },
 ) => Promise<{
   records: CatalogRecord[];
   files: string[];
@@ -133,8 +138,8 @@ const citedFiles = (facts: readonly Fact[]) => [
  * ADR 0206: the branch's own facts, kept in the change folder, are verified in that worktree and
  * cover the files they cite; they are never written to the catalog.
  */
-function gitScanAt(root: string, git: GitRunner, changeDir?: string): ScanAt {
-  return async (repo, commit) => {
+export function gitScanAt(root: string, git: GitRunner, changeDir?: string): ScanAt {
+  return async (repo, commit, o = {}) => {
     const base = baseClonePath(root, repo);
     const dir = conformScanDir(root, repo, commit);
     await rm(dir, { recursive: true, force: true });
@@ -160,26 +165,20 @@ function gitScanAt(root: string, git: GitRunner, changeDir?: string): ScanAt {
       const problems = s.problems
         .filter((p) => !p.repo || p.repo === repo)
         .map((p) => `${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
-      // The branch's facts: verified here, at the commit, for the files they cite.
-      const own = changeDir
-        ? await readFile(
-            join(changeDir, ...BRANCH_FACTS_DIR.split("/"), `${repo}.jsonl`),
-            "utf8",
-          ).catch(() => undefined)
-        : undefined;
+      // The branch's facts: verified here, at the branch's commit only, for the files they cite.
+      const own =
+        changeDir && o.branch
+          ? await readFile(
+              join(changeDir, ...BRANCH_FACTS_DIR.split("/"), `${repo}.jsonl`),
+              "utf8",
+            ).catch(() => undefined)
+          : undefined;
       if (own !== undefined) {
         const op = await loadOrgPack(orgPackDirOf(root));
-        const b = await branchFactsAt(op, own, { dir, commit });
+        const b = await branchFactsAt(op, own, { dir, commit, context: facts });
         if (b) {
           for (const p of b.problems) problems.push(`${BRANCH_FACTS_DIR}/${repo}.jsonl: ${p}`);
-          const covered = new Set(citedFiles(b.facts));
-          facts = [...facts.filter((f) => !covered.has(f.cite.file)), ...b.facts];
-          basis =
-            basis.from === "facts"
-              ? { from: "facts", unread: basis.unread.filter((f) => !covered.has(f)) }
-              : b.facts.length
-                ? { from: "facts", unread: [] }
-                : basis;
+          ({ facts, basis } = withBranchFacts({ facts, basis }, b));
         }
       }
       // The lines a claim's value may be written on, read in the worktree before it goes.
@@ -195,6 +194,30 @@ function gitScanAt(root: string, git: GitRunner, changeDir?: string): ScanAt {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       await git(["worktree", "prune"], base).catch(() => undefined);
     }
+  };
+}
+
+/**
+ * A repo's facts at the branch's commit with the branch's own (ADR 0206 as built, and its
+ * review): a fact of the snapshot citing a file the branch's facts cite gives way to them, and
+ * those files are no longer unread. A repo nobody read into facts before (the built-in readers
+ * only) is read by the branch's facts alone where they reach: what no fact cites (`unknown`, the
+ * verifier's coverage) stays unread, so its claims are never said missing or different on facts
+ * that don't cover it.
+ */
+export function withBranchFacts(
+  at: { facts: readonly Fact[]; basis: FactBasis },
+  b: { facts: readonly Fact[]; unknown: readonly string[] },
+): { facts: Fact[]; basis: FactBasis } {
+  if (!b.facts.length) return { facts: [...at.facts], basis: at.basis };
+  const covered = new Set(b.facts.map((f) => f.cite.file));
+  const cited = new Set(citedFiles(b.facts));
+  return {
+    facts: [...at.facts.filter((f) => !covered.has(f.cite.file)), ...b.facts],
+    basis:
+      at.basis.from === "facts"
+        ? { from: "facts", unread: at.basis.unread.filter((f) => !cited.has(f)) }
+        : { from: "facts", unread: [...b.unknown].sort() },
   };
 }
 
@@ -531,7 +554,7 @@ export async function conformChange(
       (x) => x.stdout.trim() || commit,
       () => commit,
     );
-    const after = await scanAt(repo, commit);
+    const after = await scanAt(repo, commit, { branch: true });
     const before = from === commit ? after : await scanAt(repo, from);
     const scope = o.task
       ? [...tasks]
