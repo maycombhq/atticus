@@ -40,6 +40,9 @@ export const REVIEW_WORDS = {
   planned: (id: string) => `${id} is listed under Planned, so the map can't check it yet`,
   touched: (id: string, c: string) =>
     `${id} is touched by the open change ${c}: atticus change conflicts --touching ${id}`,
+  /** A naysayer's run failed outright: said, and the review still exits 0. */
+  failed: (why: string) => `The naysayers didn't run: ${why}`,
+  aiOff: "AI is off here: the naysayers didn't run.",
   dropped: (n: number) =>
     `${n} question${n === 1 ? "" : "s"} of the naysayers left out: ${n === 1 ? "its quote isn't" : "their quotes aren't"} on the line ${n === 1 ? "it cites" : "they cite"}.`,
   none: (file: string) => `${file}: nothing to ask.`,
@@ -87,13 +90,19 @@ async function standing(root: string, except?: string) {
   return { unread: new Set([...manifest].filter((r) => !read.has(r))), touched };
 }
 
+/** A questions table's header row, and the delimiter row under a table's header. */
+const QUESTIONS_HEADER = /^\s*\|?\s*Question\s*\|\s*Evidence\s*\|/i;
+const DELIMITER = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
+
 const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
 /** The file with each finding not already there added as a row of its role's table. */
 export function withRows(text: string, found: ReviewFinding[]): { text: string; added: number } {
   // Each line with its own ending, so a file of mixed endings keeps every one; a new line takes
-  // the ending of the line before it (else the file's first, else LF).
-  const parts = text.split(/(\r\n|\n|\r)/);
+  // the ending of the line before it (else the file's first, else LF). Lines as the door check
+  // reads them (parseRequirements: \r?\n), so its row numbers are these lines' and a lone \r
+  // stays inside its line.
+  const parts = text.split(/(\r?\n)/);
   const lines = parts
     .filter((_, i) => i % 2 === 0)
     .map((t, i) => ({ text: t, eol: parts[2 * i + 1] ?? "" }));
@@ -128,6 +137,15 @@ export function withRows(text: string, found: ReviewFinding[]): { text: string; 
       "| --- | --- | --- | --- | --- | --- |",
     ];
     const heading = lines.findIndex((l) => l.text.trim() === `## ${role}`);
+    // A table with its header and no row yet: the rows go under its delimiter, never a second
+    // header (the second review of beta.30).
+    if (table && heading >= 0) {
+      let under: number | undefined;
+      for (let i = heading + 1; i < lines.length && !/^##\s/.test(lines[i]!.text); i++)
+        if (QUESTIONS_HEADER.test(lines[i]!.text) && DELIMITER.test(lines[i + 1]?.text ?? ""))
+          under = i + 2;
+      if (under !== undefined) return { at: under, rows };
+    }
     if (heading >= 0) return { at: heading + 1, rows: ["", ...header, ...rows] };
     const end = lines.length && lines.at(-1)!.text === "" ? lines.length - 1 : lines.length;
     return { at: end, rows: ["", `## ${role}`, "", ...header, ...rows] };
@@ -239,21 +257,31 @@ export async function reviewCommand(
       runtime = await runtimeForCli(root, { ...(o.mode ? { mode: o.mode } : {}), env: process.env })
         .then((r) => r.runtime)
         .catch((e: Error) => {
-          notes.push(
-            e instanceof AiOffError ? "AI is off here: the naysayers didn't run." : e.message,
-          );
+          notes.push(e instanceof AiOffError ? REVIEW_WORDS.aiOff : REVIEW_WORDS.failed(e.message));
           return undefined;
         });
-    if (runtime && mine.length) {
-      const r = await personaReview(root, {
-        path: REQUIREMENTS_FILE,
-        text,
-        personas: mine,
-        runtime,
-        change: change ? change.id : "atticus-review",
-        now: deps.now ?? new Date(),
-        levels: pack.pack?.classification ?? ["public", "internal", "confidential", "restricted"],
-      });
+    // A naysayer's run that throws is said, never the review's end: it exits 0 (ADR 0203 C.4).
+    const r =
+      runtime && mine.length
+        ? await personaReview(root, {
+            path: REQUIREMENTS_FILE,
+            text,
+            personas: mine,
+            runtime,
+            change: change ? change.id : "atticus-review",
+            now: deps.now ?? new Date(),
+            levels: pack.pack?.classification ?? [
+              "public",
+              "internal",
+              "confidential",
+              "restricted",
+            ],
+          }).catch((e: unknown) => {
+            notes.push(REVIEW_WORDS.failed(String((e as Error)?.message ?? e).split("\n")[0]!));
+            return undefined;
+          })
+        : undefined;
+    if (r) {
       notes.push(...r.notes);
       dropped = r.dropped;
       for (const q of r.questions)
