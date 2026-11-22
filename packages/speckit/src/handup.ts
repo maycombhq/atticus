@@ -2,7 +2,13 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { join } from "node:path";
-import { changeFolder, changeFootprint, changeTypeOf, writeFileAtomic } from "@maycombhq/changes";
+import {
+  assistantNames,
+  changeFolder,
+  changeFootprint,
+  changeTypeOf,
+  writeFileAtomic,
+} from "@maycombhq/changes";
 import {
   changeBranch,
   taskBranch,
@@ -23,6 +29,9 @@ import {
   buildContext,
   findingIdFor,
   lensAgent,
+  recordedFacts,
+  recordedText,
+  RECORDED_RULE,
   parseDoc,
   parseLensOutput,
   questionOfRule,
@@ -416,6 +425,8 @@ export async function handUp(
     lens.reason = `agent ${agent.id} reads neither tasks nor repo code`;
   else {
     const levels = criticCtx.classifications;
+    // What an assistant wrote isn't what people recorded: the org pack's agents and personas known.
+    const recorded = await recordedFacts(root, t.change.id, assistantNames(t.ctx)).catch(() => []);
     const sources: SourceInput[] = [
       {
         id: "0-instructions",
@@ -441,6 +452,28 @@ export async function handUp(
         classification: "public",
         trusted: true,
       },
+      // ADR 0203 A: what people recorded on the change's findings (an accepted stage finding
+      // among them), as data, so the hand-up's review doesn't raise it again.
+      ...(recorded.length
+        ? [
+            {
+              id: "0-recorded-rule",
+              kind: "instruction" as const,
+              origin: "atticus/speckit",
+              text: RECORDED_RULE,
+              classification: "public",
+              trusted: true,
+            },
+            {
+              id: "recorded-by-people",
+              kind: "document" as const,
+              origin: "review/ (what people recorded on this change's findings)",
+              text: recordedText(recorded),
+              classification: "internal",
+              priority: 9,
+            },
+          ]
+        : []),
       ...docs.map((d) => ({
         id: d.path,
         kind: "artifact" as const,

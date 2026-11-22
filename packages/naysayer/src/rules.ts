@@ -47,6 +47,8 @@ export interface EffectiveRule extends ChecklistRule {
    * layered and the checks are known. A tightening with no question of its own keeps its base's.
    */
   asks?: CriticQuestion;
+  /** ADR 0203 C: a persona's naysayer's one rule, built in memory: the file's name. */
+  persona?: string;
 }
 
 export interface RefusedPack {

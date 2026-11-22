@@ -8,6 +8,7 @@ export * from "./codeowners.js";
 export * from "./context.js";
 export * from "./footprint.js";
 export * from "./risk.js";
+export * from "./assistant-names.js";
 export * from "./lifecycle.js";
 export * from "./progress.js";
 export * from "./planning.js";

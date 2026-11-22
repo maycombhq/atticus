@@ -6,7 +6,7 @@ import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { changeAnswers } from "./answers.js";
 import { decidedAt, decidedReason } from "./recorded.js";
 import type { Hit } from "./hits.js";
-import { assistantClosed, type Proposal } from "./proposals.js";
+import { assistantClosed, BUILT_IN_AGENTS, type Proposal } from "./proposals.js";
 import { questionOfRule } from "./questions.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
@@ -155,7 +155,9 @@ export function toFinding(
   h: RuledHit,
   o: { id: string; change: string; gate: string; round: number; now: string },
 ): Finding {
-  const gap = h.hit.kind === "knowledge-gap";
+  // ADR 0203 C.3: a persona's finding is always a risk, never a gap, and names its persona.
+  const persona = h.rule.persona;
+  const gap = !persona && h.hit.kind === "knowledge-gap";
   const layer = h.rule.effectiveLayer;
   // A finding about what a person decided by answering (ADR 0115 addendum, 2026-10-24) doesn't
   // block: they already made the decision a waiver would be. Only where a waiver could be: a
@@ -182,7 +184,8 @@ export function toFinding(
     rule: h.rule.id,
     layer,
     // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
-    lens: questionOfRule(h.rule),
+    lens: persona ? "persona" : questionOfRule(h.rule),
+    ...(persona ? { persona } : {}),
     severity,
     artifact: h.hit.artifact,
     locator: h.hit.locator,
@@ -190,7 +193,7 @@ export function toFinding(
     why,
     fix: h.hit.fix,
     evidence: h.hit.evidence,
-    ...(h.hit.question ? { question: h.hit.question } : {}),
+    ...(h.hit.question && !persona ? { question: h.hit.question } : {}),
     ...(!gap && h.hit.answered ? { answered: h.hit.answered } : {}),
     waivable: !gap && severity === "blocking" && h.rule.waivable && layer !== "constitution",
     state: "open",
@@ -230,7 +233,8 @@ function foundNote(
     rule: h.rule.id,
     layer,
     // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
-    lens: questionOfRule(h.rule),
+    lens: h.rule.persona ? "persona" : questionOfRule(h.rule),
+    ...(h.rule.persona ? { persona: h.rule.persona } : {}),
     severity: "idea",
     artifact: h.hit.artifact,
     locator: h.hit.locator,
@@ -320,8 +324,13 @@ const DECIDED: ReadonlySet<string> = new Set(["applied", "waived", "dismissed"])
  * again, and a further round needs a further decision. The finding and question ids acted on
  * come back; none when no checking round is due.
  */
-export async function checkRoundDue(root: string, change: string, gate: string): Promise<string[]> {
-  return (await checkRoundState(root, change, gate)).actedOn;
+export async function checkRoundDue(
+  root: string,
+  change: string,
+  gate: string,
+  known: readonly string[] = BUILT_IN_AGENTS,
+): Promise<string[]> {
+  return (await checkRoundState(root, change, gate, known)).actedOn;
 }
 
 /**
@@ -332,6 +341,8 @@ export async function checkRoundState(
   root: string,
   change: string,
   gate: string,
+  /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+  known: readonly string[] = BUILT_IN_AGENTS,
 ): Promise<{ round?: number; openBlocking: number; actedOn: string[] }> {
   const n = (await countedRounds(root, change, gate)).at(-1);
   if (n === undefined) return { openBlocking: 0, actedOn: [] };
@@ -344,7 +355,7 @@ export async function checkRoundState(
   const openBlocking = findings.filter(
     (f) =>
       f.finding.severity === "blocking" &&
-      (!DECIDED.has(f.finding.state) || !f.finding.resolution || assistantClosed(f.finding)),
+      (!DECIDED.has(f.finding.state) || !f.finding.resolution || assistantClosed(f.finding, known)),
   ).length;
   if (openBlocking) return { round: n, openBlocking, actedOn: [] };
   const acted = findings
@@ -352,7 +363,7 @@ export async function checkRoundState(
       (f) =>
         f.finding.resolution &&
         f.finding.state !== "open" &&
-        !isAssistantResolution(f.finding.resolution) &&
+        !isAssistantResolution(f.finding.resolution, known) &&
         !carried.has(f.finding.id) &&
         f.finding.resolution.at >= since,
     )
@@ -383,6 +394,7 @@ export async function decidedElsewhere(
   root: string,
   change: string,
   gate: string,
+  known: readonly string[] = BUILT_IN_AGENTS,
 ): Promise<Map<string, Finding>> {
   const out = new Map<string, Finding>();
   for (const g of await reviewedGates(root, change)) {
@@ -393,7 +405,7 @@ export async function decidedElsewhere(
       const f = s.finding;
       if (!f.resolution || !(["dismissed", "waived"].includes(f.state) || wroteIn(f))) continue;
       // An assistant's dismissal of a blocking or risk finding was never a decision (ADR 0115 addendum).
-      if (assistantClosed(f)) continue;
+      if (assistantClosed(f, known)) continue;
       const reason = f.resolution.reason;
       const linked = !reason || decidedReason(reason).gate !== undefined;
       const resolution = linked
@@ -435,6 +447,11 @@ export interface RoundLens {
   promptSha256?: string;
   /** The hand-off run a waiting (or read-in) lens was with. */
   runId?: string;
+  /**
+   * ADR 0203 C: the persona whose naysayer this lens is (its `lens` is the persona's name). A
+   * persona lens never holds a gate: waiting or not, nothing waits on it.
+   */
+  persona?: string;
   /** The batched hand-off it was asked in with the round's other lenses (ADR 0185). */
   batch?: string;
   /** What the lens was sent, sized to need (ai.ts LensContext). */

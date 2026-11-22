@@ -141,7 +141,8 @@ import {
   withoutResume,
 } from "./loop.js";
 import { doneAt, type DoneAt } from "./places.js";
-import { plannedRepos, unreadConsumer } from "./planned.js";
+import { type Accepted, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
+import { acceptedRepos, plannedRepos, unreadConsumer } from "./planned.js";
 import { checkOperations, readOperations } from "./operations.js";
 import {
   checkOperationStories,
@@ -153,7 +154,7 @@ import {
   withOperationStories,
   type OperationStory,
 } from "./operation-stories.js";
-import { readPlacement } from "./feature.js";
+import { archivedWorkIssues, readPlacement } from "./feature.js";
 import {
   keepStoryNumbers,
   lastPart,
@@ -1996,7 +1997,8 @@ export function checkStories(
         if (unchecked.length)
           issue(
             "stories.field-not-checked",
-            t.id,
+            // ADR 0203 A: the fields are in the target, so another field left out is another finding.
+            fieldsTarget(t.id, unchecked),
             `Task ${taskName(want, t)}'s criteria check no value of ${unchecked.join(", ")}: write a criterion whose then clause asserts each, and list it under that criterion's checks.`,
             t.repo,
           );
@@ -2136,6 +2138,8 @@ export function checkSections(
     ...stories.map((s) => s.repo),
     // ADR 0189: the repos of the components the change plans, before they exist.
     ...(e ? plannedRepos(deltas, e) : []),
+    // ADR 0203 A: a repo a person accepted, known as a new one is.
+    ...(e ? acceptedRepos(e) : []),
     // ADR 0201: a manifest repo nobody read is known where a planned one is.
     ...(e ? unreadRepos(e) : []),
     ...(e?.flows.map((f) => f.repo) ?? []),
@@ -3004,6 +3008,56 @@ export interface StoryFileExtras {
    * disagree is answered (B-task-knowledge). Default `atticus plan stories <change>`.
    */
   asker?: { command: string; rerun: string };
+  /** ADR 0203 A: what people accepted at the change's stages, said under the task it is about. */
+  accepted?: readonly Accepted[];
+}
+
+/** ADR 0203 A: a field-not-checked finding's target: the task and the fields, sorted. */
+export const fieldsTarget = (task: string, fields: readonly string[]) =>
+  `${task}:${[...fields].sort().join(",")}`;
+
+/** ADR 0203 A: a shape-uncovered finding's target: the shape file and the story it names. */
+export const shapeTarget = (message: string) =>
+  `${SHAPE_FILE}:${/^Story (\S+) /.exec(message)?.[1] ?? ""}`;
+
+/**
+ * ADR 0203 A: the lines a task's file and prompt say of what a person accepted about it: a new
+ * file's folder that the repo doesn't have (the task creates it), and a field with no criterion
+ * (field-not-checked by the task; a story's field validation or error case under the first task
+ * that carries the field).
+ */
+function acceptedTaskLines(s: DeltaStory, t: DeltaTask, accepted: readonly Accepted[] = []) {
+  const out: string[] = [];
+  const said = (a: Accepted) => acceptedWords(a);
+  const first = (field: string) =>
+    (s.tasks.find((x) => x.fields.some((f) => foldName(f) === foldName(field))) ?? s.tasks[0])
+      ?.id === t.id;
+  for (const a of accepted) {
+    if (a.rule === "delta.new-folder") {
+      const m =
+        /a new file (\S+), but (\S+) has no folder (.+?)(?: that the catalog cites)?: /.exec(
+          a.message,
+        );
+      if (m && partsOf(t).some((p) => p.newFile === `${m[2]}:${m[1]}`))
+        out.push(`- New folder: ${m[3]}, in ${m[2]}: create it (${said(a)}).`);
+    } else if (a.rule === "stories.field-not-checked") {
+      const fields = /check no value of (.+?): write/.exec(a.message)?.[1]?.split(", ") ?? [];
+      if (a.fingerprint === issueFingerprint(a.rule, fieldsTarget(t.id, fields)))
+        for (const f of fields) out.push(`- No criterion for ${f}: ${said(a)}.`);
+    } else if (a.message.startsWith(`Story ${s.id}: `)) {
+      const field =
+        a.rule === "stories.field-no-validation"
+          ? /field (\S+) but says nothing it accepts/.exec(a.message)?.[1]
+          : a.rule === "stories.field-no-error-case"
+            ? /what happens when (\S+), a /.exec(a.message)?.[1]
+            : undefined;
+      if (field && first(field))
+        out.push(
+          `- No criterion for ${field}'s ${a.rule.endsWith("validation") ? "validation" : "error case"}: ${said(a)}.`,
+        );
+    }
+  }
+  return out;
 }
 
 /**
@@ -3304,6 +3358,7 @@ export function taskPromptFiles(
         ...(tw?.tests?.length ? { tests: tw.tests } : {}),
         ...(command ? { command } : {}),
       }),
+      ...acceptedTaskLines(s, t, x.accepted),
       "",
     ].join("\n");
   }
@@ -3367,6 +3422,10 @@ export function renderStoryFile(
   // ---- Tasks, each once (B-short).
   const command = x.commands?.[s.repo];
   lines.push("## Tasks", "");
+  // ADR 0203 A: a story the business analyst shaped, left with no task by a person's acceptance.
+  for (const a of x.accepted ?? [])
+    if (a.rule === "stories.shape-uncovered" && a.message.startsWith(`Story ${s.id} `))
+      lines.push(`No task for this story: ${acceptedWords(a)}.`, "");
   for (const t of s.tasks) {
     const tw = w.tasks.find((y) => y.id === t.id);
     const stepLines = [
@@ -3414,6 +3473,7 @@ export function renderStoryFile(
         ? [`- Waits for: ${andList(waits.map((r) => `${r.id} ${r.title}`))} (requests.md)`]
         : []),
       `- Prompt: ${promptFileOf(s, t)} (atticus task ${change} ${label(t)})`,
+      ...acceptedTaskLines(s, t, x.accepted),
       "",
     );
   }
@@ -4252,6 +4312,11 @@ export async function storiesStage(
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
   const placement = await readPlacement(dir);
   estate.outside = new Set((placement?.outside ?? []).map((x) => x.id));
+  // ADR 0203 A.4: the ids people accepted at a stage are known to every check, with who and why.
+  estate.acceptedFindings = await readAccepted(root, change.id, ctx).catch(
+    () => new Map<string, Accepted>(),
+  );
+  estate.accepted = acceptedIds(estate.acceptedFindings);
   const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
@@ -4624,6 +4689,9 @@ Rules:
         standards: new Set(standards.keys()),
       }),
       ...checkOperationStories(a.operations, opStories),
+      // ADR 0203 B addendum: a repo archived since the feature stage takes no new work here either.
+      // Its operations are the operations file's, checked by checkOperations: raised once.
+      ...archivedWorkIssues({ newFlows: placement?.newFlows ?? [] }, estate, deltas),
       // ADR 0203 review: the operations file as it is now, checked as the architecture stage
       // checks it (a person may have edited it since): no story is written from a plan it refuses.
       ...checkOperations(
@@ -4631,7 +4699,10 @@ Rules:
         opsRead.file?.waves,
         estate,
         placement ?? { newFlows: [] },
-        plannedRepos(deltas, estate),
+        new Set([
+          ...plannedRepos(deltas, estate),
+          ...acceptedRepos(estate, ["feature.unknown-repo"]),
+        ]),
       ).filter((i) => i.blocking),
       ...(await coverageIssues(unwrittenChecks(a, stories), {
         ...(judging ? { runtime: judging } : {}),
@@ -4645,9 +4716,10 @@ Rules:
       // ADR 0113 addendum: a criterion from a note quotes its line; a note never overrides code.
       ...(noted ? noteCiteIssues(a, attached, storyCodeCites(stories, ctx.records)) : []),
       // ADR 0191: nothing the business analyst shaped is left without a task.
+      // ADR 0203 A: one finding a story, its id in the target, so accepting one accepts one.
       ...shapeIssues(shaped, shape).map((message) => ({
         rule: "stories.shape-uncovered",
-        target: SHAPE_FILE,
+        target: shapeTarget(message),
         message,
         blocking: true,
       })),
@@ -4669,6 +4741,7 @@ Rules:
       const written = await writeStories(root, change.id, stories, a, requests, now, open, {
         ...extras,
         estate,
+        accepted: [...(estate.acceptedFindings?.values() ?? [])],
         // ADR 0191 review: a moved task's number is kept under its new story too, so a task the
         // story gains later never takes it.
         numbers: shape.entries.length ? numbersWithMoved(numbers, shaped) : numbers,

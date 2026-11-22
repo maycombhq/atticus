@@ -37,13 +37,14 @@ import {
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { openspecInstructionSource } from "./openspec-files.js";
-import { readPlacement } from "./feature.js";
+import { archivedWorkIssues, readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import { patternLine, type Level } from "./knowledge-lines.js";
 import {
+  issueFingerprint,
   runStageLoop,
   SELF_CHECK_RULE,
   stageBudget,
@@ -73,7 +74,9 @@ import {
 import { checkoutEmpty, checkoutHas, readCheckoutFile } from "./story-code.js";
 import { callsAt, declaresMethod, doneAt, flowCitesFile } from "./places.js";
 import {
+  breakingChanges,
   consumerIssues,
+  consumerMissingTarget,
   endpointConsumers,
   endpointName,
   renderBreaking,
@@ -93,7 +96,8 @@ import {
   withOperationRollback,
   writeOperations,
 } from "./operations.js";
-import { plannedComponents, plannedRepos } from "./planned.js";
+import { type Accepted, acceptanceOf, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
+import { acceptedRepos, knownToChange, plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
 
@@ -1034,7 +1038,7 @@ export async function placeIssues(
         const f = parseNewFile(s.new);
         if (!f) {
           issue(
-            "new",
+            `new:${s.new}`,
             "delta.new-folder",
             `${change} puts the new code in ${s.new}, which isn't a path in ${d.repo}: give the new file's path from the repo's root, in the folder of its nearest kin.`,
           );
@@ -1057,14 +1061,14 @@ export async function placeIssues(
         if (!there && root && (await checkoutEmpty(root, d.repo)))
           // ADR 0201: an empty repo has no layout to follow yet: a note, not a refusal.
           issue(
-            "new",
+            `new:${folder || "."}`,
             "delta.new-folder",
             `${change} puts the new code in a new file ${f}, and ${d.repo} is an empty repo: the change gives it its layout, so the folder isn't checked.`,
             false,
           );
         else if (!there)
           issue(
-            "new",
+            `new:${folder || "."}`,
             "delta.new-folder",
             `${change} puts the new code in a new file ${f}, but ${d.repo} has no folder ${folder || "at its root"}${checkout ? "" : " that the catalog cites"}: name the file in the folder of its nearest kin, the repo's own layout.`,
             // Without a checkout the catalog may not cite every folder: a note, not a refusal.
@@ -1510,7 +1514,9 @@ export function checkDeltas(
       )
         issue(
           "delta.unknown-component",
-          at,
+          // ADR 0203 A: the target holds what a person may accept, so a draft that names another
+          // component is another finding.
+          `${at}:${s.to.component}`,
           ["Table", "DataStore"].includes(e.byId.get(s.to.component)?.kind ?? "")
             ? `Change ${i + 1} to ${t} goes to ${s.to.component}, which is a ${e.byId.get(s.to.component)!.kind === "Table" ? "table" : "data store"}, not a component: a step that reads or writes it names it under store, as store: { table: ${s.to.component}, columns: [the columns] }, and has no to.`
             : `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
@@ -1534,7 +1540,7 @@ export function checkDeltas(
         if (have.size && !s.to.new && !known)
           issue(
             "delta.unknown-entry",
-            at,
+            `${at}:${s.to.component}:${s.to.entry}`,
             `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}${/^METHOD\s/i.test(s.to.entry) ? `: write the HTTP method itself (GET, POST, PUT, PATCH or DELETE), not METHOD. ${s.to.component} has` : ", which the catalog doesn't have; it has"} ${nearestEntries(s.to.entry, [...have.values()]).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
             d.repo,
           );
@@ -2322,6 +2328,36 @@ export function renderArchitecture(
     for (const r of reads) lines.push(`- ${r.flow}${readName(r.flow)}: ${r.why}`);
     lines.push("");
   }
+  // ADR 0203: each consumer the catalog doesn't hold, with its standing; no task is made for it.
+  const known = knownToChange(deltas, e);
+  const listed = deltas.flatMap((d) =>
+    [...(d.consumers ?? []), ...d.steps.flatMap((s) => s.store?.consumers ?? [])]
+      .filter((c) => !e.byId.has(c) && known.has(c))
+      .map((c) => ({ c, flow: d.flow, k: known.get(c)! })),
+  );
+  if (listed.length) {
+    lines.push("## Consumers the map can't check", "");
+    for (const { c, flow, k } of listed)
+      lines.push(
+        `- ${c} (of ${flow}): ${k.standing === "accepted" ? acceptedWords({ by: k.by!, why: k.why! }) : k.standing}; its use can't be checked.`,
+      );
+    lines.push("");
+  }
+  // ADR 0203 A: a consumer the map knows and the draft leaves out, which a person accepted.
+  const unaffected = breakingChanges(deltas, e).flatMap((c) => {
+    const missing = c.consumers.filter((x) => !c.listed.includes(x));
+    const a = missing.length
+      ? acceptanceOf(e.acceptedFindings, {
+          rule: "delta.consumer-missing",
+          fingerprint: issueFingerprint(
+            "delta.consumer-missing",
+            consumerMissingTarget(c.target, missing),
+          ),
+        })
+      : undefined;
+    return a ? missing.map((x) => `- ${x} (of ${c.flow}): not affected, ${acceptedWords(a)}.`) : [];
+  });
+  if (unaffected.length) lines.push("## Consumers not affected", "", ...unaffected, "");
   const ifs = interfaceChanges(deltas, e);
   lines.push("## Interface changes", "");
   if (ifs.length) {
@@ -2351,7 +2387,7 @@ export function renderArchitecture(
         (ops.operations.length
           ? [...suggestedDeploy(deltas, e), ...suggestedOperationOrder(ops.operations, ops.waves)]
           : []),
-      plannedRepos(deltas, e),
+      new Set([...plannedRepos(deltas, e), ...acceptedRepos(e)]),
     ),
     ...withOperationRollback(renderRollback(deltas, e), ops.operations),
   );
@@ -2575,6 +2611,11 @@ export async function architectureStage(
   const estate = await loadEstate(root, ctx.records);
   // ADR 0203 B.7: the parties the feature declares as outside the map are known to every check.
   estate.outside = new Set((placement.outside ?? []).map((x) => x.id));
+  // ADR 0203 A.4: the ids people accepted at a stage are known to every check, with who and why.
+  estate.acceptedFindings = await readAccepted(root, change.id, ctx).catch(
+    () => new Map<string, Accepted>(),
+  );
+  estate.accepted = acceptedIds(estate.acceptedFindings);
   const knowledge = await readKnowledge(root, { cacheRoot: root });
   const patterns = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
 
@@ -2829,13 +2870,20 @@ export async function architectureStage(
       }),
       // B-arch, check 4: the deploy order puts a callee before its caller, a migration first.
       ...deployIssues(a.flows, a.deploy, estate),
+      // ADR 0203 B addendum: a repo archived since the feature stage takes no new work here either.
+      // Its operations are the operations file's, checked by checkOperations: raised once.
+      ...archivedWorkIssues({ newFlows: placement.newFlows }, estate, a.flows),
       // ADR 0203 B: the operations against the estate, the feature and what runs today.
       ...checkOperations(
         a.operations ?? [],
         a.waves,
         estate,
         placement,
-        plannedRepos(a.flows, estate),
+        // ADR 0203 A: a repo accepted at the feature stage; one accepted here is raised again.
+        new Set([
+          ...plannedRepos(a.flows, estate),
+          ...acceptedRepos(estate, ["feature.unknown-repo"]),
+        ]),
       ),
       ...operationDeployIssues(
         a.operations ?? [],

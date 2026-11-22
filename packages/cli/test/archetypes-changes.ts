@@ -706,7 +706,7 @@ flows:
 `,
 };
 
-const given = (repo: string, then: string) =>
+export const given = (repo: string, then: string) =>
   `      - repo: ${repo}\n        criteria:\n          - "Given ${repo} as it is today, when the operation is done, then ${then}"\n`;
 
 /**

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import type { SourceInput } from "@maycombhq/ai";
 import { realUndo, writeFileAtomic } from "@maycombhq/changes";
-import { estateRepos, notEstateWhy, type Estate } from "./estate.js";
+import { archivedRepoWords, estateRepos, notEstateWhy, type Estate } from "./estate.js";
 import type { StageIssue } from "./loop.js";
 import { schemaProblems } from "./schema-words.js";
 import {
@@ -268,8 +268,15 @@ export function checkOperations(
   ]);
   const ids = ops.map((o) => o.id);
   for (const o of ops) {
-    // An archived repo takes no new work, whatever the catalog still holds of it.
-    for (const repo of o.repos.filter((r) => !known.has(r) || e.archivedRepos.has(r)))
+    // An archived repo takes no new work, whatever the catalog still holds of it: its own rule,
+    // which can't be accepted (ADR 0203 B addendum).
+    for (const repo of o.repos.filter((r) => e.archivedRepos.has(r)))
+      issue(
+        "archived-repo",
+        `${o.id}:${repo}`,
+        archivedRepoWords(`Operation ${o.id} names`, repo, "Name the repo that took over its work"),
+      );
+    for (const repo of o.repos.filter((r) => !known.has(r) && !e.archivedRepos.has(r)))
       issue(
         "unknown-repo",
         `${o.id}:${repo}`,

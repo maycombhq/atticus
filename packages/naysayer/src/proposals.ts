@@ -2,7 +2,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { changeFolder, writeFileAtomic, type ChangeContext } from "@maycombhq/changes";
+import {
+  assistantNames,
+  BUILT_IN_AGENTS,
+  changeFolder,
+  writeFileAtomic,
+  type ChangeContext,
+} from "@maycombhq/changes";
 import { assistantActor, IsoDateTime, toCanonicalYaml, type Finding } from "@maycombhq/core";
 
 /**
@@ -37,15 +43,14 @@ const ProposalsFile = z.strictObject({
 const fileOf = (root: string, change: string, gate: string, round: number) =>
   join(changeFolder(root, change), "review", gate, String(round), "meta", "proposals.yaml");
 
-/** The names that are an AI's in this metarepo, besides the built-in ones: the org pack's agents and models. */
-export function assistantNames(lifecycle: Pick<ChangeContext, "orgPack">): string[] {
-  const rt = lifecycle.orgPack.runtime as { models?: { allowed?: string[] } };
-  return [...lifecycle.orgPack.agents.map((a) => a.id), ...(rt.models?.allowed ?? [])];
-}
+/** Atticus's own agents and the metarepo's: in @maycombhq/changes, so the lifecycle reads them too. */
+export { BUILT_IN_AGENTS, assistantNames };
 
 /** The AI a `by` names, with the org pack's agents and models known; undefined for a person. */
-export const assistantOf = (lifecycle: Pick<ChangeContext, "orgPack">, by: string) =>
-  assistantActor(by, assistantNames(lifecycle));
+export const assistantOf = (
+  lifecycle: Pick<ChangeContext, "orgPack"> & { root?: string },
+  by: string,
+) => assistantActor(by, assistantNames(lifecycle));
 
 /** The severities only a person's resolution closes. */
 export const PERSON_CLOSES: ReadonlySet<string> = new Set(["blocking", "risk"]);
@@ -54,7 +59,7 @@ export const PERSON_CLOSES: ReadonlySet<string> = new Set(["blocking", "risk"]);
  * Whether a finding's resolution doesn't count as closing it: an AI resolved a blocking or risk
  * finding (a file from before this rule, or written by hand). It is read as still open.
  */
-export const assistantClosed = (f: Finding, known: readonly string[] = []): boolean =>
+export const assistantClosed = (f: Finding, known: readonly string[] = BUILT_IN_AGENTS): boolean =>
   f.state !== "open" &&
   PERSON_CLOSES.has(f.severity) &&
   !!f.resolution &&

@@ -2,7 +2,7 @@ import { redactSecrets } from "@maycombhq/core";
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
 import { changeMapBody, changeMapOf } from "./change-map.js";
 import { estimateOf } from "./change-estimate.js";
-import { knowledgeAppliesMarkdown, readKnowledgeApplies } from "@maycombhq/planner";
+import { knowledgeAppliesMarkdown, readAccepted, readKnowledgeApplies } from "@maycombhq/planner";
 
 /**
  * A hand-off PR that reviews itself (WP7.4): the parts of the PR body an approver would
@@ -86,6 +86,17 @@ export async function handoffReview(root: string, change: string): Promise<strin
   }
   if (!any) lines.push("No gate has been reviewed yet.");
   lines.push("");
+
+  // ADR 0203 A.5: each stage finding a person accepted, one line each: rule, who, why.
+  const accepted = [...(await readAccepted(root, change).catch(() => new Map())).values()];
+  if (accepted.length) {
+    lines.push("### Accepted by people", "");
+    for (const a of accepted)
+      lines.push(
+        `- \`${a.rule}\` at the ${a.stage} stage, by ${inlineCode(a.by)}: ${inlineCode(a.why)}`,
+      );
+    lines.push("");
+  }
 
   lines.push("### Findings still open", "");
   const gates = await reviewedGates(root, change).catch(() => [] as string[]);

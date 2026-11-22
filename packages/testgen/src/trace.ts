@@ -16,7 +16,7 @@ import { loadPlanContext, type PlanContext } from "@maycombhq/planner";
 import { readChangeRepos, type GitRunner } from "@maycombhq/workspace";
 import { TestgenError } from "./errors.js";
 import { readManifests, type ManifestFile } from "./generate.js";
-import { writeGateRound, type RoundWrite } from "./rounds.js";
+import { writeGateRound, type RoundWrite } from "@maycombhq/naysayer";
 import { endpointFor } from "./spec.js";
 import { loadStory, type StoryContext } from "./story.js";
 import { repoPlace } from "./targets.js";
