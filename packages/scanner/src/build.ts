@@ -2614,8 +2614,11 @@ function sameFilesAs(read: CatalogFilesRead | undefined, dir: string, onDisk: Di
   return true;
 }
 
-/** `signal` (beta.28.3): a job's Stop ends the read of every file part way, with CancelledError. */
-async function hashFiles(
+/**
+ * `signal` (beta.28.3): a job's Stop ends the read of every file part way, with CancelledError.
+ * Exported for `atticus selfcheck --timing` (v31 gate 1), which times it with `keep: false`.
+ */
+export async function hashFiles(
   dir: string,
   /** The metarepo, whose kept hashes are used; `keep: false`: read, never written (a preview). */
   cache: { root: string; keep?: boolean },

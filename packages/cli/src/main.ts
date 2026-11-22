@@ -580,7 +580,7 @@ Usage:
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, the tier your assistant reads a repo at, and (where runtime.yaml allows copilot-acp) the Copilot language server, its version and its sign-in, without running a session (ADR 0171)
   atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus status [--json]              Where this metarepo stands, in one line: your Atticus, the metarepo's stamp, whether this Atticus reads its catalog, what the editor's extension needs when it said so, and the one command to run (or Nothing to do). The same line ends every refusal. Exit 0 when up to date, 1 otherwise
-  atticus selfcheck [--names] [--quick] [--json]  Run on site, read-only: four named checks against this metarepo (every call the join left has a reason; every refusal names a next step; a build twice gives the same bytes; no long command silent for over 30 seconds), then a shape card of fixed words. Counts are given in bands; no name, id, path, hash or exact count of the estate is printed. Nothing is sent anywhere. --names adds, on screen only, the exact counts and the first 20 ids or paths behind each failed check. --quick skips the check that builds the catalog twice in memory. Exit 0 when none failed, 1 when one did, 2 when it couldn't run (no metarepo, or another command holds the lock)
+  atticus selfcheck [--names] [--quick] [--timing] [--json]  Run on site, read-only: four named checks against this metarepo (every call the join left has a reason; every refusal names a next step; a build twice gives the same bytes; no long command silent for over 30 seconds), then a shape card of fixed words. Counts are given in bands; no name, id, path, hash or exact count of the estate is printed. Nothing is sent anywhere. --names adds, on screen only, the exact counts and the first 20 ids or paths behind each failed check. --quick skips the check that builds the catalog twice in memory. Exit 0 when none failed, 1 when one did, 2 when it couldn't run (no metarepo, or another command holds the lock). With --timing, only one catalog build in memory, timed phase by phase (the build each repo's Apply runs), in fixed words and seconds; --names adds the count of repos with facts.
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
@@ -1369,7 +1369,12 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
   if (group === "selfcheck" && !command)
     return (await import("./selfcheck.js")).selfcheckCommand(
       root,
-      { json: values.json === true, names: values.names === true, quick: values.quick === true },
+      {
+        json: values.json === true,
+        names: values.names === true,
+        quick: values.quick === true,
+        timing: values.timing === true,
+      },
       io,
     );
   if (group === "catalog" && command === "validate") {

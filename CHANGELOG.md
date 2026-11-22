@@ -2,6 +2,16 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased (2.0.0-beta.30.1)
+
+### Added
+
+- **`atticus selfcheck --timing` (the v31 plan, gate 1).** One catalog build in memory, timed phase by phase, after the two reads each repo's Apply makes first: the catalog on disk, and the hash of every record file that the write's guards make (where antivirus and a slow disk show). Read-only, nothing sent, fixed words and seconds only; `--names` adds the count of repos with facts and what Apply to every repo costs at one build each; `--json` gives the phases as numbers. For reading the number off the screen where nothing may leave the machine.
+
+### Changed
+
+- **The estate join is frozen at its beta.30 size** (`scripts/check-frozen-files.mjs`, in `pnpm lint`). `packages/core/src/facts-join.ts` may be moved or shortened, never grown: an arrow the join reads wrongly is fixed by a reading rule, a pairing or a correction in the metarepo. Only the owner raises the ceiling. See [the v31 plan](docs/plan/v31.md).
+
 ## 2.0.0-beta.30 (2026-11-22)
 
 ### Added
