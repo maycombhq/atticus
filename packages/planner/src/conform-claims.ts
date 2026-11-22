@@ -376,7 +376,7 @@ export function conformClaims(input: ClaimsInput): {
       ? `no fact covers ${shown(basis.unread)}, which changed since ${repo} was read`
       : basis.from === "readers"
         ? `${repo} hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check`
-        : `nobody has read ${repo} into facts`;
+        : `nobody has read ${repo} at this commit`;
   const unreadNext = () =>
     basis.from === "facts"
       ? `Have your assistant read ${shown(basis.unread)} in ${repo}'s branch into ${branchFacts} (facts at the branch's commit, each citing its file and line), then check again: ${conformCmd}. They are verified here and never written to the catalog.`
@@ -505,6 +505,15 @@ export function conformClaims(input: ClaimsInput): {
           "nothing a scan can find",
           `${op ?? "The row"} in ${repo} names no file a scan can find.`,
         );
+        continue;
+      }
+      if (basis.from === "none") {
+        push(c, {
+          outcome: "unconfirmed",
+          expected: `file ${e.file}`,
+          what: `Atticus couldn't confirm that ${repo} has ${e.file}: ${unreadWhy()}.`,
+          at: [claimCite(c)],
+        });
         continue;
       }
       // A file of the commit's tree is git's to say, whatever the facts cover.

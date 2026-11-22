@@ -86,7 +86,7 @@ function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
         {C.repo(r.repo, r.ref)}
       </h3>
       <p className="muted" style={{ margin: "0 0 4px" }}>
-        {C.commits(r.commit, r.base)}
+        {r.commit ? C.commits(r.commit, r.base) : C.notScanned}
         {r.task ? `. ${C.task(r.task)}` : ""}
       </p>
       <p className="est-big">{bad ? C.counts(r.counts) : C.allGood}</p>

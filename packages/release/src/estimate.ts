@@ -57,6 +57,22 @@ export interface EstimateUnit {
   /** The org pack's range for its class; none when no class matches. */
   days?: DayRange;
   source: string;
+  /**
+   * ADR 0206: a unit no target flow gives: a row of a quick change's design.md In the code, an
+   * operation task (`_operations.yaml`), or a quick change's task before its table is written.
+   */
+  from?: "design" | "operations" | "tasks";
+}
+
+/** ADR 0206: a unit a change states outside its target flows, already classed. */
+export interface StatedUnit {
+  /** The task it is (`o1.2` for an operation's task), else its repo. */
+  flow: string;
+  repo: string;
+  what: string;
+  class: string;
+  source: string;
+  from: "design" | "operations" | "tasks";
 }
 
 export interface EstimateDriver {
@@ -93,6 +109,8 @@ export interface ChangeEstimate {
 export interface EstimateInput {
   change: string;
   flows: EstimateFlow[];
+  /** ADR 0206: units a change states outside its target flows. */
+  stated?: StatedUnit[];
   /** The org pack's estimates.yaml; none, and the estimate sizes the work only. */
   table?: Estimates;
   /** The boundary of a component's system (product, internal, vendor). */
@@ -231,10 +249,19 @@ export function estimateChange(input: EstimateInput): ChangeEstimate {
     ).length;
     drive("unconfirmed-step", "Changed steps no check or person confirmed", unconfirmed, f.file);
   }
+  for (const u of input.stated ?? []) {
+    const days = rangeOf(u.class, input.table);
+    units.push({ ...u, ...(days ? { days } : {}) });
+    if (u.class.includes("/new-table")) drive("new-table", "New tables", 1, u.source);
+    else if (u.class.startsWith("quick/calls/vendor/new-entry"))
+      drive("new-vendor-call", "New calls to a vendor", 1, u.source);
+  }
   drive("open-blocking", "Open blocking findings", input.openBlocking ?? 0);
   drive("open-questions", "Open questions", input.openQuestions ?? 0);
   drive("conflicts", "Other open changes on the same parts", input.conflicts ?? 0);
-  const repos = [...new Set(input.flows.map((f) => f.repo))].sort();
+  const repos = [
+    ...new Set([...input.flows.map((f) => f.repo), ...(input.stated ?? []).map((u) => u.repo)]),
+  ].sort();
   if (repos.length > 1) drive("repos", "Repos to change", repos.length);
   const ORDER: EstimateDriver["id"][] = [
     "new-vendor-call",

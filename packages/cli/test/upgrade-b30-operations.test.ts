@@ -6,8 +6,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
+import { z } from "zod";
 import { MockRuntime } from "@maycombhq/ai";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { Api, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { changeFolder } from "@maycombhq/changes";
 import { orgFlowVersionOf } from "@maycombhq/openspec-adapter";
 import { EXPAND_AGENT, OPERATIONS_FILE } from "@maycombhq/planner";
@@ -221,6 +222,115 @@ describe("atticus upgrade to beta.30: org-flow 3, and a change done through stor
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
       expect(changedPaths(root)).toEqual([]);
       expect(await bytesOf(root)).toEqual(upgraded);
+    },
+    T,
+  );
+});
+
+/**
+ * ADR 0206, Migration: a stored conformance check as beta.28.5 wrote it (no claims) reads as it
+ * did after the upgrade, byte for byte; and a result this release writes, with claims, still
+ * parses with beta.28.5's shape of ConformRepoResult (a copy, kept here as that version had it:
+ * a plain object, so an older reader drops the keys it doesn't know).
+ */
+const B285_CONFORM_RESULT = z.object({
+  schemaVersion: z.literal(1),
+  change: z.string(),
+  repo: z.string(),
+  ref: z.string(),
+  commit: z.string(),
+  base: z.string(),
+  task: z.string().optional(),
+  checkedAt: z.string(),
+  counts: z.object({
+    found: z.number().int(),
+    missing: z.number().int(),
+    stillThere: z.number().int(),
+    unexpected: z.number().int(),
+  }),
+  items: z.array(
+    z.object({
+      status: z.enum(["found", "missing", "still-there", "unexpected"]),
+      check: z.enum(["call", "publish", "table", "column", "migration", "trigger", "endpoint"]),
+      flow: z.string().optional(),
+      item: z.number().int().positive().optional(),
+      task: z.string().optional(),
+      what: z.string(),
+      record: z.string().optional(),
+      at: z.array(
+        z.object({
+          source: z.enum(["artifact", "code"]),
+          repo: z.string().optional(),
+          path: z.string(),
+          line: z.number().int().positive().optional(),
+        }),
+      ),
+    }),
+  ),
+  unchecked: z.array(
+    z.object({
+      flow: z.string(),
+      item: z.number().int().positive().optional(),
+      kind: z.string(),
+      why: z.string(),
+    }),
+  ),
+  problems: z.array(z.string()),
+});
+
+describe("a stored conformance check from beta.28.5 (ADR 0206)", () => {
+  it(
+    "reads as it did after the upgrade, byte for byte, and a result with claims parses with beta.28.5's shape",
+    async () => {
+      const root = await b285Metarepo();
+      const file = join(changeFolder(root, STAGED), "conform/forge-ledger.yaml");
+      await mkdir(dirname(file), { recursive: true });
+      await cp(join(FIXTURES, "upgrade-b30/conform-28.5.yaml"), file);
+      git(root, "add", "-A");
+      git(root, "commit", "-q", "-m", "a conformance check as beta.28.5 kept it");
+      const latest = async () => {
+        const c = io();
+        expect(
+          await main(["change", "conform", STAGED, "--latest", "--root", root], c.io, {
+            quiet: true,
+          }),
+        ).toBe(0);
+        return c.out;
+      };
+      const said = await latest();
+      expect(said[0]).toMatch(
+        /^forge-ledger at change\/add-fraud-check \(3c1f0a9b2d4e, from 9e8d7c6b5a4f\): 1 found/,
+      );
+      const before = await bytesOf(root);
+      expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
+      expect(await bytesOf(root)).toEqual(before);
+      expect(changedPaths(root).filter((f) => f.includes("/conform/"))).toEqual([]);
+      expect(await latest()).toEqual(said);
+
+      const stored = parse(await readFile(file, "utf8")) as Record<string, unknown>;
+      const newer = {
+        ...stored,
+        counts: {
+          ...(stored.counts as object),
+          claims: { present: 1, differs: 0, missing: 0, notCheckable: 0, unconfirmed: 0 },
+        },
+        claims: [
+          {
+            outcome: "present",
+            check: "deployment",
+            repo: "forge-ledger",
+            from: { file: "target-flows/_operations.yaml", line: 8, operation: "deploy-anvil" },
+            expected: "platform anvil, env prod",
+            what: "forge-ledger runs on anvil in prod.",
+            at: [{ source: "code", repo: "forge-ledger", path: "deploy/anvil.yaml", line: 3 }],
+            next: "Nothing: the line is cited for the reviewer.",
+          },
+        ],
+      };
+      expect(Api.ConformRepoResult.safeParse(newer).success).toBe(true);
+      const old = B285_CONFORM_RESULT.safeParse(newer);
+      expect(old.success).toBe(true);
+      expect(old.data).not.toHaveProperty("claims");
     },
     T,
   );

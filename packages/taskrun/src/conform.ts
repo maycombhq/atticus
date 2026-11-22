@@ -42,7 +42,7 @@ import {
 import { branchFactsAt, scanEstate, type FactBasis } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { slug, writeGateRound } from "@maycombhq/testgen";
-import { baseClonePath, createGit, type GitRunner } from "@maycombhq/workspace";
+import { baseClonePath, createGit, loadRepos, type GitRunner } from "@maycombhq/workspace";
 
 /**
  * Does the code do what the design says? (ADR 0114.) A repo's branch for a change (the change
@@ -450,6 +450,67 @@ export async function conformChange(
   for (const repo of repos) {
     const ref = o.ref ?? (o.task ? taskBranch(change, o.task.toLowerCase()) : changeBranch(change));
     const base = baseClonePath(root, repo);
+    const mine = claims.filter((c) => c.repo === repo);
+    // ADR 0206: a repo only claims name, with no clone here: its claims are said, never thrown.
+    if (!existsSync(base) && mine.length && !deltas.some((d) => d.delta.repo === repo)) {
+      const listed = await loadRepos(root).then(
+        (rs) => rs.some((r) => r.id === repo),
+        () => false,
+      );
+      const why = listed
+        ? `${repo} has no clone here, so nothing of it was scanned: run atticus workspace sync, then check again.`
+        : `${repo} isn't a repo of the estate yet: if it is new, create it on your Git host, then add it (atticus repo add <its clone URL> --id ${repo}), and check again.`;
+      const judged = conformClaims({
+        change,
+        changesRel: changesRelOf(root),
+        repo,
+        claims: mine,
+        before: [],
+        after: [],
+        files: [],
+        basis: { from: "none" },
+      });
+      const result: Api.ConformRepoResultT = {
+        schemaVersion: 1,
+        change,
+        repo,
+        ref: o.ref ?? (o.task ? taskBranch(change, o.task.toLowerCase()) : changeBranch(change)),
+        commit: "",
+        base: "",
+        ...(o.task ? { task: o.task.toLowerCase() } : {}),
+        checkedAt: now,
+        counts: {
+          found: 0,
+          missing: 0,
+          stillThere: 0,
+          unexpected: 0,
+          claims: claimCounts(judged.claims),
+        },
+        items: [],
+        unchecked: [],
+        claims: judged.claims,
+        problems: [why],
+      };
+      await writeFileAtomic(
+        join(changeFolder(root, change), CONFORM_DIR, `${repo}.yaml`),
+        toCanonicalYaml(result, [
+          "schemaVersion",
+          "change",
+          "repo",
+          "ref",
+          "commit",
+          "base",
+          "task",
+          "checkedAt",
+          "counts",
+          "outcome",
+          "check",
+          "from",
+        ]),
+      );
+      results.push(result);
+      continue;
+    }
     if (!existsSync(base))
       throw new ConformError(
         "refused",
@@ -495,7 +556,6 @@ export async function conformChange(
         })
       : { items: [] as ConformItem[], unchecked: [] };
     // ADR 0206: each claim in this repo, looked for in the facts at the commit.
-    const mine = claims.filter((c) => c.repo === repo);
     const judged = mine.length
       ? conformClaims({
           change,

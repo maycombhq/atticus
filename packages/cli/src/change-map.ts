@@ -9,7 +9,13 @@ import {
   type Api,
   type CatalogRecord,
 } from "@maycombhq/core";
-import { changeView, toDrawio, toMermaid, type FlowView } from "@maycombhq/diagrams";
+import {
+  changeView,
+  toDrawio,
+  toMermaid,
+  type ChangeFlowIn,
+  type FlowView,
+} from "@maycombhq/diagrams";
 import {
   mergeDelta,
   readDeltas,
@@ -17,6 +23,8 @@ import {
   type FlowDelta,
   type MergedFlow,
 } from "@maycombhq/planner";
+import { callOf, CODE_HAS, componentOfRepo, quickViewOf, type QuickView } from "./change-quick.js";
+import { loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
 
@@ -32,6 +40,81 @@ export interface ChangeMap {
   source: string;
   flows: number;
   problems: string[];
+  /** ADR 0206: a change with no target flow, drawn from design.md's rows or tasks.md's repos. */
+  from?: "design" | "tasks";
+  /** How many rows of In the code it is drawn from, and how many (operations) aren't drawn. */
+  rows?: number;
+  notDrawn?: number;
+}
+
+/**
+ * ADR 0206: a quick change's rows as the flows `changeView` draws, in memory only (never written
+ * as target flows): one a repo's component, its calls and publishes as added steps, its stores as
+ * stores, a topic it listens to as a line from the topic. A part is new only when the change
+ * plans it (requirements.md's Planned, or a repo of tasks.md no manifest or record has).
+ */
+export function quickFlows(
+  q: QuickView,
+  records: readonly CatalogRecord[],
+  known: (id: string) => boolean,
+): ChangeFlowIn[] {
+  const flows = new Map<string, ChangeFlowIn>();
+  const flowOf = (component: string, planned: boolean) => {
+    const f = flows.get(component) ?? {
+      flow: `quick.${component}`,
+      name: component,
+      component,
+      change: planned ? ("new" as const) : ("modify" as const),
+      steps: [],
+    };
+    flows.set(component, f);
+    return f;
+  };
+  const isPlanned = (id: string) => q.planned.has(id) || !known(id);
+  const tables = new Set(records.filter((r) => r.kind === "Table").map((r) => r.id));
+  if (q.from === "tasks") {
+    for (const repo of q.repos)
+      flowOf(componentOfRepo(records, repo), isPlanned(repo)).steps.push({
+        mark: "added",
+        kind: "task",
+      });
+    return [...flows.values()];
+  }
+  for (const r of q.rows.filter((x) => CODE_HAS.has(x.has))) {
+    const comp = componentOfRepo(records, r.repo);
+    const f = flowOf(comp, isPlanned(r.repo));
+    if (r.has === "calls") {
+      const { target, entry } = callOf(r.what);
+      const to = componentOfRepo(records, target);
+      f.steps.push({
+        mark: "added",
+        kind: "call-out",
+        to: { component: to, entry, ...(isPlanned(target) ? { new: true } : {}) },
+      });
+    } else if (r.has === "publishes")
+      f.steps.push({ mark: "added", kind: "publish", to: { component: r.what, entry: r.what } });
+    else if (r.has === "listens")
+      flowOf(r.what, false).steps.push({
+        mark: "added",
+        kind: "publish",
+        to: { component: comp, entry: r.what },
+      });
+    else if (r.has === "table" || r.has === "column" || r.has === "migration") {
+      const table = r.has === "column" ? r.what.slice(0, r.what.lastIndexOf(".")) : r.what;
+      if (r.has === "migration") f.steps.push({ mark: "added", kind: "store" });
+      else
+        f.steps.push({
+          mark: "added",
+          kind: "store",
+          store: {
+            table,
+            columns: r.has === "column" ? [r.what.slice(r.what.lastIndexOf(".") + 1)] : [],
+            ...(tables.has(table) ? {} : { new: true }),
+          },
+        });
+    } else f.steps.push({ mark: "added", kind: "entry" });
+  }
+  return [...flows.values()];
 }
 
 /** A change's target flows merged with today's, and what reading them needs (ADR 0108, 0109). */
@@ -105,6 +188,41 @@ export async function targetFlowsOf(
 export async function changeMapOf(root: string, change: string): Promise<ChangeMap | undefined> {
   const t = await targetFlowsOf(root, change);
   if (!t) return undefined;
+  const q = t.merged.length ? undefined : await quickViewOf(root, change);
+  if (q) {
+    // A repo a manifest lists is known, read or not: only what the change plans is new.
+    const listed = await loadRepos(root).then(
+      (rs) => rs.map((r) => r.id),
+      () => [] as string[],
+    );
+    const known = new Set([
+      ...t.known,
+      ...listed,
+      ...t.records.flatMap((r) => [
+        r.id,
+        ...((r as { repo?: string }).repo ? [(r as { repo?: string }).repo!] : []),
+      ]),
+    ]);
+    const flows = quickFlows(q, t.records, (id) => known.has(id));
+    const notDrawn = q.rows.filter((r) => !CODE_HAS.has(r.has)).length;
+    return {
+      view: changeView(t.records, { id: change, title: t.title, source: q.source }, flows, t.known),
+      title: t.title,
+      source: q.source,
+      flows: 0,
+      from: q.from,
+      rows: q.rows.length,
+      ...(notDrawn ? { notDrawn } : {}),
+      problems: [
+        ...t.problems,
+        ...(q.from === "tasks"
+          ? [
+              "design.md doesn't say what the code will have yet, so no line is drawn: its ## In the code does.",
+            ]
+          : []),
+      ],
+    };
+  }
   return {
     view: changeView(
       t.records,
@@ -131,6 +249,7 @@ export function changeMapBody(change: string, m: ChangeMap): Api.ChangeMapT {
     edges: m.view.edges,
     mermaid: toMermaid(m.view),
     flows: m.flows,
+    ...(m.from ? { from: m.from, rows: m.rows ?? 0 } : {}),
     problems: m.problems,
   };
 }
@@ -162,7 +281,11 @@ export async function changeMapCommand(
     return 0;
   }
   for (const p of m.problems) io.err(p);
-  if (!m.flows) {
+  if (m.from === "design")
+    io.err(
+      `Drawn from design.md's In the code (${m.rows} row${m.rows === 1 ? "" : "s"}), not from target flows: ${change} is a quick change.${m.notDrawn ? ` ${m.notDrawn} row${m.notDrawn === 1 ? " is" : "s are"} deployment or a person's work, not drawn.` : ""}`,
+    );
+  if (!m.flows && !m.from) {
     io.err(
       `${change} has no target flows yet, so there is nothing to draw: the architecture stage writes them (atticus change architecture ${change}).`,
     );

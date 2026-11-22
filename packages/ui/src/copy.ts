@@ -1862,6 +1862,8 @@ export const COPY = {
     repo: (repo: string, ref: string) => `${repo} at ${ref}`,
     commits: (commit: string, base: string) =>
       `Commit ${commit.slice(0, 12)}, compared with ${base.slice(0, 12)}`,
+    /** ADR 0206: a repo only claims name, with no clone here. */
+    notScanned: "Not scanned here: there is no clone of the repo. What couldn't be read says why.",
     task: (task: string) => `Only the steps task ${task} builds`,
     counts: (c: { found: number; missing: number; stillThere: number; unexpected: number }) =>
       `${c.found} found, ${c.missing} missing, ${c.stillThere} still there, ${c.unexpected} not in the design`,
@@ -1934,6 +1936,16 @@ export const COPY = {
   /** ADR 0109: a change's estimate, from its target flows. */
   /** ADR 0144 (V1): a change's impact, as designed, on its Architecture tab. */
   changeImpact: {
+    /** ADR 0206: a quick change, read from its design.md's In the code. */
+    quick:
+      "A quick change says what its code will have, not which fields change, so Atticus can't tell what breaks. Here is who each part it names reaches; each owner confirms.",
+    quickNoTable: (id: string) =>
+      `${id}'s impact is read from design.md's In the code, which it doesn't have yet: the spec writer writes it.`,
+    reachesCaption: "What each row of In the code names, and who receives it",
+    reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },
+    newCaller: (target: string) => `A new caller of ${target}`,
+    notInMap: "Not in the map yet: planned, or nobody has read it",
+    nobodyReceives: "Nothing in the map receives it",
     title: "What this change breaks",
     intro:
       "From the change's target flows: each entry or table they break, who calls or uses it today, the fields that stop crossing and the gateway routes to update, each with the team that owns it. A link the map only guessed may break, and isn't counted as a break until someone confirms it.",
@@ -2041,6 +2053,11 @@ export const COPY = {
     none: "No change yet. Start one from a brief, then run its architecture stage.",
     noTargets: (id: string) =>
       `${id} has no target flows yet, so there is nothing to draw. Its architecture stage writes them:`,
+    /** ADR 0206: a quick change, drawn from its design.md's In the code or its tasks.md. */
+    fromDesign: (rows: number, source: string) =>
+      `Drawn from ${rows} row${rows === 1 ? "" : "s"} of design.md's In the code (${source}), not from target flows.`,
+    fromTasks: (source: string) =>
+      `Drawn from the repos of ${source}: design.md doesn't say what the code will have yet, so no line is drawn.`,
     legend: "Legend",
     legendNew: "+ New",
     legendModify: "◇ Changed",

@@ -13,11 +13,14 @@ import {
   loadChangeContext,
   requireValid,
 } from "@maycombhq/changes";
-import { readChangeFiles } from "@maycombhq/naysayer";
+import { gateStatus, readChangeFiles } from "@maycombhq/naysayer";
 import { checkStageDraft, EXPAND_AGENT, metarepoOpenSpec } from "@maycombhq/planner";
-import { buildAndWrite } from "@maycombhq/scanner";
+import { buildAndWrite, readFactsSlot } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
-import { readyTasksOf } from "@maycombhq/taskrun";
+import { conformChange, readyTasksOf } from "@maycombhq/taskrun";
+import type { GitRunner } from "@maycombhq/workspace";
+import type { Api, Fact } from "@maycombhq/core";
+import { bigRepoId } from "./big-estate.js";
 import { changeHandoff, changeNew } from "../src/change-commands.js";
 import { critic } from "../src/critic-commands.js";
 import { main } from "../src/main.js";
@@ -83,6 +86,8 @@ const SHAPE = {
   emptyRepo: EMPTY_REPO,
   unreadRepo: UNREAD_REPO,
   topic: TOPIC,
+  // ADR 0206: the moved services' prod deployments on their hosts, read from facts.
+  deployments: [0, 1, 4],
 };
 
 interface Made {
@@ -661,6 +666,153 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
 
   // ------------------------------------------------- the door refuses (ADR 0201 part 2)
 
+  // ADR 0206: the quick changes' rows read by the map, impact and estimate, and checked against
+  // the code after the build. The scan of a branch is the estate's facts with what the branch
+  // adds, given through `scanAt`; git answers the branch and its base. The metarepo is real.
+  const SNAP = (root: string, repo: string) =>
+    readFactsSlot(root, repo).then((s) => (s?.ok ? s.facts : []));
+  const gitAt =
+    (commit: string, base: string): GitRunner =>
+    async (args) => ({
+      stdout: args[0] === "merge-base" ? base : args[0] === "rev-parse" ? commit : "",
+      stderr: "",
+    });
+  const fact = (repo: string, f: Record<string, unknown>) =>
+    ({
+      repo,
+      commit: "b".repeat(40),
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+      ...f,
+    }) as unknown as Fact;
+
+  it(
+    "the new product's map, impact and estimate are read from its In the code, and its rows are checked on a branch (ADR 0206)",
+    async () => {
+      const a = NEW_PRODUCT;
+      const map = await run(["change", "map", a.id, "--json", "--root", m.root]);
+      const drawn = JSON.parse(map.out.join("\n")) as Api.ChangeMapT;
+      expect(drawn).toMatchObject({ from: "design", rows: 4 });
+      for (const r of [PORTAL_API, PORTAL_WEB])
+        expect(drawn.nodes.find((n) => n.id === r)?.legend).toBe("new");
+      const impact = JSON.parse(
+        (await run(["change", "impact", a.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeImpactT;
+      expect(impact.breaks).toBe(0);
+      expect(
+        impact.reaches?.find((x) => x.has === "calls" && x.name.startsWith(bigRepoId(0)))?.ids,
+      ).toEqual([bigRepoId(0)]);
+      const est = JSON.parse(
+        (await run(["change", "estimate", a.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeEstimateT;
+      expect(est.units.map((u) => [u.repo, u.class])).toEqual([
+        [PORTAL_API, "quick/table/new-table"],
+        [PORTAL_API, "quick/serves"],
+        [PORTAL_API, "quick/calls"],
+        [PORTAL_WEB, "quick/calls/new-entry"],
+      ]);
+
+      // The service's branch has its table and entry; the pages' repo isn't made yet.
+      await mkdir(join(m.root, "workspace", PORTAL_API), { recursive: true });
+      const r = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => ({
+          records: [],
+          files: [],
+          problems: [],
+          basis: { from: "facts", unread: [] },
+          facts:
+            commit === "a".repeat(40)
+              ? []
+              : [
+                  fact(repo, {
+                    kind: "store",
+                    id: "s-0",
+                    store: "approvals",
+                    name: "approval_requests",
+                    op: "write",
+                    columns: ["id"],
+                    cite: { file: "db/V1__approvals.sql", line: 1, value: "approval_requests" },
+                  }),
+                  fact(repo, {
+                    kind: "entry",
+                    id: "e-0",
+                    entryType: "rest",
+                    method: "POST",
+                    path: "/v1/approvals/{id}/decision",
+                    cite: {
+                      file: "src/Approvals.java",
+                      line: 9,
+                      value: "/v1/approvals/{id}/decision",
+                    },
+                  }),
+                ],
+        }),
+      });
+      const api = r.results.find((x) => x.repo === PORTAL_API)!;
+      expect(api.claims!.map((c) => [c.check, c.outcome])).toEqual([
+        ["table", "present"],
+        ["endpoint", "present"],
+        ["call", "missing"],
+      ]);
+      const web = r.results.find((x) => x.repo === PORTAL_WEB)!;
+      expect(web.claims!.map((c) => c.outcome)).toEqual(["unconfirmed"]);
+      expect(web.problems).toEqual([
+        `${PORTAL_WEB} isn't a repo of the estate yet: if it is new, create it on your Git host, then add it (atticus repo add <its clone URL> --id ${PORTAL_WEB}), and check again.`,
+      ]);
+    },
+    T,
+  );
+
+  it(
+    "the new event's publish is present on its branch; the listener nobody read couldn't be confirmed (ADR 0206)",
+    async () => {
+      const a = NEW_EVENT;
+      const base = await SNAP(m.root, NEW_PUBLISHER);
+      const r = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => ({
+          records: [],
+          files: [],
+          problems: [],
+          basis: { from: "facts", unread: [] },
+          facts:
+            commit === "a".repeat(40)
+              ? base
+              : [
+                  ...base,
+                  fact(repo, {
+                    kind: "call",
+                    id: "c-refund-publish",
+                    callType: "event-topic",
+                    method: "publish",
+                    path: TOPIC,
+                    cite: { file: "src/RefundEvents.java", line: 4, value: TOPIC },
+                  }),
+                ],
+        }),
+      });
+      const pub = r.results.find((x) => x.repo === NEW_PUBLISHER)!;
+      expect(pub.claims!.map((c) => [c.check, c.outcome])).toEqual([["publish", "present"]]);
+      expect(pub.claims![0]!.at).toEqual([
+        { source: "code", repo: NEW_PUBLISHER, path: "src/RefundEvents.java", line: 4 },
+      ]);
+      expect(pub.items.filter((i) => i.status === "unexpected")).toEqual([]);
+      const listener = r.results.find((x) => x.repo === UNREAD_REPO)!;
+      expect(listener.claims!.map((c) => [c.check, c.outcome])).toEqual([
+        ["listener", "unconfirmed"],
+      ]);
+      expect(listener.claims![0]!.what).toBe(
+        `Atticus couldn't confirm that ${UNREAD_REPO} listens to ${TOPIC}: nobody has read ${UNREAD_REPO} at this commit.`,
+      );
+      expect(listener.problems[0]).toContain(`${UNREAD_REPO} has no clone here`);
+    },
+    T,
+  );
+
   describe("the door check refuses", () => {
     const base = NEW_EVENT.requirements;
     const QUESTION = "Who receives the topic today, and do they expect a refund on it?";
@@ -1098,6 +1250,119 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
   );
 
   it(
+    "the migration's operations checked on each repo's branch: present, present differently, couldn't confirm, and the cut-over a person checks (ADR 0206)",
+    async () => {
+      const g = STAGED_MIGRATION;
+      for (const r of MOVED) await mkdir(join(m.root, "workspace", r), { recursive: true });
+      const anvil = (repo: string) =>
+        ({
+          repo,
+          commit: "c".repeat(40),
+          verified: "line",
+          by: "assistant",
+          conf: "declared",
+          kind: "deploy",
+          id: "d-anvil",
+          env: "prod",
+          platform: "anvil",
+          resourceName: repo,
+          cite: { file: "deploy/anvil.yaml", line: 1, value: repo },
+        }) as unknown as Fact;
+      const base = new Map<string, Fact[]>();
+      for (const r of MOVED)
+        base.set(r, await readFactsSlot(m.root, r).then((s) => (s?.ok ? s.facts : [])));
+      const git: GitRunner = async (args) => ({
+        stdout:
+          args[0] === "merge-base" ? "a".repeat(40) : args[0] === "rev-parse" ? "c".repeat(40) : "",
+        stderr: "",
+      });
+      const run1 = await conformChange(m.root, g.id, {
+        git,
+        now: NOW,
+        scanAt: async (repo, commit) => {
+          const before = base.get(repo) ?? [];
+          if (commit === "a".repeat(40))
+            return {
+              records: [],
+              files: [],
+              problems: [],
+              basis: { from: "facts", unread: [] },
+              facts: before,
+            };
+          // The first is on Anvil; the second still only on its hosts; the third's descriptor
+          // changed on the branch and no fact covers it yet.
+          if (repo === MOVED[0])
+            return {
+              records: [],
+              files: [],
+              problems: [],
+              basis: { from: "facts", unread: [] },
+              facts: [...before, anvil(repo)],
+              lines: new Map([["deploy/anvil.yaml", [`name: ${repo} platform: anvil`]]]),
+            };
+          return {
+            records: [],
+            files: [],
+            problems: [],
+            basis: { from: "facts", unread: repo === MOVED[2] ? ["deploy/anvil.yaml"] : [] },
+            facts: before,
+          };
+        },
+      });
+      const of = (repo: string) =>
+        run1.results
+          .find((x) => x.repo === repo)!
+          .claims!.map((c) => [c.from.operation, c.outcome]);
+      expect(of(MOVED[0])).toEqual([
+        ["deploy-anvil", "present"],
+        ["switch", "not-checkable"],
+      ]);
+      expect(of(MOVED[1])).toEqual([
+        ["deploy-anvil", "present-differently"],
+        ["switch", "not-checkable"],
+      ]);
+      expect(of(MOVED[2])).toEqual([
+        ["deploy-anvil", "unconfirmed"],
+        ["switch", "not-checkable"],
+      ]);
+      const present = run1.results[0]!.claims![0]!;
+      expect(present.why).toBe(
+        `Written on the cited lines: platform anvil. The assistant's reading of deploy/anvil.yaml:1: env prod.`,
+      );
+      expect(run1.results.find((x) => x.repo === MOVED[1])!.claims![0]!.what).toBe(
+        `${MOVED[1]} runs on hosts in prod, not on anvil.`,
+      );
+      // The answer the owner chose: a cut-over holds the gate until a named person says how it
+      // was checked; couldn't confirm is a note in the hand-off PR, never a finding.
+      let gate = await gateStatus(m.root, g.id, "conform");
+      expect(gate.open.blocking).toBe(4);
+      for (const r of MOVED) {
+        const w = await run([
+          "finding",
+          g.id,
+          `conform-not-checked-cut-over-switch-${r}`,
+          "waive",
+          "--reason",
+          "Pointed back and forth on the Anvil console with the platform team on 2026-11-21.",
+          "--by",
+          "pat",
+          "--root",
+          m.root,
+        ]);
+        expect(w.code, w.err.join("\n")).toBe(0);
+      }
+      gate = await gateStatus(m.root, g.id, "conform");
+      expect(gate.open.blocking).toBe(1);
+      // The estimate counts each operation task.
+      const est = JSON.parse(
+        (await run(["change", "estimate", g.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeEstimateT;
+      expect(est.units.filter((u) => u.from === "operations")).toHaveLength(6);
+    },
+    T,
+  );
+
+  it(
     "a change of flows and operations: one deploy order, the operations' tasks beside the flow's, and the capabilities named",
     async () => {
       const x = STAGED_MIXED;
@@ -1138,18 +1403,28 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       );
       const v = await metarepoOpenSpec(m.root)!.validate({ item: x.id, strict: true });
       expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
-      // The estimate sizes the flow's step and says the operation tasks it leaves out.
-      const e = await run(["change", "estimate", x.id, "--root", m.root]);
-      expect(e.err.join("\n")).toContain(
-        "2 operation tasks are not in this estimate (2 operations): estimates.yaml has no class for operations yet.",
+      // ADR 0206: the estimate sizes the flow's step and each operation task, citing the file.
+      const e = await run(["change", "estimate", x.id, "--json", "--root", m.root]);
+      expect(e.code).toBe(0);
+      const units = (
+        JSON.parse(e.out.join("\n")) as {
+          units: { flow: string; repo: string; class: string; from?: string; source: string }[];
+        }
+      ).units;
+      expect(
+        units.filter((u) => u.from === "operations").map((u) => [u.flow, u.repo, u.class]),
+      ).toEqual([
+        ["o1.1", NEW_PUBLISHER, "operation/config"],
+        ["o2.1", EMPTY_REPO, "operation/config"],
+      ]);
+      expect(units.find((u) => u.from === "operations")!.source).toBe(
+        `openspec/changes/${x.id}/target-flows/_operations.yaml`,
       );
-      // Conformance reads the flow, and says the operations are not checked.
+      // Conformance reads the flow and the operations' claims; it never says they aren't checked.
       const c = await run(["change", "conform", x.id, "--latest", "--root", m.root]);
       expect(c.code).toBe(0);
       expect(c.err.join("\n")).not.toContain("Unrecognized key");
-      expect(c.out.at(-1)).toBe(
-        "2 operations are not checked: Atticus doesn't check operations against the code in this release.",
-      );
+      expect(c.out.join("\n")).not.toContain("doesn't check operations");
     },
     T,
   );

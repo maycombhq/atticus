@@ -64,6 +64,13 @@ function printClaims(r: Api.ConformRepoResultT, io: Output): void {
 function print(results: Api.ConformRepoResultT[], io: Output): void {
   for (const r of results) {
     const n = r.counts;
+    // ADR 0206: a repo only claims name, with no clone here: its claims, and why nothing was scanned.
+    if (!r.commit) {
+      io.out(`${r.repo}: not scanned here.`);
+      printClaims(r, io);
+      for (const p of r.problems) io.err(`${r.repo}: ${p}`);
+      continue;
+    }
     io.out(
       `${r.repo} at ${r.ref} (${r.commit.slice(0, 12)}, from ${r.base.slice(0, 12)})${r.task ? `, task ${r.task}` : ""}: ${n.found} found, ${n.missing} missing, ${n.stillThere} still there, ${n.unexpected} not in the design.`,
     );

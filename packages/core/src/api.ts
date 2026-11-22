@@ -3876,6 +3876,12 @@ export const ChangeMap = z.object({
   mermaid: z.string(),
   /** How many target flows it is drawn from. */
   flows: z.number().int(),
+  /**
+   * 3.19.0 (ADR 0206, additive): a change with no target flow is drawn from its design.md's In
+   * the code (`design`, with how many rows) or, before that is written, tasks.md's repos.
+   */
+  from: z.enum(["design", "tasks"]).optional(),
+  rows: z.number().int().optional(),
   /** Target flows that don't read, or whose today isn't in the spec. */
   problems: z.array(z.string()),
 });
@@ -3898,6 +3904,11 @@ export const ChangeEstimate = z.object({
       class: z.string(),
       days: Days.optional(),
       source: z.string(),
+      /**
+       * 3.19.0 (ADR 0206, additive): a unit no target flow gives: a row of design.md's In the
+       * code, an operation's task, or a quick change's task before its table is written.
+       */
+      from: z.enum(["design", "operations", "tasks"]).optional(),
     }),
   ),
   needsClass: z.number().int(),
@@ -3942,6 +3953,27 @@ export const ChangeImpact = z.object({
   change: RecordId,
   /** How many target flows the change has; none means the architecture stage hasn't run. */
   flows: z.number().int(),
+  /**
+   * 3.19.0 (ADR 0206, additive): a change with no target flow is read from design.md's In the
+   * code: for each row, the records of the map it names and who receives them, never counted
+   * as breaks (a quick change states no fields). Empty before the table is written.
+   */
+  from: z.literal("design").optional(),
+  reaches: z
+    .array(
+      z.object({
+        line: z.number().int(),
+        has: z.string(),
+        name: z.string(),
+        ids: z.array(z.string()),
+        owner: z.string().optional(),
+        receivers: z.array(
+          z.object({ id: z.string(), kind: z.string(), owner: z.string().optional() }),
+        ),
+        further: z.number().int(),
+      }),
+    )
+    .optional(),
   breaks: z.number().int(),
   mayBreak: z.number().int(),
   /** 2.81.0 (ADR 0181): of the callers that break, those whose every link the AI decided. */
