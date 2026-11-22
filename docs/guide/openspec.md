@@ -60,7 +60,39 @@ The architecture stage refuses, by rule: a repo the estate doesn't have and the 
 
 The plan's order is one: waves, then `after`, then each repo's own order. A plan whose tasks could never all run, such as a first-wave task that comes after an operation done only in the second wave, is refused with the ring named (`operation.order`). The stories stage checks the operations file again, so an `undo` taken out after the architecture stage is refused there too. An `undo` says how the cut-over is taken back: `n/a`, `none`, `-` or `tbd` is refused. A secret-looking value written in an operation is redacted by the facts' rules (a password in prose, a credential with no scheme), only the value: a key and a record id stay. An undo that only says no undo applies ("Not applicable here.", "There is nothing to roll back.") is refused, and a cut-over comes after its repo's migrations and code in the deploy order.
 
-What is not checked: Atticus never connects to a live system, so a cut-over is never verified by it, and the catalog has no record for a pipeline. In this release `atticus change conform` checks target flows only: for a change whose work is operations it says "This change's work is operations (N): Atticus doesn't check operations against the code in this release", and beside a change's flows it says how many operations are not checked. The app's Code against design panel says the same. Comparing what `sets` says with a rescan is not built yet. `atticus change estimate` doesn't size operation tasks, and says how many it leaves out.
+**Checked against the code after the build ([ADR 0206](../adr/0206-operations-and-quick-changes-checked-against-the-code.md)).** `atticus change conform <change>` looks for each operation, in each of its repos, in the verified facts of the branch's commit, and says one of five things, each with its file and line and what to do next:
+
+| Result              | When                                                                                                                                                     | What you do                                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Present             | a verified fact says what `sets` says                                                                                                                    | nothing: the line is cited for the reviewer                                                                      |
+| Present differently | a fact says something else: another platform for that env, another host, a setting in another env or with another value, a secret's key set to a literal | change the branch, or the operation if the design was wrong, and check again; or waive the finding with a reason |
+| Missing             | the facts cover the commit with nothing unread, and none has it                                                                                          | build it on the branch, in the repo the operation names                                                          |
+| Not checkable       | a cut-over, an operation with no `sets`, a pipeline with no `file`                                                                                       | check it by hand, then waive its finding with a reason that says how                                             |
+| Couldn't confirm    | a file changed on the branch and no fact covers it, or the repo was read by the built-in readers only                                                    | have your assistant read those files into the change's `conform/facts/<repo>.jsonl`, then check again            |
+
+`sets` takes `platform` and `env` (a deployment), `host` and `basePath` (a route), `key`, `env` and `value` (a setting), `key` (a secret, never its value) and `file` (a pipeline). `atticus verify` checks a host, a base path and a setting's key on the line it cites; a platform or an env is the assistant's reading of the line unless it is written there, and the result says which. A secret's value is never read, compared or shown. Missing, present differently and not checkable are findings on the conform gate (`conform.missing`, `conform.differs`, `conform.not-checked`) and hold the Build, QA and Go/no-go hand-offs; "couldn't confirm" is listed in those hand-offs' pull requests for a reviewer.
+
+The branch's own facts are kept in the change folder, not in the catalog: `atticus verify <repo> --write` reads the repo's base clone at its own branch, so it can't speak for a task branch. The check verifies `conform/facts/<repo>.jsonl` against the branch's checkout, each fact on its line, and uses it for the files it cites.
+
+Atticus never connects to a live system, so a cut-over is never verified by it. `atticus change estimate` counts each operation task as a unit, class `operation/<kind>`; give the class a range in `estimates.yaml` to size it.
+
+## What a quick change's code will have
+
+A quick change has no target flows, so its `design.md` says what the code will have, one row each, under `## In the code` ([ADR 0206](../adr/0206-operations-and-quick-changes-checked-against-the-code.md)). The spec writer writes it:
+
+```markdown
+## In the code
+
+| Repo         | Task | Has       | What                               | Spec                                             |
+| ------------ | ---- | --------- | ---------------------------------- | ------------------------------------------------ |
+| forge-orders | t1   | publishes | `forge.orders.shipped`             | orders-shipped: An order that ships is published |
+| forge-ledger | t4   | listens   | `forge.orders.shipped`             | orders-shipped: An order that ships is published |
+| forge-ledger | t4   | calls     | `forge-orders GET /v1/orders/{id}` | orders-shipped: An order that ships is published |
+```
+
+Repo is a `## <repo>` of `tasks.md`, Task a task under it or `-`, Spec a `### Requirement:` of the spec deltas or `-`. Has is one of `serves`, `listens`, `calls`, `publishes`, `table`, `column`, `migration`, `deployment`, `route`, `config`, `secret`, `pipeline`, `cut-over` (`undo:` and how) and `other` (a person checks it). Every repo of `tasks.md` has a row. The plan hand-off is refused without the table, or with a row it can't read, with the line and what to fix; `atticus change status` lists them. A name of the map in the spec deltas that no row states is a note there, never a refusal: what a sentence means isn't read from prose.
+
+After the build, `atticus change conform` checks each row as it checks an operation (present, present differently, missing, not checkable, couldn't confirm), and lists what the branch adds that no row names as not in the design. `atticus change map` draws the rows, `atticus change impact` lists who receives what each row names (never counted as breaks: a quick change states no fields), and `atticus change estimate` counts a unit a row, class `quick/<has>`. Before the table is written, they read `tasks.md`'s repos and say what the table would add.
 
 ## Drawing a change on the canvas
 
