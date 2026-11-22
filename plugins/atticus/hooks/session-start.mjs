@@ -35,7 +35,7 @@ const read = atticus("next");
 const next = read?.next;
 if (read === undefined) {
   console.log(
-    "This is an Atticus metarepo, but the atticus command line didn't answer. Install it (npm install -g @maycombhq/atticus@2.0.0-beta.28.5, or the offline bundle) to take its steps; the /atticus-* commands need it.",
+    "This is an Atticus metarepo, but the atticus command line didn't answer. Install it (npm install -g @maycombhq/atticus@2.0.0-beta.30, or the offline bundle) to take its steps; the /atticus-* commands need it.",
   );
   process.exit(0);
 }

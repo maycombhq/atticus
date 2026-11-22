@@ -6,7 +6,7 @@
  */
 
 /** The oldest atticus this extension's flags and pages work with (atticus ui --embed, --parent). */
-export const MIN_CLI = "2.0.0-beta.28.5";
+export const MIN_CLI = "2.0.0-beta.30";
 
 /** The environment variable the command line reads. */
 export const EXTENSION_NEEDS_ENV = "ATTICUS_EXTENSION_NEEDS";

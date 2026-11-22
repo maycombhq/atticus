@@ -2,6 +2,13 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.35 (pre-release, with Atticus 2.0.0-beta.30)
+
+- **Ships with Atticus 2.0.0-beta.30, and needs it.** After installing, run `atticus upgrade` once in each metarepo before building: beta.30 puts the repo in every loose end's id and carries your changes to the new ids in one write. The app in its tab shows beta.30: the quick path for a small change, Connect A to B and Find it in the code, accepting a stage's finding in its thread, plain words and fewer pages (the Map, Read status, Activity).
+- **The extension says which Atticus it needs.** It sets `ATTICUS_EXTENSION_NEEDS` for the `atticus ui` it starts, for every command it runs and for its terminals, so `atticus status` and the line after a refusal say "The extension needs <version>" with the install command when the command line is behind.
+- **The version check compares every number of a pre-release.** It read only the first number after `beta`, so `2.0.0-beta.28.1` passed for `2.0.0-beta.28.5`. A missing or an old command line is given one install command at the exact version, `npm install -g @maycombhq/atticus@2.0.0-beta.30`, never `@latest`.
+- **"Open a repo on the Map"** is the command's name (it said "on the Architecture canvas"); its baseline dialog's Open the map opens the Map.
+
 ## 0.7.34 (pre-release, with Atticus 2.0.0-beta.28.5)
 
 - **Ships with Atticus 2.0.0-beta.28.5, and needs it.** The app in its tab shows beta.28.5's fixes: a link's nested fields are no longer called mismatches, a line drawn from an outside system opens Declare a link with the gateway's routes to tick, and Connect never offers "Write 0 pairs". No change to the extension's own commands or views.
