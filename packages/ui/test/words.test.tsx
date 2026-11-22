@@ -53,6 +53,16 @@ describe("one name per thing", () => {
     expect(out).toContain(COPY.glossary.was("loose call"));
   });
 
+  // The whole-release review of beta.30: two words for one command, each with its meaning.
+  it("says what Accept and Waive are, and that one command does both", () => {
+    expect(term("Accept")!.says).toMatch(/a stage's blocking finding/);
+    expect(term("Accept")!.says).toContain("atticus finding <change> <id> waive");
+    expect(term("Accept")!.says).toMatch(/no undo/i);
+    expect(term("Waive")!.says).toMatch(/a critic's finding/);
+    expect(term("Waive")!.says).toContain("atticus finding <change> <id> waive");
+    expect(term("Waive")!.says).toMatch(/constitution rule/);
+  });
+
   it("names the Map's pages and Activity once each in the menu's words", () => {
     expect(COPY.nav.screens.canvas).toBe("Map");
     expect(COPY.nav.screens.trust).toBe("Read status");

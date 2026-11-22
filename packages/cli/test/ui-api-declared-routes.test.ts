@@ -205,7 +205,7 @@ describe("several routes declared in one request (ADR 0200)", () => {
     const w = Api.FileChangeResult.parse((await call("/api/declared-links", "POST", body)).body);
     expect(w.written).toBe(true);
     expect(w.files).toEqual(pv.files);
-    expect(w.commit).toContain(`${HARBOR} calls 2 gateway routes, declared on the canvas`);
+    expect(w.commit).toContain(`${HARBOR} calls 2 gateway routes, declared on the Map`);
     const text = readFileSync(profile(), "utf8");
     const after = parse(text) as { systems: { id: string; calls?: { route: string }[] }[] };
     expect(after.systems.find((s) => s.id === HARBOR)!.calls).toEqual([

@@ -724,8 +724,20 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   may carry that line as `standing`, and a `newer-atticus` refusal's `newer[]` entry for
  *   build.json may name the Atticus that wrote it (`atticus`, point 7), in which case `command`
  *   installs exactly that version. Additive only.
- *   Also in 3.19.0 (ADR 0203): a change's conformance says how many operations it has, which
- *   the check doesn't look at (`operations`), so the app says they aren't checked. Additive only.
+ *   Also in 3.19.0 (ADR 0203, ADR 0206): a change's conformance says how many operations it has
+ *   (`operations`) and how many claims it states (`claims`: each operation's `sets` in each of
+ *   its repos, each row of a quick change's design.md "In the code"). Each repo's result lists
+ *   its claims (`ConformClaim`: one of five outcomes, `present`, `present-differently`, `missing`,
+ *   `not-checkable`, `unconfirmed`, with where it is stated, what was expected and found, its
+ *   cites, what to do next and the finding it became) and counts them (`counts.claims`). A change
+ *   with no target flow is drawn and read from its design (`ChangeMap.from` and `rows`;
+ *   `ChangeImpact.from` and `reaches`, who receives what each row names, never counted as breaks),
+ *   and an estimate's unit says where it comes from (`from`: `design`, `operations`, `tasks`).
+ *   Additive only.
+ *   Also in 3.19.0 (beta.30): GET /api/ask, when the answer is who receives a topic with
+ *   consumers in several repos, gains `receivers` (every Endpoint of the topic, each record
+ *   once), `also` (the topic's other Endpoints) and `named` (its name); `query` and `impact` stay
+ *   the first Endpoint's walk. Additive only.
  *   Also in 3.19.0 (ADR 0203 A, the app's half): a stage's thread shows the stage's own blocking
  *   findings (the built-in gate `stage-<stage>`): each open one says whether the person using the
  *   app may accept it and, if not, why (`StageFindingView.accept`, `StageAcceptRefusal`); an
@@ -762,7 +774,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   before the slots (`atticus upgrade --yes` adopts it), and `renames`, the count of loose ends
  *   `atticus upgrade` renames and carries your changes to (`atticus upgrade --dry-run` shows what
  *   it would write); a `not-upgraded` refusal with neither is one from before the slots.
- *   Additive only.
+ *   POST /api/upgrade (`UpgradeRequest`) confirms a step's build that waits for its removals over
+ *   the limits (`allowRemovals`), its hand edits (`discardEdits`) or both, with the `plan` of the
+ *   list, all three from the refused run's job result (`confirm`). Additive only.
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
@@ -4353,8 +4367,9 @@ export const ChangeConformance = z.object({
   /** How many target flows the change has; 0: nothing to compare yet. */
   flows: z.number().int(),
   /**
-   * 3.19.0 (ADR 0203): how many operations the change has (target-flows/_operations.yaml), which
-   * this check doesn't look at; absent when it has none. Additive only.
+   * 3.19.0 (ADR 0203): how many operations the change has (target-flows/_operations.yaml); absent
+   * when it has none. ADR 0206 checks what each states (`claims`, below, and each repo's).
+   * Additive only.
    */
   operations: z.number().int().positive().optional(),
   /**

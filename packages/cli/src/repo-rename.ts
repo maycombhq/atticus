@@ -276,7 +276,7 @@ async function renameLocked(
     const next = breakSlots && next0 ? next0.slice(0, -10) : next0;
     const check = next === undefined ? undefined : readersSlotRead(next);
     if (!next || !check || !("slot" in check) || check.slot.repo !== to) {
-      const why = `The readers slot of ${from} doesn't read under ${to} (${"problem" in read ? read.problem : "problem" in (check ?? {}) ? (check as { problem: string }).problem : "renamed, it isn't a slot"}); nothing was changed.`;
+      const why = `The stored read (built-in readers) of ${from} doesn't read under ${to} (${"problem" in read ? read.problem : "problem" in (check ?? {}) ? (check as { problem: string }).problem : "renamed, it isn't a stored read"}); nothing was changed.`;
       io.err(why);
       refusedJson(["build-failed"], why);
       return 1;

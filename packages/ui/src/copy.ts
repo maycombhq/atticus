@@ -2906,6 +2906,14 @@ export const COPY = {
         says: "Only the AI's decisions (Decided by AI) and the knowledge kind (decisions and constraints). What you told Atticus is one of your changes, never a decision.",
       },
       {
+        term: "Accept",
+        says: "A person says a stage's blocking finding stands as it is, with a reason, so it no longer holds the stage: Accept… in the stage's thread, or atticus finding <change> <id> waive --reason. Only a person, from the app or a terminal of their own; there is no undo.",
+      },
+      {
+        term: "Waive",
+        says: "A person says a critic's finding doesn't hold its gate, with a reason: atticus finding <change> <id> waive --reason, the command that accepts a stage's finding too. Only a person; a constitution rule is never waived.",
+      },
+      {
         term: "call with no arrow",
         says: "A call read from code whose target Atticus can't tell yet, so the map draws no arrow for it.",
         was: "loose call",

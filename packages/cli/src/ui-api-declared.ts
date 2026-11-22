@@ -334,7 +334,7 @@ export function uiDeclaredRoutes(
               files: [{ file: res.rel, changes: res.changes }],
               ...(res.created ? { created: { system: res.created, file: res.rel } } : {}),
               verify: "atticus verify --all --write",
-              commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
+              commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the Map`)}"`,
             } satisfies Api.FileChangeResultT,
           };
         } catch (e) {
@@ -631,7 +631,7 @@ const arrowChange = (
   written: res.written,
   files: [{ file: res.rel, changes: res.changes }],
   verify: "atticus catalog build",
-  commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${boxWords(a.from)} calls ${boxWords(a.to)}, declared on the canvas`)}"`,
+  commit: `git add ${res.rel}\ngit commit -m "${safeMessage(`profile: ${boxWords(a.from)} calls ${boxWords(a.to)}, declared on the Map`)}"`,
 });
 
 /** The profile's declared arrow a built Interface is, by the build's own rule (1.5): its id. */

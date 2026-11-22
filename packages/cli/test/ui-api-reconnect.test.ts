@@ -506,7 +506,6 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
     expect(r.out.filter((l) => l.includes("would remove Interface/")).length).toBe(2);
     expect(await h.arrows()).toEqual({ [C]: 4, [B]: 2, [VENDOR]: 1 });
     const ok = await run(h, Number(count));
-    console.log("ARCHIVED", ok.code, ok.said, JSON.stringify(await h.arrows()));
     expect(ok.code, ok.said).toBe(0);
     // No arrow to the archived box; the call its line's host places goes back to forge-billing,
     // and the pairing is kept and said not joined until the box is read again.

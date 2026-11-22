@@ -1978,14 +1978,17 @@ function manifestOf(
 
 // ------------------------------------------------------------------ the guards
 
-/** What a changed source of a removed record was, in words: a slot, its repo's new source, an input. */
+/**
+ * What a changed source of a removed record was, in words: a stored read (the glossary's word,
+ * docs/guide/words.md; never "slot"), its repo's new source, an input.
+ */
 function sourceWords(path: string, b: Build): string {
   const m = /sources\/(readers|facts)\/(.+?)(\.meta\.json|\.jsonl|\.json)$/.exec(path);
   if (m) {
     const now = b.sources.find((s) => s.repo === m[2]);
-    const was = m[1] === "facts" ? "facts snapshot" : "readers slot";
+    const was = m[1] === "facts" ? "facts snapshot" : "stored read (built-in readers)";
     if (now?.slot && now.slot !== path && m[3] !== ".meta.json")
-      return `${m[2]} is built from ${now.source === "facts" ? "its facts snapshot" : now.source === "legacy" ? "a legacy slot" : "its readers slot"} now (${now.slot})`;
+      return `${m[2]} is built from ${now.source === "facts" ? "its facts snapshot" : now.source === "legacy" ? "a legacy stored read" : "its stored read (built-in readers)"} now (${now.slot})`;
     return `${m[2]}'s ${was} changed (${path})`;
   }
   if (path.endsWith("joins.json")) return "a legacy join was derived again, or left";

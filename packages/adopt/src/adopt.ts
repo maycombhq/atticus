@@ -223,7 +223,7 @@ export async function adopt(path: string, o: AdoptOptions = {}): Promise<AdoptRe
     );
     await writeNew(
       join(a, "catalog", "curated", "README.md"),
-      "# Curated decisions\n\nPeople's decisions applied over every scan.\n",
+      "# Your changes\n\nWhat people told Atticus, which every build keeps.\n",
     );
   }
   await writeNew(join(a, ".gitignore"), GITIGNORE);

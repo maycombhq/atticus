@@ -258,7 +258,7 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
   );
   await writeNew(
     join(dir, "catalog", "curated", "README.md"),
-    "# Curated decisions\n\nPeople's decisions (aliases, names, confirmations) applied over every scan.\n",
+    "# Your changes\n\nWhat people told Atticus (aliases, names, confirmations, kept edits), which every build keeps.\n",
   );
   await writeNew(join(dir, "README.md"), README(o.name, o.platform));
   await ensureGitignore(dir);

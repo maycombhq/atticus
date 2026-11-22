@@ -750,7 +750,7 @@ export function uiLinkRoutes(
           const rel = `${factsRelOf(ctx.root)}/${from}.corrections.jsonl`;
           const lines = corrections.map(correctionLine);
           const verify = `atticus verify ${from} --write`;
-          const commit = `git add ${rel}${q ? ` ${questionsRelOf(ctx.root)}/` : ""}\ngit commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
+          const commit = `git add ${rel}${q ? ` ${questionsRelOf(ctx.root)}/` : ""}\ngit commit -m "${safeMessage(`${from}: calls paired with ${target} on the Map`)}"`;
           // The rule's answer is worked out before anything is previewed or written: a problem with it refuses
           // the whole request, never leaving the pairings written and the person told it failed.
           let answer: { text: string } | undefined;
