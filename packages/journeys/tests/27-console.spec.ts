@@ -58,7 +58,7 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
   );
   await expect(log).not.toContainText('"stats"');
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible();
+  await expect(page.getByText("The catalog wasn't changed.")).toBeVisible();
   expect(catalogFiles(app().root)).toEqual(before);
   await accessible(page, "the Console with a scan");
 });

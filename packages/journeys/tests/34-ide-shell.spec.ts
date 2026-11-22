@@ -137,7 +137,7 @@ test("the bottom panel holds the Console, and a scan started from a page shows i
   await page.getByRole("button", { name: "Check with the built-in readers" }).click();
   // No repo is cloned here, so the scan writes nothing and says so in the page, each repo with why
   // and what to do; the catalog is as it was (ADR 0195 point 4: a scan that read nothing).
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible({
+  await expect(page.getByText("The catalog wasn't changed.")).toBeVisible({
     timeout: 60_000,
   });
   await expect(
