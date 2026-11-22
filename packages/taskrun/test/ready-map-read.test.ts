@@ -34,6 +34,24 @@ describe("a task that reads a repo into the map", () => {
     expect(readsIntoMap("Handle the refund kind on forge.items.settled")).toBe(false);
     expect(readsIntoMap("Read the settled event and post the entry")).toBe(false);
     expect(readsIntoMap("Add the map of currencies to the ledger")).toBe(false);
+    expect(readsIntoMap("Read forge-audit into facts")).toBe(true);
+    expect(readsIntoMap("Read `forge-svc-04` into its facts first")).toBe(true);
+    expect(readsIntoMap("/atticus-map forge-deploy")).toBe(true);
+    expect(readsIntoMap("Run atticus map forge-svc-04")).toBe(true);
+  });
+
+  it("is not told by words that only look like it (the review)", () => {
+    for (const t of [
+      "Read the currency rows into the map of rates before posting",
+      "Read the YAML into map entries keyed by id",
+      "read the config and put it into the map",
+      "Read the settlement file into facts table forge_facts",
+      "Document atticus verify usage for ops",
+      "Read forge-rates into the map of rates",
+      "Run atticus map --help and note the flags",
+      "Mention /atticus-map in the runbook",
+    ])
+      expect(readsIntoMap(t), t).toBe(false);
   });
 
   it("is never ready, and says it is a person's step; the repo's next task waits for it", () => {

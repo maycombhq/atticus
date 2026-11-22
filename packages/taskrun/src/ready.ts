@@ -22,16 +22,23 @@ import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
+/** A repo id's shape: lower case, parts joined by a dash, a dot or an underscore. */
+const REPO_ID = "`?[a-z0-9]+(?:[._-][a-z0-9]+)+`?";
+
 /**
- * The persona check of beta.30: a task whose words read a repo into the map (`/atticus-map`,
- * `atticus map|verify <repo>`, "read … into facts" or "into the map"). That is a person's step,
- * never a task run, so such a task is never ready.
+ * The persona check of beta.30: a task whose words read a repo into the map. That is a person's
+ * step, never a task run, so such a task is never ready. Only words that name a repo say so:
+ * `/atticus-map <repo>`, `atticus map <repo>` or `atticus verify <repo>`, or "read <repo> into
+ * (its or the) facts" or "into the map" (not "the map of", "for", "with"), the repo id-shaped.
  */
 export function readsIntoMap(title: string): boolean {
   return (
-    /\/atticus-map\b/.test(title) ||
-    /\batticus\s+(?:map|verify)\s+[a-z0-9]/i.test(title) ||
-    /\bread\b[^.;:]{0,60}?\binto\s+(?:its\s+|the\s+)?(?:facts|the\s+map|map)\b/i.test(title)
+    new RegExp(`(?:^|\\s)/atticus-map\\s+${REPO_ID}(?![\\w.-])`).test(title) ||
+    new RegExp(`\\batticus\\s+(?:map|verify)\\s+${REPO_ID}(?![\\w.-])`).test(title) ||
+    new RegExp(
+      `\\bread\\s+${REPO_ID}\\s+into\\s+(?:(?:its|the)\\s+)?(?:facts\\b|the\\s+map\\b(?!\\s+(?:of|for|with)\\b))`,
+      "i",
+    ).test(title)
   );
 }
 
