@@ -60,6 +60,7 @@ import {
   legacyLooseEndsWords,
   UNRESOLVED_IDS_STEP,
   unresolvedIdsApply,
+  unresolvedIdsDryRun,
   UnresolvedIdsRefused,
   unresolvedIdsPending,
 } from "./upgrade-unresolved-ids.js";
@@ -79,6 +80,12 @@ export interface Migration {
   summary: string;
   /** Files (relative to the root, "/"-separated) it would change; none means nothing to do. */
   pending(root: string): Promise<string[]>;
+  /**
+   * What `--dry-run` says of the step beyond its files (the whole-release review of beta.30, I2):
+   * for a step that builds the catalog, that it does, what goes with it and whether it would
+   * refuse. Read-only.
+   */
+  dryRun?(root: string): Promise<string[]>;
   /**
    * `o.allowRemovals`: a step that builds the catalog (ADR 0195 point 4: any command that builds
    * takes `--allow-removals <count>`) confirms the removals its refusal listed.
@@ -366,7 +373,7 @@ export const MIGRATIONS: Migration[] = [
     // design, stories, specs, tasks), so `openspec status` and `validate` agree with Atticus.
     id: "org-flow-v2",
     summary:
-      "OpenSpec's org-flow schema at version 3: the artifacts Atticus 2 writes, in its stage order (ADR 0006 addendum), the design's Operations and a task's (after …) (ADR 0203)",
+      "OpenSpec's org-flow schema at version 3 (the step keeps its id, org-flow-v2): the artifacts Atticus 2 writes, in its stage order (ADR 0006 addendum), the design's Operations and a task's (after …) (ADR 0203)",
     async pending(root) {
       const os = openspecRootOf(root);
       if (!os) return [];
@@ -466,6 +473,7 @@ export const MIGRATIONS: Migration[] = [
     summary:
       "Loose ends named with their repo, unresolved.<repo>.<fact id>, so two repos' calls of one fact id are two records; your changes, change folders, questions, spec flows and dismissals that cite one carried to the new id (ADR 0124 addendum E-ids)",
     pending: (root) => unresolvedIdsPending(root),
+    dryRun: (root) => unresolvedIdsDryRun(root),
     apply: (root, o) => unresolvedIdsApply(root, o),
   },
 ];
@@ -998,10 +1006,22 @@ export async function upgradeCommand(
   }
   if (o.check || o.dryRun) {
     const steps = c.pending.length + (store?.action === "create" ? 1 : 0) + (slots.pending ? 1 : 0);
+    // I2 of the whole-release review: --dry-run says what a step that builds would do, per step.
+    const said = new Map<string, string[]>();
+    if (o.dryRun)
+      for (const p of c.pending) {
+        const lines = await MIGRATIONS.find((x) => x.id === p.id)?.dryRun?.(root);
+        if (lines?.length) said.set(p.id, lines);
+      }
     if (o.json)
       io.out(
         JSON.stringify(
-          { ...c, ...(store ? { openspecStore: store } : {}), ...slotsJson() },
+          {
+            ...c,
+            ...(said.size ? { dryRun: [...said].map(([id, lines]) => ({ id, lines })) } : {}),
+            ...(store ? { openspecStore: store } : {}),
+            ...slotsJson(),
+          },
           null,
           2,
         ),
@@ -1015,8 +1035,10 @@ export async function upgradeCommand(
       if (store) io.out(storeLine(store));
     } else {
       io.out(`${steps} upgrade step${steps === 1 ? "" : "s"} to run (atticus upgrade):`);
-      for (const p of c.pending)
+      for (const p of c.pending) {
         io.out(`  ${p.summary}: ${p.files.length} file${p.files.length === 1 ? "" : "s"}`);
+        for (const l of said.get(p.id) ?? []) io.out(`    ${l}`);
+      }
       if (store?.action === "create")
         io.out(`  Make this metarepo the OpenSpec store ${store.id} (beta): ${STORE_MARKER}`);
       else if (store) io.out(storeLine(store));

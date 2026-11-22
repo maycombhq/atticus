@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { askedGapQuestionId, readQuestion, sha256Of } from "@maycombhq/core";
 import {
   buildAndWrite,
@@ -506,7 +506,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       ).toBe(0);
       expect(await tree(root)).toEqual(before);
       expect(d.out.join("\n")).toMatch(
-        /^1 upgrade step to run \(atticus upgrade\):\n {2}Loose ends named with their repo, .*: 14 files$/,
+        /^1 upgrade step to run \(atticus upgrade\):\n {2}Loose ends named with their repo, .*: 14 files\n {4}It builds the catalog once, /,
       );
       const u = quiet();
       expect(await upgradeCommand(root, { by: "pat" }, u.io, B30), u.err.join("\n")).toBe(0);
@@ -1154,6 +1154,135 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
  * 2026-11-22: such a build refuses on every machine, and the upgrade decides by the old record
  * still committed in catalog/generated.
  */
+/**
+ * The whole-release review of beta.30 (I1, I2): beta.30's four steps together on one metarepo as
+ * 2.0.0-beta.28.5 left it. The fixture, with what the other three steps find on such a metarepo:
+ * org-flow at version 2 (the folder beta.28.5 generated), change-types.yaml with no quick type,
+ * no starter personas, and a stamp that names neither of the two new steps.
+ */
+describe("a beta.28.5 metarepo takes beta.30's four upgrade steps in one run", () => {
+  const STEPS = ["change-types-quick", "starter-personas", "org-flow-v2", STEP];
+  async function b285(): Promise<string> {
+    const root = await metarepo();
+    const flow = join(root, "openspec", "schemas", "org-flow");
+    await rm(flow, { recursive: true });
+    await cp(join(HERE, "../../../fixtures/upgrade-b30/org-flow-v2"), flow, { recursive: true });
+    const types = join(root, "org-pack", "change-types.yaml");
+    const t = parse(await readFile(types, "utf8")) as { types: { id: string }[] };
+    await writeFile(
+      types,
+      [
+        "# Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.",
+        stringify({ ...t, types: t.types.filter((x) => x.id !== "quick") }, { lineWidth: 0 }),
+      ].join("\n"),
+    );
+    await rm(join(root, "org-pack", "agents"), { recursive: true });
+    await rm(join(root, "org-pack", "skills"), { recursive: true });
+    const stamp = join(root, ".atticus", "metarepo.yaml");
+    await writeFile(
+      stamp,
+      (await readFile(stamp, "utf8")).replace(
+        /^ {2}- (change-types-quick|starter-personas)\n/gm,
+        "",
+      ),
+    );
+    return root;
+  }
+
+  it(
+    "says four steps wait, lists them in order, runs them in one upgrade, and is then up to date",
+    async () => {
+      const root = await b285();
+      const s = quiet();
+      expect(await statusCommand(root, {}, s.io, { version: B30 })).toBe(1);
+      expect(s.out.join("\n")).toContain("Do: atticus upgrade");
+      expect(s.out.join("\n")).toContain("4 upgrade steps wait.");
+      expect((await upgradeCheck(root, B30)).pending.map((p) => p.id)).toEqual(STEPS);
+      // The metarepo's own files (this machine's caches under .atticus and .index aside).
+      const before = await tree(root);
+
+      // --check and --dry-run list the four, in the order they run, and write nothing.
+      for (const flag of ["check", "dryRun"] as const) {
+        const q = quiet();
+        expect(await upgradeCommand(root, { [flag]: true }, q.io, B30)).toBe(
+          flag === "check" ? 1 : 0,
+        );
+        const listed = q.out.filter((l) => /^ {2}\S/.test(l));
+        expect(q.out[0]).toBe("4 upgrade steps to run (atticus upgrade):");
+        expect(listed).toHaveLength(4);
+        expect(listed[0]).toMatch(/quick/i);
+        expect(listed[1]).toMatch(/persona/i);
+        // The step keeps its id, org-flow-v2 (stamps name it), and says the version it writes.
+        expect(listed[2]).toMatch(
+          /org-flow schema at version 3 \(the step keeps its id, org-flow-v2\)/,
+        );
+        expect(listed[3]).toMatch(/^ {2}Loose ends named with their repo/);
+        expect(await tree(root)).toEqual(before);
+      }
+
+      // I2: the dry run says what the ids step's build does, and that it wouldn't refuse.
+      const d = quiet();
+      expect(await upgradeCommand(root, { dryRun: true }, d.io, B30)).toBe(0);
+      expect(d.out.filter((l) => l.startsWith("    "))).toEqual([
+        "    It builds the catalog once, through the build's guards: 3 loose ends are named again with their repo, and 1 other record leaves with that build.",
+        "    1 arrow drawn by path for a host nothing sets goes: each is asked about instead (a call with no arrow, and its question).",
+        "    It would not refuse as things stand.",
+      ]);
+      const j = quiet();
+      expect(await upgradeCommand(root, { dryRun: true, json: true }, j.io, B30)).toBe(0);
+      const json = JSON.parse(j.out.join("\n")) as { dryRun?: { id: string; lines: string[] }[] };
+      expect(json.dryRun?.map((x) => x.id)).toEqual([STEP]);
+      expect(json.dryRun?.[0]?.lines).toHaveLength(3);
+      // --check stays the quick list: no build, so none of those lines.
+      const c = quiet();
+      await upgradeCommand(root, { check: true }, c.io, B30);
+      expect(c.out.some((l) => l.startsWith("    "))).toBe(false);
+
+      // One run does all four.
+      const ok = quiet();
+      expect(await upgradeCommand(root, { by: "pat" }, ok.io, B30), ok.err.join("\n")).toBe(0);
+      expect(ok.out.filter((l) => l.startsWith("Done: "))).toHaveLength(4);
+      const stamp = await yamlOf(root, ".atticus/metarepo.yaml");
+      expect(stamp.atticus).toBe(B30);
+      expect(stamp.migrations).toEqual(expect.arrayContaining(STEPS));
+      expect(await readFile(join(root, "org-pack", "change-types.yaml"), "utf8")).toMatch(
+        /^ {2}- id: quick$/m,
+      );
+      expect(await readdir(join(root, "org-pack", "agents"))).toContain("product-owner.md");
+      expect(
+        await readFile(join(root, "openspec", "schemas", "org-flow", "schema.yaml"), "utf8"),
+      ).toMatch(/^version: 3$/m);
+      expect(unresolvedIds(await generated(root))).toContain("unresolved.forge-ledger.c-1");
+
+      // The second check: up to date, and status has nothing to do.
+      const again = quiet();
+      expect(await upgradeCommand(root, { check: true }, again.io, B30)).toBe(0);
+      expect(again.out.join("\n")).toContain(`Up to date for Atticus ${B30}.`);
+      const s2 = quiet();
+      expect(await statusCommand(root, {}, s2.io, { version: B30 })).toBe(0);
+      expect(s2.out.join("\n")).toContain("Nothing to do.");
+      const b = quiet();
+      expect(await main(["catalog", "build", "--check", "--root", root], b.io)).toBe(0);
+    },
+    T,
+  );
+
+  it(
+    "its dry run says the ids step would refuse for a hand edit, with why and the way on",
+    async () => {
+      const root = await metarepo();
+      const p = join(root, "catalog", "generated", "component", "forge-ledger.yaml");
+      await writeFile(p, `${await readFile(p, "utf8")}# a note by hand\n`);
+      const d = quiet();
+      expect(await upgradeCommand(root, { dryRun: true }, d.io, B30)).toBe(0);
+      expect(d.out.at(-1)).toBe(
+        "    It would refuse as things stand, writing nothing: 1 file under catalog/generated changed by hand. Keep the hand edits first (atticus catalog edits --curate), or run atticus upgrade --discard-edits 1.",
+      );
+    },
+    T,
+  );
+});
+
 describe("the same commit refuses and upgrades the same on every machine (ADR 0124 addendum E-ids, 2026-11-22)", () => {
   /** The old record of unresolved.c-1 cites forge-payments; one of your changes names it. */
   const setUp = async (change: string) => {

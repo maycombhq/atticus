@@ -537,6 +537,82 @@ export async function unresolvedIdsPending(root: string): Promise<string[]> {
 }
 
 /**
+ * What `atticus upgrade --dry-run` says of the step beyond its files (the whole-release review of
+ * beta.30, I2): that it builds the catalog, how many loose ends it names again, which arrows
+ * drawn by path for a host nothing sets go with that build (each becomes a question), and whether
+ * the build would refuse as things stand, with why and the way on. The step's own build, made and
+ * checked against the files on disk; nothing is written, and no lock is taken.
+ */
+export async function unresolvedIdsDryRun(root: string): Promise<string[]> {
+  const scanner = await import("@maycombhq/scanner");
+  const plan = await planOf(root);
+  if (!plan?.builds) return [];
+  if (plan.refused) return [`It would refuse, writing nothing: ${plan.refused}`];
+  const renamed = (await generatedLooseEnds(root)).filter((g) => isOld(g.r)).length;
+  const checked = await scanner.buildAndWrite(root, {
+    command: scanner.UNRESOLVED_IDS_COMMAND,
+    build: await stepBuild(root, plan),
+    slots: [...plan.writes, ...(plan.reads ?? [])],
+    check: true,
+  });
+  scanner.forgetCatalogs();
+  const r = checked.guard.refused;
+  const removals = r?.removals ?? checked.guard.removals;
+  const byPath = removals.filter(
+    (x) => x.kind === "Interface" && x.explainedBy.some((e) => e.includes(": asked now (")),
+  ).length;
+  // A rename is listed by the guard as a removal of the old id's file; it isn't a record gone.
+  const gone = removals.filter(
+    (x) => !x.explainedBy.some((e) => e.includes("(the repo in its id)")),
+  ).length;
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const lines = [
+    `It builds the catalog once, through the build's guards: ${n(renamed, "loose end is", "loose ends are")} named again with ${renamed === 1 ? "its" : "their"} repo, and ${gone ? n(gone, "other record leaves", "other records leave") : "no other record leaves"} with that build.`,
+    byPath
+      ? `${n(byPath, "arrow", "arrows")} drawn by path for a host nothing sets ${byPath === 1 ? "goes" : "go"}: each is asked about instead (a call with no arrow, and its question).`
+      : "No arrow drawn by path for a host nothing sets goes.",
+  ];
+  if (!r) return [...lines, "It would not refuse as things stand."];
+  const removalsOver = r.reasons.includes("large-removals") ? r.allowRemovals : undefined;
+  const edits =
+    r.reasons.includes("hand-edits") && !r.unreadableManifest ? r.discardEdits : undefined;
+  const why = [
+    ...(edits !== undefined
+      ? [`${n(edits, "file", "files")} under catalog/generated changed by hand`]
+      : []),
+    ...(removalsOver !== undefined
+      ? [
+          `${n(removalsOver, "removal", "removals")} over the limits (10% of a repo's records, or 200)`,
+        ]
+      : []),
+  ];
+  const flags = `${edits !== undefined ? ` --discard-edits ${edits}` : ""}${removalsOver !== undefined ? ` --allow-removals ${removalsOver}` : ""}`;
+  return [
+    ...lines,
+    why.length && why.length === r.reasons.length
+      ? `It would refuse as things stand, writing nothing: ${why.join(", and ")}. ${edits !== undefined ? "Keep the hand edits first (atticus catalog edits --curate), or run" : "Run"} atticus upgrade${flags}.`
+      : `It would refuse as things stand, writing nothing: ${r.message.split("\n")[0]}`,
+  ];
+}
+
+/** The step's build: the inputs carried, and the reads verify checked as their facts slots. */
+async function stepBuild(root: string, plan: Plan) {
+  const scanner = await import("@maycombhq/scanner");
+  const pending = new Map<string, string | null>(plan.writes.map((w) => [w.path, w.text]));
+  const inputs = await scanner.loadBuildInputs(root, {
+    ...(plan.op ? { op: plan.op } : {}),
+    ...(plan.curatedNext ? { curated: plan.curatedNext } : {}),
+    pending,
+    ...(plan.questions ? { questions: plan.questions } : {}),
+  });
+  // Option b: the reads verify checked, as their repos' facts slots, in the same build.
+  return scanner.buildCatalog({
+    ...inputs,
+    slots: await scanner.withSlotWrites(root, inputs.slots, plan.reads ?? []),
+  });
+}
+
+/**
  * Apply the step: the plan again, under the scan's lock, refused when it would write a file the
  * upgrade didn't list (`listed`: so it is in the backup); then one build through the guards, in
  * the build's one write. Returns the files written, relative to the root.
@@ -566,18 +642,7 @@ export async function unresolvedIdsApply(
           `${not.join(", ")} would be written, but wasn't listed (and backed up) by this upgrade: another command wrote meanwhile. Nothing of this step was written: run atticus upgrade again to list it.`,
         );
     }
-    const pending = new Map<string, string | null>(plan.writes.map((w) => [w.path, w.text]));
-    const inputs = await scanner.loadBuildInputs(root, {
-      ...(plan.op ? { op: plan.op } : {}),
-      ...(plan.curatedNext ? { curated: plan.curatedNext } : {}),
-      pending,
-      ...(plan.questions ? { questions: plan.questions } : {}),
-    });
-    // Option b: the reads verify checked, as their repos' facts slots, in the same build.
-    const build = await scanner.buildCatalog({
-      ...inputs,
-      slots: await scanner.withSlotWrites(root, inputs.slots, plan.reads ?? []),
-    });
+    const build = await stepBuild(root, plan);
     const { buildPlanOf, refusalPlanOf } = await import("./build-report.js");
     const written = await scanner.buildAndWrite(root, {
       command: scanner.UNRESOLVED_IDS_COMMAND,
