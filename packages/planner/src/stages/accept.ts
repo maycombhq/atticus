@@ -124,6 +124,20 @@ export interface Accepted {
   message: string;
 }
 
+/**
+ * The acceptance of one finding: by its fingerprint, and only when the acceptance's rule is the
+ * finding's. The fingerprint is read off the finding file's id and the rule off its `rule`, so a
+ * file edited by hand to give a rule that can't be accepted the id of one that can (or the other
+ * way round) accepts nothing.
+ */
+export const acceptanceOf = (
+  accepted: ReadonlyMap<string, Accepted> | undefined,
+  f: { rule: string; fingerprint: string },
+): Accepted | undefined => {
+  const a = accepted?.get(f.fingerprint);
+  return a && a.rule === f.rule ? a : undefined;
+};
+
 /** The words a stage file and a note use: "accepted by <who>: <why>". */
 export const acceptedWords = (a: Pick<Accepted, "by" | "why">) =>
   `accepted by ${a.by}: ${a.why.trim().replace(/[.!?]+$/, "")}`;
@@ -261,9 +275,9 @@ export async function writeStageGate(
   // The gate says what the current draft has, in its words; an acceptance is carried by the id,
   // which holds what was accepted. One accepted at another stage is that stage's to show.
   for (const f of current) {
-    const mine = accepted.get(f.fingerprint)?.stage === o.stage;
-    if (f.source === "stage" && (mine || (f.blocking && !accepted.has(f.fingerprint))))
-      fresh.push(await stageFinding(f, o));
+    const a = acceptanceOf(accepted, f);
+    const mine = a?.stage === o.stage;
+    if (f.source === "stage" && (mine || (f.blocking && !a))) fresh.push(await stageFinding(f, o));
   }
   return writeGateRound(root, o.change, stageGateOf(o.stage), fresh, o.now, { carryById: true });
 }

@@ -91,7 +91,13 @@ import {
   type FindingKind,
 } from "./finding-kind.js";
 import { STAGE_PHASE, STAGE_SCHEMA_VERSION, Stage, StageLoop, type LoopFinding } from "./schema.js";
-import { acceptedWords, readAccepted, writeStageGate, type Accepted } from "./accept.js";
+import {
+  acceptanceOf,
+  acceptedWords,
+  readAccepted,
+  writeStageGate,
+  type Accepted,
+} from "./accept.js";
 
 /**
  * The loop every stage runs (ADR 0087, plan principle 4): the assistant drafts through the AI
@@ -520,7 +526,12 @@ export async function runStageLoop<A>(
   const accepted = await readAccepted(root, changeId, ctx).catch(() => new Map<string, Accepted>());
   const check: StageSpec<A>["check"] = async (a, co) =>
     (await spec.check(a, co)).map((i) => {
-      const yes = i.blocking && accepted.get(issueFingerprint(i.rule, i.target, i.evidence ?? ""));
+      const yes =
+        i.blocking &&
+        acceptanceOf(accepted, {
+          rule: i.rule,
+          fingerprint: issueFingerprint(i.rule, i.target, i.evidence ?? ""),
+        });
       return yes ? { ...i, blocking: false, message: `${i.message} (${acceptedWords(yes)}.)` } : i;
     });
   if (o.checkDraft !== undefined) return runLoop(root, changeId, { ...spec, check }, o, ctx);
@@ -2327,7 +2338,7 @@ export async function retireSettledEscalations(
     : new Map<string, Accepted>();
   let settled = false;
   for (const f of mine) {
-    const a = accepted.get(f.fingerprint);
+    const a = acceptanceOf(accepted, f);
     const q = a ? await readQuestion(root, f.question!).catch(() => undefined) : undefined;
     if (!a || !q || q.state !== "open") continue;
     await answerQuestion(root, q.id, { text: `Accepted: ${a.why}`, by: a.by, at });

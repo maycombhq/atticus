@@ -96,7 +96,7 @@ import {
   withOperationRollback,
   writeOperations,
 } from "./operations.js";
-import { type Accepted, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
+import { type Accepted, acceptanceOf, acceptedIds, acceptedWords, readAccepted } from "./accept.js";
 import { acceptedRepos, knownToChange, plannedComponents, plannedRepos } from "./planned.js";
 import { z } from "zod";
 import { schemaProblems } from "./schema-words.js";
@@ -2347,9 +2347,13 @@ export function renderArchitecture(
   const unaffected = breakingChanges(deltas, e).flatMap((c) => {
     const missing = c.consumers.filter((x) => !c.listed.includes(x));
     const a = missing.length
-      ? e.acceptedFindings?.get(
-          issueFingerprint("delta.consumer-missing", consumerMissingTarget(c.target, missing)),
-        )
+      ? acceptanceOf(e.acceptedFindings, {
+          rule: "delta.consumer-missing",
+          fingerprint: issueFingerprint(
+            "delta.consumer-missing",
+            consumerMissingTarget(c.target, missing),
+          ),
+        })
       : undefined;
     return a ? missing.map((x) => `- ${x} (of ${c.flow}): not affected, ${acceptedWords(a)}.`) : [];
   });

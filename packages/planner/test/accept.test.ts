@@ -287,6 +287,44 @@ describe("accepting the feature stage's finding about a repo the estate doesn't 
     expect([...(await readAccepted(root, CHANGE)).values()]).toEqual([]);
   });
 
+  it("reads no acceptance whose rule isn't the finding's: a hand-edited file can't carry a forbidden rule's id", async () => {
+    const root = await estateRoot();
+    const draft = "summary: A move of the order services to another platform.\n";
+    const first = await featureStage(root, CHANGE, {
+      runtime: assistant(draft).runtime,
+      now: NOW,
+    }).catch((e: Error) => e);
+    const [f] = await stageGate(root);
+    expect(f).toMatchObject({ rule: "feature.nothing-placed", waivable: false });
+    const file = join(root, "openspec/changes", CHANGE, "review/stage-feature/1", `${f!.id}.yaml`);
+    // By hand: the forbidden rule's id, an acceptable rule, and a person's waiver.
+    await writeFile(
+      file,
+      (await readFile(file, "utf8"))
+        .replace("rule: feature.nothing-placed", "rule: feature.unknown-repo")
+        .replace("waivable: false", "waivable: true")
+        .replace(
+          "state: open",
+          "state: waived\nresolution:\n  action: waive\n  by: pat\n  at: 2026-11-19T10:00:00Z\n  reason: We know better.",
+        ),
+    );
+    const again = await featureStage(root, CHANGE, {
+      runtime: assistant(draft).runtime,
+      now: NOW,
+      force: true,
+    }).catch((e: Error) => e);
+    // Still refused as before: nothing-placed is never passed by an acceptance of another rule.
+    expect(first instanceof Error).toBe(true);
+    expect(again instanceof Error ? "refused" : again.state).toBe("refused");
+    expect(again instanceof Error ? again.message : JSON.stringify(again)).not.toContain(
+      "accepted by pat",
+    );
+    const loop = parse(
+      await readFile(join(root, "openspec/changes", CHANGE, "stage/feature.yaml"), "utf8"),
+    ) as { findings: { rule: string; blocking: boolean }[] };
+    expect(loop.findings.find((x) => x.rule === "feature.nothing-placed")?.blocking).toBe(true);
+  });
+
   it("refuses to accept a rule not on the list, saying the row's way on", async () => {
     const root = await estateRoot();
     const r = assistant("summary: A move of the order services to another platform.\n");
