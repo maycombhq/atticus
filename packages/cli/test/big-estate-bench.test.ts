@@ -15,8 +15,12 @@ import {
   serializeBuildManifest,
   serializeBuildManifestV1,
 } from "@maycombhq/scanner";
+import { setFlagsFromString, getHeapStatistics } from "node:v8";
+import { runInNewContext } from "node:vm";
 import {
+  appMemoryHeld,
   factsParseHooks,
+  releaseAppMemory,
   loadOrgPack,
   orgPackDirOf,
   settleAfterResult,
@@ -28,7 +32,7 @@ import { verifyCommand } from "../src/verify-commands.js";
 import { candidatesOf } from "../src/ui-api-links.js";
 import { verifyWritePreview } from "../src/verify-preview.js";
 import { forgetKeptChecks } from "../src/contract-check-files.js";
-import { bigGatewayId, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
+import { BIG_COMMIT, bigGatewayId, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
 import { v1Of } from "./build-json-v1.js";
 import { makeFieldEstate } from "./field-estate.js";
 
@@ -172,7 +176,14 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
           verifyCommand(
             root,
             repo,
-            { write: true, verbose: false, json: false, cachesAfterResult: !STEPS_OFF },
+            {
+              write: true,
+              verbose: false,
+              json: false,
+              // The estate's checkouts have no .git: the facts' commit, as the command is given.
+              commit: BIG_COMMIT,
+              cachesAfterResult: !STEPS_OFF,
+            },
             quiet,
           ),
         );
@@ -191,7 +202,28 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       );
       say(`  written: ${JSON.stringify(w?.written)}`);
     }
-    if (APP && !STEPS_OFF) stopAppMemory();
+    if (APP && !STEPS_OFF) {
+      // ADR 0205 step 4: what the app's server holds after its Applies, each keeper's own count
+      // and the heap after a full collection with it and once it is let go.
+      const gc = () => {
+        setFlagsFromString("--expose-gc");
+        (runInNewContext("gc") as () => void)();
+      };
+      const held = appMemoryHeld();
+      gc();
+      const withIt = getHeapStatistics().used_heap_size;
+      releaseAppMemory();
+      gc();
+      const without = getHeapStatistics().used_heap_size;
+      say(
+        `the app's memory: ${Object.entries(held)
+          .map(([k, v]) => `${k} ${(v / 1e6).toFixed(0)} MB`)
+          .join(
+            ", ",
+          )}; the heap ${(withIt / 1e9).toFixed(2)} GB with it, ${(without / 1e9).toFixed(2)} GB let go (${((withIt - without) / 1e6).toFixed(0)} MB held)`,
+      );
+      stopAppMemory();
+    }
     // ATTICUS_BENCH_CLI=<the CLI's dist/bin.js>: one repo's whole Apply as the command runs it
     // (`atticus verify <repo> --write`: its own process, verify's check of every fact, then the
     // write), RUNS times, each after another change of the repo.
@@ -203,7 +235,7 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
         "bash",
         [
           "-c",
-          `TIMEFORMAT="%R %U %S"; time node --max-old-space-size=4096 "${cli}" verify ${repo} --write > /dev/null 2>&1`,
+          `TIMEFORMAT="%R %U %S"; time node --max-old-space-size=4096 "${cli}" verify ${repo} --write --commit ${BIG_COMMIT} > /dev/null 2>&1`,
         ],
         { cwd: root, encoding: "utf8" },
       );

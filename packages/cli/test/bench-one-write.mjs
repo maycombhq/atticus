@@ -44,7 +44,8 @@ if (verify) {
     code: await verifyCommand(
       root,
       repo,
-      { write: true, verbose: false, json: false, cachesAfterResult: !off },
+      // The estate's checkouts have no .git: the facts' commit (big-estate.ts's BIG_COMMIT).
+      { write: true, verbose: false, json: false, commit: "1111aaa", cachesAfterResult: !off },
       quiet,
     ),
   };
