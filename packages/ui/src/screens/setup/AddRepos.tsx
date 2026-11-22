@@ -6,6 +6,7 @@ import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, useAction } from "../know/common.js";
 import { EditPreview, type FileEdit } from "./EditPreview.js";
+import { RunNewRepos } from "./RunNewRepos.js";
 
 /**
  * ADR 0190: Set up › Repos › Add repos. Paste clone URLs (one a line, ~40 at once) or discover a
@@ -356,6 +357,14 @@ export function AddRepos({ onAdded }: { onAdded?: () => void }) {
                   api<FileEdit>("/api/setup/repos", { method: "POST", body: body(false) })
                 }
                 onWritten={() => onAdded?.()}
+              />
+            )}
+            {/* ADR 0204 decision 4: the four steps in one go; the preview above writes alone. */}
+            {rows.length > 0 && picked.length > 0 && (
+              <RunNewRepos
+                key={`run-${round}`}
+                repos={picked}
+                {...(platform ? { platform } : {})}
               />
             )}
             {rows.length > 0 && picked.length === 0 && (

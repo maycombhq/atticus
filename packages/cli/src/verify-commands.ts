@@ -22,6 +22,7 @@ import {
   verifyFacts,
   type VerifyReport,
 } from "@maycombhq/verify";
+import type { BuildRefusal } from "@maycombhq/scanner";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { refusalEnds } from "./standing.js";
@@ -128,6 +129,11 @@ export interface VerifyCommandOptions {
    * beta.28.1, S1).
    */
   onLeftOut?: (leftOut: readonly LeftOutFact[]) => void;
+  /**
+   * Told the build's refusal when --write's build refused (a large removal, a hand edit): the
+   * repos run of ADR 0204 decision 4 says that repo waits for a confirm, with its listing.
+   */
+  onBuildRefused?: (refused: BuildRefusal) => void;
 }
 
 /**
@@ -658,7 +664,10 @@ export async function verifyCommand(
           ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
           ...(o.plan !== undefined ? { plan: o.plan } : {}),
           ...(o.cachesAfterResult ? { cachesAfterResult: true } : {}),
-          onRefused: (r) => (refusedBuild = r.guard.refused),
+          onRefused: (r) => {
+            refusedBuild = r.guard.refused;
+            if (r.guard.refused) o.onBuildRefused?.(r.guard.refused);
+          },
         },
         { ...io, out: () => undefined },
       );
@@ -961,6 +970,12 @@ export async function verifyCommand(
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined ? { plan: o.plan } : {}),
       ...(o.cachesAfterResult ? { cachesAfterResult: true } : {}),
+      ...(o.onBuildRefused
+        ? {
+            onRefused: (r: { guard: { refused?: BuildRefusal } }) =>
+              r.guard.refused && o.onBuildRefused!(r.guard.refused),
+          }
+        : {}),
     },
     io,
   );

@@ -45,6 +45,7 @@ import { uiLinkRoutes } from "./ui-api-links.js";
 import { uiSketchRoutes } from "./ui-api-sketch.js";
 import { uiOwnerRoutes } from "./ui-api-owner.js";
 import { uiDeclaredRoutes } from "./ui-api-declared.js";
+import { uiConnectRoutes } from "./ui-api-connect.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
 import { uiAiRoutes } from "./ui-api-ai.js";
 import { uiDocumentRoutes } from "./ui-api-documents.js";
@@ -199,7 +200,13 @@ export function extendUiRoutes(
   return uiRolesRoutes(
     uiSetupRoutes(
       // ADR 0202 point 1: Save a support bundle, on this machine (nothing is sent anywhere).
-      uiThreadRoutes(uiActivityRoutes(uiSupportRoutes(uiDecisionRoutes(all, ctx), ctx), ctx), ctx),
+      uiThreadRoutes(
+        uiActivityRoutes(
+          uiSupportRoutes(uiDecisionRoutes(uiConnectRoutes(all, ctx), ctx), ctx),
+          ctx,
+        ),
+        ctx,
+      ),
       ctx,
       deps.openFolder ? { openFolder: deps.openFolder } : {},
     ),

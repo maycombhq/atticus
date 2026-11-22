@@ -20,8 +20,9 @@ import {
  * forge-orders to forge-ledger, sees those calls listed first with where each goes today and how
  * that was decided, ticks them, says why for the three the code names, says yes to replacing
  * sam's pairing, moves them, applies, and the map draws forge-orders → forge-ledger and no
- * forge-orders → forge-billing. Then Undo and Apply, with its removals confirmed, put the arrow back. No network; nothing is
- * committed or pushed. The field-shaped estate does the same move below.
+ * forge-orders → forge-billing. Then Undo, with its removals confirmed (a pairing taken back
+ * counts toward the limits), puts the arrow back. No network; nothing is committed or pushed.
+ * The field-shaped estate does the same move below.
  */
 test.describe("fixtures/reconnect", () => {
   const app = reconnectJourney();
@@ -130,11 +131,14 @@ test.describe("fixtures/reconnect", () => {
     const file = join(root, "facts", "forge-orders.corrections.jsonl");
     expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
 
-    // Confirmed: four pairings, the person's word with their reason; the facts are as read.
+    // Confirmed: four pairings, the person's word with their reason, written and applied in one
+    // job (ADR 0204 decision 2); the facts are as read.
     await confirm.click();
     await expect(
-      panel.getByText("4 pairs written to facts/forge-orders.corrections.jsonl."),
-    ).toBeVisible({ timeout: 30_000 });
+      panel.getByText("Connected: forge-orders → forge-ledger is on the map."),
+    ).toBeVisible({
+      timeout: 120_000,
+    });
     const lines = readFileSync(file, "utf8")
       .trim()
       .split("\n")
@@ -146,9 +150,7 @@ test.describe("fixtures/reconnect", () => {
     expect(readFileSync(join(root, "facts", "forge-orders.jsonl"), "utf8")).toContain(
       '"to":"forge-billing"',
     );
-
-    // Apply redraws the map with no removal to confirm.
-    await panel.getByRole("button", { name: "Apply to forge-orders's map" }).first().click();
+    // The map is redrawn with no Apply to press and no removal to confirm.
     await expect(page.locator(RIGHT)).toHaveAttribute(
       "aria-label",
       /4 × calls · paired by a person/,
@@ -165,38 +167,38 @@ test.describe("fixtures/reconnect", () => {
     ).toBeVisible({ timeout: 60_000 });
     await accessible(page, "the map after the move");
 
-    // Undo takes the four lines back at once; the map is the last Apply's until the next, which
-    // the panel says and offers, with the confirm it may ask for.
+    // Undo takes the four lines back in one job. A pairing taken back counts toward the removal
+    // limits (ADR 0195's addendum of 2026-11-19): three of forge-orders's 13 records is over a
+    // tenth, so the build waits for the person's count, each removal listed with why.
     await panel.getByRole("button", { name: "Undo" }).click();
     await expect(
       panel.getByText(
-        "Undone: the 4 lines are removed. The map still draws what forge-orders's last Apply drew. Apply forge-orders again to draw it without the pairings; Atticus asks you to confirm when that removes many arrows:",
+        "Undone: what this wrote is taken back. The map is built again once you confirm the records it would remove: what is taken back counts toward the removal limits.",
       ),
-    ).toBeVisible({ timeout: 30_000 });
+    ).toBeVisible({ timeout: 120_000 });
     expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
-    await expect(page.locator(RIGHT)).toHaveCount(1);
-    await panel.getByRole("button", { name: "Apply to forge-orders's map" }).last().click();
-    // Four arrows of a small repo go: over the removal limits, so the Apply waits for a confirm
-    // (the build can't tell an Undo from a file reverted by hand). Nothing is written yet.
-    await expect(panel.getByText("The build waits for you: nothing has been written.")).toBeVisible(
-      {
-        timeout: 90_000,
-      },
-    );
-    await expect(page.locator(RIGHT)).toHaveCount(1);
-    await page.getByRole("button", { name: "Review the 4 removals" }).click();
-    const dialog = page.getByRole("dialog", { name: "Confirm 4 removals" });
-    const listed = dialog.getByRole("table", { name: "The records the build would remove" });
-    await expect(listed).toContainText("A pairing changed (facts/*.corrections.jsonl)");
-    await expect(listed).toContainText("its call goes to forge-billing now");
-    await accessible(page, "the confirm of an undone move's removals");
-    await dialog.getByLabel("Type 4 to confirm exactly these").fill("4");
-    await dialog.getByRole("button", { name: "Apply, removing 4 records" }).click();
+    await expect(page.locator(RIGHT)).toHaveAttribute("aria-label", /paired by a person/);
+    await accessible(page, "Connect after Undo, the build waiting");
+    await panel.getByRole("link", { name: /^Review the \d+ removals?$/ }).click();
+    // Plain words (slice 8): Catalog builds is a tab of Set up › Activity; its old address opens it.
+    await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds$/);
+    const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
+    const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+    await review.click();
+    const dialog = page.getByRole("dialog", { name: `Confirm ${n} removals` });
+    await expect(
+      dialog.getByRole("row").filter({ hasText: "its call goes to forge-billing now" }),
+    ).toHaveCount(3);
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+    await dialog.getByRole("button", { name: `Remove ${n} records` }).click();
+    await expect(dialog).toBeHidden({ timeout: 120_000 });
     // Confirmed: the arrow is back where it was.
+    await open(page, app(), "canvas");
     await expect(page.locator(WRONG)).toHaveAttribute("aria-label", /4 × calls/, {
       timeout: 120_000,
     });
     await expect(page.locator(RIGHT)).toHaveCount(0);
+    await accessible(page, "the map after Undo, confirmed");
   });
 });
 
@@ -205,7 +207,7 @@ test.describe("fixtures/reconnect", () => {
  * calls, gateway proxies, hand pairings and a legacy slot. The first service's call `wrongBox.call`
  * is joined by its address to `wrongBox.joins`; `wrongBox.goes` serves the same API. Connect lists
  * it with how it was decided, the move asks why (the line names the other box), the preview
- * refuses nothing, and Apply draws one call more to the right box and one fewer to the wrong one.
+ * refuses nothing, and its confirm draws one call more to the right box and one fewer to the wrong one.
  */
 test.describe("the field-shaped estate", () => {
   const field = forgeJourney({ estate: "field" });
@@ -269,12 +271,11 @@ test.describe("the field-shaped estate", () => {
     await expect(confirm).toBeEnabled({ timeout: 90_000 });
     await expect(panel.getByText(/Apply will refuse/)).toHaveCount(0);
     await expect(panel.getByText(/Apply will wait for you to confirm/)).toHaveCount(0);
+    // Written and applied in one job (ADR 0204 decision 2): no Apply to press after it.
     await confirm.click();
     const file = join(root, "facts", `${w.from}.corrections.jsonl`);
-    await expect(
-      panel.getByText(`written to facts/${w.from}.corrections.jsonl`, { exact: false }),
-    ).toBeVisible({
-      timeout: 30_000,
+    await expect(panel.getByText(`Connected: ${w.from} → ${w.goes} is on the map.`)).toBeVisible({
+      timeout: 120_000,
     });
     const last = JSON.parse(readFileSync(file, "utf8").trim().split("\n").at(-1)!) as {
       fact: string;
@@ -283,11 +284,7 @@ test.describe("the field-shaped estate", () => {
     };
     expect([last.fact, last.by, last.link.repo]).toEqual([w.call, "priya", w.goes]);
 
-    // Apply: one call more to the right box, one fewer to the wrong one, nothing to confirm.
-    await panel
-      .getByRole("button", { name: `Apply to ${w.from}'s map` })
-      .first()
-      .click();
+    // Drawn: one call more to the right box, one fewer to the wrong one, nothing to confirm.
     await expect
       .poll(() => calls(edge(page, w.from, w.goes)), { timeout: 120_000 })
       .toBe(rightBefore + 1);

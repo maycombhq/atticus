@@ -8,6 +8,7 @@ import {
   commitCurrent,
   currentSignal,
   declareLink,
+  factsDirOf,
   deserializeRecord,
   loadOrgPack,
   LockHeldError,
@@ -1401,6 +1402,8 @@ const addWords = (e: Api.MapEditT) => {
   }
   if (!("add" in e)) return "";
   const a = e.add;
+  if (a.kind === "link")
+    return `${a.from.repo ?? a.from.system} → ${a.to.repo ?? a.to.system} (an arrow declared)`;
   return a.kind === "call" ? `${a.system} calls ${a.route}` : `${a.system} ${a.side} ${a.topic}`;
 };
 
@@ -1433,7 +1436,9 @@ export async function applyMapEdits(
   root: string,
   o: { edits: readonly Api.MapEditT[]; by?: string; now?: Date; what?: string },
   io: Output,
-): Promise<{ code: number; edits: MapEditOutcome[]; built: boolean }> {
+): Promise<{ code: number; edits: MapEditOutcome[]; built: boolean; wrote: Api.MapEditWroteT[] }> {
+  /** ADR 0204 2.4: what each saved change wrote, for its Undo. */
+  const wrote: Api.MapEditWroteT[] = [];
   const outcomes: MapEditOutcome[] = o.edits.map((e, edit) => ({
     edit,
     kind: e.kind,
@@ -1445,7 +1450,7 @@ export async function applyMapEdits(
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
     const stamp = at.replace(/\D/g, "").slice(0, 14);
-    const { correctionLine, factsDirOf } = await import("@maycombhq/core");
+    const { correctionLine } = await import("@maycombhq/core");
     const records = (
       await (
         await import("@maycombhq/scanner")
@@ -1544,6 +1549,15 @@ export async function applyMapEdits(
           for (const target of ids) {
             // A link a person declared on the canvas: the declaration goes, not a suppress of it.
             const decl = await canvasDeclarationOf(root, byId.get(target));
+            if (decl?.kind === "link") {
+              const { retireArrow } = await import("@maycombhq/core");
+              const res = await retireArrow(root, decl.arrow, { platform: decl.arrow.platform });
+              replaced(join(root, ...res.rel.split("/")), i, res);
+              inputs.add("org-pack");
+              io.out(`${said}: took the declared arrow out of ${res.rel}.`);
+              targets.add(target);
+              continue;
+            }
             if (decl) {
               const { systemInUse } = await import("./ui-api-declared.js");
               const res = await undeclareLink(root, decl, {
@@ -1610,12 +1624,45 @@ export async function applyMapEdits(
               });
             inputs.add(p.rel);
           }
-          if (lines.length)
+          if (lines.length) {
+            wrote.push({ edit: i, file: p.rel, lines: [...lines] });
             io.out(
               `${said}: wrote ${lines.length} pairing${lines.length === 1 ? "" : "s"} in ${p.rel}, the person's word for ${e.pair.from}'s call${lines.length === 1 ? "" : "s"}.`,
             );
-        } else if ("add" in e) {
+          }
+        } else if ("add" in e && e.add.kind === "link") {
+          // ADR 0204: a declared arrow, one item of the caller's profile's `links`.
           const a = e.add;
+          const { writeArrow } = await import("./ui-api-declared.js");
+          const res = await writeArrow(
+            root,
+            { from: a.from, to: a.to, why: a.why, planned: a.planned, addSystem: a.addSystem },
+            { by, at },
+          );
+          replaced(join(root, ...res.rel.split("/")), i, res);
+          inputs.add("org-pack");
+          if (res.addedSystem)
+            io.out(
+              `${said}: added the system ${res.addedSystem} to ${res.rel}, in the same write.`,
+            );
+          wrote.push({
+            edit: i,
+            file: res.rel,
+            ...(res.addedSystem ? { addedSystem: res.addedSystem } : {}),
+            ...(res.raisedFrom !== undefined ? { raisedFrom: res.raisedFrom } : {}),
+            link: {
+              from: a.from,
+              to: a.to,
+              why: a.why.trim(),
+              by,
+              at,
+              ...(a.planned ? { planned: true } : {}),
+              file: res.rel,
+            },
+          });
+          io.out(`${said}: declared the arrow in ${res.rel}.`);
+        } else if ("add" in e) {
+          const a = e.add as Exclude<Api.MapEditAddT, { kind: "link" }>;
           const d =
             a.kind === "call"
               ? ({ kind: "call", system: a.system, route: a.route } as const)
@@ -1625,6 +1672,8 @@ export async function applyMapEdits(
           const res = await declareLink(root, d, { by, at, ...(create ? { create } : {}) });
           replaced(join(root, ...res.rel.split("/")), i, res);
           inputs.add("org-pack");
+          if (d.kind === "call")
+            wrote.push({ edit: i, file: res.rel, route: { system: d.system, value: d.route } });
           // Beta.28.1: a box no System of the profiles was gets one first, said.
           if (res.created)
             io.out(
@@ -1701,7 +1750,130 @@ export async function applyMapEdits(
   // The lock was held: nothing tried.
   if (outcomes.every((x) => x.state === "not-tried") && code !== 0)
     io.err("Nothing was saved and nothing was built.");
-  return { code, edits: outcomes, built };
+  // A change taken back wrote nothing that stands.
+  const kept = new Set(outcomes.filter((x) => x.state === "saved").map((x) => x.edit));
+  return { code, edits: outcomes, built, wrote: wrote.filter((w) => kept.has(w.edit)) };
+}
+
+/**
+ * ADR 0204 2.4 (the review): an Undo takes back only what an Apply writes: lines of a repo's
+ * corrections file, or an item of a platform's profile. Any other path is refused whole.
+ */
+export function undoFileOk(root: string, w: Api.MapEditWroteT): boolean {
+  const facts = posix(relative(root, factsDirOf(root)));
+  const pack = posix(relative(root, orgPackDirOf(root)));
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return "lines" in w
+    ? new RegExp(`^${esc(facts)}/[A-Za-z0-9._-]+\\.corrections\\.jsonl$`).test(w.file) &&
+        !w.file.includes("..")
+    : new RegExp(`^${esc(pack)}/profiles/[A-Za-z0-9._-]+/profile\\.yaml$`).test(w.file) &&
+        !w.file.includes("..");
+}
+
+/**
+ * ADR 0204 2.4: Undo of an Apply, one local job: exactly what it wrote (its `wrote`), each only
+ * while it is still as written (every line on file, the arrow with the same why, who and when),
+ * else nothing is removed and what changed is said; then one build. No commit, no push.
+ */
+export async function undoMapEdits(
+  root: string,
+  wrote: readonly Api.MapEditWroteT[],
+  io: Output,
+): Promise<{ code: number; built: boolean }> {
+  let built = false;
+  const bad = wrote.filter((w) => !undoFileOk(root, w));
+  if (bad.length) {
+    io.err(
+      `Nothing was undone: ${bad.map((w) => w.file).join(", ")} ${bad.length === 1 ? "isn't a file" : "aren't files"} an Apply writes (a repo's corrections, or a platform's profile).`,
+    );
+    return { code: 2, built };
+  }
+  const code = await locked(root, "Undo", io, async () => {
+    const { loadOrgPack, orgPackDirOf, retireArrow } = await import("@maycombhq/core");
+    const { arrowOf, endOf } = await import("./connect-arrows.js");
+    const { removeCorrectionLines } = await import("./ui-api-links.js");
+    const op = await loadOrgPack(orgPackDirOf(root));
+    // What the build would remove before this Undo takes anything back (a teammate's change
+    // pulled meanwhile): never confirmed as the Undo's own (ADR 0195).
+    const pending = new Set(
+      (
+        await buildAndWrite(root, { command: "atticus catalog build", check: true })
+      ).guard.removals.map((x) => x.id),
+    );
+    const changed: string[] = [];
+    const { declaredOf, undeclareLink } = await import("@maycombhq/core");
+    for (const w of wrote) {
+      if ("route" in w) {
+        const on = (await declaredOf(root, w.route.system)).list;
+        if (!on.some((x) => x.kind === "call" && x.value === w.route.value && x.by))
+          changed.push(`${w.file} (the route ${w.route.value} isn't as written)`);
+      } else if ("lines" in w) {
+        const text = await readFile(join(root, ...w.file.split("/")), "utf8").catch(() => "");
+        const have = new Set(text.split(/\r?\n/));
+        if (w.lines.some((l) => !have.has(l))) changed.push(`${w.file} (a line it wrote is gone)`);
+      } else {
+        const d = arrowOf(root, op, w.link.from, w.link.to);
+        if (!d || d.why !== w.link.why || d.by !== w.link.by || d.at !== w.link.at)
+          changed.push(`${w.file} (the arrow isn't as written)`);
+      }
+    }
+    if (changed.length) {
+      io.err(
+        `Undo it under Your changes on the box: nothing was undone here, because ${changed.join(", ")} changed since.`,
+      );
+      return 1;
+    }
+    for (const w of wrote) {
+      if ("route" in w) {
+        await undeclareLink(root, { kind: "call", system: w.route.system, value: w.route.value });
+        io.out(`Took the declared route ${w.route.value} out of ${w.file}.`);
+      } else if ("lines" in w) {
+        await removeCorrectionLines(join(root, ...w.file.split("/")), w.lines);
+        io.out(
+          `Took back ${w.lines.length} line${w.lines.length === 1 ? "" : "s"} from ${w.file}.`,
+        );
+      } else {
+        const platform = w.file.split("/").slice(-2)[0]!;
+        const r = await retireArrow(
+          root,
+          { from: endOf(w.link.from), to: endOf(w.link.to) },
+          { platform, ...(w.raisedFrom !== undefined ? { lowerTo: w.raisedFrom } : {}) },
+        );
+        io.out(`Took the declared arrow out of ${w.file}.`);
+        // The second review: a version it can't go back to (a topic added since) is said plainly.
+        if (r.keptAt) io.out(r.keptAt.why);
+        if (w.addedSystem) {
+          const { removeAddedSystem } = await import("@maycombhq/core");
+          const { systemInUse } = await import("./ui-api-declared.js");
+          // ADR 0174: a system a pairing or an answered question names stays, as Undeclare's does.
+          const inUse = await systemInUse(
+            root,
+            await loadOrgPack(orgPackDirOf(root)),
+            w.addedSystem,
+          );
+          const s = await removeAddedSystem(root, { platform, system: w.addedSystem, inUse });
+          io.out(
+            s.removed
+              ? `Took the system ${w.addedSystem} it added out of ${w.file}.`
+              : `Left the system ${w.addedSystem} in ${w.file}: ${
+                  s.why === "in-use"
+                    ? "a pairing or an answered question names it"
+                    : s.why === "named"
+                      ? "another declared arrow names it"
+                      : "it changed since it was added"
+                }.`,
+          );
+        }
+      }
+    }
+    // What the Undo took back is the build's changed input: the removals it explains are this
+    // Undo's own (a declared arrow's profile, a pairing's corrections file).
+    const inputs = new Set(wrote.map((w) => ("lines" in w ? w.file : "org-pack")));
+    const c = await buildAfterDecisions(root, new Set(), io, { inputs, pending });
+    built = c === 0;
+    return c;
+  });
+  return { code, built };
 }
 
 /**
@@ -1713,9 +1885,19 @@ export async function applyMapEdits(
 export async function canvasDeclarationOf(
   root: string,
   r: CatalogRecord | undefined,
-): Promise<{ kind: "topic" | "call"; system: string; value: string } | undefined> {
+): Promise<
+  | { kind: "topic" | "call"; system: string; value: string }
+  | { kind: "link"; arrow: import("@maycombhq/core").DeclaredArrow }
+  | undefined
+> {
   if (r?.kind !== "Interface") return undefined;
   if (!r.evidence.some((e) => e.source === "manual")) return undefined;
+  // ADR 0204 (the review): a declared arrow is the profile's item; Delete takes the item away.
+  if ((r as { flags?: string[] }).flags?.includes("declared-link")) {
+    const { arrowOfInterface } = await import("./ui-api-declared.js");
+    const arrow = await arrowOfInterface(root, await loadOrgPack(orgPackDirOf(root)), r.id);
+    return arrow ? { kind: "link", arrow } : undefined;
+  }
   const { declaredOf } = await import("@maycombhq/core");
   const norm = (p: string) =>
     p

@@ -16,6 +16,17 @@ vi.mock("../src/api/client.js", async () => ({
   ...(await vi.importActual<object>("../src/api/client.js")),
   api: async (path: string, o?: { body?: unknown }) => {
     calls.push({ path, ...(o?.body ? { body: o.body } : {}) });
+    // The final review: a profile at version 3 whose version on the target couldn't be read.
+    if (path === "/api/propose?scope=org-pack")
+      return {
+        scope: "org-pack",
+        files: [{ path: "org-pack/profiles/harbor/profile.yaml", status: "M" }],
+        branch: "propose/org-pack/2026-11-21-pat",
+        title: "The org pack",
+        raisesProfileUnread: [
+          { file: "org-pack/profiles/harbor/profile.yaml", target: "origin/main" },
+        ],
+      };
     if (path.startsWith("/api/propose?"))
       return {
         scope: "answers",
@@ -236,6 +247,19 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
     confirmation: "c".repeat(43),
   });
   expect(text(n.tree)).toContain("PR #7 is open for review");
+});
+
+it("says a profile whose version on the target it couldn't read, not as raised or not (the final review)", async () => {
+  const n = mount(Propose as never, { scope: "org-pack" } as never);
+  const nbtn = (label: string) =>
+    all(n.tree).find((e) => e.type === "button" && text(e.props.children) === label)!;
+  (nbtn(P.propose).props.onClick as () => void)();
+  await tick();
+  n.render();
+  expect(text(n.tree)).toContain(
+    P.raisesUnread("org-pack/profiles/harbor/profile.yaml", "origin/main"),
+  );
+  expect(all(n.tree).some((e) => e.props.role === "note")).toBe(true);
 });
 
 it("an Apply that ended says so, so the map's bar and Home's list read again", async () => {

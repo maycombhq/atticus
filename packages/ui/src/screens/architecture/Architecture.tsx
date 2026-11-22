@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
+import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { latestCall } from "../../api/latest.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
@@ -18,9 +18,10 @@ import { CatalogEmpty } from "../../app/app-step.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
-import { ConnectPanel, type BoxChoice } from "./Connect.js";
+import { type BoxChoice } from "./Connect.js";
+import { ConnectAB } from "./ConnectAB.js";
 import { OwnerPanel } from "./Owner.js";
-import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
+import { AddBoxPanel, BoxCorrections } from "./Declare.js";
 import { CanvasTools, type ToolsState } from "./Tools.js";
 import { CanvasLegend, IconButton, MapBar } from "./MapBar.js";
 import { OpenCode } from "./OpenCode.js";
@@ -226,14 +227,14 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     setPickedBox(id);
   };
   // G1 (ADR 0174): connecting a repo's box to another, call by call.
-  const [connecting, setConnecting] = useState<{ from: string; initial?: BoxChoice } | undefined>();
+  // ADR 0204: "Connect to…" on every box; `initial`, the box a line drawn ended on.
+  const [connecting, setConnecting] = useState<
+    { from: string; a: BoxChoice; initial?: BoxChoice } | undefined
+  >();
   // G2 (ADR 0174): setting a repo's owner and system.
   const [owning, setOwning] = useState<string | undefined>();
   // G3 (ADR 0174): declaring a system's link, and adding to the picture.
   // ADR 0200: `target`, the repo a line drawn from the system ended on.
-  const [declaring, setDeclaring] = useState<
-    { system: string; label: string; target?: string } | undefined
-  >();
   const [adding, setAdding] = useState(false);
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
@@ -249,6 +250,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
   // what was said after a correction of the AI's pairing.
   const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  // ADR 0204 2.4: the arrow Show the arrow asked for, picked once the map draws it.
+  const [toSelect, setToSelect] = useState<{ a: Api.LinkBoxT; b: Api.LinkBoxT } | undefined>();
   // Beta.28: the link just deleted from its panel (what the panel says once it left the picture).
   const [deletedLink, setDeletedLink] = useState<
     { link: string; from: string; to: string; interfaces: ReadonlySet<string> } | undefined
@@ -705,10 +708,19 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     graph.boxes.length > 0 &&
     arrangement.state === "ready" &&
     arrangement.key === key;
+  useEffect(() => {
+    if (!toSelect) return;
+    const id = arrowBetween(graph.links, find, toSelect.a, toSelect.b);
+    if (!id) return;
+    setPickedLink({ id, keyboard: false });
+    setToSelect(undefined);
+  }, [graph, toSelect]);
   const reveal = revealOf({
     adding,
-    connecting,
-    declaring,
+    connecting: connecting
+      ? { from: `${connecting.from}>${connecting.initial ? say(connecting.initial.box) : ""}` }
+      : undefined,
+    declaring: undefined,
     owning,
     pickedLink,
     pickedBox,
@@ -719,6 +731,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     <div className="bento">
       {/* Corrections drawn here and not yet applied: Apply for them all, on the map itself. */}
       <CorrectionsToApply />
+      {/* ADR 0204 1.7: the declared arrows the code now shows, each opening its Retire. */}
+      <ShownByCode
+        onOpen={(a, b) =>
+          setConnecting({
+            from: say(a),
+            a: { label: say(a), box: a },
+            initial: { label: say(b), box: b },
+          })
+        }
+      />
       {/* Beta.26: one panel, the canvas taking most of it: one slim bar of controls above it,
           the tools a drawer over it, the legend in its corner, the details beside it. */}
       <section
@@ -1003,15 +1025,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                     const c = connectDrawn(find(a), find(b));
                     // Said, not silently dropped: why a line connects nothing.
                     if ("say" in c) return flash({ text: c.say });
-                    // ADR 0200: from an outside system, Declare a link, the ends as drawn. One
-                    // panel for the line: the other kind, open for another line, closes.
-                    if ("declare" in c) {
-                      setConnecting(undefined);
-                      setDeclaring(c.declare);
-                    } else {
-                      setDeclaring(undefined);
-                      setConnecting(c);
-                    }
+                    // ADR 0204: one panel for every line, the ends as drawn (ADR 0200).
+                    setConnecting(c);
                   }}
                   aside={
                     // Beta.28: results here are one line and one button; the rest full width.
@@ -1126,20 +1141,17 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                             under={under}
                             above={above}
                             contracts={findings}
-                            {...(boxOf(sel)?.repo
-                              ? {
-                                  onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
-                                  onOwner: () => setOwning(boxOf(sel)!.repo!),
-                                }
-                              : boxOf(sel)?.system
+                            {...((b) =>
+                              b
                                 ? {
-                                    onDeclare: () =>
-                                      setDeclaring({
-                                        system: boxOf(sel)!.system!,
-                                        label: sel.label,
-                                      }),
+                                    // ADR 0204 1.1: one Connect to… on every box.
+                                    onConnect: () =>
+                                      setConnecting({ from: say(b), a: choiceOf(sel, b) }),
                                   }
-                                : {})}
+                                : {})(drawnBoxOf(sel) ?? boxOf(sel))}
+                            {...(boxOf(sel)?.repo
+                              ? { onOwner: () => setOwning(boxOf(sel)!.repo!) }
+                              : {})}
                             {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                               ? {
                                   here: {
@@ -1153,21 +1165,18 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                           <p>{WORDS.pick}</p>
                         )}
                         {connecting && (
-                          <ConnectPanel
-                            key={`${connecting.from}:${connecting.initial?.box.repo ?? connecting.initial?.box.system ?? ""}`}
-                            from={connecting.from}
-                            boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
-                            {...(connecting.initial ? { initial: connecting.initial } : {})}
+                          <ConnectAB
+                            key={`${connecting.from}>${connecting.initial ? say(connecting.initial.box) : ""}`}
+                            a={connecting.a}
+                            {...(connecting.initial ? { b: connecting.initial } : {})}
+                            boxes={boxes}
                             onClose={() => setConnecting(undefined)}
-                          />
-                        )}
-                        {declaring && (
-                          <DeclarePanel
-                            key={`${declaring.system}>${declaring.target ?? ""}`}
-                            system={declaring.system}
-                            label={declaring.label}
-                            {...(declaring.target ? { target: declaring.target } : {})}
-                            onClose={() => setDeclaring(undefined)}
+                            onShown={(a, b) => {
+                              setConnecting(undefined);
+                              // ADR 0204 2.4: Show the arrow selects it once the map is read again.
+                              setToSelect({ a, b });
+                              reloadViews();
+                            }}
                           />
                         )}
                         {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
@@ -1279,46 +1288,28 @@ const choiceOf = (n: Api.HierNodeT, b: Api.LinkBoxT): BoxChoice =>
     ? { label: `${WORDS.kindWord.repo}: ${b.repo}`, box: b }
     : { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b };
 
-/** What a line drawn on the canvas opens: Connect, Declare a link, or words for why neither. */
-export type DrawnLine =
-  | { from: string; initial: BoxChoice }
-  | { declare: { system: string; label: string; target: string } }
-  | { say: string };
+/** What a line drawn on the canvas opens: Connect, or words for why not. */
+export type DrawnLine = { from: string; a: BoxChoice; initial: BoxChoice } | { say: string };
+
+/** A box as GET /api/connect names it. */
+export const say = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
 
 /**
- * G1 (ADR 0174), ADR 0200: what a line drawn on the canvas from box `a` to box `b` opens. The
- * box the line starts on is the caller, always: what a person drew is never turned round.
- *
- * - From a repo (or its component, or a system holding one repo) to another box: Connect, the
- *   repo's calls paired with the other box's APIs.
- * - From an outside system (no code in the estate, so no call to pair) to a repo: Declare a
- *   link, the system as the caller and the repo's gateway routes to pick from.
- * - A system with several repos or none at either end, two outside systems, one repo to itself,
- *   or a box that is none of these: said, by name, with what to do.
+ * ADR 0204 1.1 (and ADR 0200): what a line drawn on the canvas from box `a` to box `b` opens:
+ * Connect <A> to <B>, the box it starts on the caller, never turned round. A system of the estate
+ * with one repo is that repo; one with several, or none, is asked about in the panel (`needs`).
+ * Said, not opened, only for a box drawn to itself and for a node that is no box.
  */
 export function connectDrawn(
   a: Api.HierNodeT | undefined,
   b: Api.HierNodeT | undefined,
 ): DrawnLine {
   const C = COPY.connect;
-  const from = drawnBoxOf(a);
-  const to = drawnBoxOf(b);
-  // An end that is no one box: a system of the estate with several repos, or with none.
-  for (const n of [a, b]) {
-    if (!n || drawnBoxOf(n) || !boxOf(n)?.system) continue;
-    const repos = n.properties.repos;
-    return {
-      say:
-        Array.isArray(repos) && repos.length > 1 ? C.dropSeveral(n.label) : C.dropNoRepo(n.label),
-    };
-  }
+  const from = drawnBoxOf(a) ?? boxOf(a);
+  const to = drawnBoxOf(b) ?? boxOf(b);
   if (!a || !b || !from || !to) return { say: C.dropNeedsRepo };
-  if (from.system)
-    return to.repo
-      ? { declare: { system: from.system, label: a.label, target: to.repo } }
-      : { say: C.dropTwoOutside(a.label, b.label) };
-  if (to.repo === from.repo) return { say: C.dropSameRepo };
-  return { from: from.repo!, initial: choiceOf(b, to) };
+  if (say(from) === say(to)) return { say: C.dropSameRepo };
+  return { from: say(from), a: choiceOf(a, from), initial: choiceOf(b, to) };
 }
 
 export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
@@ -1666,4 +1657,65 @@ export function ArrangementBar(p: {
       {p.moved > 0 && <span className="hud">{WORDS.moved(p.moved)}</span>}
     </div>
   );
+}
+
+/** ADR 0204 1.7: "N declared arrows the code now shows", above the map; each opens Connect. */
+export function ShownByCode(p: {
+  onOpen(from: Api.LinkBoxT, to: Api.LinkBoxT): void;
+  read?: Loaded<Api.SupersededArrowsViewT>;
+}) {
+  const live = useApi<Api.SupersededArrowsViewT>(
+    p.read ? undefined : "/api/declared-links/superseded",
+  );
+  const r = p.read ?? live;
+  const items = r.state === "ready" ? r.data.items : [];
+  if (!items.length) return null;
+  const name = (b: Api.LinkBoxT) => b.repo ?? b.system ?? "";
+  return (
+    <div
+      className="run-note stack"
+      style={{ gap: 4 }}
+      role="region"
+      aria-label={COPY.connectAB.shownCount(items.length)}
+    >
+      <p className="ev-say" style={{ margin: 0 }}>
+        {COPY.connectAB.shownCount(items.length)}
+      </p>
+      <div className="box-btns">
+        {items.map((x) => (
+          <button
+            key={`${say(x.from)}>${say(x.to)}`}
+            type="button"
+            className="btn"
+            onClick={() => p.onOpen(x.from, x.to)}
+          >
+            {COPY.connectAB.shownOpen(name(x.from), name(x.to))}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ADR 0204 2.4: the link drawn between two boxes (either way round), by the boxes the canvas
+ * draws them as: a repo's own box, its component's, or a system that holds only it.
+ */
+export function arrowBetween(
+  links: readonly { id: string; from: string; to: string }[],
+  find: (id: string) => Api.HierNodeT | undefined,
+  a: Api.LinkBoxT,
+  b: Api.LinkBoxT,
+): string | undefined {
+  const of = (id: string) => {
+    const n = find(id);
+    const x = drawnBoxOf(n) ?? boxOf(n);
+    return x ? say(x) : undefined;
+  };
+  const [x, y] = [say(a), say(b)];
+  const l = links.find((k) => {
+    const [f, t] = [of(k.from), of(k.to)];
+    return (f === x && t === y) || (f === y && t === x);
+  });
+  return l?.id;
 }

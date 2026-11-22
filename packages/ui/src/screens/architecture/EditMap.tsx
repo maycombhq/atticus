@@ -234,7 +234,11 @@ export interface ToChoice {
 type AddKind = "publishes" | "listens" | "call";
 
 /** The add the form says, or none when it lacks the topic or the route. */
-export function addOf(system: string, kind: AddKind, value: string): Api.MapEditAddT | undefined {
+export function addOf(
+  system: string,
+  kind: AddKind,
+  value: string,
+): Exclude<Api.MapEditAddT, { kind: "link" }> | undefined {
   const v = value.trim();
   if (!system || !v) return undefined;
   return kind === "call"

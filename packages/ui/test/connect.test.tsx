@@ -373,7 +373,7 @@ describe("calls that are paired, by where each stands", () => {
     const out = show(view([paired(1), paired(2)]));
     expect(out).toContain(C.pairedOnMap("pat", 2, B, L));
     expect(C.pairedOnMap("pat", 2, B, L)).toBe(
-      "pat paired 2 calls of forge-billing with forge-ledger, and the map draws them: the arrow from forge-billing to forge-ledger on the Estate map (pick the arrow to see its calls). To pair one again, first undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+      "pat paired 2 calls of forge-billing with forge-ledger, and the map draws them: the arrow from forge-billing to forge-ledger on the Map (pick the arrow to see its calls). To pair one again, first undo it: pick forge-billing's box, Show your changes (under Your changes), and Undo its line.",
     );
     // Nothing to apply: no Apply is offered.
     expect(out).not.toContain(COPY.propose.apply(B));
@@ -406,7 +406,7 @@ describe("calls that are paired, by where each stands", () => {
     );
     expect(out).toContain(C.pairedMix("pat", 2, 1, B, L, true));
     expect(C.pairedMix("pat", 2, 1, B, L, true)).toBe(
-      "pat paired 3 calls of forge-billing with forge-ledger: the map draws 2 (the arrow from forge-billing to forge-ledger on the Estate map), and 1 isn't drawn yet: it is in forge-billing's corrections, written since forge-billing was last applied. Apply to forge-billing's map, below, draws it.",
+      "pat paired 3 calls of forge-billing with forge-ledger: the map draws 2 (the arrow from forge-billing to forge-ledger on the Map), and 1 isn't drawn yet: it is in forge-billing's corrections, written since forge-billing was last applied. Apply to forge-billing's map, below, draws it.",
     );
     expect(out).toContain(COPY.propose.apply(B));
   });
@@ -422,7 +422,7 @@ describe("calls that are paired, by where each stands", () => {
     );
     expect(out).toContain(C.pairedElsewhere("sam", 2, "forge-cards (1), forge-risk (1)", B));
     expect(C.pairedElsewhere("sam", 2, "forge-cards (1), forge-risk (1)", B)).toBe(
-      "sam paired 2 calls of forge-billing with another box: forge-cards (1), forge-risk (1). Each is listed below with who paired it; pairing one here replaces that pairing. To free one without pairing it here, undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+      "sam paired 2 calls of forge-billing with another box: forge-cards (1), forge-risk (1). Each is listed below with who paired it; pairing one here replaces that pairing. To free one without pairing it here, undo it: pick forge-billing's box, Show your changes (under Your changes), and Undo its line.",
     );
     // The row of the one not drawn yet says whose it is, not only that the read ties it there.
     expect(out).toContain(C.pairedUndrawn("sam", "forge-risk"));
@@ -505,7 +505,7 @@ describe("calls that are paired, by where each stands", () => {
       const out = show(gwView([fwd(1), fwd(2)]));
       expect(out).toContain(C.pairedForwarded("pat", 2, B, G, "forge-ledger", true));
       expect(C.pairedForwarded("pat", 2, B, G, "forge-ledger", true)).toBe(
-        "pat paired 2 calls of forge-billing with forge-gw. forge-gw forwards them to forge-ledger, so the arrow on the map is from forge-billing to forge-ledger, not to forge-gw (pick that arrow: Why linked says it goes through a gateway). To change that, undo the pairing: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+        "pat paired 2 calls of forge-billing with forge-gw. forge-gw forwards them to forge-ledger, so the arrow on the map is from forge-billing to forge-ledger, not to forge-gw (pick that arrow: Why linked says it goes through a gateway). To change that, undo the pairing: pick forge-billing's box, Show your changes (under Your changes), and Undo its line.",
       );
       expect(out).not.toContain(COPY.propose.apply(B));
       // Never the words of a pairing that waits, or of an Apply that may have been stopped.
@@ -536,7 +536,7 @@ describe("calls that are paired, by where each stands", () => {
       );
       expect(out).toContain(C.pairedOutranked(1, B, G, "forge-ledger", true));
       expect(C.pairedOutranked(1, B, G, "forge-ledger", true)).toBe(
-        "AI paired 1 call of forge-billing with forge-gw, but a person's answer names forge-ledger for it, and a person's word stands over the AI's: the pairing is not in effect. Its arrow is from forge-billing to forge-ledger, on the map. To clear the AI's pairing, undo it: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+        "AI paired 1 call of forge-billing with forge-gw, but a person's answer names forge-ledger for it, and a person's word stands over the AI's: the pairing is not in effect. Its arrow is from forge-billing to forge-ledger, on the map. To clear the AI's pairing, undo it: pick forge-billing's box, Show your changes (under Your changes), and Undo its line.",
       );
       expect(out).not.toContain(COPY.propose.apply(B));
       expect(C.pairedOutranked(1, B, G, "forge-ledger", false)).toContain(
@@ -548,7 +548,7 @@ describe("calls that are paired, by where each stands", () => {
       const out = show(gwView([paired(1, { joins: "forge-ledger" })]));
       expect(out).toContain(C.pairedTiedElsewhere("pat", 1, B, G, "forge-ledger", true));
       expect(C.pairedTiedElsewhere("pat", 1, B, G, "forge-ledger", true)).toBe(
-        "pat paired 1 call of forge-billing with forge-gw, but the estate's read ties it to forge-ledger, and its facts don't say why here. Its arrow is from forge-billing to forge-ledger, on the map. To change that, undo the pairing: pick forge-billing's box, Show the corrections (under Corrections and declarations), and Undo its line.",
+        "pat paired 1 call of forge-billing with forge-gw, but the estate's read ties it to forge-ledger, and its facts don't say why here. Its arrow is from forge-billing to forge-ledger, on the map. To change that, undo the pairing: pick forge-billing's box, Show your changes (under Your changes), and Undo its line.",
       );
     });
 
