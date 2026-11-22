@@ -506,6 +506,9 @@ describe("a build the cache gives whole is guarded as any build (ADR 0195 point 
       const r = await buildAndWrite(root, { command: "atticus catalog build" });
       expect(buildCacheStats().memoHits).toBe(s0.memoHits + 1);
       expect(r.guard.refused?.reasons).toEqual(["not-upgraded"]);
+      // The final review of b30/unresolved-ids: said by a flag, not by its words.
+      expect(r.guard.refused?.beforeSlots).toBe(true);
+      expect(r.guard.refused?.renames).toBeUndefined();
       expect(r.write).toBeUndefined();
     },
     T,

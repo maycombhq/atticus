@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { oldLooseEndId, type CatalogRecord } from "@maycombhq/core";
-import { oldIdsNamedOf } from "../src/build.js";
+import { oldIdsNamedOf, refusedBeforeSlots } from "../src/build.js";
 
 /**
  * ADR 0124 addendum E-ids, its dated part of 2026-11-22 (the owner: one deterministic rule): a
@@ -72,5 +72,36 @@ describe("a build tells the old ids its inputs name that it would name again wit
 
   it("lists none when nothing names an old id: a normal build renames them", () => {
     expect(oldIdsNamedOf(records, new Map())).toEqual([]);
+  });
+});
+
+/**
+ * The final review of b30/unresolved-ids (a nit): the two `not-upgraded` refusals are told apart
+ * by flags on the refusal, never by its words: `beforeSlots` (no build.json: a catalog from before
+ * the slots) and `renames` (the count of old loose ends the upgrade renames). A refusal with
+ * neither, from a report written before beta.30, is one from before the slots: only that kind
+ * was `not-upgraded` then.
+ */
+describe("a not-upgraded refusal says which it is by its flags", () => {
+  const words = "catalog/generated was written before beta.27 (there is no build.json).";
+  it("is from before the slots by beforeSlots, whatever its words", () => {
+    expect(refusedBeforeSlots({ reasons: ["not-upgraded"], message: "x", beforeSlots: true })).toBe(
+      true,
+    );
+    expect(
+      refusedBeforeSlots({
+        reasons: ["not-upgraded"],
+        message: "x",
+        beforeSlots: true,
+        renames: 2,
+      }),
+    ).toBe(true);
+    // The words of a catalog from before the slots don't make one.
+    expect(refusedBeforeSlots({ reasons: ["not-upgraded"], message: words, renames: 2 })).toBe(
+      false,
+    );
+    // A refusal a report kept from before beta.30 had no flag: from before the slots.
+    expect(refusedBeforeSlots({ reasons: ["not-upgraded"], message: "x" })).toBe(true);
+    expect(refusedBeforeSlots({ reasons: ["hand-edits"], message: words })).toBe(false);
   });
 });

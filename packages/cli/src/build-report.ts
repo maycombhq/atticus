@@ -109,6 +109,9 @@ export function refusalView(
     ...(r.discardEdits !== undefined ? { discardEdits: r.discardEdits } : {}),
     ...(r.unread ? { unread: r.unread } : {}),
     ...(r.unreadableManifest ? { unreadableManifest: true as const } : {}),
+    // API 3.19.0 (the final review of b30/unresolved-ids): which not-upgraded refusal it is.
+    ...(r.beforeSlots ? { beforeSlots: true as const } : {}),
+    ...(r.renames !== undefined ? { renames: r.renames } : {}),
     // ADR 0202 points 7 and 8: the files a newer Atticus wrote, and where the metarepo stands.
     ...(r.newer ? { newer: r.newer.map((f) => ({ ...f })) } : {}),
     ...(r.standing ? { standing: r.standing } : {}),

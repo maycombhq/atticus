@@ -45322,6 +45322,15 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "newer": {
                     "type": "array",
                     "items": {
@@ -45711,6 +45720,15 @@
               "unreadableManifest": {
                 "type": "boolean",
                 "const": true
+              },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "newer": {
                 "type": "array",
@@ -50665,6 +50683,15 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
                   "newer": {
                     "type": "array",
                     "items": {
@@ -50993,6 +51020,15 @@
                   "unreadableManifest": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "beforeSlots": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "renames": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "newer": {
                     "type": "array",
@@ -51906,6 +51942,15 @@
                 "type": "boolean",
                 "const": true
               },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "newer": {
                 "type": "array",
                 "items": {
@@ -52328,6 +52373,15 @@
               "unreadableManifest": {
                 "type": "boolean",
                 "const": true
+              },
+              "beforeSlots": {
+                "type": "boolean",
+                "const": true
+              },
+              "renames": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "newer": {
                 "type": "array",

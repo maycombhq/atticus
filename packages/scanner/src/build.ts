@@ -290,14 +290,16 @@ export const upgradeRenamesWords = (n: number) =>
   `${UPGRADE_RENAMES}${n} loose end${n === 1 ? "" : "s"} your changes name and carries your changes in one write.`;
 
 /**
- * Whether a `not-upgraded` refusal is a catalog from before the slots (no build.json), not a
- * build that waits for the loose ends' step: what curating, an undo and the app tell them by.
+ * Whether a `not-upgraded` refusal is a catalog from before the slots (no build.json), not only a
+ * build that waits for the loose ends' step: what curating, an undo and the app tell them by. Told
+ * by the refusal's flags (`beforeSlots`, `renames`), never by its words (the final review of
+ * b30/unresolved-ids). A refusal with neither, as a report written before beta.30 keeps one, is
+ * from before the slots: only that kind was `not-upgraded` then.
  */
-export function refusedBeforeSlots(r: { reasons: readonly string[]; message: string }): boolean {
-  return (
-    r.reasons.includes("not-upgraded") &&
-    r.message.split("\n").some((l) => / was written before beta\.27 /.test(l))
-  );
+export function refusedBeforeSlots(
+  r: Pick<BuildRefusal, "reasons" | "beforeSlots" | "renames">,
+): boolean {
+  return r.reasons.includes("not-upgraded") && (r.beforeSlots === true || r.renames === undefined);
 }
 
 const sha = (text: string) => sha256Of(text);
@@ -2472,6 +2474,18 @@ export interface BuildRefusal {
    */
   unreadableManifest?: true;
   /**
+   * A `not-upgraded` refusal of a catalog from before the slots (no build.json; or an undo took
+   * the upgrade back): `atticus upgrade --yes` adopts it (the final review of b30/unresolved-ids:
+   * a flag, so nothing tells it by the words).
+   */
+  beforeSlots?: true;
+  /**
+   * ADR 0124 addendum E-ids: a `not-upgraded` refusal of a build that would name again with their
+   * repo loose ends an input names by their old ids: how many old ids. `atticus upgrade` renames
+   * them and carries the inputs (`--dry-run` shows what it would write).
+   */
+  renames?: number;
+  /**
    * ADR 0202 point 8: where the metarepo stands, in one line. The build never sets it: the
    * command that printed this refusal does, so `--json` and the app's report carry it.
    */
@@ -2935,6 +2949,8 @@ export async function guardBuild(
   });
   for (const e of curatedEdits) edits.splice(edits.indexOf(e), 1);
   const unreadableManifest = before && o.discardEdits !== onDisk.size && last.problem !== undefined;
+  /** A catalog from before the slots, refused (`BuildRefusal.beforeSlots`). */
+  let beforeSlots = false;
   if (unreadableManifest) {
     // ADR 0197 review: a build.json is there but doesn't read (edited or merged by hand, say).
     // The catalog isn't one from before the slots, so `atticus upgrade` is no answer: no file
@@ -2945,6 +2961,7 @@ export async function guardBuild(
     );
   } else if (before && o.discardEdits !== onDisk.size) {
     reasons.push("not-upgraded");
+    beforeSlots = true;
     // An undo that took back the upgrade leaves a catalog from before the slots again.
     const latest = (await listUndo(o.undoDir))[0];
     if (latest?.command.startsWith("atticus catalog undo")) lines.push(UPGRADE_UNDONE);
@@ -3358,6 +3375,8 @@ export async function guardBuild(
           ? { edits: before ? beforeEdits : edits, discardEdits: discardCount }
           : {}),
         ...(unreadableManifest ? { unreadableManifest: true as const } : {}),
+        ...(beforeSlots ? { beforeSlots: true as const } : {}),
+        ...(named.length ? { renames: named.length } : {}),
       },
     };
   }
