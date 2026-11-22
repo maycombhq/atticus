@@ -21,11 +21,15 @@ describe("profiles a proposal raises (ADR 0204)", () => {
         `schemaVersion: ${v}\nplatform: ${p}\nname: ${p}\n`,
       );
     }
-    const git = async (args: readonly string[]) => ({
-      stdout: args[1]!.includes("forge") ? "schemaVersion: 1\n" : "schemaVersion: 2\n",
-      stderr: "",
-      code: 0,
-    });
+    const git = async (args: readonly string[]) => {
+      // No origin/HEAD here: the proposal's target is read as HEAD.
+      if (args[0] === "symbolic-ref") throw new Error("exit 1");
+      return {
+        stdout: args[1]!.includes("forge") ? "schemaVersion: 1\n" : "schemaVersion: 2\n",
+        stderr: "",
+        code: 0,
+      };
+    };
     const files = [
       { path: "org-pack/profiles/forge/profile.yaml" },
       { path: "org-pack/profiles/harbor/profile.yaml" },
@@ -34,5 +38,26 @@ describe("profiles a proposal raises (ADR 0204)", () => {
     expect(await profilesRaised(root, files, git as never)).toEqual([
       { file: "org-pack/profiles/forge/profile.yaml", from: 1, to: 3 },
     ]);
+  });
+
+  it("compares with the proposal's target branch, not HEAD (the second review)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b30-cn-propose-"));
+    mkdirSync(join(root, "org-pack", "profiles", "forge"), { recursive: true });
+    writeFileSync(
+      join(root, "org-pack", "profiles", "forge", "profile.yaml"),
+      "schemaVersion: 3\nplatform: forge\nname: forge\n",
+    );
+    const asked: string[][] = [];
+    // The raise is committed on this branch already (HEAD at 3); the target, origin/main, is at 2.
+    const git = async (args: readonly string[]) => {
+      asked.push([...args]);
+      if (args[0] === "symbolic-ref") return { stdout: "origin/main\n", stderr: "", code: 0 };
+      const at = args[1]!.startsWith("origin/main:") ? 2 : 3;
+      return { stdout: `schemaVersion: ${at}\n`, stderr: "", code: 0 };
+    };
+    expect(
+      await profilesRaised(root, [{ path: "org-pack/profiles/forge/profile.yaml" }], git as never),
+    ).toEqual([{ file: "org-pack/profiles/forge/profile.yaml", from: 2, to: 3 }]);
+    expect(asked).toContainEqual(["show", "origin/main:org-pack/profiles/forge/profile.yaml"]);
   });
 });

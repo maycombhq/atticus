@@ -6,7 +6,10 @@ import { createGit, type GitRunner } from "@maycombhq/workspace";
 /**
  * ADR 0204 (Migration): the profiles a proposal raises to a version an older Atticus refuses: a
  * `profiles/<platform>/profile.yaml` among its files whose own `schemaVersion` is above the one
- * committed at HEAD (a new file counts from version 1). The Propose page says so.
+ * on the proposal's target branch (a new file counts from version 1). The Propose page says so.
+ * The second review: the target, not HEAD, since a raise committed on this branch still reaches
+ * the target in the pull request. The target is the remote's default branch as this clone knows it
+ * (`origin/HEAD`, read from files, no network), else HEAD.
  */
 export async function profilesRaised(
   root: string,
@@ -22,14 +25,20 @@ export async function profilesRaised(
     }
   };
   const out: { file: string; from: number; to: number }[] = [];
-  for (const f of files) {
-    if (!/(^|\/)profiles\/[^/]+\/profile\.yaml$/.test(f.path)) continue;
+  const profiles = files.filter((f) => /(^|\/)profiles\/[^/]+\/profile\.yaml$/.test(f.path));
+  if (!profiles.length) return out;
+  const target =
+    (await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], root).then(
+      (r) => r.stdout.trim(),
+      () => "",
+    )) || "HEAD";
+  for (const f of profiles) {
     const now = versionOf(
       await readFile(join(root, ...f.path.split("/")), "utf8").catch(() => undefined),
     );
     const was =
       versionOf(
-        await git(["show", `HEAD:${f.path}`], root).then(
+        await git(["show", `${target}:${f.path}`], root).then(
           (r) => r.stdout,
           () => undefined,
         ),
