@@ -541,7 +541,7 @@ describe("the build's own commands (ADR 0195 points 2, 4 and 7)", () => {
       const before = generated(root);
       const c = await run(["catalog", "build", "--root", root, "--check"]);
       expect(c.code).toBe(1);
-      expect(c.out).toMatch(/isn't what the slots and inputs build/);
+      expect(c.out).toMatch(/isn't what the stored reads and inputs build/);
       expect(generated(root)).toEqual(before);
     },
     T,

@@ -248,8 +248,8 @@ export async function catalogBuild(
       else
         io.out(
           r.upToDate
-            ? "catalog/generated is what the slots and inputs build."
-            : "catalog/generated isn't what the slots and inputs build: run atticus catalog build.",
+            ? "catalog/generated is what the stored reads and inputs build."
+            : "catalog/generated isn't what the stored reads and inputs build: run atticus catalog build.",
         );
       if (!o.json) for (const w of buildWarnings(r.build)) io.err(`warning: ${w}`);
       return r.upToDate ? 0 : 1;
