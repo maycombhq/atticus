@@ -7,6 +7,8 @@ import {
   factsParseHooks,
   factsParseStats,
   forgetFactsParses,
+  recordCacheHooks,
+  recordCacheStats,
   settleAfterResult,
   startAppMemory,
   stopAppMemory,
@@ -102,6 +104,7 @@ afterEach(async () => {
   delete writeFactsHooks.onDiffs;
   delete factsParseHooks.check;
   delete buildCacheHooks.checkTexts;
+  delete recordCacheHooks.checkMemory;
   await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -167,8 +170,11 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       writeFactsHooks.onDiffs = (changed, whole) => both.push([changed, whole]);
       // Step 3, both ways: every kept facts parse is checked against a parse of its text.
       factsParseHooks.check = true;
-      // Step 4, both ways: every kept text a build takes is checked against its serialization.
+      // Step 4, both ways: every kept text a build takes is checked against its serialization,
+      // and every catalog parse a write's read takes from memory against its file's parse.
       buildCacheHooks.checkTexts = true;
+      recordCacheHooks.checkMemory = true;
+      const parsesFromMemory = recordCacheStats.fromMemory;
       const kept = factsParseStats.kept;
       const fromMemory = buildCacheStats().textsFromMemory;
       const hits = buildCacheStats().memoHits;
@@ -176,6 +182,12 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       delete writeFactsHooks.onDiffs;
       delete factsParseHooks.check;
       delete buildCacheHooks.checkTexts;
+      delete recordCacheHooks.checkMemory;
+      // Every write after the first read the catalog's parses from the server's memory.
+      expect(
+        recordCacheStats.fromMemory - parsesFromMemory,
+        "parses from memory",
+      ).toBeGreaterThanOrEqual(3);
       // Each write's build took the last build's texts from memory, but one whose inputs were the
       // last build's, which is that build whole, read from disk as before.
       const now = buildCacheStats();

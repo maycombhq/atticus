@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { CancelledError } from "./cancel.js";
 import { hashFilesIn, statFilesIn, type FileHash, type FileStat } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
+import { appMemory, appMemoryInUse, onAppMemoryRelease } from "./app-memory.js";
 
 /**
  * Record files read and parsed once, then kept between runs (ADR 0119, with its addendum of
@@ -47,7 +49,16 @@ import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 export const RACY_MS = 2000;
 
 /** Tests set the clock a parse is kept at (ms; default `Date.now`). */
-export const recordCacheHooks: { now?: () => number } = {};
+export const recordCacheHooks: {
+  now?: () => number;
+  /** The tests: the size limit of the parses kept in memory, in place of `MEMORY_MAX`. */
+  memoryMaxBytes?: number;
+  /**
+   * ADR 0205's proof: each parse a read takes from memory is checked against the parse of its
+   * file as the cache on disk would give it (its JSON), or a throw.
+   */
+  checkMemory?: boolean;
+} = {};
 const now = () => (recordCacheHooks.now ?? Date.now)();
 
 /** One file's parse: the value, or why the file isn't valid. Never both. */
@@ -151,6 +162,104 @@ async function readMemo(file: string, v: string, dir: string): Promise<Map<strin
   }
 }
 
+// ------------------------------------------------------------------ kept in the app's memory
+
+/**
+ * ADR 0205 step 4 (the owner's decision of 2026-11-21: the step the ADR first held back is
+ * built): in the app's server, the parses a writer's read keeps (`memory: true`) are kept in
+ * memory too, by the memo they belong to, so the next read takes them without reading the memo's
+ * file back (a JSON of every parse: at 100,000 records, most of what a read of the catalog
+ * costs). Each is still vouched for by its file exactly as on disk (its size and time, and its
+ * hash while racy): a change made outside the app is read again. What is kept is what the memo
+ * on disk would give (the parse through JSON: no field set to undefined, no -0), deep-frozen and
+ * handed out without a copy, since a copy costs what the parse of the memo does; a reader that
+ * changed one would throw rather than change the next read's. Let go by the app's rule, and kept
+ * only up to `MEMORY_MAX`.
+ */
+interface InMemory {
+  v: string;
+  dir: string;
+  entries: Map<string, Entry>;
+  /** The bytes of the files the parses are of (what the limit counts). */
+  bytes: number;
+}
+const inMemory = new Map<string, InMemory>();
+/** How many reads took their parses from memory (the tests). */
+export const recordCacheStats = { fromMemory: 0 };
+const HELD = "the catalog's parses (a writer's read)";
+onAppMemoryRelease(
+  () => inMemory.clear(),
+  () => ({ [HELD]: [...inMemory.values()].reduce((n, m) => n + m.bytes, 0) }),
+);
+
+/**
+ * The most the parses kept in memory stand for, in bytes of the files parsed. The objects take
+ * about three times their files' bytes on the heap (ADR 0205 measures them); with the texts and
+ * the facts parses, the app keeps about 1 GB at 100,000 records, the owner's answer.
+ */
+const MEMORY_MAX = 160 * 1024 * 1024;
+
+/** A value as the memo on disk gives it back: through JSON, then frozen, every level of it. */
+function asKept(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  return deepFreeze(JSON.parse(JSON.stringify(value)) as unknown);
+}
+
+function deepFreeze(v: unknown): unknown {
+  if (v && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k]);
+  }
+  return v;
+}
+
+/**
+ * Keep a memo's entries in memory as they now are: an entry the memory held already keeps its
+ * value; one read from the memo on disk (JSON already) is frozen; one parsed or written now
+ * (`raw`) is taken through JSON first, as the memo on disk would give it.
+ */
+function remember(
+  file: string,
+  v: string,
+  dir: string,
+  entries: ReadonlyMap<string, Entry>,
+  raw: ReadonlySet<string>,
+): void {
+  if (!appMemory.on || !appMemoryInUse()) {
+    inMemory.delete(file);
+    return;
+  }
+  const was = inMemory.get(file);
+  const out = new Map<string, Entry>();
+  let bytes = 0;
+  const max = recordCacheHooks.memoryMaxBytes ?? MEMORY_MAX;
+  for (const [rel, e] of entries) {
+    bytes += Math.max(0, e.size);
+    if (bytes > max) {
+      inMemory.delete(file);
+      return;
+    }
+    const held = was?.entries.get(rel);
+    const same = held !== undefined && held.value === e.value && held.problem === e.problem;
+    out.set(
+      rel,
+      same || e.problem !== undefined
+        ? e
+        : { ...e, value: raw.has(rel) ? asKept(e.value) : deepFreeze(e.value) },
+    );
+  }
+  inMemory.set(file, { v, dir: resolve(dir), entries: out, bytes });
+}
+
+/** The memo's entries from memory, when the app keeps them and they are of this shape and folder. */
+function fromMemory(file: string, v: string, dir: string): Map<string, Entry> | undefined {
+  if (!appMemory.on) return undefined;
+  const m = inMemory.get(file);
+  if (!m || m.v !== v || m.dir !== resolve(dir) || !appMemoryInUse()) return undefined;
+  recordCacheStats.fromMemory++;
+  return new Map(m.entries);
+}
+
 /**
  * Read and parse every named file of a folder, reusing the parses kept from an earlier run for
  * the files that haven't changed. `name` names the kind of file (`catalog`, `spec`), `version`
@@ -184,10 +293,19 @@ export async function readParsedFiles<T>(o: {
    * CancelledError; nothing is kept of a stopped read.
    */
   signal?: AbortSignal;
+  /**
+   * ADR 0205 step 4: a writer's read, in the app's server: its parses kept in memory between
+   * reads too (frozen, handed out without a copy), and taken from there. Outside a server, or
+   * with `keep: false`, nothing changes.
+   */
+  memory?: boolean;
 }): Promise<Parsed<T>[]> {
   const stop = o.signal ? { signal: o.signal } : {};
   const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
-  const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
+  const mem = !!memo && o.memory === true && o.keep !== false;
+  const inMem = mem ? fromMemory(memo.file, o.version, o.dir) : undefined;
+  const had =
+    inMem ?? (memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>());
   const full = (rel: string) => join(o.dir, ...rel.split("/"));
   // beta.28.2: in a few worker threads for a big folder (file-pool.ts: 100,000 stats through the
   // promise API took a second and more), the same sizes and times.
@@ -267,6 +385,11 @@ export async function readParsedFiles<T>(o: {
   const changed = read.length > 0 || rekept > 0 || fresh.size !== had.size;
   for (const { rel, e } of read) fresh.set(rel, e);
   if (memo && changed && o.keep !== false) await writeMemo(memo, o.version, o.dir, fresh);
+  if (mem) {
+    // ADR 0205's proof: each parse taken from memory is the one its file gives.
+    if (inMem && recordCacheHooks.checkMemory) checkFromMemory(o, inMem, fresh, read);
+    remember(memo.file, o.version, o.dir, fresh, new Set(read.map((x) => x.rel)));
+  }
   if (memo && o.keep !== false && o.kept)
     o.kept({ memo, version: o.version, dir: o.dir, entries: new Map(fresh) } as KeptParses<T>);
   return o.files.map((rel, i) => {
@@ -346,6 +469,33 @@ export async function keepParses<T>(
     );
   });
   await writeMemo(k.memo, k.version, k.dir, entries);
+  // ADR 0205 step 4: a folder the app keeps in memory keeps the writer's texts' parses too.
+  if (inMemory.has(k.memo.file))
+    remember(k.memo.file, k.version, k.dir, entries, new Set(o.files.map((f) => f.rel)));
+}
+
+/** ADR 0205's proof (`checkMemory`): each parse a read took from memory against its file's. */
+function checkFromMemory<T>(
+  o: { dir: string; parse: (text: string, rel: string) => ParseOutcome<T> },
+  inMem: ReadonlyMap<string, Entry>,
+  fresh: ReadonlyMap<string, Entry>,
+  read: readonly { rel: string }[],
+): void {
+  const parsedNow = new Set(read.map((x) => x.rel));
+  for (const [rel, e] of fresh) {
+    if (parsedNow.has(rel) || !inMem.has(rel)) continue;
+    let text: string;
+    try {
+      text = readFileSync(join(o.dir, ...rel.split("/")), "utf8");
+    } catch {
+      continue;
+    }
+    const p = o.parse(text, rel);
+    const want = p.ok ? JSON.stringify(p.value) : p.message;
+    const got = e.problem === undefined ? JSON.stringify(e.value) : e.problem;
+    if (want !== got)
+      throw new Error(`ADR 0205 step 4: a parse kept in memory isn't its file's (${rel})`);
+  }
 }
 
 async function writeMemo(

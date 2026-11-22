@@ -100,7 +100,16 @@ export async function readCatalogWithFiles(
 ): Promise<CatalogFilesRead> {
   const files = new Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>();
   let kept: KeptParses<CatalogRecord> | undefined;
-  const read = await readCatalogFiles(dir, o.cacheRoot, o.keep, files, (k) => (kept = k), o.signal);
+  // ADR 0205 step 4: a writer's read, kept in the app's memory between writes (in its server).
+  const read = await readCatalogFiles(
+    dir,
+    o.cacheRoot,
+    o.keep,
+    files,
+    (k) => (kept = k),
+    o.signal,
+    true,
+  );
   return { ...read, dir: resolve(dir), files, ...(kept ? { kept } : {}) };
 }
 
@@ -164,6 +173,7 @@ async function readCatalogFiles(
   withFiles?: Map<string, { record?: CatalogRecord; size: number; mtimeMs: number }>,
   kept?: (k: KeptParses<CatalogRecord>) => void,
   signal?: AbortSignal,
+  memory?: boolean,
 ): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
@@ -195,6 +205,7 @@ async function readCatalogFiles(
     ...(withFiles ? { withStats: true } : {}),
     ...(kept ? { kept } : {}),
     ...(signal ? { signal } : {}),
+    ...(memory ? { memory } : {}),
     parse: parseCatalogText,
   })) {
     if (p.problem === undefined) records.push(p.value!);

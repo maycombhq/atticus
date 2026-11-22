@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   factsParseHooks,
   forgetFactsParses,
+  recordCacheHooks,
   releaseAppMemory,
   settleAfterResult,
   startAppMemory,
@@ -210,8 +211,8 @@ export class World {
 
   /**
    * ADR 0205: the app's server, from now on in this sequence: its memory on (step 4), and, while
-   * it is, every kept text a build takes and every kept facts parse checked against what it
-   * stands for (a throw if not).
+   * it is, every kept text a build takes, every kept facts parse and every catalog parse taken
+   * from memory checked against what it stands for (a throw if not).
    */
   serve(): void {
     if (this.serving) return;
@@ -219,6 +220,7 @@ export class World {
     startAppMemory();
     buildCacheHooks.checkTexts = true;
     factsParseHooks.check = true;
+    recordCacheHooks.checkMemory = true;
   }
 
   /** The server gone (it stopped, or the sequence ended): what it kept in memory with it. */
@@ -231,6 +233,7 @@ export class World {
     forgetFactsParses();
     delete buildCacheHooks.checkTexts;
     delete factsParseHooks.check;
+    delete recordCacheHooks.checkMemory;
   }
 
   async dispose(): Promise<void> {
