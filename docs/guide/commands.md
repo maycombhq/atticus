@@ -78,7 +78,7 @@ Every command under the twelve, with its options.
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions decisions [--json]   What the AI decided that stands (ADR 0181): its pairings and answers, Detected by AI with the run; counts from code, by a person, by AI; the batches; whether deciding is paused by the sample audit
   atticus questions correct <q-id | link:<repo>:<call>> --option <n> | --api <entry> --to <repo> | --none   Correct an AI decision as yours; with Write to similar (on; --no-similar off) a rule derived from it (or --match) re-checks every AI decision and open item it covers [--no-similar] [--match <rule>] [--preview] [--json]
-  atticus questions undo <batch> [--json]   Undo one batch of decisions (by AI, or a correction and its rule): exactly its lines and answers
+  atticus questions undo <batch> [--json]   Undo one batch (the AI's decisions, or your correction and its rule): exactly its lines and answers
   atticus questions route <id> --to product|architecture|analysis|delivery   Move a question to the role that answers it (ADR 0191): a business question to the product owner, a design one to the architect [--by who]
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
@@ -287,7 +287,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
           [--check]                    Write nothing; exit 1 when catalog/generated isn't what the stored reads build (for a metarepo's CI)
   atticus catalog edits                List the files under catalog/generated changed by hand since the last build [--json]
           [--curate]                   Keep each as your edit, to propose (an assert of what it changed, a suppress for a deleted one; an added record can't be one, and is said); it builds nothing: the next atticus catalog build keeps the edits and replaces the files
-          [--drop-fields <n>]          With --curate: also keep as yours the files that change fields no decision can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back
+          [--drop-fields <n>]          With --curate: also keep as yours the files that change fields none of your changes can set (evidence, confidence) or remove a field, with the count listed; the next build puts those fields back
   atticus catalog undo [<n>]           List the last five builds kept on this machine and what undoing would put back; with --yes, put back catalog/generated, build.json and the slots as they were before the latest build (or before build n) [--json]
   atticus catalog crosscheck [<repo>]  The readers' cross-check (ADR 0195): per repo with facts, what the built-in readers found that the facts don't have, where they disagree, and what only the facts have; a repo's items with <repo> [--json]
           [--dismiss <key>]            Dismiss an item at the readers' value it has now, in facts/<repo>.crosscheck.yaml (listed again when that value changes)

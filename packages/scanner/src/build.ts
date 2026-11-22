@@ -884,7 +884,7 @@ export const BUILD_PASSES = [
   "link evidence and shared maps",
   "the legacy records",
   "your changes",
-  "each repo's flows and loose calls",
+  "each repo's flows and loose ends",
   "the record files and build.json",
 ] as const;
 
@@ -1588,7 +1588,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
   mark("6 curated");
 
-  // ---- per fact repo: flows, loose calls, the join about it
+  // ---- per fact repo: flows, loose ends, the join about it
   await pass(7);
   const facts = new Map<string, FactsRepoBuild>();
   if (projection && afterFacts) {
@@ -2434,7 +2434,7 @@ async function interruptedManifest(
 
 /** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
 export const UPGRADE_UNDONE =
-  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from slots again.";
+  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again.";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a

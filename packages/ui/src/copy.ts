@@ -1252,7 +1252,7 @@ export const COPY = {
   catalogBuild: {
     title: "Catalog builds",
     intro:
-      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and your changes. Nothing is removed or overwritten without being shown first, and every build can be undone.",
+      "catalog/generated is built from each repo's stored read (its verified facts, else its built-in readers' last full read) and your changes. Nothing is removed or overwritten without being shown first, and every build can be undone.",
     openFromScans: "Catalog builds: confirm, undo, prune",
     sourcesTitle: "Where each repo's records come from",
     sourcesCaption: "Each repo's source in the build",
@@ -1291,7 +1291,7 @@ export const COPY = {
       "unexplained-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
       "not-upgraded": (n: number) =>
-        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from slots again. The upgrade lists every file it writes first.`,
+        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`,
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
@@ -1390,7 +1390,7 @@ export const COPY = {
     } as Record<string, (path: string) => string>,
     upgradeTitle: "Upgrade to stored reads",
     upgradeIntro:
-      "This catalog was written before beta.27. The upgrade moves every record into source slots, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
+      "This catalog was written before beta.27. The upgrade moves every record into stored reads, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
     upgradeRecords: (records: number, slots: number) =>
       `${records} ${records === 1 ? "record" : "records"} moved into ${slots} slot ${slots === 1 ? "file" : "files"}:`,
     upgradeSlotsCaption: "The slots the upgrade writes",

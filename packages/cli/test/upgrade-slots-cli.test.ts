@@ -270,7 +270,7 @@ describe("an undo can take back the upgrade (ADR 0195 point 7)", () => {
       const undo = await run(["catalog", "undo", "--root", root, "--yes"]);
       expect(undo.code, undo.err).toBe(0);
       const said =
-        "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from slots again.";
+        "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again.";
       expect(undo.out).toContain(said);
       expect(existsSync(join(root, "catalog", "sources", "build.json"))).toBe(false);
       expect(generated(root)).toEqual(before);
