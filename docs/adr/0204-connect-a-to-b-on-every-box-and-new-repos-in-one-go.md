@@ -76,12 +76,12 @@ links:
   - from: { repo: forge-edge-proxy } # or { system: <id> }
     to: { repo: forge-ledger-svc } # or { system: <id> }
     why: The proxy's target is set at deploy time; the platform team confirmed it.
-    by: Ada Example
+    by: ada.example
     at: 2026-11-18T10:02:00Z
     planned: true # optional: not built yet
 ```
 
-- `from` and `to` each name a repo of the manifests or a system of the profiles, one of the two; they differ; a pair (`from`, `to`) is listed once. `why` is 3 to 500 characters and required. `by` is the Git user, `at` the instant; both are data, not a comment, so the map can say who.
+- `from` and `to` each name a repo of the manifests or a system of the profiles, one of the two; they differ; a pair (`from`, `to`) is listed once. `why` is 3 to 500 characters and required. `by` is the Git user, `at` the instant; both are data, not a comment, so the map can say who. Amended 2026-11-21 (the second review, while version 3 is unreleased): `by` is the Git handle Atticus records (one line, at most 100 characters, the character rule of a team's people), and a `repo` end has the record id rule, so neither carries a sentence into a brief or a path.
 - It is written to the profile of the caller's platform (the manifest that lists the repo, or the profile that has the system), else the callee's. The write is `declareLink`'s: comments and order kept, previewed line by line, refused whole if the file changed.
 - Why the profile and not the corrections file: a correction is about one fact of one repo's code (`fact` and `target` are required), and a declared arrow has no fact; an outside system has no corrections file. Why not `systems[].calls`: that item names a gateway route, not a box, and a repo-to-repo arrow would have to invent a System to hang from. Both stay as they are.
 
