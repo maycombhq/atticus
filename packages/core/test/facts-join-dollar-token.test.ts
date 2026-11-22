@@ -290,6 +290,25 @@ describe("a host by NAME in any of its forms is resolved by a setting of that NA
     expect(unsetHostOf("${SCHEME}://${LEDGER_HOST}/v1")?.host).toBe("${LEDGER_HOST}");
   });
 
+  // The final review of b30/unresolved-ids (a nit): a host part a setting gives as a bare host
+  // resolves and joins by host, though nothing sets the scheme part; never asked.
+  it("joins a base built from parts by its host part when a setting gives a bare host", () => {
+    const host = setting("host", "ledger.apps.forge.internal", "cfg-host");
+    for (const parts of [[host], [host, setting("scheme", "https", "cfg-scheme")]]) {
+      const out = join1([put({ base: "${scheme}://${host}/v1" }), ...parts], listed);
+      const what = parts.map((p) => p.id).join(", ");
+      expect(out.asks, what).toEqual([]);
+      expect(
+        out.joins.map((j) => [j.call.fact, j.how]),
+        what,
+      ).toEqual([["c-put-statement", "host"]]);
+      expect(
+        out.joins[0]!.through?.map((t) => t.fact),
+        what,
+      ).toContain("cfg-host");
+    }
+  });
+
   it("words a camelCase name nothing sets as a setting where the repo's settings are camelCase", () => {
     const camel = setting("ledgerTimeout", "30", "cfg-timeout");
     const asSetting = join1([put({ base: "${ledgerUrl}" }), camel]);

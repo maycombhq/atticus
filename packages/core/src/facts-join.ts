@@ -804,7 +804,7 @@ const sameSegments = (a: string[] | undefined, b: string[] | undefined) =>
 
 /** The path part of a URL (`https://host/forge/limits` gives `/forge/limits`), when it has one. */
 function urlPathOf(s: string | undefined): string | undefined {
-  const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(s.trim()) : null;
+  const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(schemeAside(s.trim())) : null;
   return m && m[1] !== "/" ? m[1] : undefined;
 }
 
@@ -950,14 +950,24 @@ export function registrableDomain(host: string): string | undefined {
 const joinPaths = (base: string | undefined, path: string | undefined) =>
   base ? `${base.replace(/\/+$/, "")}/${(path ?? "").replace(/^\/+/, "")}` : path;
 
+/**
+ * A scheme written as a placeholder, as the whole scheme (`${scheme}://`): the final review of
+ * b30/unresolved-ids. The host after it is read as any URL's is; its port is the one written.
+ */
+const SCHEME_PLACEHOLDER = /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}:\/\//;
+/** A URL whose scheme is a placeholder, with the scheme read as an unknown one (no port of its own). */
+const schemeAside = (s: string) => s.replace(/^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}(?=:\/\/)/, "scheme");
+
 /** A host written as a URL or as `name[:port]`; `named` is the port the text writes, if any. */
 function hostIn(
   s: string | undefined,
 ): { host: string; port?: number; named?: number } | undefined {
-  if (!s || SECRETISH.test(s.trim())) return undefined;
-  const u = urlHostPort(s.trim());
+  if (!s) return undefined;
+  const t = schemeAside(s.trim());
+  if (SECRETISH.test(t)) return undefined;
+  const u = urlHostPort(t);
   if (u) {
-    const named = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?[^/?#:]*:(\d+)/i.exec(s.trim())?.[1];
+    const named = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?[^/?#:]*:(\d+)/i.exec(t)?.[1];
     // A host still written as a token (`https://{{ host }}/v1`) is no host yet.
     return u.host && !/[{}@$\s]/.test(u.host)
       ? { ...u, ...(named ? { named: Number(named) } : {}) }
@@ -1440,7 +1450,12 @@ export function* joinFactsSteps(input: JoinFactsInput): Generator<void, FactsJoi
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
     if (placeholderIn(p.after)) {
       // Two or more in one value: each is resolved on its own, and kept only with one value.
-      const head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth, own);
+      let head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth, own);
+      // The final review of b30/unresolved-ids (a nit): a scheme written as a placeholder that
+      // nothing sets (`${scheme}://${host}/v1`) is set aside as written, so the host part a
+      // setting gives (`host: ledger.apps.forge.internal`) still resolves and joins by host.
+      if (!head.length && SCHEME_PLACEHOLDER.test(v.slice(0, v.length - p.after.length + 3)))
+        head = [{ value: v.slice(0, v.length - p.after.length), through: [], guesses: [] }];
       const tail = resolve(p.after, owner, seen, depth, own);
       if (new Set(head.map((r) => r.value)).size !== 1) return [];
       if (new Set(tail.map((r) => r.value)).size !== 1) return [];
