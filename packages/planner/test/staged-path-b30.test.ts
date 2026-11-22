@@ -233,10 +233,11 @@ describe("the manifests the estate reads agree with the workspace's reader", () 
       "forge-e",
       `schemaVersion: 1\nplatform: forge-e\nrepos:\n${repo("forge.orders")}`,
     );
+    // The dotted one listed first: the words, and the repo to rename, are the same.
     await profile(
       root,
       "forge-f",
-      `schemaVersion: 1\nplatform: forge-f\nrepos:\n${repo("forge-pay")}${repo("forge.pay")}`,
+      `schemaVersion: 1\nplatform: forge-f\nrepos:\n${repo("forge.pay")}${repo("forge-pay")}`,
     );
     const e = await estate(root);
     expect([...e.manifestRepos].sort()).toEqual(["forge-infra", "forge-mobile", "forge-orders"]);

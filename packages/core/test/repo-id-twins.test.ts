@@ -58,8 +58,10 @@ const repo = (id: string) => ({
   owner: "unassigned",
 });
 
-const WORDS = (a: string, b: string) =>
-  `Repo ids ${a} and ${b} name one loose-end id (unresolved.${unresolvedIdOf(b, "").split(".")[1]}.…), so the map couldn't tell their loose ends apart`;
+const WORDS = (x: string, y: string) => {
+  const [a, b] = [x, y].sort();
+  return `Repo ids ${a} and ${b} name one loose-end id (unresolved.${unresolvedIdOf(b, "").split(".")[1]}.…), so the map couldn't tell their loose ends apart`;
+};
 
 describe("repo ids that name one loose-end id", () => {
   it("are told by the loose end's own id part", () => {
@@ -70,13 +72,20 @@ describe("repo ids that name one loose-end id", () => {
   });
 
   it("are listed in pairs, each later id with the first that names its loose ends, for a warning", () => {
+    // One rule everywhere: each pair sorted (cmpText), the second one the one to rename.
     expect(repoIdTwins(["forge.api", "forge-ledger", "forge-api", "forge--api"])).toEqual([
-      ["forge.api", "forge-api"],
-      ["forge.api", "forge--api"],
+      ["forge--api", "forge-api"],
+      ["forge--api", "forge.api"],
     ]);
+    expect(repoIdTwins(["forge-api", "forge.api"])).toEqual(
+      repoIdTwins(["forge.api", "forge-api"]),
+    );
     expect(repoIdTwins(["forge-ledger", "forge-cards"])).toEqual([]);
     expect(repoIdTwinWarning("forge.api", "forge-api")).toBe(
-      `${WORDS("forge.api", "forge-api")}: rename one (atticus repo rename forge-api <new id>)`,
+      `${WORDS("forge-api", "forge.api")}: rename one (atticus repo rename forge.api <new id>)`,
+    );
+    expect(repoIdTwinWarning("forge-api", "forge.api")).toBe(
+      repoIdTwinWarning("forge.api", "forge-api"),
     );
   });
 
