@@ -172,6 +172,8 @@ read from it. The plan hand-off refuses a design without it.
   for itself, and no two wait for each other.
 - A repo that doesn't exist yet gets no task to create it: a person creates it and adds it with
   `atticus repo add <its clone URL> --id <repo>`. Say so above the tasks.
+- Reading a repo into the map is never a task: say it above the tasks, as for a new repo (a
+  person runs `/atticus-map <repo>`, then `atticus verify <repo> --write`, before its tasks run).
 - Every requirement in `specs/` has a task that builds it and a task or a line that tests it.
 
 When the tasks are written, read the vaguest one as the coder who gets it: does its line name

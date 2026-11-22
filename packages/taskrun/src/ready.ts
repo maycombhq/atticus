@@ -22,10 +22,28 @@ import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
+/**
+ * The persona check of beta.30: a task whose words read a repo into the map (`/atticus-map`,
+ * `atticus map|verify <repo>`, "read … into facts" or "into the map"). That is a person's step,
+ * never a task run, so such a task is never ready.
+ */
+export function readsIntoMap(title: string): boolean {
+  return (
+    /\/atticus-map\b/.test(title) ||
+    /\batticus\s+(?:map|verify)\s+[a-z0-9]/i.test(title) ||
+    /\bread\b[^.;:]{0,60}?\binto\s+(?:its\s+|the\s+)?(?:facts|the\s+map|map)\b/i.test(title)
+  );
+}
+
+const MAP_READ =
+  "it reads a repo into the map, which a person does (/atticus-map <repo>, then atticus verify <repo> --write), never a task run: once it is read, tick the task in tasks.md, or take it out and say it above the tasks";
+
 /** A task as the ready list reads it. */
 export interface ReadyInput {
   id: string;
   repo: string;
+  /** Its line's words, after the id: a task that reads a repo into the map is never ready. */
+  title?: string | undefined;
   done: boolean;
   stories: string[];
   /** Ninth UX walk: tasks.md marks it [P], so it may go with the [P] tasks next to it in its repo. */
@@ -156,6 +174,7 @@ export function planReadyTasks(o: {
     const tasksWord = (ids: readonly string[]) => (ids.length === 1 ? "task" : "tasks");
     const why =
       never.get(t) ??
+      (t.title && readsIntoMap(t.title) ? MAP_READ : undefined) ??
       (waitsFor.length ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first` : past);
     out.push({
       id: t.id,
@@ -189,6 +208,7 @@ export async function readyTasksOf(
       id: t.id,
       repo: t.repo,
       done: t.done,
+      title: t.title,
       stories: t.stories,
       ...(t.parallel ? { parallel: true } : {}),
       ...(t.after ? { after: t.after } : {}),

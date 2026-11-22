@@ -72,7 +72,9 @@ plainly enough to be copied.
 - Never invent a repo, a file, a class or a build command. A repo is an id from the manifest or
   a line under `## Planned`. A file is one a tool showed you.
 - When a tool answers "is not in the map: planned or not read", believe it. A repo nobody read
-  can still have tasks, but say that its layout is unknown and the first task is to read it.
+  can still have tasks, but say its layout is unknown and that a person reads it into the map
+  (`/atticus-map <repo>`, then `atticus verify <repo> --write`) before its tasks run; that is not
+  a task.
 - One task is one piece of work in one repo that can be reviewed by itself. If it needs "and",
   it is two.
 - You plan the work. You don't write the code here, and you never push or raise anything.
