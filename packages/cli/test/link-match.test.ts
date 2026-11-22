@@ -130,8 +130,8 @@ describe("the brief and the answer", () => {
       none: [],
       rejected: [
         "entry.get.nope isn't an API of forge-partner-gateway.",
-        "call.nope isn't one of forge-billing's loose calls.",
-        "call.nope isn't one of forge-billing's loose calls.",
+        "call.nope isn't one of forge-billing's calls with no arrow.",
+        "call.nope isn't one of forge-billing's calls with no arrow.",
       ],
     });
     // One sloppy line never loses the good ones; a file that isn't a map at all is refused.

@@ -1130,7 +1130,7 @@ export async function writeFactsIntoCatalog(
       `  Facts snapshot: ${snapshot.path} ${snapshot.status} (${snapshot.facts} ${snapshot.facts === 1 ? "fact" : "facts"} at ${snapshot.commit.slice(0, 7)}).`,
     );
     for (const p of result.curated.problems)
-      io.out(`Curated decision ${p.decision} no longer applies: ${p.message}`);
+      io.out(`Your change ${p.decision} no longer holds: ${p.message}`);
     for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
     for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
       io.out(l);

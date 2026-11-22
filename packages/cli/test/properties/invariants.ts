@@ -43,6 +43,15 @@ export const INVARIANTS = [
 export type Invariant = (typeof INVARIANTS)[number];
 
 /**
+ * Beta.30 (slice 9, field-reliability-and-ease.md item 2): the invariants of the estate's shape,
+ * checked by shape-properties.test.ts over the shape generator (`shapeArb`, estate.ts) rather than
+ * after each command of a sequence: every call is drawn, listed loose or asked; every refusal
+ * names a next step. `atticus selfcheck` runs the same two on a real metarepo.
+ */
+export const SHAPE_INVARIANTS = ["every-call-accounted", "every-refusal-has-a-next-step"] as const;
+export type ShapeInvariant = (typeof SHAPE_INVARIANTS)[number];
+
+/**
  * The invariants today's writers (beta.26) break: the baseline CS4 records. Each has its shrunk
  * counterexample in regressions/<invariant>.json, which must fail with that invariant (the test
  * says so when it starts passing); the examples that fail today are FAILS_TODAY in examples.ts.

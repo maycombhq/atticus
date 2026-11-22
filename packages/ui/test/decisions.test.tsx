@@ -139,7 +139,7 @@ describe("the Detected by AI chip", () => {
     expect(out).toContain("chip ai");
     expect(out).toContain(esc(D.chip));
     expect(out).toContain(esc(D.chipWhy));
-    expect(out).toContain('href="#/runs?run=run-match-0007"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
     expect(out).toContain(esc(D.openRun("run-match-0007")));
   });
 
@@ -404,10 +404,11 @@ describe("Home and Trust: the pause", () => {
 });
 
 describe("Map › Decided by AI", () => {
-  it("is a tab of Map, found by its name", () => {
+  it("is a page of Map, found by its name, opened from a repo's box (v30 slice 8: not a tab)", () => {
     expect(screenOf("decisions").section).toBe("Map");
     expect(screenOf("decisions").label).toBe(COPY.nav.screens.decisions);
-    expect(tabsOf("Map").map((t) => t.id)).toContain("decisions");
+    expect(tabsOf("Map").map((t) => t.id)).not.toContain("decisions");
+    expect(tabsOf("Map", true).map((t) => t.id)).toContain("decisions");
   });
 
   it("filters by repo and kind", () => {
@@ -434,8 +435,8 @@ describe("Map › Decided by AI", () => {
   it("lists each decision with its chip, run, bar, lines and Correct; counts split three ways", () => {
     const out = page({ state: "ready", data: VIEW });
     expect(out).toContain(esc(D.chip));
-    expect(out).toContain('href="#/runs?run=run-match-0007"');
-    expect(out).toContain('href="#/runs?run=run-propose-0003"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
+    expect(out).toContain('href="#/activity?tab=runs&amp;run=run-propose-0003"');
     expect(out).toContain(esc(LINK.what));
     expect(out).toContain(esc(D.decided("forge-notify")));
     expect(out).toContain(esc(D.because(D.bar.confident!)));
@@ -550,7 +551,7 @@ describe("Map › Decided by AI", () => {
     const short = html(<AiChip run="run-match-0007" short />);
     expect(short).toContain(esc(D.chipShort));
     expect(short).not.toContain(esc(D.chipWhy));
-    expect(short).toContain('href="#/runs?run=run-match-0007"');
+    expect(short).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
   });
 
   it("shows the pause on the page too, and files it couldn't read", () => {

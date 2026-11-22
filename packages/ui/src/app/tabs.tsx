@@ -3,6 +3,7 @@ import {
   changeOf,
   groupLabel,
   PHASES,
+  pageTitle,
   sectionLabel,
   tabHref,
   tabsOf,
@@ -51,8 +52,13 @@ export function SectionTabs({
             <span>{change}</span>
           </>
         )}
-        <span aria-hidden="true"> › </span>
-        <span aria-current="location">{current.label}</span>
+        {/* v30 slice 8: "Map", not "Map › Map"; Activity names its tab. */}
+        {pageTitle(current, hash) !== section && (
+          <>
+            <span aria-hidden="true"> › </span>
+            <span aria-current="location">{pageTitle(current, hash)}</span>
+          </>
+        )}
       </nav>
       {tabs.length > 1 && (
         <nav aria-label={T.tabs(section)} className="tabs">
@@ -73,5 +79,20 @@ export function SectionTabs({
         </nav>
       )}
     </div>
+  );
+}
+
+/**
+ * v30 slice 8: a page's "what next", one line under its tabs, on the pages that had none
+ * (COPY.nav.next). Nothing for a page that ends in its own next step.
+ */
+export function PageNext({ current }: { current: ScreenDef }) {
+  const next = T.next[current.id];
+  if (!next) return null;
+  return (
+    <p className="page-next muted">
+      <strong>{T.nextLabel}: </strong>
+      {next}
+    </p>
   );
 }

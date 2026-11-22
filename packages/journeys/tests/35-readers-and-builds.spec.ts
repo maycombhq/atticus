@@ -11,6 +11,8 @@ import {
   catalogFiles,
   classicLayout,
   expect,
+  fieldInfo,
+  forgeJourney,
   open,
   startApp,
   stopApp,
@@ -29,6 +31,11 @@ import {
  * count, is confirmed, and is undone; a hand edit is made curated; and a catalog from before
  * beta.27 is upgraded from the app, every file it writes listed and confirmed with their count.
  * Everything is the invented Forge estate (CLAUDE.md rule 3).
+ *
+ * Beta.30 (slice 9): on the field-shaped estate (fixtures/forge-field) a legacy slot from before
+ * the upgrade that lost most of its records waits for its count in the same way, is confirmed and
+ * undone, Catalog builds fits the IDE's panel there too, and the built-in readers' check (journey
+ * 36's) removes nothing from that estate (at the end, on one seeded metarepo and server).
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -88,16 +95,14 @@ test.use({ deviceScaleFactor: 2 });
 
 test("reads what the readers found beside the facts, and dismisses one", async ({ page }) => {
   await open(page, a(), "trust");
-  await page.getByRole("link", { name: "Readers found / facts say" }).first().click();
+  await page.getByRole("link", { name: "Cross-check" }).first().click();
   await expect(page).toHaveURL(/#\/crosscheck/);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Readers found / facts say" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Cross-check" })).toBeVisible();
   await expect(page.getByLabel("Repo")).toHaveValue("forge-ledger");
   const list = page.getByRole("list", { name: "Cross-check items of forge-ledger" });
   await expect(list).toBeVisible();
   await expect(list.getByText("api/ledger-openapi.yaml:6")).toBeVisible();
-  await accessible(page, "Readers found / facts say, dark");
+  await accessible(page, "Cross-check, dark");
   await shot(page, "crosscheck-1440-dark");
 
   // The filter is a group of radios: the arrow keys move between them.
@@ -188,7 +193,8 @@ test("a large removal waits for its count, is confirmed, then undone", async ({ 
   expect(atticus(a().root, "catalog", "build")).toMatch(/--allow-removals \d+/);
   await open(page, a(), "scans");
   await page.getByRole("link", { name: "Catalog builds: confirm, undo, prune" }).click();
-  await expect(page).toHaveURL(/#\/catalog-builds$/);
+  // v30 slice 8: Catalog builds is a tab of Activity.
+  await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds$/);
   await expect(page.getByText("The build waits for you: nothing has been written.")).toBeVisible();
   const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
   const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
@@ -265,7 +271,7 @@ async function opensAtUndo(page: Page): Promise<void> {
   await page.evaluate(`location.hash = '#/catalog-builds'`);
   const away = async () => {
     await page.locator("#p-catalog-builds").scrollIntoViewIfNeeded();
-    await page.getByRole("link", { name: "Readers found / facts say" }).first().focus();
+    await page.getByRole("link", { name: "Cross-check" }).first().focus();
     await expect(undo).not.toBeFocused();
   };
   await away();
@@ -275,7 +281,7 @@ async function opensAtUndo(page: Page): Promise<void> {
   await expect(undo).toBeFocused();
   // The second click: the address says ?at=undo already, and the link still goes there.
   await away();
-  await expect(page).toHaveURL(/#\/catalog-builds\?at=undo$/);
+  await expect(page).toHaveURL(/#\/activity\?tab=catalog-builds&at=undo$/);
   await link.click();
   await expect(undo).toBeInViewport();
   await expect(undo).toBeFocused();
@@ -323,7 +329,7 @@ test("a catalog from before beta.27 is upgraded from the app, every file listed 
     const before = catalogFiles(root);
     await open(page, old, "catalog-builds");
     const panel = page.locator(".panel", {
-      has: page.getByRole("heading", { name: "Upgrade to source slots" }),
+      has: page.getByRole("heading", { name: "Upgrade to stored reads" }),
     });
     await expect(panel.getByText("The first build after it gives every record")).toBeVisible();
     await expect(
@@ -376,4 +382,128 @@ test("a catalog from before beta.27 is upgraded from the app, every file listed 
   } finally {
     await stopApp(old);
   }
+});
+
+test.describe("the field-shaped estate", () => {
+  const field = forgeJourney({ estate: "field" });
+
+  test("a legacy slot that lost most of its records waits for its count, is confirmed, then undone", async ({
+    page,
+  }) => {
+    const root = field().root;
+    // The legacy service's slot, kept from before the upgrade, holds one record of its many.
+    const slot = join(root, "catalog/sources/readers", `${fieldInfo().legacy[0]!}.json`);
+    const was = readFileSync(slot, "utf8");
+    const s = JSON.parse(was) as { status: string; records: unknown[] };
+    expect(s.status).toBe("legacy");
+    writeFileSync(slot, JSON.stringify({ ...s, records: s.records.slice(0, 1) }, null, 2) + "\n");
+    const before = catalogFiles(root);
+    expect(atticus(root, "catalog", "build")).toMatch(/--allow-removals \d+/);
+    await open(page, field(), "catalog-builds");
+    await expect(
+      page.getByText("The build waits for you: nothing has been written."),
+    ).toBeVisible();
+    const review = page.getByRole("button", { name: /^Review the \d+ removals$/ });
+    const n = Number(/\d+/.exec((await review.textContent()) ?? "")![0]);
+    expect(n).toBeGreaterThan(1);
+    const last = page.locator(".panel", {
+      has: page.getByRole("heading", { name: "The last build here" }),
+    });
+    await expect(last.getByText("Refused: nothing written")).toBeVisible();
+    await expect(
+      last.getByText(`atticus catalog build --allow-removals ${n}`).first(),
+    ).toBeVisible();
+    await accessible(page, "a terminal's refused build on the field-shaped estate");
+    await review.click();
+    const dialog = page.getByRole("dialog", { name: `Confirm ${n} removals` });
+    await expect(
+      dialog.getByRole("table", { name: "The records the build would remove" }),
+    ).toBeVisible();
+    await accessible(page, "the removals' confirm on the field-shaped estate");
+    const remove = dialog.getByRole("button", { name: `Remove ${n} records` });
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n + 1));
+    await expect(remove).toBeDisabled();
+    expect(catalogFiles(root)).toEqual(before);
+    await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
+    await remove.click();
+    await expect(dialog).toBeHidden({ timeout: 60_000 });
+    await expect(page.getByText("Done. What it printed is in the Console.")).toBeVisible();
+    expect(Object.keys(catalogFiles(root)).length).toBeLessThan(Object.keys(before).length);
+
+    await page.getByRole("button", { name: "Undo the latest build" }).first().click();
+    const undo = page.getByRole("dialog", { name: "Undo the latest build" });
+    await expect(undo.getByRole("list", { name: "The files undo puts back" })).toBeVisible();
+    await undo.getByRole("button", { name: /^Put back \d+ files?$/ }).click();
+    await expect(undo).toBeHidden({ timeout: 60_000 });
+    expect(catalogFiles(root)).toEqual(before);
+    writeFileSync(slot, was);
+    await page.reload();
+    await expect(
+      page.getByText("catalog/generated is what the slots and inputs build."),
+    ).toBeVisible();
+  });
+
+  test("Catalog builds fits the IDE's panel (IntelliJ's tool window) at 780 and 420 px without scrolling sideways", async ({
+    page,
+  }) => {
+    for (const width of [780, 420]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${field().url}/?host=intellij#/catalog-builds`);
+      await expect(page.locator(".panel").first()).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      const skip = page.getByRole("button", { name: "Skip the tour" });
+      if (await skip.isVisible().catch(() => false)) await skip.click();
+      expect(await sideways(page), `catalog-builds at ${width} px scrolls sideways`).toBe(false);
+      await accessible(page, `Catalog builds at ${width} px on the field-shaped estate`);
+    }
+  });
+
+  /**
+   * (Journey 36's check, on this estate.) The built-in readers are a cross-check of what the facts
+   * say: the check reads the clones, writes their readers' slots beside the facts and removes
+   * nothing (the facts, and the legacy slot from before the upgrade, win), so the catalog is byte
+   * for byte as it was. Each repo it can't read says what to do.
+   */
+  test("the built-in readers' check removes nothing, and each repo it can't read says what to do", async ({
+    page,
+  }) => {
+    const root = field().root;
+    // On its own, whatever the test before left: the legacy slot as the fixture has it, built.
+    const legacy = fieldInfo().legacy[0]!;
+    writeFileSync(
+      join(root, "catalog/sources/readers", `${legacy}.json`),
+      readFileSync(
+        join(FIXTURES, "forge-field/metarepo/catalog/sources/readers", `${legacy}.json`),
+        "utf8",
+      ),
+    );
+    expect(atticus(root, "catalog", "build")).not.toMatch(/--allow-removals \d+/);
+    const before = catalogFiles(root);
+    await open(page, field(), "scans");
+    const panel = page.getByRole("region", { name: "Panel" });
+    await panel.getByRole("button", { name: "Show the panel" }).click();
+    await page.getByRole("button", { name: "Check with the built-in readers" }).click();
+    await expect(panel.getByText(/: done$/).first()).toBeVisible({ timeout: 90_000 });
+    const log = panel.getByRole("log");
+    await expect(log).toContainText(/catalog\/generated: 0 written, \d+ unchanged, 0 removed/);
+    await expect(log).toContainText(
+      "The built-in readers added 0 records, changed 0 and removed 0",
+    );
+    await expect(page.getByText("The build waits for you: nothing has been written.")).toHaveCount(
+      0,
+    );
+    // A repo the manifest lists that isn't cloned here: named, with the command that clones it.
+    await expect(log).toContainText(
+      `${fieldInfo().unreadRepo!}: workspace: isn't cloned here yet; run atticus workspace sync`,
+    );
+    // The legacy service's records are kept: read it to replace them.
+    await expect(log).toContainText(
+      `${fieldInfo().legacy[0]!}: its records are kept from before the upgrade`,
+    );
+    expect(catalogFiles(root)).toEqual(before);
+    expect(
+      existsSync(join(root, "catalog/sources/readers", `${fieldInfo().clones[0]!}.json`)),
+    ).toBe(true);
+    await accessible(page, "Set up › Scans after the readers' check on the field-shaped estate");
+  });
 });

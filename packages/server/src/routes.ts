@@ -26,6 +26,7 @@ import {
   openIndex,
   QueryError,
   askLookup,
+  receiversOfAll,
   mapFault,
   translate,
   type CatalogIndex,
@@ -247,6 +248,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const o = {
         ...(strParam(query, "status") ? { status: strParam(query, "status")! } : {}),
         ...(strParam(query, "system") ? { system: strParam(query, "system")! } : {}),
+        ...(strParam(query, "repo") ? { repo: strParam(query, "repo")! } : {}),
         ...(strParam(query, "q") ? { q: strParam(query, "q")! } : {}),
         ...(strParam(query, "confidence") ? { confidence: strParam(query, "confidence")! } : {}),
         ...(strParam(query, "cursor") ? { cursor: strParam(query, "cursor")! } : {}),
@@ -282,7 +284,17 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const answer = await withIndex(root, (ix): Record<string, unknown> => {
         const asked = translate(q, askLookup(ix), () => mapFault(ix, root));
         if (asked.action === "impact")
-          return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
+          return {
+            question: q,
+            ...asked,
+            impact: impact(ix, asked.id, 4),
+            // Who receives a topic: its receivers apart from what lies past them, at every one of
+            // its Endpoints (beta.30: read from facts, a topic has one per consumer), as
+            // `atticus ask` answers.
+            ...(asked.receivers
+              ? { receivers: receiversOfAll(ix, [asked.id, ...(asked.also ?? [])], 4) }
+              : {}),
+          };
         if (asked.action === "owner") {
           const r = ix.find(asked.id)[0] as unknown as Record<string, unknown> | undefined;
           const owner =

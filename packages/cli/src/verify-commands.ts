@@ -849,12 +849,19 @@ export async function verifyCommand(
   // is cited, so re-verifying never says an estate's auth is recorded when it isn't.
   const noAuth = report.authUncited;
   if (noAuth.length) {
+    // v30 slice 8: what to do first, then what happened (with the list), then what it leaves.
     io.out(
-      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth rests on no cited line (all under authUncited in ${verifyYaml}). ${noAuth.length === 1 ? "It is" : "They are"} kept in ${rel}/${repo}.jsonl, as the reader wrote ${noAuth.length === 1 ? "it" : "them"}, and left out of the catalog, so the map never says an auth nothing shows. To record ${noAuth.length === 1 ? "it" : "them"}: give each entry an authCite — the file and line that sets the auth and what it writes there — and run atticus verify ${repo} again:`,
+      [
+        `To record ${noAuth.length === 1 ? "it" : "them"}, give each entry below an authCite (the file and line that sets the auth, and what it writes there), then run: atticus verify ${repo}`,
+        `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth rests on no cited line (all under authUncited in ${verifyYaml}):`,
+      ].join("\n"),
     );
     show(
       noAuth.map((a) => `${a.id} (${a.auth}, ${a.cite})`),
       `(authUncited in ${verifyYaml})`,
+    );
+    io.out(
+      `${noAuth.length === 1 ? "It is" : "They are"} kept in ${rel}/${repo}.jsonl as the reader wrote ${noAuth.length === 1 ? "it" : "them"}, and left out of the catalog: the map never says an auth nothing shows.`,
     );
   }
   // C-estate: a note, not a rejection, so the reader follows each listener and route with a flow.

@@ -150,7 +150,7 @@ export const COPY = {
       /** A job this page found running or just ended, started before the page was loaded. */
       found: "Started before this page was loaded:",
       linesLabel: (what: string) => `What it printed last: ${what}`,
-      seeRefusal: "See why on Set up › Catalog builds",
+      seeRefusal: "See why on Set up › Activity › Catalog builds",
       /** Why a step ended, when a person's Stop ended it (never the job's raw state word). */
       youStopped: "Stop was asked, and it ended before it finished.",
     },
@@ -311,7 +311,7 @@ export const COPY = {
         "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites and shows each proposal on its question; nothing is answered until you accept it or answer otherwise.",
       /** Ninth UX walk: when runtime.yaml's decide.questions is auto, say what happens instead. */
       askWhyAuto:
-        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites. Each proposal for an option question that meets the bar (the code's shapes rank that option first, or a person's rule says the same) is applied as the AI's answer, marked Detected by AI, never as yours: correct any that is wrong. The rest wait on their questions for you to accept or answer otherwise.",
+        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites. Each proposal for an option question that meets the bar (the code's shapes rank that option first, or a person's rule says the same) is written as the AI's answer, marked Detected by AI, never as yours: correct any that is wrong. The rest wait on their questions for you to accept or answer otherwise.",
       askWhyPaused: (why: string) =>
         `AI deciding is paused (${why}), so each proposal waits on its question for you to accept or answer otherwise.`,
       askHandoff: "Hand it to my assistant",
@@ -423,7 +423,7 @@ export const COPY = {
     /** What an option changes, said for the app: Apply on this page writes the map. */
     whenApplied: (repo: string) => `when the answers are next applied to ${repo}'s map`,
     pickBelow:
-      "pick this and the list of every repo, system and team opens below; it takes the one you name",
+      "pick this and the list of every repo, outside system and team opens below; it takes the one you name",
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
     /**
@@ -452,9 +452,9 @@ export const COPY = {
       how: "Answer with",
       byTarget: "Where the calls go",
       byWords: "Your own words",
-      targetLabel: "Repo, system or team",
+      targetLabel: "Repo, outside system or team",
       hint: "Each picked question gets this answer for its own repo, as if answered one by one. A question it doesn't fit says why; the rest are still answered.",
-      needTarget: "Name the repo, system or team the calls go to.",
+      needTarget: "Name the repo, outside system or team the calls go to.",
       submit: (n: number) => `Answer ${n}`,
       busy: "Answering…",
       clear: "Clear the picks",
@@ -545,38 +545,40 @@ export const COPY = {
     },
     // ADR 0162 (F8): "Another repo…", the picker of the whole estate, and a reopened answer.
     another: {
-      label: "Which repo, system or team",
-      loading: "Loading the repos, systems and teams…",
+      label: "Which repo, outside system or team",
+      loading: "Loading the repos, outside systems and teams…",
       failed: (why: string) => `The list didn't load: ${why}`,
-      empty: "The org pack lists no repos, systems or teams yet. Answer in your own words instead.",
+      empty:
+        "The org pack lists no repos, outside systems or teams yet. Answer in your own words instead.",
       choose: "Choose one",
       repos: "Repos of the manifest",
-      systems: "Systems of the profile",
+      systems: "Outside systems of the profile",
       teams: "Teams in roles.yaml",
       notRead: "not read yet",
-      noSystem: "no system yet",
+      noSystem: "no outside system yet",
       newVendor: "An outside system (new): its name",
       newVendorHint:
-        "Leave the list on “Choose one” and type the system's name to add it to the profile: a short name (letters, digits, spaces and dashes, up to 40 characters), not a sentence. If these aren't real calls, choose Ignore instead.",
-      pickOne: "Choose a repo, system or team, or type a new outside system's name.",
+        "Leave the list on “Choose one” and type the outside system's name to add it to the profile: a short name (letters, digits, spaces and dashes, up to 40 characters), not a sentence. If these aren't real calls, choose Ignore instead.",
+      pickOne: "Choose a repo, outside system or team, or type a new outside system's name.",
       addTeam: (team: string, system: string) =>
-        `${team} has no system yet: add ${system} (another team's, owner ${team}) to the profile, as a file change for review in the pull request`,
+        `${team} has no outside system yet: add ${system} (another team's, owner ${team}) to the profile, as a file change for review in the pull request`,
       addVendor: (name: string) =>
         `Add ${name} to the profile as a vendor, as a file change for review in the pull request`,
-      needAdd: "Tick the box to add the system to the profile, or choose one that is listed.",
+      needAdd:
+        "Tick the box to add the outside system to the profile, or choose one that is listed.",
       added: (id: string, profile: string) =>
-        `Wrote the system ${id} into ${profile}; review it in the same pull request.`,
+        `Wrote the outside system ${id} into ${profile}; review it in the same pull request.`,
     },
     reopened: (why: string, answer: string, day: string) =>
       `Asked again on ${day}: you answered ${answer}, and ${why}`,
     // ADR 0153 (Q5): an answer accepted from the assistant's proposal says so.
     fromProposal: (by: string, day: string) =>
       `It was ${by}'s proposal (${day}), confirmed by the person who answered. It cited:`,
-    /** Ninth UX walk: an AI answer's proposal was applied by Atticus as the AI's, never confirmed by a person. */
+    /** Ninth UX walk: an AI answer's proposal was written by Atticus as the AI's, never confirmed by a person. */
     fromAiProposal: (by: string, day: string, run: string) =>
-      `${by} proposed it (${day}) and Atticus applied it as the AI's from run ${run}, because it met the bar. No person has confirmed it. It cited:`,
+      `${by} proposed it (${day}) and Atticus wrote it as the AI's from run ${run}, because it met the bar. No person has confirmed it. It cited:`,
     changeAiAnswer:
-      "To change the AI's answer, Correct it above: your answer is recorded as yours, and Apply to similar spreads it to the questions like it.",
+      "To change the AI's answer, Correct it above: your answer is recorded as yours, and Write to similar spreads it to the questions like it.",
   },
   /** Knowledge managed in the metarepo (ADR 0101), in the app (ADR 0102). */
   knowledge: {
@@ -915,7 +917,7 @@ export const COPY = {
       groups: [
         { title: "Requests and processes to raise", kinds: ["request", "process"] },
         { title: "Standards and patterns to follow", kinds: ["standard", "pattern"] },
-        { title: "Decisions and constraints that apply", kinds: ["decision", "constraint"] },
+        { title: "Decisions and constraints that hold", kinds: ["decision", "constraint"] },
         {
           title: "Teams, vendors and products to involve",
           kinds: ["team", "vendor", "product", "project"],
@@ -989,11 +991,10 @@ export const COPY = {
     /** The pages, by screen id. */
     screens: {
       home: "Home",
-      canvas: "Estate canvas",
-      trust: "Trust",
+      canvas: "Map",
+      trust: "Read status",
       explore: "Search the catalog",
-      map: "Ecosystem map",
-      impact: "Impact explorer",
+      impact: "Impact",
       features: "Features",
       orgpack: "Org pack",
       intake: "Intake",
@@ -1034,41 +1035,98 @@ export const COPY = {
       /** ADR 0181: what the AI decided, its batches and Undo. */
       decisions: "Decided by AI",
       /** ADR 0195 (CS3): the readers' cross-check, and the catalog's builds. */
-      crosscheck: "Readers found / facts say",
+      crosscheck: "Cross-check",
       catalogBuilds: "Catalog builds",
+      /** v30 slice 8: Model runs, Prompt history, Scans and Catalog builds, as one page's tabs. */
+      activity: "Activity",
     },
+    /**
+     * v30 slice 8: the names pages had before (docs/guide/words.md). Ctrl+K still finds a page by
+     * them; no page shows them.
+     */
+    formerly: {
+      canvas: "Estate canvas",
+      map: "Ecosystem map",
+      impact: "Impact explorer",
+      trust: "Trust",
+      crosscheck: "Readers found / facts say",
+    },
+    /**
+     * v30 slice 8: a page's "what next", one line under its tabs, on the pages that had none (a
+     * page that ends in its own next step, a form's button or a stage's, has no line here).
+     */
+    nextLabel: "Next",
+    next: {
+      canvas:
+        "Pick a box to see what it is, where it was found and what is missing; a box with something missing says the command that fills it.",
+      flows: "Pick a flow to follow it step by step, each step citing its line of code.",
+      trust:
+        "Read again a repo that is behind or read only in part, then Apply it, so the map is up to date.",
+      contracts:
+        "Pick an API, an interface or a table to see who calls it; open Impact from it before changing one.",
+      impact: "Type a record's id, then check every box it reaches before you change it.",
+      decisions:
+        "Check each decision against its cited line: keep it, Correct it, or Undo its batch.",
+      crosscheck:
+        "For each repo, check the cited line, then keep what the readers got right as your own fact, or dismiss it.",
+      mismatches:
+        "Each mismatch cites both sides' lines: fix the side that is wrong in its repo, then read that repo again and Apply it.",
+      systems: "Pick a system to read its guide; a cell marked unknown is a repo to read next.",
+      outside:
+        "Pick an outside system to see who calls it and how each call compares with its spec; a call that reaches it by mistake is corrected on its arrow on the Map (Why is this linked?).",
+      activity:
+        "Open a run to see what was asked and what came back; a failed scan or build says its next command.",
+      features: "Pick a feature to see the repos and flows it spans.",
+      diagrams: "Check each diagram against the map: Reconcile lists where they differ.",
+      reconcile:
+        "Take each difference: correct the diagram, or correct the map with its cited line.",
+      explore: "Ask a question in words, or type an id; open a result on the Map or in Impact.",
+      evals: "Run the checks again after a change to the org pack or the AI settings.",
+      learning: "Keep what is right as an org-pack rule; drop the rest.",
+      words: "Every word Atticus uses, in one place: docs/guide/words.md has the same list.",
+    } as Record<string, string>,
+    /** The Activity page: what ran, a tab each. */
+    activityTabs: "Activity pages",
+    activityIntro:
+      "What ran on this metarepo: what Atticus asked a model, what people asked their assistant, the scans and the catalog's builds. What runs now is in the Console at the foot.",
+  },
+  /** v30 slice 8: a box's panel opens the Map's pages about that box (they were Map's tabs). */
+  boxPages: {
+    contracts: "Its contracts",
+    impact: "Its impact",
+    decisions: "Decided by AI here",
   },
   /**
-   * ADR 0195 (ticket CS3): the readers' cross-check (Map › Trust › Readers found / facts say) and
-   * the catalog build's confirm steps (Set up › Scans › Catalog builds): a refused build's
+   * ADR 0195 (ticket CS3): the readers' cross-check (Map › Read status › Cross-check) and
+   * the catalog build's confirm steps (Set up › Activity › Catalog builds): a refused build's
    * removals and hand edits, undo of the last five builds, and prune.
    */
   crossCheck: {
-    title: "Readers found / facts say",
+    title: "Cross-check",
     intro:
       "For each repo with verified facts, what the built-in readers found is compared with what the facts say. The facts are the map; the readers are a cross-check. Nothing here changes the catalog: check the cited line, then promote what the readers got right to your own fact, dismiss what they got wrong, or ask your assistant to read the repo again.",
-    openFromTrust: "Readers found / facts say",
-    openFromTrustOf: (repo: string) => `Readers found / facts say for ${repo}`,
+    openFromTrust: "Cross-check",
+    openFromTrustOf: (repo: string) => `Cross-check for ${repo}`,
     /** The repo picker's option: the counts in short. */
     pickerCounts: (found: number, disagree: number) => `${found} found, ${disagree} disagree`,
     repoPicker: "Repo",
     empty:
-      "No repo has verified facts yet, so there is nothing to check the readers against. Read a repo with your assistant and Apply it on Map › Trust; then scan to compare.",
+      "No repo has verified facts yet, so there is nothing to check the readers against. Read a repo with your assistant and Apply it on Map › Read status; then scan to compare.",
     loadingRepo: "Loading the cross-check",
     state: {
       compared: "Compared",
       "no-facts":
         "No facts yet: its map comes from the built-in readers, so there is nothing to compare.",
       "no-readers":
-        "No readers slot yet: check this repo with the built-in readers (Set up › Scans) to compare.",
+        "No read by the built-in readers yet: check this repo with them (Set up › Activity › Scans) to compare.",
       legacy:
         "Kept from before the upgrade, not yet read by the built-in readers: scan or verify this repo to replace it.",
-      unusable: "A slot doesn't read, so it isn't compared.",
+      unusable: "A stored read can't be opened, so it isn't compared.",
     } as Record<string, string>,
     commits: (readers: string, facts: string) =>
       `Readers read commit ${readers}; the facts are of commit ${facts}.`,
     behind: (head: string) =>
-      `The base clone is at ${head} now: a slot behind it is shown as read at its own commit.`,
+      `The base clone is at ${head} now: a read behind it is shown at its own commit.`,
     counts: (found: number, disagree: number, factsOnly: number, agree: number) =>
       `${found} found by the readers only · ${disagree} disagree · ${factsOnly} in the facts only · ${agree} agree`,
     filterLabel: "Show",
@@ -1137,7 +1195,7 @@ export const COPY = {
       rejected: "Your fact: verify rejected it",
     } as Record<string, string>,
     promotedVerifiedHint: (repo: string) =>
-      `Apply ${repo} on Map › Trust (atticus verify ${repo} --write) to put it in the catalog.`,
+      `Apply ${repo} on Map › Read status (atticus verify ${repo} --write) to put it in the catalog.`,
     promotedRejectedHint:
       "It is kept in the rejected file with why: check the line, or dismiss the item.",
   },
@@ -1179,22 +1237,22 @@ export const COPY = {
     copySupport: "Copy the command",
     copySupportLabel: (cmd: string) => `Copy the command for a support bundle: ${cmd}`,
     buildAgain: "Build again",
-    buildAgainOn: "Build again on Set up › Catalog builds",
-    seeOnBuilds: "See them on Set up › Catalog builds",
+    buildAgainOn: "Build again on Set up › Activity › Catalog builds",
+    seeOnBuilds: "See them on Set up › Activity › Catalog builds",
     undoLast: "Undo the last build",
     undoWhy: "If this started after a build, the last build can be taken back:",
     upgradeBelow: "Go to the upgrade below",
-    upgradeOnBuilds: "Upgrade on Set up › Catalog builds",
-    readOnTrust: "Read the repos on Map › Trust",
-    readAgainOnTrust: (repo: string) => `Read ${repo} again on Map › Trust`,
+    upgradeOnBuilds: "Upgrade on Set up › Activity › Catalog builds",
+    readOnTrust: "Read the repos on Map › Read status",
+    readAgainOnTrust: (repo: string) => `Read ${repo} again on Map › Read status`,
     rejectedOnTrust: (n: number) =>
-      `See the ${n} rejected ${n === 1 ? "fact" : "facts"} on Map › Trust`,
+      `See the ${n} rejected ${n === 1 ? "fact" : "facts"} on Map › Read status`,
     label: "Ways on from here",
   },
   catalogBuild: {
     title: "Catalog builds",
     intro:
-      "catalog/generated is built from each repo's source slot (its verified facts, else its built-in readers' last full read) and the curated decisions. Nothing is removed or overwritten without being shown first, and every build can be undone.",
+      "catalog/generated is built from each repo's stored read (its verified facts, else its built-in readers' last full read) and your changes. Nothing is removed or overwritten without being shown first, and every build can be undone.",
     openFromScans: "Catalog builds: confirm, undo, prune",
     sourcesTitle: "Where each repo's records come from",
     sourcesCaption: "Each repo's source in the build",
@@ -1233,7 +1291,7 @@ export const COPY = {
       "unexplained-removals": (n: number) =>
         `It would remove ${n} ${n === 1 ? "record" : "records"} that no changed slot or input explains. That is a bug: nothing can confirm it. The list is its report.`,
       "not-upgraded": (n: number) =>
-        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again. The upgrade lists every file it writes first.`,
+        `This catalog (${n} record files) was written before beta.27, or the last undo took back the upgrade: run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again. The upgrade lists every file it writes first.`,
       empty: () =>
         "The build has no record from any repo's code, so the catalog is left as it was.",
       "nothing-read": () => "The scan read no repo in full, so it wrote nothing.",
@@ -1254,12 +1312,12 @@ export const COPY = {
     countHint: "A confirmation names the count it was shown, so it never covers more.",
     countWrong: (n: number) => `Type ${n}, the number listed.`,
     editsChanged:
-      "The hand edits aren't the ones listed here any more. Nothing was made curated: scan again to list them.",
+      "The hand edits aren't the ones listed here any more. Nothing was kept: scan again to list them.",
     confirmRemove: (n: number) => `Remove ${n} ${n === 1 ? "record" : "records"}`,
     cancel: "Cancel",
     editsTitle: "Hand edits",
     editsIntro:
-      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits makes each a curated decision, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
+      "These files were changed by hand since the last build, and a build never overwrites them. Keep my edits keeps each as your kept edit, which every later build keeps. Use Atticus's version replaces them with what the build gives (a copy is kept for undo).",
     /** Beta.30: what happened and the way on, for the refusals no confirm goes on from. */
     way: {
       unexplained:
@@ -1274,13 +1332,13 @@ export const COPY = {
     unreadableManifest: (n: number) =>
       `catalog/sources/build.json doesn't read: it was edited or merged by hand. Without it none of the ${n} record files under catalog/generated can be told from a hand edit, so nothing is overwritten.`,
     unreadableIntro:
-      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Making them curated isn't the way here.",
+      "Build again: the build replaces every record file with what the slots build, and writes build.json whole. Their bytes are kept in the undo copy first. Keeping them as your edits isn't the way here.",
     buildAgain: (n: number) => `Build again over the ${n} record files…`,
     how: { changed: "changed", added: "added", deleted: "deleted" } as Record<string, string>,
     curate: (n: number) => (n === 1 ? "Keep my edit" : `Keep my ${n} edits`),
-    curating: "Keeping your edits as curated decisions…",
+    curating: "Keeping your edits…",
     curateHint:
-      "Writes a curated decision for each into catalog/curated/, to propose for review, then builds.",
+      "Writes your kept edit for each into catalog/curated/, to propose for review, then builds.",
     // The count is in the dialog it opens, which lists each file and is confirmed with it.
     discard: (_n: number) => "Use Atticus's version…",
     discardTitle: (n: number) => `Discard ${n} hand ${n === 1 ? "edit" : "edits"}`,
@@ -1290,7 +1348,7 @@ export const COPY = {
     upgradeTodo:
       "Review the upgrade below: it shows every file it writes before it writes one. In a terminal:",
     upgradeElsewhere: "Upgrade from the app on",
-    upgradeOn: "Set up › Catalog builds",
+    upgradeOn: "Set up › Activity › Catalog builds",
     lastTitle: "The last build here",
     lastNone: "No build has run on this machine yet.",
     lastIntro:
@@ -1322,7 +1380,7 @@ export const COPY = {
       answers: (path: string) => `An answer changed (${path}): your own action`,
       pairings: (path: string) => `A pairing changed (${path})`,
       "org-pack": (path: string) => `The org pack changed (${path})`,
-      curated: (path: string) => `A curated decision changed (${path})`,
+      curated: (path: string) => `One of your changes changed (${path})`,
       traffic: (path: string) => `The traffic evidence changed (${path})`,
       shared: (path: string) => `A shared map changed (${path})`,
       inputs: (path: string) => `inputs/ changed (${path})`,
@@ -1330,11 +1388,11 @@ export const COPY = {
       federated: (path: string) => `A federated catalog changed (${path})`,
       other: (path: string) => `An input changed (${path})`,
     } as Record<string, (path: string) => string>,
-    upgradeTitle: "Upgrade to source slots",
+    upgradeTitle: "Upgrade to stored reads",
     upgradeIntro:
-      "This catalog was written before beta.27. The upgrade adopts every record into source slots, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
+      "This catalog was written before beta.27. The upgrade moves every record into stored reads, so nothing is lost, and keeps a copy of the catalog as it is. It writes nothing until you confirm.",
     upgradeRecords: (records: number, slots: number) =>
-      `${records} ${records === 1 ? "record" : "records"} adopted into ${slots} slot ${slots === 1 ? "file" : "files"}:`,
+      `${records} ${records === 1 ? "record" : "records"} moved into ${slots} slot ${slots === 1 ? "file" : "files"}:`,
     upgradeSlotsCaption: "The slots the upgrade writes",
     upgradeSlotCol: { path: "Slot", repo: "Repo", records: "Records" },
     upgradeJoins: "joined and evidence-less records",
@@ -1412,11 +1470,11 @@ export const COPY = {
     orphaned: (repo: string, why: string) =>
       `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its slots are kept, not built from.`,
   },
-  /** Set up › Scans (ADR 0195): each repo's outcome of the last scan run here. */
+  /** Set up › Activity › Scans (ADR 0195): each repo's outcome of the last scan run here. */
   scanSources: {
     title: "What the scan read",
     caption: "Each repo's outcome of the scan",
-    col: { repo: "Repo", outcome: "Readers slot", source: "Catalog from", note: "Why" },
+    col: { repo: "Repo", outcome: "Built-in readers' read", source: "Catalog from", note: "Why" },
     slot: {
       written: "Read in full",
       unchanged: "Read in full, unchanged",
@@ -1435,12 +1493,12 @@ export const COPY = {
       refused: "the scan wrote nothing",
       "dry-run": "a dry run writes nothing",
     } as Record<string, string>,
-    factsStale: "its facts cite files changed since: read it again on Map › Trust",
+    factsStale: "its facts cite files changed since: read it again on Map › Read status",
     refusedBuild: "The scan read these repos, and its build waits for you:",
     confirmScan: (n: number) => `Scan again, removing ${n} ${n === 1 ? "record" : "records"}`,
-    links: "Readers found / facts say, and the catalog's builds:",
+    links: "The cross-check, and the catalog's builds:",
   },
-  /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
+  /** Map › Read status (ADR 0124): how far to trust each repo's map, from the verifier's report. */
   trust: {
     // ADR 0164: the contract check's counts, with the way to the Mismatches page.
     contracts: (m: number, u: number, links: number) =>
@@ -1546,7 +1604,7 @@ export const COPY = {
       wrongFact: "Correct this fact",
       wrongFactOf: (claim: string) => `Correct the fact ${claim}`,
       wrongLink: (repo: string) =>
-        `Open ${repo} on the estate canvas, then the link's Why is this linked? › This link is wrong`,
+        `Open ${repo} on the Map, then the link's Why is this linked? › This link is wrong`,
       factGone: "This fact isn't in the repo's facts any more, so there is nothing to correct.",
     },
     /** ADR 0124 addendum A-framework: what each repo is built on, read from its build files. */
@@ -1583,18 +1641,18 @@ export const COPY = {
       title: (n: number) =>
         n === 1 ? "A box made from an answer's words" : `${n} boxes made from answers' words`,
       intro:
-        "An answer to a question about where calls go was taken as a system's name, so the map drew a box with arrows to it. Say what it was: Ignore leaves its calls off the map; a rename points them at a real system. Both are written here first, then proposed for review.",
+        "An answer to a question about where calls go was taken as an outside system's name, so the map drew a box with arrows to it. Say what it was: Ignore leaves its calls off the map; a rename points them at a real repo or outside system. Both are written here first, then proposed for review.",
       box: (name: string) => `A box made from an answer's words: ${name}`,
-      inProfile: (path: string) => `A system in ${path}`,
+      inProfile: (path: string) => `An outside system in ${path}`,
       answeredIn: (n: number) => `Named by ${n} answer${n === 1 ? "" : "s"}:`,
       ignore: "It was 'ignore this'",
       ignoreOf: (name: string) => `It was 'ignore this': ${name}`,
-      rename: "Rename to a real system",
-      renameOf: (name: string) => `Rename to a real system: ${name}`,
-      nameLabel: "The repo or system it is, or a new outside system's name",
+      rename: "Rename to a real repo or outside system",
+      renameOf: (name: string) => `Rename to a real repo or outside system: ${name}`,
+      nameLabel: "The repo or outside system it is, or a new outside system's name",
       nameHint:
-        "A repo or system Atticus knows, or a short name: letters, digits, spaces and dashes, up to 40 characters, not a sentence.",
-      needName: "Type the repo or system it is, or a new system's name.",
+        "A repo or outside system Atticus knows, or a short name: letters, digits, spaces and dashes, up to 40 characters, not a sentence.",
+      needName: "Type the repo or outside system it is, or a new outside system's name.",
       preview: "Preview the change",
       previewing: "Working out the change…",
       willIgnore: (n: number) =>
@@ -1694,7 +1752,7 @@ export const COPY = {
     answer: "Answer it",
     unverifiedFix: "The verifier hasn't checked these on their lines yet:",
     moreFacts: (n: number, file: string) => `and ${n} more, in ${file}`,
-    openCanvas: "Open the repo on the estate canvas",
+    openCanvas: "Open the repo on the Map",
     /**
      * ADR 0196 (Z2): canaries beside the sample audit, and how often a claim graded as backed is
      * wrong, as two numbers side by side (never pooled), in the CLI's own words.
@@ -1833,18 +1891,18 @@ export const COPY = {
       return `task${all.length === 1 ? "" : "s"} ${all.join(", ")}`;
     },
   },
-  /** B-task-knowledge (C4 2.25.0): pages that disagree, and who decided which applies. */
+  /** B-task-knowledge (C4 2.25.0): pages that disagree, and who decided which holds. */
   knowledgeConflicts: {
     title: "Pages that disagree",
     intro:
-      "Two pages say different things about the same item. A person decides which applies (or both, in different cases); nothing is picked for them. A signal may suggest a page (it replaces the other, its owner handles the item, its source is tagged for the kind, it is in the team's space, or it was edited last), but only suggests. When code verified in a repo holds one page's value, the code settles it: a document never overrides a fact verified from code.",
+      "Two pages say different things about the same item. A person decides which holds (or both, in different cases); nothing is picked for them. A signal may suggest a page (it replaces the other, its owner handles the item, its source is tagged for the kind, it is in the team's space, or it was edited last), but only suggests. When code verified in a repo holds one page's value, the code settles it: a document never overrides a fact verified from code.",
     says: (page: string, words: string) => `${page} says "${words}"`,
     open: (id: string) =>
       `Waiting for a person: question ${id} (atticus questions answer ${id} --option <n>, or on the Questions page).`,
-    notAsked: "No one has been asked yet; a change that relies on it asks a person which applies.",
-    applies: (pages: string, by: string) => `${pages} applies (${by}).`,
+    notAsked: "No one has been asked yet; a change that relies on it asks a person which holds.",
+    applies: (pages: string, by: string) => `${pages} holds (${by}).`,
     both: (by: string, words?: string) =>
-      `Both apply, in different cases (${by}${words ? `: "${words}"` : ""}).`,
+      `Both hold, in different cases (${by}${words ? `: "${words}"` : ""}).`,
     byPerson: (who: string) => `answered by ${who}`,
     byCode: (kind: string, record: string, value: string, at: string) =>
       `settled by the code: ${kind} ${record} has ${value}, verified at ${at}`,
@@ -2119,7 +2177,7 @@ export const COPY = {
     previewSays:
       "Draw it writes exactly these lines (the flow's target file, and design.md where Atticus wrote it):",
     written:
-      "Drawn. The picture shows it. Propose the drawing for review now, or let it ride the stage's hand-off.",
+      "Drawn. The change's diagram shows it. Propose the drawing for review now, or let it ride the stage's hand-off.",
     copy: "Copy",
     drawnTitle: "Strokes drawn here",
     drawnNone: "None yet.",
@@ -2149,9 +2207,9 @@ export const COPY = {
     /** Ninth UX walk: a knowledge gap holds the gate; it is answered on the change's page. */
     answerGap: "Answer it on the change's page",
     answerGapSay:
-      "A missing fact is settled on the change's page: Apply fix, ask its owner (Ask), or say it isn't relevant, with a reason.",
+      "A missing fact is settled on the change's page: Write the fix, ask its owner (Ask), or say it isn't relevant, with a reason.",
     resolveFindingsSay:
-      "Each blocking finding is resolved on the change's page: Apply fix, Not relevant or Waive, with a reason.",
+      "Each blocking finding is resolved on the change's page: Write the fix, Not relevant or Waive, with a reason.",
     /** Eighth UX walk: a step the app has no control for opens the change's At a glance. */
     openGlance: "Open At a glance",
     /** Eighth UX walk: map questions don't hold a change's step; Home says how many are open. */
@@ -2334,7 +2392,7 @@ export const COPY = {
     allTrusted:
       "Every repo's map is trusted: its facts are verified and of the commit checked out.",
     notTrusted: "Not trusted yet",
-    openTrust: "Open Map › Trust",
+    openTrust: "Open Map › Read status",
     addReposInApp: "Add repos on Set up › Repos",
     inFlight: "Changes in flight",
     noChanges: "No change is in flight. Start one with New change.",
@@ -2481,7 +2539,7 @@ export const COPY = {
       discover:
         "There are no repos to work on until a manifest lists them: add them on Set up › Repos.",
       sync: (n: number) => `${n} repo${n === 1 ? " isn't" : "s aren't"} cloned yet.`,
-      /** ADR 0124: a repo read by the assistant and verified, by its state on Map › Trust. */
+      /** ADR 0124: a repo read by the assistant and verified, by its state on Map › Read status. */
       read: {
         "not-read": (repo: string) =>
           `${repo} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify checks every one.`,
@@ -2501,7 +2559,7 @@ export const COPY = {
       answerUnknown:
         "The open questions couldn't be read just now, so this step isn't ticked yet. Open the Questions page to see them.",
       onboarded:
-        "Every repo is read and its facts verified. Map › Trust says how far to trust each repo's map; atticus next says what comes next.",
+        "Every repo is read and its facts verified. Map › Read status says how far to trust each repo's map; atticus next says what comes next.",
       change: (id: string, stage: string) => `${id} is at the ${stage} stage.`,
       newChange: "Everything is onboarded and no change is in flight. Start one.",
       feature:
@@ -2729,10 +2787,78 @@ export const COPY = {
   glossary: {
     title: "What the words mean",
     intro:
-      "Atticus's own words, each in one plain sentence. atticus explain <word> says the same on the command line.",
+      "Atticus's own words, each in one plain sentence, one name each. The guide's words page (docs/guide/words.md) has these and the words of the files and the build.",
     link: "Words",
     linkTitle: "What Atticus's words mean",
+    /** v30 slice 8: the names a word replaces, said under it. */
+    was: (names: string) => `Was: ${names}`,
     terms: [
+      // v30 slice 8 (docs/guide/words.md): one name per thing, and the names each replaces.
+      {
+        term: "Map",
+        says: "The drawing of your estate: a box for each repo and outside system, an arrow for each call between them, each citing its line of code.",
+        was: "Estate canvas, Estate map, Ecosystem map, the picture",
+      },
+      {
+        term: "Read status",
+        says: "How far each repo was read and checked: what is up to date, behind or read only in part, what was rejected, and what to read again.",
+        was: "Trust",
+      },
+      {
+        term: "Cross-check",
+        says: "For a repo your assistant read, what the built-in readers found compared with what its facts say. It never changes the map by itself.",
+        was: "Readers found / facts say",
+      },
+      {
+        term: "Apply",
+        says: "Update the map from what was read: verify checks each fact on its cited line and the catalog is built again. The button Apply means only this.",
+      },
+      {
+        term: "Write",
+        says: "Save a correction, an answer or a fix into the metarepo's files. It reaches the map when you Apply it.",
+        was: "Apply fix, Apply to similar",
+      },
+      {
+        term: "Propose",
+        says: "Share what you wrote for review, as a pull request a person reviews and merges.",
+      },
+      {
+        term: "your changes",
+        says: "Everything you told Atticus that the build keeps, in your name: your answers, corrections, declarations, choices on triage items, tags, kept edits and deleted links. Apply puts them on the map; Propose shares them.",
+        was: "curated decision",
+      },
+      {
+        term: "your kept edit",
+        says: "A file of the catalog you changed by hand and kept (Keep my edits): one of your changes.",
+        was: "made curated",
+      },
+      {
+        term: "decision",
+        says: "Only the AI's decisions (Decided by AI) and the knowledge kind (decisions and constraints). What you told Atticus is one of your changes, never a decision.",
+      },
+      {
+        term: "call with no arrow",
+        says: "A call read from code whose target Atticus can't tell yet, so the map draws no arrow for it.",
+        was: "loose call",
+      },
+      {
+        term: "loose end",
+        says: "A call, publish, listener or table use whose other side Atticus can't find; for a call, the map draws no arrow.",
+      },
+      {
+        term: "repo",
+        says: "A Git repository the manifest lists; a box on the map.",
+      },
+      {
+        term: "outside system",
+        says: "A system outside your estate that your repos call, named in the profile: a vendor, or another team's service.",
+        was: "System, system",
+      },
+      {
+        term: "Activity",
+        says: "One page for what ran: Model runs, Prompt history, Scans and Catalog builds, a tab each, in Set up.",
+        was: "Model runs, Prompt history, Scans and Catalog builds as pages",
+      },
       {
         term: "metarepo",
         says: "The Git repo Atticus keeps for your estate: the catalog read from your repos' code, the changes in flight, the knowledge and the org pack. Its pull requests are how things get approved.",
@@ -2981,7 +3107,7 @@ export const COPY = {
       `Task ${id} handed to your assistant. Open the prompt, then mark it done.`,
     reason: "Reason",
     reasonNeededToWaive: "Reason (needed to waive or dismiss)",
-    applyFix: "Apply fix",
+    applyFix: "Write the fix",
     owner: "owner",
     ask: (v: string | number) => `Ask ${v}`,
     notRelevant: "Not relevant",
@@ -3158,7 +3284,7 @@ export const COPY = {
     optional: " · optional",
     acceptTheCatalogAs: "Accept the catalog as the baseline",
     afterWalkingTheEcosystem:
-      "After walking the ecosystem map with the architect. Every later scan, document and change is compared with it. It is a file in the metarepo, so it reaches main through a pull request.",
+      "After walking the Map with the architect. Every later scan, document and change is compared with it. It is a file in the metarepo, so it reaches main through a pull request.",
     setUpAtticus: "Set up Atticus",
     // Seventh UX walk: the org pack's owner, set here instead of in pack.yaml.
     ownerLabel: "Who looks after the org pack",
@@ -3272,7 +3398,7 @@ export const COPY = {
       /** The words before a change's name, the name its link (beta.26 review). */
       inChangeLead: "in ",
       assistant: "Use with your assistant",
-      problems: "Some files couldn't be read: see Map › Trust.",
+      problems: "Some files couldn't be read: see Map › Read status.",
       /** Beta.26 review: a short list cut at its top few, the rest one link away. */
       more: (n: number) => `+${n} more`,
       setupLine: (done: number, all: number) =>
@@ -3289,6 +3415,8 @@ export const COPY = {
     evidence: "Evidence",
     noEvidenceRecordedTreat: "No evidence recorded: treat this fact as unconfirmed.",
     whatBreaksIfThis: "What breaks if this changes",
+    // Beta.30: the Ask panel's receivers of a topic, when the map has none yet.
+    noReceivers: "Nothing in the map receives it yet: read the repos that listen to it.",
     isOwnedBy: " is owned by ",
     theCatalogDoesntKnow: "The catalog doesn't know who owns ",
     yet: " yet.",
@@ -3559,16 +3687,19 @@ export const COPY = {
     generatedFromTheCatalog: "Generated from the catalog",
     theCatalogIsEmpty:
       "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",
-    around: (focus: string | number) => `Around ${focus}`,
-    ecosystemMap: "Ecosystem map",
     showAll: "Show all",
-    clickANodeTo: "Click a node to centre it",
     gaps: (gaps: string | number) => ` · ${gaps} gaps`,
     verified: (verified: string | number, total: string | number, v: string | number) =>
       `${verified}/${total} verified${v}`,
     factsVerifiedFromCode: (system: string | number) => `${system}: facts verified from code`,
     noSystemsYet: "No systems yet.",
     systems: "Systems",
+    /** v30 slice 8: Impact asked of a repo (a repo box's panel): its components to pick from. */
+    impactOfRepo: (repo: string) => `Impact of ${repo}: pick one of its components`,
+    noComponentsIn: (repo: string) =>
+      `No component of ${repo} is in the catalog yet: read the repo, then Apply it.`,
+    /** v30 slice 8: the coverage's list on Systems, beside the system picker (named apart). */
+    verifiedBySystem: "Verified, by system",
     coverageBySystemAnd: "Coverage by system and area",
     notExpected: "not expected",
     notExpected2: (system: string | number, name: string | number) =>
@@ -3577,7 +3708,7 @@ export const COPY = {
     /** No System record yet (a catalog read from facts, ADR 0124): what each repo's facts say. */
     factsByRepo: {
       intro:
-        "No System record says more yet, so this is what each repo's verified facts say. Map › Trust says how far to trust them.",
+        "No System record says more yet, so this is what each repo's verified facts say. Map › Read status says how far to trust them.",
       caption: "Facts by repo",
       repo: "Repo",
       entries: "Entries",
@@ -3669,7 +3800,7 @@ export const COPY = {
     intake: "Intake",
     inputs: "inputs/",
     eachChoiceIsSaved:
-      "Each choice is saved as a curated decision in your name. Code always wins over a document until a person decides.",
+      "Each choice is saved in your name, as one of your changes. Code always wins over a document until a person decides.",
     nothingToTriage: "Nothing to triage.",
     needsYou: "Needs you",
     ofReposCloned: (present: string | number, total: string | number) =>
@@ -3679,9 +3810,9 @@ export const COPY = {
     /** App-only audit: the old built-in readers are a cross-check, never how the map is made. */
     scanNow: "Check with the built-in readers",
     scanCrossCheck:
-      "A cross-check, not how the map is made: the built-in readers read every repo's files. A scan keeps each repo read in full as its readers slot, keeps every other repo's last good read and says why, then builds the catalog; for a repo with verified facts, the facts stay its map and the readers' differences are listed under Readers found / facts say. It asks which repo answers on an unknown host only for the repos your assistant has read.",
+      "A cross-check, not how the map is made: the built-in readers read every repo's files. A scan keeps each repo read in full, keeps every other repo's last good read and says why, then builds the catalog; for a repo with verified facts, the facts stay its map and the readers' differences are listed under Cross-check. It asks which repo answers on an unknown host only for the repos your assistant has read.",
     /** Beta.26 safety stop: a scan that didn't read every repo in full wrote nothing. */
-    scanRefusedTitle: "Nothing written: the catalog is as it was.",
+    scanRefusedTitle: "The catalog wasn't changed.",
     scanRefusedState: "Nothing written",
     scanRefusedList: "Repos the scan didn't read in full",
     scanRefusedWhy: {
@@ -3698,12 +3829,12 @@ export const COPY = {
     scanRefusedEmpty: (before: number) =>
       `The scan found no records in any repo's code, and the catalog has ${before}.`,
     scanRefusedTodo:
-      "Sync repos, then check again, or put one repo's read in the catalog from its facts: atticus verify <repo> --write (Map › Trust). A failed reader run is in the Console.",
+      "Sync repos, then check again, or put one repo's read in the catalog from its facts: atticus verify <repo> --write (Map › Read status). A failed reader run is in the Console.",
     scanAskAll: "Also ask about the repos your assistant hasn't read",
     scanAdded: (added: number, changed: number, removed: number, questions: number) =>
       `The built-in readers added ${added} ${added === 1 ? "record" : "records"}, changed ${changed} and removed ${removed}. ${questions === 1 ? "1 host question is" : `${questions} host questions are`} open.`,
     readAgain: "Read again with your assistant",
-    readAgainWhere: "Your assistant reads each repo and cites its facts: on Map › Trust.",
+    readAgainWhere: "Your assistant reads each repo and cites its facts: on Map › Read status.",
     jobProgress: "Job progress",
     /** A job's state in words (ADR 0119). */
     jobState: {
@@ -4087,7 +4218,7 @@ export const COPY = {
     columnsTaggedWithA:
       "Columns tagged with a data classification, and so where tagged fields live.",
     noColumnsAreTagged:
-      "No columns are tagged yet. Tag sensitive fields as curated decisions so their flows show here.",
+      "No columns are tagged yet. Tag sensitive fields (each tag is one of your changes) so their flows show here.",
     authenticationGaps: "Authentication gaps",
     callsWithNoOauth2: "Calls with no OAuth2, mTLS or API key declared in code or config.",
     everyCallDeclaresHow: "Every call declares how it authenticates.",
@@ -4496,7 +4627,7 @@ export const COPY = {
   },
   outside: {
     noSuchSystem: (id: string) =>
-      `No outside system of the profile is ${id}: pick one above, or add it in Map › Canvas (Add to the picture).`,
+      `No outside system of the profile is ${id}: pick one above, or add it on the Map (Add to the picture…).`,
     title: "Outside systems",
     // ADR 0164: the calls to the system against its newest spec.
     contracts: "The calls against this spec",
@@ -4784,7 +4915,7 @@ export const COPY = {
     /** Ninth UX walk (ADR 0181): whether the AI decides first, set here. */
     decideLabel: "AI decides first",
     decideHint:
-      "Auto: after a Copilot session Atticus runs, or a hand-off to your assistant you mark done, Atticus applies each AI decision that passes the citation check and the bar, shown as Detected by AI and never as anyone's word; a person corrects what is wrong. Propose: the AI only proposes, and a person accepts each one. The safety rules are not affected.",
+      "Auto: after a Copilot session Atticus runs, or a hand-off to your assistant you mark done, Atticus writes each AI decision that passes the citation check and the bar, shown as Detected by AI and never as anyone's word; a person corrects what is wrong. Propose: the AI only proposes, and a person accepts each one. The safety rules are not affected.",
     decideLinks: "Pairings of calls to APIs",
     decideQuestions: "Answers to option questions",
     decideMode: { propose: "Propose for a person", auto: "Decide (auto)" } as Record<
@@ -5110,7 +5241,7 @@ export const COPY = {
     searchPlaceholder: "Find a repo, system or topic",
     found: (label: string) => `${label}: centred and picked.`,
     notFound: (q: string) => `Nothing here is called ${q}.`,
-    minimap: "Map of the whole picture",
+    minimap: "Overview of the whole drawing",
     /** What each key does, said once beside the picture. */
     keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
     region: (title: string) => `${title}: picture`,
@@ -5203,14 +5334,13 @@ export const COPY = {
     applyNewer: (repo: string) =>
       `Nothing applied to ${repo}'s map: this catalog was built by a newer Atticus. Upgrade Atticus (${NEWER_ATTICUS_COMMAND}), then Apply again.`,
     confirmApply: (n: number) => `Apply, removing ${n} ${n === 1 ? "record" : "records"}`,
-    /** ADR 0195 point 4: Apply's hand edits made curated; the facts wait for Apply again. */
+    /** ADR 0195 point 4: Apply's hand edits kept as yours; the facts wait for Apply again. */
     editsChanged:
-      "The hand edits aren't the ones listed here any more. Nothing was made curated: Apply again to list them.",
+      "The hand edits aren't the ones listed here any more. Nothing was kept: Apply again to list them.",
     curatedApplyAgain: (repo: string) =>
-      `The hand edits are curated decisions now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
+      `The hand edits are your kept edits now, which every later build keeps. Apply again to put ${repo}'s facts in the map.`,
     toHome: "Propose it from Home",
-    applyFirst:
-      "Apply the answers and corrections first, so the map in the pull request matches them:",
+    applyFirst: "Apply your changes first, so the map in the pull request matches them:",
     /** The map's bar: corrections drawn here, not yet applied (shown on the map itself). */
     onMap: (repos: string) =>
       `Your corrections aren't in the map yet: ${repos}. Apply them to check each against the code and draw the map again.`,
@@ -5311,7 +5441,7 @@ export const COPY = {
     readRepoFirst: "Read a repo first",
     readRepoFirstSay:
       "Your assistant reads a repo's code and writes its facts; Atticus checks each against its line and draws the map.",
-    openTrust: "Read a repo on Map › Trust",
+    openTrust: "Read a repo on Map › Read status",
     storiesAgain: "Draft the stories again",
     openArchitecture: "Prepare it on Architecture",
     findingAsk: "Ask its owner",
@@ -5326,9 +5456,9 @@ export const COPY = {
     openMachine: "Open Settings › This machine",
     ownInstall: "Your install",
     setupRead:
-      "Read each repo with your assistant on Map › Trust; Done checks every fact against the line it cites and puts it on the map.",
+      "Read each repo with your assistant on Map › Read status; Done checks every fact against the line it cites and puts it on the map.",
     setupBaseline:
-      "Walk the ecosystem map with the architect, then accept it with Accept the catalog below and propose it for review.",
+      "Walk the Map with the architect, then accept it with Accept the catalog below and propose it for review.",
   },
   /** UX review: starting a change in the app. */
   newChange: {
@@ -5518,24 +5648,24 @@ export const COPY = {
     title: "Detected by AI",
     hint: "Links the AI paired as itself, from a run Atticus started, that no person has confirmed. Drawn dotted, with ◆ and the words. Pick one to see its run and correct it.",
     only: "Only links detected by AI",
-    listed: (n: number) => `${n} link${n === 1 ? "" : "s"} on this picture detected by AI:`,
+    listed: (n: number) => `${n} link${n === 1 ? "" : "s"} on this map detected by AI:`,
     pick: (from: string, to: string) => `Show the link ${from} → ${to}`,
-    none: "No link on this picture was detected by AI.",
+    none: "No link on this map was detected by AI.",
     noneOnly:
-      "Only links detected by AI are shown, and this picture has none. Press the button again to show every link.",
+      "Only links detected by AI are shown, and this map has none. Press the button again to show every link.",
     legend: "How links are drawn",
     legendCode: "Solid line: read from code",
     legendPerson: "Dashed line: a person's word (declared or paired)",
     legendAi: "Dotted line with ◆: detected by AI",
     // ADR 0192: a build dependency on a library of the estate's own, never a call.
     legendDependency: (n: number) =>
-      `Dash-dot line, "depends on": a build dependency on a library of the estate's own, not a call (${n} on this picture)`,
+      `Dash-dot line, "depends on": a build dependency on a library of the estate's own, not a call (${n} on this map)`,
     linkTitle: (from: string, to: string, type: string) => `${from} → ${to} (${type})`,
     link: "Link",
     close: "Close the link",
-    gone: "This link isn't on the picture any more: a correction or a new read moved it.",
+    gone: "This link isn't on the map any more: a correction or a new read moved it.",
     corrected:
-      "Correction saved as your word. The canvas was read again; the link moves once atticus verify --write has joined the caller's repo again.",
+      "Correction saved as your word. The map was read again; the link moves once atticus verify --write has joined the caller's repo again.",
   },
   /**
    * Beta.28 (the owner's decision of 2026-11-12): Delete this link, on every link's panel, as
@@ -5547,7 +5677,7 @@ export const COPY = {
     confirm: (from: string, to: string, n: number) =>
       `Delete ${from} → ${to}, ${n} call${n === 1 ? "" : "s"}?`,
     intro:
-      "Your decision is written to catalog/curated, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
+      "The deleted link is written to catalog/curated as one of your changes, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
     yes: "Delete",
     no: "Cancel",
     reading: "Reading every call on this link…",
@@ -5568,7 +5698,7 @@ export const COPY = {
       title: "Deleted links",
       loading: "Reading the deleted links…",
       failed: (why: string) => `The deleted links couldn't be read: ${why}`,
-      none: "No link was deleted on the canvas.",
+      none: "No link was deleted on the map.",
       item: (from: string, to: string, n: number) =>
         `${from} → ${to}, ${n} call${n === 1 ? "" : "s"}`,
       by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
@@ -5848,7 +5978,7 @@ export const COPY = {
     saved: (rel: string) => `Kept in ${rel}: commit it to share it.`,
     open: "Open",
     noViews: "No view kept yet.",
-    export: "Export the picture",
+    export: "Export the map",
     exportEnd: {
       saved: "Saved.",
       cancelled: "Not saved: the Save dialog was closed.",
@@ -6042,7 +6172,7 @@ export const COPY = {
     /** Ninth UX walk: reading the hand-off answer in is its run's Done. */
     readingAnswer: "Reading the answer in…",
     handoff: (brief: string) =>
-      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer. Atticus checks it; where runtime.yaml's decide.links is auto, it applies each pairing that passes the citation check and the bar as the AI's (Detected by AI), and the rest wait here for you.`,
+      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer. Atticus checks it; where runtime.yaml's decide.links is auto, it writes each pairing that passes the citation check and the bar as the AI's (Detected by AI), and the rest wait here for you.`,
     answerAt: (file: string) => `It writes its answer to ${file}.`,
     copy: "Copy",
     done: (p: number, n: number, r: number) =>
@@ -6530,7 +6660,7 @@ export const COPY = {
       fixThenVerify: (command: string) => `Fix them, then run ${command}`,
       open: "Open",
       openLabel: (what: string) => `Open: ${what}`,
-      openTrust: "Open Trust",
+      openTrust: "Open Read status",
       show: "Show in the Console",
       showLabel: (title: string) => `Show ${title} in the Console`,
     },
@@ -6616,7 +6746,7 @@ export const COPY = {
       rejected: (n: number) =>
         n === 1 ? "verify rejected 1 line:" : `verify rejected ${n.toLocaleString()} lines:`,
       noRejected: "Two Copilot sessions added nothing to it, and verify rejected nothing.",
-      moreRejected: (n: number) => `and ${n.toLocaleString()} more on Map › Trust`,
+      moreRejected: (n: number) => `and ${n.toLocaleString()} more on Map › Read status`,
     },
     console: {
       title: "Console",
@@ -6628,7 +6758,7 @@ export const COPY = {
       copy: "Copy",
       copied: "Copied",
       empty:
-        "No Copilot run yet. Start one from Map › Trust: read the stale repos, fill the gaps, or read one repo.",
+        "No Copilot run yet. Start one from Map › Read status: read the stale repos, fill the gaps, or read one repo.",
       noLines: "Nothing printed yet.",
       noMatch: (q: string) => `No line has “${q}”.`,
       earlier: (n: number) => `${n.toLocaleString()} earlier lines not shown.`,
@@ -6719,7 +6849,7 @@ export const COPY = {
     gaps: {
       unverified: "No fact verified from code cites this",
       question: "A question is open on this",
-      corrected: "A person corrected this; atticus verify applies it",
+      corrected: "A person corrected this; atticus verify uses it",
     } as Record<string, string>,
     short: {
       unverified: "unproven",
@@ -6734,7 +6864,7 @@ export const COPY = {
     close: "Close",
     correctTitle: (label: string) => `Correct ${label}`,
     correctIntro:
-      "Say the fact is wrong, or put the claim right. Atticus writes your correction to the repo's corrections file; atticus verify applies it every time it runs, so the next read keeps it. A corrected claim is still checked on its line: the code must say it.",
+      "Say the fact is wrong, or put the claim right. Atticus writes your correction to the repo's corrections file; atticus verify uses it every time it runs, so the next read keeps it. A corrected claim is still checked on its line: the code must say it.",
     wrong: "It is wrong",
     edit: "Put the claim right",
     reason: "Why (required to mark it wrong)",
@@ -6783,12 +6913,12 @@ export const COPY = {
     failed: (why: string) => `Couldn't work out what the write will change: ${why}`,
     unavailable: {
       "no-checkout":
-        "There is no checkout of the repo here, so what the write changes can't be worked out. Clone it (atticus workspace sync); the commands still apply.",
+        "There is no checkout of the repo here, so what the write changes can't be worked out. Clone it (atticus workspace sync); the commands still work.",
       "unreadable-facts":
         "The repo's facts file doesn't read as facts, so the write would change nothing yet. Have your assistant read the repo again.",
     } as Record<string, string>,
     blocked: (n: number) =>
-      `The write puts nothing in the catalog: ${n} fact${n === 1 ? " is" : "s are"} rejected. Fix ${n === 1 ? "it" : "them"} first (Map › Trust lists ${n === 1 ? "it" : "them"}).`,
+      `The write puts nothing in the catalog: ${n} fact${n === 1 ? " is" : "s are"} rejected. Fix ${n === 1 ? "it" : "them"} first (Map › Read status lists ${n === 1 ? "it" : "them"}).`,
     headMoved: (head: string, commit: string) =>
       `The checkout is at ${head.slice(0, 7)}, past the facts' commit ${commit.slice(0, 7)}: verify reads the changed files' facts again, which this preview doesn't.`,
     facts: "Facts",
@@ -6819,7 +6949,7 @@ export const COPY = {
       `Apply will wait for you to confirm: its build removes ${n} ${n === 1 ? "record" : "records"}, more than the removal guard lets through unasked. Apply lists ${n === 1 ? "it" : "them"}, each with why; confirm there with ${button}.`,
     // The re-review of G1: files under catalog/generated changed by hand stop the Apply first.
     confirmEdits: (n: number, button: string) =>
-      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; make ${n === 1 ? "it a curated decision" : "them curated decisions"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
+      `Apply will stop first: ${n} ${n === 1 ? "file" : "files"} under catalog/generated ${n === 1 ? "was" : "were"} changed by hand since the last build. Apply lists ${n === 1 ? "it" : "them"}; keep ${n === 1 ? "it as your edit" : "them as your edits"}, or discard ${n === 1 ? "it" : "them"} with ${button}.`,
     // The last re-review of G1: a refusal no confirm helps, and a catalog from before the slots.
     confirmRefused: (
       reasons: readonly ("nothing-read" | "empty" | "unexplained-removals" | "newer-atticus")[],
@@ -6829,7 +6959,7 @@ export const COPY = {
           (r) =>
             ({
               "unexplained-removals":
-                "its build would remove records that no changed slot, input or decision explains (a bug: Catalog builds lists them)",
+                "its build would remove records that nothing changed explains (a bug: Catalog builds lists them)",
               empty:
                 "its build would hold no record from any repo's code over a catalog that has some",
               "nothing-read": "no repo could be read",
@@ -6838,11 +6968,11 @@ export const COPY = {
         )
         .join("; ")}.`,
     confirmUpgrade:
-      "Apply will stop first: the catalog was written before beta.27 and is to be upgraded. Run atticus upgrade (it shows what it would do first; atticus upgrade --yes applies it), then Apply.",
+      "Apply will stop first: the catalog was written before beta.27 and is to be upgraded. Run atticus upgrade (it shows what it would do first; atticus upgrade --yes does it), then Apply.",
     confirmUpgradeCommand: "Upgrade the catalog",
     confirmCommand: "Or confirm from a terminal",
     stale: (ids: string) =>
-      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,
+      `Corrections on file that meet no fact in this read (kept, used when it is read again): ${ids}.`,
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
@@ -6862,7 +6992,7 @@ export const COPY = {
     copyOf: (what: string) => `Copy ${what}`,
     how: {
       person:
-        "A person paired this call with this entry on the canvas (Connect to…): their word, written as a link in the caller's corrections, the call's own fact left as read.",
+        "A person paired this call with this entry on the map (Connect to…): their word, written as a link in the caller's corrections, the call's own fact left as read.",
       answer: "A person answered which repo or system it calls.",
       named: "The call names the component it goes to.",
       repo: "The call names the repo it goes to.",
@@ -6879,7 +7009,7 @@ export const COPY = {
       "folder-name":
         "Its host comes from a setting that is this service's only because its file sits in a folder named like it, so this is a guess.",
       conflict:
-        "Its host or base path is one a deploy file gives and the manifest disagrees with (an open conflict on Map › Trust), so this is a guess.",
+        "Its host or base path is one a deploy file gives and the manifest disagrees with (an open conflict on Map › Read status), so this is a guess.",
       "service-name":
         "Its host is a Kubernetes Service's short name, which reaches that Service only from its own namespace, and no deploy file says this service runs there, so this is a guess.",
       shared:
@@ -6975,7 +7105,7 @@ export const COPY = {
     wrongOf: (call: string) => `Say the call ${call} is wrong`,
     wrongTitle: (call: string) => `What is wrong with ${call}?`,
     wrongIntro:
-      "Your word outranks every join rule. Atticus writes it to the caller's repo's corrections file through the local API; atticus verify applies it every time it runs. Nothing changes until you run the command below and the change is reviewed in a pull request.",
+      "Your word outranks every join rule. Atticus writes it to the caller's repo's corrections file through the local API; atticus verify uses it every time it runs. Nothing changes until you run the command below and the change is reviewed in a pull request.",
     pickCall: "The call on that line",
     choice: {
       estate: "It calls another repo or component of the estate",
@@ -7070,7 +7200,7 @@ export const COPY = {
       sayNoFile:
         "A person declared this link in the profile: no call in code makes it, so there is no call to correct. Withdraw the declaration and the link goes at the next join.",
       byHand: (file: string) =>
-        `It wasn't declared from the canvas, so there is no Undo for it here: remove it from ${file} and propose that for review.`,
+        `It wasn't declared on the map, so there is no Undo for it here: remove it from ${file} and propose that for review.`,
     },
     routingLink:
       "No line of a caller's cites this call: the link comes from a gateway proxy's routing, so there is no call here to correct. Where the proxy forwards it is set on the proxy, for every caller of the route, not this link alone: answer where it goes, or correct the proxy's forwarding at its line.",
@@ -7100,7 +7230,7 @@ export const COPY = {
     movedOff: (what: string, was: string) =>
       `${what}: was ${was}, now on no link of the parts open here`,
     notYet:
-      "No call has moved yet: run the verify command above. The picture reads the catalog again when it changes.",
+      "No call has moved yet: run the verify command above. The map reads the catalog again when it changes.",
   },
   /** ADR 0124 addendum D-app, B10: a stage tab's critic findings, their options and a comment box. */
   stageReview: {
@@ -7301,7 +7431,7 @@ export const COPY = {
     detailModel: (m: string) => `Model ${m}`,
     detailAttempt: (n: number) => `Round ${n}`,
     detailFiles: "Files",
-    adminView: "Every run, for an administrator: Set up › Model runs",
+    adminView: "Every run, for an administrator: Set up › Activity › Model runs",
     empty: "Nothing has happened at this stage yet.",
     criticRan: (waiting: number) =>
       waiting
@@ -7389,7 +7519,7 @@ export const COPY = {
   stageDrafts: {
     title: "The drafts",
     intro:
-      "What the AI drafted for this stage. Read each one: if something is wrong, Correct it in your words. The stage's next run follows your correction, and with Apply to similar, makes the same fix everywhere it fits.",
+      "What the AI drafted for this stage. Read each one: if something is wrong, Correct it in your words. The stage's next run follows your correction, and with Write to similar, makes the same fix everywhere it fits.",
     none: "Nothing drafted for this page yet. Run the stage: its drafts show here, each marked as drafted by AI until you edit it.",
     draftedByAi: "Drafted by AI",
     draftedByAiRun: (run: string) => `in run ${run}`,
@@ -7407,7 +7537,7 @@ export const COPY = {
     textLabel: "What should it say or do instead?",
     textHint:
       "Say it as you would to a colleague. Your words go to the stage's assistant as your instruction; a fact verified from the code still wins over them.",
-    similar: "Apply to similar",
+    similar: "Write to similar",
     similarHint:
       "The next run makes the same correction to every other step, story, section or task like this one.",
     likeLabel: "Similar items name",
@@ -7418,17 +7548,17 @@ export const COPY = {
     cancel: "Cancel",
     needText: "Write the correction first.",
     saved: (label: string) =>
-      `Your correction of ${label} is saved. Run the stage again to apply it.`,
+      `Your correction of ${label} is saved. Run the stage again to use it.`,
     waitingTitle: "Corrections waiting for the next run",
     waitingNone: "No correction waits. Correct an item above, then run the stage again.",
-    runAgain: "Run the stage again to apply them",
+    runAgain: "Run the stage again to use them",
     runAgainWhy:
       "The stage's next run reads every correction as your instruction, drafts again from the current drafts, and the critic checks the new draft.",
     doneTitle: "Corrections the stage has read",
     state: {
       waiting: "Waiting for the next run",
       read: "Read, but the item didn't change",
-      applied: "Applied",
+      applied: "Used in the run",
     } as Record<string, string>,
     scope: {
       one: "This item",
@@ -7465,7 +7595,7 @@ export const COPY = {
     openRun: (run: string) => `Open run ${run}: what the AI was asked and what it answered`,
     title: "Decided by AI",
     intro:
-      "What the AI decided without a person: pairings of calls to APIs and answers to option questions. Each is the AI's, never yours. If one is wrong, Correct it: your answer is your word, and Apply to similar spreads it to everything like it. Every batch is one Undo away.",
+      "What the AI decided without a person: pairings of calls to APIs and answers to option questions. Each is the AI's, never yours. If one is wrong, Correct it: your answer is your word, and Write to similar spreads it to everything like it. Every batch is one Undo away.",
     loading: "Reading the AI's decisions…",
     failed: (why: string) => `The AI's decisions couldn't be read: ${why}`,
     problems: "Files that couldn't be read:",
@@ -7511,9 +7641,9 @@ export const COPY = {
     allKinds: "Pairings and answers",
     kinds: { link: "Pairings", question: "Answers" } as Record<string, string>,
     itemsTitle: "What the AI decided",
-    itemsCaption: "Each decision the AI applied that still stands",
+    itemsCaption: "Each decision the AI made that still stands",
     itemsEmpty:
-      "The AI has decided nothing that still stands. When runtime.yaml's decide says auto, Match with Copilot and Ask AI to propose apply what passes the bar here.",
+      "The AI has decided nothing that still stands. When runtime.yaml's decide says auto, Match with Copilot and Ask AI to propose keep what passes the bar here.",
     itemsFiltered: "Nothing the AI decided matches the filter.",
     shown: (n: number, total: number) =>
       n === total ? `${total} decision${total === 1 ? "" : "s"}` : `${n} of ${total} decisions`,
@@ -7542,7 +7672,7 @@ export const COPY = {
     apisLoading: "Reading that repo's APIs…",
     apisFailed: (why: string) => `That repo's APIs couldn't be read: ${why}. Type the API's id:`,
     apiIdLabel: "The API's id (its entry fact)",
-    similar: "Apply to similar",
+    similar: "Write to similar",
     similarHint:
       "Atticus derives a rule from your correction, shows it below before you save, and re-checks every AI decision and open item it covers in this repo.",
     matchLabel: "The rule to spread (a path prefix, host or topic pattern)",
@@ -7570,7 +7700,7 @@ export const COPY = {
     spreadTitle: (n: number) => `${n} other item${n === 1 ? "" : "s"} the rule re-checks`,
     spreadCaption: "What the rule does to each item like it",
     change: {
-      applied: "Applied",
+      applied: "Answered",
       confirmed: "Confirmed",
       replaced: "Replaced",
       reverted: "Reverted to open",
@@ -7583,7 +7713,7 @@ export const COPY = {
     } as Record<string, string>,
     col: { item: "Item", change: "What happens", was: "Was", now: "Now" },
     spreadCounts: (c: { applied: number; confirmed: number; replaced: number; reverted: number }) =>
-      `${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+      `${c.applied} answered, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
     nothing: "—",
     saved: (answer: string) => `Saved as your word: ${answer}.`,
     savedBatch: (batch: string) =>
@@ -7593,7 +7723,7 @@ export const COPY = {
       answer: string,
       c: { applied: number; confirmed: number; replaced: number; reverted: number },
     ) =>
-      `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+      `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} answered, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
     verify: "Bring the map up to it:",
     commit: "Commit it for review:",
     /** Ninth UX walk: the next steps as the app's own buttons; the commands under Or in a terminal. */
@@ -7609,9 +7739,9 @@ export const COPY = {
     /** Batches and Undo. */
     batchesTitle: "Batches",
     batchesIntro:
-      "Every batch the AI or a person's rule applied, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
-    batchesEmpty: "No batch yet: nothing has been applied by AI or by a correction's rule.",
-    batchesCaption: "Batches applied, newest first, each with Undo",
+      "Every batch the AI or a person's rule wrote, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
+    batchesEmpty: "No batch yet: nothing has been written by AI or by a correction's rule.",
+    batchesCaption: "Batches written, newest first, each with Undo",
     batchKind: {
       ai: "By AI",
       rule: "By a person's rule",
@@ -7620,14 +7750,14 @@ export const COPY = {
     batchCol: { batch: "Batch", by: "Who and when", what: "What it did", undo: "Undo" },
     batchBy: (by: string, day: string) => `${by}, ${day}`,
     batchApplied: (applied: number, reverted: number) =>
-      `${applied} applied${reverted ? `, ${reverted} reverted to open` : ""}`,
+      `${applied} written${reverted ? `, ${reverted} reverted to open` : ""}`,
     batchFrom: (item: string, answer: string) => `From the correction of ${item}: ${answer}`,
     batchRule: (kind: string, match: string) => `Rule (${kind}): ${match}`,
     undone: (by: string, day: string) => `Undone by ${by} on ${day}`,
     undo: "Undo",
     undoOf: (id: string) => `Undo batch ${id}`,
     confirmUndo: (id: string, applied: number) =>
-      `Undo batch ${id}? It removes the ${applied} line${applied === 1 ? "" : "s"} and answer${applied === 1 ? "" : "s"} it applied and puts back what it took away. Anything changed since is left as it is now.`,
+      `Undo batch ${id}? It removes the ${applied} line${applied === 1 ? "" : "s"} and answer${applied === 1 ? "" : "s"} it wrote and puts back what it took away. Anything changed since is left as it is now.`,
     confirmYes: "Yes, undo it",
     confirmNo: "Keep it",
     undoing: "Undoing…",
@@ -7636,11 +7766,11 @@ export const COPY = {
     skipped: "Left as it is now, because it changed since the batch:",
     undoFailed: (why: string) => `The batch couldn't be undone: ${why}`,
     record: (file: string) => `Record: ${file}`,
-    /** Home and Map › Trust. */
+    /** Home and Map › Read status. */
     pausedTitle: "AI deciding is paused",
     pausedWhy: (why: string) =>
       `${why} Until the audit is back above the bar, the AI only proposes.`,
-    pausedLink: "See the audit on Map › Trust",
+    pausedLink: "See the audit on Map › Read status",
     trustTitle: "AI decisions",
     trustTally: (t: {
       right: number;
@@ -7662,11 +7792,11 @@ export const COPY = {
     impactCaller: "every link of this caller was decided by AI",
     /** The AI's answer on a question, beside who answered. */
     answeredByAi: (day: string) => `Answered by AI on ${day}`,
-    /** Match with Copilot: what Atticus applied as the AI's. */
+    /** Match with Copilot: what Atticus wrote as the AI's. */
     matchApplied: (n: number) =>
-      `Atticus applied ${n} pairing${n === 1 ? "" : "s"} as the AI's (they met the bar):`,
+      `Atticus wrote ${n} pairing${n === 1 ? "" : "s"} as the AI's (they met the bar):`,
     matchKept: (n: number) => `${n} kept as proposals for you:`,
-    matchPaused: (why: string) => `Not applied: AI deciding is paused. ${why}`,
+    matchPaused: (why: string) => `Not written: AI deciding is paused. ${why}`,
     matchUndo: "Undo or correct them on Decided by AI",
     /** The Connect panel: what the AI already paired between the two boxes. */
     betweenTitle: (n: number) => `Paired by AI between these boxes (${n})`,

@@ -116,6 +116,7 @@ import {
   type ScanProblem,
 } from "./scan.js";
 import {
+  WORDS_LINK,
   buildManifestPath,
   factsSlotPaths,
   legacyJoinsPath,
@@ -884,8 +885,8 @@ export const BUILD_PASSES = [
   "the merge, intake, features and the glossary",
   "link evidence and shared maps",
   "the legacy records",
-  "the curated decisions",
-  "each repo's flows and loose calls",
+  "your changes",
+  "each repo's flows and loose ends",
   "the record files and build.json",
 ] as const;
 
@@ -1589,7 +1590,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   const out = applied.records.filter((r) => r.kind !== "Flow").sort(byKindId);
   mark("6 curated");
 
-  // ---- per fact repo: flows, loose calls, the join about it
+  // ---- per fact repo: flows, loose ends, the join about it
   await pass(7);
   const facts = new Map<string, FactsRepoBuild>();
   if (projection && afterFacts) {
@@ -2440,7 +2441,7 @@ async function interruptedManifest(
 
 /** Said when an undo took back the upgrade to slots (ADR 0195 point 7: every write can be undone). */
 export const UPGRADE_UNDONE =
-  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Catalog builds) to build from slots again.";
+  "The last undo took back the upgrade; run atticus upgrade --yes (or Upgrade on Set up › Activity › Catalog builds) to build from the stored reads again.";
 
 /**
  * Beta.28.2 (ADR 0197, "beta.28.1 and older reading version 2"): the files of the catalog a
@@ -2554,11 +2555,18 @@ export async function refuseIfNewer(
   return files.length
     ? {
         reasons: ["newer-atticus"],
-        message: `Nothing written: ${newerAtticusWords(files)}`,
+        message: `The catalog wasn't changed: ${newerAtticusWords(files)}`,
         newer: files,
       }
     : undefined;
 }
+
+/**
+ * v30 slice 8: a refused build's first line, once: the catalog is as it was. Only the catalog:
+ * the command that asked for the build (verify --write, a scan) may have written its own files.
+ */
+export const catalogUnchanged = (genRel: string): string =>
+  `The catalog wasn't changed: ${genRel} is as it was.`;
 
 /** A guard's refusal of a catalog a newer Atticus wrote: nothing else is looked at or said. */
 export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[]): GuardResult {
@@ -2567,10 +2575,7 @@ export function newerAtticusRefusal(genRel: string, files: readonly NewerFile[])
     edits: [],
     refused: {
       reasons: ["newer-atticus"],
-      message: [
-        `Nothing written: ${genRel} and every slot are as they were.`,
-        newerAtticusWords(files),
-      ].join("\n"),
+      message: [catalogUnchanged(genRel), newerAtticusWords(files)].join("\n"),
       newer: files.map((f) => ({ ...f })),
     },
   };
@@ -2694,7 +2699,11 @@ export async function guardBuild(
     const latest = (await listUndo(o.undoDir))[0];
     if (latest?.command.startsWith("atticus catalog undo")) lines.push(UPGRADE_UNDONE);
     lines.push(
-      `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}): run atticus upgrade to adopt its ${onDisk.size} record files into legacy slots (it shows what it would do first; atticus upgrade --yes applies it), or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}.`,
+      // v30 slice 8: what to do, then what happened (the catalog unchanged is said once, first).
+      [
+        `Move its ${onDisk.size} record files into stored reads, nothing lost: atticus upgrade (it shows what it would do first; --yes does it). Or replace them with this build: ${again(`--discard-edits ${onDisk.size}`)}. ${WORDS_LINK}`,
+        `${genRel} was written before beta.27 (there is no ${relOf(root, target.manifest)}).`,
+      ].join("\n"),
     );
   } else if (edits.length && o.discardEdits !== edits.length) {
     reasons.push("hand-edits");
@@ -2702,7 +2711,7 @@ export async function guardBuild(
       `${edits.length} ${edits.length === 1 ? "file" : "files"} under ${genRel} ${edits.length === 1 ? "was" : "were"} changed by hand since the last build, so nothing is overwritten:`,
       ...edits.slice(0, 20).map((e) => `  ${e.how}: ${e.path}`),
       ...(edits.length > 20 ? [`  and ${edits.length - 20} more`] : []),
-      `Make ${edits.length === 1 ? "it" : "them"} curated decisions, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
+      `Keep ${edits.length === 1 ? "it" : "them"} as your edits, which every later build keeps: atticus catalog edits --curate. Or discard ${edits.length === 1 ? "it" : "them"} (a copy is kept for atticus catalog undo): ${again(`--discard-edits ${edits.length}`)}.`,
     );
     if (o.discardEdits !== undefined)
       lines.push(`--discard-edits ${o.discardEdits} doesn't name the ${edits.length} listed.`);
@@ -2997,7 +3006,7 @@ export async function guardBuild(
     if (unexplained.length) {
       reasons.push("unexplained-removals");
       lines.push(
-        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or curated decision explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
+        `${unexplained.length} ${unexplained.length === 1 ? "record" : "records"} the last build wrote would be removed, and no changed slot, input, manifest entry or change of yours explains ${unexplained.length === 1 ? "it" : "them"}. That is a bug: nothing is written, and this list is its report:`,
         ...unexplained
           .slice(0, 20)
           .map((x) => `  ${x.kind}/${x.id}${x.repos.length ? ` (${x.repos.join(", ")})` : ""}`),
@@ -3046,7 +3055,11 @@ export async function guardBuild(
   if (hadCode && emptyNow) {
     reasons.push("empty");
     lines.push(
-      `The build has no record from any repo's code, and ${genRel} has some, so it is left as it was. Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again. atticus doctor --counts says how many repos are read.`,
+      // v30 slice 8: what to do, then what happened (the catalog unchanged is said once, first).
+      [
+        "Check that the manifests list the repos to read (an archived repo or a prototype isn't read), then build again; to see how many repos are read: atticus doctor --counts",
+        `The build has no record from any repo's code, and ${genRel} has some.`,
+      ].join("\n"),
     );
   }
 
@@ -3056,9 +3069,9 @@ export async function guardBuild(
       edits,
       refused: {
         reasons,
-        message: [`Nothing written: ${genRel} and every slot are as they were.`, ...lines].join(
-          "\n",
-        ),
+        // v30 slice 8: once, that only the catalog is unchanged (the command that asked for
+        // the build may have written its own files); then each reason, what to do first.
+        message: [catalogUnchanged(genRel), ...lines].join("\n"),
         ...(removals.length ? { removals, allowRemovals: removals.length } : {}),
         ...(unexplained.length ? { unexplained } : {}),
         ...(edits.length || before
@@ -4194,7 +4207,7 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     );
   for (const d of r.build.orphanedDecisions)
     out.push(
-      `The curated decision ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
+      `Your change ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
   return out;
 }

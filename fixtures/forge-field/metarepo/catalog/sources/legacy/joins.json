@@ -1,0 +1,1993 @@
+{
+  "slotVersion": 1,
+  "kind": "legacy-joins",
+  "status": "legacy",
+  "records": [
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-006c1cf947057153",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.get-rate-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 10,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-02",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-02",
+      "method": "GET",
+      "normalizedPath": "/v1/invoices/{}/rate-0",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-07187e535660a8c9",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.put-transfer-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/statements/{}/transfer-2",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-08b361c2967dc228",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.post-invoice-5",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 6,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "POST",
+      "normalizedPath": "/v1/customers/{}/invoice-5",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-0b839599baa550cb",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-report-3",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 20,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 13,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "DELETE",
+      "normalizedPath": "/v1/entrys/{}/report-3",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-0e142af0c5a39e36",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-02.get-audit-4",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 22,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 6,
+          "path": "apiproxy/proxies/default.xml",
+          "repo": "forge-gw-02",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "config.json",
+          "repo": "forge-gw-02",
+          "side": "gateway",
+          "source": "config"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-02",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/ledgers/{}/audit-4",
+      "route": "gw-forge-gw-02-get-svc-02-1-0-v1-ledgers-id-audit-4",
+      "sync": "sync",
+      "to": "forge-svc-02",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-0e46ed72ee53d93e",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.put-ledger-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-01",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-01",
+      "method": "PUT",
+      "normalizedPath": "/v1/ledgers/{}/ledger-2",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-17a9c24333e6bce5",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-01.put-statement-6",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 13,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-01",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/entrys/{}/statement-6",
+      "sync": "sync",
+      "to": "forge-svc-01",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-20c7d74786a75ccb",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-00.put-payment-6",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-00",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/ledgers/{}/payment-6",
+      "sync": "sync",
+      "to": "forge-svc-00",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-2402bddf927c26f2",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.post-mandate-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 10,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "POST",
+      "normalizedPath": "/v1/invoices/{}/mandate-1",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-28d955a652c4ef48",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-02.delete-entry-3",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "apiproxy/proxies/default.xml",
+          "repo": "forge-gw-02",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "config.json",
+          "repo": "forge-gw-02",
+          "side": "gateway",
+          "source": "config"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-02",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 6,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "DELETE",
+      "normalizedPath": "/v1/statements/{}/entry-3",
+      "route": "gw-forge-gw-02-delete-svc-02-1-0-v1-statements-id-entry-3",
+      "sync": "sync",
+      "to": "forge-svc-02",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-297d485c969f3d68",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.get-refund-4",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 19,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 8,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/entrys/{}/refund-4",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-319ce4c72f035374",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-00.post-entry-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-00",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "POST",
+      "normalizedPath": "/v1/balances/{}/entry-1",
+      "sync": "sync",
+      "to": "forge-svc-00",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-34aee842efb885d7",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-01.get-transfer-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "apiproxy/proxies/default.xml",
+          "repo": "forge-gw-01",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "config.json",
+          "repo": "forge-gw-01",
+          "side": "gateway",
+          "source": "config"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-01",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/balances/{}/transfer-0",
+      "route": "gw-forge-gw-01-get-svc-01-1-0-v1-balances-id-transfer-0",
+      "sync": "sync",
+      "to": "forge-svc-01",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-35b4e7aeec93d9d6",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-branch-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-01",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-01",
+      "method": "POST",
+      "normalizedPath": "/v1/statements/{}/branch-1",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-39aac1925b093323",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-00.get-account-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "apiproxy/proxies/default.xml",
+          "repo": "forge-gw-00",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "config.json",
+          "repo": "forge-gw-00",
+          "side": "gateway",
+          "source": "config"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-00",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 13,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/accounts/{}/account-0",
+      "route": "gw-forge-gw-00-get-svc-00-1-0-v1-accounts-id-account-0",
+      "sync": "sync",
+      "to": "forge-svc-00",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-3dc2470bba96a20a",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-balance-7",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 16,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "DELETE",
+      "normalizedPath": "/v1/fees/{}/balance-7",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-421e3ed3bd8c910c",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.put-fee-6",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 16,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/cards/{}/fee-6",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-48e1c5ba959ae1d7",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-entry-5",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "POST",
+      "normalizedPath": "/v1/cards/{}/entry-5",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-49822c86ec6bc90f",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.put-audit-6",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/LedgerController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 13,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "PUT",
+      "normalizedPath": "/v1/limits/{}/audit-6",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-4c30ae5bbe416085",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-balance-7",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-01",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 3,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-01",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-01",
+      "method": "DELETE",
+      "normalizedPath": "/v1/fees/{}/balance-7",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-4ea4cd6116e30705",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-branch-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 4,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "POST",
+      "normalizedPath": "/v1/statements/{}/branch-1",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-5f3ba2d79eccb87d",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-01.post-dispute-5",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "apiproxy/proxies/default.xml",
+          "repo": "forge-gw-01",
+          "side": "gateway",
+          "source": "gateway"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "config.json",
+          "repo": "forge-gw-01",
+          "side": "gateway",
+          "source": "config"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-01",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "POST",
+      "normalizedPath": "/v1/ledgers/{}/dispute-5",
+      "route": "gw-forge-gw-01-post-svc-01-1-0-v1-ledgers-id-dispute-5",
+      "sync": "sync",
+      "to": "forge-svc-01",
+      "via": "gateway"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-5fff2822aeeba81e",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-01.put-refund-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-01",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/transfers/{}/refund-2",
+      "sync": "sync",
+      "to": "forge-svc-01",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-669bdbcd73f484bd",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-entry-5",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "POST",
+      "normalizedPath": "/v1/cards/{}/entry-5",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-6b9c4cddc7be5bc2",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-00.delete-card-7",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 20,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-00",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "DELETE",
+      "normalizedPath": "/v1/entrys/{}/card-7",
+      "sync": "sync",
+      "to": "forge-svc-00",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-6e5e5e46c6b22001",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.put-ledger-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 8,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "PUT",
+      "normalizedPath": "/v1/ledgers/{}/ledger-2",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-72be3364cf115acf",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-branch-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 16,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-02",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-02",
+      "method": "POST",
+      "normalizedPath": "/v1/statements/{}/branch-1",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-78311d86ccddeafd",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-02.delete-notice-7",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 24,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-02",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "DELETE",
+      "normalizedPath": "/v1/cards/{}/notice-7",
+      "sync": "sync",
+      "to": "forge-svc-02",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-8aad1bb9898ec703",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-report-3",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-01",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-01",
+      "method": "DELETE",
+      "normalizedPath": "/v1/entrys/{}/report-3",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-8b90fb978e7c3761",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-balance-7",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 18,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/EntryController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 21,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 23,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "DELETE",
+      "normalizedPath": "/v1/fees/{}/balance-7",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-913ee1840842919e",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.get-rate-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 11,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "GET",
+      "normalizedPath": "/v1/invoices/{}/rate-0",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-9b15688c855abddb",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-02.get-ledger-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 14,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-02",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/payments/{}/ledger-0",
+      "sync": "sync",
+      "to": "forge-svc-02",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-aab9153a29b7e84b",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-02.post-report-1",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 21,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/BalanceController0.java",
+          "repo": "forge-svc-02",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "POST",
+      "normalizedPath": "/v1/transfers/{}/report-1",
+      "sync": "sync",
+      "to": "forge-svc-02",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-ace1fb5ea36381ac",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-01.get-fee-4",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 10,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-01",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/statements/{}/fee-4",
+      "sync": "sync",
+      "to": "forge-svc-01",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-adac1728b0af74a5",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.get-rate-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 16,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 2,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-03",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-03",
+      "method": "GET",
+      "normalizedPath": "/v1/invoices/{}/rate-0",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-cfe387db8ed0e62f",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.get-account-4",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 15,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-02",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-02",
+      "method": "GET",
+      "normalizedPath": "/v1/customers/{}/account-4",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-da63a1decc697df3",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.delete-report-3",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 20,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/TransferController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "DELETE",
+      "normalizedPath": "/v1/entrys/{}/report-3",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-db046e3576ec55da",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.get-account-4",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 5,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-00",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/InvoiceController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-00",
+      "method": "GET",
+      "normalizedPath": "/v1/customers/{}/account-4",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-e41ff32590b89a29",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.put-ledger-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 7,
+          "path": "src/main/java/forge/client/Client1.java",
+          "repo": "forge-svc-02",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-02",
+      "method": "PUT",
+      "normalizedPath": "/v1/ledgers/{}/ledger-2",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-e50d6a8844e7cf30",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-04.post-entry-5",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-02",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/StatementController0.java",
+          "repo": "forge-svc-04",
+          "side": "callee",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-02",
+      "method": "POST",
+      "normalizedPath": "/v1/cards/{}/entry-5",
+      "sync": "sync",
+      "to": "forge-svc-04",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-e9ea7230bc78b193",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-03.get-card-0",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 18,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/AccountController0.java",
+          "repo": "forge-svc-03",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 9,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "GET",
+      "normalizedPath": "/v1/transfers/{}/card-0",
+      "sync": "sync",
+      "to": "forge-svc-03",
+      "via": "direct"
+    },
+    {
+      "schemaVersion": 5,
+      "kind": "Interface",
+      "id": "if-fba8b1be7a9246cf",
+      "status": "current",
+      "confidence": "verified",
+      "conflicts": [],
+      "direction": "outbound",
+      "endpoint": "forge-svc-00.put-audit-2",
+      "evidence": [
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 12,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 1,
+          "path": "src/main/java/forge/web/PaymentController0.java",
+          "repo": "forge-svc-00",
+          "side": "callee",
+          "source": "code"
+        },
+        {
+          "by": "assistant",
+          "commit": "1111aaa",
+          "line": 23,
+          "path": "src/main/java/forge/client/Client0.java",
+          "repo": "forge-svc-04",
+          "side": "caller",
+          "source": "code"
+        }
+      ],
+      "flags": [
+        "joined-by-host"
+      ],
+      "from": "forge-svc-04",
+      "method": "PUT",
+      "normalizedPath": "/v1/payments/{}/audit-2",
+      "sync": "sync",
+      "to": "forge-svc-00",
+      "via": "direct"
+    }
+  ],
+  "inputs": {}
+}

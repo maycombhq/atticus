@@ -1178,7 +1178,7 @@ describe("atticus verify <repo> --write keeps the facts file whole (A-uncited)",
     expect(await write(root, first)).toBe(0);
     expect(said(first)).toMatch(/1 entry's auth rests on no cited line/);
     // what to do about it, and what was and wasn't kept
-    expect(said(first)).toMatch(/give each entry an authCite/);
+    expect(said(first)).toMatch(/give each entry below an authCite/);
     expect(said(first)).toContain("kept in facts/forge-ledger.jsonl");
     expect(said(first)).toMatch(/left out of the catalog/);
     expect(reportOf(root).authUncited).toEqual([

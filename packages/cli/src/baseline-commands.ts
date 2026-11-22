@@ -200,7 +200,7 @@ export async function setupSteps(
       detail: baseline
         ? `accepted by ${baseline.acceptedBy} on ${baseline.acceptedAt.slice(0, 10)}`
         : "not yet",
-      fix: "Walk the ecosystem map with the architect, then accept it: atticus baseline (or Accept the catalog on Home), and commit catalog/baseline.yaml through a pull request.",
+      fix: "Walk the Map with the architect, then accept it: atticus baseline (or Accept the catalog on Home), and commit catalog/baseline.yaml through a pull request.",
     },
   ];
   return { steps, baselined: !!baseline };
