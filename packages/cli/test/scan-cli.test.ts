@@ -52,6 +52,27 @@ async function forgeRoot(): Promise<string> {
 
 describe("atticus scan", () => {
   it(
+    "exits 0 with two repo ids that name one loose-end id, and says it as a note (the review of b30/review2-fixes)",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+      // Archived, so the scan reads nothing more: the pair is the only difference.
+      await writeFile(
+        file,
+        `${(await readFile(file, "utf8")).trimEnd()}\n  - id: forge.ledger\n    url: https://git.example.com/forge/forge-ledger-two.git\n    type: forge-service\n    owner: team-ledger\n    archived: true\n`,
+      );
+      const c = capture();
+      const code = await main(["scan", "--root", root], c.io);
+      expect(c.err).toEqual([]);
+      expect(code).toBe(0);
+      expect(c.out).toContain(
+        "note: Repo ids forge-ledger and forge.ledger name one loose-end id (unresolved.forge-ledger.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.ledger <new id>)",
+      );
+    },
+    T,
+  );
+
+  it(
     "writes catalog/generated, reports what changed, and is quiet on a rescan",
     async () => {
       const root = await forgeRoot();

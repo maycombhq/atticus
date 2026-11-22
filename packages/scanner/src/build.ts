@@ -1091,10 +1091,6 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   for (const p of i.curated.problems)
     problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
   const listed = new Set(op.profiles.flatMap((p) => (p.repos?.repos ?? []).map((r) => r.id)));
-  // The review of b30/review2-fixes: two repo ids that name one loose-end id, which a merge of
-  // two pull requests or a hand edit can leave past the refusals where an id is written.
-  for (const [a, b] of repoIdTwins(listed))
-    problems.push({ source: "org-pack/profiles", message: repoIdTwinWarning(a, b) });
   const archived = new Set(
     op.profiles.flatMap((p) => (p.repos?.repos ?? []).filter((r) => r.archived).map((r) => r.id)),
   );
@@ -4515,6 +4511,16 @@ export async function undoDirOf(root: string): Promise<string> {
 }
 
 /** What a build wrote or refused, in the words a person reads (the CLI and the Console). */
+/**
+ * What a build warns of and never counts as a problem (a scan exits 1 on a problem): two repo
+ * ids the manifests list that name one loose-end id (repoIdTwins), which a merge of two pull
+ * requests or a hand edit can leave past the refusals where an id is written (the reviews of
+ * b30/review2-fixes). Worked out from the ids the build listed, so a kept build says it too.
+ */
+export function buildWarnings(b: Pick<Build, "listed">): string[] {
+  return repoIdTwins(b.listed ?? []).map(([a, x]) => repoIdTwinWarning(a, x));
+}
+
 export function buildLines(root: string, r: BuildAndWrite): string[] {
   const genRel = relOf(root, generatedDirOf(root));
   if (r.guard.refused) return r.guard.refused.message.split("\n");

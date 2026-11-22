@@ -9,6 +9,7 @@ import {
 } from "@maycombhq/core";
 import {
   buildAndWrite,
+  buildWarnings,
   listUndo,
   planUndo,
   type BuildAndWrite,
@@ -168,10 +169,14 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
     ...(last ? { last } : {}),
     ...(r.guard.refused?.reasons.includes("not-upgraded") ? { upgrade: true as const } : {}),
     orphaned: r.build.orphaned,
-    problems: r.build.problems.map((p) => ({
-      file: p.source,
-      message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
-    })),
+    problems: [
+      ...r.build.problems.map((p) => ({
+        file: p.source,
+        message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
+      })),
+      // The app lists the build's warnings beside its problems; neither fails anything here.
+      ...buildWarnings(r.build).map((message) => ({ file: "org-pack/profiles", message })),
+    ],
   };
 }
 

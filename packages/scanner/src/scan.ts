@@ -66,6 +66,7 @@ import {
 } from "./slots.js";
 import {
   buildCatalog,
+  buildWarnings,
   forgetKeptReads,
   loadBuildInputs,
   readersSlotRead,
@@ -823,7 +824,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     }
   const merged = { records: build.records, stats: build.stats, invalid: build.invalid };
   const applied = build.curated;
-  const notes = [...factNotes, ...build.notes];
+  // A warning of the build is a note of the scan: said, never a problem (which fails the scan).
+  const notes = [...factNotes, ...build.notes, ...buildWarnings(build)];
   const runs = results.flatMap((s) => s.runs);
   // House frameworks with no model, and models that read nothing where they're imported (ADR 0066).
   const unmodelled = unmodelledFrameworks(

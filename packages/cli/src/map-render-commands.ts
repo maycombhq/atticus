@@ -59,6 +59,7 @@ import {
   phaseClock,
   buildCatalog,
   buildLines,
+  buildWarnings,
   diffCatalogFiles,
   diffCatalogs,
   factsSnapshotWrites,
@@ -836,6 +837,8 @@ export async function writeFactsIntoCatalog(
       commit: snapshotCommit,
     };
     const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
+    // A warning of the build, always said and never a failure (buildWarnings).
+    for (const x of buildWarnings(built.build)) io.out(`warning: ${x}`);
     // ADR 0195 point 4: the removals the build wrote, each with what explains it, are said.
     for (const l of buildLines(root, built)
       .filter((l) => !l.startsWith("slots: "))
