@@ -15,6 +15,7 @@ import {
   buildAndWrite,
   buildCacheHooks,
   buildCatalog,
+  buildWarnings,
   refusalCommands,
   factsSnapshotWrites,
   loadBuildInputs,
@@ -711,6 +712,73 @@ describe("nothing of the estate is in the card, the default output or --json", (
         for (const w of l.split(/[\s:]+/).filter(Boolean)) expect(CARD_WORDS.has(w), w).toBe(true);
       expect(SHAPE_FLAGS.length).toBe(12);
       expect(CHECK_IDS).toHaveLength(4);
+    },
+    T,
+  );
+});
+
+const TWIN_WARNING =
+  "Repo ids forge-svc-00 and forge.svc-00 name one loose-end id (unresolved.forge-svc-00.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.svc-00 <new id>)";
+async function addTwin(root: string) {
+  await appendFile(
+    join(root, "org-pack/profiles/github/repos.manifest.yaml"),
+    [
+      "  - id: forge.svc-00",
+      "    url: https://git.forge.example/forge/forge-svc-00-two.git",
+      "    type: spring-boot",
+      "    owner: team-forge",
+      "",
+    ].join("\n"),
+  );
+}
+
+describe("repo ids that name one loose-end id (the review of b30/review2-fixes)", () => {
+  it(
+    "selfcheck warns, naming the ids only with --names",
+    async () => {
+      const e = await estate(SMALL);
+      await addTwin(e.root);
+      const plain = await run(["selfcheck", "--quick", "--root", e.root]);
+      expect(plain.out).toContain(SELFCHECK_WORDS.twins);
+      expect(plain.out.join("\n")).not.toContain("forge.svc-00");
+      const named = await run(["selfcheck", "--quick", "--names", "--root", e.root]);
+      expect(named.out).toContain(SELFCHECK_WORDS.twins);
+      expect(named.out).toContain(`    ${TWIN_WARNING}`);
+      const json = await run(["selfcheck", "--quick", "--json", "--root", e.root]);
+      expect(json.out.join("\n")).not.toContain("forge.svc-00");
+    },
+    T,
+  );
+
+  it(
+    "a scan, catalog build and verify --write say it and exit as they would without it: it is no problem of the build",
+    async () => {
+      // With forge-svc-00 checked out, so verify --write runs (the selfcheck estates have none).
+      const withCheckout = async () => {
+        const dir = await mkdtemp(join(tmpdir(), "b30-st-sc-"));
+        made.push(dir);
+        return makeFieldEstate(dir, { shape: SMALL, checkouts: 1 });
+      };
+      const without = await withCheckout();
+      const twin = await withCheckout();
+      await addTwin(twin.root);
+      // The build's warnings, never its problems: a scan exits 1 on any problem.
+      const b = await buildCatalog(await loadBuildInputs(twin.root));
+      expect(b.problems.map((p) => p.message)).not.toContain(TWIN_WARNING);
+      expect(buildWarnings(b)).toEqual([TWIN_WARNING]);
+      expect(buildWarnings(await buildCatalog(await loadBuildInputs(without.root)))).toEqual([]);
+      const all = (r: { out: string[]; err: string[] }) => [...r.out, ...r.err];
+      for (const argv of [
+        ["scan"],
+        ["catalog", "build", "--check"],
+        ["verify", "forge-svc-00", "--write"],
+      ]) {
+        const base = await run([...argv, "--root", without.root]);
+        const r = await run([...argv, "--root", twin.root]);
+        expect(r.code, `${argv.join(" ")}: ${all(r).join("\n")}`).toBe(base.code);
+        expect(all(r).join("\n"), argv.join(" ")).toContain(TWIN_WARNING);
+        expect(all(base).join("\n")).not.toContain("loose-end id");
+      }
     },
     T,
   );

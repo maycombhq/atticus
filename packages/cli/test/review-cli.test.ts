@@ -5,10 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { MockRuntime } from "@maycombhq/ai";
+import { MockRuntime, type AiRuntime } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { reviewCommand, withRows } from "../src/review-commands.js";
+import { REVIEW_WORDS, reviewCommand, withRows } from "../src/review-commands.js";
 
 /**
  * ADR 0203 C.4: `atticus review <requirements.md | change>` on the Forge metarepo. The door
@@ -268,4 +268,104 @@ describe("atticus review", () => {
       ].join("\n"),
     });
   });
+
+  it("adds under a role's header-only table, never a second header (the second review of beta.30)", () => {
+    const header = [
+      "| Question | Evidence | Asked by | Answered by | Answer | State |",
+      "| --- | --- | --- | --- | --- | --- |",
+    ];
+    const text = ["# T", "", "## QA", "", "Words.", "", ...header, "", "## Planned", ""].join("\n");
+    const w = withRows(text, [
+      { line: 1, who: "qa-naysayer", question: "What if it fails?", evidence: "-", role: "QA" },
+    ]);
+    expect(w).toEqual({
+      added: 1,
+      text: [
+        "# T",
+        "",
+        "## QA",
+        "",
+        "Words.",
+        "",
+        ...header,
+        "| What if it fails? | - | qa-naysayer | - | - | open |",
+        "",
+        "## Planned",
+        "",
+      ].join("\n"),
+    });
+  });
+
+  it("finds a role's heading with closing #s as the door check reads it", () => {
+    const header = [
+      "| Question | Evidence | Asked by | Answered by | Answer | State |",
+      "| --- | --- | --- | --- | --- | --- |",
+    ];
+    const row = "| What if it fails? | - | qa-naysayer | - | - | open |";
+    const f = {
+      line: 1,
+      who: "qa-naysayer",
+      question: "What if it fails?",
+      evidence: "-",
+      role: "QA",
+    };
+    // A header-only table under "## QA ##": the row under it.
+    const withTable = ["# T", "", "## QA ##", "", ...header, ""].join("\n");
+    expect(withRows(withTable, [f]).text).toBe(
+      ["# T", "", "## QA ##", "", ...header, row, ""].join("\n"),
+    );
+    // No table yet under "## QA #": the table goes under that heading, not a second one.
+    const bare = ["# T", "", "## QA #", "", "Words.", ""].join("\n");
+    expect(withRows(bare, [f]).text).toBe(
+      ["# T", "", "## QA #", "", ...header, row, "", "Words.", ""].join("\n"),
+    );
+  });
+
+  it("reads a lone carriage return as the door check does: inside its line, kept", () => {
+    const text = [
+      "# T",
+      "",
+      "Words\rmore words.",
+      "",
+      "## QA",
+      "",
+      "| Question | Evidence | Asked by | Answered by | Answer | State |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| Who books it? | - | qa-naysayer | pat | Ledger | answered |",
+      "",
+    ].join("\n");
+    const w = withRows(text, [
+      { line: 1, who: "qa-naysayer", question: "What if it fails?", evidence: "-", role: "QA" },
+    ]);
+    expect(w.text).toBe(
+      text.replace(
+        "| answered |\n",
+        "| answered |\n| What if it fails? | - | qa-naysayer | - | - | open |\n",
+      ),
+    );
+  });
+
+  it(
+    "exits 0 when a naysayer's run throws, and says why in the review's words",
+    async () => {
+      const root = await forgeRoot();
+      const file = join(root, "requirements.md");
+      await writeFile(file, FILE);
+      const broken = {
+        prepare: () => Promise.reject(new Error("the model provider went away")),
+      } as unknown as AiRuntime;
+      const c = capture();
+      expect(await reviewCommand(root, file, {}, c.io, { runtime: broken, now: NOW })).toBe(0);
+      expect(c.out).toContain(REVIEW_WORDS.failed("the model provider went away"));
+      expect(c.out.some((l) => l.includes("requirements.open-question"))).toBe(true);
+      const j = capture();
+      expect(
+        await reviewCommand(root, file, { json: true }, j.io, { runtime: broken, now: NOW }),
+      ).toBe(0);
+      expect((JSON.parse(j.out.join("\n")) as { notes: string[] }).notes).toEqual([
+        REVIEW_WORDS.failed("the model provider went away"),
+      ]);
+    },
+    T,
+  );
 });

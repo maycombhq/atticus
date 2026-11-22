@@ -109,7 +109,7 @@ Every command under the twelve, with its options.
   atticus change list [--json]         Every change and its state
   atticus change export <change> [ado|jira] [--format ado|jira] [--out file.csv] [--area path] [--iteration path]  The change's stories and tasks as a work-item import file: Azure DevOps' CSV (a User Story per story, its Tasks under it, criteria in Acceptance Criteria) or Jira's; a person imports it
   atticus change conflicts [--touching <id>] [--names] [--json]  Open changes that touch the same systems, records or repos; with --touching, only the overlaps that id is in; with --names too, each open change whose tasks or flows name it
-  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
+  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows, each operation's sets in its repos and a quick change's In the code rows (ADR 0206); what is missing, still there or not in the design becomes findings on the conform gate, and each stated claim is present, present differently, missing, not checkable or unconfirmed (--latest shows the newest check, scanning nothing)
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
@@ -275,7 +275,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
-  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
+  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR). A stage's own finding (stage-<id>) takes only waive, to accept it; otherwise fix the draft and run the stage again
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
   atticus feature list [--json]        Features found in code, named by people or proposed by AI
   atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps

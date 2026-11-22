@@ -28,6 +28,7 @@ import {
   buildAndWrite,
   buildCatalog,
   buildLines,
+  buildWarnings,
   filesUnder,
   generatedBeforeUpgradeDirOf,
   guardBuild,
@@ -250,6 +251,7 @@ export async function catalogBuild(
             ? "catalog/generated is what the slots and inputs build."
             : "catalog/generated isn't what the slots and inputs build: run atticus catalog build.",
         );
+      if (!o.json) for (const w of buildWarnings(r.build)) io.err(`warning: ${w}`);
       return r.upToDate ? 0 : 1;
     }
     if (o.json) io.out(JSON.stringify(buildJson(r), null, 2));
@@ -261,9 +263,12 @@ export async function catalogBuild(
       for (const l of buildLines(root, r)) (r.guard.refused ? io.err : io.out)(l);
     }
     // A catalog a newer Atticus wrote: its slots' problems here are this Atticus's misreading.
-    if (!r.guard.refused?.reasons.includes("newer-atticus"))
+    if (!r.guard.refused?.reasons.includes("newer-atticus")) {
       for (const p of r.build.problems)
         if (!o.json) io.err(`${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
+      // A warning of the build: said, and never counted toward the exit (buildWarnings).
+      for (const w of buildWarnings(r.build)) if (!o.json) io.err(`warning: ${w}`);
+    }
     return r.guard.refused ? 1 : 0;
   };
   const code = o.check || o.held ? await run() : await locked(root, command, io, run);

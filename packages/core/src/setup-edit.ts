@@ -12,6 +12,7 @@ import {
   type YAMLMap,
 } from "yaml";
 import type { z } from "zod";
+import { repoIdTwinOf, repoIdTwinWords } from "./facts.js";
 import { writeFileIfUnchanged } from "./fs.js";
 import {
   changedLines,
@@ -383,6 +384,17 @@ async function idsUniqueAcrossProfiles(root: string, r: string, content: string)
         "invalid",
         `${there} already lists ${String(id)}; repo ids are unique across every profile. Give it another id.`,
       );
+  }
+  // Two ids that name one loose-end id, in this manifest or beside another's (repoIdTwinOf).
+  const seen: string[] = [...listed.keys()];
+  for (const id of ids as string[]) {
+    const twin = repoIdTwinOf(id, seen);
+    if (twin)
+      throw new SetupEditError(
+        "invalid",
+        `${repoIdTwinWords(twin, id)}: give one of them another id.`,
+      );
+    seen.push(id);
   }
 }
 

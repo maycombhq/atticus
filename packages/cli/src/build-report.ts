@@ -9,6 +9,7 @@ import {
 } from "@maycombhq/core";
 import {
   buildAndWrite,
+  buildWarnings,
   listUndo,
   planUndo,
   type BuildAndWrite,
@@ -151,6 +152,7 @@ export async function lastBuildOf(root: string): Promise<Api.BuildReportViewT | 
 export async function catalogBuildView(root: string): Promise<Api.CatalogBuildViewT> {
   const r = await buildAndWrite(root, { command: BUILD, check: true });
   const last = await lastBuildOf(root);
+  const warnings = buildWarnings(r.build);
   return {
     sources: r.build.sources.map((s) => ({
       repo: s.repo,
@@ -172,6 +174,8 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
       file: p.source,
       message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
     })),
+    // What the build warns of, apart from its problems: neither fails anything here.
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

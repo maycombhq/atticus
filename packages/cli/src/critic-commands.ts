@@ -511,7 +511,15 @@ export async function findingAction(
   changeId: string | undefined,
   findingId: string | undefined,
   action: string | undefined,
-  o: { by?: string; reason?: string; askedOf?: string; edit?: string; gate?: string },
+  o: {
+    by?: string;
+    reason?: string;
+    askedOf?: string;
+    edit?: string;
+    gate?: string;
+    /** Where an assistant works though a person's name is recorded (act's `assistantHere`). */
+    assistantHere?: { here: string; app?: boolean };
+  },
   io: Output,
   deps: CriticDeps = {},
 ): Promise<number> {
@@ -537,6 +545,7 @@ export async function findingAction(
       ...(o.askedOf ? { askedOf: o.askedOf } : {}),
       ...(edit ? { edit } : {}),
       ...(o.gate ? { gate: o.gate } : {}),
+      ...(o.assistantHere ? { assistantHere: o.assistantHere } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(r.message);

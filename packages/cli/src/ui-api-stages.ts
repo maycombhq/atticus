@@ -14,6 +14,7 @@ import {
 } from "@maycombhq/core";
 import { changeFolder, loadChangeContext } from "@maycombhq/changes";
 import {
+  PERSON_CLOSES,
   readProposals,
   readRound,
   reviewedGates,
@@ -42,6 +43,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { assistantSession } from "./assistant-session.js";
 import { stageGateViews, type AppPerson } from "./ui-api-accept.js";
 import { uiDraftRoutes } from "./ui-api-drafts.js";
 
@@ -61,6 +63,23 @@ type Tab = Api.StageReviewViewT["stage"];
 type FindingView = Api.StageFindingViewT;
 
 const ID = /^[a-z0-9][a-z0-9._-]{0,99}$/;
+
+/**
+ * The review of b30/review2-fixes (ADR 0115 addendum): where the app runs inside a Copilot
+ * session Atticus started or a coding assistant's terminal, an open blocking or risk finding's
+ * Not relevant, Apply without a patch and Waive are a person's only, and the action route refuses
+ * them there: why, or undefined where they are offered.
+ */
+export function personOnlyOf(
+  f: Finding,
+  who: AppPerson | undefined,
+): FindingView["personOnly"] | undefined {
+  if (!who?.env || f.state !== "open" || f.kind !== "issue" || !PERSON_CLOSES.has(f.severity))
+    return undefined;
+  if (who.env.ATTICUS_ACP_SESSION) return { why: "assistant-session" };
+  const s = assistantSession(who.env);
+  return s ? { why: "assistant-terminal", because: s.because } : undefined;
+}
 
 /** What a person may do with a finding, by the rules the finding's schema holds it to. */
 export function findingOptions(f: Finding): FindingView["options"] {
@@ -157,10 +176,20 @@ export async function stageReviewView(
       const fileRel = `${rel}/${s.path}`;
       const p =
         s.finding.state === "open" ? proposals.find((x) => x.finding === s.finding.id) : undefined;
+      const held = personOnlyOf(s.finding, who);
+      const options = findingOptions(s.finding);
       return {
         finding: s.finding,
         file: fileRel,
-        options: findingOptions(s.finding),
+        options: held
+          ? {
+              ...options,
+              apply: options.apply && !!s.finding.fix.patch,
+              dismiss: false,
+              waive: false,
+            }
+          : options,
+        ...(held ? { personOnly: held } : {}),
         comments: comments.comments.filter((c) => c.about === fileRel).map(view),
         ...(p
           ? {

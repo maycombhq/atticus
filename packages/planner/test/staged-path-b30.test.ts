@@ -225,6 +225,27 @@ describe("the manifests the estate reads agree with the workspace's reader", () 
       /^New flow "Invoice run" is put in repo forge-billing, which the estate doesn't have\. 3 manifests didn't read, so their repos aren't counted: org-pack\/profiles\/forge-b\/repos\.manifest\.yaml: /,
     );
   });
+
+  it("two repo ids that name one loose-end id make the later manifest a problem, its repos not counted, in it or beside another", async () => {
+    const root = await estateRoot();
+    await profile(
+      root,
+      "forge-e",
+      `schemaVersion: 1\nplatform: forge-e\nrepos:\n${repo("forge.orders")}`,
+    );
+    // The dotted one listed first: the words, and the repo to rename, are the same.
+    await profile(
+      root,
+      "forge-f",
+      `schemaVersion: 1\nplatform: forge-f\nrepos:\n${repo("forge.pay")}${repo("forge-pay")}`,
+    );
+    const e = await estate(root);
+    expect([...e.manifestRepos].sort()).toEqual(["forge-infra", "forge-mobile", "forge-orders"]);
+    expect(e.problems).toEqual([
+      "org-pack/profiles/forge-e/repos.manifest.yaml: Repo ids forge-orders and forge.orders name one loose-end id (unresolved.forge-orders.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.orders <new id>)",
+      "org-pack/profiles/forge-f/repos.manifest.yaml: Repo ids forge-pay and forge.pay name one loose-end id (unresolved.forge-pay.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.pay <new id>)",
+    ]);
+  });
 });
 
 describe("a manifest repo that was read is known by its component, not by its repo id", () => {

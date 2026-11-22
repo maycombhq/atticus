@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
+import { repoIdTwinOf, repoIdTwinWords } from "./facts.js";
 import { writeFileIfUnchanged } from "./fs.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { RepoDescription, RepoManifest, WORKSPACE_SCHEMA_VERSION } from "./schema/workspace.js";
@@ -183,6 +184,12 @@ export async function addManifestRepos(
         "invalid",
         `${there} already lists ${entry.id}; repo ids are unique across every profile. Give another with --id.`,
       );
+    const twin = repoIdTwinOf(entry.id, listed.keys());
+    if (twin)
+      throw new ManifestEditError(
+        "invalid",
+        `${repoIdTwinWords(twin, entry.id)}: give ${entry.id} another id with --id.`,
+      );
     listed.set(entry.id, file.rel);
   }
   // Round 50: the `repos: []` init writes is a flow list; the first entry turns it into a block
@@ -253,6 +260,7 @@ export async function renamedManifest(
   repo: string,
   to: string,
 ): Promise<{ file: ManifestFile; text: string; next: string }> {
+  const others: string[] = [];
   for (const other of await manifestFiles(root)) {
     const t = await readFile(other.path, "utf8").catch(() => undefined);
     if (t === undefined) continue;
@@ -262,7 +270,18 @@ export async function renamedManifest(
         "invalid",
         `${to} is already listed in ${other.rel}; repo ids are unique across every profile.`,
       );
+    if (isSeq(repos))
+      for (const x of repos.items) {
+        const id = isMap(x) ? x.get("id") : undefined;
+        if (typeof id === "string" && id !== repo) others.push(id);
+      }
   }
+  const twin = repoIdTwinOf(to, others);
+  if (twin)
+    throw new ManifestEditError(
+      "invalid",
+      `${repoIdTwinWords(twin, to)}: give ${repo} another new id.`,
+    );
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
   found.item.set("id", to);

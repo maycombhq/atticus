@@ -4523,7 +4523,7 @@
     "/api/changes/{changeId}/conformance": {
       "get": {
         "operationId": "getChangeConformance",
-        "summary": "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114)",
+        "summary": "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114), and against each claim the change states, each operation's sets in its repos and each of a quick change's In the code rows, as present, present differently, missing, not checkable or unconfirmed (ADR 0206)",
         "tags": [
           "changes"
         ],
@@ -51833,6 +51833,12 @@
               ],
               "additionalProperties": false
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -57681,6 +57687,25 @@
                     "at"
                   ],
                   "additionalProperties": false
+                },
+                "personOnly": {
+                  "type": "object",
+                  "properties": {
+                    "why": {
+                      "type": "string",
+                      "enum": [
+                        "assistant-session",
+                        "assistant-terminal"
+                      ]
+                    },
+                    "because": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "why"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -58180,6 +58205,25 @@
                             "by",
                             "why",
                             "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "personOnly": {
+                          "type": "object",
+                          "properties": {
+                            "why": {
+                              "type": "string",
+                              "enum": [
+                                "assistant-session",
+                                "assistant-terminal"
+                              ]
+                            },
+                            "because": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "why"
                           ],
                           "additionalProperties": false
                         }

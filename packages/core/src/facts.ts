@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { deserialize, serialize } from "node:v8";
 import { z } from "zod";
 import type { CatalogRecord } from "./catalog.js";
-import { interfaceId, normalizePath, slugify } from "./identity.js";
+import { cmpText, interfaceId, normalizePath, slugify } from "./identity.js";
 import { canonicalize } from "./serialize.js";
 import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
 import {
@@ -574,6 +574,52 @@ export const factIdPart = idPart;
  */
 export const unresolvedIdOf = (repo: string, rest: string): string =>
   `unresolved.${idPart(repo)}.${rest}`;
+
+/**
+ * The second whole-release review of beta.30: another repo id among `ids` that names the same
+ * loose-end id as `id` (`forge.api` and `forge-api`), so the map couldn't tell their loose ends
+ * apart. The id scheme is C1's and stays: two such repo ids are refused where a repo id is written.
+ */
+export function repoIdTwinOf(id: string, ids: Iterable<string>): string | undefined {
+  const part = idPart(id);
+  for (const x of ids) if (x !== id && idPart(x) === part) return x;
+  return undefined;
+}
+
+/**
+ * A twin pair in the one order every place says it (the review of b30/review2-fixes): sorted by
+ * cmpText, so doctor, the stages, a build, a scan, selfcheck and GET /api/build name the pair
+ * alike and suggest renaming the same repo, the second.
+ */
+export const repoIdTwinPair = (x: string, y: string): [string, string] =>
+  cmpText(x, y) <= 0 ? [x, y] : [y, x];
+
+/** Why two repo ids can't both be: the words every refusal of repoIdTwinOf's pair starts with. */
+export const repoIdTwinWords = (x: string, y: string) => {
+  const [a, b] = repoIdTwinPair(x, y);
+  return `Repo ids ${a} and ${b} name one loose-end id (unresolved.${idPart(b)}.…), so the map couldn't tell their loose ends apart`;
+};
+
+/** A pair of repo ids that name one loose-end id, and the way on: rename the second (repoIdTwinPair). */
+export const repoIdTwinWarning = (x: string, y: string) =>
+  `${repoIdTwinWords(x, y)}: rename one (atticus repo rename ${repoIdTwinPair(x, y)[1]} <new id>)`;
+
+/**
+ * Every pair of repo ids that name one loose-end id, whatever order they are listed in: for each
+ * loose-end id, its repo ids sorted (cmpText), the first with each of the others, the pairs
+ * sorted. What a merge of two pull requests, or a hand edit, can leave on disk past the refusals
+ * where an id is written (doctor, selfcheck, a build, the stages).
+ */
+export function repoIdTwins(ids: Iterable<string>): [string, string][] {
+  const by = new Map<string, Set<string>>();
+  for (const id of ids) by.set(idPart(id), (by.get(idPart(id)) ?? new Set()).add(id));
+  const out: [string, string][] = [];
+  for (const group of by.values()) {
+    const [first, ...rest] = [...group].sort(cmpText);
+    for (const other of rest) out.push([first!, other]);
+  }
+  return out.sort((p, q) => cmpText(p[0], q[0]) || cmpText(p[1], q[1]));
+}
 
 /** The loose ends a listener leaves: its rest is an Endpoint id, `<component>.<name>`. */
 const SUBSCRIBE = "event-subscribe";

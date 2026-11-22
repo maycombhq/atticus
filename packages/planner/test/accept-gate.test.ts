@@ -186,3 +186,50 @@ describe("an acceptance covers its own target, never one whose words agree for 1
     expect([...(await readAccepted(r, CHANGE)).keys()]).toEqual([a.fingerprint]);
   });
 });
+
+describe("a stage's own finding is never stranded by a dismissal (the second review of beta.30)", () => {
+  it("refuses not-relevant, so the finding stays open across the next run and a person may still accept it", async () => {
+    const r = await root();
+    const folder = finding(
+      "delta.new-folder",
+      "forge-orders.place-order#1:new:src/main/java/forge/screen",
+      "the folder src/.../screen.",
+    );
+    const archived: LoopFinding = {
+      ...finding("feature.archived-repo", "forge-orders.place-order:forge-legacy", ""),
+      message: "The flow forge-orders.place-order is placed in forge-legacy, which is archived.",
+    };
+    await writeStageGate(
+      r,
+      [folder, archived],
+      new Map(),
+      opts("architecture", "2026-11-22T09:00:00Z"),
+    );
+    for (const f of [folder, archived])
+      await expect(
+        act(r, CHANGE, `stage-${f.fingerprint}`, "not-relevant", {
+          by: "pat",
+          reason: "Not in this release",
+          now: "2026-11-22T10:00:00Z",
+        }),
+      ).rejects.toThrow(
+        `stage-${f.fingerprint} is the architecture stage's own finding: only a fix to the draft or a person's acceptance settles it, so it can't be dismissed as not relevant.`,
+      );
+    // The stage runs again with the same draft: both are still open, nothing carried.
+    await writeStageGate(
+      r,
+      [folder, archived],
+      await readAccepted(r, CHANGE),
+      opts("architecture", "2026-11-22T11:00:00Z"),
+    );
+    const { findings } = await newest(r, "stage-architecture");
+    expect(findings.map((f) => f.state)).toEqual(["open", "open"]);
+    // The acceptable one is accepted, and the stage reads the acceptance.
+    await act(r, CHANGE, `stage-${folder.fingerprint}`, "waive", {
+      by: "pat",
+      reason: "The folder is new on purpose",
+      now: "2026-11-22T12:00:00Z",
+    });
+    expect([...(await readAccepted(r, CHANGE)).keys()]).toEqual([folder.fingerprint]);
+  });
+});

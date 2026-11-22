@@ -449,3 +449,66 @@ describe("said once, and no Accept that would be refused again (the review of 3a
     expect(count(shown, A.noUndo)).toBe(0);
   });
 });
+
+describe("a critic's finding where an assistant works (the review of b30/review2-fixes)", () => {
+  const critic = stageFinding("f-plan-1", "ledger.limits-named", "No limit is named.", {
+    gate: "plan",
+    artifact: "proposal.md",
+  });
+  const card = (
+    view: Partial<FindingItem["view"]>,
+    o: { assistantWrites?: boolean; edit?: FindingItem["edit"] } = {},
+  ) =>
+    renderToStaticMarkup(
+      <FindingCardInThread
+        it={{
+          ...item(critic, view),
+          assistantWrites: o.assistantWrites ?? false,
+          ...(o.edit ? { edit: o.edit } : {}),
+        }}
+        change={CHANGE}
+        onReplyTo={() => undefined}
+        onFixToAssistant={() => undefined}
+        reason=""
+        accept={{
+          stage: "feature",
+          command: `atticus change feature ${CHANGE}`,
+          others: 0,
+          waiting: false,
+        }}
+      />,
+    );
+
+  it("offers no Not relevant there, and says why in the copy file's words", () => {
+    const options = { fix: critic.fix.text, apply: false, dismiss: false, waive: false };
+    const h = card({
+      options,
+      personOnly: { why: "assistant-terminal", because: "CLAUDECODE is set" },
+    });
+    expect(h).toContain(esc(T.personOnly("assistant-terminal", "CLAUDECODE is set")));
+    expect(h).not.toContain(`>${esc(T.notRelevant)}<`);
+    const acp = card({ options, personOnly: { why: "assistant-session" } });
+    expect(acp).toContain(esc(T.personOnly("assistant-session")));
+    // In a person's own app: Not relevant, and no such words.
+    const own = card({ options: { ...options, dismiss: true } });
+    expect(own).toContain(`>${esc(T.notRelevant)}<`);
+    expect(own).not.toContain(esc(T.personOnly("assistant-session")));
+  });
+
+  it("keeps Make the fix where it only fills the reply to the assistant, and drops it where it would record a fix", () => {
+    const options = { fix: critic.fix.text, apply: false, dismiss: false, waive: false };
+    const held = {
+      options,
+      personOnly: { why: "assistant-terminal" as const, because: "CLAUDECODE is set" },
+    };
+    const make = `aria-label="${esc(T.makeFixFor(critic.id))}"`;
+    // The assistant drafts the file: the button fills the reply box (fixToAssistant).
+    expect(card(held, { assistantWrites: true })).toContain(make);
+    // No editor for it here: the same.
+    expect(card(held)).toContain(make);
+    // A file the person edits in the app: saving records a fix with no patch, refused there.
+    expect(card(held, { edit: { artifact: "proposal" } as FindingItem["edit"] })).not.toContain(
+      make,
+    );
+  });
+});

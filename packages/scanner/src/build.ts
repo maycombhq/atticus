@@ -30,6 +30,8 @@ import {
   readSharedMaps,
   readTrafficFile,
   recordPath,
+  repoIdTwins,
+  repoIdTwinWarning,
   DECLARED_CALLER,
   registrableDomain,
   serializeRecord,
@@ -4509,6 +4511,16 @@ export async function undoDirOf(root: string): Promise<string> {
 }
 
 /** What a build wrote or refused, in the words a person reads (the CLI and the Console). */
+/**
+ * What a build warns of and never counts as a problem (a scan exits 1 on a problem): two repo
+ * ids the manifests list that name one loose-end id (repoIdTwins), which a merge of two pull
+ * requests or a hand edit can leave past the refusals where an id is written (the reviews of
+ * b30/review2-fixes). Worked out from the ids the build listed, so a kept build says it too.
+ */
+export function buildWarnings(b: Pick<Build, "listed">): string[] {
+  return repoIdTwins(b.listed ?? []).map(([a, x]) => repoIdTwinWarning(a, x));
+}
+
 export function buildLines(root: string, r: BuildAndWrite): string[] {
   const genRel = relOf(root, generatedDirOf(root));
   if (r.guard.refused) return r.guard.refused.message.split("\n");

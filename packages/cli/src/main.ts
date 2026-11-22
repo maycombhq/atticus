@@ -700,7 +700,7 @@ Usage:
   atticus change list [--json]         Every change and its state
   atticus change export <change> [ado|jira] [--format ado|jira] [--out file.csv] [--area path] [--iteration path]  The change's stories and tasks as a work-item import file: Azure DevOps' CSV (a User Story per story, its Tasks under it, criteria in Acceptance Criteria) or Jira's; a person imports it
   atticus change conflicts [--touching <id>] [--names] [--json]  Open changes that touch the same systems, records or repos; with --touching, only the overlaps that id is in; with --names too, each open change whose tasks or flows name it
-  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
+  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows, each operation's sets in its repos and a quick change's In the code rows (ADR 0206); what is missing, still there or not in the design becomes findings on the conform gate, and each stated claim is present, present differently, missing, not checkable or unconfirmed (--latest shows the newest check, scanning nothing)
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
@@ -708,7 +708,7 @@ Usage:
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
-  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
+  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR). A stage's own finding (stage-<id>) takes only waive, to accept it; otherwise fix the draft and run the stage again
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
   atticus feature list [--json]        Features found in code, named by people or proposed by AI
   atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps
@@ -3557,7 +3557,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     // a stage's finding or waiving a critic's is a person's, and --by names who is recorded, never
     // whose terminal this is. In an assistant's terminal it is refused even with --by, as the app
     // refuses an Accept where it would record an assistant. With no --by the assistant is
-    // recorded, as before, and what it may do is decided there.
+    // recorded, as before, and what it may do is decided there. With --by there, the action
+    // itself checks the finding: a dismissal of a blocking or risk finding, or a fix recorded
+    // with nothing changed, is refused too (the second review of beta.30; act.ts `assistantHere`).
     if (assistant && given && action === "waive") {
       io.err(
         `Accept or waive it in a terminal of your own, or in the app: this terminal is a coding assistant's (${assistant.because}), and only a person accepts or waives a finding. --by names who is recorded; it doesn't make this terminal a person's. Nothing was written.`,
@@ -3577,6 +3579,13 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         ...(str(values["asked-of"]) ? { askedOf: str(values["asked-of"])! } : {}),
         ...(str(values.edit) ? { edit: str(values.edit)! } : {}),
         ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
+        ...(assistant && given
+          ? {
+              assistantHere: {
+                here: `this terminal is a coding assistant's (${assistant.because})`,
+              },
+            }
+          : {}),
       },
       io,
     );

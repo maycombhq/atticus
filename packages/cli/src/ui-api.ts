@@ -94,7 +94,8 @@ import {
   unmarkCheckedByApp,
   type AutoDoneOptions,
 } from "./handoff-autodone.js";
-import { setAppDone } from "./ui-api-accept.js";
+import { sessionRefusal, setAppDone } from "./ui-api-accept.js";
+import { assistantSession } from "./assistant-session.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -2081,6 +2082,25 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/findings/{changeId}/{findingId}/action", async ({ params, body }) => {
         await readChange(root, params.changeId!);
         const b = parseBody(Api.FindingActionRequest, body);
+        // The review of b30/review2-fixes (ADR 0115 addendum, 2026-11-22): where the app runs
+        // inside a Copilot session Atticus started or a coding assistant's terminal, its Git user
+        // is recorded with an assistant at work. A waiver is refused as the stage's Accept is;
+        // what would close a blocking or risk finding with no change Atticus can check, as the
+        // command line refuses it with --by there (act's assistantHere).
+        const env = deps.env ?? process.env;
+        const session = env.ATTICUS_ACP_SESSION ? undefined : assistantSession(env);
+        const assistantHere = env.ATTICUS_ACP_SESSION
+          ? { here: "this app runs inside a Copilot session that Atticus started", app: true }
+          : session
+            ? {
+                here: `this app runs in a coding assistant's terminal (${session.because})`,
+                app: true,
+              }
+            : undefined;
+        if (b.action === "waive") {
+          const no = sessionRefusal(env, params.changeId!);
+          if (no) throw new HttpError(403, "Only a person waives a finding", no);
+        }
         const res = await run((io) =>
           findingAction(
             root,
@@ -2093,6 +2113,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               ...(b.askedOf ? { askedOf: b.askedOf } : {}),
               ...(b.patch ? { edit: b.patch } : {}),
               ...(b.gate ? { gate: b.gate } : {}),
+              ...(assistantHere ? { assistantHere } : {}),
             },
             io,
           ),
@@ -2100,6 +2121,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (res.code !== 0) {
           if (res.err.some((l) => /no finding|not found/i.test(l)))
             throw notFound(res.err.join("\n"));
+          if (assistantHere && res.err.some((l) => l.includes(assistantHere.here)))
+            throw new HttpError(403, "Only a person decides this", res.err.join("\n"));
           if (res.err.some((l) => /can't be waived|not allowed|needs/i.test(l)))
             throw new HttpError(403, "Not allowed", res.err.join("\n"));
           throw refused(res);

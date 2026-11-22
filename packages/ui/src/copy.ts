@@ -1478,6 +1478,8 @@ export const COPY = {
     done: "Done. What it printed is in the Console.",
     failed: (why: string) => `It stopped: ${why}`,
     problems: "Problems the build reported",
+    /** The review of b30/review2-fixes: what the build warns of, which fails nothing. */
+    warnings: "The build warns of this (it doesn't stop the build):",
     orphaned: (repo: string, why: string) =>
       `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its stored reads are kept, not built from.`,
   },
@@ -7501,6 +7503,16 @@ export const COPY = {
     askOwnerFor: (id: string, owner: string) => `Ask ${owner} about ${id}`,
     asked: "Asked of its owner.",
     notRelevant: "Not relevant, for this reason",
+    /**
+     * The review of b30/review2-fixes (ADR 0115 addendum): a blocking or risk finding where the
+     * app runs where an assistant works, with Not relevant, Apply without a patch and Waive left out.
+     */
+    personOnly: (why: "assistant-session" | "assistant-terminal", because?: string) =>
+      `Decide it in an app or a terminal of your own: only a person dismisses this finding, waives it or marks it fixed with no patch, and this app runs ${
+        why === "assistant-session"
+          ? "inside a Copilot session that Atticus started"
+          : `in a coding assistant's terminal${because ? ` (${because})` : ""}`
+      }.`,
     notRelevantNeeds: "Write why it isn't relevant in the box first.",
     findingState: {
       open: "Open",

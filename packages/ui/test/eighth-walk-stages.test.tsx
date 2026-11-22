@@ -37,7 +37,6 @@ vi.mock("../src/api/client.js", async () => ({
 const { COPY } = await import("../src/copy.js");
 const { PlacementView } = await import("../src/screens/work/Placement.js");
 const { FilesTable, placementRows } = await import("../src/screens/work/Stage.js");
-const { StageReviewView } = await import("../src/screens/work/StageReview.js");
 const { ImpactView } = await import("../src/screens/work/Impact.js");
 const { TargetList } = await import("../src/screens/flows/Flows.js");
 const { StoriesAtTheStage } = await import("../src/screens/know/Phase.js");
@@ -49,8 +48,6 @@ const { TaskRunState, TaskTick } = await import("../src/screens/know/task-pr.js"
 const { StepDetail } = await import("../src/screens/run/Todo.js");
 
 const W = COPY.work;
-const S = COPY.stageReview;
-const R = COPY.runNext;
 const T = COPY.phase;
 const esc = (s: string) =>
   s
@@ -169,45 +166,9 @@ const review = (o: Partial<Api.StageReviewViewT> = {}): Api.StageReviewViewT => 
 const TERMINAL = '<details class="work-terminal">';
 
 describe("the in-app Prepare comes before the terminal", () => {
-  it("in the critic panel's not-run state, the command is folded under Or in a terminal", () => {
-    const html = renderToStaticMarkup(
-      <StageReviewView
-        of={{
-          state: "ready",
-          data: review({ loop: { file: `${REL}/stage/stories.yaml`, present: false } }),
-        }}
-      />,
-    );
-    expect(html).toContain(TERMINAL);
-    expect(html).toContain(esc(R.orTerminal));
-    expect(html.indexOf(esc(R.slash))).toBeLessThan(html.indexOf(TERMINAL));
-    expect(html.indexOf(TERMINAL)).toBeLessThan(html.indexOf(esc(R.terminal)));
-    expect(html.indexOf(TERMINAL)).toBeLessThan(html.indexOf(`atticus plan stories ${CHANGE}`));
-  });
-
-  it("under Then run the stage again too", () => {
-    const html = renderToStaticMarkup(<StageReviewView of={{ state: "ready", data: review() }} />);
-    expect(html).toContain(esc(S.next));
-    expect(html.indexOf(esc(S.next))).toBeLessThan(html.indexOf(TERMINAL));
-    expect(html.indexOf(TERMINAL)).toBeLessThan(html.indexOf(esc(R.terminal)));
-  });
-
-  it("offers a fresh run of a stage that is done only under Run the stage again", () => {
-    const html = renderToStaticMarkup(
-      <StageReviewView
-        of={{
-          state: "ready",
-          data: review({
-            loop: { file: `${REL}/stage/stories.yaml`, present: true, state: "done" },
-          }),
-        }}
-      />,
-    );
-    expect(html).toMatch(new RegExp(`<details[^>]*><summary>${esc(S.runAgain)}</summary>`));
-    expect(html).toContain(esc(S.runAgainWhy));
-    expect(html).not.toContain(`>${esc(S.next)}<`);
-  });
-
+  // The stage tab's own review panel (StageReview.tsx), mounted nowhere since ADR 0189, was
+  // deleted with its three cases here (the review of b30/review2-fixes): a stage's thread holds
+  // its findings now.
   it("in the breaks panel and the target flows' empty states", () => {
     const impact = renderToStaticMarkup(
       <ImpactView i={{ change: CHANGE, flows: 0 } as unknown as Api.ChangeImpactT} />,

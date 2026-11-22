@@ -60,6 +60,14 @@ export interface ActOptions {
   /** Only look in this gate. */
   gate?: string;
   now?: string;
+  /**
+   * Where a coding assistant works and a person's name is recorded anyway (ADR 0115 addendum,
+   * 2026-11-22): `--by` in an assistant's terminal, or the app's Git user where the app runs in
+   * one or inside a Copilot session Atticus started (`app`). `here` says where, in words ("this
+   * terminal is a coding assistant's (CLAUDECODE is set)"). What would close a blocking or risk
+   * finding with no change Atticus can check is refused.
+   */
+  assistantHere?: { here: string; app?: boolean };
 }
 
 export interface ActResult {
@@ -218,6 +226,58 @@ export async function act(
       "refused",
       `${o.by} is an assistant: only a person waives a finding. Propose that ${f.id} is not relevant, with a reason, or fix it and record the fix; a person decides.`,
     );
+  // ADR 0203 A (addendum 2026-11-22, the second review): a stage's own finding is settled by a
+  // fix to the draft (the stage's next run no longer raises it) or by a person's acceptance
+  // (waive), which is all the stage reads (readAccepted). Any other state closed the file, not
+  // the stage, was carried by id into every later round, and then barred the acceptance
+  // ("already dismissed"): the stage stayed blocked for good. Its fix says the way on.
+  if (f.gate.startsWith(STAGE_GATE_PREFIX) && act !== "waive")
+    throw new CriticError(
+      "refused",
+      `${f.id} is the ${f.gate.slice(STAGE_GATE_PREFIX.length)} stage's own finding: only a fix to the draft or a person's acceptance settles it, so it can't be ${
+        act === "not-relevant"
+          ? "dismissed as not relevant"
+          : act === "ask"
+            ? "asked of someone"
+            : "marked applied"
+      }. ${f.fix.text}`,
+    );
+  // ADR 0115 addendum (2026-11-22, extended by the second review): where an assistant works, a
+  // person's name never closes a blocking or risk finding with nothing in the draft changed. A
+  // dismissal opens the gate as a waiver does; so does a fix recorded where nothing changed. A
+  // patch, or a file of the change edited, changes the draft, and the next round checks it.
+  if (o.assistantHere && !ai && PERSON_CLOSES.has(f.severity)) {
+    const { here, app } = o.assistantHere;
+    const lead = (what: string) =>
+      app
+        ? `${what} in an app or a terminal of your own`
+        : `${what} in a terminal of your own, or in the app`;
+    const tail = app
+      ? " The app records its Git user here, and that doesn't make this session a person's. Nothing was written."
+      : " Without --by it is recorded as the assistant's proposal, which a person decides. --by names who is recorded; it doesn't make this terminal a person's. Nothing was written.";
+    if (act === "not-relevant")
+      throw new CriticError(
+        "refused",
+        `${lead("Decide it")}: ${here}, and only a person dismisses a blocking or risk finding as not relevant.${tail}`,
+      );
+    if (act === "apply" && !f.fix.patch)
+      throw new CriticError(
+        "refused",
+        `${lead("Record the fix")}: ${here}, and ${f.id} has no patch, so marking it applied would close a ${f.severity} finding with nothing in the draft changed; only a person does that.${tail}`,
+      );
+    // Only an edit to the finding's own file counts, and Atticus sees only the files a stage
+    // wrote (their write hashes): a hand-written file's edit is invisible, so it is said so.
+    const mine = findingFiles(f);
+    if (
+      act === "edit-and-apply" &&
+      !o.edit &&
+      !(await editedByPerson(changeFolder(root, change.id))).some(mine)
+    )
+      throw new CriticError(
+        "refused",
+        `${lead("Record the fix")}: ${here}, and there is no edit Atticus can see to ${f.artifact} and no patch, so recording ${f.id} as fixed would close a ${f.severity} finding with no change Atticus can check; only a person does that.${tail}`,
+      );
+  }
 
   // A gap has no fix to apply, only a fact to write in: a person who already wrote it by hand
   // records that with edit-and-apply and a reason, no patch needed.
@@ -443,6 +503,15 @@ async function afterLimit(
   if ((await checkRoundDue(root, change, f.gate, assistantNames(ctx))).length === 0)
     return undefined;
   return `The ${f.gate} gate has no critic round left, but ${checkRoundRule(f.round)}: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
+}
+
+/** Whether a change-folder file is the finding's own: its artifact (a folder: under it), or a file its evidence cites. */
+function findingFiles(f: Finding): (file: string) => boolean {
+  const paths = [
+    f.artifact,
+    ...f.evidence.flatMap((e) => (e.source === "artifact" && e.path ? [e.path] : [])),
+  ];
+  return (file) => paths.some((p) => (p.endsWith("/") ? file.startsWith(p) : file === p));
 }
 
 /** A file a stage renders: the stage, and the source it is rendered from. */

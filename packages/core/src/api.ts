@@ -2309,6 +2309,12 @@ export const CatalogBuildView = z.object({
     }),
   ),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
+  /**
+   * 3.19.0 (the review of b30/review2-fixes): what the build warns of and never counts as a
+   * problem, each in words (two repo ids that name one loose-end id). Optional: none, or an
+   * older server.
+   */
+  warnings: z.array(z.string()).optional(),
 });
 export type CatalogBuildViewT = z.infer<typeof CatalogBuildView>;
 /** 3.12.0: confirm a refused build with the counts it listed (point 4). */
@@ -3514,6 +3520,19 @@ export const StageFindingView = z.object({
    * assistant's resolution): who, why and when. Optional.
    */
   accepted: StageAcceptance.optional(),
+  /**
+   * 3.19.0 (ADR 0115 addendum, the review of b30/review2-fixes): on an open blocking or risk
+   * finding of the critic's, where the app runs inside a Copilot session Atticus started
+   * (`assistant-session`) or a coding assistant's terminal (`assistant-terminal`, `because`
+   * names the variable): Not relevant, Apply without a patch and Waive are left out of `options`,
+   * since POST /api/findings/{changeId}/{findingId}/action refuses them there. Optional.
+   */
+  personOnly: z
+    .object({
+      why: z.enum(["assistant-session", "assistant-terminal"]),
+      because: z.string().optional(),
+    })
+    .optional(),
 });
 export const StageReviewView = z.object({
   change: z.string(),
@@ -4341,7 +4360,10 @@ export type ConformClaimT = z.infer<typeof ConformClaim>;
 
 /**
  * The newest conformance check of one repo of a change (ADR 0114), as stored in the change
- * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows.
+ * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows,
+ * and each claim the change states for the repo (ADR 0206: each operation's `sets` in it, each
+ * of a quick change's In the code rows) with one of five outcomes: present, present
+ * differently, missing, not checkable or unconfirmed.
  */
 export const ConformRepoResult = z.object({
   schemaVersion: z.literal(1),
@@ -8438,7 +8460,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getChangeConformance",
       summary:
-        "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114)",
+        "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114), and against each claim the change states, each operation's sets in its repos and each of a quick change's In the code rows, as present, present differently, missing, not checkable or unconfirmed (ADR 0206)",
       tag: "changes",
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeConformance", description: "OK" },

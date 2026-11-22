@@ -8,6 +8,8 @@ import {
   LockHeldError,
   orgPackDirOf,
   readTerminalRuns,
+  repoIdTwins,
+  repoIdTwinWarning,
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
@@ -159,6 +161,9 @@ export const SELFCHECK_WORDS = {
     "No run on record since this Atticus was installed: run the command once, then selfcheck again.",
   busy: (since: string) =>
     `Another Atticus command is running on this metarepo (since ${since}), so selfcheck couldn't run. Run it again when that command has finished.`,
+  /** The review of b30/review2-fixes: with no id, as every line above the card. */
+  twins:
+    "Warning: the manifests list repo ids that name one loose-end id, so the map couldn't tell their loose ends apart. atticus selfcheck --names (or atticus doctor) names them; rename one of each pair with atticus repo rename <id> <new id>.",
 } as const;
 
 export interface CheckResult {
@@ -179,6 +184,11 @@ export interface Selfcheck {
   names: Partial<Record<CheckId, string[]>>;
   /** With `names`: each check's counts as numbers. Never in `--json`. */
   exact: Partial<Record<CheckId, string>>;
+  /**
+   * Each pair of repo ids that name one loose-end id, as its warning (repoIdTwinWarning): said
+   * as SELFCHECK_WORDS.twins, the ids only with `names`. Never in `--json`.
+   */
+  twins: string[];
 }
 
 const NAMES_MAX = 20;
@@ -531,7 +541,10 @@ export async function selfcheck(
     const closest = CHECK_FLAGS[id]?.find((f) => flags.includes(f));
     return { id, ...r, ...(closest ? { closest } : {}), make };
   });
-  return { checks, card, names, exact };
+  const twins = repoIdTwins(
+    (op?.profiles ?? []).flatMap((p) => (p.repos?.repos ?? []).map((r) => r.id)),
+  ).map(([a, b]) => repoIdTwinWarning(a, b));
+  return { checks, card, names, exact, twins };
 }
 
 /** atticus selfcheck [--names] [--json]. 0 when none failed, 1 when one did, 2 for no metarepo. */
@@ -584,6 +597,10 @@ export async function selfcheckCommand(
       io.out(W.names(shown.length));
       for (const x of shown) io.out(`    ${x}`);
     }
+  }
+  if (r.twins.length) {
+    io.out(W.twins);
+    if (o.names) for (const t of r.twins) io.out(`    ${t}`);
   }
   io.out("");
   io.out(W.card);

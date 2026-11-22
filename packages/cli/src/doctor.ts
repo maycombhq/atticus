@@ -18,6 +18,8 @@ import {
   loadOrgPack,
   orgPackDirOf,
   readLock,
+  repoIdTwins,
+  repoIdTwinWords,
   retrievalOf,
   STEP_CLASSES,
   stepModelsOf,
@@ -651,6 +653,18 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         ? "Run atticus verify <repo> --write again: every file it writes is whole."
         : "Read a repo with /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
   });
+
+  // The review of b30/review2-fixes: two repo ids that name one loose-end id, which a merge of
+  // two pull requests or a hand edit can leave past the refusals where an id is written.
+  const twins = repoIdTwins(manifest.map((r) => r.id));
+  if (twins.length)
+    out.push({
+      id: "repo-ids",
+      label: "Repo ids",
+      status: "warn",
+      detail: twins.map(([a, b]) => repoIdTwinWords(a, b)).join("; "),
+      fix: `Rename one of each pair: ${twins.map(([, b]) => `atticus repo rename ${b} <new id>`).join("; ")}.`,
+    });
 
   // ADR 0123: the branch each repo is read from, against the one its remote calls its default
   // (as the base clone last heard it at a sync: no network here).
