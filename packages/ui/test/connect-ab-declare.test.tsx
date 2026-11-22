@@ -481,4 +481,39 @@ describe("a find stopped by the callee's read (the final review)", () => {
     expect(text(m.tree)).toContain(W.findReadFailed("forge-ledger-svc"));
     expect(text(m.tree)).not.toContain(W.findReadFailed("Ledger service"));
   });
+
+  // The review of beta.30: a box with neither a repo nor a system gave "Read  again…".
+  it("says this box, from the copy file, should the answer and the box both leave the callee out", async () => {
+    const { FindButton } = await import("../src/screens/architecture/ConnectAB.js");
+    const m = mount(
+      FindButton as never,
+      {
+        v: { ...v, mechanism: "declared", to: {}, toName: "" },
+        reload: () => undefined,
+        io: {
+          find: () =>
+            Promise.resolve({
+              brief: "facts/forge-edge-proxy.find.md",
+              leftOut: [],
+              notBuilt: {
+                readFailed: true as const,
+                message: "Not read",
+                lines: [],
+                command: "atticus connect find forge-edge-proxy",
+              },
+            }),
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(W.thisBox).toBe("this box");
+    expect(text(m.tree)).toContain(
+      "Read this box again, then find the arrow again: its read ended before it finished",
+    );
+    expect(text(m.tree)).not.toContain("Read  again");
+  });
 });

@@ -8581,6 +8581,8 @@ export const COPY = {
       `${b} hasn't been read yet, and Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code to read it, then find the arrow again:`,
     findNotBuiltRead: (b: string) =>
       `Saved, not built: ${b}'s read is saved, and its build waits for you to confirm what it lists. Then find the arrow again.`,
+    /** The callee where neither the answer nor the box names it: never an empty name. */
+    thisBox: "this box",
     findReadFailed: (b: string) =>
       `Read ${b} again, then find the arrow again: its read ended before it finished, or didn't start, so the find stopped before the caller's session. What it said is below.`,
     findNotVerified: (a: string) =>
