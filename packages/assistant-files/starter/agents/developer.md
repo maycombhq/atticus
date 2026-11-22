@@ -18,6 +18,9 @@ tools:
   - atticus/outline
   - atticus/impact
   - atticus/conflicts
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
 handoffs:
   - to: developer-naysayer
     label: Challenge this section

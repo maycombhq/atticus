@@ -111,9 +111,15 @@ export async function changeAboutText(root: string, change: string): Promise<str
   const meta = (parse(await readFile(join(dir, "change.yaml"), "utf8").catch(() => "")) ??
     undefined) as { title?: string } | undefined;
   if (!meta) return undefined;
-  const brief = (await readFile(join(dir, "brief.md"), "utf8").catch(() => ""))
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .trim();
+  // ADR 0207: a quick change has no brief; what it asks for is its requirements file, else its
+  // proposal (a plain OpenSpec folder adopted).
+  let brief = "";
+  for (const f of ["brief.md", "requirements.md", "proposal.md"]) {
+    brief = (await readFile(join(dir, f), "utf8").catch(() => ""))
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .trim();
+    if (brief) break;
+  }
   return [meta.title ?? change, brief].filter(Boolean).join("\n\n");
 }
 

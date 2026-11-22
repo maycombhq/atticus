@@ -14,23 +14,38 @@ The map is a read-only MCP server, `atticus mcp`. It reads the metarepo and writ
 
 The tools a persona asks most:
 
-| Tool            | What it answers                                                                                                             |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `ask`           | A plain question: "who calls ledger-api?", "who consumes the topic transfers.completed?". It says how it read the question. |
-| `impact`        | What a change to one record reaches, hop by hop, with owners.                                                               |
-| `walk`          | What one id is linked to, and how each link was made.                                                                       |
-| `show`          | One record in full, with the file it was read from and whether it was verified.                                             |
-| `show_code`     | The lines of code a fact cites.                                                                                             |
-| `search`        | Records, knowledge, flows, changes and wiki pages by words and meaning.                                                     |
-| `similar`       | What reads like one id. A hint where to look, never a fact.                                                                 |
-| `conflicts`     | Open changes that overlap; with an id, only the overlaps that id is in.                                                     |
-| `features`      | The features the estate has, with their entry points.                                                                       |
-| `knowledge_ask` | The organisation's own standards, processes and decisions that may answer a question, each with its page.                   |
+| Tool              | What it answers                                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `ask`             | A plain question: "who calls ledger-api?", "who consumes the topic transfers.completed?". It says how it read the question. |
+| `impact`          | What a change to one record reaches, hop by hop, with owners.                                                               |
+| `walk`            | What one id is linked to, and how each link was made.                                                                       |
+| `show`            | One record in full, with the file it was read from and whether it was verified.                                             |
+| `show_code`       | The lines of code a fact cites.                                                                                             |
+| `search`          | Records, knowledge, flows, changes and wiki pages by words and meaning.                                                     |
+| `similar`         | What reads like one id. A hint where to look, never a fact.                                                                 |
+| `conflicts`       | Open changes that overlap; with an id, only the overlaps that id is in.                                                     |
+| `owners`          | Who owns a record, a repo or a system, and where that is said: the catalog, a profile or a manifest.                        |
+| `consumers_of`    | Who uses it: the components that receive a topic, or that call an API or a component.                                       |
+| `similar_changes` | The archived changes nearest a change or a text. A hint where to look, never a fact.                                        |
+| `features`        | The features the estate has, with their entry points.                                                                       |
+| `knowledge_ask`   | The organisation's own standards, processes and decisions that may answer a question, each with its page.                   |
 
 Two answers are worth teaching your personas:
 
 - **"`<id>` is not in the map: planned or not read."** `impact`, `show`, `walk` and `ask` say this of an id the map lacks, and then which it is: "`<id>` is in the manifests and hasn't been read", "`<id>` is planned by change `<change>`", or "Neither: no manifest lists `<id>` and no open change plans it", with the nearest ids when the name looks like a slip. It is an answer, not an error. A persona that gets it must not describe how the thing behaves.
 - **An overlap from `conflicts`** is an answer too. On the command line `atticus change conflicts` exits 1 when changes overlap; the tool just tells you.
+
+**Three tools came with 2.0.0-beta.30 after the starter personas** (`owners`, `consumers_of`, `similar_changes`). A new org pack's starters list them. An org pack that already has the starters keeps its own files, since an upgrade never writes over a file that is there: add these three lines under `tools:` in each persona that lists `atticus/conflicts`, then run `atticus skills write`. Copilot's files name `atticus/*` and need nothing.
+
+```yaml
+- atticus/owners
+- atticus/consumers_of
+- atticus/similar_changes
+```
+
+- **`owners <id>`** gives the owner and where it is said. A repo the manifest lists that nobody read still has its manifest's owner (`read: false`); "no owner on record" means neither the catalog nor the org pack names one.
+- **`consumers_of <id>`** knows only what was read into the map: a consumer in a repo nobody read isn't in its answer.
+- **`similar_changes`** lists archived changes only. Open changes that overlap are `conflicts`' answer.
 
 Three more things a persona should know of the tools:
 

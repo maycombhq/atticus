@@ -14,6 +14,9 @@ tools:
   - atticus/impact
   - atticus/catalog_query
   - atticus/conflicts
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/changes
   - atticus/change_status
   - atticus/task_context

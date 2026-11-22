@@ -61,6 +61,67 @@ export const FORGE_FIELD_OPTIONS: FieldEstateOptions = {
 /** The fixture's change: the archetypes' new event on the quick path, its four files written. */
 export const FORGE_FIELD_CHANGE = NEW_EVENT;
 
+/**
+ * ADR 0207 (the map tool similar_changes): one change of the estate's past, archived, about an
+ * event much like the fixture's open change, so "which earlier change was like this one" has an
+ * answer on the field estate. Its folder is `<date>-<id>`, as `atticus change archive` names it.
+ */
+export const FORGE_FIELD_ARCHIVED = {
+  folder: "2026-10-02-publish-refund-requests",
+  id: "publish-refund-requests",
+  title: "Publish refund requests",
+  proposal: [
+    "# Publish refund requests",
+    "",
+    "## Why",
+    "",
+    "The audit service needs to know when a refund is requested, without the refund service calling it. The refund service publishes a refund requested event to a topic and the audit service listens to it.",
+    "",
+    "## What changes",
+    "",
+    "- The refund service publishes an event for each refund requested.",
+    "- The audit service listens to the topic and stores each event.",
+    "",
+  ].join("\n"),
+};
+
+const archivedChangeYaml = (id: string, title: string) =>
+  [
+    "schemaVersion: 1",
+    `id: ${id}`,
+    `title: ${title}`,
+    "type: quick",
+    "state: archived",
+    "authors: {}",
+    "createdAt: 2026-09-20T05:00:00Z",
+    "createdBy: pat",
+    "handoffs: []",
+    "history:",
+    ...(
+      [
+        ["draft", "plan"],
+        ["plan", "build"],
+        ["build", "release-ready"],
+        ["release-ready", "released"],
+        ["released", "archived"],
+      ] as const
+    ).flatMap(([from, to]) => [
+      `  - from: ${from}`,
+      `    to: ${to}`,
+      "    at: 2026-10-02T05:00:00Z",
+      "    by: pat",
+    ]),
+    "owners: {}",
+    "systems: []",
+    "touches:",
+    "  dataStores: []",
+    "  interfaces: []",
+    "  records: []",
+    "  repos: []",
+    "  tables: []",
+    "",
+  ].join("\n");
+
 /** change.yaml of a change `change new --from` made, at a fixed time. */
 const quickChangeYaml = (id: string, title: string) =>
   [
@@ -214,6 +275,11 @@ export async function writeForgeField(out: string): Promise<void> {
       "change.yaml": quickChangeYaml(c.id, c.title),
       "requirements.md": c.requirements,
       ...c.files,
+    });
+    const past = FORGE_FIELD_ARCHIVED;
+    await writeChangeFiles(estate.root, `archive/${past.folder}`, {
+      "change.yaml": archivedChangeYaml(past.id, past.title),
+      "proposal.md": past.proposal,
     });
     // After the upgrade, as a team has it: the curated decisions field-estate.ts writes at an
     // older schema are migrated, so `atticus status` has nothing waiting on a fresh seed.

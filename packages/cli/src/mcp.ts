@@ -325,6 +325,37 @@ export const MCP_TOOLS: McpTool[] = [
     answersOnExit: [1],
   },
   {
+    name: "owners",
+    description:
+      "Who owns a record, a repo or a system, and where that is said: the catalog's System record, else a profile or a manifest of the org pack, with the record's id and its system's. \"no owner on record\" when none names one. A repo the manifests list that nobody read still has its manifest's owner (read: false). An id the map lacks answers which it is: in the manifests and not read, planned by an open change, or neither (atticus owners).",
+    args: [s("id", "A record, repo or system id.")],
+    argv: (a) => ["owners", String(a.id), "--json"],
+    mapId: "id",
+  },
+  {
+    name: "consumers_of",
+    description:
+      "Who uses one thing the map holds. A topic, by its id or its name: the components that receive it, each with its owner, and how many records lie past them. An API or a component (or its repo): the components that call it, each with its owner and the interface record that says so. It knows only what was read into the map. An id the map lacks answers which it is, as owners does (atticus impact --receivers).",
+    args: [s("id", "A topic's id or name, an API's id, a component's or a repo's id.")],
+    argv: (a) => ["impact", String(a.id), "--receivers", "--json"],
+    mapId: "id",
+  },
+  {
+    name: "similar_changes",
+    description:
+      "The archived changes nearest a change or a text, best first, each with its archive folder, its change id and its file, by meaning where the embedding model is on and by words where it isn't. A hint where to look, never a fact. It lists archived changes only; open changes that overlap are conflicts' answer. None near is an empty list (atticus change similar).",
+    args: [
+      s("change", "An open change's id, to find the archived changes like it.", false),
+      s("text", "Or a sentence or a brief that says what the change is about.", false),
+    ],
+    argv: (a) => [
+      "change",
+      "similar",
+      ...(a.change ? ["--change", String(a.change)] : a.text ? [String(a.text)] : []),
+      "--json",
+    ],
+  },
+  {
     name: "change_status",
     description:
       "A change's state, next step, what blocks it, its risk and the PR to merge (atticus change status).",

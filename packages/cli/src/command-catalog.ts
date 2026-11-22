@@ -148,6 +148,7 @@ const AREA_BY_WORD: Record<string, string> = {
   context: "catalog",
   cites: "catalog",
   impact: "catalog",
+  owners: "catalog",
   ask: "catalog",
   guide: "catalog",
   diagram: "catalog",
@@ -216,6 +217,7 @@ const KIND_BY_COMMAND: Record<string, ArgKind[]> = {
   finding: ["change", "finding"],
   findings: ["change"],
   impact: ["record"],
+  owners: ["record"],
   drift: ["change"],
   trace: ["change"],
 };

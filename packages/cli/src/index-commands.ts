@@ -56,20 +56,23 @@ export async function askCommand(
     io.err(asked.fault);
     return 1;
   }
-  const answer = (to: Output) =>
-    asked.action === "impact"
-      ? impactCommand(
-          root,
-          asked.id,
-          {
-            json: o.json === true,
-            ...(asked.receivers ? { receivers: true } : {}),
-            // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
-            ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
-          },
-          to,
-        )
-      : queryCommand(root, asked.query, { json: o.json === true }, to);
+  const answer = async (to: Output) =>
+    // ADR 0207: "who owns it" answers what atticus owners answers, so the two can't differ.
+    asked.action === "owner"
+      ? (await import("./owners.js")).ownersCommand(root, asked.id, { json: o.json === true }, to)
+      : asked.action === "impact"
+        ? impactCommand(
+            root,
+            asked.id,
+            {
+              json: o.json === true,
+              ...(asked.receivers ? { receivers: true } : {}),
+              // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
+              ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
+            },
+            to,
+          )
+        : queryCommand(root, asked.query, { json: o.json === true }, to);
   if (!o.json) {
     io.out(asked.explanation);
     io.out(`Query: ${asked.query}`);

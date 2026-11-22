@@ -16,6 +16,9 @@ tools:
   - atticus/feature
   - atticus/changes
   - atticus/conflicts
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/knowledge_ask
 handoffs:
   - to: product-owner
