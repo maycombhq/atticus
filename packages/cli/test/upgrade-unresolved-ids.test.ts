@@ -493,7 +493,7 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       ).toBe(0);
       expect(await tree(root)).toEqual(before);
       expect(d.out.join("\n")).toMatch(
-        /^1 upgrade step to run \(atticus upgrade\):\n  Loose ends named with their repo, .*: 14 files$/,
+        /^1 upgrade step to run \(atticus upgrade\):\n {2}Loose ends named with their repo, .*: 14 files$/,
       );
       const u = quiet();
       expect(await upgradeCommand(root, { by: "pat" }, u.io, B30), u.err.join("\n")).toBe(0);
