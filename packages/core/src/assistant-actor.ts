@@ -7,6 +7,55 @@ const GENERIC = ["assistant", "agent", "agents", "ai", "bot", "llm", "model"];
 /** A Git host's bot account: `name[bot]`, or a handle ending in `-bot`. */
 const BOT = /\[bot\]$|[-_.]bot$/;
 
+/**
+ * Atticus's own agents, which draft, judge and review: a `by` that names one is an AI, never a
+ * person (ADR 0203 A.4). Matched exactly (assistantActor); a hyphenated handle ending `-critic`
+ * or `-naysayer` (every critic lens and every persona's naysayer) is matched by that suffix.
+ * assistantActor always knows them, as the whole handle or an email's local part; the org
+ * pack's names (assistantNames, in @maycombhq/changes) only as the whole handle.
+ * packages/changes/test/assistant-names.test.ts reads every agent id the code defines and
+ * checks each is here.
+ */
+export const BUILT_IN_AGENTS: readonly string[] = [
+  // The stages and the context engine.
+  "feature-placer",
+  "flow-architect",
+  "story-writer-flows",
+  "small-change-planner",
+  "context-expander",
+  "context-reranker",
+  "change-drafter",
+  "needs-finder",
+  "story-writer",
+  "template-writer",
+  // Review, the task run and the tests.
+  "judge",
+  "critic-lenses",
+  "critic",
+  "naysayer",
+  "task-runner",
+  "test-writer",
+  // Reading the estate and its knowledge.
+  "repo-reader",
+  "knowledge-reader",
+  "knowledge-asker",
+  "feature-namer",
+  "glossary-definer",
+  "explainer",
+  "spec-drafter",
+  "dialect-drafter",
+  "dialect-writer",
+  "framework-drafter",
+  // The Copilot agents Atticus writes for the person's assistant (assistant-files).
+  "atticus-repo-reader",
+  "atticus-verifier",
+  "atticus-repo-describer",
+  "atticus-question-proposer",
+  "atticus-stage-drafter",
+  "atticus-task-runner",
+  "atticus-knowledge-reader",
+];
+
 /** A handle every critic lens and every persona's naysayer has: one hyphenated word, no address. */
 const LENS_HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*-(?:critic|naysayer)$/;
 
@@ -18,10 +67,12 @@ const LENS_HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*-(?:critic|naysayer)$/;
  *    hyphen); a runtime kind; a generic word for an AI; a Git host's bot account. Such a word
  *    matches when it is the handle, or starts or ends it joined by a hyphen, dot, underscore or
  *    space ("copilot-agent", "ai-reviewer"); an email is read by its local part.
- * 2. One of `known`, which the caller fills (Atticus's own agents, the org pack's agents, its
- *    persona files, the models it allows): the whole `by`, or an email's local part, exactly,
- *    case aside. Never a part of either, so a person "m.judge@…" or "judge.smith" is a person,
- *    and "feature-placer@…" is the agent.
+ * 2. One of Atticus's own agents (BUILT_IN_AGENTS): the whole `by`, or an email's local part,
+ *    exactly, case aside ("feature-placer@…" is the agent). One of `known`, which the caller
+ *    fills from the org pack (its agents, its persona files, the models it allows): the whole
+ *    `by` only, exactly, case aside, never an email's local part: a persona's name is often a
+ *    role's, and a team mailbox of that name ("security@…", "qa@…") is a person. Never a part
+ *    of either, so "m.judge@…" or "judge.smith" is a person.
  * 3. A handle that ends `-critic` or `-naysayer` and is one hyphenated word of letters and digits
  *    (every critic lens and every persona's naysayer is named so): not an email, a dotted name,
  *    or words with spaces or underscores, which are people's.
@@ -35,7 +86,8 @@ export function assistantActor(by: string, known: readonly string[] = []): strin
   const local = whole.replace(/@.*$/, "");
   if (!local) return undefined;
   if (BOT.test(local)) return said;
-  if (known.some((k) => [whole, local].includes(k.trim().toLowerCase()) && !!k.trim())) return said;
+  if (BUILT_IN_AGENTS.includes(whole) || BUILT_IN_AGENTS.includes(local)) return said;
+  if (known.some((k) => !!k.trim() && k.trim().toLowerCase() === whole)) return said;
   if (LENS_HANDLE.test(whole)) return said;
   const names = new Set<string>([...GENERIC, ...RuntimeKind.options]);
   for (const a of ASSISTANTS) {

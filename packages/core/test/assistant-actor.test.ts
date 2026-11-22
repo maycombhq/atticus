@@ -27,7 +27,9 @@ describe("assistantActor", () => {
   it("knows the org pack's agents and models when the caller passes them", () => {
     expect(assistantActor("feature-placer", ["feature-placer"])).toBe("feature-placer");
     expect(assistantActor("northwind-model-2", ["northwind-model-2"])).toBe("northwind-model-2");
-    expect(assistantActor("feature-placer")).toBeUndefined();
+    // Atticus's own agents are known whatever the caller passes.
+    expect(assistantActor("feature-placer")).toBe("feature-placer");
+    expect(assistantActor("ledger-architect")).toBeUndefined();
   });
 
   it("matches the known names exactly, never as part of a person's name or address", () => {
@@ -38,10 +40,9 @@ describe("assistantActor", () => {
       "critic",
       "feature-placer",
       "ledger-architect",
-      // The part before @ too: an agent's name as an address is still the agent.
+      // The part before @ too, for Atticus's own agents: its name as an address is the agent.
       "feature-placer@forge.example",
       "judge@forge.example",
-      "Ledger-Architect@forge.example",
     ])
       expect(assistantActor(by, known), by).toBe(by);
     for (const by of [
@@ -53,6 +54,23 @@ describe("assistantActor", () => {
       "ledger-architect-team",
     ])
       expect(assistantActor(by, known), by).toBeUndefined();
+  });
+
+  it("reads an address's local part as Atticus's own agent only, never as an org pack's persona", () => {
+    // Persona names are often a role's: a team mailbox of that name is a person.
+    const known = ["security", "qa", "developer", "product-owner", "ledger-architect"];
+    for (const by of known) expect(assistantActor(by, known), by).toBe(by);
+    for (const by of [
+      "security@forge.example",
+      "qa@forge.example",
+      "developer@forge.example",
+      "product-owner@forge.example",
+      "ledger-architect@forge.example",
+    ])
+      expect(assistantActor(by, known), by).toBeUndefined();
+    // Atticus's own agents, whether or not the caller passes them.
+    for (const by of ["feature-placer@forge.example", "task-runner@forge.example", "judge"])
+      expect(assistantActor(by), by).toBe(by);
   });
 
   it("knows a handle ending -critic or -naysayer, but not an address or a dotted name", () => {
