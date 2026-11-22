@@ -11,7 +11,9 @@ import {
   type FactOf,
   type JoinGuessFlag,
 } from "@maycombhq/core";
+import { looksLikeRepoId, parseCodeTable } from "@maycombhq/changes";
 import { docOf, normalizePath } from "../artifacts.js";
+import type { Doc } from "../doc.js";
 import type { CriticContext, EstateReads } from "../context.js";
 import {
   lineEvidence,
@@ -30,8 +32,10 @@ import { calls, rowLocator, type Call } from "./interfaces.js";
  * `JOIN_GUESS_FLAGS`: `joined-by-path`, `-label`, `-platform-setting`, `-folder-name` or
  * `joined-despite-conflict` or `joined-by-service-name`), a link question still open about a call the change plans, or a repo whose
  * read is stale or incomplete. It says only what the files show: a link a person, a name, a repo
- * or a host made says nothing, and a repo never read by the assistant is left to the checks that
- * ask about what the catalog doesn't know.
+ * or a host made says nothing. A repo nobody read, of which the map has nothing, is said only where
+ * the change has work in it (a `## <repo>` of tasks.md, a row of design.md's In the code) and a
+ * manifest lists it (the persona check of beta.30); elsewhere it is left to the checks that ask
+ * about what the catalog doesn't know.
  */
 
 const IFACES = "interfaces.md";
@@ -48,9 +52,33 @@ const GUESSES: Record<JoinGuessFlag, string> = {
 };
 const guessOf = (f: string): f is JoinGuessFlag => Object.hasOwn(GUESSES, f);
 
+/**
+ * The persona check of beta.30: the repos the change has work in, by its own files: each
+ * `## <repo>` heading of tasks.md and each row of design.md's In the code, with the first line
+ * that names it.
+ */
+function workRepos(ctx: CriticContext): Map<string, { doc: Doc; line: number }> {
+  const out = new Map<string, { doc: Doc; line: number }>();
+  const tasks = docOf(ctx.files, "tasks.md");
+  tasks?.lines.forEach((l, i) => {
+    const h = /^##\s+`?([a-z0-9][a-z0-9._-]*)`?\s*$/.exec(l);
+    if (h && looksLikeRepoId(h[1]!) && !out.has(h[1]!)) out.set(h[1]!, { doc: tasks, line: i + 1 });
+  });
+  const design = docOf(ctx.files, "design.md");
+  if (design)
+    for (const r of parseCodeTable(design.raw).rows)
+      if (r.repo && !out.has(r.repo)) out.set(r.repo, { doc: design, line: r.line });
+  return out;
+}
+
+/** The repos a manifest lists (read or not): only those can be read into the map. */
+const listedRepos = (ctx: CriticContext) =>
+  new Set(ctx.lifecycle.orgPack.profiles.flatMap((p) => p.repos?.repos.map((r) => r.id) ?? []));
+
 /** The repos a change's calls start or end in, and the ones it names: what its design rests on. */
 function reposOf(ctx: CriticContext): string[] {
   const out = new Set<string>(ctx.footprint.repos);
+  for (const r of workRepos(ctx).keys()) out.add(r);
   for (const c of calls(ctx))
     for (const id of [c.caller, c.callee]) {
       const repo = ctx.get("Component", id)?.repo;
@@ -211,6 +239,32 @@ export const changeLinksKnown: DeterministicCheckDef = {
           key: `link-question|${id}|${c.hop?.line ?? rec?.id}`,
         });
       }
+    }
+    // The persona check of beta.30: a repo a manifest lists that nobody has read, so the map has
+    // nothing of it, which the change's tasks.md or In the code names: a risk, with the way on,
+    // once per repo.
+    const work = workRepos(ctx);
+    const listed = listedRepos(ctx);
+    for (const [repo, r] of ctx.estate?.reads ?? []) {
+      const at = work.get(repo);
+      if (r.state !== "not-read" || !at || !listed.has(repo)) continue;
+      // Mapped by the built-in readers, the map has it: said by the checks of what it knows.
+      if (ctx.records.some((x) => x.kind === "Component" && x.repo === repo)) continue;
+      hits.push({
+        kind: "issue",
+        artifact: at.doc.path,
+        locator: rowLocator(at.doc, at.line),
+        summary: sentence(
+          `The change has work in ${repo}, which nobody has read into the map, so what it says of ${repo} can't be checked against its code.`,
+        ),
+        why: `${repo} has no verified facts, so the map knows nothing of its code: what the change plans there, and what calls it or what it calls, rests on the change's words alone.`,
+        fix: {
+          text: `Read it into the map before its tasks run: /atticus-map ${repo}, then atticus verify ${repo} --write, and run the critic again.`,
+        },
+        evidence: [lineEvidence(at.doc, at.line)],
+        subject: repo,
+        key: `not-read|${repo}`,
+      });
     }
     // A repo whose read is stale or incomplete: once per repo.
     for (const [repo, r] of ctx.estate?.reads ?? []) {
