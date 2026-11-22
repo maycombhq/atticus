@@ -1,4 +1,5 @@
 import { changeFolder } from "@maycombhq/changes";
+import { loadRepos } from "@maycombhq/workspace";
 import { readChangeFiles, readStoryIndex } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { previewTaskRun, runTask, type RunTaskOptions, type TaskRunPreview } from "./run.js";
@@ -22,23 +23,32 @@ import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
-/** A repo id's shape: lower case, parts joined by a dash, a dot or an underscore. */
-const REPO_ID = "`?[a-z0-9]+(?:[._-][a-z0-9]+)+`?";
+/** A word that may be a repo id, in backticks or bare: what follows is checked against the known. */
+const WORD = "`?([A-Za-z0-9][\\w.-]*?)`?(?=[\\s,;:)]|$)";
 
 /**
- * The persona check of beta.30: a task whose words read a repo into the map. That is a person's
- * step, never a task run, so such a task is never ready. Only words that name a repo say so:
- * `/atticus-map <repo>`, `atticus map <repo>` or `atticus verify <repo>`, or "read <repo> into
- * (its or the) facts" or "into the map" (not "the map of", "for", "with"), the repo id-shaped.
+ * The persona check of beta.30, and its reviews: a task whose words read a repo into the map.
+ * That is a person's step, never a task run, so such a task is never ready. Only words that name
+ * a repo the estate knows (`repos`: the tasks' own, tasks.md's headings, the manifests') say so:
+ * `/atticus-map <repo>`, `atticus map <repo>`, `atticus map … --repos <repo>[,<repo>]`,
+ * `atticus verify <repo>`, or "read <repo> into (its or the) facts" or "into the map" (not "the
+ * map of", "for", "with"). A file, a table, a topic or a version is no repo, so never one.
  */
-export function readsIntoMap(title: string): boolean {
+export function readsIntoMap(title: string, repos: ReadonlySet<string>): boolean {
+  const known = (w: string | undefined) => !!w && repos.has(w.replace(/[.,;:]+$/, ""));
+  const any = (re: RegExp, pick: (m: RegExpMatchArray) => string[]) =>
+    [...title.matchAll(re)].some((m) => pick(m).some(known));
   return (
-    new RegExp(`(?:^|\\s)/atticus-map\\s+${REPO_ID}(?![\\w.-])`).test(title) ||
-    new RegExp(`\\batticus\\s+(?:map|verify)\\s+${REPO_ID}(?![\\w.-])`).test(title) ||
-    new RegExp(
-      `\\bread\\s+${REPO_ID}\\s+into\\s+(?:(?:its|the)\\s+)?(?:facts\\b|the\\s+map\\b(?!\\s+(?:of|for|with)\\b))`,
-      "i",
-    ).test(title)
+    any(new RegExp(`(?:^|\\s)/atticus-map\\s+${WORD}`, "g"), (m) => [m[1]!]) ||
+    any(new RegExp(`\\batticus\\s+(?:map|verify)\\s+${WORD}`, "g"), (m) => [m[1]!]) ||
+    any(/\batticus\s+map\b[^;]*?\s--repos[\s=]+`?([\w.,-]+)`?/g, (m) => m[1]!.split(",")) ||
+    any(
+      new RegExp(
+        `\\bread\\s+${WORD}\\s+into\\s+(?:(?:its|the)\\s+)?(?:facts\\b|the\\s+map\\b(?!\\s+(?:of|for|with)\\b))`,
+        "gi",
+      ),
+      (m) => [m[1]!],
+    )
   );
 }
 
@@ -134,8 +144,14 @@ export function planReadyTasks(o: {
   stories: readonly { id: string; dependsOn: readonly string[] }[];
   /** The repos in the order they deploy (the deployment plan); repos it leaves out go after. */
   repoOrder?: readonly string[];
+  /**
+   * The repos the manifests list, beside the tasks' own: a task that reads one of them into the
+   * map is never ready (readsIntoMap).
+   */
+  repos?: readonly string[];
 }): ReadyPlan {
   const deps = new Map(o.stories.map((s) => [s.id, s.dependsOn]));
+  const known = new Set([...(o.repos ?? []), ...o.tasks.map((t) => t.repo)]);
   const rank = (repo: string) => {
     const i = o.repoOrder?.indexOf(repo) ?? -1;
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;
@@ -181,7 +197,7 @@ export function planReadyTasks(o: {
     const tasksWord = (ids: readonly string[]) => (ids.length === 1 ? "task" : "tasks");
     const why =
       never.get(t) ??
-      (t.title && readsIntoMap(t.title) ? MAP_READ : undefined) ??
+      (t.title && readsIntoMap(t.title, known) ? MAP_READ : undefined) ??
       (waitsFor.length ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first` : past);
     out.push({
       id: t.id,
@@ -223,10 +239,15 @@ export async function readyTasksOf(
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });
   }
+  const listed = await loadRepos(root).then(
+    (rs) => rs.map((r) => r.id),
+    () => [] as string[],
+  );
   const plan = planReadyTasks({
     tasks,
     stories: readStoryIndex(files),
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
+    repos: listed,
   });
   const notes = read.flatMap((t) => afterWordsNote(t) ?? []);
   return notes.length ? { ...plan, notes } : plan;
