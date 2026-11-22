@@ -1,3 +1,6 @@
+.anvil/pipeline.yaml
+deploy/anvil.yaml
+deploy/values-prod.yaml
 src/main/java/forge/refunds/AuditClient.java
 src/main/java/forge/refunds/ReceiptApi.java
 src/main/java/forge/refunds/ReceiptEvents.java

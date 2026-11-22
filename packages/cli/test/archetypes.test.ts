@@ -9,6 +9,7 @@ import { MockRuntime } from "@maycombhq/ai";
 import {
   changeFolder,
   changeFootprint,
+  changeReport,
   changeStore,
   loadChangeContext,
   requireValid,
@@ -809,6 +810,112 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         `Atticus couldn't confirm that ${UNREAD_REPO} listens to ${TOPIC}: nobody has read ${UNREAD_REPO} at this commit.`,
       );
       expect(listener.problems[0]).toContain(`${UNREAD_REPO} has no clone here`);
+    },
+    T,
+  );
+
+  it(
+    "the quick migration's rows checked on each repo's branch, and its Go/no-go hand-off not held by the cut-over a person has waived (ADR 0206)",
+    async () => {
+      const a = MIGRATION;
+      const repos = [...MOVED, EMPTY_REPO];
+      for (const r of repos) await mkdir(join(m.root, "workspace", r), { recursive: true });
+      const base = new Map<string, Fact[]>();
+      for (const r of repos) base.set(r, await SNAP(m.root, r));
+      const r1 = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => {
+          const before = base.get(repo) ?? [];
+          const at = (o: { unread?: string[]; facts?: Fact[]; lines?: Map<string, string[]> }) => ({
+            records: [],
+            files: [],
+            problems: [],
+            basis: { from: "facts" as const, unread: o.unread ?? [] },
+            facts: o.facts ?? before,
+            ...(o.lines ? { lines: o.lines } : {}),
+          });
+          if (commit === "a".repeat(40)) return at({});
+          // As the staged migration: the first on Anvil, the second still on its hosts, the
+          // third's descriptor changed and no fact covers it; the routing repo is empty.
+          if (repo === MOVED[0])
+            return at({
+              facts: [
+                ...before,
+                fact(repo, {
+                  kind: "deploy",
+                  id: "d-anvil",
+                  env: "prod",
+                  platform: "anvil",
+                  resourceName: repo,
+                  cite: { file: "deploy/anvil.yaml", line: 1, value: repo },
+                }),
+              ],
+              lines: new Map([["deploy/anvil.yaml", [`name: ${repo} platform: anvil env: prod`]]]),
+            });
+          return at({ unread: repo === MOVED[2] ? ["deploy/anvil.yaml"] : [] });
+        },
+      });
+      const of = (repo: string) =>
+        r1.results.find((x) => x.repo === repo)!.claims!.map((c) => [c.check, c.outcome]);
+      expect(of(MOVED[0])).toEqual([["deployment", "present"]]);
+      expect(of(MOVED[1])).toEqual([["deployment", "present-differently"]]);
+      expect(of(MOVED[2])).toEqual([["deployment", "unconfirmed"]]);
+      expect(of(EMPTY_REPO)).toEqual([
+        ["route", "missing"],
+        ["cut-over", "not-checkable"],
+      ]);
+      const cut = r1.results
+        .find((x) => x.repo === EMPTY_REPO)!
+        .claims!.find((c) => c.check === "cut-over")!;
+      const id = `conform-not-checked-cut-over-${EMPTY_REPO}-undo-route-the-three-services-back-to-their-old-hosts-which-stay-up-until-the`;
+      expect(cut.next).toBe(
+        `Check it by hand, then say how: atticus finding ${a.id} ${id} waive --reason "<how it was checked>".`,
+      );
+
+      // The Go/no-go hand-off itself: held by the cut-over until a named person says how it was
+      // checked, then held only by what the code still lacks.
+      const store = changeStore(m.root);
+      const was = await store.read(a.id);
+      // As if it were built and through QA: its Go/no-go is what the test reads.
+      await store.write({
+        ...was,
+        state: "release-ready",
+        history: [
+          ...was.history,
+          { from: was.state, to: "release-ready", at: NOW, by: "pat", reason: "the test" },
+        ],
+      });
+      try {
+        const held = async () =>
+          (await changeReport(m.root, a.id)).blockers.flatMap((b) =>
+            "finding" in b && b.finding ? [b.finding] : [],
+          );
+        expect(await held()).toContain(id);
+        const w = await run([
+          "finding",
+          a.id,
+          id,
+          "waive",
+          "--reason",
+          "Routed back and forth with the platform team on 2026-11-21.",
+          "--by",
+          "pat",
+          "--root",
+          m.root,
+        ]);
+        expect(w.code, w.err.join("\n")).toBe(0);
+        const after = await held();
+        expect(after).not.toContain(id);
+        expect(after.sort()).toEqual(
+          [
+            `conform-differs-deployment-${MOVED[1]}-platform-anvil-env-prod`,
+            `conform-missing-route-${EMPTY_REPO}-host-anvil-forge-example`,
+          ].sort(),
+        );
+      } finally {
+        await store.write(was);
+      }
     },
     T,
   );

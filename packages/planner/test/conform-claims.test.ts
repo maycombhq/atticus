@@ -128,7 +128,7 @@ describe("conformance of operations (ADR 0206 part A)", () => {
 });
 
 describe("conformance of a quick change (ADR 0206 part B)", () => {
-  it("each row of design.md's In the code, and what the branch adds that no row names", async () => {
+  it("each row of design.md's In the code, its operation rows read as an operation's sets, and what the branch adds that no row names", async () => {
     const { claims, problems } = await readClaims(join(QUICK, "change"));
     expect(problems).toEqual([]);
     const r = conformClaims({
@@ -140,6 +140,7 @@ describe("conformance of a quick change (ADR 0206 part B)", () => {
       after: facts(QUICK, "forge-refunds.after.jsonl"),
       files: tree(QUICK, "forge-refunds"),
       basis: { from: "facts", unread: [] },
+      lineAt: lineAt(QUICK, "forge-refunds"),
       unexpected: true,
     });
     const want = golden(QUICK, "forge-refunds.yaml") as { claims: unknown; unexpected: unknown };

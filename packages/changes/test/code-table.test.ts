@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { checkCodeTable, parseCodeTable, specNamesNotInRows } from "../src/code-table.js";
+import { checkCodeTable, pairsOf, parseCodeTable, specNamesNotInRows } from "../src/code-table.js";
 
 /**
  * ADR 0206 point 4: a quick change's design.md says what the code will have, in one table under
@@ -45,6 +45,21 @@ describe("design.md's In the code (ADR 0206)", () => {
       [20, "forge-refunds", "r2", "serves"],
       [21, "forge-refunds", "r2", "calls"],
       [22, "forge-refunds", undefined, "other"],
+      [23, "forge-refunds", "r2", "deployment"],
+      [24, "forge-refunds", "r2", "route"],
+      [25, "forge-refunds", "r1", "config"],
+      [26, "forge-refunds", "r1", "secret"],
+      [27, "forge-refunds", "r2", "pipeline"],
+      [28, "forge-refunds", undefined, "cut-over"],
+    ]);
+    // The operation rows read as an operation's sets (pairsOf).
+    expect(t.rows.slice(8).map((r) => pairsOf(r.what) ?? r.what)).toEqual([
+      { platform: "anvil", env: "prod" },
+      { host: "refunds.anvil.forge.example", basePath: "/refunds" },
+      { key: "refunds.receipts.keep", env: "prod", value: "7y" },
+      { key: "refunds.signing.key", env: "prod" },
+      { file: ".anvil/pipeline.yaml" },
+      "undo: point the route back at the hosts, which stay up one release",
     ]);
     expect(t.rows[6]!.what).toBe("forge-ledger GET /v1/accounts/{id}");
     expect(t.rows[0]!.spec).toBe("refund-receipts: A settled refund gets a receipt");
