@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { devNull, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
@@ -656,6 +656,8 @@ export async function forgeFieldMetarepo(): Promise<string> {
     stamp,
     readFileSync(stamp, "utf8").replace(/^atticus: .*$/m, `atticus: ${version}`),
   );
+  const emptyConfig = join(await mkdtemp(join(tmpdir(), "atticus-gitconfig-")), "empty.gitconfig");
+  writeFileSync(emptyConfig, "");
   // Each clone at its one commit, made the same on every machine (packages/cli/test/forge-field.ts
   // `commitClone`): its facts cite that commit. Hermetic: no user or system git config is read.
   const env = {
@@ -666,7 +668,8 @@ export async function forgeFieldMetarepo(): Promise<string> {
     GIT_COMMITTER_EMAIL: "forge@example.com",
     GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
     GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
-    GIT_CONFIG_GLOBAL: devNull,
+    // An empty file, not os.devNull: Git for Windows refuses \\.\nul as a config file.
+    GIT_CONFIG_GLOBAL: emptyConfig,
     GIT_CONFIG_NOSYSTEM: "1",
   };
   for (const id of info.clones) {
