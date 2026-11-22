@@ -7,6 +7,8 @@ import {
   orgPackRelOf,
   readRepoSpec,
   RepoManifest,
+  repoIdTwinOf,
+  repoIdTwinWords,
   specsDirOf,
   type CatalogRecord,
   type FlowRecord,
@@ -163,6 +165,24 @@ export async function readManifests(root: string): Promise<ManifestRead> {
     if (twice) {
       problems.push(
         `${rel}: repo id ${twice.id} is in both ${where.get(twice.id)} and ${m.data.platform}`,
+      );
+      continue;
+    }
+    // The second review of beta.30: two ids that name one loose-end id (repoIdTwinOf), in this
+    // manifest or beside another's, as an id in two manifests is.
+    const seen = [...where.keys()];
+    let twins: [string, string] | undefined;
+    for (const r of m.data.repos) {
+      const t = repoIdTwinOf(r.id, seen);
+      if (t) {
+        twins = [t, r.id];
+        break;
+      }
+      seen.push(r.id);
+    }
+    if (twins) {
+      problems.push(
+        `${rel}: ${repoIdTwinWords(...twins)}: rename one (atticus repo rename ${twins[1]} <new id>)`,
       );
       continue;
     }

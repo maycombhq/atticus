@@ -575,6 +575,21 @@ export const factIdPart = idPart;
 export const unresolvedIdOf = (repo: string, rest: string): string =>
   `unresolved.${idPart(repo)}.${rest}`;
 
+/**
+ * The second whole-release review of beta.30: another repo id among `ids` that names the same
+ * loose-end id as `id` (`forge.api` and `forge-api`), so the map couldn't tell their loose ends
+ * apart. The id scheme is C1's and stays: two such repo ids are refused where a repo id is written.
+ */
+export function repoIdTwinOf(id: string, ids: Iterable<string>): string | undefined {
+  const part = idPart(id);
+  for (const x of ids) if (x !== id && idPart(x) === part) return x;
+  return undefined;
+}
+
+/** Why two repo ids can't both be: the words every refusal of repoIdTwinOf's pair starts with. */
+export const repoIdTwinWords = (listed: string, id: string) =>
+  `Repo ids ${listed} and ${id} name one loose-end id (unresolved.${idPart(id)}.…), so the map couldn't tell their loose ends apart`;
+
 /** The loose ends a listener leaves: its rest is an Endpoint id, `<component>.<name>`. */
 const SUBSCRIBE = "event-subscribe";
 
