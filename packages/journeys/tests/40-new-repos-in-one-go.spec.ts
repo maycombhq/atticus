@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { accessible, expect, forgeSlotsJourney, open, test } from "../support/app.js";
 
 /**
@@ -47,7 +48,6 @@ const CONTROLLER = (id: string) =>
 const FILE = "src/main/java/Controller.java";
 const heads: Record<string, string> = {};
 
-test.skip(process.platform === "win32", "the remote's slow-clone hook is a shell script");
 test.beforeAll(() => {
   for (const id of NEW) {
     const work = join(top, "work", id);
@@ -60,12 +60,27 @@ test.beforeAll(() => {
     git(top, "clone", "-q", "--bare", work, join(top, `${id}.git`));
   }
   // The remote takes a moment per clone (upload-pack's pack-objects, as a slow host would), so
-  // Stop is pressed while the sync runs. Git reads this hook only from a global config.
-  const hook = join(top, "slow-pack.sh");
-  writeFileSync(hook, '#!/bin/sh\nsleep 3\nexec "$@"\n');
-  chmodSync(hook, 0o755);
+  // Stop is pressed while the sync runs. Git reads this hook only from a global config. The hook
+  // is node running a script that waits, then runs the pack-objects command it is given (with
+  // its stdio) and exits with its status: the same on Windows, where no shell script runs.
+  const slow = join(top, "slow-pack.mjs");
+  writeFileSync(
+    slow,
+    [
+      'import { spawnSync } from "node:child_process";',
+      "await new Promise((r) => setTimeout(r, 8000));",
+      "const [cmd, ...args] = process.argv.slice(2);",
+      'const r = spawnSync(cmd, args, { stdio: "inherit" });',
+      "process.exit(r.status ?? 1);",
+      "",
+    ].join("\n"),
+  );
+  const fwd = (p: string) => p.replace(/\\/g, "/");
   const cfg = join(top, "gitconfig");
-  writeFileSync(cfg, `[uploadpack]\n\tpackObjectsHook = ${hook}\n`);
+  writeFileSync(
+    cfg,
+    `[uploadpack]\n\tpackObjectsHook = "\\"${fwd(process.execPath)}\\" \\"${fwd(slow)}\\""\n`,
+  );
   process.env.GIT_CONFIG_GLOBAL = cfg;
 });
 const app = forgeSlotsJourney();
@@ -77,18 +92,20 @@ test.afterAll(() => {
 test("three new repos are added, synced, read and applied in one job, with Stop, Continue and the hand-off pause", async ({
   page,
 }) => {
+  // Three slowed clones, a read paused and three Applies: longer than a journey's default.
+  test.setTimeout(420_000);
   const root = app().root;
   await open(page, app(), "repos");
   await page
     .getByRole("textbox", { name: "Clone URLs" })
-    .fill(NEW.map((id) => `file://${join(top, `${id}.git`)}`).join("\n"));
+    .fill(NEW.map((id) => pathToFileURL(join(top, `${id}.git`)).href).join("\n"));
   await page.getByRole("button", { name: "Read the list" }).click();
   const run = page.getByRole("button", { name: "Sync, read and apply these 3" });
   await expect(run).toBeVisible({ timeout: 60_000 });
   await accessible(page, "Add repos, the list read");
   await run.click();
   // The part and the repo, with Stop, while the sync runs.
-  await expect(page.getByText(/Part 2 of 4: syncing forge-fx \(1 of 3\)/)).toBeVisible({
+  await expect(page.getByText(/Part 2 of 4: syncing forge-fx \(1 of 3\)/).first()).toBeVisible({
     timeout: 60_000,
   });
   await accessible(page, "Add repos, syncing");

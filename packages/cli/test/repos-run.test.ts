@@ -219,3 +219,33 @@ describe("Apply's ends that aren't done (the second review)", () => {
     }
   }, 300_000);
 });
+
+describe("Stop between parts (ADR 0204 4.3, the final review)", () => {
+  const TWO = ["forge-mint", "forge-yard"].map((id) => ({
+    id,
+    url: `https://git.forge.example/forge/${id}.git`,
+  }));
+  it("a Stop after the sync's last repo is heard before the read, even where the read would pause", async () => {
+    reposRunHooks.canRead = false;
+    refuse = new Set();
+    const ctl = new AbortController();
+    const first = reposRunHooks.sync!;
+    reposRunHooks.sync = async (root, rs, io, s) => {
+      const c = await first(root, rs, io, s);
+      if (rs[0] === "forge-yard") ctl.abort();
+      return c;
+    };
+    try {
+      const r = await reposRun(
+        g.root,
+        { repos: TWO },
+        { by: "pat", io: quiet, signal: ctl.signal },
+      );
+      expect(state(r, "sync")?.state).toBe("done");
+      expect(state(r, "read")).toMatchObject({ state: "stopped" });
+      expect(r.handoff).toBeUndefined();
+    } finally {
+      reposRunHooks.sync = first;
+    }
+  }, 300_000);
+});

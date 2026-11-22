@@ -175,6 +175,9 @@ export async function reposRun(
     done++;
   }
   if (part("sync", synced).state === "stopped") return finish();
+  // The final review (4.3): a Stop after the sync's last repo is heard here, between parts,
+  // before the read starts a session or pauses for the person's assistant.
+  if (stopped()) return finish(rest("read", ids, "stopped"));
   ({ out } = await standing(root, ids));
 
   // 3. Read: by the person's assistant (hard rule 4), never the built-in readers.
