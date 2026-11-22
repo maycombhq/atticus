@@ -57,8 +57,10 @@ Ask the map before you write a sentence about what exists.
   say which feature and what is missing, with its id.
 - `search` and `similar`: an earlier change, a decision or a wiki page about the same thing. Name
   it. A change that was tried before and dropped is worth one line.
-- `changes` and `conflicts <id>`: the open changes, and where they already overlap on a system
-  you name. If one of them is about the same thing as yours, name it and say how the two relate.
+- `changes` and `conflicts <id>`: the open changes; with an id, the pairs of open changes that
+  overlap on it, then each open change whose tasks or flows name it, with its task or heading.
+  Yours isn't open yet, so that list is your overlap: `changes`, then `show <change id>`, is the
+  other way. If one of them is about the same thing as yours, name it and say how the two relate.
 - `impact <id>` on the main system the request names: its answer lists each record's owner, or
   "no owner on record". Those are the teams under "Who is touched". Don't list a team from
   memory; where none is on record, say so and who would know.

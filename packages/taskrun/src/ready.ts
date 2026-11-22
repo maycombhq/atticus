@@ -1,4 +1,5 @@
 import { changeFolder } from "@maycombhq/changes";
+import { loadRepos } from "@maycombhq/workspace";
 import { readChangeFiles, readStoryIndex } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { previewTaskRun, runTask, type RunTaskOptions, type TaskRunPreview } from "./run.js";
@@ -22,10 +23,44 @@ import { afterWaits, neverReady, sameRepoBefore } from "./waves.js";
  * deployment plan's order of the repos when the caller gives one, else tasks.md's.
  */
 
+/** A word that may be a repo id, in backticks or bare: what follows is checked against the known. */
+const WORD = "`?([A-Za-z0-9][\\w.-]*?)`?(?=[\\s,;:)]|$)";
+
+/**
+ * The persona check of beta.30, and its reviews: a task whose words read a repo into the map.
+ * That is a person's step, never a task run, so such a task is never ready. Only words that name
+ * a repo the estate knows (`repos`: the tasks' own, tasks.md's headings, the manifests') say so:
+ * `/atticus-map <repo>`, `atticus map <repo>`, `atticus map … --repos <repo>[,<repo>]`,
+ * `atticus verify <repo>`, or "read <repo> into (its or the) facts" or "into the map" (not "the
+ * map of", "for", "with"). A file, a table, a topic or a version is no repo, so never one.
+ */
+export function readsIntoMap(title: string, repos: ReadonlySet<string>): boolean {
+  const known = (w: string | undefined) => !!w && repos.has(w.replace(/[.,;:]+$/, ""));
+  const any = (re: RegExp, pick: (m: RegExpMatchArray) => string[]) =>
+    [...title.matchAll(re)].some((m) => pick(m).some(known));
+  return (
+    any(new RegExp(`(?:^|\\s)/atticus-map\\s+${WORD}`, "g"), (m) => [m[1]!]) ||
+    any(new RegExp(`\\batticus\\s+(?:map|verify)\\s+${WORD}`, "g"), (m) => [m[1]!]) ||
+    any(/\batticus\s+map\b[^;]*?\s--repos[\s=]+`?([\w.,-]+)`?/g, (m) => m[1]!.split(",")) ||
+    any(
+      new RegExp(
+        `\\bread\\s+${WORD}\\s+into\\s+(?:(?:its|the)\\s+)?(?:facts\\b|the\\s+map\\b(?!\\s+(?:of|for|with)\\b))`,
+        "gi",
+      ),
+      (m) => [m[1]!],
+    )
+  );
+}
+
+const MAP_READ =
+  "it reads a repo into the map, which a person does (/atticus-map <repo>, then atticus verify <repo> --write), never a task run: once it is read, tick the task in tasks.md, or take it out and say it above the tasks";
+
 /** A task as the ready list reads it. */
 export interface ReadyInput {
   id: string;
   repo: string;
+  /** Its line's words, after the id: a task that reads a repo into the map is never ready. */
+  title?: string | undefined;
   done: boolean;
   stories: string[];
   /** Ninth UX walk: tasks.md marks it [P], so it may go with the [P] tasks next to it in its repo. */
@@ -109,8 +144,14 @@ export function planReadyTasks(o: {
   stories: readonly { id: string; dependsOn: readonly string[] }[];
   /** The repos in the order they deploy (the deployment plan); repos it leaves out go after. */
   repoOrder?: readonly string[];
+  /**
+   * The repos the manifests list, beside the tasks' own: a task that reads one of them into the
+   * map is never ready (readsIntoMap).
+   */
+  repos?: readonly string[];
 }): ReadyPlan {
   const deps = new Map(o.stories.map((s) => [s.id, s.dependsOn]));
+  const known = new Set([...(o.repos ?? []), ...o.tasks.map((t) => t.repo)]);
   const rank = (repo: string) => {
     const i = o.repoOrder?.indexOf(repo) ?? -1;
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;
@@ -156,6 +197,7 @@ export function planReadyTasks(o: {
     const tasksWord = (ids: readonly string[]) => (ids.length === 1 ? "task" : "tasks");
     const why =
       never.get(t) ??
+      (t.title && readsIntoMap(t.title, known) ? MAP_READ : undefined) ??
       (waitsFor.length ? `it waits for ${tasksWord(waitsFor)} ${waits} to be done first` : past);
     out.push({
       id: t.id,
@@ -189,6 +231,7 @@ export async function readyTasksOf(
       id: t.id,
       repo: t.repo,
       done: t.done,
+      title: t.title,
       stories: t.stories,
       ...(t.parallel ? { parallel: true } : {}),
       ...(t.after ? { after: t.after } : {}),
@@ -196,13 +239,32 @@ export async function readyTasksOf(
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });
   }
+  // The re-review: manifests that don't read leave only the tasks' own repos known, said.
+  let unreadManifests: string | undefined;
+  const listed = await loadRepos(root).then(
+    (rs) => rs.map((r) => r.id),
+    (e: unknown) => {
+      unreadManifests = manifestsNote(e);
+      return [] as string[];
+    },
+  );
   const plan = planReadyTasks({
     tasks,
     stories: readStoryIndex(files),
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
+    repos: listed,
   });
-  const notes = read.flatMap((t) => afterWordsNote(t) ?? []);
+  const notes = [
+    ...read.flatMap((t) => afterWordsNote(t) ?? []),
+    ...(unreadManifests ? [unreadManifests] : []),
+  ];
   return notes.length ? { ...plan, notes } : plan;
+}
+
+/** The plan's note when the manifests don't read: only the tasks' own repos count as known. */
+export function manifestsNote(e: unknown): string {
+  const why = (e instanceof Error ? e.message : String(e)).split("\n")[0]!.trim();
+  return `The manifests couldn't be read (${why || "no reason given"}), so only each task's own repo counts as a repo the estate knows when a task is checked for reading a repo into the map: fix the manifest for the others to count`;
 }
 
 /**

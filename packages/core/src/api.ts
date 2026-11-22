@@ -777,6 +777,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   POST /api/upgrade (`UpgradeRequest`) confirms a step's build that waits for its removals over
  *   the limits (`allowRemovals`), its hand edits (`discardEdits`) or both, with the `plan` of the
  *   list, all three from the refused run's job result (`confirm`). Additive only.
+ *   Also in 3.19.0 (ADR 0201 addendum 2026-11-22, the persona check of beta.30): the map tool
+ *   `conflicts` runs `atticus change conflicts --names --json`, which answers `{ pairs, touches }`:
+ *   `pairs` as `--json` alone gives them (unchanged without `--names`), and with an id `touches`,
+ *   each open change whose tasks.md or target flows name it (`{ change, touches, where: [{ file,
+ *   line, heading?, task?, tasks?, text }] }`). The tool's answer was the pairs' array. Additive
+ *   for the command line and the local API; the tool's answer changes shape, by the review.
+ *   Also in 3.19.0 (ADR 0206 addendum, the same check): a change's impact read from design.md
+ *   lists In the code's operation rows (`ChangeImpact.operations`, each its `line` and `has`),
+ *   which name nothing the map can follow, and `reaches` may hold `has: "deployment"` entries:
+ *   `name` and `ids` the components the repo deploys, `receivers` the components the map shows
+ *   calling them, or sending them events (`events: true`). Additive only.
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
@@ -4163,7 +4174,10 @@ export const ChangeImpact = z.object({
   /**
    * 3.19.0 (ADR 0206, additive): a change with no target flow is read from design.md's In the
    * code: for each row, the records of the map it names and who receives them, never counted
-   * as breaks (a quick change states no fields). Empty before the table is written.
+   * as breaks (a quick change states no fields). Empty before the table is written. A
+   * `deployment` row's reach (the persona check of beta.30): its `name` is every component the
+   * repo deploys, comma-joined (`ids` those the catalog has), and its `receivers` the components
+   * outside them linked to one of them, `events` where every such link is async.
    */
   from: z.literal("design").optional(),
   reaches: z
@@ -4175,12 +4189,27 @@ export const ChangeImpact = z.object({
         ids: z.array(z.string()),
         owner: z.string().optional(),
         receivers: z.array(
-          z.object({ id: z.string(), kind: z.string(), owner: z.string().optional() }),
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            owner: z.string().optional(),
+            /**
+             * 3.19.0 (the persona check of beta.30): in a `deployment` row's reach, true when
+             * this component only sends the deployed one events (every link async), not calls.
+             */
+            events: z.boolean().optional(),
+          }),
         ),
         further: z.number().int(),
       }),
     )
     .optional(),
+  /**
+   * 3.19.0 (the persona check of beta.30, additive): the rows of In the code that are operations
+   * (a route, a config, a secret, a pipeline, a cut-over, a migration, other), which name nothing
+   * the map can follow; conform checks them. A table of these alone is a table, not none.
+   */
+  operations: z.array(z.object({ line: z.number().int(), has: z.string() })).optional(),
   breaks: z.number().int(),
   mayBreak: z.number().int(),
   /** 2.81.0 (ADR 0181): of the callers that break, those whose every link the AI decided. */

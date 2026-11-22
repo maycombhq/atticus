@@ -53,7 +53,8 @@ thinks it is.
   A change that is "one line" in a class five others extend is not one line.
 - **Does every wait have a wave?** For each new call or event the architect's section names:
   can the caller's repo ship before the other end exists? If not, where is the "after"?
-- **Who else is in the same repo?** `conflicts <id>` for each repo.
+- **Who else is in the same repo?** `conflicts <id>` for each repo: each open change whose tasks
+  or flows name it, with its task or heading. Or `changes`, then `show <change id>`.
 - **Is each repo real?** An id that answers "is not in the map: planned or not read" and isn't
   under `## Planned`; a new repo with no word on who creates it.
 - **Is the reuse real?** `show_code` or `grep` on what the section says to copy from.

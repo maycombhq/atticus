@@ -15,7 +15,14 @@ import { CHANGE, NOW, forgeChangeRoot, write } from "./helpers.js";
  */
 
 const RULE = "constitution.change-links-known";
-const of = (r: CriticResult) => r.findings.filter((f) => f.finding.rule === RULE);
+const all = (r: CriticResult) => r.findings.filter((f) => f.finding.rule === RULE);
+/**
+ * The persona check of beta.30: the rule also says a repo the change's tasks.md names that only
+ * the built-in readers mapped (the Forge fixture's forge-ledger and forge-portal-bff: no facts).
+ * Those are tested in links-not-read.test.ts; here, the rule's other findings.
+ */
+const READER_ONLY = "which only the built-in readers mapped";
+const of = (r: CriticResult) => all(r).filter((f) => !f.finding.summary.includes(READER_ONLY));
 const A = "a".repeat(40);
 const B = "b".repeat(40);
 
@@ -84,8 +91,14 @@ async function ask(root: string, evidence: string[], question: string) {
 }
 
 describe("a change that rests on a guessed link says so (ADR 0140)", () => {
-  it("says nothing on the Forge change, whose links are read from code", async () => {
-    expect(of(await runCritic(await forgeChangeRoot(), CHANGE, { now: NOW }))).toEqual([]);
+  it("says nothing on the Forge change, whose links are read from code, but that its repos weren't read", async () => {
+    // Its tasks.md has work in forge-ledger and forge-portal-bff, which have no facts (ADR 0074).
+    const f = all(await runCritic(await forgeChangeRoot(), CHANGE, { now: NOW }));
+    expect(f.map((x) => x.finding.summary.split(",")[0])).toEqual([
+      "The change has work in forge-ledger",
+      "The change has work in forge-portal-bff",
+    ]);
+    expect(f.every((x) => x.finding.summary.includes(READER_ONLY))).toBe(true);
   });
 
   it("asks the caller's owner about a call the join found by path", async () => {

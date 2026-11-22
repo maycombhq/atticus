@@ -873,6 +873,10 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
       ]);
       const web = r.results.find((x) => x.repo === PORTAL_WEB)!;
       expect(web.claims!.map((c) => c.outcome)).toEqual(["unconfirmed"]);
+      // The persona check of beta.30: a repo no manifest lists is added first, never read first.
+      expect(web.claims![0]!.next).toBe(
+        `Add ${PORTAL_WEB} to the estate first: create it on your Git host if it is new, then atticus repo add <its clone URL> --id ${PORTAL_WEB}. Then read it into facts (/atticus-map ${PORTAL_WEB}, then atticus verify ${PORTAL_WEB} --write) and check again: atticus change conform ${a.id}.`,
+      );
       expect(web.problems).toEqual([
         `${PORTAL_WEB} isn't a repo of the estate yet: if it is new, create it on your Git host, then add it (atticus repo add <its clone URL> --id ${PORTAL_WEB}), and check again.`,
       ]);

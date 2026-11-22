@@ -23,7 +23,7 @@ The tools a persona asks most:
 | `show_code`     | The lines of code a fact cites.                                                                                             |
 | `search`        | Records, knowledge, flows, changes and wiki pages by words and meaning.                                                     |
 | `similar`       | What reads like one id. A hint where to look, never a fact.                                                                 |
-| `conflicts`     | Open changes that overlap; with an id, only the overlaps that id is in.                                                     |
+| `conflicts`     | Open changes that overlap; with an id, those overlaps, then each open change whose tasks or flows name it, with the line.   |
 | `features`      | The features the estate has, with their entry points.                                                                       |
 | `knowledge_ask` | The organisation's own standards, processes and decisions that may answer a question, each with its page.                   |
 

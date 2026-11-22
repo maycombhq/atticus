@@ -54,3 +54,7 @@ A question's owner is the team its repo manifest names (`owner`), with the name 
 - Not done: the read plan's parts (A-ledger) are not read for "incomplete" (the verifier's unread files cover the same ground once the facts are verified); a change's own questions have no team owner, though a change names its people in `owners`; the VS Code Questions view keeps its order from the API but has no _My teams'_ toggle.
 
 **Contracts.** C3: the constitution gains one rule (data); `CriticContext` gains the optional `estate` (C4, additive for plugin checks). C6: `roles.yaml` version 2 (`teams`), with the `roles-v2` migration. C4: the local API 2.33.0, additive. C1, the facts file and the question file are unchanged.
+
+## Addendum, 2026-11-22
+
+- `constitution.change-links-known` also says a repo a manifest lists that the change has work in (a `## <repo>` of `tasks.md`, a row of design.md's In the code) and that wasn't read into facts: nobody read it, or only the built-in readers mapped it. A risk, with `/atticus-map <repo>`, then `atticus verify <repo> --write`. See [ADR 0201's addendum of 2026-11-22](0201-the-quick-path-and-personas-that-ask-the-map.md#addendum). Those repos are also among the ones whose stale or incomplete read and open link questions it reports.

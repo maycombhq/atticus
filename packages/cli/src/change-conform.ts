@@ -123,6 +123,61 @@ const toActOn = (r: Api.ConformRepoResultT) =>
       open(c),
   ).length;
 
+/**
+ * The last line of a check that raised nothing to act on (the persona check of beta.30, and its
+ * review): the code has everything only when every claim is present and every item found; else
+ * what couldn't be confirmed or is left, counted; what a person waived or dismissed is said as
+ * settled. An item a person dismissed that isn't in the design is nothing the change states.
+ */
+export function conformSummary(
+  results: readonly Api.ConformRepoResultT[],
+  run: { flows: number; claims?: number },
+): string {
+  const claims = results.flatMap((r) => r.claims ?? []);
+  const items = results.flatMap((r) => r.items);
+  const unconfirmed = claims.filter((c) => c.outcome === "unconfirmed").length;
+  const unsure = (c: (typeof claims)[number]) =>
+    c.outcome !== "present" && c.outcome !== "unconfirmed";
+  const left =
+    claims.filter((c) => unsure(c) && open(c)).length +
+    items.filter((i) => i.status !== "found" && open(i)).length;
+  const settledClaims = claims.filter((c) => unsure(c) && !open(c)).length;
+  const settledItems = items.filter(
+    (i) => i.status !== "found" && i.status !== "unexpected" && !open(i),
+  ).length;
+  const settled = settledClaims + settledItems;
+  // In the code and not in the design, dismissed by a person: no part of what the change states.
+  const dismissedExtra = items.filter((i) => i.status === "unexpected" && !open(i)).length;
+  if (unconfirmed || left) {
+    const parts = [
+      unconfirmed ? `${unconfirmed} couldn't be confirmed` : "",
+      left ? `${left} missing, different or to check by hand` : "",
+      settled ? `${settled} waived or dismissed` : "",
+    ].filter(Boolean);
+    return `Not everything the change states is confirmed in the code: ${parts.join(", ")}. Each claim above says what to do next; check again once it is done.`;
+  }
+  const things = (k: number) =>
+    `${k} ${k === 1 ? "thing" : "things"} in the code that the design doesn't name ${k === 1 ? "was" : "were"} dismissed by a person`;
+  if (settled) {
+    const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
+    const what = [
+      settledClaims ? n(settledClaims, "claim") : "",
+      settledItems ? n(settledItems, "item") : "",
+    ]
+      .filter(Boolean)
+      .join(" and ");
+    // The third review: a dismissed thing the design doesn't name is counted beside them.
+    return `The code has everything else the change states it will have; ${what} ${settled === 1 ? "was" : "were"} waived or dismissed by a person${dismissedExtra ? `, and ${things(dismissedExtra)}` : ""}.`;
+  }
+  if (dismissedExtra)
+    return run.flows
+      ? `The code has everything its target flows add${run.claims ? " and everything the change states it will have" : ""}; ${things(dismissedExtra)}.`
+      : `The code has everything the change states it will have; ${things(dismissedExtra)}.`;
+  return run.flows
+    ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
+    : "The code has everything the change states it will have, and nothing its design doesn't name.";
+}
+
 export async function changeConformCommand(
   root: string,
   change: string,
@@ -183,12 +238,12 @@ export async function changeConformCommand(
     }
     if (!run.results.length) return 1;
     print(results, io);
+    // The persona check of beta.30: success is said only when every claim is present and every
+    // item found (conformSummary).
     io.out(
       bad
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`
-        : run.flows
-          ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
-          : "The code has everything the change states it will have, and nothing its design doesn't name.",
+        : conformSummary(results, run),
     );
     return bad && !o.findingsAnswer ? 1 : 0;
   } catch (e) {

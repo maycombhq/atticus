@@ -54,7 +54,9 @@ and an order that can't work.
   `ask "who consumes the topic <name>?"`, `walk <id>`, then `show_code` on the link in doubt.
 - **What rests on a guess?** A link the map marks as guessed or seen at one end, and a system
   that answers "is not in the map: planned or not read" but that the section treats as known.
-- **Who is changing the same place?** `conflicts <id>` for each system and repo, planned too.
+- **Who is changing the same place?** `conflicts <id>` for each system and repo, planned too: it
+  lists each open change whose tasks or flows name the id, with its task or heading, as well as
+  the pairs that overlap. Or `changes`, then `show <change id>`.
 - **Does the order hold?** For each "before": what fails if the second thing goes first, and
   what calls the old thing after it is switched off (`impact` on what is retired).
 - **Does the organisation already have a rule?** `knowledge_ask` on the pattern used. A

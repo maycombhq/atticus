@@ -301,10 +301,12 @@ describe("conflicts, show and the lists", () => {
   it(
     "find two open quick changes with tasks under the same planned repo",
     async () => {
-      const pairs = await json<{ changes: string[]; overlap: Record<string, string[]> }[]>(
-        "conflicts",
-        {},
-      );
+      const asked = await json<{
+        pairs: { changes: string[]; overlap: Record<string, string[]> }[];
+        touches: unknown[];
+      }>("conflicts", {});
+      const pairs = asked.pairs;
+      expect(asked.touches).toEqual([]);
       expect(pairs).toEqual([
         {
           changes: [PORTAL, RATES],
@@ -319,8 +321,39 @@ describe("conflicts, show and the lists", () => {
           },
         },
       ]);
-      expect(await json("conflicts", { id: API })).toEqual(pairs);
-      expect(await json("conflicts", { id: WEB })).toEqual([]);
+      // The command line without --names is as it was: the pairs only.
+      const cli = await run(["change", "conflicts", "--touching", API, "--json"]);
+      expect(JSON.parse(cli.out)).toEqual(pairs);
+      expect(
+        JSON.parse((await run(["change", "conflicts", "--touching", WEB, "--json"])).out),
+      ).toEqual([]);
+      // The persona check of beta.30: the tool asks with --names, so with an id it has the pairs
+      // and each open change whose tasks.md names it, with its heading and tasks.
+      expect(await json("conflicts", { id: API })).toEqual({
+        pairs,
+        touches: [
+          {
+            change: PORTAL,
+            touches: API,
+            where: [{ file: "tasks.md", line: 3, heading: API, tasks: ["t1"], text: `## ${API}` }],
+          },
+          {
+            change: RATES,
+            touches: API,
+            where: [{ file: "tasks.md", line: 3, heading: API, tasks: ["t1"], text: `## ${API}` }],
+          },
+        ],
+      });
+      expect(await json("conflicts", { id: WEB })).toEqual({
+        pairs: [],
+        touches: [
+          {
+            change: PORTAL,
+            touches: WEB,
+            where: [{ file: "tasks.md", line: 7, heading: WEB, tasks: ["t2"], text: `## ${WEB}` }],
+          },
+        ],
+      });
       const said = await run(["change", "conflicts"]);
       expect(said.code).toBe(1);
       expect(said.out).toBe(`${PORTAL} and ${RATES} both touch records ${API}; repos ${API}`);
