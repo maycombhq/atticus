@@ -1,6 +1,6 @@
 # 0206. Operations and quick changes are checked against the code, and impact, map and estimate read a quick change
 
-- Status: proposed (2026-11-21), for the owner's approval before any code
+- Status: accepted (2026-11-21, by the owner, with the recommended answers: a not-checkable claim is a blocking, waivable `conform.not-checked` finding at Build, QA and Go/no-go, the waiver's reason saying how it was checked, and "couldn't confirm" stays a note listed in the hand-off PR; the quick path refuses its plan hand-off without the `## In the code` table, a row with Has `other` always being a way on; on a quick change impact lists receivers under "reaches", never as breaks; ADR 0114's flow checks are unchanged in beta.30)
 - Date: 2026-11-21
 - Release: 2.0.0-beta.30, closing two of the [known limits](../plan/v30.md#known-limits-of-beta30) by the owner's decision of 2026-11-21 (nothing stays out of beta.30)
 - Amends: ADR 0203 (its addendum: "point 6, conformance of `sets`, is not built in beta.30"), ADR 0201 (decision 1's `quick-define` step and the plan's "one deterministic check on the quick path"), ADR 0114 (the conform gate's rules and stored result)
