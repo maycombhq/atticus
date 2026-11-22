@@ -55,7 +55,8 @@ export function tasksNaming(tasks: string, id: string): ChangeTouchPlace[] {
     const l = raw.trimEnd();
     if (/^\s{0,3}(```|~~~)/.test(l)) fence = !fence;
     if (fence) return;
-    const h = /^##\s+`?([^`\s]+)`?\s*$/.exec(l);
+    // `## <repo>`, words after it allowed (`## forge-svc-01 (new)`), as a repo heading is written.
+    const h = /^##\s+`?([a-z0-9][a-z0-9._-]*)`?(?:\s.*)?$/.exec(l);
     if (h) {
       heading = h[1]!;
       under = undefined;

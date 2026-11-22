@@ -108,7 +108,7 @@ Every command under the twelve, with its options.
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change export <change> [ado|jira] [--format ado|jira] [--out file.csv] [--area path] [--iteration path]  The change's stories and tasks as a work-item import file: Azure DevOps' CSV (a User Story per story, its Tasks under it, criteria in Acceptance Criteria) or Jira's; a person imports it
-  atticus change conflicts [--touching <id>] [--json]  Open changes that touch the same systems, records or repos; with --touching, the overlaps that id is in, then each open change whose tasks or flows name it
+  atticus change conflicts [--touching <id>] [--names] [--json]  Open changes that touch the same systems, records or repos; with --touching, only the overlaps that id is in; with --names too, each open change whose tasks or flows name it
   atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire

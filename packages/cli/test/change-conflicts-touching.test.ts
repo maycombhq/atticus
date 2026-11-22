@@ -72,6 +72,17 @@ describe("tasksNaming", () => {
       },
     ]);
     expect(tasksNaming(MOVE_TASKS, "forge-svc-0")).toEqual([]);
+    // The review: a heading with words after the id is still the repo's.
+    expect(
+      tasksNaming("## forge-svc-03 (new)\n\n- [ ] t1 Add it\n", "forge-svc-03").map((p) => [
+        p.line,
+        p.tasks,
+      ]),
+    ).toEqual([[1, ["t1"]]]);
+    // A fenced block is not tasks.
+    expect(
+      tasksNaming("## forge-ops\n\n```\n- [ ] t9 forge-svc-03\n```\n", "forge-svc-03"),
+    ).toEqual([]);
   });
 });
 
@@ -91,32 +102,48 @@ describe("atticus change conflicts --touching", () => {
       ],
     ]);
 
+    // Without --names the command says what it said before (the review: additive only).
+    const plain = io();
+    expect(await changeConflicts(root, { touching: "forge-svc-01" }, plain.io)).toBe(0);
+    expect(plain.out).toEqual(["No open changes both touch forge-svc-01."]);
+    const plainJson = io();
+    expect(
+      await changeConflicts(root, { touching: "forge-svc-01", json: true }, plainJson.io),
+    ).toBe(0);
+    expect(plainJson.out).toEqual(["[]"]);
+
     const c = io();
-    expect(await changeConflicts(root, { touching: "forge-svc-01" }, c.io)).toBe(0);
+    expect(await changeConflicts(root, { touching: "forge-svc-01", names: true }, c.io)).toBe(0);
     expect(c.out).toEqual([
       "No open changes both touch forge-svc-01.",
-      "Open changes whose tasks or flows name forge-svc-01 (changes, then show <change id>, lists every change's repos):",
+      "Open changes whose tasks or flows name forge-svc-01:",
       "- move-to-anvil: tasks.md:9 task t5 under ## forge-deploy",
       "- publish-settled-refunds: tasks.md:7 ## forge-svc-01 (t5)",
+      "To see every change's repos: atticus change list, then atticus context show <change id>.",
     ]);
 
     const j = io();
-    expect(await changeConflicts(root, { touching: "forge-audit", json: true }, j.io)).toBe(0);
-    expect(JSON.parse(j.out.join("\n"))).toEqual([
-      {
-        change: "publish-settled-refunds",
-        touches: "forge-audit",
-        where: [
-          {
-            file: "tasks.md",
-            line: 3,
-            heading: "forge-audit",
-            tasks: ["t1"],
-            text: "## forge-audit",
-          },
-        ],
-      },
-    ]);
+    expect(
+      await changeConflicts(root, { touching: "forge-audit", json: true, names: true }, j.io),
+    ).toBe(0);
+    expect(JSON.parse(j.out.join("\n"))).toEqual({
+      pairs: [],
+      touches: [
+        {
+          change: "publish-settled-refunds",
+          touches: "forge-audit",
+          where: [
+            {
+              file: "tasks.md",
+              line: 3,
+              heading: "forge-audit",
+              tasks: ["t1"],
+              text: "## forge-audit",
+            },
+          ],
+        },
+      ],
+    });
   });
 
   it("keeps the pairs first and as they were, and says nothing more without an id", async () => {
@@ -137,17 +164,30 @@ describe("atticus change conflicts --touching", () => {
     expect(all.out).toEqual([pairLine]);
     const one = io();
     expect(await changeConflicts(root, { touching: "forge-audit" }, one.io)).toBe(1);
-    expect(one.out).toEqual([
+    expect(one.out).toEqual([pairLine]);
+    const named = io();
+    expect(await changeConflicts(root, { touching: "forge-audit", names: true }, named.io)).toBe(1);
+    expect(named.out).toEqual([
       pairLine,
-      "Open changes whose tasks or flows name forge-audit (changes, then show <change id>, lists every change's repos):",
+      "Open changes whose tasks or flows name forge-audit:",
       "- audit-retention: tasks.md:3 ## forge-audit (t1)",
       "- publish-settled-refunds: tasks.md:3 ## forge-audit (t1)",
+      "To see every change's repos: atticus change list, then atticus context show <change id>.",
     ]);
     const j = io();
     expect(await changeConflicts(root, { touching: "forge-audit", json: true }, j.io)).toBe(1);
-    const got = JSON.parse(j.out.join("\n")) as Record<string, unknown>[];
-    expect(got.map((x) => x.changes ?? x.change)).toEqual([
-      ["audit-retention", "publish-settled-refunds"],
+    const pairs = JSON.parse(j.out.join("\n")) as { changes: string[] }[];
+    expect(pairs.map((x) => x.changes)).toEqual([["audit-retention", "publish-settled-refunds"]]);
+    const jn = io();
+    expect(
+      await changeConflicts(root, { touching: "forge-audit", json: true, names: true }, jn.io),
+    ).toBe(1);
+    const got = JSON.parse(jn.out.join("\n")) as {
+      pairs: unknown[];
+      touches: { change: string }[];
+    };
+    expect(got.pairs).toEqual(pairs);
+    expect(got.touches.map((t) => t.change)).toEqual([
       "audit-retention",
       "publish-settled-refunds",
     ]);

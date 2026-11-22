@@ -777,11 +777,18 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   POST /api/upgrade (`UpgradeRequest`) confirms a step's build that waits for its removals over
  *   the limits (`allowRemovals`), its hand edits (`discardEdits`) or both, with the `plan` of the
  *   list, all three from the refused run's job result (`confirm`). Additive only.
+ *   Also in 3.19.0 (ADR 0201 addendum 2026-11-22, the persona check of beta.30): the map tool
+ *   `conflicts` runs `atticus change conflicts --names --json`, which answers `{ pairs, touches }`:
+ *   `pairs` as `--json` alone gives them (unchanged without `--names`), and with an id `touches`,
+ *   each open change whose tasks.md or target flows name it (`{ change, touches, where: [{ file,
+ *   line, heading?, task?, tasks?, text }] }`). The tool's answer was the pairs' array. Additive
+ *   for the command line and the local API; the tool's answer changes shape, by the review.
+ *   Also in 3.19.0 (ADR 0206 addendum, the same check): a change's impact read from design.md
+ *   lists In the code's operation rows (`ChangeImpact.operations`, each its `line` and `has`),
+ *   which name nothing the map can follow, and `reaches` may hold `has: "deployment"` entries:
+ *   `name` and `ids` the component the repo deploys, `receivers` the components the map shows
+ *   calling it or sending it events. Additive only.
  */
-// Also in 3.19.0 (ADR 0201 addendum 2026-11-22, the persona check of beta.30): the map tool
-// `conflicts` with an id (`atticus change conflicts --touching <id> --json`) lists after the
-// pairs, as they were, each open change whose tasks.md or target flows name the id
-// (`{ change, touches, where: [{ file, line, heading?, task?, tasks?, text }] }`). Additive only.
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
 export const API_VERSION = "3.19.0";

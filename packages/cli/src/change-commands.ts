@@ -1294,14 +1294,18 @@ const bracketed = (cites: readonly string[] | undefined): string => {
 };
 
 /**
- * atticus change conflicts [--touching <id>]: open changes touching the same records or repos;
- * with an id, the overlaps that id is in, then each open change whose tasks.md or target flows
- * name it, with where (ADR 0201, addendum 2026-11-22; an id the map lacks is fine: two changes
- * may plan the same repo). Exit 1 when any overlap; a change that only names the id is none.
+ * atticus change conflicts [--touching <id>] [--names]: open changes touching the same records or
+ * repos; with an id, only the overlaps that id is in (ADR 0201; an id the map lacks is fine: two
+ * changes may plan the same repo). Exit 1 when any overlap.
+ *
+ * ADR 0201 addendum, 2026-11-22: with --names, also each open change whose tasks.md or target
+ * flows name the id, with where, so a change still being written (not open, so in no pair) sees
+ * who has work there; --json is then `{ pairs, touches }`. Without it, everything is as it was.
+ * A change that only names the id is no overlap: it never makes exit 1.
  */
 export async function changeConflicts(
   root: string,
-  o: { json?: boolean; touching?: string },
+  o: { json?: boolean; touching?: string; names?: boolean },
   io: Output,
 ): Promise<number> {
   // Nothing overlaps where there is nothing to read: said as a fault, never as "no overlap".
@@ -1315,12 +1319,9 @@ export async function changeConflicts(
   const pairs = o.touching
     ? all.filter((p) => Object.values(p.overlap).some((v) => v.includes(o.touching!)))
     : all;
-  // The persona check of beta.30: while a change is being written it isn't open, so no pair has
-  // it; with an id, each open change whose tasks.md or target flows name it is listed too, after
-  // the pairs. Only a pair is an overlap (exit 1).
-  const touches = o.touching ? await changesTouching(root, o.touching) : [];
+  const touches = o.names && o.touching ? await changesTouching(root, o.touching) : [];
   if (o.json) {
-    io.out(JSON.stringify([...pairs, ...touches], null, 2));
+    io.out(JSON.stringify(o.names ? { pairs, touches } : pairs, null, 2));
     return pairs.length ? 1 : 0;
   }
   if (pairs.length === 0)
@@ -1332,10 +1333,16 @@ export async function changeConflicts(
     io.out(`${p.changes[0]} and ${p.changes[1]} both touch ${parts.join("; ")}`);
   }
   if (touches.length) {
-    io.out(
-      `Open changes whose tasks or flows name ${o.touching} (changes, then show <change id>, lists every change's repos):`,
-    );
+    io.out(CONFLICT_WORDS.touchesHead(o.touching!));
     for (const t of touches) io.out(`- ${t.change}: ${t.where.map(touchPlaceLine).join("; ")}`);
+    io.out(CONFLICT_WORDS.everyRepo);
   }
   return pairs.length ? 1 : 0;
 }
+
+/** The words of `change conflicts --names` (ADR 0201 addendum, 2026-11-22). */
+export const CONFLICT_WORDS = {
+  touchesHead: (id: string) => `Open changes whose tasks or flows name ${id}:`,
+  everyRepo:
+    "To see every change's repos: atticus change list, then atticus context show <change id>.",
+};

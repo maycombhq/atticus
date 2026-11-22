@@ -313,7 +313,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "conflicts",
     description:
-      "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, the pairs that overlap on it, then each open change whose tasks.md or target flows name it, with the file, line and heading or task (so a change not open yet still sees who has work there). changes, then show <change id>, gives every change's repos (atticus change conflicts).",
+      "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share (pairs); with an id, the pairs that overlap on it, and each open change whose tasks.md or target flows name it, with the file, line and heading or task (touches), so a change not open yet still sees who has work there. changes, then show <change id>, gives every change's repos (atticus change conflicts --names).",
     args: [
       s(
         "id",
@@ -321,7 +321,13 @@ export const MCP_TOOLS: McpTool[] = [
         false,
       ),
     ],
-    argv: (a) => ["change", "conflicts", ...(a.id ? ["--touching", String(a.id)] : []), "--json"],
+    argv: (a) => [
+      "change",
+      "conflicts",
+      ...(a.id ? ["--touching", String(a.id)] : []),
+      "--names",
+      "--json",
+    ],
     answersOnExit: [1],
   },
   {

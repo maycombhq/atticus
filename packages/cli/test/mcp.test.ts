@@ -442,8 +442,8 @@ describe("atticus mcp (ADR 0104)", () => {
       await call("conflicts", {}, fake(calls));
       await call("conflicts", { id: "forge-ledger" }, fake(calls));
       expect(calls).toEqual([
-        ["change", "conflicts", "--json"],
-        ["change", "conflicts", "--touching", "forge-ledger", "--json"],
+        ["change", "conflicts", "--names", "--json"],
+        ["change", "conflicts", "--touching", "forge-ledger", "--names", "--json"],
       ]);
       const pairs = '[{"changes":["a","b"],"overlap":{"repos":["forge-ledger"]}}]';
       const overlap = await call("conflicts", {}, async () => ({ code: 1, out: pairs, err: "" }));
@@ -459,7 +459,7 @@ describe("atticus mcp (ADR 0104)", () => {
       const other = await call("changes", {}, async () => ({ code: 1, out: "[]", err: "" }));
       expect(other.result.isError).toBe(true);
       expect(MCP_TOOLS.find((t) => t.name === "conflicts")!.description).toBe(
-        "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share; with an id, the pairs that overlap on it, then each open change whose tasks.md or target flows name it, with the file, line and heading or task (so a change not open yet still sees who has work there). changes, then show <change id>, gives every change's repos (atticus change conflicts).",
+        "Where open changes already overlap: each pair of changes that touch the same systems, records or repos, with what they share (pairs); with an id, the pairs that overlap on it, and each open change whose tasks.md or target flows name it, with the file, line and heading or task (touches), so a change not open yet still sees who has work there. changes, then show <change id>, gives every change's repos (atticus change conflicts --names).",
       );
     });
 
@@ -631,7 +631,7 @@ describe("atticus mcp (ADR 0104)", () => {
       expect(a.affected.map((x) => x.id)).toContain("reports-job");
       const none = await call("conflicts", { id: "forge-portal" }, run);
       expect(none.result.isError).toBeUndefined();
-      expect(JSON.parse(none.result.content[0]!.text)).toEqual([]);
+      expect(JSON.parse(none.result.content[0]!.text)).toEqual({ pairs: [], touches: [] });
     }, 120_000);
   });
 });
