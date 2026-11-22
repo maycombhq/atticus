@@ -4312,7 +4312,10 @@ export type ConformClaimT = z.infer<typeof ConformClaim>;
 
 /**
  * The newest conformance check of one repo of a change (ADR 0114), as stored in the change
- * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows.
+ * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows,
+ * and each claim the change states for the repo (ADR 0206: each operation's `sets` in it, each
+ * of a quick change's In the code rows) with one of five outcomes: present, present
+ * differently, missing, not checkable or unconfirmed.
  */
 export const ConformRepoResult = z.object({
   schemaVersion: z.literal(1),
@@ -8409,7 +8412,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getChangeConformance",
       summary:
-        "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114)",
+        "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114), and against each claim the change states, each operation's sets in its repos and each of a quick change's In the code rows, as present, present differently, missing, not checkable or unconfirmed (ADR 0206)",
       tag: "changes",
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeConformance", description: "OK" },
