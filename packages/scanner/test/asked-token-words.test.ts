@@ -37,4 +37,18 @@ describe("the words of an arrow asked about now, by its host's form", () => {
     // A loose end whose host is a real one isn't this.
     expect(askedTokenOf(arrow, at("PUT http://ledger.forge.internal/v1/x"))).toBeUndefined();
   });
+
+  it("a setting nothing gives a host, or a camelCase setting nothing sets (the review of 5cc4ce87, I2)", () => {
+    const settings = { names: new Set(["FORGELEDGERURL"]), camelRepos: new Set<string>() };
+    for (const raw of ["PUT http://${FORGE_LEDGER_URL}/v1/x", "PUT http://$FORGE_LEDGER_URL/v1/x"])
+      expect(askedTokenOf(arrow, at(raw), settings), raw).toBe(
+        "the host is a setting Atticus couldn't take a host from: asked now (Unresolved/unresolved.forge-payments.c-token)",
+      );
+    const camel = { names: new Set<string>(), camelRepos: new Set(["forge-payments"]) };
+    expect(askedTokenOf(arrow, at("PUT http://${ledgerUrl}/v1/x"), camel)).toBe(
+      "the host is a setting nothing sets: asked now (Unresolved/unresolved.forge-payments.c-token)",
+    );
+    // Without those, the words of its form, as before.
+    expect(askedTokenOf(arrow, at("PUT http://${ledgerUrl}/v1/x"))).toMatch(/a variable/);
+  });
 });

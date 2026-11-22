@@ -54,6 +54,9 @@ import {
   type TermsResult,
   unresolvedIdsNow,
   unsetHostOf,
+  camelSettingKey,
+  settingNameKey,
+  type UnsetHostForm,
   mayBeOldLooseEndId,
   oldIdOfLooseEnd,
 } from "@maycombhq/core";
@@ -724,6 +727,12 @@ export interface Build {
    * names again with their repo (`oldIdsNamedOf`); the guard refuses while there are any.
    */
   oldIdsNamed?: OldIdNamed[];
+  /**
+   * The review of 5cc4ce87 (I2): the names the facts slots' settings have (`settingNameKey`),
+   * and the repos whose settings have camelCase keys, so a removal's words name an unset host as
+   * the join's question does (`askedTokenOf`).
+   */
+  hostSettings?: { names: string[]; camelRepos: string[] };
   linkEvidence?: LinkEvidenceResult;
   shared?: SharedJoinResult;
   terms?: TermsResult;
@@ -1648,6 +1657,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
   // refused by applyCurated like any other protected field.
   const sorted = [...records].sort(byKindId);
+  const hostSettings = hostSettingsFrom(factRepos);
   // ADR 0124 addendum E-ids (2026-11-22): an old loose end's id an input names, which this build
   // names again with its repo; the guard refuses such a build until the upgrade.
   const oldIdsNamed = oldIdsNamedOf(sorted, new Map(Object.entries(i.looseEndIdsNamed ?? {})));
@@ -1769,6 +1779,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     orphanedDecisions,
     orphanedTargets,
     ...(oldIdsNamed.length ? { oldIdsNamed } : {}),
+    ...(hostSettings.names.length ? { hostSettings } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(shared ? { shared } : {}),
     ...(projection ? { terms: projection.terms } : {}),
@@ -2272,23 +2283,58 @@ export function renamedIdsOf(words: string): string[] | undefined {
 export function askedTokenOf(
   r: CatalogRecord,
   addedLooseAt: ReadonlyMap<string, readonly CatalogRecord[]>,
+  /**
+   * The review of 5cc4ce87 (I2): the names the facts' settings have (`settingNameKey`) and the
+   * repos whose settings have camelCase keys (`Build.hostSettings`), worded as the join words
+   * them: never "a deploy token nothing sets" where a setting has that name.
+   */
+  settings?: { names: ReadonlySet<string>; camelRepos: ReadonlySet<string> },
 ): string | undefined {
   if (r.kind !== "Interface") return undefined;
   const from = (r as unknown as { from?: string }).from;
   const caller = (r.evidence as { side?: string; repo?: string; path?: string; line?: number }[])
     .filter((e) => e.side !== "callee" && e.repo && e.path && e.line !== undefined)
     .map((e) => `${e.repo}\u0000${e.path}\u0000${e.line}`);
-  const found = new Map<string, "token" | "variable">();
+  const found = new Map<string, UnsetHostForm>();
   for (const k of new Set(caller))
     for (const u of addedLooseAt.get(k) ?? []) {
       if ((u as unknown as { owner?: string }).owner !== from) continue;
-      const host = unsetHostOf(String((u as unknown as { raw?: string }).raw ?? ""));
+      const repo = u.evidence.find((e) => e.repo)?.repo;
+      const host = unsetHostOf(String((u as unknown as { raw?: string }).raw ?? ""), {
+        ...(settings ? { names: settings.names } : {}),
+        camel: !!repo && !!settings?.camelRepos.has(repo),
+      });
       if (host) found.set(u.id, host.form);
     }
   if (found.size !== 1) return undefined;
-  const [[id, form]] = [...found] as [[string, "token" | "variable"]];
-  return `${form === "variable" ? "the host is a variable Atticus couldn't find the value of" : "the host is a deploy token nothing sets"}: asked now (Unresolved/${id})`;
+  const [[id, form]] = [...found] as [[string, UnsetHostForm]];
+  const words: Record<UnsetHostForm, string> = {
+    token: "the host is a deploy token nothing sets",
+    variable: "the host is a variable Atticus couldn't find the value of",
+    setting: "the host is a setting nothing sets",
+    set: "the host is a setting Atticus couldn't take a host from",
+  };
+  return `${words[form]}: asked now (Unresolved/${id})`;
 }
+
+/** The settings the facts slots have, for how an unset host is worded (`Build.hostSettings`). */
+function hostSettingsFrom(
+  repos: readonly { repo: string; facts: readonly import("@maycombhq/core").Fact[] }[],
+): { names: string[]; camelRepos: string[] } {
+  const names = new Set<string>();
+  const camel = new Set<string>();
+  for (const r of repos)
+    for (const f of r.facts)
+      if (f.kind === "config") {
+        names.add(settingNameKey(f.key));
+        if (camelSettingKey(f.key)) camel.add(r.repo);
+      }
+  return { names: [...names].sort(cmpText), camelRepos: [...camel].sort(cmpText) };
+}
+const hostSettingsOf = (b: Build) => ({
+  names: new Set(b.hostSettings?.names ?? []),
+  camelRepos: new Set(b.hostSettings?.camelRepos ?? []),
+});
 
 /** The loose ends among records, by each line they cite (`<repo>\u0000<path>\u0000<line>`). */
 function looseByLine(records: readonly CatalogRecord[]): Map<string, CatalogRecord[]> {
@@ -3150,7 +3196,7 @@ export async function guardBuild(
       const renamedNow = r ? renamedTo.get(`${r.kind}/${r.id}`) : undefined;
       if (why.size && r) {
         const back = rekeyedTo.get(`${r.kind}/${r.id}`);
-        const asked = askedTokenOf(r, addedLooseAt);
+        const asked = askedTokenOf(r, addedLooseAt, hostSettingsOf(b));
         if (renamedNow) own.push(renamedWords(renamedNow));
         else if (asked) own.push(asked);
         else if (back) own.push(back);

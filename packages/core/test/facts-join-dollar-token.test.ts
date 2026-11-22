@@ -150,10 +150,12 @@ describe("a code variable as the whole host is asked about too, in its own words
     expect(unsetHostOf("PUT http://${FORGE_LEDGER_URL}/v1/balances/{id}")).toEqual({
       host: "${FORGE_LEDGER_URL}",
       form: "token",
+      name: "FORGE_LEDGER_URL",
     });
     expect(unsetHostOf("GET http://${this.cfg.url}/v1/x")).toEqual({
       host: "${this.cfg.url}",
       form: "variable",
+      name: "this.cfg.url",
     });
   });
 
@@ -209,5 +211,96 @@ describe("a code variable as the whole host is asked about too, in its own words
     const required = join1([put({ base: "${N:?set N}" })], listed);
     expect(required.joins).toEqual([]);
     expect(required.asks.map((a) => a.reason)).toEqual(["unknown-host"]);
+  });
+});
+
+/**
+ * The final review of 5cc4ce87 (I2): the shell's `$NAME`, a Windows or CI `%NAME%`, PowerShell's
+ * `$env:NAME` and `${process.env.NAME}` were asked even with a setting of that NAME in the repo,
+ * where `${NAME}` resolves: each is resolved against the settings by NAME the same way. A host
+ * that a setting of that name doesn't give is never "a deploy token nothing sets"; a base built
+ * from parts asks about its host part; and a camelCase name nothing sets is worded as a setting
+ * where the repo's settings have camelCase keys, else as a variable of the code's.
+ */
+describe("a host by NAME in any of its forms is resolved by a setting of that NAME", () => {
+  const setting = (key: string, value: string, id = "cfg-ledger") =>
+    fact("forge-payments", id, "config", {
+      key,
+      value,
+      cite: { file: "deploy/configmap.yaml", line: 5, value: key },
+    });
+  const listed = ledger(["ledger.apps.forge.internal"]);
+  const set = setting("FORGE_LEDGER_URL", "https://ledger.apps.forge.internal");
+
+  it("joins $NAME, %NAME%, $env:NAME and ${process.env.NAME} by their host, as ${NAME}", () => {
+    for (const extra of [
+      { base: "${FORGE_LEDGER_URL}" },
+      { base: "$FORGE_LEDGER_URL" },
+      { host: "$FORGE_LEDGER_URL" },
+      { base: "%FORGE_LEDGER_URL%" },
+      { base: "$env:FORGE_LEDGER_URL" },
+      { base: "${process.env.FORGE_LEDGER_URL}" },
+    ]) {
+      const out = join1([put(extra), set], listed);
+      const what = JSON.stringify(extra);
+      expect(out.asks, what).toEqual([]);
+      expect(
+        out.joins.map((j) => [j.call.fact, j.how]),
+        what,
+      ).toEqual([["c-put-statement", "host"]]);
+    }
+    expect(placeholderIn("$FORGE_LEDGER_URL/v1")).toMatchObject({
+      name: "FORGE_LEDGER_URL",
+      before: "",
+      after: "/v1",
+    });
+    expect(placeholderIn("https://%FORGE_LEDGER_URL%/v1")?.name).toBe("FORGE_LEDGER_URL");
+    expect(placeholderIn("$env:LEDGER_URL")?.name).toBe("LEDGER_URL");
+    expect(placeholderIn("${process.env.LEDGER_URL}")?.name).toBe("LEDGER_URL");
+    // Only as the whole host: a `$` inside a path names nothing.
+    expect(placeholderIn("/v1/accounts/$id")).toBeUndefined();
+  });
+
+  it("never calls a host a setting of that name has a deploy token nothing sets", () => {
+    // The setting is there, but what it gives is no host (a placeholder nothing sets).
+    const unset = setting("FORGE_LEDGER_URL", "${LEDGER_HOST}");
+    for (const base of ["${FORGE_LEDGER_URL}", "$FORGE_LEDGER_URL", "%FORGE_LEDGER_URL%"]) {
+      const out = join1([put({ base }), unset], listed);
+      expect(out.joins, base).toEqual([]);
+      expect(
+        out.asks.map((a) => a.reason),
+        base,
+      ).toEqual(["unknown-host"]);
+      const q = out.asks[0]!.question;
+      expect(q, base).not.toMatch(/nothing sets/);
+      expect(q, base).toMatch(
+        /^Which repo answers on \S+\? A setting FORGE_LEDGER_URL is read, but Atticus couldn't take a host from it for this call of forge-payments\./,
+      );
+    }
+    expect(unsetHostOf("${FORGE_LEDGER_URL}", { names: new Set(["FORGELEDGERURL"]) })?.form).toBe(
+      "set",
+    );
+  });
+
+  it("asks a base built from parts about its host part, not its scheme", () => {
+    const out = join1([put({ base: "${scheme}://${host}/v1" })]);
+    expect(out.joins).toEqual([]);
+    expect(out.asks.map((a) => a.host)).toEqual(["${host}"]);
+    expect(out.asks[0]!.question).toMatch(/^Which repo answers on \$\{host\}\?/);
+    expect(unsetHostOf("${SCHEME}://${LEDGER_HOST}/v1")?.host).toBe("${LEDGER_HOST}");
+  });
+
+  it("words a camelCase name nothing sets as a setting where the repo's settings are camelCase", () => {
+    const camel = setting("ledgerTimeout", "30", "cfg-timeout");
+    const asSetting = join1([put({ base: "${ledgerUrl}" }), camel]);
+    expect(asSetting.asks[0]!.question).toMatch(
+      /^Which repo answers on \$\{ledgerUrl\}\? It is a setting nothing sets, in a call of forge-payments\./,
+    );
+    // With no camelCase key among its settings: a variable of the code's, as before.
+    const upper = setting("LEDGER_TIMEOUT", "30", "cfg-timeout");
+    const asVariable = join1([put({ base: "${ledgerUrl}" }), upper]);
+    expect(asVariable.asks[0]!.question).toMatch(
+      /It is a variable Atticus couldn't find the value of, in the code of forge-payments\./,
+    );
   });
 });
