@@ -18,6 +18,7 @@ import {
   findHooks,
   type FindInputs,
 } from "../src/connect-find.js";
+import { acpPathsOf } from "@maycombhq/ai";
 import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
 import { verifyConfirmed } from "./seed-slots.js";
 import {
@@ -112,10 +113,13 @@ const verifyAll = (root: string, repo: string) =>
 let g: ReconnectEstate;
 const PROFILE = () => join(g.root, "org-pack", "profiles", "forge", "profile.yaml");
 let profileBytes = "";
+/** Each session's step as the find started it: what it may read and write. */
+const steps: Parameters<AcpStepRunner>[0][] = [];
 /** The mock assistant: writes these facts into A's facts file and this answer, nothing else. */
 const session =
   (facts: object[], answer: object): AcpStepRunner =>
   async (s) => {
+    steps.push(s);
     expect(s.line).toContain(`facts/${A}.find.md`);
     for (const f of facts)
       appendFileSync(join(g.root, "facts", `${A}.jsonl`), `${JSON.stringify(f)}\n`);
@@ -216,6 +220,51 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
     expect(r.entry).toMatchObject({ outcome: "elsewhere", facts: [FEE.id], other: C });
     expect((await g.interfaces()).some((i) => i.flags?.includes("declared-link"))).toBe(true);
   }, 300_000);
+
+  it("the session writes only A's facts file and its answer, and reads only what A.2 gives it (the second review)", () => {
+    const s = steps.at(-1)!;
+    const facts = join(g.root, "facts");
+    const answer = join(g.root, "proposals", "find", `${A}--repo-${B}.yaml`);
+    expect(s.writeRoots).toEqual([]);
+    expect(s.writeFiles).toEqual([join(facts, `${A}.jsonl`), answer]);
+    const p = acpPathsOf({
+      readRoots: s.readRoots!,
+      writeRoots: s.writeRoots,
+      writeFiles: s.writeFiles!,
+    });
+    expect(p.writable(join(facts, `${A}.jsonl`))).toBeUndefined();
+    expect(p.writable(answer)).toBeUndefined();
+    for (const no of [
+      `${C}.jsonl`,
+      `${B}.jsonl`,
+      `${A}.find.md`,
+      `${A}.find.yaml`,
+      `${A}.verify.yaml`,
+      `${C}.verify.yaml`,
+    ])
+      expect(p.writable(join(facts, no)), no).toMatch(/refused/);
+    expect(p.writable(join(g.root, "proposals", "find", `${C}--repo-${B}.yaml`))).toMatch(
+      /refused/,
+    );
+    // A.2: A is never read whole again: the brief, A's facts file, the answer and A.3's files.
+    expect(p.readable(join(facts, `${A}.find.md`))).toBeUndefined();
+    expect(p.readable(join(facts, `${A}.jsonl`))).toBeUndefined();
+    // The loose call the find before this one read (A.3's first place to look).
+    expect(p.readable(join(g.root, "workspace", A, ...FILE.split("/")))).toBeUndefined();
+    for (const no of [
+      join(facts, `${B}.jsonl`),
+      join(facts, `${C}.jsonl`),
+      join(g.root, "workspace", C, "pom.xml"),
+      join(g.root, "workspace", A, "no-fact-and-no-list.txt"),
+      PROFILE(),
+    ])
+      expect(p.readable(no), no).toMatch(/outside/);
+    // Every file it may read beside those three is A's, under its checkout.
+    for (const f of s.readRoots!.filter(
+      (x) => ![join(facts, `${A}.find.md`), join(facts, `${A}.jsonl`), answer].includes(x),
+    ))
+      expect(f.startsWith(join(g.root, "workspace", A))).toBe(true);
+  });
 
   it("found: the code's arrow is drawn, the declared one isn't, and it reads confirmed by code", async () => {
     const r = await find([HOLD], { looked: [FILE], found: [HOLD.id] });

@@ -122,6 +122,13 @@ export interface AcpStep {
   change: string;
   /** Where the session may write, besides nothing: folders. */
   writeRoots: string[];
+  /** And single files it may write (a find's facts file and answer, the second review of ADR 0204). */
+  writeFiles?: string[];
+  /**
+   * What it may read, when less than the metarepo and its clones (folders or single files): a
+   * find reads its brief and the files the brief names (ADR 0204 A.2).
+   */
+  readRoots?: string[];
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
   /**
@@ -168,7 +175,11 @@ export async function acpStepRunner(
         command: c.command,
         cwd: root,
         prompt,
-        policy: { readRoots: readRootsOf(root), writeRoots: s.writeRoots },
+        policy: {
+          readRoots: s.readRoots ?? readRootsOf(root),
+          writeRoots: s.writeRoots,
+          ...(s.writeFiles ? { writeFiles: s.writeFiles } : {}),
+        },
         exec,
         ...(c.model ? { model: c.model } : {}),
         maxTurns: c.maxTurns,
