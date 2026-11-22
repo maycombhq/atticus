@@ -321,7 +321,7 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
     T,
   );
 
-  // The review: "another repo's slot changed (a join with it)" explained every removal. Only a
+  // The review: "another repo's stored read changed (a join with it)" explained every removal. Only a
   // record a join derives can rest on another repo's slot.
   it(
     "the estate's slots changing explains the removal of a joined record only, not of one repo's own record",
@@ -362,7 +362,7 @@ describe("the guards write nothing they refuse (ADR 0195 point 4)", () => {
       expect(r.guard.refused?.reasons).toContain("unexplained-removals");
       expect(r.guard.refused?.unexplained?.map((x) => x.path)).toEqual([endpoint.ghost.path]);
       expect(r.guard.refused?.removals?.map((x) => [x.path, x.explainedBy])).toEqual([
-        [feature.ghost.path, ["another repo's slot changed (a join with it)"]],
+        [feature.ghost.path, ["another repo's stored read changed (a join with it)"]],
       ]);
       expect(await snap(root)).toEqual(before);
     },

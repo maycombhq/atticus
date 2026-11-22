@@ -3245,7 +3245,7 @@ export async function guardBuild(
       // join's slot; a manifest entry, a curated decision of its own or another slot does.
       const joinDerived = !!r && (JOIN_DERIVED.has(r.kind) || repos.length > 1);
       if (estate && ![...kinds].some((k) => k !== "input" && k !== "build") && joinDerived) {
-        why.add("another repo's slot changed (a join with it)");
+        why.add("another repo's stored read changed (a join with it)");
         kinds.add("slot");
       }
       // beta.28: what the removal is to this record, first, beside what changed (true of every
