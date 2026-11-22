@@ -273,7 +273,7 @@ export async function estateFacts(
 export async function branchFactsAt(
   op: OrgPack,
   text: string | undefined,
-  at: { dir: string; commit: string; context?: readonly Fact[] },
+  at: { dir: string; commit: string; context?: readonly Fact[]; repo?: string },
 ): Promise<{ facts: Fact[]; rejected: number; problems: string[]; unknown: string[] } | undefined> {
   if (text === undefined) return undefined;
   const parsed = parseFacts(text);
@@ -284,11 +284,15 @@ export async function branchFactsAt(
       problems: parsed.issues.map((i) => `${i.line ? `line ${i.line}: ` : ""}${i.message}`),
       unknown: [],
     };
-  const own = new Set(parsed.facts.map((f) => f.id));
-  const files = new Set(parsed.facts.map((f) => f.cite.file));
+  // The re-review: the file holds one repo's facts, read in that repo's checkout; a fact that
+  // says it is another repo's is refused, never cited in a repo whose files it didn't read.
+  const strays = at.repo ? parsed.facts.filter((f) => f.repo !== at.repo) : [];
+  const facts = parsed.facts.filter((f) => !strays.includes(f));
+  const own = new Set(facts.map((f) => f.id));
+  const files = new Set(facts.map((f) => f.cite.file));
   const context = (at.context ?? []).filter((f) => !own.has(f.id) && !files.has(f.cite.file));
   const report = await verifyFacts({
-    facts: [...context, ...parsed.facts],
+    facts: [...context, ...facts],
     source: dirSource(at.dir),
     commit: at.commit,
     conventions: conventionsOf(op),
@@ -297,8 +301,14 @@ export async function branchFactsAt(
   const rejected = report.rejected.filter((r) => own.has(r.fact.id));
   return {
     facts: report.accepted.filter((f) => own.has(f.id)),
-    rejected: rejected.length,
-    problems: rejected.slice(0, 5).map((r) => `${r.fact.id}: ${r.message}`),
+    rejected: rejected.length + strays.length,
+    problems: [
+      ...strays.map(
+        (f) =>
+          `${f.id}: its repo is ${f.repo}, but this file holds ${at.repo}'s facts, read in ${at.repo}'s checkout: write it in conform/facts/${f.repo}.jsonl, citing ${f.repo}'s files.`,
+      ),
+      ...rejected.slice(0, 5).map((r) => `${r.fact.id}: ${r.message}`),
+    ],
     unknown: report.coverage.unknown,
   };
 }

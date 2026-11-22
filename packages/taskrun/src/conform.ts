@@ -175,7 +175,7 @@ export function gitScanAt(root: string, git: GitRunner, changeDir?: string): Sca
           : undefined;
       if (own !== undefined) {
         const op = await loadOrgPack(orgPackDirOf(root));
-        const b = await branchFactsAt(op, own, { dir, commit, context: facts });
+        const b = await branchFactsAt(op, own, { dir, commit, context: facts, repo });
         if (b) {
           for (const p of b.problems) problems.push(`${BRANCH_FACTS_DIR}/${repo}.jsonl: ${p}`);
           ({ facts, basis } = withBranchFacts({ facts, basis }, b));

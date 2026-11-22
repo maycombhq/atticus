@@ -352,6 +352,41 @@ describe("the branch's facts, verified at its commit (ADR 0206 as built)", () =>
   );
 });
 
+describe("a branch fact of another repo (ADR 0206 re-review)", () => {
+  it(
+    "is refused: conform/facts/<repo>.jsonl holds that repo's facts, read in its checkout",
+    async () => {
+      const stray = (commit: string) =>
+        JSON.stringify({
+          repo: "forge-portal-bff",
+          commit,
+          conf: "declared",
+          kind: "deploy",
+          id: "d-7",
+          env: "prod",
+          platform: "anvil",
+          resourceName: "anvil",
+          exposes: "ledger-api",
+          cite: { file: "deploy/anvil.yaml", line: 3, value: "anvil", quote: "platform: anvil" },
+        }) + "\n";
+      const { root } = await setup({ facts: (c) => branchFacts(c, true) + stray(c) });
+      const r = (
+        await conformChange(root, CHANGE, {
+          repo: "forge-ledger",
+          git,
+          now: "2026-11-22T09:00:00Z",
+        })
+      ).results[0]!;
+      expect(r.problems).toContain(
+        "conform/facts/forge-ledger.jsonl: d-7: its repo is forge-portal-bff, but this file holds forge-ledger's facts, read in forge-ledger's checkout: write it in conform/facts/forge-portal-bff.jsonl, citing forge-portal-bff's files.",
+      );
+      expect(JSON.stringify(r.claims)).not.toContain("forge-portal-bff");
+      expect(r.claims!.find((c) => c.from.operation === "deploy-anvil")!.fact).toBe("d-1");
+    },
+    T,
+  );
+});
+
 describe("a Repo cell that isn't a repo's id (ADR 0206 review)", () => {
   it(
     "is said and its row passed over; the change's other claims are checked",
