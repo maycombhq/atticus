@@ -41,7 +41,7 @@ const DECLARE_KINDS = {
   call: "Calls a gateway route",
 } as Record<string, string>;
 const COPY_UNDO = (from: string) =>
-  `pick ${from}'s box, Show the corrections (under Corrections and declarations), and Undo its line`;
+  `pick ${from}'s box, Show your changes (under Your changes), and Undo its line`;
 const APPLY_DRAWS = (from: string, what: string) => `Apply to ${from}'s map, below, draws ${what}.`;
 const APPLY_BUILDS = (from: string) =>
   `Apply to ${from}'s map, below, builds it and draws the arrow.`;
@@ -2881,7 +2881,7 @@ export const COPY = {
       {
         term: "your changes",
         says: "Everything you told Atticus that the build keeps, in your name: your answers, corrections, declarations, choices on triage items, tags, kept edits and deleted links. Apply puts them on the map; Propose shares them.",
-        was: "curated decision",
+        was: "curated decision, Corrections and declarations",
       },
       {
         term: "your kept edit",
@@ -2896,6 +2896,10 @@ export const COPY = {
         term: "call with no arrow",
         says: "A call read from code whose target Atticus can't tell yet, so the map draws no arrow for it.",
         was: "loose call",
+      },
+      {
+        term: "declared arrow",
+        says: "An arrow a person draws with Connect to… where the code shows no call yet: drawn dashed, marked declared by them, never counted with arrows read from code. Find it in the code looks for the call.",
       },
       {
         term: "loose end",
@@ -3404,7 +3408,7 @@ export const COPY = {
       inFlight: "Changes in flight",
       inFlightNone: "None in flight",
       inStage: (n: number, stage: string) => `${n} at ${stage}`,
-      corrections: "Corrections to apply",
+      corrections: "Your changes to apply",
       toPropose: (files: number) =>
         files ? `${files} file${files === 1 ? "" : "s"} to propose` : "Nothing to propose",
       trusted: (trusted: number, all: number) => `${trusted}/${all} trusted`,
@@ -5349,6 +5353,9 @@ export const COPY = {
   /** ADR 0106: what Atticus asked a model and what it answered, run by run. */
   /** ADR 0183: Apply and Propose for review, run from the app. */
   propose: {
+    /** ADR 0204's final review: a profile whose version on the proposal's target can't be read. */
+    raisesUnread: (file: string, target: string) =>
+      `Check ${file} on ${target} before this merges: Atticus couldn't read it there, so it can't say whether this raises its profile version, and an Atticus older than 2.0.0-beta.30 refuses version 3.`,
     apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
     applying: "Applying…",
     /** Beta.30: what the panel says over the job's step while one repo's Apply runs. */
@@ -5843,7 +5850,7 @@ export const COPY = {
         "What Declare a link… writes: your word in the profile that has the system, with your name and the date, drawn dashed.",
       from: "From",
       fromNone:
-        "No outside system is on the map to start a link from. Add one with Add to the picture first.",
+        "Add an outside system with Add to the map… first: no outside system is on the map to start a link from.",
       kind: "What it does",
       to: "Draw it to, until the map is built",
       toNone: "Don't draw it yet",
@@ -5926,7 +5933,7 @@ export const COPY = {
           : `paired by a person (${by}) with ${with_}: pairing it here replaces their word`;
       },
       noApis: (to: string) =>
-        `${to} has no APIs on record yet, so there is nothing to pair with. Read it first (Map › Trust).`,
+        `Read ${to} first (Map › Read status): it has no APIs on record yet, so there is nothing to pair with.`,
       pickOne: "Pick the API for at least one call.",
       redirectCalls: (from: string) => `${from}'s calls this arrow is, each with where it goes now`,
       lineless: (from: string) =>
@@ -5958,7 +5965,7 @@ export const COPY = {
       `${n} change${n === 1 ? "" : "s"} applied and the catalog built. Propose them for review with the catalog's other changes.`,
     /** `repos`: joined with ", ". */
     doneWaits: (n: number, repos: string) =>
-      `${n} change${n === 1 ? "" : "s"} applied and the catalog built. The new links are drawn once ${repos} ${repos.includes(",") ? "are" : "is"} read from facts too (Map › Trust).`,
+      `${n} change${n === 1 ? "" : "s"} applied and the catalog built. The new links are drawn once ${repos} ${repos.includes(",") ? "are" : "is"} read from facts too (Map › Read status).`,
     problemsLine: (n: number) =>
       `${n} change${n === 1 ? "" : "s"} can't be made, so nothing was saved: each says why below.`,
     failedLine:
@@ -6090,7 +6097,7 @@ export const COPY = {
       `${repo} (${n === 1 ? "one route" : `${n} routes`})`,
     notGatewayOption: (repo: string) => `${repo} (no gateway route)`,
     noGateways:
-      "No repo read so far has a gateway route, so there is none to pick from. Read the gateway's repo first (Add to the picture…), or type the route below if you know it.",
+      "Read the gateway's repo first (Add to the map…), or type the route below if you know it: no repo read so far has a gateway route to pick from.",
     routesLoading: "Reading the routes…",
     routesFailed: (why: string) => `The routes couldn't be read: ${why}`,
     again: "Try again",
@@ -6104,7 +6111,7 @@ export const COPY = {
     handler: (h: string) => `handler ${h}`,
     declaredAlready: "declared already",
     declaredList: (system: string, n: number) =>
-      `Declared already (${n}), not offered again: undo one under Corrections and declarations on ${system}'s box.`,
+      `Declared already (${n}), not offered again: undo one under Your changes on ${system}'s box.`,
     allDeclared: (system: string, repo: string) =>
       `${system} is declared to call every route of ${repo} already.`,
     also: (repos: readonly string[]) =>
@@ -6127,7 +6134,7 @@ export const COPY = {
       `If ${repo} is a gateway, set type: gateway for it in ${manifest}, then draw the line again: its ${entries === 1 ? "one entry is" : `${entries} entries are`} then listed as routes to tick.`,
     /** A system only the code names: no profile has it, so nothing can be declared of it yet. */
     noProfile: (label: string, id: string) =>
-      `${label} is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id ${id}, then draw the line again.`,
+      `Add ${label} with Add to the map… as a new outside system with the id ${id}, then draw the line again: it is on the map because code names it, and no profile has it yet, so a link of it can't be declared.`,
     /** Several routes of one gateway that the same words name: one row, one declaration. */
     sameWords: (n: number) =>
       `${n} routes of this gateway are served on these words: one declaration is for all of them`,
@@ -6145,14 +6152,15 @@ export const COPY = {
     emptyRoutes: "Tick a route, or type one, first.",
   },
   corrections: {
-    title: "Corrections and declarations",
-    /** The review of beta.28.1 (S3): a System added from the canvas goes with its last declaration. */
+    // v30 slice 8 (docs/guide/words.md): what people told Atticus on a box is "your changes".
+    title: "Your changes",
+    /** The review of beta.28.1 (S3): a System added from the Map goes with its last declaration. */
     removedSystem: (system: string, file: string) =>
-      `${system} was added from the canvas for its declarations, and none is left: it is taken out of ${file} too.`,
-    show: "Show the corrections",
-    loading: "Reading the corrections…",
-    failed: (why: string) => `The corrections couldn't be read: ${why}`,
-    none: "No corrections or declarations on this box.",
+      `${system} was added from the Map for its declarations, and none is left: it is taken out of ${file} too.`,
+    show: "Show your changes",
+    loading: "Reading your changes…",
+    failed: (why: string) => `Your changes on this box couldn't be read: ${why}`,
+    none: "None of your changes is on this box.",
     by: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
     kinds: {
       edit: "corrected",
@@ -6167,8 +6175,8 @@ export const COPY = {
     undone: "Undone. Apply it to redraw the map, then propose it for review.",
   },
   addBox: {
-    open: "Add to the picture…",
-    title: "Add to the picture",
+    open: "Add to the map…",
+    title: "Add to the map",
     loading: "Reading the manifest and profiles…",
     failed: (why: string) => `What can be added couldn't be read: ${why}`,
     notRead: "Repos of the manifest not read yet: read one to draw it with its calls.",
@@ -6249,7 +6257,7 @@ export const COPY = {
     dropSeveral: (system: string) =>
       `${system} holds several repos, so the line can't say which one is meant. Open ${system} (double-click it) and draw the line to or from the repo inside.`,
     dropNoRepo: (system: string) =>
-      `${system} is a system of the estate with no repo on the map yet, so there is no call or API of it to connect. Add its repo with Add to the picture…, then draw the line to or from the repo.`,
+      `Add ${system}'s repo with Add to the map…, then draw the line to or from the repo: ${system} is a system of the estate with no repo on the map yet, so there is no call or API of it to connect.`,
     dropTwoOutside: (a: string, b: string) =>
       `Neither ${a} nor ${b} has code in the estate, so there is no call to pair and no gateway route to declare between them. To say what ${a} does that the code can't show, pick ${a} and choose Declare a link….`,
     dropSameRepo:
@@ -6289,7 +6297,7 @@ export const COPY = {
      */
     noLooseNoApis: (where: string, to: string) =>
       `Every call of this repo has an arrow already (${where}): nothing is loose, and ${to} has no API on record to move one to.`,
-    /** Loose calls, and no API of the other box to pair them with. */
+    /** Calls with no arrow, and no API of the other box to pair them with. */
     looseNoApis: (n: number, from: string, to: string) =>
       `${n === 1 ? `One call of ${from} has` : `${n} calls of ${from} have`} no arrow, and ${to} has no API on record to pair ${n === 1 ? "it" : "them"} with yet.`,
     /** The other box is an outside system and nothing can be paired: the other direction. */
@@ -6317,7 +6325,7 @@ export const COPY = {
           : "Someone",
     /** Paired with this box, and the catalog has the arrow. */
     pairedOnMap: (who: string, n: number, from: string, to: string) =>
-      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, and the map draws ${n === 1 ? "it" : "them"}: the arrow from ${from} to ${to} on the Estate map (pick the arrow to see its calls). To pair one again, first undo it: ${COPY_UNDO(from)}.`,
+      `${who} paired ${n === 1 ? "1 call" : `${n} calls`} of ${from} with ${to}, and the map draws ${n === 1 ? "it" : "them"}: the arrow from ${from} to ${to} on the Map (pick the arrow to see its calls). To pair one again, first undo it: ${COPY_UNDO(from)}.`,
     /**
      * Paired with this box, and the catalog has no arrow for it. `ahead`: the corrections are
      * newer than the repo's last Apply (it only waits); else an Apply ran since and the map
@@ -6348,7 +6356,7 @@ export const COPY = {
       to: string,
       ahead: boolean,
     ) =>
-      `${who} paired ${drawn + waiting} calls of ${from} with ${to}: the map draws ${drawn} (the arrow from ${from} to ${to} on the Estate map), and ${waiting} ${waiting === 1 ? "isn't" : "aren't"} drawn yet${
+      `${who} paired ${drawn + waiting} calls of ${from} with ${to}: the map draws ${drawn} (the arrow from ${from} to ${to} on the Map), and ${waiting} ${waiting === 1 ? "isn't" : "aren't"} drawn yet${
         ahead
           ? `: ${waiting === 1 ? "it is" : "they are"} in ${from}'s corrections, written since ${from} was last applied. ${APPLY_DRAWS(from, waiting === 1 ? "it" : "them")}`
           : `, though ${from}'s files say it was applied since: ${APPLY_AGAIN(from)}`
@@ -6497,7 +6505,8 @@ export const COPY = {
       `None of ${from}'s calls on record is one Connect to… pairs (a REST, SOAP, gRPC or GraphQL call): its topics, queues and tables are linked from what its code reads. To say one the code can't show, use Declare a link….`,
     outsideWhy: (target: string) => `left outside the estate, to ${target}, which no box draws`,
     calls: "Calls that join nothing",
-    caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
+    caption: (from: string, to: string) =>
+      `${from}'s calls with no arrow, each with an API of ${to}`,
     col: { pick: "Pair", call: "Call", line: "Line", status: "Now", api: "API" },
     pickApi: "Pick an API",
     likely: "Likely",
@@ -6530,7 +6539,7 @@ export const COPY = {
     } as Record<string, string>,
     suggested: (why: string) => `Suggested: ${why}`,
     rule: (n: number) =>
-      `All ${n} loose calls go there, and calls read later too: answer the open target question with /** (a rule)`,
+      `All ${n} calls with no arrow go there, and calls read later too: answer the open target question with /** (a rule)`,
     preview: "Preview",
     previewing: "Working out what changes…",
     confirm: (n: number, rule: boolean) =>
@@ -6548,7 +6557,7 @@ export const COPY = {
     undone: "Undone: the line is removed.",
     undoneLines: (n: number) => `Undone: the ${n} lines are removed.`,
     undoneRuleStays: (q: string, target: string) =>
-      `Undone: the pair lines are removed. The rule's answer is not undone: the target question ${q} still sends this repo's loose calls, and calls read later, to ${target} (/**). To take it back, answer ${q} again on the Questions page.`,
+      `Undone: the pair lines are removed. The rule's answer is not undone: the target question ${q} still sends this repo's calls with no arrow, and calls read later, to ${target} (/**). To take it back, answer ${q} again on the Questions page.`,
     nothingPicked: "Pick at least one pair, or the rule for all.",
     pairedMark: "paired by a person",
     makeRule: "Make this a rule for every repo of this type?",
@@ -8330,6 +8339,157 @@ export const COPY = {
       "release-ready": "release",
       "post-release-review": "review",
       returned: "returned",
+    } as Record<string, string>,
+  },
+  // ---------------------------------------------------------------- ADR 0204: Connect A to B
+  // (a block of its own: the wording branch edits the rest of this file broadly).
+  connectAB: {
+    title: (caller: string, callee: string) => `Connect ${caller} to ${callee}`,
+    calls: (a: string, b: string) => `${a} calls ${b}`,
+    direction: "Which way the calls go",
+    pickOther: "The other box",
+    pickOtherNone: "Pick a box",
+    loading: "Reading what connects the two boxes…",
+    mechanism: {
+      calls: (n: number, a: string, b: string, k: number) =>
+        `Atticus found ${n} call${n === 1 ? "" : "s"} in ${a}'s code that look${n === 1 ? "s" : ""} like ${n === 1 ? "it goes" : "they go"} to ${b}. The ${k} it is sure of ${k === 1 ? "is" : "are"} ticked.`,
+      connected: (a: string, b: string, n: number) =>
+        `${a} already calls ${b}: ${n} call${n === 1 ? "" : "s"} read from code. There is nothing to add.`,
+      declared: (name: string, date: string, why: string) =>
+        `${name} declared this arrow on ${date}: "${why}".`,
+      declareNoCode: (a: string, b: string, name: string) =>
+        `${a} has no code in the estate, so no call of it can be read. You can still draw the arrow to ${b}: it will be your word, drawn dashed and marked "declared by ${name}".`,
+      declare: (a: string, b: string, name: string) =>
+        `Atticus found no call in ${a}'s code that goes to ${b}. You can still draw the arrow: it will be your word, drawn dashed and marked "declared by ${name}".`,
+      needs: "Something is missing before these two boxes can be connected:",
+    },
+    noneOfThese: "None of these: declare the arrow instead",
+    why: "Why is it so? (your words, kept with the arrow)",
+    whyShort: "Say why in a few words (3 to 500 characters).",
+    planned: "Not built yet",
+    declare: "Connect: declare the arrow",
+    declaring: "Connecting…",
+    connected: (a: string, b: string) => `Connected: ${a} → ${b} is on the map.`,
+    savedNotBuilt:
+      "Saved, not built: the build waits for you to confirm what it removes. Review it on Set up › Activity › Catalog builds.",
+    wrote: "What was written",
+    notProposed: "Not proposed yet: only this machine has it.",
+    show: "Show the arrow",
+    undo: "Undo",
+    undoing: "Undoing…",
+    undone: "Undone: what this wrote is taken back, and the map built again.",
+    undoneWaits:
+      "Undone: what this wrote is taken back. The map is built again once you confirm the records it would remove: what is taken back counts toward the removal limits.",
+    remove: "Remove it",
+    superseded: (a: string, b: string, n: number, name: string, date: string) =>
+      `The code now shows ${a} calling ${b} (${n} call${n === 1 ? "" : "s"}). The arrow ${name} declared on ${date} is no longer needed.`,
+    retire: "Retire the declared arrow",
+    retired: "Done: the declared arrow is out of the profile, and the map built again.",
+    retireLines: "These lines go from the profile:",
+    shownCount: (n: number) =>
+      `${n} declared arrow${n === 1 ? "" : "s"} the code now shows: retire ${n === 1 ? "it" : "them"} when you agree.`,
+    shownOpen: (a: string, b: string) => `${a} → ${b}`,
+    raisesProfile: (file: string, from: number, to: number) =>
+      `This raises ${file} from profile version ${from} to ${to}: an Atticus older than 2.0.0-beta.30 refuses it. Upgrade everyone who works in this metarepo before it merges.`,
+    retireConfirm: (label: string) => `${label}: take these lines out and build`,
+    declaredPanel: (name: string, date: string, a: string, b: string, why: string) =>
+      `${name} declared on ${date} that ${a} calls ${b}: "${why}". No code was read for this arrow.`,
+    declaredBy: (name: string) => `declared by ${name}`,
+    need: {
+      "pick-repo": (system: string, n: number) => `${system} holds ${n} repos. Which one?`,
+      "no-repo": (system: string) => `${system} has no repo on the map yet.`,
+      read: (box: string) => `${box} hasn't been read yet.`,
+      verify: (box: string) => `${box}'s facts are read but not checked yet.`,
+      "add-system": (label: string) => `${label} is on the map because code names it.`,
+    },
+    toItself: (system: string) => `Connect to ${system} itself`,
+    addRepo: "Add its repo…",
+    checkNow: (box: string) => `Check ${box}'s facts now`,
+    addAndGo: (label: string) => `Add ${label} and continue`,
+    details: "Details",
+    // ADR 0204 5.2 and 5.3: nine statuses shown as four, ten reasons as four; the exact one kept.
+    shown: {
+      loose: "no arrow yet",
+      goes: (box: string) => `goes to ${box}`,
+      here: "goes here already",
+      by: (name: string) => `connected by ${name}`,
+      ai: "connected by AI, not confirmed",
+    },
+    reason: {
+      address: "its address isn't known",
+      nothing: "nothing on the map serves it",
+      kind: "Atticus can't match this kind",
+      none: "you said it calls nothing here",
+    },
+    exact: (word: string) => `exactly: ${word}`,
+    // ADR 0204 addendum A: find a declared arrow in the code.
+    find: "Find it in the code",
+    findAgain: "Find it again",
+    readAgain: "Read again anyway",
+    finding: "Finding it in the code…",
+    handoff:
+      "Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code:",
+    readAnswer: "Read the answer",
+    // The second review: a find whose build refused tells no outcome; it waits for the build.
+    findNotBuilt: (a: string) =>
+      `Saved, not built: ${a}'s facts and the answer are saved, and the build waits for you to confirm what it lists. Then read the answer again.`,
+    // The third review: B is read as part of the find; where the app can't start the assistant,
+    // the read waits for the person's.
+    findReadFirst: (b: string) =>
+      `${b} hasn't been read yet, and Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code to read it, then find the arrow again:`,
+    findNotBuiltRead: (b: string) =>
+      `Saved, not built: ${b}'s read is saved, and its build waits for you to confirm what it lists. Then find the arrow again.`,
+    findReadFailed: (b: string) =>
+      `Read ${b} again, then find the arrow again: its read ended before it finished, so the find stopped before the caller's session. What it said is below.`,
+    findNotVerified: (a: string) =>
+      `Saved, not built: verify refused ${a}'s facts, so nothing was built and no outcome is told. Fix what it says, then read the answer again.`,
+    outcome: {
+      found: (date: string) => `confirmed by code on ${date}`,
+      "found-loose": (at: string, what: string, b: string) =>
+        `Atticus found the call at ${at}. Its address is set outside the code (${what}), so the code doesn't say it goes to ${b}.`,
+      elsewhere: (a: string, c: string, at: string, name: string, b: string) =>
+        `The code shows ${a} calling ${c} at ${at}, not ${b}. ${name} declared that ${a} calls ${b}.`,
+      "not-found": (date: string, n: number) =>
+        `Read on ${date}: no code found for it. Atticus looked at ${n} file${n === 1 ? "" : "s"}.`,
+    },
+    looked: "The files it looked at",
+    rejectedFact: (fact: string, why: string) => `${fact} was rejected: ${why}`,
+    connectThese: (n: number, b: string) => `Connect these ${n} call${n === 1 ? "" : "s"} to ${b}`,
+    moveThis: (b: string) => `Move this call to ${b}`,
+    keepBoth: "Keep both",
+    kept: "Both arrows stay.",
+    makeRule: "Make this a reading rule",
+    ruleDrafted: (file: string) =>
+      `Drafted in ${file}. It is given to no read until a person sets it active:`,
+    boundary: (label: string) => `What ${label} is`,
+    boundaries: { internal: "another team's system", vendor: "a vendor's" } as Record<
+      string,
+      string
+    >,
+    routesFold: "Say which routes (optional)",
+    routesHint:
+      "Tick the gateway routes it calls, and each is declared as a route instead of the arrow; tick none for the arrow.",
+    routesLoading: "Reading the gateway's routes…",
+    routesNone: "No route of this gateway is on record.",
+    declareRoutes: (n: number) => `Connect: declare ${n} route${n === 1 ? "" : "s"}`,
+    // ADR 0204 decision 4: new repos in one go.
+    run: (n: number) => `Sync, read and apply these ${n}`,
+    continue: (n: number) => `Continue: ${n} left`,
+    noEstimate: "No estimate yet.",
+    readHandoff:
+      "Atticus can't start your assistant on this machine. Paste this into Copilot Chat or Claude Code:",
+    readDone: "I've read them: continue",
+    onMap: (n: number, m: number) => `${n} of ${m} are on the map.`,
+    showThem: "Show them",
+    partWords: { add: "Add:", sync: "Sync:", read: "Read:", apply: "Apply:" } as Record<
+      string,
+      string
+    >,
+    repoState: {
+      done: "done",
+      waiting: "waiting",
+      stopped: "stopped",
+      failed: "failed",
     } as Record<string, string>,
   },
 } as const;

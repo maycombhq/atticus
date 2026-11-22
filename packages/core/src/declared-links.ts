@@ -6,7 +6,15 @@ import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } fr
 import { writeFileIfUnchanged } from "./fs.js";
 import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
-import { DeclaredCall, Profile } from "./schema/orgpack.js";
+import {
+  arrowEndKey,
+  DeclaredCall,
+  Profile,
+  PROFILE_SCHEMA_VERSION,
+  PROFILE_TOPICS_VERSION,
+  type ArrowEnd,
+  type DeclaredLink,
+} from "./schema/orgpack.js";
 import { migrateProfileText } from "./profile-migrate.js";
 
 /**
@@ -519,7 +527,8 @@ function withoutItem(
   }
   let from = first;
   // The last item: its list's key goes too (`calls:` alone on the line above).
-  if (last && first > 0 && /^\s*(topics|calls):\s*$/.test(lines[first - 1]!)) from = first - 1;
+  if (last && first > 0 && /^\s*(topics|calls|links):\s*$/.test(lines[first - 1]!))
+    from = first - 1;
   return [...lines.slice(0, from), ...lines.slice(end)].join("\n");
 }
 
@@ -548,4 +557,280 @@ export async function declaredOf(
       if (isMap(x) && typeof x.get("route") === "string")
         out.push({ kind: "call", system, value: String(x.get("route")), ...read(x.comment) });
   return { rel: found.rel, list: out };
+}
+
+// ------------------------------------------------------------------ declared arrows (ADR 0204)
+
+/** A declared arrow as a person asks for it: the two ends, why, and whether it is built yet. */
+export interface ArrowAsked {
+  from: ArrowEnd;
+  to: ArrowEnd;
+  why: string;
+  planned?: boolean;
+}
+
+/** One declared arrow as the profiles hold it, with the file it is in. */
+export interface DeclaredArrow extends DeclaredLink {
+  platform: string;
+  /** The profile, relative to the metarepo's org pack: `profiles/<platform>/profile.yaml`. */
+  file: string;
+}
+
+/** Every declared arrow of the profiles, in the profiles' order then the file's. */
+export function declaredArrows(op: {
+  profiles: readonly { platform: string; profile?: { links?: readonly DeclaredLink[] } }[];
+}): DeclaredArrow[] {
+  return op.profiles.flatMap((p) =>
+    (p.profile?.links ?? []).map((l) => ({
+      ...l,
+      platform: p.platform,
+      file: `profiles/${p.platform}/profile.yaml`,
+    })),
+  );
+}
+
+const samePair = (x: unknown, from: ArrowEnd, to: ArrowEnd) => {
+  if (!isMap(x)) return false;
+  const v = x.toJSON() as { from?: ArrowEnd; to?: ArrowEnd };
+  return (
+    !!v.from &&
+    !!v.to &&
+    arrowEndKey(v.from) === arrowEndKey(from) &&
+    arrowEndKey(v.to) === arrowEndKey(to)
+  );
+};
+
+async function profileOf(root: string, platform: string) {
+  const f = (await profilesOf(root)).find((x) =>
+    x.rel.endsWith(`/profiles/${platform}/profile.yaml`),
+  );
+  const raw = f ? await readFile(f.path, "utf8").catch(() => undefined) : undefined;
+  if (!f || raw === undefined)
+    throw new DeclareError(
+      "not-found",
+      `The ${platform} platform has no profile.yaml yet: add it (schemaVersion: 1, platform: ${platform}, a name, systems: []), then declare the arrow again.`,
+    );
+  return { ...f, raw, eol: eolOf(raw), text: lfOnly(raw) };
+}
+
+/** The text as written, checked the way `declareLink` checks it: whole, the same profile. */
+function checkedProfile(rel: string, before: string, doc: Document): string {
+  if (doc.errors.length)
+    throw new DeclareError(
+      "invalid",
+      `${rel} doesn't read as one YAML document (${doc.errors[0]!.message.split("\n")[0]}): fix it, then declare again. Nothing written.`,
+    );
+  const after = keepUntouchedLines(before, doc.toString(OPTS));
+  const check = Profile.safeParse(doc.toJS());
+  if (!check.success)
+    throw new DeclareError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  const written = strictMeaning(after);
+  if (written === undefined || !isDeepStrictEqual(written, doc.toJS()))
+    throw new DeclareError(
+      "invalid",
+      `${rel}: the profile as it would be written doesn't read back as the same profile (a bug): nothing written.`,
+    );
+  return after;
+}
+
+/**
+ * ADR 0204 1.4: write a declared arrow as one item of the profile's `links` (or, with `preview`,
+ * say the lines it changes), in `platform`'s profile: the caller's, else the callee's (the caller
+ * works it out). The profile moves to version 3 (the number only); comments and order are kept,
+ * and the write is refused whole if the file changed since it was read, or if the pair is listed.
+ */
+export async function declareArrow(
+  root: string,
+  a: ArrowAsked,
+  o: {
+    by: string;
+    at: string;
+    platform: string;
+    preview?: boolean;
+    /**
+     * ADR 0204 3.1 (`add-system`): a system only the code names, added to this profile's systems
+     * in the same write as the arrow, with who and when on its id (as the canvas adds one).
+     */
+    addSystem?: { id: string; name: string; boundary: "vendor" | "internal" };
+  },
+): Promise<{
+  rel: string;
+  changes: LineChange[];
+  written: boolean;
+  before: string;
+  wrote?: string;
+  /** The version the profile was at, when this write raised it (Undo puts it back). */
+  raisedFrom?: number;
+}> {
+  const f = await profileOf(root, o.platform);
+  const was = (parseDocument(f.text).toJS() as { schemaVersion?: unknown } | null)?.schemaVersion;
+  const migrated = migrateProfileText(f.text, PROFILE_SCHEMA_VERSION);
+  const raised = migrated.changed && typeof was === "number" ? { raisedFrom: was } : {};
+  const doc = parseDocument(migrated.text);
+  if (o.addSystem) {
+    let seq = doc.get("systems");
+    if (!isSeq(seq)) {
+      doc.set("systems", doc.createNode([]));
+      seq = doc.get("systems");
+    }
+    if (!isSeq(seq)) throw new DeclareError("invalid", `${f.rel}: its systems isn't a list.`);
+    if (seq.items.some((x) => isMap(x) && x.get("id") === o.addSystem!.id))
+      throw new DeclareError("exists", `${f.rel} has the system ${o.addSystem.id} already.`);
+    if (seq.items.length === 0) seq.flow = false;
+    const fields = { ...o.addSystem, aliases: [] };
+    const added = doc.createNode(fields) as YAMLMap;
+    (added.items[0]!.value as { comment?: string | null }).comment = addedComment(
+      o.by,
+      o.at,
+      addedHash(fields),
+    );
+    seq.add(added);
+  }
+  let list = doc.get("links");
+  if (!isSeq(list)) {
+    doc.set("links", doc.createNode([]));
+    list = doc.get("links");
+  }
+  if (!isSeq(list)) throw new DeclareError("invalid", `${f.rel}: its links isn't a list.`);
+  if (list.items.some((x) => samePair(x, a.from, a.to)))
+    throw new DeclareError(
+      "exists",
+      `${f.rel} already declares ${arrowEndKey(a.from)} → ${arrowEndKey(a.to)}.`,
+    );
+  const end = (e: ArrowEnd) => {
+    const n = doc.createNode(e) as YAMLMap;
+    n.flow = true;
+    return n;
+  };
+  const item = doc.createNode({}) as YAMLMap;
+  item.set("from", end(a.from));
+  item.set("to", end(a.to));
+  item.set("why", a.why.trim());
+  item.set("by", o.by);
+  item.set("at", o.at);
+  if (a.planned) item.set("planned", true);
+  list.add(item);
+  const after = checkedProfile(f.rel, f.text, doc);
+  const changes = changedLines(f.text, after);
+  if (o.preview) return { rel: f.rel, changes, written: false, before: f.raw, ...raised };
+  const wrote = inEol(after, f.eol);
+  await writeFileIfUnchanged(f.path, f.raw, wrote);
+  return { rel: f.rel, changes, written: true, before: f.raw, wrote, ...raised };
+}
+
+/**
+ * ADR 0204 1.7 and 2.4: take one declared arrow out of `platform`'s profile (Retire the declared
+ * arrow, Undo, Remove it): exactly that item's lines, and the `links:` key when it was the last;
+ * every other byte as it was, the version too. `preview` says the lines and writes nothing.
+ */
+export async function retireArrow(
+  root: string,
+  a: { from: ArrowEnd; to: ArrowEnd },
+  o: {
+    platform: string;
+    preview?: boolean;
+    /**
+     * Undo (ADR 0204 2.4): the version the arrow's write raised the profile from, put back on
+     * its own line when no arrow is left, so the file is again exactly as it was.
+     */
+    lowerTo?: number;
+  },
+): Promise<{
+  rel: string;
+  changes: LineChange[];
+  written: boolean;
+  before: string;
+  wrote: string;
+  /**
+   * The second review of ADR 0204: an Undo's `lowerTo` below what the profile now needs (a topic
+   * added since needs version 2): the profile stays at the version it needs, said in these words.
+   */
+  keptAt?: { version: number; why: string };
+}> {
+  const f = await profileOf(root, o.platform);
+  const doc = parseDocument(f.text);
+  const list = doc.get("links");
+  const i = isSeq(list) ? list.items.findIndex((x) => samePair(x, a.from, a.to)) : -1;
+  if (!isSeq(list) || i < 0)
+    throw new DeclareError(
+      "not-found",
+      `${f.rel} declares no arrow ${arrowEndKey(a.from)} → ${arrowEndKey(a.to)} (retired already?).`,
+    );
+  let after = withoutItem(
+    f.text,
+    list.items[i] as { range?: [number, number, number] | null },
+    list.items.length === 1,
+  );
+  // The last arrow gone: back to the lowest version the profile needs (2 with topics, else 1),
+  // so an older Atticus reads it again; an Undo puts back exactly the version it raised.
+  const topics = (doc.toJS() as { systems?: { topics?: unknown[] }[] }).systems?.some(
+    (x) => !!x.topics?.length,
+  );
+  const needs = topics ? PROFILE_TOPICS_VERSION : 1;
+  const lowerTo = Math.max(o.lowerTo ?? needs, needs);
+  const keptAt =
+    o.lowerTo !== undefined && o.lowerTo < needs && isSeq(list) && list.items.length === 1
+      ? {
+          version: needs,
+          why: `${f.rel} stays at profile version ${needs}, not ${o.lowerTo}: its topics need version ${needs}.`,
+        }
+      : undefined;
+  if (after !== undefined && isSeq(list) && list.items.length === 1)
+    after = after.replace(
+      new RegExp(`^schemaVersion:[ \\t]*${PROFILE_SCHEMA_VERSION}([ \\t]*(#.*)?)$`, "m"),
+      `schemaVersion: ${lowerTo}$1`,
+    );
+  if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
+    throw new DeclareError(
+      "invalid",
+      `${f.rel}: that arrow isn't laid out as Connect writes it, so Atticus leaves the file alone: remove it there by hand.`,
+    );
+  const wrote = inEol(after, f.eol);
+  const changes = changedLines(f.text, after);
+  if (!o.preview) await writeFileIfUnchanged(f.path, f.raw, wrote);
+  return {
+    rel: f.rel,
+    changes,
+    written: !o.preview,
+    before: f.raw,
+    wrote,
+    ...(keptAt ? { keptAt } : {}),
+  };
+}
+
+/**
+ * ADR 0204 2.4: Undo of an arrow whose write added a system (`addSystem`): the system goes too,
+ * only while it is still exactly as added (its fields hash to its comment's), nothing else names
+ * it in the profile and (`inUse`, ADR 0174, the second review) no pairing or answered question
+ * names it: the caller works that out from the estate. Else it is left, with why, said by the
+ * caller.
+ */
+export async function removeAddedSystem(
+  root: string,
+  o: { platform: string; system: string; inUse?: boolean },
+): Promise<{ removed: boolean; rel: string; why?: "changed" | "named" | "in-use" }> {
+  const f = await profileOf(root, o.platform);
+  const doc = parseDocument(f.text);
+  const seq = doc.get("systems");
+  const sys = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === o.system) : undefined;
+  if (!isSeq(seq) || !isMap(sys)) return { removed: false, rel: f.rel };
+  const idNode = sys.items.find((p) => isScalar(p.key) && p.key.value === "id")?.value as
+    { comment?: string | null } | undefined;
+  const hash = ADDED.exec(idNode?.comment ?? "")?.[3];
+  const links = (doc.toJS() as { links?: DeclaredLink[] }).links ?? [];
+  const named = links.some((l) =>
+    [l.from, l.to].some((e) => "system" in e && e.system === o.system),
+  );
+  if (!hash || addedHash(sys.toJS(doc) as Record<string, unknown>) !== hash)
+    return { removed: false, rel: f.rel, why: "changed" };
+  if (named) return { removed: false, rel: f.rel, why: "named" };
+  if (o.inUse) return { removed: false, rel: f.rel, why: "in-use" };
+  const after = withoutItem(f.text, sys as { range?: [number, number, number] | null }, false);
+  if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
+    return { removed: false, rel: f.rel, why: "changed" };
+  await writeFileIfUnchanged(f.path, f.raw, inEol(after, f.eol));
+  return { removed: true, rel: f.rel };
 }

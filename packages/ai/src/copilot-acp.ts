@@ -176,6 +176,21 @@ export interface AcpPolicy {
   writeRoots: string[];
   /** Single files it may write (a hand-off's result file). */
   writeFiles?: string[];
+  /**
+   * The metarepo, which a refusal names paths relative to (else the first read root). ADR 0204's
+   * second review: a find reads single files, so its first read root is no folder.
+   */
+  base?: string;
+  /**
+   * When set, the only atticus commands it may run, each by its first words (`verify`,
+   * `catalog show`); none when empty: the step reads and writes files only (a find, ADR 0204 A.2).
+   */
+  commands?: readonly string[];
+  /**
+   * When set, its reads are narrowed to `readRoots` (single files, say), said in a refusal in these
+   * words; and a search must say where, since an unnamed one searches the session's whole folder.
+   */
+  reads?: string;
 }
 
 /** The real path of p, or of its nearest folder that exists with the rest after it. */
@@ -213,9 +228,34 @@ class Paths {
   readable(path: string): string | undefined {
     if (!path || !isAbsolute(path)) return `the path must be absolute (got ${short(path)})`;
     const r = caseOf(real(path));
-    return this.reads.some((x) => sameOrUnder(x, r))
-      ? undefined
+    if (this.reads.some((x) => sameOrUnder(x, r))) return undefined;
+    return this.p.reads !== undefined
+      ? `Atticus lets this session read only ${this.p.reads}; ${short(this.rel(path))} is not one of them, so it is outside what it may read`
       : `Atticus lets this session read only under the metarepo and its clones; ${short(path)} is outside`;
+  }
+  /** A search that names no place searches the session's folder: refused when reads are narrowed. */
+  searchable(): string | undefined {
+    return this.p.reads !== undefined
+      ? `Refused: a search must say where; this session reads only ${this.p.reads}`
+      : undefined;
+  }
+  /** Whether the step lets the session run this atticus command (`commands`). */
+  runnable(argv: readonly string[]): string | undefined {
+    const allowed = this.p.commands;
+    if (allowed === undefined) return undefined;
+    if (!allowed.length)
+      return "Atticus runs no command in this session: this step reads and writes files only. Read the files it names with your file tools.";
+    const line = argv.join(" ");
+    // The final review: by its words, each matched whole, never a text prefix of one argument.
+    return allowed.some((c) => c.split(" ").every((w, i) => argv[i] === w))
+      ? undefined
+      : `Atticus runs only ${allowed.map((c) => `atticus ${c}`).join(", ")} in this session; atticus ${short(line)} is refused`;
+  }
+  /** A path as the agent names it: relative to the metarepo when under it. */
+  rel(x: string): string {
+    const base = this.p.base ?? this.p.readRoots[0] ?? "";
+    const r = relative(base, x);
+    return r && !r.startsWith("..") && !isAbsolute(r) ? r.split(sep).join("/") : x;
   }
   writable(path: string): string | undefined {
     if (!path || !isAbsolute(path)) return `the path must be absolute (got ${short(path)})`;
@@ -232,16 +272,14 @@ class Paths {
       return `Atticus never lets a session write a person's record (${short(path)}: an audit's answers or a person's corrections)`;
     if (this.files.includes(r) || this.writeDirs.some((x) => sameOrUnder(x, r))) return undefined;
     // Said relative to the metarepo, as the agent names its files.
-    const base = this.p.readRoots[0] ?? "";
-    const rel = (x: string) => {
-      const r = relative(base, x);
-      return r && !r.startsWith("..") && !isAbsolute(r) ? r.split(sep).join("/") : x;
-    };
-    const where = [
-      ...this.p.writeRoots.map((d) => `${rel(d)}/`),
-      ...(this.p.writeFiles ?? []).map(rel),
-    ].join(", ");
-    return `Atticus lets this session write only its step's result: it writes only under ${where || "nothing"}; ${short(path)} is refused`;
+    const dirs = this.p.writeRoots.map((d) => `${this.rel(d)}/`);
+    const files = (this.p.writeFiles ?? []).map((f) => this.rel(f));
+    const where = dirs.length
+      ? `under ${[...dirs, ...files].join(", ")}`
+      : files.length
+        ? files.join(", ")
+        : "nothing";
+    return `Atticus lets this session write only its step's result: it writes only ${where}; ${short(this.p.base ? this.rel(path) : path)} is refused`;
   }
 }
 
@@ -551,12 +589,20 @@ export const MAX_NUDGES = 3;
  * beta.16: what a session that ended right after a refusal is told: what was refused and why,
  * and how to carry on without a shell.
  */
-export function carryOnPrompt(refusals: readonly string[]): string {
+export function carryOnPrompt(
+  refusals: readonly string[],
+  o: { commands?: readonly string[] } = {},
+): string {
+  // ADR 0204's second review: a step that runs no command is never told one may be run.
+  const commands =
+    o.commands && !o.commands.length
+      ? "Run no command: this step reads and writes files only. Read the files the step names with your own file tools; they need no shell."
+      : "Use your own file tools to find, view and search files: they are allowed and need no shell. Don't run shell commands (cd, dir, Get-ChildItem, Select-String, Get-Content, grep, find); the only command Atticus runs is one `atticus ...` command at a time, with nothing piped or chained.";
   return [
     "Atticus refused this, and you are not finished yet:",
     ...refusals.slice(-3).map((r) => `- ${oneLine(r, 300)}`),
     "",
-    "Carry on with the step. Use your own file tools to find, view and search files: they are allowed and need no shell. Don't run shell commands (cd, dir, Get-ChildItem, Select-String, Get-Content, grep, find); the only command Atticus runs is one `atticus ...` command at a time, with nothing piped or chained. The step says where its files are. Finish what the step asks for (the facts, or the result file it names), then stop.",
+    `Carry on with the step. ${commands} The step says where its files are. Finish what the step asks for (the facts, or the result file it names), then stop.`,
   ].join("\n");
 }
 
@@ -1152,6 +1198,8 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       const a = atticusArgvOf(p.command, p.args ?? []);
       const input = { command: p.command, args: p.args ?? [] };
       if (a.refused !== undefined) return refuse("terminal/create", input, a.refused);
+      const not = paths.runnable(a.argv);
+      if (not !== undefined) return refuse("terminal/create", input, not);
       // beta.17: an atticus command runs in the metarepo whatever folder the session names (run
       // from a repo's checkout, it would find no metarepo there).
       const cwd = o.cwd;
@@ -1428,7 +1476,9 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       say(
         `  Atticus: told Copilot why that was refused and to carry on (${nudge} of ${MAX_NUDGES}).`,
       );
-      prompt = carryOnPrompt(fresh);
+      prompt = carryOnPrompt(fresh, {
+        ...(o.policy.commands ? { commands: o.policy.commands } : {}),
+      });
     }
     const usage = usageOf(sumUsage(usages));
     return {
@@ -1496,7 +1546,7 @@ function permissionRefused(tc: AcpToolCall, paths: Paths): string | undefined {
     case "search": {
       if (!locs.length)
         return tc.kind === "search"
-          ? undefined
+          ? paths.searchable()
           : "Refused: a read must say which file (use fs/read_text_file)";
       for (const l of locs) {
         const why = paths.readable(l);
@@ -1526,7 +1576,7 @@ function permissionRefused(tc: AcpToolCall, paths: Paths): string | undefined {
             : (tc.title ?? "");
       const args = Array.isArray(raw.args) ? raw.args.map(String) : [];
       const a = atticusArgvOf(cmd, args);
-      return a.refused;
+      return a.refused ?? paths.runnable(a.argv);
     }
     default:
       return `Refused: Atticus doesn't let this session ${tc.kind ?? "do"} ${short(tc.title ?? "that")} (it may read the metarepo, write its step's result and run atticus commands)`;

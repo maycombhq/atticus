@@ -33,7 +33,14 @@ describe("one name per thing", () => {
     expect(term("call with no arrow")).toMatchObject({ was: "loose call" });
     // Everything a person told Atticus that the build keeps is one of "your changes"; a decision
     // is only the AI's, or the knowledge kind.
-    expect(term("your changes")).toMatchObject({ was: "curated decision" });
+    expect(term("your changes")).toMatchObject({
+      was: expect.stringContaining("curated decision"),
+    });
+    // Connect's list of what people told Atticus on a box is "Your changes" too.
+    expect(term("your changes")).toMatchObject({
+      was: expect.stringContaining("Corrections and declarations"),
+    });
+    expect(term("declared arrow")!.says).toMatch(/never counted with arrows read from code/);
     expect(term("your kept edit")!.says).toMatch(/one of your changes/);
     expect(term("decision")!.says).toMatch(/Only the AI's decisions/);
     expect(term("your decision")).toBeUndefined();

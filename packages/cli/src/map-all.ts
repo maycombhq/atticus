@@ -33,7 +33,7 @@ import {
   writeFileAtomic,
   type OrgPack,
 } from "@maycombhq/core";
-import { estateRepos, productionRepos } from "@maycombhq/scanner";
+import { estateRepos, productionRepos, type BuildRefusal } from "@maycombhq/scanner";
 import { dirSource, sameCommit, sessionTokensFor } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import { rulesLackingAll } from "./reading-rules.js";
@@ -149,6 +149,11 @@ export interface MapAllDeps {
   backoffMs?: number;
   /** copilot-acp (ADR 0171): runs one step's line in a new Copilot session. */
   acp?: AcpStepRunner;
+  /**
+   * Told the build's refusal when a repo's verify --write refused to build (the find's read of B,
+   * ADR 0204 A.2): the caller says that repo waits for a confirm.
+   */
+  onBuildRefused?: (refused: BuildRefusal) => void;
   /** ADR 0173: what the run does, as it does it, for the app's progress and Console. */
   onEvent?: (e: MapAllEvent) => void;
   makeAcp?: () => Promise<AcpStepRunner>;
@@ -1497,7 +1502,13 @@ async function mapAllRun(
       await verifyCommand(
         root,
         item.repo,
-        { commit: item.commit, write: true, whole: true, json: true },
+        {
+          commit: item.commit,
+          write: true,
+          whole: true,
+          json: true,
+          ...(deps.onBuildRefused ? { onBuildRefused: deps.onBuildRefused } : {}),
+        },
         c,
       );
     } catch (e) {
@@ -1649,7 +1660,16 @@ async function mapAllRun(
       const c = capturedStep(io);
       let code: number;
       try {
-        code = await verifyCommand(root, repo, { write: true, json: true }, c);
+        code = await verifyCommand(
+          root,
+          repo,
+          {
+            write: true,
+            json: true,
+            ...(deps.onBuildRefused ? { onBuildRefused: deps.onBuildRefused } : {}),
+          },
+          c,
+        );
       } catch (e) {
         // One repo that can't be applied (a file of it open in another program, say) never ends
         // the join: said with its own command, and the other repos are applied.

@@ -549,6 +549,7 @@ Usage:
   atticus types add <id> --name "..." --description "..." [--badge <1-3 chars>] [--shape <shape>] [--colour <css>] [--owner <team>]   Write a component type to org-pack/component-types/<id>/type.yaml with a notes.md to fill in; the next reads are handed it, the canvas draws it, a new box on the canvas can be of it
   atticus types notes <id>             A component type's notes (the architect's write-up), or where to write them
   atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's calls with no arrow and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
+  atticus connect find <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Find a declared arrow in the repo's code: a brief from the profile's arrow (a hint, never evidence) for your assistant, which writes cited facts and one answer under proposals/find/; verify checks each fact on its line and builds, and the outcome (found, found-loose, elsewhere, not-found) is told from the catalog into facts/<repo>.find.yaml; --read goes on after a hand-off (ADR 0204)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --key <k> --rule "..." --org-wide | --type <t> | --repo <r> [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
@@ -1649,8 +1650,24 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         io,
       );
     }
+    // ADR 0204 addendum A: find a declared arrow in the caller's code.
+    if (command === "find") {
+      const f = await import("./connect-find.js");
+      return f.connectFindCommand(
+        root,
+        positionals[2],
+        {
+          ...(text(values.to) ? { to: text(values.to)! } : {}),
+          ...(sys ? { system: sys } : {}),
+          ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+          ...(values.read === true ? { read: true } : {}),
+          ...(values.json === true ? { json: true } : {}),
+        },
+        io,
+      );
+    }
     io.err(
-      "atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off]",
+      "atticus connect match | find <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off]",
     );
     return 2;
   }

@@ -6509,6 +6509,80 @@
                                     "route"
                                   ],
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "link"
+                                    },
+                                    "from": {
+                                      "type": "object",
+                                      "properties": {
+                                        "repo": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "system": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "to": {
+                                      "type": "object",
+                                      "properties": {
+                                        "repo": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "system": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "why": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 500
+                                    },
+                                    "planned": {
+                                      "type": "boolean"
+                                    },
+                                    "addSystem": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "boundary": {
+                                          "type": "string",
+                                          "enum": [
+                                            "vendor",
+                                            "internal"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "boundary"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "from",
+                                    "to",
+                                    "why"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               ]
                             }
@@ -6684,6 +6758,80 @@
                                     "kind",
                                     "system",
                                     "route"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "link"
+                                    },
+                                    "from": {
+                                      "type": "object",
+                                      "properties": {
+                                        "repo": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "system": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "to": {
+                                      "type": "object",
+                                      "properties": {
+                                        "repo": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "system": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "why": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 500
+                                    },
+                                    "planned": {
+                                      "type": "boolean"
+                                    },
+                                    "addSystem": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "boundary": {
+                                          "type": "string",
+                                          "enum": [
+                                            "vendor",
+                                            "internal"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "boundary"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "from",
+                                    "to",
+                                    "why"
                                   ],
                                   "additionalProperties": false
                                 }
@@ -7786,7 +7934,8 @@
                 "bring-in",
                 "sync",
                 "scan",
-                "map-edits"
+                "map-edits",
+                "repos-run"
               ]
             },
             "description": "The page action that started it",
@@ -14368,10 +14517,739 @@
         }
       }
     },
+    "/api/connect": {
+      "get": {
+        "operationId": "getConnect",
+        "summary": "3.19.0 (ADR 0204): what connecting box `from` to box `to` is, the direction as asked: the calls to connect (those going elsewhere first), connected already, declared already, declare the arrow, or what is needed first",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The caller: repo:<id> or system:<id>",
+            "required": false
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The callee: repo:<id> or system:<id>",
+            "required": false
+          },
+          {
+            "name": "job",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "1 runs the read as a job (202 JobAccepted; its result `answer` is this view)",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started as a job (`job=1`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/declared-links/arrow": {
+      "get": {
+        "operationId": "getDeclaredArrowOf",
+        "summary": "3.19.0 (ADR 0204 1.6): the profile's declared arrow a drawn Interface flagged declared-link is, with who, when and why",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "interface",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Interface's id",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrowOfInterfaceView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/declared-links/superseded": {
+      "get": {
+        "operationId": "getSupersededArrows",
+        "summary": "3.19.0 (ADR 0204 1.7): the declared arrows the code now shows, as the last build listed them, for the count above the map",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersededArrowsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connect/find": {
+      "post": {
+        "operationId": "findDeclaredArrow",
+        "summary": "3.19.0 (ADR 0204 A): find a declared arrow in the caller's code, as a job: the brief from the profile's item (a hint, never evidence), the assistant's session or the hand-off, the answer checked, verify --write, and the outcome told from the catalog after the build; its result `answer` is FindResult",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "copilot-acp",
+                      "hand-off"
+                    ]
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "job": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its result `answer` is FindResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reading-rules/from-find": {
+      "post": {
+        "operationId": "ruleFromFind",
+        "summary": "3.19.0 (ADR 0204 A.8): Make this a reading rule from a call a find confirmed: a draft in org-pack/reading-rules/types/<type>.yaml, given to no read until a person sets it active",
+        "tags": [
+          "workspace"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "repo",
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleFromPairingResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setup/repos/run": {
+      "post": {
+        "operationId": "runNewRepos",
+        "summary": "3.19.0 (ADR 0204 decision 4): add, sync, read and apply new repos as one local job of four parts, worked out from disk so the same request continues where a Stop left it; Stop is heard between parts and repos; the read pauses with the command to paste where the app can't start the assistant. Its job's result carries ReposRunResult",
+        "tags": [
+          "workspace"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "platform": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "repos": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                        },
+                        "url": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "owner": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "defaultBranch": {
+                          "type": "string",
+                          "maxLength": 250
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 300
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "read": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "repos"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its result carries ReposRunResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/map/edits/undo": {
+      "post": {
+        "operationId": "undoMapEdits",
+        "summary": "3.19.0 (ADR 0204 2.4): take back exactly what an Apply of Edit the map or Connect wrote (its result's `wrote`), each only while it is as written, then build once, as a local job; its result is MapEditsResult",
+        "tags": [
+          "scans"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "wrote": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "edit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "file": {
+                              "type": "string"
+                            },
+                            "lines": {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "edit",
+                            "file",
+                            "lines"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "edit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "file": {
+                              "type": "string"
+                            },
+                            "link": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "to": {
+                                  "type": "object",
+                                  "properties": {
+                                    "repo": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "system": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "why": {
+                                  "type": "string"
+                                },
+                                "by": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": "string"
+                                },
+                                "planned": {
+                                  "type": "boolean"
+                                },
+                                "file": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "why",
+                                "by",
+                                "at",
+                                "file"
+                              ]
+                            },
+                            "addedSystem": {
+                              "type": "string"
+                            },
+                            "raisedFrom": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "edit",
+                            "file",
+                            "link"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "edit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "file": {
+                              "type": "string"
+                            },
+                            "route": {
+                              "type": "object",
+                              "properties": {
+                                "system": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "system",
+                                "value"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "edit",
+                            "file",
+                            "route"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "wrote"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Started: its result is MapEditsResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/declared-links/undo": {
       "post": {
         "operationId": "undeclareLink",
-        "summary": "Remove exactly one declared topic or call from a system in the profile (ADR 0174)",
+        "summary": "Remove exactly one declared topic or call from a system in the profile (ADR 0174), or (3.19.0, `kind: link`) one declared arrow from the profile's links",
         "tags": [
           "workspace"
         ],
@@ -29424,6 +30302,9 @@
       "HierJoin": {
         "type": "object",
         "properties": {
+          "declaredBy": {
+            "type": "string"
+          },
           "interface": {
             "type": "string"
           },
@@ -30179,7 +31060,8 @@
                   "bring-in",
                   "sync",
                   "scan",
-                  "map-edits"
+                  "map-edits",
+                  "repos-run"
                 ]
               },
               "repo": {
@@ -30626,6 +31508,52 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "raisesProfile": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "to": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "file",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "raisesProfileUnread": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "target"
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -43527,6 +44455,1304 @@
         ],
         "additionalProperties": false
       },
+      "ConnectView": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "toName": {
+            "type": "string"
+          },
+          "mechanism": {
+            "type": "string",
+            "enum": [
+              "calls",
+              "connected",
+              "declared",
+              "declare",
+              "needs"
+            ]
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "need": {
+                  "type": "string",
+                  "enum": [
+                    "pick-repo",
+                    "no-repo",
+                    "read",
+                    "verify",
+                    "add-system"
+                  ]
+                },
+                "end": {
+                  "type": "string",
+                  "enum": [
+                    "from",
+                    "to"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "need",
+                "end",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "candidates": {
+            "$ref": "#/components/schemas/LinkCandidatesView"
+          },
+          "existing": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "declared": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "why": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "planned": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "why",
+              "by",
+              "at",
+              "file"
+            ],
+            "additionalProperties": false
+          },
+          "superseded": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "calls"
+            ],
+            "additionalProperties": false
+          },
+          "routes": {
+            "type": "boolean"
+          },
+          "find": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "at": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "found",
+                  "found-loose",
+                  "elsewhere",
+                  "not-found"
+                ]
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "looked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "other": {
+                "type": "string"
+              },
+              "rejected": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "shape": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "at",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "to",
+              "at",
+              "outcome",
+              "facts",
+              "looked"
+            ],
+            "additionalProperties": false
+          },
+          "findAgain": {
+            "type": "string",
+            "enum": [
+              "again",
+              "anyway"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "fromName",
+          "toName",
+          "mechanism",
+          "needs",
+          "existing"
+        ],
+        "additionalProperties": false
+      },
+      "ArrowOfInterfaceView": {
+        "type": "object",
+        "properties": {
+          "declared": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "why": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "planned": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "why",
+              "by",
+              "at",
+              "file"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "declared"
+        ],
+        "additionalProperties": false
+      },
+      "SupersededArrowsView": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "system": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "to": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "system": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "calls": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "from",
+                "to",
+                "by",
+                "at",
+                "calls"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "FindResult": {
+        "type": "object",
+        "properties": {
+          "handoff": {
+            "type": "object",
+            "properties": {
+              "brief": {
+                "type": "string"
+              },
+              "answer": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brief",
+              "answer",
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "readFirst": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "then": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "command",
+              "then"
+            ],
+            "additionalProperties": false
+          },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "at": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "found",
+                  "found-loose",
+                  "elsewhere",
+                  "not-found"
+                ]
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "looked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "other": {
+                "type": "string"
+              },
+              "rejected": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "shape": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "at",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "to",
+              "at",
+              "outcome",
+              "facts",
+              "looked"
+            ],
+            "additionalProperties": false
+          },
+          "brief": {
+            "type": "string"
+          },
+          "report": {
+            "type": "string"
+          },
+          "leftOut": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notBuilt": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "readFailed": {
+                "type": "boolean",
+                "const": true
+              },
+              "message": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "refused": {
+                "type": "object",
+                "properties": {
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "nothing-read",
+                        "empty",
+                        "unexplained-removals",
+                        "large-removals",
+                        "hand-edits",
+                        "not-upgraded",
+                        "newer-atticus"
+                      ]
+                    }
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "removals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "unexplained": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "repos": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "explainedBy": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "slot",
+                              "manifest",
+                              "archived",
+                              "curated",
+                              "input",
+                              "build"
+                            ]
+                          }
+                        },
+                        "inputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "what": {
+                                "type": "string",
+                                "enum": [
+                                  "answers",
+                                  "pairings",
+                                  "org-pack",
+                                  "curated",
+                                  "traffic",
+                                  "shared",
+                                  "inputs",
+                                  "proposals",
+                                  "federated",
+                                  "other"
+                                ]
+                              },
+                              "path": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "id",
+                        "repos",
+                        "explainedBy"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "allowRemovals": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "edits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "changed",
+                            "added",
+                            "deleted"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "how"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "discardEdits": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "unread": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string"
+                        },
+                        "why": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "why"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "unreadableManifest": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "newer": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "field": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reads": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "atticus": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "name",
+                        "field",
+                        "version",
+                        "reads"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "standing": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "plan": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reasons",
+                  "message",
+                  "command"
+                ],
+                "additionalProperties": false
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message",
+              "lines",
+              "command"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "brief",
+          "leftOut"
+        ],
+        "additionalProperties": false
+      },
+      "ReposRunResult": {
+        "type": "object",
+        "properties": {
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "sync",
+                    "read",
+                    "apply"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "done",
+                    "waiting",
+                    "stopped",
+                    "failed"
+                  ]
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "done",
+                          "waiting",
+                          "stopped",
+                          "failed"
+                        ]
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "repo",
+                      "state"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "part",
+                "state",
+                "repos"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "handoff": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "refused": {
+            "type": "object",
+            "properties": {
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "nothing-read",
+                    "empty",
+                    "unexplained-removals",
+                    "large-removals",
+                    "hand-edits",
+                    "not-upgraded",
+                    "newer-atticus"
+                  ]
+                }
+              },
+              "message": {
+                "type": "string"
+              },
+              "removals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unexplained": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "explainedBy": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "slot",
+                          "manifest",
+                          "archived",
+                          "curated",
+                          "input",
+                          "build"
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "what": {
+                            "type": "string",
+                            "enum": [
+                              "answers",
+                              "pairings",
+                              "org-pack",
+                              "curated",
+                              "traffic",
+                              "shared",
+                              "inputs",
+                              "proposals",
+                              "federated",
+                              "other"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "what",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind",
+                    "id",
+                    "repos",
+                    "explainedBy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "allowRemovals": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "changed",
+                        "added",
+                        "deleted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "how"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "discardEdits": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unread": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unreadableManifest": {
+                "type": "boolean",
+                "const": true
+              },
+              "newer": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "reads": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "atticus": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "name",
+                    "field",
+                    "version",
+                    "reads"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "standing": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reasons",
+              "message",
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "of": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "parts",
+          "done",
+          "of"
+        ],
+        "additionalProperties": false
+      },
       "SketchStrokeRequest": {
         "type": "object",
         "properties": {
@@ -43891,7 +46117,8 @@
                     "link",
                     "topic",
                     "call",
-                    "unlink"
+                    "unlink",
+                    "arrow"
                   ]
                 },
                 "says": {
@@ -43964,6 +46191,49 @@
                         "kind",
                         "system",
                         "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "link"
+                        },
+                        "from": {
+                          "type": "object",
+                          "properties": {
+                            "repo": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "system": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "to": {
+                          "type": "object",
+                          "properties": {
+                            "repo": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "system": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "from",
+                        "to"
                       ],
                       "additionalProperties": false
                     }
@@ -48962,6 +51232,39 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "declaredSuperseded": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "calls": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "by",
+                    "at",
+                    "calls"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -49625,6 +51928,107 @@
               "command"
             ],
             "additionalProperties": false
+          },
+          "wrote": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "edit": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "edit",
+                    "file",
+                    "lines"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "edit": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "link": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "addedSystem": {
+                      "type": "string"
+                    },
+                    "raisedFrom": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "edit",
+                    "file",
+                    "link"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "edit": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "system": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "system",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "edit",
+                    "file",
+                    "route"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
           }
         },
         "required": [

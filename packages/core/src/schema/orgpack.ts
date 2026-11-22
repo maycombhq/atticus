@@ -103,12 +103,17 @@ export const Approver = z
  */
 export const ROLES_SCHEMA_VERSION = 3 as const;
 
-/** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
-const TeamPerson = z
+/**
+ * A person by their Git handle, as Atticus records `by` (`gitUser`'s handle): one line, no spaces.
+ * A team's people, and since ADR 0204's second review who declared an arrow.
+ */
+export const PersonHandle = z
   .string()
   .min(1)
   .max(100)
   .regex(/^@?[A-Za-z0-9][A-Za-z0-9._-]*$/, "a person's Git handle, such as pat or pat.doe");
+/** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
+const TeamPerson = PersonHandle;
 
 export const Team = z.strictObject({
   /** The id a repo manifest's `owner` names, e.g. team-ledger. */
@@ -1648,16 +1653,53 @@ export const DeclaredCall = z
 export type DeclaredCall = z.infer<typeof DeclaredCall>;
 
 /**
- * profile.yaml's version. 2 (ADR 0162 amendment, review item 15) adds a system's `topics`. A
- * version-1 profile reads as it is and stays valid, so `atticus upgrade` moves nothing; a profile
- * that names topics is at 2 (`migrateProfileText`, the number only), as `addProfileSystem` writes
- * it when an answer puts a topic there.
+ * profile.yaml's version. 2 (ADR 0162 amendment, review item 15) adds a system's `topics`; 3 (ADR
+ * 0204) adds the declared arrows, `links`. A version-1 or 2 profile reads as it is and stays
+ * valid, so `atticus upgrade` moves nothing; a profile is moved up only by the write that needs it
+ * (`migrateProfileText`, the number only): a topic to 2, a declared arrow to 3.
  */
-export const PROFILE_SCHEMA_VERSION = 2 as const;
+export const PROFILE_SCHEMA_VERSION = 3 as const;
+/** The version a system's `topics` needs (ADR 0162 amendment). */
+export const PROFILE_TOPICS_VERSION = 2 as const;
+
+/** One end of a declared arrow: a repo of the manifests or a system of the profiles. */
+export const ArrowEnd = z.union([
+  // The second review: a repo end is an id as the manifests' are, so it never reaches a path.
+  z.strictObject({ repo: RecordId }),
+  z.strictObject({ system: RecordId }),
+]);
+export type ArrowEnd = z.infer<typeof ArrowEnd>;
+
+/**
+ * ADR 0204 (version 3): an arrow a person declares that the code doesn't show, from the caller
+ * to the callee. A person's word, built into an asserted Interface flagged `declared-link` on
+ * every build and never kept on its own; not drawn while the code shows a call the same way.
+ */
+export const DeclaredLink = z.strictObject({
+  from: ArrowEnd,
+  to: ArrowEnd,
+  /** Why it is so: required, and only ever data (never an instruction to a reader). */
+  why: z.string().trim().min(3).max(500),
+  /**
+   * The Git user who declared it (their handle, one line: the second review, while version 3 is
+   * unreleased), and when.
+   */
+  by: PersonHandle,
+  at: z.iso.datetime({ offset: true }),
+  /** Not built yet: the Interface is `planned-new`. */
+  planned: z.boolean().optional(),
+});
+export type DeclaredLink = z.infer<typeof DeclaredLink>;
+export const arrowEndKey = (e: ArrowEnd): string =>
+  "repo" in e ? `repo:${e.repo}` : `system:${e.system}`;
 
 export const Profile = z
   .strictObject({
-    schemaVersion: z.union([V, z.literal(PROFILE_SCHEMA_VERSION)]),
+    schemaVersion: z.union([
+      V,
+      z.literal(PROFILE_TOPICS_VERSION),
+      z.literal(PROFILE_SCHEMA_VERSION),
+    ]),
     platform: RecordId,
     name: z.string().min(1),
     systems: z
@@ -1701,12 +1743,33 @@ export const Profile = z
       .default({ new: ["New"], modify: ["Modify"], retire: ["Retire"] }),
     /** Gate ids from gates.yaml that are mandatory on this platform. */
     gates: Ids.default([]),
+    /** ADR 0204 (version 3): the arrows a person declared, each pair once. */
+    links: z.array(DeclaredLink).optional(),
   })
   .superRefine((p, ctx) => {
     unique(p.systems, (s) => s.id, ctx, "systems");
+    if (p.links?.length && p.schemaVersion < PROFILE_SCHEMA_VERSION)
+      ctx.addIssue({
+        code: "custom",
+        path: ["links"],
+        message: "links needs schemaVersion 3: set schemaVersion: 3, nothing else changes",
+      });
+    const pairs = new Set<string>();
+    (p.links ?? []).forEach((l, i) => {
+      const k = `${arrowEndKey(l.from)}>${arrowEndKey(l.to)}`;
+      if (arrowEndKey(l.from) === arrowEndKey(l.to))
+        ctx.addIssue({ code: "custom", path: ["links", i], message: "an arrow's two ends differ" });
+      if (pairs.has(k))
+        ctx.addIssue({
+          code: "custom",
+          path: ["links", i],
+          message: `the arrow ${k.replace(">", " → ")} is listed twice`,
+        });
+      pairs.add(k);
+    });
     const owned = new Map<string, string>();
     p.systems.forEach((s, i) => {
-      if (s.topics?.length && p.schemaVersion < PROFILE_SCHEMA_VERSION)
+      if (s.topics?.length && p.schemaVersion < PROFILE_TOPICS_VERSION)
         ctx.addIssue({
           code: "custom",
           path: ["systems", i, "topics"],

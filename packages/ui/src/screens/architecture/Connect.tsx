@@ -12,7 +12,8 @@ import {
   type Loaded,
 } from "../../api/client.js";
 import { JobStoppedNote, JobWait } from "../../app/job-wait.js";
-import { ApplyAndPropose, onWorkChanged } from "../../app/propose.js";
+import { ApplyAndPropose, onWorkChanged, Propose, RefusalLink } from "../../app/propose.js";
+import { followJob, JobFailed } from "../../app/job.js";
 import { onwardGroups, pairedStanding, pairedWho } from "./paired-standing.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
@@ -97,6 +98,27 @@ export function howWords(c: Api.CandidateCallViewT, me?: string): string | undef
     case "kept":
       return C.how.kept;
   }
+}
+
+/** ADR 0204 5.2: the status a row shows, of four; the exact one is its detail. */
+export function shownStatus(c: Api.CandidateCallViewT): string {
+  if (c.status === "here") return COPY.connectAB.shown.here;
+  if (c.status === "paired")
+    return c.pairedAi ? COPY.connectAB.shown.ai : COPY.connectAB.shown.by(c.pairedBy ?? "");
+  if (c.status === "joined" && c.joins) return COPY.connectAB.shown.goes(c.joins);
+  return COPY.connectAB.shown.loose;
+}
+
+/** ADR 0204 5.3: the reason a call was left, of four; undefined for one not in the table. */
+export function shownReason(why: string | undefined): string | undefined {
+  if (!why) return undefined;
+  if (["no-host", "unresolved-placeholder", "topic-unresolved"].includes(why))
+    return COPY.connectAB.reason.address;
+  if (["host-no-route", "label-no-route", "target-no-route", "topic-unheard"].includes(why))
+    return COPY.connectAB.reason.nothing;
+  if (["generic-path", "type-not-joined"].includes(why)) return COPY.connectAB.reason.kind;
+  if (why === "answered-none") return COPY.connectAB.reason.none;
+  return undefined;
 }
 
 /** The shortest reason that says something. */
@@ -352,6 +374,12 @@ export function Pairing(p: {
   me?: string;
   /** Tests pass their own; the app removes the line through the local API. */
   undoLine?: (line: string) => Promise<unknown>;
+  /**
+   * ADR 0204 decision 2: write and apply in one job (POST /api/map/edits with one `pair`), and
+   * its Undo (POST /api/map/edits/undo). Tests pass their own; a test passing only `post` keeps
+   * the write alone, as before.
+   */
+  apply?: PairApply;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -368,6 +396,10 @@ export function Pairing(p: {
   const [preview, setPreview] = useState<Api.ConnectLinksResultT | undefined>();
   const [written, setWritten] = useState<Api.ConnectLinksResultT | undefined>();
   const [undone, setUndone] = useState<Api.ConnectLinksResultT | undefined>();
+  // ADR 0204 decision 2: what the one job wrote and whether it built, for Undo.
+  const [applied, setApplied] = useState<{ wrote: Api.MapEditWroteT[]; built: boolean }>();
+  const [appliedUndone, setAppliedUndone] = useState<boolean | Api.BuildRefusalViewT>(false);
+  const applyIo = p.apply ?? (p.post ? undefined : APP_APPLY);
   // The review (S2): the Apply offered under a waiting pairing is this panel's own. Once work
   // changed (that Apply ended) the calls are read again, so "not on the map yet" doesn't stay
   // beside an arrow the map now draws. Only while a pairing waits: a person's picks are kept.
@@ -519,6 +551,28 @@ export function Pairing(p: {
       { once: true },
     );
     try {
+      // ADR 0204 decision 2: the confirmed pairs written and applied in one job. The rule for
+      // all answers a question, which Edit the map doesn't take: it stays its own write.
+      if (mode === "write" && applyIo && !sending.rule) {
+        const done = await applyIo.apply([
+          { kind: "add", pair: { from: p.from, to: p.box, pairs: sending.pairs } },
+        ]);
+        if (gone()) return;
+        setWritten({
+          written: true,
+          file: preview?.file ?? "",
+          lines: done.wrote.flatMap((w) => ("lines" in w ? w.lines : [])),
+          verify: "",
+          commit: "",
+        });
+        setApplied(done);
+        setAppliedUndone(false);
+        setUndone(undefined);
+        setPreview(undefined);
+        setMovesOnly(false);
+        p.cands.reload?.();
+        return;
+      }
       const r = await post(
         {
           from: p.from,
@@ -573,6 +627,32 @@ export function Pairing(p: {
   };
   const undo = async () => {
     if (!written || undoing) return;
+    if (applied && applyIo) {
+      // One job: exactly what the Apply wrote, while it is as written, then one build.
+      setUndoing(true);
+      setError(undefined);
+      try {
+        await applyIo.undo(applied.wrote);
+        setApplied(undefined);
+        setWritten(undefined);
+        setAppliedUndone(true);
+        p.cands.reload?.();
+      } catch (e) {
+        // Taken back, the build waiting for a confirm of removals it didn't make (ADR 2.3).
+        const refused =
+          e instanceof JobFailed
+            ? (e.result?.refused as Api.BuildRefusalViewT | undefined)
+            : undefined;
+        if (refused) {
+          setApplied(undefined);
+          setWritten(undefined);
+          setAppliedUndone(refused);
+        } else setError(errorOf(e));
+      } finally {
+        setUndoing(false);
+      }
+      return;
+    }
     setUndoing(true);
     setError(undefined);
     let left = written.lines;
@@ -633,7 +713,11 @@ export function Pairing(p: {
           </span>
           <span className="chip dim box-now">
             <span className="sr">{C.col.status}: </span>
-            {C.status[c.status]}
+            {/* ADR 0204 5.2: one of four words; the exact status is the row's detail. */}
+            <span title={COPY.connectAB.exact(C.status[c.status] ?? c.status)}>
+              {shownStatus(c)}
+            </span>
+            <span className="sr"> ({COPY.connectAB.exact(C.status[c.status] ?? c.status)})</span>
           </span>
         </label>
         {c.status === "undrawn" && c.joins ? (
@@ -665,7 +749,14 @@ export function Pairing(p: {
               : C.joinsNow(c.joins)}
           </span>
         ) : (
-          c.why && <span className="box-why">{C.leftWhy[c.why] ?? c.why}</span>
+          c.why && (
+            // ADR 0204 5.3: one of four reasons, today's exact words beside it.
+            <span className="box-why">
+              {shownReason(c.why)
+                ? `${shownReason(c.why)} (${C.leftWhy[c.why] ?? c.why})`
+                : (C.leftWhy[c.why] ?? c.why)}
+            </span>
+          )
         )}
         <select
           className="field"
@@ -1031,7 +1122,38 @@ export function Pairing(p: {
           }
         />
       )}
-      {written && (
+      {written && applied && (
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {applied.built
+              ? COPY.connectAB.connected(d.from, d.toName)
+              : COPY.connectAB.savedNotBuilt}
+          </p>
+          <p className="hud">{COPY.connectAB.notProposed}</p>
+          <div className="box-btns">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void undo()}
+              disabled={undoing}
+              aria-busy={undoing}
+            >
+              {undoing ? COPY.connectAB.undoing : C.undo}
+            </button>
+            {written.lines[0] && <MakeRule repo={p.from} line={written.lines[0]} />}
+          </div>
+          <Propose scope="corrections" />
+        </div>
+      )}
+      {appliedUndone && (
+        <div className="stack">
+          <p role="status" className="ev-say">
+            {appliedUndone === true ? COPY.connectAB.undone : COPY.connectAB.undoneWaits}
+          </p>
+          {appliedUndone !== true && <RefusalLink refused={appliedUndone} />}
+        </div>
+      )}
+      {written && !applied && (
         <div className="stack">
           {written.rule && <p className="ev-say">{C.ruleWritten(written.rule.question)}</p>}
           {/* ADR 0188: Apply moves the arrow, then Propose for review. */}
@@ -1071,6 +1193,28 @@ export function Pairing(p: {
   );
 }
 
+/** ADR 0204 decision 2: write and apply a pairing in one job, and its Undo. */
+export interface PairApply {
+  apply(edits: Api.MapEditT[]): Promise<{ wrote: Api.MapEditWroteT[]; built: boolean }>;
+  undo(wrote: readonly Api.MapEditWroteT[]): Promise<unknown>;
+}
+const APP_APPLY: PairApply = {
+  apply: async (edits) => {
+    try {
+      const r = await followJob("/api/map/edits", { edits });
+      const res = (r.result ?? {}) as Partial<Api.MapEditsResultT>;
+      return { wrote: (res.wrote ?? []) as Api.MapEditWroteT[], built: res.built === true };
+    } catch (e) {
+      // Saved, the build waiting for a confirm: said, with Undo still possible.
+      const res = e instanceof JobFailed ? e.result : undefined;
+      if (res?.built === false && Array.isArray(res.wrote) && res.wrote.length)
+        return { wrote: res.wrote as Api.MapEditWroteT[], built: false };
+      throw e;
+    }
+  },
+  undo: (wrote) => followJob("/api/map/edits/undo", { wrote }),
+};
+
 /** G4 (ADR 0176): the pairing as a draft reading rule for every repo of this repo's type. */
 function MakeRule({ repo, line }: { repo: string; line: string }) {
   const [busy, setBusy] = useState(false);
@@ -1078,8 +1222,10 @@ function MakeRule({ repo, line }: { repo: string; line: string }) {
   const [error, setError] = useState<string | undefined>();
   if (made)
     return (
-      <div className="stack" role="status">
-        <p className="ev-say">{C.ruleMade(made.file)}</p>
+      <div className="stack">
+        <p role="status" className="ev-say">
+          {C.ruleMade(made.file)}
+        </p>
         <Cmd text={made.activate} />
       </div>
     );
