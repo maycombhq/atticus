@@ -515,7 +515,7 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
               return ran.code;
             });
             // Saved but the build refused (a large removal, a hand edit): its listing, which
-            // Set up › Scans › Catalog builds confirms in full width. Only this job's report.
+            // Set up › Activity › Catalog builds confirms in full width. Only this job's report.
             let refused: unknown;
             if (ran && !ran.built && ran.edits.every((x) => x.state === "saved")) {
               const { lastBuildOf } = await import("./build-report.js");
@@ -531,10 +531,53 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
                 callers,
                 waitsOn,
                 ...(refused ? { refused } : {}),
+                // ADR 0204 2.4: what each saved change wrote, for Undo.
+                ...(ran?.wrote.length ? { wrote: ran.wrote } : {}),
               },
             };
           },
           mapEdits,
+        );
+      })
+      // ADR 0204 2.4: Undo of an Apply, exactly what it wrote while it is as written, one build.
+      .add("POST", "/api/map/edits/undo", async ({ body }) => {
+        const b = parse(Api.MapEditsUndoRequest, body);
+        const { undoMapEdits, undoFileOk } = await import("./catalog-build-commands.js");
+        // The review: only what an Apply writes, never a path a page sends.
+        const bad = b.wrote.filter((w) => !undoFileOk(root, w));
+        if (bad.length)
+          throw badRequest(
+            `${bad.map((w) => w.file).join(", ")}: an Undo takes back only a repo's corrections or a platform's profile.`,
+          );
+        return asJob(
+          "Undo the change to the map",
+          async () => {
+            const { lastBuildOf } = await import("./build-report.js");
+            const before = JSON.stringify((await lastBuildOf(root)) ?? null);
+            let ran: Awaited<ReturnType<typeof undoMapEdits>> | undefined;
+            const res = await captured(async (io) => {
+              ran = await undoMapEdits(root, b.wrote, io);
+              return ran.code;
+            });
+            // Taken back, the build waiting for a confirm (ADR 2.3): its listing, as Apply's.
+            let refused: unknown;
+            if (ran && !ran.built && ran.code !== 2) {
+              const last = await lastBuildOf(root);
+              if (last?.outcome === "refused" && last.refused && JSON.stringify(last) !== before)
+                refused = last.refused;
+            }
+            return {
+              ...res,
+              extra: {
+                edits: [],
+                built: ran?.built ?? false,
+                callers: [],
+                waitsOn: [],
+                ...(refused ? { refused } : {}),
+              },
+            };
+          },
+          { for: { action: "map-edits" as const }, hearsStop: true },
         );
       })
   );

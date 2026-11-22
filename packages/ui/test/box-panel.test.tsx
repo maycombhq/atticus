@@ -145,7 +145,10 @@ describe("the Connect popup", () => {
     expect(out).toContain('<span class="box-method">GET</span><code class="mono">/ping</code>');
     // The whole call and its line on hover; a screen reader has them in the labels.
     expect(out).toContain('title="GET /ping\nsrc/main/java/forge/cards/CardsController.java:12"');
-    expect(out).toContain(`<span class="sr">${C.col.status}: </span>${C.status.unresolved}`);
+    // ADR 0204 5.2: one of four words, the exact status kept beside it.
+    expect(out).toContain(
+      `<span class="sr">${C.col.status}: </span><span title="${COPY.connectAB.exact(C.status.unresolved!)}">${COPY.connectAB.shown.loose}</span>`,
+    );
     const foot = out.indexOf('<div class="box-foot">');
     expect(foot).toBeGreaterThan(out.indexOf("</ul>"));
     expect(out.slice(foot)).toContain(`>${C.preview}</button>`);

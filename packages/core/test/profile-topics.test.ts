@@ -9,6 +9,7 @@ import {
   migrateProfileText,
   Profile,
   PROFILE_SCHEMA_VERSION,
+  PROFILE_TOPICS_VERSION,
 } from "../src/index.js";
 
 /**
@@ -34,7 +35,11 @@ const sys = (id: string, more: object = {}) => ({
 });
 
 describe("Profile topics (ADR 0162 amendment)", () => {
-  it("is version 2", () => expect(PROFILE_SCHEMA_VERSION).toBe(2));
+  // ADR 0204: the profile is at 3 now; topics still need only 2.
+  it("needs version 2", () => {
+    expect(PROFILE_TOPICS_VERSION).toBe(2);
+    expect(PROFILE_SCHEMA_VERSION).toBe(3);
+  });
 
   it("reads a version-1 profile as it is, with no topics", () => {
     const p = Profile.parse(v(1, [sys("harbor-audit", { aliases: ["Harbor"] })]));

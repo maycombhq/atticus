@@ -342,6 +342,8 @@ export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
   JOINED_BY_BASE_PATH,
   // A-callers: a person declared who calls a gateway route (`DECLARED_CALLER`, facts-callers).
   "declared-caller",
+  // ADR 0204: a person declared an arrow the code doesn't show (the profile's `links`).
+  "declared-link",
   // ADR 0160 (O3): a call to another team's system, answered by an entry of the map they share.
   "joined-to-shared-map",
 ]);

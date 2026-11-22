@@ -15,6 +15,7 @@ export * from "./measure-links.js";
 export * from "./audit-links.js";
 export * from "./slots.js";
 export * from "./build.js";
+export * from "./declared-arrows.js";
 export { buildPhases, phaseClock } from "./build-phases.js";
 export {
   buildCacheHooks,

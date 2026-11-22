@@ -156,6 +156,7 @@ import {
 } from "./slots.js";
 import { phaseClock } from "./build-phases.js";
 import { looseEndIdsNamed } from "./old-ids-named.js";
+import { declaredArrowRecords, type DeclaredArrowBuild } from "./declared-arrows.js";
 
 /**
  * The build (ADR 0195 point 2): `catalog/generated` made from the source slots and the build
@@ -733,6 +734,10 @@ export interface Build {
    * the join's question does (`askedTokenOf`).
    */
   hostSettings?: { names: string[]; camelRepos: string[] };
+  /** ADR 0204 1.7: the declared arrows the code now shows (not drawn), when there are any. */
+  declaredSuperseded?: DeclaredArrowBuild["superseded"];
+  /** ADR 0204 1.8: declared arrows with an end that is gone, or not drawn yet. */
+  declaredOrphaned?: DeclaredArrowBuild["orphaned"];
   linkEvidence?: LinkEvidenceResult;
   shared?: SharedJoinResult;
   terms?: TermsResult;
@@ -1649,6 +1654,31 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   );
   const stranded = [...away].map(([id, x]) => ({ id, ...x }));
   records = overlaid.filter((r) => !(r.kind === "Capability" && away.has(r.id)));
+  // ADR 0204: the profiles' declared arrows, made again from the profile on every build, each
+  // left out while the code shows a call the same way (`superseded`).
+  const declared = declaredArrowRecords(
+    op,
+    records,
+    undefined,
+    new Set(
+      i.curated.records.flatMap((d) =>
+        d.kind === "CuratedDecision" &&
+        d.status === "current" &&
+        d.action === "suppress" &&
+        (d.value ?? null) === null &&
+        typeof d.target === "string"
+          ? [d.target]
+          : [],
+      ),
+    ),
+  );
+  if (declared.records.length) records = [...records, ...declared.records];
+  for (const o of declared.orphaned)
+    notes.push(
+      o.why === "gone"
+        ? `declared arrow ${o.from} → ${o.to}: to ${o.missing}, which is no longer here; kept in the profile.`
+        : `declared arrow ${o.from} → ${o.to}: ${o.missing} has no box on the map yet; drawn once it has.`,
+    );
 
   mark("5 legacy");
   // ---- 6. the curated decisions, once, last
@@ -1780,6 +1810,8 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     orphanedTargets,
     ...(oldIdsNamed.length ? { oldIdsNamed } : {}),
     ...(hostSettings.names.length ? { hostSettings } : {}),
+    ...(declared.superseded.length ? { declaredSuperseded: declared.superseded } : {}),
+    ...(declared.orphaned.length ? { declaredOrphaned: declared.orphaned } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(shared ? { shared } : {}),
     ...(projection ? { terms: projection.terms } : {}),
@@ -4251,6 +4283,8 @@ export interface BuildReport {
   undo?: number;
   /** Hand edits a confirmed discard replaced. */
   discarded?: HandEdit[];
+  /** ADR 0204 1.7: the declared arrows the code now shows, not drawn by this build. */
+  declaredSuperseded?: DeclaredArrowBuild["superseded"];
 }
 
 /** Where the latest build's report is (beside the undo copies, in the state folder's .index). */
@@ -4378,6 +4412,7 @@ async function buildReportOf(
     changed,
     removed,
     slots: [],
+    ...(b.declaredSuperseded ? { declaredSuperseded: b.declaredSuperseded } : {}),
   };
 }
 

@@ -29,6 +29,7 @@ import {
   PackManifest,
   Procedure,
   Profile,
+  PROFILE_SCHEMA_VERSION,
   Roles,
   Runtime,
   ServiceRequestTemplate,
@@ -139,6 +140,16 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
         file: rel(path),
         path: "",
         message: `can't read YAML: ${(e as Error).message.split("\n")[0]}`,
+      });
+      return undefined;
+    }
+    // ADR 0204: a profile a newer Atticus wrote is said as one, not as its version's issue.
+    const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
+    if (schema === (Profile as unknown) && typeof v === "number" && v > PROFILE_SCHEMA_VERSION) {
+      problems.push({
+        file: rel(path),
+        path: "schemaVersion",
+        message: `written by a newer Atticus (profile version ${v}); install it to read this profile`,
       });
       return undefined;
     }

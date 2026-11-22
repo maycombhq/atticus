@@ -306,7 +306,7 @@ describe("a system only the code names, in no profile (review of ADR 0200)", () 
       ),
     );
     expect(out).toContain(
-      "model-provider is on the map because code names it; no profile has it yet, so a link of it can't be declared. Add it with Add to the picture… as a new system with the id model-provider, then draw the line again.",
+      "Add model-provider with Add to the map… as a new outside system with the id model-provider, then draw the line again: it is on the map because code names it, and no profile has it yet, so a link of it can't be declared.",
     );
     expect(out).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*>${D.preview}</button>`));
     expect(out).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*>${D.confirm}</button>`));
