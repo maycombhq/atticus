@@ -349,6 +349,8 @@ async function planOf(root: string): Promise<Plan | undefined> {
         refuse(
           `${posix(relative(root, to))} is there already, so ${posix(relative(root, from))} can't move to it under its new id. Nothing of this step was written: move or merge one of them, then run atticus upgrade again.`,
         );
+        // Listed (so the step is pending and says why), never written: the write refuses.
+        write(from, carried.get(from)!);
         continue;
       }
       write(to, carried.get(from)!);
@@ -390,6 +392,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
         refuse(
           `The owner question ${newQ} is there already, so ${oldQ} can't be re-keyed to it (knowledge gap ${was.id} of ${was.change}). Nothing of this step was written: remove the one that is no longer asked, then run atticus upgrade again.`,
         );
+        write(path, next);
         continue;
       }
       const moved = Question.parse({ ...q, id: newQ });
@@ -411,7 +414,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
   return {
     writes,
     files: [...new Set(files)].sort(),
-    builds: renamedGen.length > 0 || writes.length > 0,
+    builds: renamedGen.length > 0 || writes.length > 0 || !!refused,
     curatedNext,
     ...(questions ? { questions } : {}),
     op,

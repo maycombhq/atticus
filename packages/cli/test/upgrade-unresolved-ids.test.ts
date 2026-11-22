@@ -394,6 +394,15 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         /catalog\/curated\/unresolved\/unresolved\.forge-ledger\.c-solo\.yaml is there already/,
       );
       expect(await tree(other)).toEqual(before2);
+
+      // The same after a beta.30 build: no loose end of the old form on disk, still refused.
+      const b = quiet();
+      expect(await main(["catalog", "build", "--root", other], b.io), b.err.join("\n")).toBe(0);
+      const before3 = await tree(other);
+      const q3 = quiet();
+      expect(await upgradeCommand(other, { by: "pat" }, q3.io, B30)).toBe(1);
+      expect(q3.err.join("\n")).toMatch(/unresolved\.forge-ledger\.c-solo\.yaml is there already/);
+      expect(await tree(other)).toEqual(before3);
     },
     T,
   );
