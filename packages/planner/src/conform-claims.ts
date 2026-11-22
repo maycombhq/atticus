@@ -464,15 +464,46 @@ export function conformClaims(input: ClaimsInput): {
   const notCheckable = (c: Claim, expected: string, what: string) =>
     push(c, { outcome: "not-checkable", expected, what, at: [claimCite(c)] });
 
-  /** A file of the commit's tree, named as a file or with its folder. */
-  const inTree = (name: string) => {
+  /**
+   * A fact that names no env, the only one of its subject, against a claim for one env (the
+   * review of ADR 0206): which env it is for isn't read, so it is couldn't confirm, never a
+   * blocking present differently. True when it said so.
+   */
+  const noEnv = (
+    c: Claim,
+    expected: string,
+    says: string,
+    inEnv: readonly Fact[],
+    all: readonly (F<"deploy"> | F<"config">)[],
+  ) => {
+    if (!c.expect.env || inEnv.length) return false;
+    const loose = all.find((f) => f.env === undefined);
+    if (!loose) return false;
+    matched.add(loose.id);
+    push(c, {
+      outcome: "unconfirmed",
+      expected,
+      what: `Atticus couldn't confirm that ${bare(says)}: ${loose.cite.file}:${loose.cite.line} names no env, so which env it is for isn't read.`,
+      at: [codeCite(loose), claimCite(c)],
+      fact: loose.id,
+    });
+    return true;
+  };
+
+  /**
+   * A file of the commit's tree. A pipeline's `file` is its path in the repo (the review of ADR
+   * 0206: a file of that name in another folder isn't it); a migration keeps ADR 0114's rule, its
+   * file name wherever the migrations are (`planner/src/conform.ts`).
+   */
+  const inTree = (name: string, byName: boolean) => {
     const want = name
       .trim()
       .replace(/\\/g, "/")
       .replace(/^\.?\//, "");
     return input.files.find(
       (f) =>
-        f === want || f.endsWith(`/${want}`) || (!want.includes("/") && posix.basename(f) === want),
+        f === want ||
+        (byName && (f.endsWith(`/${want}`) || (!want.includes("/") && posix.basename(f) === want))),
     );
   };
 
@@ -532,7 +563,7 @@ export function conformClaims(input: ClaimsInput): {
         continue;
       }
       // A file of the commit's tree is git's to say, whatever the facts cover.
-      const file = inTree(e.file);
+      const file = inTree(e.file, c.check === "migration");
       push(
         c,
         file
@@ -561,6 +592,7 @@ export function conformClaims(input: ClaimsInput): {
         const says = e.platform
           ? `${repo} runs on ${e.platform}${e.env ? ` in ${e.env}` : ""}`
           : `${repo} has a deployment in ${e.env}`;
+        if (!hit && noEnv(c, expected, says, sameEnv, deploys)) break;
         const o = hit ? undefined : (sameEnv[0] ?? deploys[0]);
         judge(
           c,
@@ -654,6 +686,7 @@ export function conformClaims(input: ClaimsInput): {
             });
             break;
           }
+          if (!hit && !lit && noEnv(c, expected, says, inEnv, keyed)) break;
           const o = hit ? undefined : (lit ?? keyed[0]);
           judge(
             c,
@@ -675,13 +708,15 @@ export function conformClaims(input: ClaimsInput): {
           break;
         }
         const hit = inEnv.find((f) => e.value === undefined || f.value === e.value);
+        const configSays = `${repo} sets ${e.key}${envWords}${e.value !== undefined ? ` to ${redactWords(e.value)}` : ""}`;
+        if (!hit && noEnv(c, expected, configSays, inEnv, keyed)) break;
         const o = hit ? undefined : (inEnv[0] ?? keyed[0]);
         const valueOf = (f: F<"config">) =>
           f.value !== undefined ? redactWords(f.value) : "a reference";
         judge(
           c,
           expected,
-          `${repo} sets ${e.key}${envWords}${e.value !== undefined ? ` to ${redactWords(e.value)}` : ""}`,
+          configSays,
           hit,
           o && {
             fact: o,
