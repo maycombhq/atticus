@@ -4,6 +4,7 @@ import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import {
   connectChoices,
+  boxOf,
   connectDrawn,
   drawnBoxOf,
 } from "../src/screens/architecture/Architecture.js";
@@ -103,44 +104,35 @@ describe("what a drawn line opens (connectDrawn)", () => {
     id: "topic:forge.events",
     kind: "topic",
   } as Api.HierNodeT;
-  const connect = (from: string, label: string, box: Api.LinkBoxT) => ({
-    from,
-    initial: { label, box },
-  });
-  const declare = (n: Api.HierNodeT, target: string) => ({
-    declare: { system: n.id.slice(7), label: n.label, target },
-  });
+  const say = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
+  /** ADR 0204 1.1: what a line opens is Connect <A> to <B>, the ends as drawn. */
+  const connect = (
+    a: { label: string; box: Api.LinkBoxT },
+    b: { label: string; box: Api.LinkBoxT },
+  ) => ({ from: say(a.box), a, initial: b });
 
-  it("on the estate view, Ledger to Reports opens Connect from forge-ledger with forge-reports picked", () => {
+  it("on the estate view, Ledger to Reports opens Connect forge-ledger to forge-reports", () => {
     expect(connectDrawn(ledger, reports)).toEqual(
-      connect("forge-ledger", "repo: forge-reports", { repo: "forge-reports" }),
+      connect(
+        { label: "repo: forge-ledger", box: { repo: "forge-ledger" } },
+        { label: "repo: forge-reports", box: { repo: "forge-reports" } },
+      ),
     );
   });
 
-  // ADR 0200 (a field report on beta.28.4): what a person drew is never turned round.
-  it("drawn from an outside system to a repo, opens Declare a link with the system as the caller and the repo as what it calls", () => {
-    expect(connectDrawn(harbor, edge)).toEqual({
-      declare: { system: "harbor-audit", label: "Harbor Audit", target: "forge-edge" },
-    });
-    expect(connectDrawn(northwind, ledger)).toEqual(declare(northwind, "forge-ledger"));
-    expect(connectDrawn(synthesized, edge)).toEqual(declare(synthesized, "forge-edge"));
+  // ADR 0200, ADR 0204: what a person drew is never turned round, and every line opens Connect.
+  it("drawn from an outside system to a repo, opens Connect with the system as the caller", () => {
+    expect(connectDrawn(harbor, edge)).toEqual(
+      connect(
+        { label: "system: Harbor Audit", box: { system: "harbor-audit" } },
+        { label: "repo: forge-edge", box: { repo: "forge-edge" } },
+      ),
+    );
     // To a component of a repo, or a system holding one repo: that repo.
-    expect(connectDrawn(harbor, component("edge-proxy", "forge-edge"))).toEqual(
-      declare(harbor, "forge-edge"),
-    );
-    expect(connectDrawn(harbor, reports)).toEqual(declare(harbor, "forge-reports"));
-  });
-
-  it("drawn from a repo to an outside system, opens Connect from the repo with the system picked", () => {
-    expect(connectDrawn(edge, harbor)).toEqual(
-      connect("forge-edge", "system: Harbor Audit", { system: "harbor-audit" }),
-    );
-    expect(connectDrawn(component("edge-proxy", "forge-edge"), northwind)).toEqual(
-      connect("forge-edge", "system: northwind-pay", { system: "northwind-pay" }),
-    );
-    expect(connectDrawn(ledger, northwind)).toEqual(
-      connect("forge-ledger", "system: northwind-pay", { system: "northwind-pay" }),
-    );
+    const c = connectDrawn(harbor, component("edge-proxy", "forge-edge"));
+    expect("initial" in c && c.initial.box).toEqual({ repo: "forge-edge" });
+    const r = connectDrawn(harbor, reports);
+    expect("initial" in r && r.initial.box).toEqual({ repo: "forge-reports" });
   });
 
   it("never swaps the ends, for every pair of box kinds: the caller is the box the line started on", () => {
@@ -161,50 +153,33 @@ describe("what a drawn line opens (connectDrawn)", () => {
         if (a === b) continue;
         const c = connectDrawn(a, b);
         const where = `${a.id} -> ${b.id}`;
-        const A = drawnBoxOf(a);
-        const B = drawnBoxOf(b);
+        const A = drawnBoxOf(a) ?? boxOf(a);
+        const B = drawnBoxOf(b) ?? boxOf(b);
         if ("from" in c) {
-          // Connect: the repo the line started on is the caller, the box it ended on the other.
-          expect(c.from, where).toBe(A?.repo);
+          expect(c.a.box, where).toEqual(A);
           expect(c.initial.box, where).toEqual(B);
-        } else if ("declare" in c) {
-          // Declare: the outside system the line started on is the caller, the repo its target.
-          expect(c.declare.system, where).toBe(A?.system);
-          expect(c.declare.target, where).toBe(B?.repo);
         } else {
-          // Said: only where one end is no one box, or both are outside systems.
-          expect(!A || !B || (!!A.system && !!B.system), where).toBe(true);
-          expect(c.say.length, where).toBeGreaterThan(20);
+          // Said only for a node that is no box, or one box drawn to itself.
+          expect(!A || !B || say(A) === say(B), where).toBe(true);
         }
       }
   });
 
-  it("says why a line connects nothing, by the boxes' names, and what to do", () => {
-    // A system of several repos, at either end.
-    expect(connectDrawn(portal, ledger)).toEqual({ say: C.dropSeveral("portal") });
-    expect(connectDrawn(ledger, portal)).toEqual({ say: C.dropSeveral("portal") });
-    expect(connectDrawn(harbor, portal)).toEqual({ say: C.dropSeveral("portal") });
-    expect(C.dropSeveral("portal")).toContain("Open portal (double-click it)");
-    // A system of the estate with no repo on the map.
-    expect(connectDrawn(empty, ledger)).toEqual({ say: C.dropNoRepo("empty") });
-    expect(connectDrawn(harbor, empty)).toEqual({ say: C.dropNoRepo("empty") });
-    expect(C.dropNoRepo("empty")).toContain("Add to the picture…");
-    // Two outside systems.
-    expect(connectDrawn(northwind, synthesized)).toEqual({
-      say: C.dropTwoOutside("northwind-pay", "model-provider"),
-    });
-    expect(connectDrawn(harbor, northwind)).toEqual({
-      say: C.dropTwoOutside("Harbor Audit", "northwind-pay"),
-    });
-    expect(C.dropTwoOutside("Harbor Audit", "northwind-pay")).toContain(
-      "pick Harbor Audit and choose Declare a link…",
-    );
-    // A repo to itself (its own box, its system's or its component's).
+  it("opens Connect for a system of several repos, one of none and two outside systems; says why only for no box or the same box", () => {
+    // A system of several repos, or none: the panel asks (GET /api/connect's needs).
+    for (const [a, b] of [
+      [portal, ledger],
+      [ledger, portal],
+      [empty, ledger],
+      [northwind, synthesized],
+      [harbor, northwind],
+    ] as const)
+      expect("from" in connectDrawn(a, b), `${a.id} -> ${b.id}`).toBe(true);
+    // One repo to itself (its own component), or a box that is none of these.
     expect(connectDrawn(ledger, repo("forge-ledger"))).toEqual({ say: C.dropSameRepo });
     expect(connectDrawn(component("edge-proxy", "forge-edge"), edge)).toEqual({
       say: C.dropSameRepo,
     });
-    // A box that is none of these (a topic), or nothing.
     expect(connectDrawn(topic, ledger)).toEqual({ say: C.dropNeedsRepo });
     expect(connectDrawn(ledger, undefined)).toEqual({ say: C.dropNeedsRepo });
   });

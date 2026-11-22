@@ -134,6 +134,7 @@ export function reportView(root: string, r: BuildReport): Api.BuildReportViewT {
     slots: r.slots,
     ...(r.undo !== undefined ? { undo: r.undo } : {}),
     ...(r.discarded?.length ? { discarded: r.discarded } : {}),
+    ...(r.declaredSuperseded?.length ? { declaredSuperseded: r.declaredSuperseded } : {}),
   };
 }
 

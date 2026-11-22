@@ -39,7 +39,7 @@ export function buildRefusalOf(e: unknown): Api.BuildRefusalViewT | undefined {
  * Beta.28 (the owner's feedback of 2026-11-12, 22:29: the canvas's side panel is too cramped for
  * results): inside a narrow panel (the canvas's details), a step's result is one status line and
  * one primary button. Its whole output is the job's Console entry (the bottom panel), and a
- * refused build's removals and confirm are on Set up › Scans › Catalog builds, full width.
+ * refused build's removals and confirm are on Set up › Activity › Catalog builds, full width.
  */
 export const ResultsInPanel = createContext(false);
 export const useResultsInPanel = () => useContext(ResultsInPanel);
@@ -167,6 +167,10 @@ export interface Plan {
   title: string;
   /** API 2.69.0: the repos whose corrections are newer than their last Apply. */
   applyFirst?: string[];
+  /** API 3.19.0 (ADR 0204): the profiles this proposal raises to a version older Atticus refuses. */
+  raisesProfile?: { file: string; from: number; to: number }[];
+  /** API 3.19.0 (the third review): profiles whose version on the target couldn't be read. */
+  raisesProfileUnread?: { file: string; target: string }[];
 }
 
 /** Beta.28.1: how many rejected facts an Apply's job left out (verify's exit 3), or 0. */
@@ -434,6 +438,17 @@ export function Propose({ scope, onDone }: { scope: Scope; onDone?: () => void }
       ) : (
         <>
           <p className="work-say">{P.willCommit(plan.branch, plan.title)}</p>
+          {(plan.raisesProfile ?? []).map((x) => (
+            // ADR 0204 (Migration): an older Atticus refuses the raised profile by its version.
+            <p key={x.file} className="run-note bad" role="note">
+              {COPY.connectAB.raisesProfile(x.file, x.from, x.to)}
+            </p>
+          ))}
+          {(plan.raisesProfileUnread ?? []).map((x) => (
+            <p key={x.file} className="run-note" role="note">
+              {P.raisesUnread(x.file, x.target)}
+            </p>
+          ))}
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {plan.files.map((f) => (
               <li key={f.path}>
