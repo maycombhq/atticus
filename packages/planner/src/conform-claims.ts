@@ -9,7 +9,7 @@ import {
   type CodeRow,
   type CodeTable,
 } from "@maycombhq/changes";
-import { normalizePath, type Fact } from "@maycombhq/core";
+import { normalizePath, RecordId, type Fact } from "@maycombhq/core";
 import type { ConformCite, ConformItem } from "./conform.js";
 import { OPERATIONS_FILE, readOperations } from "./stages/operations.js";
 import { redactWords, type Operation } from "./stages/schema.js";
@@ -289,12 +289,21 @@ export async function readClaims(
   const t = design === undefined ? undefined : parseCodeTable(design);
   if (t) {
     for (const p of t.problems) problems.push(`${CODE_TABLE_FILE}:${p.line}: ${p.words}`);
-    for (const r of t.rows)
+    // The review of ADR 0206: a Repo cell names a folder and a file of the check, so one that
+    // isn't a repo's id is said and its row passed over, never thrown for the whole change.
+    const named = t.rows.filter((r) => {
+      if (RecordId.safeParse(r.repo).success) return true;
+      problems.push(
+        `${CODE_TABLE_FILE}:${r.line}: ${r.repo} isn't a repo's id (lowercase letters, digits, '.', '_' and '-'), so the row isn't checked.`,
+      );
+      return false;
+    });
+    for (const r of named)
       if (!rowClaim(r))
         problems.push(
           `${CODE_TABLE_FILE}:${r.line}: this row of ## In the code doesn't read, so it isn't checked: atticus change status names what to fix.`,
         );
-    claims.push(...tableClaims(t));
+    claims.push(...tableClaims({ ...t, rows: named }));
   }
   return { claims, problems, table: !!t?.found, rows: t?.rows.length ?? 0 };
 }

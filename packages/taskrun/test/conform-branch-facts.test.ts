@@ -351,3 +351,37 @@ describe("the branch's facts, verified at its commit (ADR 0206 as built)", () =>
     T,
   );
 });
+
+describe("a Repo cell that isn't a repo's id (ADR 0206 review)", () => {
+  it(
+    "is said and its row passed over; the change's other claims are checked",
+    async () => {
+      const { root } = await setup();
+      await writeFile(
+        join(root, CHANGES, "design.md"),
+        [
+          "# Design",
+          "",
+          "## In the code",
+          "",
+          "| Repo | Task | Has | What | Spec |",
+          "| ---- | ---- | --- | ---- | ---- |",
+          "| ../forge-ledger | - | other | Checked by a person. | - |",
+          "| forge-ledger | - | other | Receipts are kept for seven years. | - |",
+          "",
+        ].join("\n"),
+      );
+      const run = await conformChange(root, CHANGE, {
+        repo: "forge-ledger",
+        git,
+        now: "2026-11-22T09:00:00Z",
+      });
+      expect(run.problems).toContain(
+        "design.md:7: ../forge-ledger isn't a repo's id (lowercase letters, digits, '.', '_' and '-'), so the row isn't checked.",
+      );
+      expect(run.results[0]!.claims!.filter((c) => c.check === "other")).toHaveLength(1);
+      expect(existsSync(join(root, "openspec", "forge-ledger.yaml"))).toBe(false);
+    },
+    T,
+  );
+});
