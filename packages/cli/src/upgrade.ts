@@ -89,6 +89,11 @@ export interface Migration {
       allowRemovals?: number;
       /** The files the upgrade listed and backed up for the step: it writes no other. */
       listed?: readonly string[];
+      /**
+       * The app's confirm (API 3.19.0): the plan of the removals its refusal listed, worked out
+       * again under the lock; another list writes nothing, as POST /api/build's confirm.
+       */
+      plan?: string;
     },
   ): Promise<string[]>;
   /**
@@ -891,6 +896,17 @@ export async function newerCatalogOf(
     : undefined;
 }
 
+/**
+ * A step whose build its guards refused (`atticus upgrade` exits 1): its words, and where the only
+ * reason is removals over the limits, the count and the plan that confirm exactly them
+ * (`--allow-removals <count>`; the app sends both back to POST /api/upgrade).
+ */
+export interface UpgradeStepRefusal {
+  step: string;
+  message: string;
+  confirm?: { allowRemovals: number; plan: string };
+}
+
 /** atticus upgrade [--check] [--dry-run] [--openspec-store] [--by you] [--json]; the person defaults to the Git user. */
 export async function upgradeCommand(
   root: string,
@@ -908,6 +924,10 @@ export async function upgradeCommand(
     acceptChanges?: number;
     /** ADR 0195 point 4: the count of the removals a step's build listed, confirmed. */
     allowRemovals?: number;
+    /** With allowRemovals, the app's: the plan of the list it confirms (`UpgradeStepRefusal`). */
+    plan?: string;
+    /** Told a step's refused build (the app's job result: what a person may confirm). */
+    onRefused?: (r: UpgradeStepRefusal) => void;
   },
   io: Output,
   version = VERSION,
@@ -1051,6 +1071,7 @@ export async function upgradeCommand(
         changed.push(
           ...(await m.apply(root, {
             ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+            ...(o.plan !== undefined ? { plan: o.plan } : {}),
             listed: p.files,
           })),
         );
@@ -1063,8 +1084,13 @@ export async function upgradeCommand(
           io.err(
             `The files as they were before this upgrade are in ${relative(root, backup).split(sep).join("/")}${done.length ? `; these steps had already run: ${done.join(", ")}` : ""}.`,
           );
-          if (o.json)
-            io.out(JSON.stringify({ refused: { step: p.id, message: e.message } }, null, 2));
+          const refused: UpgradeStepRefusal = {
+            step: p.id,
+            message: e.message,
+            ...(e.confirm ? { confirm: e.confirm } : {}),
+          };
+          o.onRefused?.(refused);
+          if (o.json) io.out(JSON.stringify({ refused }, null, 2));
           return 1;
         }
         // Said with where the files as they were are kept, and which steps already ran.

@@ -4964,6 +4964,13 @@ export const COPY = {
       "Upgraded. Only the stamp that records this Atticus changed (.atticus/metarepo.yaml): propose the stamp so everyone's Atticus sees this upgrade.",
     failed: "The upgrade stopped.",
     terminal: "Or in a terminal:",
+    /**
+     * The review of 5cc4ce87 (API 3.19.0): a step whose build waits only for its removals to be
+     * confirmed, as `atticus upgrade --allow-removals <n>` confirms them.
+     */
+    confirmRemovals: (n: number) => `Confirm these ${n} removal${n === 1 ? "" : "s"} and upgrade`,
+    confirmHint:
+      "The step's build removes more than the limits let a build remove unasked; it is listed above. Confirm exactly that list, or run the command in a terminal.",
   },
   settings: {
     connectedChip: "CONNECTED",

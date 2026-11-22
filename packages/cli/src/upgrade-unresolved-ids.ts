@@ -161,8 +161,18 @@ function carriedText(text: string, map: ReadonlyMap<string, string>): string | u
   return changed ? doc.toString() : undefined;
 }
 
-/** Refused: nothing of the step was written. */
-export class UnresolvedIdsRefused extends Error {}
+/**
+ * Refused: nothing of the step was written. `confirm`: the step's build waits only for its
+ * removals to be confirmed, with the count and the plan that confirm exactly them.
+ */
+export class UnresolvedIdsRefused extends Error {
+  constructor(
+    message: string,
+    readonly confirm?: { allowRemovals: number; plan: string },
+  ) {
+    super(message);
+  }
+}
 
 interface Plan {
   /** Every input file the step writes (null: removed), by absolute path. */
@@ -425,7 +435,7 @@ export async function unresolvedIdsPending(root: string): Promise<string[]> {
  */
 export async function unresolvedIdsApply(
   root: string,
-  o: { allowRemovals?: number; listed?: readonly string[] } = {},
+  o: { allowRemovals?: number; listed?: readonly string[]; plan?: string } = {},
 ): Promise<string[]> {
   const scanner = await import("@maycombhq/scanner");
   const lock = await acquireLock(root, "scan", "atticus upgrade");
@@ -452,24 +462,39 @@ export async function unresolvedIdsApply(
         ...(plan.questions ? { questions: plan.questions } : {}),
       }),
     );
+    const { buildPlanOf, refusalPlanOf } = await import("./build-report.js");
     const written = await scanner.buildAndWrite(root, {
       command: scanner.UNRESOLVED_IDS_COMMAND,
       build,
       slots: plan.writes,
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+      // The app's confirm: the list it confirms, worked out again under the lock.
+      ...(o.plan !== undefined
+        ? { expect: (listed: Parameters<typeof buildPlanOf>[0]) => buildPlanOf(listed) === o.plan }
+        : {}),
     });
     scanner.forgetCatalogs();
-    if (written.guard.refused)
+    if (written.changed)
+      throw new UnresolvedIdsRefused(
+        "What the step's build would remove isn't what the page listed any more. Nothing of this step was written: run the upgrade again to see the list.",
+      );
+    const r = written.guard.refused;
+    if (r) {
+      // Only removals over the limits wait: the count and the plan confirm exactly them.
+      const confirmable =
+        r.allowRemovals !== undefined && r.reasons.every((x) => x === "large-removals");
       throw new UnresolvedIdsRefused(
         [
           ...scanner.buildLines(root, written),
           `Nothing of this step was written. ${
-            written.guard.refused.allowRemovals !== undefined
-              ? `Run atticus upgrade --allow-removals ${written.guard.refused.allowRemovals} to confirm the removals it lists.`
+            r.allowRemovals !== undefined
+              ? `Run atticus upgrade --allow-removals ${r.allowRemovals} to confirm the removals it lists.`
               : "Run atticus upgrade again once it is put right."
           }`,
         ].join("\n"),
+        confirmable ? { allowRemovals: r.allowRemovals!, plan: refusalPlanOf(r) } : undefined,
       );
+    }
     return [...plan.files, "catalog/generated"];
   } finally {
     await lock.release();

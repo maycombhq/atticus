@@ -5,6 +5,7 @@ import { COPY } from "../copy.js";
 import { CopyButton } from "../screens/run/shared.js";
 import { InstallCopy } from "./ways-on.js";
 import { followJob, Propose, workChanged } from "./propose.js";
+import { JobFailed } from "./job.js";
 
 /**
  * Ninth UX walk: Home offers the upgrade this metarepo waits on (runtime.yaml at an older schema,
@@ -27,13 +28,23 @@ export type UpgradeRun =
        */
       upgraded?: string[];
     }
-  | { state: "failed"; lines: string[] };
+  | {
+      state: "failed";
+      lines: string[];
+      /**
+       * The review of 5cc4ce87 (API 3.19.0): a step whose build waits only for its removals to be
+       * confirmed: their count, and the plan of the list (the job result's `confirm`).
+       */
+      confirm?: { removals: number; plan?: string };
+    };
 
 /** The offer from its state (tests render each). Nothing when nothing waits. */
 export function UpgradeOfferView(p: {
   view: Api.UpgradeViewT;
   run: UpgradeRun;
   onRun: () => void;
+  /** Confirm the removals a refused run listed (their count), as --allow-removals does. */
+  onConfirm?: (removals: number) => void;
 }) {
   const { view, run } = p;
   if (view.newer && view.stamp)
@@ -101,6 +112,9 @@ export function UpgradeOfferView(p: {
               {run.lines.join("\n")}
             </pre>
           )}
+          {run.state === "failed" && run.confirm && p.onConfirm && (
+            <ConfirmRemovals n={run.confirm.removals} onConfirm={p.onConfirm} />
+          )}
         </div>
       )}
       {/* Beta.27 review: "Propose the changed files for review" with the button that does it.
@@ -108,6 +122,27 @@ export function UpgradeOfferView(p: {
           Atticus sees the upgrade. */}
       {run.state === "done" && <Propose scope="upgrade" onDone={workChanged} />}
     </section>
+  );
+}
+
+/** A refused step's removals confirmed here, or with the command in a terminal. */
+function ConfirmRemovals({ n, onConfirm }: { n: number; onConfirm: (n: number) => void }) {
+  const command = `${COMMAND} --allow-removals ${n}`;
+  return (
+    <div className="stack" style={{ gap: 4, marginTop: 6 }}>
+      <p className="work-say" style={{ margin: 0 }}>
+        {U.confirmHint}
+      </p>
+      <div>
+        <button type="button" className="btn primary" onClick={() => onConfirm(n)}>
+          {U.confirmRemovals(n)}
+        </button>
+      </div>
+      <div className="work-cmd">
+        <code className="mono">{command}</code>
+        <CopyButton text={command} label={COPY.decisions.copy(command)} />
+      </div>
+    </div>
   );
 }
 
@@ -136,29 +171,57 @@ export function UpgradeOffer({
   if ((part === "newer" && !newer) || (part === "pending" && newer)) return null;
   if (only && run.state === "idle" && !u.data.pending.some((s) => s.id.startsWith(only)))
     return null;
+  const start = (confirm?: { allowRemovals: number; plan: string }) => {
+    setRun({ state: "running" });
+    followJob("/api/upgrade", confirm ?? {}).then(
+      (r) => {
+        const upgraded = r.result?.upgraded;
+        setRun({
+          state: "done",
+          lines: r.lines,
+          ...(Array.isArray(upgraded)
+            ? { upgraded: upgraded.filter((x): x is string => typeof x === "string") }
+            : {}),
+        });
+        u.reload();
+        // Home's list of files to propose reads them again.
+        workChanged();
+      },
+      (e: unknown) => {
+        // A step whose build waits only for its removals: the count and plan that confirm them.
+        const c = e instanceof JobFailed ? e.result?.confirm : undefined;
+        const confirm =
+          c &&
+          typeof c === "object" &&
+          typeof (c as { allowRemovals?: unknown }).allowRemovals === "number"
+            ? (c as { allowRemovals: number; plan?: string })
+            : undefined;
+        setRun({
+          state: "failed",
+          lines:
+            e instanceof JobFailed && e.lines.length
+              ? e.lines
+              : [e instanceof Error ? e.message : String(e)],
+          ...(confirm
+            ? {
+                confirm: {
+                  removals: confirm.allowRemovals,
+                  ...(typeof confirm.plan === "string" ? { plan: confirm.plan } : {}),
+                },
+              }
+            : {}),
+        });
+      },
+    );
+  };
   return (
     <UpgradeOfferView
       view={u.data}
       run={run}
-      onRun={() => {
-        setRun({ state: "running" });
-        followJob("/api/upgrade", {}).then(
-          (r) => {
-            const upgraded = r.result?.upgraded;
-            setRun({
-              state: "done",
-              lines: r.lines,
-              ...(Array.isArray(upgraded)
-                ? { upgraded: upgraded.filter((x): x is string => typeof x === "string") }
-                : {}),
-            });
-            u.reload();
-            // Home's list of files to propose reads them again.
-            workChanged();
-          },
-          (e: unknown) =>
-            setRun({ state: "failed", lines: [e instanceof Error ? e.message : String(e)] }),
-        );
+      onRun={() => start()}
+      onConfirm={(n) => {
+        const plan = run.state === "failed" ? run.confirm?.plan : undefined;
+        if (plan) start({ allowRemovals: n, plan });
       }}
     />
   );

@@ -1029,7 +1029,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
         return { ...r, body: { ...r.body, upgraded } };
       })
-      .add("POST", "/api/upgrade", async () => {
+      .add("POST", "/api/upgrade", async ({ body }) => {
+        // 3.19.0 (the review of 5cc4ce87): a step's removals confirmed, with the plan of the list.
+        const b = parseBody(Api.UpgradeRequest, body);
+        if (b.allowRemovals !== undefined && b.plan === undefined)
+          throw badRequest(
+            "plan is the refused upgrade's confirm.plan for the list being confirmed.",
+          );
         const { newerCatalogOf, newerThan, newerWords, upgradeCheck, upgradeCommand } =
           await import("./upgrade.js");
         // Beta.28.2 (ADR 0197): never over a catalog a newer Atticus built.
@@ -1046,10 +1052,30 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         return asJob(
           "Upgrading the metarepo",
           async () => {
-            const ran = await run((io) => upgradeCommand(root, { by: user }, io));
+            let refused: import("./upgrade.js").UpgradeStepRefusal | undefined;
+            const ran = await run((io) =>
+              upgradeCommand(
+                root,
+                {
+                  by: user,
+                  ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                  ...(b.plan !== undefined ? { plan: b.plan } : {}),
+                  onRefused: (r) => (refused = r),
+                },
+                io,
+              ),
+            );
             const { upgradedPaths, UPGRADE_STAMP } = await import("./propose.js");
             const upgraded = upgradedPaths(root).filter((p) => p !== UPGRADE_STAMP);
-            return { ...ran, extra: { upgraded } };
+            const r = refused as import("./upgrade.js").UpgradeStepRefusal | undefined;
+            return {
+              ...ran,
+              extra: {
+                upgraded,
+                ...(r ? { refused: { message: r.message } } : {}),
+                ...(r?.confirm ? { confirm: r.confirm } : {}),
+              },
+            };
           },
           { for: { action: "upgrade" } },
         );

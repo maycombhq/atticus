@@ -7,7 +7,7 @@ import { parse } from "yaml";
 import { askedGapQuestionId, readQuestion, sha256Of } from "@maycombhq/core";
 import { readBuildReport } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
-import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
+import { upgradeCheck, upgradeCommand, type UpgradeStepRefusal } from "../src/upgrade.js";
 import { unresolvedIdsApply, unresolvedIdsPending } from "../src/upgrade-unresolved-ids.js";
 
 /**
@@ -506,6 +506,55 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       expect(await upgradeCommand(other, { by: "pat" }, q3.io, B30)).toBe(1);
       expect(q3.err.join("\n")).toMatch(/unresolved\.forge-ledger\.c-solo\.yaml is there already/);
       expect(await tree(other)).toEqual(before3);
+    },
+    T,
+  );
+
+  it(
+    "tells the app the count and plan that confirm a step's removals, and confirms exactly those",
+    async () => {
+      // forge-notify's read taken away since: the step's build removes its records, more than
+      // the limits let a build remove unasked, so it waits for them to be confirmed.
+      const root = await metarepo();
+      for (const f of ["forge-notify.jsonl", "forge-notify.meta.json"])
+        await rm(join(root, "catalog", "sources", "facts", f));
+      const before = await tree(root);
+      let refused: UpgradeStepRefusal | undefined;
+      const q = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", onRefused: (r) => (refused = r) }, q.io, B30),
+      ).toBe(1);
+      expect(await tree(root)).toEqual(before);
+      const r = refused as UpgradeStepRefusal | undefined;
+      expect(r?.step).toBe(STEP);
+      const n = r?.confirm?.allowRemovals ?? 0;
+      expect(n).toBeGreaterThan(0);
+      expect(r?.confirm?.plan).toMatch(/^[0-9a-f]{64}$/);
+      expect(q.err.join("\n")).toContain(`atticus upgrade --allow-removals ${n}`);
+      // Another list's plan writes nothing.
+      const w = quiet();
+      expect(
+        await upgradeCommand(
+          root,
+          { by: "pat", allowRemovals: n, plan: "0".repeat(64) },
+          w.io,
+          B30,
+        ),
+      ).toBe(1);
+      expect(w.err.join("\n")).toMatch(/isn't what the page listed any more/);
+      expect(await tree(root)).toEqual(before);
+      // The count and plan given: upgraded.
+      const ok = quiet();
+      expect(
+        await upgradeCommand(
+          root,
+          { by: "pat", allowRemovals: n, plan: r!.confirm!.plan },
+          ok.io,
+          B30,
+        ),
+        ok.err.join("\n"),
+      ).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
     },
     T,
   );
