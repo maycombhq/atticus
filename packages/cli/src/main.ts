@@ -3593,7 +3593,8 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
           ...(str(values.type) ? { type: str(values.type)! } : {}),
           ...(str(values.template) ? { template: str(values.template)! } : {}),
           ...(str(values.id) ? { id: str(values.id)! } : {}),
-          by: who(),
+          // The door check (--check) creates nothing and records no one, as upgrade --check.
+          ...(values.check === true ? {} : { by: who() }),
           ...(list(values.owner) ? { owners: list(values.owner)! } : {}),
           ...(list(values.system) ? { systems: list(values.system)! } : {}),
           ...(str(values.like) ? { like: str(values.like)! } : {}),
