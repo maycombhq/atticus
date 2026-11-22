@@ -21,8 +21,10 @@ import { makeFieldEstate, type FieldEstate } from "./field-estate.js";
  * slow it. So each figure is the median of three, after one write that fills the caches, with
  * its CPU time and the load said beside it: a median over 15 s whose CPU time is well under it
  * was the runner's noise, not the code's (run it again from the Actions tab). The margin, from
- * ADR 0205's measurements at 60 repos: the app's Apply takes about a third of the budget in CPU
- * time and the command about half; on an idle runner the clock is about the CPU time.
+ * ADR 0205's measurements at 60 repos (2 CPUs): the app's Apply takes about 5.7 CPU s, two fifths
+ * of the budget, and the command about 10 CPU s, two thirds of it; on an idle runner the clock is
+ * about the CPU time, so a runner slowed by half again still passes the app's and is at the edge
+ * for the command's.
  *
  * Two Applies, each with the budget:
  * - the app's: `verify <repo> --write` in the process that runs it, the caches written after

@@ -11,8 +11,10 @@ name: Apply budget (nightly)
 # own. No other job of ours shares it, but it is a virtual machine on a shared host, so its clock
 # can be slowed by its neighbours. The run prints each Apply's time with its CPU time and the load:
 # a median over 15 s whose CPU time is well under it was the runner's noise (run it again), one
-# whose CPU time is over it is the code's. The margin, from ADR 0205's measurements at 60 repos:
-# the app's Apply uses about a third of the budget in CPU time and the command about half. The big
+# whose CPU time is over it is the code's. The margin, from ADR 0205's measurements at 60 repos
+# (2 CPUs): the app's Apply takes about 5.7 CPU s, two fifths of the budget, and the command about
+# 10 CPU s, two thirds of it; on an idle runner the clock is about the CPU time, so a runner
+# slowed by half again still passes the app's and is at the edge for the command's. The big
 # estate's times, a stress test, go in the release notes from the bench
 # (packages/cli/test/big-estate-bench.test.ts). No secret is used, and nothing reaches the network
 # but the install (CLAUDE.md rule 5).
