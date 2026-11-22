@@ -602,6 +602,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         ...(exclude?.length ? { exclude } : {}),
       });
       if (at) factsAt.set(r.id, at);
+      if (at?.problem) problems.push({ repo: r.id, source: "facts", message: at.problem });
     }
     const extractors: Extractor[] = off.has("readers")
       ? []

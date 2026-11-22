@@ -22,13 +22,16 @@ import { parseFactsSnapshot, serializeFactsSnapshot, sha256Of } from "../src/slo
  * (in another order, a key held undefined): only for the test that says a carried slot holds the
  * parse of its bytes.
  */
-const inMemory = vi.hoisted(() => ({ on: false }));
+const inMemory = vi.hoisted(() => ({ on: false, unreadable: false }));
 vi.mock("@maycombhq/verify", async (importOriginal) => {
   const real = await importOriginal<typeof import("@maycombhq/verify")>();
   return {
     ...real,
     verifyFacts: async (o: Parameters<typeof real.verifyFacts>[0]) => {
       const r = await real.verifyFacts(o);
+      // A verify bug: an accepted fact of a kind the facts file doesn't have.
+      if (inMemory.unreadable)
+        return { ...r, accepted: [...r.accepted, { ...r.accepted[0]!, kind: "not-a-kind" }] };
       if (!inMemory.on) return r;
       return { ...r, accepted: [...r.accepted].reverse().map((f) => ({ ...f, held: undefined })) };
     },
@@ -158,6 +161,35 @@ describe("a scan with carryFacts carries the facts snapshot to the commit read",
       const parsed = parseFactsSnapshot(text);
       if (!parsed.ok) throw new Error("the carried facts don't read");
       expect(slot.facts).toStrictEqual(parsed.facts);
+    },
+    T,
+  );
+});
+
+/**
+ * Carried facts whose bytes don't read back can only be a verify or serializer bug: the readers
+ * stand in as before, and the scan says so instead of falling back silently (review of beta.30).
+ */
+describe("a scan with carryFacts whose carried facts don't read back from their bytes", () => {
+  it(
+    "falls back to the readers and says so as a problem of that repo",
+    async () => {
+      const { scan, head } = await branch("README.md");
+      inMemory.unreadable = true;
+      const carried = await scan(true).finally(() => {
+        inMemory.unreadable = false;
+      });
+      expect(carried.basis?.[REPO]).toEqual({ from: "readers" });
+      const said = carried.problems.filter((p) => p.repo === REPO && p.source === "facts");
+      expect(said).toHaveLength(1);
+      expect(said[0]!.message).toMatch(
+        new RegExp(
+          `^its verified facts, carried to ${head.slice(0, 12)}, don't read back from their own bytes \\(.+\\); the built-in readers stand in for this check\\. That is a bug in Atticus, not in the repo: report it with atticus support bundle\\.$`,
+        ),
+      );
+      // A carry that reads back says nothing.
+      const fine = await scan(true);
+      expect(fine.problems.filter((p) => p.source === "facts")).toEqual([]);
     },
     T,
   );

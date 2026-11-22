@@ -53,7 +53,8 @@ export type FactBasis = { from: "facts"; unread: string[] } | { from: "readers" 
  * source files changed since that no fact covers now. A snapshot whose commit isn't an ancestor
  * of `at.commit` (verify ran on another branch) is compared from the two commits' merge base:
  * a fact citing a file changed on either side since is left out (the review of beta.27). No slot
- * (the readers stand in) when the two commits can't be compared here or no fact is left.
+ * (the readers stand in) when the two commits can't be compared here or no fact is left; also
+ * when the carried facts don't read back from their own bytes, with `problem` saying so.
  * Undefined when there is nothing to carry: no snapshot, one that isn't current, or one of this
  * very commit. `exclude` is the repo's scan settings' excluded paths (globs): a file the scan
  * doesn't read is never listed unread.
@@ -63,7 +64,7 @@ export async function factsSlotAt(
   op: OrgPack,
   repo: string,
   at: { dir: string; commit: string; git?: GitRunner; exclude?: readonly string[] },
-): Promise<{ slot?: FactsSlotRead; unread: string[] } | undefined> {
+): Promise<{ slot?: FactsSlotRead; unread: string[]; problem?: string } | undefined> {
   const snap = await readFactsSlot(root, repo);
   if (!snap?.ok || sameCommit(snap.meta.commit, at.commit)) return undefined;
   let diff =
@@ -101,9 +102,15 @@ export async function factsSlotAt(
   // The slot holds the parse of the bytes its hash is of, as a slot read from disk does, never
   // verify's facts as they stand in memory (in its order, with what the serialization drops): with
   // the kept projection on (ADR 0205 addendum, step 1), a later build reading a slot of these
-  // very bytes takes the projection made from this one. Bytes that don't read back: no slot.
+  // very bytes takes the projection made from this one. Bytes that don't read back: no slot, and
+  // the scan says so (`problem`): verify accepted them and the serializer wrote them, so it can
+  // only be a bug in one of the two, never something in the repo.
   const facts = parseFactsSnapshot(text);
-  if (!facts.ok) return { unread: [] };
+  if (!facts.ok)
+    return {
+      unread: [],
+      problem: `its verified facts, carried to ${at.commit.slice(0, 12)}, don't read back from their own bytes (${facts.issues.map((i) => i.message).join("; ") || "no reason given"}); the built-in readers stand in for this check. That is a bug in Atticus, not in the repo: report it with atticus support bundle.`,
+    };
   // Carried to another commit, some facts left out to be read again: no longer a complete read.
   const { readComplete: _complete, ...kept } = snap.meta;
   const meta = { ...kept, commit: at.commit, factsHash: sha256Of(text) };
