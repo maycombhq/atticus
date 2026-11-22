@@ -2298,6 +2298,12 @@ export const CatalogBuildView = z.object({
     }),
   ),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
+  /**
+   * 3.19.0 (the review of b30/review2-fixes): what the build warns of and never counts as a
+   * problem, each in words (two repo ids that name one loose-end id). Optional: none, or an
+   * older server.
+   */
+  warnings: z.array(z.string()).optional(),
 });
 export type CatalogBuildViewT = z.infer<typeof CatalogBuildView>;
 /** 3.12.0: confirm a refused build with the counts it listed (point 4). */

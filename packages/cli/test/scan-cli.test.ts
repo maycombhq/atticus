@@ -65,9 +65,14 @@ describe("atticus scan", () => {
       const code = await main(["scan", "--root", root], c.io);
       expect(c.err).toEqual([]);
       expect(code).toBe(0);
-      expect(c.out).toContain(
-        "note: Repo ids forge-ledger and forge.ledger name one loose-end id (unresolved.forge-ledger.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.ledger <new id>)",
-      );
+      const warning =
+        "Repo ids forge-ledger and forge.ledger name one loose-end id (unresolved.forge-ledger.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.ledger <new id>)";
+      expect(c.out).toContain(`note: ${warning}`);
+      // GET /api/build: under warnings, never among the problems.
+      const { catalogBuildView } = await import("../src/build-report.js");
+      const v = await catalogBuildView(root);
+      expect(v.warnings).toEqual([warning]);
+      expect(v.problems.map((p) => p.message)).not.toContain(warning);
     },
     T,
   );

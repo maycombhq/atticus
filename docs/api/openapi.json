@@ -51809,6 +51809,12 @@
               ],
               "additionalProperties": false
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

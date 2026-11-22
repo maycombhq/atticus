@@ -964,6 +964,16 @@ export function CatalogBuildsPage(p: {
                   {B.orphaned(o.repo, o.why)}
                 </p>
               ))}
+              {(v.warnings ?? []).length > 0 && (
+                <div className="state" role="note">
+                  <p style={{ margin: 0 }}>{B.warnings}</p>
+                  <ul style={{ margin: 0 }}>
+                    {v.warnings!.map((w, i) => (
+                      <li key={`${i}:${w}`}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {v.problems.length > 0 && (
                 <div className="state error" role="note">
                   <p style={{ margin: 0 }}>{B.problems}</p>

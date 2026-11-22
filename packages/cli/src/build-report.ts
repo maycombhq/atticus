@@ -152,6 +152,7 @@ export async function lastBuildOf(root: string): Promise<Api.BuildReportViewT | 
 export async function catalogBuildView(root: string): Promise<Api.CatalogBuildViewT> {
   const r = await buildAndWrite(root, { command: BUILD, check: true });
   const last = await lastBuildOf(root);
+  const warnings = buildWarnings(r.build);
   return {
     sources: r.build.sources.map((s) => ({
       repo: s.repo,
@@ -169,14 +170,12 @@ export async function catalogBuildView(root: string): Promise<Api.CatalogBuildVi
     ...(last ? { last } : {}),
     ...(r.guard.refused?.reasons.includes("not-upgraded") ? { upgrade: true as const } : {}),
     orphaned: r.build.orphaned,
-    problems: [
-      ...r.build.problems.map((p) => ({
-        file: p.source,
-        message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
-      })),
-      // The app lists the build's warnings beside its problems; neither fails anything here.
-      ...buildWarnings(r.build).map((message) => ({ file: "org-pack/profiles", message })),
-    ],
+    problems: r.build.problems.map((p) => ({
+      file: p.source,
+      message: `${p.repo ? `${p.repo}: ` : ""}${p.message}`,
+    })),
+    // What the build warns of, apart from its problems: neither fails anything here.
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

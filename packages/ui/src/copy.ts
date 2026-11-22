@@ -1478,6 +1478,8 @@ export const COPY = {
     done: "Done. What it printed is in the Console.",
     failed: (why: string) => `It stopped: ${why}`,
     problems: "Problems the build reported",
+    /** The review of b30/review2-fixes: what the build warns of, which fails nothing. */
+    warnings: "The build warns of this (it doesn't stop the build):",
     orphaned: (repo: string, why: string) =>
       `${repo}: ${why === "archived" ? "archived" : "no longer in the manifests"}; its stored reads are kept, not built from.`,
   },

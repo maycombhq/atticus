@@ -924,3 +924,19 @@ describe("Set up › Scans says what a scan read of each repo", () => {
     });
   });
 });
+
+describe("a build's warnings (the review of b30/review2-fixes)", () => {
+  const WARN =
+    "Repo ids forge-ledger and forge.ledger name one loose-end id (unresolved.forge-ledger.…), so the map couldn't tell their loose ends apart: rename one (atticus repo rename forge.ledger <new id>)";
+  it("are listed in a box of their own, never among the problems the build reported", () => {
+    const v = view({ upToDate: true, removals: [] });
+    const out = page({ build: { ...v, data: { ...v.data, warnings: [WARN] } } });
+    expect(out).toContain(esc(B.warnings));
+    expect(out).toContain(esc(WARN));
+    expect(out).not.toContain(esc(B.problems));
+    const box = out.slice(out.indexOf(esc(B.warnings)));
+    expect(box.indexOf(esc(WARN))).toBeGreaterThan(-1);
+    // None: no box.
+    expect(page()).not.toContain(esc(B.warnings));
+  });
+});
