@@ -5043,6 +5043,13 @@ export const COPY = {
     confirmRemovals: (n: number) => `Confirm these ${n} removal${n === 1 ? "" : "s"} and upgrade`,
     confirmHint:
       "The step's build removes more than the limits let a build remove unasked; it is listed above. Confirm exactly that list, or run the command in a terminal.",
+    /** B2 of the whole-release review: a step's build that lists hand edits, confirmed here. */
+    confirmEdits: (n: number) =>
+      n === 1 ? "Discard this hand edit and upgrade" : `Discard these ${n} hand edits and upgrade`,
+    confirmBoth: (n: number, m: number) =>
+      `Discard ${n === 1 ? "this hand edit" : `these ${n} hand edits`}, confirm these ${m} removal${m === 1 ? "" : "s"} and upgrade`,
+    confirmEditsHint:
+      "The step's build found files under catalog/generated changed by hand; they are listed above. To keep them as your edits, run atticus catalog edits --curate in a terminal, then upgrade again. Or discard exactly that list here (a copy is kept for Undo), or with the command in a terminal.",
   },
   settings: {
     connectedChip: "CONNECTED",

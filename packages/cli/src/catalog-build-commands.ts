@@ -132,6 +132,20 @@ export function buildJson(r: BuildAndWrite) {
   };
 }
 
+/**
+ * The command that discards hand edits here (B2 of the whole-release review of beta.30): the
+ * build's own, but while the upgrade's step for the loose ends' ids waits a build refuses and says
+ * to upgrade, so it is `atticus upgrade`, whose step's build takes the same count.
+ */
+async function discardsWith(root: string): Promise<string> {
+  const { unresolvedIdsPending } = await import("./upgrade-unresolved-ids.js");
+  const waits = await unresolvedIdsPending(root).then(
+    (files) => files.length > 0,
+    () => false,
+  );
+  return waits ? "atticus upgrade" : "atticus catalog build";
+}
+
 /** How the loose ends' step goes on (the final review of b30/unresolved-ids, I1). */
 export const UPGRADE_DRY_RUN_WORDS =
   "atticus upgrade --dry-run shows what it would write; atticus upgrade does it.";
@@ -992,7 +1006,7 @@ export async function catalogEdits(
       for (const e of listed)
         io.out(`  ${e.how}: ${e.path}${e.fields?.length ? ` (${cantSay(e)})` : ""}`);
       io.out(
-        `Keep them as your edits: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: atticus catalog build --discard-edits ${edits.length}.`,
+        `Keep them as your edits: atticus catalog edits --curate${dropping.length ? ` --drop-fields ${dropping.length}` : ""}. Or discard them: ${await discardsWith(root)} --discard-edits ${edits.length}.`,
       );
     }
     return 1;
@@ -1098,7 +1112,7 @@ export async function catalogEdits(
         );
       if (left.length)
         io.err(
-          `What isn't kept stays a hand edit: discard it with atticus catalog build --discard-edits <count> (a copy is kept for undo).`,
+          `What isn't kept stays a hand edit: discard it with ${await discardsWith(root)} --discard-edits <count> (a copy is kept for undo).`,
         );
     }
     return left.length ? 1 : 0;

@@ -1045,7 +1045,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       .add("POST", "/api/upgrade", async ({ body }) => {
         // 3.19.0 (the review of 5cc4ce87): a step's removals confirmed, with the plan of the list.
         const b = parseBody(Api.UpgradeRequest, body);
-        if (b.allowRemovals !== undefined && b.plan === undefined)
+        if ((b.allowRemovals !== undefined || b.discardEdits !== undefined) && b.plan === undefined)
           throw badRequest(
             "plan is the refused upgrade's confirm.plan for the list being confirmed.",
           );
@@ -1072,6 +1072,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
                 {
                   by: user,
                   ...(b.allowRemovals !== undefined ? { allowRemovals: b.allowRemovals } : {}),
+                  ...(b.discardEdits !== undefined ? { discardEdits: b.discardEdits } : {}),
                   ...(b.plan !== undefined ? { plan: b.plan } : {}),
                   onRefused: (r) => (refused = r),
                 },

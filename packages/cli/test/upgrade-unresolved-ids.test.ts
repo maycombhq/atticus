@@ -662,6 +662,237 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
     T,
   );
 
+  // The whole-release review of beta.30 (B2): a hand edit under catalog/generated on a metarepo
+  // whose inputs name old ids was a dead end. The step's refusal named three ways on and none
+  // worked: the build's label spliced into a command, --discard-edits accepted by atticus upgrade
+  // and ignored, --allow-removals for a refusal about a hand edit, and catalog edits --curate
+  // pointing at a build that says to upgrade. Every way on it names is a command that works.
+  const LEDGER = "catalog/generated/component/forge-ledger.yaml";
+  const edit = async (root: string, change: (text: string) => string) => {
+    const p = join(root, ...LEDGER.split("/"));
+    await writeFile(p, change(await readFile(p, "utf8")));
+  };
+  /** Every `atticus …` command a text names, as written (to its end of sentence). */
+  const commandsIn = (text: string) =>
+    [...text.matchAll(/atticus (?:upgrade|catalog)[a-z0-9 <>-]*/g)].map((m) => m[0].trim());
+
+  it(
+    "with a hand edit curate can't keep: names atticus upgrade --discard-edits <n>, which works; curate says the same",
+    async () => {
+      const root = await metarepo();
+      await edit(root, (t) => `${t}# a note by hand\n`);
+      const before = await tree(root);
+      let refused: UpgradeStepRefusal | undefined;
+      const q = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", onRefused: (r) => (refused = r) }, q.io, B30),
+      ).toBe(1);
+      expect(await tree(root)).toEqual(before);
+      const said = q.err.join("\n");
+      // Never the build's label as a command, never a flag for removals nobody was asked about.
+      expect(said).not.toContain("(loose ends named with their repo)");
+      expect(said).not.toContain("--allow-removals");
+      expect(said).toContain(`changed: ${LEDGER}`);
+      expect(said).toContain(
+        "Keep it as your edits, which every later build keeps: atticus catalog edits --curate. Or discard it (a copy is kept for atticus catalog undo): atticus upgrade --discard-edits 1.",
+      );
+      expect(said).toContain(
+        "Nothing of this step was written. Keep the hand edit (atticus catalog edits --curate, then atticus upgrade), or discard it: atticus upgrade --discard-edits 1.",
+      );
+      expect(new Set(commandsIn(said))).toEqual(
+        new Set([
+          "atticus catalog edits --curate",
+          "atticus catalog undo",
+          "atticus upgrade",
+          "atticus upgrade --discard-edits 1",
+        ]),
+      );
+      // The app's confirm: the count and the plan of the list.
+      const r = refused as UpgradeStepRefusal | undefined;
+      expect(r?.confirm).toMatchObject({ discardEdits: 1 });
+      expect(r?.confirm).not.toHaveProperty("allowRemovals");
+      expect(r?.confirm?.plan).toMatch(/^[0-9a-f]{64}$/);
+
+      // Way 1, curate: it can't keep a comment, and says the command that discards it here.
+      const c = quiet();
+      expect(await main(["catalog", "edits", "--curate", "--root", root], c.io)).toBe(1);
+      const curate = [...c.out, ...c.err].join("\n");
+      expect(curate).toContain("not kept");
+      expect(curate).toContain("atticus upgrade --discard-edits <count>");
+      expect(curate).not.toContain("atticus catalog build --discard-edits");
+      // And the list of hand edits names it too.
+      const l = quiet();
+      expect(await main(["catalog", "edits", "--root", root], l.io)).toBe(1);
+      expect([...l.out, ...l.err].join("\n")).toContain("atticus upgrade --discard-edits 1");
+      expect(await tree(root)).toEqual(before);
+
+      // A count that isn't the one listed writes nothing, and says so.
+      const w = quiet();
+      expect(await main(["upgrade", "--discard-edits", "2", "--root", root], w.io)).toBe(1);
+      expect(w.err.join("\n")).toContain("--discard-edits 2 doesn't name the 1 listed.");
+      expect(await tree(root)).toEqual(before);
+      // Another list's plan writes nothing (the app's confirm is of the list shown).
+      const o = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", discardEdits: 1, plan: "0".repeat(64) }, o.io, B30),
+      ).toBe(1);
+      expect(await tree(root)).toEqual(before);
+
+      // Way 2, the command it names: upgraded, the edit gone (its bytes in the undo copy).
+      const ok = quiet();
+      expect(
+        await main(["upgrade", "--discard-edits", "1", "--root", root], ok.io),
+        ok.err.join("\n"),
+      ).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      expect(await readFile(join(root, ...LEDGER.split("/")), "utf8")).not.toContain("by hand");
+      expect(unresolvedIds(await generated(root))).toContain("unresolved.forge-ledger.c-1");
+      const again = quiet();
+      expect(await main(["catalog", "build", "--check", "--root", root], again.io)).toBe(0);
+    },
+    T,
+  );
+
+  it(
+    "with a hand edit curate can keep: catalog edits --curate keeps it before the step, and atticus upgrade then goes through",
+    async () => {
+      const root = await metarepo();
+      await edit(root, (t) => t.replace(/^system: forge-ledger$/m, "system: forge-payments"));
+      const q = quiet();
+      expect(await upgradeCommand(root, { by: "pat" }, q.io, B30)).toBe(1);
+      expect(q.err.join("\n")).toContain(
+        "Nothing of this step was written. Keep the hand edit (atticus catalog edits --curate, then atticus upgrade), or discard it: atticus upgrade --discard-edits 1.",
+      );
+      const c = quiet();
+      expect(
+        await main(["catalog", "edits", "--curate", "--root", root], c.io),
+        c.err.join("\n"),
+      ).toBe(0);
+      const ok = quiet();
+      expect(await main(["upgrade", "--root", root], ok.io), ok.err.join("\n")).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      // The edit is kept: the build makes the record with it.
+      expect(await readFile(join(root, ...LEDGER.split("/")), "utf8")).toMatch(
+        /^system: forge-payments$/m,
+      );
+      expect(unresolvedIds(await generated(root))).toContain("unresolved.forge-ledger.c-1");
+    },
+    T,
+  );
+
+  it(
+    "with a hand edit and removals over the limits: one command names both counts, and it works",
+    async () => {
+      const root = await metarepo();
+      for (const f of ["forge-notify.jsonl", "forge-notify.meta.json"])
+        await rm(join(root, "catalog", "sources", "facts", f));
+      await edit(root, (t) => `${t}# a note by hand\n`);
+      let refused: UpgradeStepRefusal | undefined;
+      const q = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat", onRefused: (r) => (refused = r) }, q.io, B30),
+      ).toBe(1);
+      const r = refused as UpgradeStepRefusal | undefined;
+      const n = r?.confirm?.allowRemovals ?? 0;
+      expect(n).toBeGreaterThan(0);
+      expect(r?.confirm?.discardEdits).toBe(1);
+      const command = `atticus upgrade --discard-edits 1 --allow-removals ${n}`;
+      expect(q.err.join("\n")).toContain(command);
+      expect(q.err.join("\n")).not.toContain("(loose ends named with their repo)");
+      const ok = quiet();
+      expect(
+        await main([...command.split(" ").slice(1), "--root", root], ok.io),
+        ok.err.join("\n"),
+      ).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    "asks once in a terminal about the step's hand edits, and a yes discards exactly those",
+    async () => {
+      const root = await metarepo();
+      await edit(root, (t) => `${t}# a note by hand\n`);
+      const before = await tree(root);
+      const asked: string[] = [];
+      const no = quiet();
+      expect(
+        await upgradeCommand(
+          root,
+          { by: "pat" },
+          { ...no.io, ask: async (q: string) => (asked.push(q), "") },
+          B30,
+        ),
+      ).toBe(1);
+      expect(asked).toEqual([
+        "Discard these 1 hand edits? A copy is kept for atticus catalog undo. [y/N]",
+      ]);
+      expect(no.err.join("\n")).toContain("Nothing of this step written.");
+      expect(await tree(root)).toEqual(before);
+      const yes = quiet();
+      expect(
+        await upgradeCommand(root, { by: "pat" }, { ...yes.io, ask: async () => "y" }, B30),
+        yes.err.join("\n"),
+      ).toBe(0);
+      expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    "the app's Upgrade confirms the step's hand edits with their count and the plan of the list",
+    async () => {
+      const { startServer } = await import("@maycombhq/server");
+      const { uiRoutes } = await import("../src/ui-api.js");
+      const root = await metarepo();
+      await edit(root, (t) => `${t}# a note by hand\n`);
+      const s = await startServer({
+        root,
+        port: 0,
+        user: "pat",
+        extend: (r, ctx) => uiRoutes(r, ctx),
+      });
+      try {
+        const h = { "X-Atticus-Token": s.token, "Content-Type": "application/json" };
+        const post = (body: unknown) =>
+          fetch(`${s.url}/api/upgrade`, { method: "POST", headers: h, body: JSON.stringify(body) });
+        type J = {
+          state: string;
+          result?: {
+            lines: string[];
+            confirm?: { discardEdits?: number; allowRemovals?: number; plan?: string };
+          };
+        };
+        const job = async (r: Response) => {
+          expect(r.status).toBe(202);
+          const { jobId } = (await r.json()) as { jobId: string };
+          for (;;) {
+            const j = (await (
+              await fetch(`${s.url}/api/jobs/${jobId}`, { headers: h })
+            ).json()) as J;
+            if (j.state !== "running" && j.state !== "queued") return j;
+            await new Promise((x) => setTimeout(x, 50));
+          }
+        };
+        const refused = await job(await post({}));
+        expect(refused.state).toBe("failed");
+        expect(refused.result?.confirm?.discardEdits).toBe(1);
+        expect(refused.result?.confirm).not.toHaveProperty("allowRemovals");
+        const plan = refused.result!.confirm!.plan!;
+        expect(refused.result!.lines.join("\n")).toContain("atticus upgrade --discard-edits 1");
+        // A count with no plan confirms no list.
+        expect((await post({ discardEdits: 1 })).status).toBe(400);
+        const done = await job(await post({ discardEdits: 1, plan }));
+        expect(done.state, done.result?.lines.join("\n")).toBe("done");
+        expect((await upgradeCheck(root, B30)).pending).toEqual([]);
+      } finally {
+        await s.close();
+      }
+    },
+    T,
+  );
+
   it(
     "refuses an undo of the step over an input changed since, changing nothing",
     async () => {

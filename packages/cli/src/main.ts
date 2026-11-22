@@ -588,6 +588,7 @@ Usage:
           [--yes]                      Apply the step that moves a catalog from before beta.27 into stored reads (ADR 0195); without it the step only shows what it would write
           [--accept-changes <n>]       With --yes: accept the record files the first build would change, with the count the step listed
           [--allow-removals <n>]       Confirm the removals a step's build listed (more than 10% of a repo's records, or 200), with the count it named
+          [--discard-edits <n>]        Discard the hand edits under catalog/generated a step's build listed, with the count it named (a copy is kept for atticus catalog undo)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
@@ -2529,6 +2530,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       root,
       {
         ...(counts.allowRemovals !== undefined ? { allowRemovals: counts.allowRemovals } : {}),
+        ...(counts.discardEdits !== undefined ? { discardEdits: counts.discardEdits } : {}),
         check: values.check === true,
         dryRun: values["dry-run"] === true,
         ...(values.check === true || values["dry-run"] === true ? {} : { by: who() }),

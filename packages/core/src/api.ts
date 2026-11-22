@@ -6237,12 +6237,19 @@ export const UpgradeView = z.object({
 });
 /**
  * 3.19.0 (ADR 0124 addendum E-ids; the review of 5cc4ce87): POST /api/upgrade confirms a step whose
- * build waits only for its removals over the limits, as `atticus upgrade --allow-removals <n>`
- * does: the count and the plan the refused run's job result gave (`confirm`), the plan worked out
- * again under the lock; another list writes nothing. Additive: no body runs it as before.
+ * build waits only for its removals over the limits, its hand edits or both, as `atticus upgrade
+ * --allow-removals <n>` and `--discard-edits <n>` do: the counts and the plan the refused run's
+ * job result gave (`confirm`), the plan worked out again under the lock; another list writes
+ * nothing. Additive: no body runs it as before.
  */
 export const UpgradeRequest = z.strictObject({
   allowRemovals: z.number().int().min(0).max(1_000_000).optional(),
+  /**
+   * The whole-release review of beta.30 (B2), additive: the hand edits under catalog/generated a
+   * step's build listed, discarded with their count as `atticus upgrade --discard-edits <n>` does
+   * (the refused run's `confirm.discardEdits`; a copy is kept for undo).
+   */
+  discardEdits: z.number().int().min(0).max(1_000_000).optional(),
   /** The refused run's `confirm.plan`: required with a count (the list it confirms). */
   plan: z
     .string()

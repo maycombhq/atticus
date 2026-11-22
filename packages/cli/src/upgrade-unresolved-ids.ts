@@ -168,7 +168,7 @@ function carriedText(text: string, map: ReadonlyMap<string, string>): string | u
 export class UnresolvedIdsRefused extends Error {
   constructor(
     message: string,
-    readonly confirm?: { allowRemovals: number; plan: string },
+    readonly confirm?: { allowRemovals?: number; discardEdits?: number; plan: string },
   ) {
     super(message);
   }
@@ -543,7 +543,12 @@ export async function unresolvedIdsPending(root: string): Promise<string[]> {
  */
 export async function unresolvedIdsApply(
   root: string,
-  o: { allowRemovals?: number; listed?: readonly string[]; plan?: string } = {},
+  o: {
+    allowRemovals?: number;
+    discardEdits?: number;
+    listed?: readonly string[];
+    plan?: string;
+  } = {},
 ): Promise<string[]> {
   const scanner = await import("@maycombhq/scanner");
   const lock = await acquireLock(root, "scan", "atticus upgrade");
@@ -579,6 +584,9 @@ export async function unresolvedIdsApply(
       build,
       slots: [...plan.writes, ...(plan.reads ?? [])],
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+      // B2 of the whole-release review: the hand edits the step's build listed, discarded with
+      // their count as the build's own --discard-edits does (a copy kept for undo).
+      ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       // The app's confirm: the list it confirms, worked out again under the lock.
       ...(o.plan !== undefined
         ? { expect: (listed: Parameters<typeof buildPlanOf>[0]) => buildPlanOf(listed) === o.plan }
@@ -591,19 +599,35 @@ export async function unresolvedIdsApply(
       );
     const r = written.guard.refused;
     if (r) {
-      // Only removals over the limits wait: the count and the plan confirm exactly them.
+      // What a person can confirm (B2 of the whole-release review): removals over the limits,
+      // hand edits, or both, each by the count listed and together by the plan of the list. The
+      // way on is said by the reasons, every one a command that works: curate keeps a hand edit
+      // before the step (it renames nothing), and atticus upgrade takes both counts.
+      const removals = r.reasons.includes("large-removals") ? r.allowRemovals : undefined;
+      const edits =
+        r.reasons.includes("hand-edits") && !r.unreadableManifest ? r.discardEdits : undefined;
       const confirmable =
-        r.allowRemovals !== undefined && r.reasons.every((x) => x === "large-removals");
+        r.reasons.every((x) => x === "large-removals" || x === "hand-edits") &&
+        !r.unreadableManifest &&
+        (removals !== undefined || edits !== undefined);
+      const flags = `${edits !== undefined ? ` --discard-edits ${edits}` : ""}${removals !== undefined ? ` --allow-removals ${removals}` : ""}`;
+      const it = edits === 1 ? "it" : "them";
+      const wayOn = !confirmable
+        ? "Run atticus upgrade again once it is put right."
+        : edits === undefined
+          ? `Run atticus upgrade${flags} to confirm the removals it lists.`
+          : `Keep the hand ${edits === 1 ? "edit" : "edits"} (atticus catalog edits --curate, then atticus upgrade), or discard ${it}${removals !== undefined ? " and confirm the removals it lists" : ""}: atticus upgrade${flags}.`;
       throw new UnresolvedIdsRefused(
-        [
-          ...scanner.buildLines(root, written),
-          `Nothing of this step was written. ${
-            r.allowRemovals !== undefined
-              ? `Run atticus upgrade --allow-removals ${r.allowRemovals} to confirm the removals it lists.`
-              : "Run atticus upgrade again once it is put right."
-          }`,
-        ].join("\n"),
-        confirmable ? { allowRemovals: r.allowRemovals!, plan: refusalPlanOf(r) } : undefined,
+        [...scanner.buildLines(root, written), `Nothing of this step was written. ${wayOn}`].join(
+          "\n",
+        ),
+        confirmable
+          ? {
+              ...(removals !== undefined ? { allowRemovals: removals } : {}),
+              ...(edits !== undefined ? { discardEdits: edits } : {}),
+              plan: refusalPlanOf(r),
+            }
+          : undefined,
       );
     }
     return [...plan.files, "catalog/generated"];

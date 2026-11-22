@@ -87,6 +87,8 @@ export interface Migration {
     root: string,
     o?: {
       allowRemovals?: number;
+      /** The hand edits the step's build listed, discarded with their count (`--discard-edits`). */
+      discardEdits?: number;
       /** The files the upgrade listed and backed up for the step: it writes no other. */
       listed?: readonly string[];
       /**
@@ -904,7 +906,7 @@ export async function newerCatalogOf(
 export interface UpgradeStepRefusal {
   step: string;
   message: string;
-  confirm?: { allowRemovals: number; plan: string };
+  confirm?: { allowRemovals?: number; discardEdits?: number; plan: string };
 }
 
 /** atticus upgrade [--check] [--dry-run] [--openspec-store] [--by you] [--json]; the person defaults to the Git user. */
@@ -924,7 +926,9 @@ export async function upgradeCommand(
     acceptChanges?: number;
     /** ADR 0195 point 4: the count of the removals a step's build listed, confirmed. */
     allowRemovals?: number;
-    /** With allowRemovals, the app's: the plan of the list it confirms (`UpgradeStepRefusal`). */
+    /** The count of the hand edits a step's build listed, discarded (a copy kept for undo). */
+    discardEdits?: number;
+    /** With a count, the app's: the plan of the list it confirms (`UpgradeStepRefusal`). */
     plan?: string;
     /** Told a step's refused build (the app's job result: what a person may confirm). */
     onRefused?: (r: UpgradeStepRefusal) => void;
@@ -1068,13 +1072,40 @@ export async function upgradeCommand(
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       try {
-        changed.push(
-          ...(await m.apply(root, {
-            ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
-            ...(o.plan !== undefined ? { plan: o.plan } : {}),
-            listed: p.files,
-          })),
-        );
+        try {
+          changed.push(
+            ...(await m.apply(root, {
+              ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+              ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+              ...(o.plan !== undefined ? { plan: o.plan } : {}),
+              listed: p.files,
+            })),
+          );
+        } catch (first) {
+          // ADR 0202 point 9, for a step's build (B2 of the whole-release review): in a terminal,
+          // with no count given, the list is asked about once; a yes confirms exactly it, by its
+          // counts and the plan of the list, as the build's own question does.
+          const ask =
+            first instanceof UnresolvedIdsRefused &&
+            first.confirm &&
+            io.ask &&
+            !o.json &&
+            o.allowRemovals === undefined &&
+            o.discardEdits === undefined
+              ? first.confirm
+              : undefined;
+          if (!ask) throw first;
+          io.err((first as Error).message);
+          const W = CONFIRM_WORDS;
+          const question =
+            ask.discardEdits !== undefined && ask.allowRemovals !== undefined
+              ? W.both(ask.discardEdits, ask.allowRemovals)
+              : ask.discardEdits !== undefined
+                ? W.discard(ask.discardEdits)
+                : W.remove(ask.allowRemovals ?? 0);
+          if (!(await confirmOnce(io, question))) throw new UnresolvedIdsRefused(W.noStep, ask);
+          changed.push(...(await m.apply(root, { ...ask, listed: p.files })));
+        }
       } catch (e) {
         // A step's build its guards refused wrote nothing: said, with how to go on, no stack.
         if (e instanceof UnresolvedIdsRefused) {

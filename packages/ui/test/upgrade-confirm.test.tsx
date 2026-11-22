@@ -30,12 +30,46 @@ describe("the upgrade panel confirms a step's removals", () => {
           confirm: { removals: 240 },
         }}
         onRun={() => undefined}
-        onConfirm={(n) => sent.push(n)}
+        onConfirm={(c) => sent.push(c.removals ?? -1)}
       />,
     );
     expect(failed).toContain(esc(COPY.upgrade.confirmRemovals(240)));
     expect(failed).toContain("atticus upgrade --allow-removals 240");
     expect(failed).toMatch(/<button[^>]*>[^<]*Confirm/);
+  });
+
+  // The whole-release review of beta.30 (B2): a step's build that lists hand edits is confirmed
+  // here too, as `atticus upgrade --discard-edits <n>` does it, with the way that keeps them.
+  it("offers to discard a step's hand edits with their count, names curate, and the command", () => {
+    const failed = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={view}
+        run={{
+          state: "failed",
+          lines: ["1 file under catalog/generated was changed by hand"],
+          confirm: { edits: 1 },
+        }}
+        onRun={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(COPY.upgrade.confirmEdits(1)).toBe("Discard this hand edit and upgrade");
+    expect(COPY.upgrade.confirmEdits(3)).toBe("Discard these 3 hand edits and upgrade");
+    expect(failed).toContain(esc(COPY.upgrade.confirmEdits(1)));
+    expect(failed).toContain(esc(COPY.upgrade.confirmEditsHint.split("'").at(-1)!));
+    expect(failed).toContain("atticus catalog edits --curate");
+    expect(failed).toContain("atticus upgrade --discard-edits 1");
+    expect(failed).not.toContain("--allow-removals");
+    const both = renderToStaticMarkup(
+      <UpgradeOfferView
+        view={view}
+        run={{ state: "failed", lines: [], confirm: { edits: 2, removals: 240 } }}
+        onRun={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(both).toContain(esc(COPY.upgrade.confirmBoth(2, 240)));
+    expect(both).toContain("atticus upgrade --discard-edits 2 --allow-removals 240");
   });
 
   it("offers no confirm for a refusal nothing confirms", () => {

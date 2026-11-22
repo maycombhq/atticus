@@ -16,6 +16,13 @@ import { JobFailed } from "./job.js";
 const U = COPY.upgrade;
 const COMMAND = "atticus upgrade";
 
+/** What a refused step's job result lets a person confirm: its counts and the list's plan. */
+export interface StepConfirm {
+  removals?: number;
+  edits?: number;
+  plan?: string;
+}
+
 export type UpgradeRun =
   | { state: "idle" }
   | { state: "running" }
@@ -35,7 +42,7 @@ export type UpgradeRun =
        * The review of 5cc4ce87 (API 3.19.0): a step whose build waits only for its removals to be
        * confirmed: their count, and the plan of the list (the job result's `confirm`).
        */
-      confirm?: { removals: number; plan?: string };
+      confirm?: { removals?: number; edits?: number; plan?: string };
     };
 
 /** The offer from its state (tests render each). Nothing when nothing waits. */
@@ -44,7 +51,7 @@ export function UpgradeOfferView(p: {
   run: UpgradeRun;
   onRun: () => void;
   /** Confirm the removals a refused run listed (their count), as --allow-removals does. */
-  onConfirm?: (removals: number) => void;
+  onConfirm?: (confirm: StepConfirm) => void;
 }) {
   const { view, run } = p;
   if (view.newer && view.stamp)
@@ -112,9 +119,10 @@ export function UpgradeOfferView(p: {
               {run.lines.join("\n")}
             </pre>
           )}
-          {run.state === "failed" && run.confirm && p.onConfirm && (
-            <ConfirmRemovals n={run.confirm.removals} onConfirm={p.onConfirm} />
-          )}
+          {run.state === "failed" &&
+            run.confirm &&
+            (run.confirm.removals !== undefined || run.confirm.edits !== undefined) &&
+            p.onConfirm && <ConfirmStep confirm={run.confirm} onConfirm={p.onConfirm} />}
         </div>
       )}
       {/* Beta.27 review: "Propose the changed files for review" with the button that does it.
@@ -125,17 +133,38 @@ export function UpgradeOfferView(p: {
   );
 }
 
-/** A refused step's removals confirmed here, or with the command in a terminal. */
-function ConfirmRemovals({ n, onConfirm }: { n: number; onConfirm: (n: number) => void }) {
-  const command = `${COMMAND} --allow-removals ${n}`;
+/**
+ * A refused step's list confirmed here, or with the command in a terminal: its removals over the
+ * limits, the hand edits its build listed (B2 of the whole-release review of beta.30), or both.
+ */
+function ConfirmStep({
+  confirm,
+  onConfirm,
+}: {
+  confirm: StepConfirm;
+  onConfirm: (c: StepConfirm) => void;
+}) {
+  const { removals, edits } = confirm;
+  const command = `${COMMAND}${edits !== undefined ? ` --discard-edits ${edits}` : ""}${removals !== undefined ? ` --allow-removals ${removals}` : ""}`;
   return (
     <div className="stack" style={{ gap: 4, marginTop: 6 }}>
-      <p className="work-say" style={{ margin: 0 }}>
-        {U.confirmHint}
-      </p>
+      {edits !== undefined && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {U.confirmEditsHint}
+        </p>
+      )}
+      {removals !== undefined && (
+        <p className="work-say" style={{ margin: 0 }}>
+          {U.confirmHint}
+        </p>
+      )}
       <div>
-        <button type="button" className="btn primary" onClick={() => onConfirm(n)}>
-          {U.confirmRemovals(n)}
+        <button type="button" className="btn primary" onClick={() => onConfirm(confirm)}>
+          {edits !== undefined && removals !== undefined
+            ? U.confirmBoth(edits, removals)
+            : edits !== undefined
+              ? U.confirmEdits(edits)
+              : U.confirmRemovals(removals ?? 0)}
         </button>
       </div>
       <div className="work-cmd">
@@ -171,7 +200,7 @@ export function UpgradeOffer({
   if ((part === "newer" && !newer) || (part === "pending" && newer)) return null;
   if (only && run.state === "idle" && !u.data.pending.some((s) => s.id.startsWith(only)))
     return null;
-  const start = (confirm?: { allowRemovals: number; plan: string }) => {
+  const start = (confirm?: { allowRemovals?: number; discardEdits?: number; plan: string }) => {
     setRun({ state: "running" });
     followJob("/api/upgrade", confirm ?? {}).then(
       (r) => {
@@ -188,13 +217,18 @@ export function UpgradeOffer({
         workChanged();
       },
       (e: unknown) => {
-        // A step whose build waits only for its removals: the count and plan that confirm them.
-        const c = e instanceof JobFailed ? e.result?.confirm : undefined;
+        // A step whose build waits for its removals, its hand edits or both: the counts and the
+        // plan that confirm exactly that list.
+        const c = (e instanceof JobFailed ? e.result?.confirm : undefined) as
+          { allowRemovals?: unknown; discardEdits?: unknown; plan?: unknown } | undefined;
+        const num = (x: unknown) => (typeof x === "number" ? x : undefined);
         const confirm =
-          c &&
-          typeof c === "object" &&
-          typeof (c as { allowRemovals?: unknown }).allowRemovals === "number"
-            ? (c as { allowRemovals: number; plan?: string })
+          c && typeof c === "object" && (num(c.allowRemovals) ?? num(c.discardEdits)) !== undefined
+            ? {
+                ...(num(c.allowRemovals) !== undefined ? { removals: num(c.allowRemovals)! } : {}),
+                ...(num(c.discardEdits) !== undefined ? { edits: num(c.discardEdits)! } : {}),
+                ...(typeof c.plan === "string" ? { plan: c.plan } : {}),
+              }
             : undefined;
         setRun({
           state: "failed",
@@ -202,14 +236,7 @@ export function UpgradeOffer({
             e instanceof JobFailed && e.lines.length
               ? e.lines
               : [e instanceof Error ? e.message : String(e)],
-          ...(confirm
-            ? {
-                confirm: {
-                  removals: confirm.allowRemovals,
-                  ...(typeof confirm.plan === "string" ? { plan: confirm.plan } : {}),
-                },
-              }
-            : {}),
+          ...(confirm ? { confirm } : {}),
         });
       },
     );
@@ -219,9 +246,14 @@ export function UpgradeOffer({
       view={u.data}
       run={run}
       onRun={() => start()}
-      onConfirm={(n) => {
+      onConfirm={(c) => {
         const plan = run.state === "failed" ? run.confirm?.plan : undefined;
-        if (plan) start({ allowRemovals: n, plan });
+        if (plan)
+          start({
+            ...(c.removals !== undefined ? { allowRemovals: c.removals } : {}),
+            ...(c.edits !== undefined ? { discardEdits: c.edits } : {}),
+            plan,
+          });
       }}
     />
   );

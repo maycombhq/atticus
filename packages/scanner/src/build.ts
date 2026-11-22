@@ -2702,6 +2702,15 @@ async function interruptedManifest(
 export const UNRESOLVED_IDS_COMMAND = "atticus upgrade (loose ends named with their repo)";
 
 /**
+ * The command a person types to run `command` again (the whole-release review of beta.30, B2):
+ * the upgrade step's build is recorded under a label, `UNRESOLVED_IDS_COMMAND`, which is no
+ * command; a way on that takes a flag (`--discard-edits <n>`, `--allow-removals <n>`) names
+ * `atticus upgrade`, which takes both for the step.
+ */
+export const typedCommandOf = (command: string): string =>
+  command === UNRESOLVED_IDS_COMMAND ? "atticus upgrade" : command;
+
+/**
  * What an undo of that step says (ADR 0195's addendum of 2026-11-21): it put back the inputs the
  * step carried, as they were before it, so the loose ends have their old ids in the catalog and
  * in them again, and the step is pending.
@@ -2912,7 +2921,7 @@ export async function guardBuild(
         ).records;
   const reasons: RefusalReason[] = [];
   const lines: string[] = [];
-  const again = (flag: string) => `${o.command} ${flag}`;
+  const again = (flag: string) => `${typedCommandOf(o.command)} ${flag}`;
 
   // ---- hand edits (and a catalog from before the slots)
   const edits: HandEdit[] = [];
@@ -4404,7 +4413,8 @@ export async function writeRefusedReport(
 }
 
 /** The commands that go on from a refusal: what confirms, curates, discards or upgrades. */
-export function refusalCommands(r: BuildRefusal, command: string): string[] {
+export function refusalCommands(r: BuildRefusal, labelled: string): string[] {
+  const command = typedCommandOf(labelled);
   // A build.json that doesn't read: build again over every record file, never curate them.
   if (r.unreadableManifest) return [`${command} --discard-edits ${r.discardEdits ?? 0}`];
   if (r.reasons.includes("newer-atticus")) return [newerAtticusCommand(r.newer)];
