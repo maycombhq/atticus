@@ -2029,6 +2029,8 @@ export const COPY = {
       `${n} more ${n === 1 ? "row is an operation" : "rows are operations"} (${kinds.join(", ")}): checking the code checks ${n === 1 ? "it" : "them"}.`,
     /** A deployment row: who calls what it moves, from the map. */
     calledBy: (who: string) => `Called by ${who}: each must still reach it where it is deployed`,
+    sentEventsBy: (who: string) =>
+      `Sent events by ${who}: each must still reach it where it is deployed`,
     nobodyCalls: "Nothing in the map calls it",
     reachesCaption: "What each row of In the code names, and who receives it",
     reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },

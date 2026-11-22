@@ -74,6 +74,8 @@ export const CHANGE_IMPACT_WORDS = {
   operationRows: (n: number, kinds: string[]) =>
     `${n} more ${n === 1 ? "row is an operation" : "rows are operations"} (${kinds.join(", ")}): conform checks ${n === 1 ? "it" : "them"} against the code.`,
   calledBy: (who: string) => `  Called by ${who}: each must still reach it where it is deployed.`,
+  sentEventsBy: (who: string) =>
+    `  Sent events by ${who}: each must still reach it where it is deployed.`,
   nobodyCalls: "  Nothing in the map calls it.",
   reach: (name: string, has: string, line: number) => `${name} (design.md:${line}, ${has}):`,
   receivedBy: (who: string) => `  Received by ${who}.`,
@@ -163,28 +165,34 @@ async function quickReaches(
         });
         continue;
       } else if (row.has === "deployment") {
-        // The persona check of beta.30: what a deployment moves is called by these, from the map.
-        const callers = [
-          ...new Set(
-            records
-              .filter(
-                (r) =>
-                  r.kind === "Interface" &&
-                  (r as { to?: string }).to === comp &&
-                  (r as { from?: string }).from !== comp,
-              )
-              .map((r) => String((r as { from?: string }).from ?? ""))
-              .filter(Boolean),
-          ),
-        ].sort();
+        // The persona check of beta.30: who calls what a deployment moves (every component of
+        // the repo), from the map; one whose every link is async only sends it events.
+        const mine = records
+          .filter((r) => r.kind === "Component" && (r as { repo?: string }).repo === row.repo)
+          .map((r) => r.id)
+          .sort();
+        const moved = mine.length ? mine : [comp];
+        const links = records.filter(
+          (r) =>
+            r.kind === "Interface" &&
+            moved.includes(String((r as { to?: string }).to)) &&
+            !moved.includes(String((r as { from?: string }).from)),
+        ) as unknown as { from: string; sync?: string }[];
+        const callers = [...new Set(links.map((l) => l.from).filter(Boolean))].sort();
         out.push({
           line: row.line,
           has: row.has,
-          name: comp,
-          ids: rec(comp) ? [comp] : [],
+          name: moved.join(", "),
+          ids: moved.filter((id) => rec(id)),
           receivers: callers.map((id) => {
             const owner = ownerOf(id);
-            return { id, kind: rec(id)?.kind ?? "Component", ...(owner ? { owner } : {}) };
+            const events = links.filter((l) => l.from === id).every((l) => l.sync === "async");
+            return {
+              id,
+              kind: rec(id)?.kind ?? "Component",
+              ...(owner ? { owner } : {}),
+              ...(events ? { events: true } : {}),
+            };
           }),
           further: 0,
         });
@@ -282,15 +290,16 @@ export function impactLines(i: Api.ChangeImpactT): string[] {
     for (const r of i.reaches) {
       out.push(W.reach(r.name, r.has, r.line));
       if (r.has === "deployment") {
-        out.push(
-          !r.ids.length
-            ? W.notInMap
-            : r.receivers.length
-              ? W.calledBy(
-                  r.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", "),
-                )
-              : W.nobodyCalls,
-        );
+        const who = (xs: typeof r.receivers) =>
+          xs.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", ");
+        const calls = r.receivers.filter((x) => !x.events);
+        const sends = r.receivers.filter((x) => x.events);
+        if (!r.ids.length) out.push(W.notInMap);
+        else if (!r.receivers.length) out.push(W.nobodyCalls);
+        else {
+          if (calls.length) out.push(W.calledBy(who(calls)));
+          if (sends.length) out.push(W.sentEventsBy(who(sends)));
+        }
         continue;
       }
       if (r.has === "calls") {

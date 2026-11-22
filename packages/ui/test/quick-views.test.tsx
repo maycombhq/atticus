@@ -132,6 +132,7 @@ describe("a quick change's picture and impact (ADR 0206)", () => {
               receivers: [
                 { id: "forge-svc-00", kind: "Component", owner: "team-forge" },
                 { id: "forge-gw-01", kind: "Component", owner: "team-platform" },
+                { id: "forge-svc-02", kind: "Component", owner: "team-forge", events: true },
               ],
               further: 0,
             },
@@ -144,5 +145,6 @@ describe("a quick change's picture and impact (ADR 0206)", () => {
       esc(I.calledBy("forge-svc-00 (team-forge), forge-gw-01 (team-platform)")),
     );
     expect(moved).toContain(esc(I.operationRows(1, ["route"])));
+    expect(moved).toContain(esc(I.sentEventsBy("forge-svc-02 (team-forge)")));
   });
 });

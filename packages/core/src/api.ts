@@ -786,8 +786,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   Also in 3.19.0 (ADR 0206 addendum, the same check): a change's impact read from design.md
  *   lists In the code's operation rows (`ChangeImpact.operations`, each its `line` and `has`),
  *   which name nothing the map can follow, and `reaches` may hold `has: "deployment"` entries:
- *   `name` and `ids` the component the repo deploys, `receivers` the components the map shows
- *   calling it or sending it events. Additive only.
+ *   `name` and `ids` the components the repo deploys, `receivers` the components the map shows
+ *   calling them, or sending them events (`events: true`). Additive only.
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
@@ -4186,7 +4186,16 @@ export const ChangeImpact = z.object({
         ids: z.array(z.string()),
         owner: z.string().optional(),
         receivers: z.array(
-          z.object({ id: z.string(), kind: z.string(), owner: z.string().optional() }),
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            owner: z.string().optional(),
+            /**
+             * 3.19.0 (the persona check of beta.30): in a `deployment` row's reach, true when
+             * this component only sends the deployed one events (every link async), not calls.
+             */
+            events: z.boolean().optional(),
+          }),
         ),
         further: z.number().int(),
       }),

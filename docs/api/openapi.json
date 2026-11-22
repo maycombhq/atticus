@@ -37829,6 +37829,9 @@
                       },
                       "owner": {
                         "type": "string"
+                      },
+                      "events": {
+                        "type": "boolean"
                       }
                     },
                     "required": [

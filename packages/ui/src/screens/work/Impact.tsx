@@ -18,6 +18,18 @@ type Owner = Api.ChangeImpactT["owners"][number]["owner"];
 export const ownerWords = (o: Owner) =>
   "none" in o ? I.noTeam(o.none) : o.name ? `${o.team} (${o.name})` : o.team;
 
+/** A deployment row's receivers: who calls what moves, then who sends it events. */
+function deploymentWords(xs: NonNullable<Api.ChangeImpactT["reaches"]>[number]["receivers"]) {
+  const who = (ys: typeof xs) =>
+    ys.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", ");
+  const calls = xs.filter((x) => !x.events);
+  const sends = xs.filter((x) => x.events);
+  return [
+    ...(calls.length ? [I.calledBy(who(calls))] : []),
+    ...(sends.length ? [I.sentEventsBy(who(sends))] : []),
+  ].join(". ");
+}
+
 /** ADR 0206: a quick change's impact, from its design.md's In the code: who each row reaches. */
 function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
   const ops = i.operations ?? [];
@@ -51,11 +63,7 @@ function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
                   ? !r.ids.length
                     ? I.notInMap
                     : r.receivers.length
-                      ? I.calledBy(
-                          r.receivers
-                            .map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id))
-                            .join(", "),
-                        )
+                      ? deploymentWords(r.receivers)
                       : I.nobodyCalls
                   : r.has === "calls"
                     ? r.ids.length
