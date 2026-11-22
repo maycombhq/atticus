@@ -1831,19 +1831,34 @@ export async function undoMapEdits(
         );
       } else {
         const platform = w.file.split("/").slice(-2)[0]!;
-        await retireArrow(
+        const r = await retireArrow(
           root,
           { from: endOf(w.link.from), to: endOf(w.link.to) },
           { platform, ...(w.raisedFrom !== undefined ? { lowerTo: w.raisedFrom } : {}) },
         );
         io.out(`Took the declared arrow out of ${w.file}.`);
+        // The second review: a version it can't go back to (a topic added since) is said plainly.
+        if (r.keptAt) io.out(r.keptAt.why);
         if (w.addedSystem) {
           const { removeAddedSystem } = await import("@maycombhq/core");
-          const r = await removeAddedSystem(root, { platform, system: w.addedSystem });
+          const { systemInUse } = await import("./ui-api-declared.js");
+          // ADR 0174: a system a pairing or an answered question names stays, as Undeclare's does.
+          const inUse = await systemInUse(
+            root,
+            await loadOrgPack(orgPackDirOf(root)),
+            w.addedSystem,
+          );
+          const s = await removeAddedSystem(root, { platform, system: w.addedSystem, inUse });
           io.out(
-            r.removed
+            s.removed
               ? `Took the system ${w.addedSystem} it added out of ${w.file}.`
-              : `Left the system ${w.addedSystem} in ${w.file}: it changed since, or something names it.`,
+              : `Left the system ${w.addedSystem} in ${w.file}: ${
+                  s.why === "in-use"
+                    ? "a pairing or an answered question names it"
+                    : s.why === "named"
+                      ? "another declared arrow names it"
+                      : "it changed since it was added"
+                }.`,
           );
         }
       }

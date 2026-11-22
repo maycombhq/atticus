@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 import { Profile as Beta285Profile } from "./frozen/profile-beta28-5.js";
 import {
   declareArrow,
@@ -13,6 +14,7 @@ import {
   migrateProfileText,
   Profile,
   PROFILE_SCHEMA_VERSION,
+  removeAddedSystem,
   retireArrow,
 } from "../src/index.js";
 
@@ -223,6 +225,54 @@ describe("declareArrow and retireArrow (ADR 0204 1.4, 1.7)", () => {
     expect(await readFile(file, "utf8")).toBe(`# a note by hand\n${before}`);
     await expect(retireArrow(root, asked, { platform: "forge" })).rejects.toBeInstanceOf(
       DeclareError,
+    );
+  });
+
+  it("an Undo's lowerTo below what the profile now needs keeps that version and says why (the second review)", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const r = await declareArrow(root, asked, who);
+    expect(r.raisedFrom).toBe(1);
+    // Meanwhile a person adds a topic (version 2) to a system, by hand.
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }",
+        "  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [], topics: [forge.cards.settled] }",
+      ),
+    );
+    const u = await retireArrow(root, asked, { platform: "forge", lowerTo: 1 });
+    const left = await readFile(file, "utf8");
+    expect(left).toMatch(/^schemaVersion: 2$/m);
+    expect(left).not.toContain("links:");
+    expect(Profile.safeParse(parse(left)).success).toBe(true);
+    expect(u.keptAt).toEqual({
+      version: 2,
+      why: "org-pack/profiles/forge/profile.yaml stays at profile version 2, not 1: its topics need version 2.",
+    });
+    // Without an asked version it lowers to what it needs, and says nothing.
+    await declareArrow(root, asked, who);
+    expect((await retireArrow(root, asked, { platform: "forge" })).keptAt).toBeUndefined();
+  });
+
+  it("removeAddedSystem leaves a system a pairing or an answer names (ADR 0174, the second review)", async () => {
+    const root = await metarepo();
+    const file = join(root, ...PROFILE);
+    const add = { id: "harbor-unknown", name: "Harbor Unknown", boundary: "internal" as const };
+    const arrow = {
+      from: { system: "harbor-unknown" },
+      to: { repo: "forge-cards" },
+      why: "Harbor reads it.",
+    };
+    await declareArrow(root, arrow, { ...who, addSystem: add });
+    await retireArrow(root, arrow, { platform: "forge" });
+    const before = await readFile(file, "utf8");
+    expect(
+      await removeAddedSystem(root, { platform: "forge", system: add.id, inUse: true }),
+    ).toEqual({ removed: false, rel: "org-pack/profiles/forge/profile.yaml", why: "in-use" });
+    expect(await readFile(file, "utf8")).toBe(before);
+    expect((await removeAddedSystem(root, { platform: "forge", system: add.id })).removed).toBe(
+      true,
     );
   });
 

@@ -11,6 +11,7 @@ import {
   DeclaredCall,
   Profile,
   PROFILE_SCHEMA_VERSION,
+  PROFILE_TOPICS_VERSION,
   type ArrowEnd,
   type DeclaredLink,
 } from "./schema/orgpack.js";
@@ -743,6 +744,11 @@ export async function retireArrow(
   written: boolean;
   before: string;
   wrote: string;
+  /**
+   * The second review of ADR 0204: an Undo's `lowerTo` below what the profile now needs (a topic
+   * added since needs version 2): the profile stays at the version it needs, said in these words.
+   */
+  keptAt?: { version: number; why: string };
 }> {
   const f = await profileOf(root, o.platform);
   const doc = parseDocument(f.text);
@@ -763,7 +769,15 @@ export async function retireArrow(
   const topics = (doc.toJS() as { systems?: { topics?: unknown[] }[] }).systems?.some(
     (x) => !!x.topics?.length,
   );
-  const lowerTo = o.lowerTo ?? (topics ? 2 : 1);
+  const needs = topics ? PROFILE_TOPICS_VERSION : 1;
+  const lowerTo = Math.max(o.lowerTo ?? needs, needs);
+  const keptAt =
+    o.lowerTo !== undefined && o.lowerTo < needs && isSeq(list) && list.items.length === 1
+      ? {
+          version: needs,
+          why: `${f.rel} stays at profile version ${needs}, not ${o.lowerTo}: its topics need version ${needs}.`,
+        }
+      : undefined;
   if (after !== undefined && isSeq(list) && list.items.length === 1)
     after = after.replace(
       new RegExp(`^schemaVersion:[ \\t]*${PROFILE_SCHEMA_VERSION}([ \\t]*(#.*)?)$`, "m"),
@@ -777,18 +791,27 @@ export async function retireArrow(
   const wrote = inEol(after, f.eol);
   const changes = changedLines(f.text, after);
   if (!o.preview) await writeFileIfUnchanged(f.path, f.raw, wrote);
-  return { rel: f.rel, changes, written: !o.preview, before: f.raw, wrote };
+  return {
+    rel: f.rel,
+    changes,
+    written: !o.preview,
+    before: f.raw,
+    wrote,
+    ...(keptAt ? { keptAt } : {}),
+  };
 }
 
 /**
  * ADR 0204 2.4: Undo of an arrow whose write added a system (`addSystem`): the system goes too,
- * only while it is still exactly as added (its fields hash to its comment's) and nothing else
- * names it in the profile. Else it is left, and said by the caller.
+ * only while it is still exactly as added (its fields hash to its comment's), nothing else names
+ * it in the profile and (`inUse`, ADR 0174, the second review) no pairing or answered question
+ * names it: the caller works that out from the estate. Else it is left, with why, said by the
+ * caller.
  */
 export async function removeAddedSystem(
   root: string,
-  o: { platform: string; system: string },
-): Promise<{ removed: boolean; rel: string }> {
+  o: { platform: string; system: string; inUse?: boolean },
+): Promise<{ removed: boolean; rel: string; why?: "changed" | "named" | "in-use" }> {
   const f = await profileOf(root, o.platform);
   const doc = parseDocument(f.text);
   const seq = doc.get("systems");
@@ -801,11 +824,13 @@ export async function removeAddedSystem(
   const named = links.some((l) =>
     [l.from, l.to].some((e) => "system" in e && e.system === o.system),
   );
-  if (!hash || addedHash(sys.toJS(doc) as Record<string, unknown>) !== hash || named)
-    return { removed: false, rel: f.rel };
+  if (!hash || addedHash(sys.toJS(doc) as Record<string, unknown>) !== hash)
+    return { removed: false, rel: f.rel, why: "changed" };
+  if (named) return { removed: false, rel: f.rel, why: "named" };
+  if (o.inUse) return { removed: false, rel: f.rel, why: "in-use" };
   const after = withoutItem(f.text, sys as { range?: [number, number, number] | null }, false);
   if (after === undefined || !Profile.safeParse(parseDocument(after).toJS()).success)
-    return { removed: false, rel: f.rel };
+    return { removed: false, rel: f.rel, why: "changed" };
   await writeFileIfUnchanged(f.path, f.raw, inEol(after, f.eol));
   return { removed: true, rel: f.rel };
 }

@@ -11,6 +11,7 @@ import {
   CALLS,
   GATEWAY,
   VENDOR,
+  pairingLine,
   reconnectEstate,
   type Json,
   type ReconnectEstate,
@@ -320,6 +321,37 @@ describe("what is missing, fixed in the same write (ADR 0204 3.1, 1.3)", () => {
     expect(u.result.built, (u.result.lines as string[]).join("\n")).toBe(true);
     expect(profile()).not.toContain("harbor-unknown");
     expect(profile()).toBe(before);
+  }, 300_000);
+
+  it("Undo leaves the system it added when a pairing names it since (ADR 0174, the second review)", async () => {
+    const before = profile();
+    const corrections = join(g.root, "facts", `${A}.corrections.jsonl`);
+    const was = readFileSync(corrections, "utf8");
+    const link = {
+      kind: "link",
+      from: { system: "harbor-unknown" },
+      to: { repo: B },
+      why: "Harbor reads the ledger's holds each night.",
+      addSystem: { name: "Harbor Unknown", boundary: "internal" },
+    };
+    const j = await job("/api/map/edits", { edits: [{ kind: "add", add: link }] });
+    expect(j.result.built, (j.result.lines as string[]).join("\n")).toBe(true);
+    const wrote = Api.MapEditsResult.parse(j.result).wrote!;
+    // A person pairs one of A's calls with the system meanwhile.
+    const pairing = JSON.parse(pairingLine(CALLS.outside.call, CALLS.outside.api, "sam")) as Json;
+    pairing.link = { system: "harbor-unknown", path: "/charges" };
+    writeFileSync(corrections, `${was.replace(/\n*$/, "\n")}${JSON.stringify(pairing)}\n`);
+    try {
+      const u = await job("/api/map/edits/undo", { wrote });
+      expect(u.result.lines as string[]).toContain(
+        "Left the system harbor-unknown in org-pack/profiles/forge/profile.yaml: a pairing or an answered question names it.",
+      );
+      expect(profile()).toContain("id: harbor-unknown");
+      expect(profile()).not.toContain("from: { system: harbor-unknown }");
+    } finally {
+      writeFileSync(corrections, was);
+      writeFileSync(join(g.root, ...PROFILE), before);
+    }
   }, 300_000);
 
   it("declares the gateway routes an outside system calls, written and undone in one go", async () => {
