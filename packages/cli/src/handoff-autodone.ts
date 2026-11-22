@@ -140,7 +140,10 @@ export async function dueRuns(
       later = true;
       continue;
     }
-    const text = (await answerOf(root, s)) ?? (await readFile(file!, "utf8").catch(() => ""));
+    // The file as it is now: run.json's `output` is the text the last check read, so a failed
+    // answer fixed in its file is a new text (ADR 0203 A: handed in again after an acceptance).
+    const text =
+      (await readFile(file!, "utf8").catch(() => undefined)) ?? (await answerOf(root, s)) ?? "";
     const key = sha(text);
     if (o.tried.get(s.run.runId) === key) continue;
     if (!answerComplete(s, text)) continue;
