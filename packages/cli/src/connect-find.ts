@@ -623,7 +623,12 @@ export async function runFind(
   }
   await step("Telling the outcome from the catalog");
   const out = await outcomeOf(root, op, { from: o.from, to: o.to, ...checked });
-  const commit = (await builtFacts(root, o.from))[0]?.commit;
+  // A.6's "A's commit": the clone's, as the find read it (A.7 compares the clone with it), else
+  // the commit A's facts were read at. The third review: the facts' commit alone said a find
+  // after the clone moved was still of the old commit, so it never read "Read again anyway".
+  const { headOf } = await import("./facts-files.js");
+  const commit =
+    (dir ? await headOf(dir) : undefined) ?? (await builtFacts(root, o.from))[0]?.commit;
   const entry: Api.FindEntryViewT = {
     to: o.to,
     at: (o.now ?? new Date()).toISOString(),
