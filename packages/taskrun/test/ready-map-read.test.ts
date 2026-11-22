@@ -1,5 +1,8 @@
+import { appendFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { planReadyTasks, readsIntoMap, type ReadyInput } from "../src/index.js";
+import { planReadyTasks, readsIntoMap, readyTasksOf, type ReadyInput } from "../src/index.js";
+import { CHANGE, speckitRoot } from "./helpers.js";
 
 /**
  * The persona check of beta.30: the spec writer wrote "Read the repo into facts: /atticus-map …"
@@ -117,4 +120,28 @@ describe("the repos it knows", () => {
       "it waits for task t1 (same repo) to be done first",
     );
   });
+});
+
+describe("when the manifests can't be read", () => {
+  it("says so in the plan's notes, and only each task's own repo counts as known", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const tasks = join(root, "openspec/changes", CHANGE, "tasks.md");
+    await appendFile(tasks, "\n## forge-portal-ui\n\n- [ ] 9.1 Read forge-infra into the map\n");
+    const read = await readyTasksOf(root, CHANGE);
+    expect(read.tasks.find((t) => t.id === "9.1")!.why).toMatch(/^it reads a repo into the map/);
+    expect(read.notes ?? []).toEqual([]);
+
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      "repos: [ this isn't: a manifest\n",
+    );
+    const unread = await readyTasksOf(root, CHANGE);
+    const note = (unread.notes ?? []).find((n) => n.startsWith("The manifests couldn't be read"));
+    expect(note).toMatch(
+      /^The manifests couldn't be read \(.+\), so only each task's own repo counts as a repo the estate knows when a task is checked for reading a repo into the map: fix the manifest for the others to count$/,
+    );
+    expect(unread.tasks.find((t) => t.id === "9.1")?.why ?? "").not.toMatch(
+      /reads a repo into the map/,
+    );
+  }, 180_000);
 });

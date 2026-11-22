@@ -239,9 +239,14 @@ export async function readyTasksOf(
       ...(pr === "merged" || pr === "closed" ? { prSettled: pr } : {}),
     });
   }
+  // The re-review: manifests that don't read leave only the tasks' own repos known, said.
+  let unreadManifests: string | undefined;
   const listed = await loadRepos(root).then(
     (rs) => rs.map((r) => r.id),
-    () => [] as string[],
+    (e: unknown) => {
+      unreadManifests = manifestsNote(e);
+      return [] as string[];
+    },
   );
   const plan = planReadyTasks({
     tasks,
@@ -249,8 +254,17 @@ export async function readyTasksOf(
     ...(o.repoOrder ? { repoOrder: o.repoOrder } : {}),
     repos: listed,
   });
-  const notes = read.flatMap((t) => afterWordsNote(t) ?? []);
+  const notes = [
+    ...read.flatMap((t) => afterWordsNote(t) ?? []),
+    ...(unreadManifests ? [unreadManifests] : []),
+  ];
   return notes.length ? { ...plan, notes } : plan;
+}
+
+/** The plan's note when the manifests don't read: only the tasks' own repos count as known. */
+export function manifestsNote(e: unknown): string {
+  const why = (e instanceof Error ? e.message : String(e)).split("\n")[0]!.trim();
+  return `The manifests couldn't be read (${why || "no reason given"}), so only each task's own repo counts as a repo the estate knows when a task is checked for reading a repo into the map: fix the manifest for the others to count`;
 }
 
 /**

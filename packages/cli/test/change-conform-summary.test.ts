@@ -77,4 +77,20 @@ describe("the summary of a check of the code", () => {
       "The code has everything else the change states it will have; 1 item was waived or dismissed by a person.",
     );
   });
+
+  it("counts a settled claim and a dismissed thing the design doesn't name, both", () => {
+    expect(
+      conformSummary(
+        [
+          result(
+            [claim("present"), claim("not-checkable", "waived")],
+            [item("found"), item("unexpected", "dismissed")],
+          ),
+        ],
+        { flows: 1, claims: 2 },
+      ),
+    ).toBe(
+      "The code has everything else the change states it will have; 1 claim was waived or dismissed by a person, and 1 thing in the code that the design doesn't name was dismissed by a person.",
+    );
+  });
 });

@@ -156,6 +156,8 @@ export function conformSummary(
     ].filter(Boolean);
     return `Not everything the change states is confirmed in the code: ${parts.join(", ")}. Each claim above says what to do next; check again once it is done.`;
   }
+  const things = (k: number) =>
+    `${k} ${k === 1 ? "thing" : "things"} in the code that the design doesn't name ${k === 1 ? "was" : "were"} dismissed by a person`;
   if (settled) {
     const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
     const what = [
@@ -164,14 +166,13 @@ export function conformSummary(
     ]
       .filter(Boolean)
       .join(" and ");
-    return `The code has everything else the change states it will have; ${what} ${settled === 1 ? "was" : "were"} waived or dismissed by a person.`;
+    // The third review: a dismissed thing the design doesn't name is counted beside them.
+    return `The code has everything else the change states it will have; ${what} ${settled === 1 ? "was" : "were"} waived or dismissed by a person${dismissedExtra ? `, and ${things(dismissedExtra)}` : ""}.`;
   }
-  if (dismissedExtra) {
-    const things = `${dismissedExtra} ${dismissedExtra === 1 ? "thing" : "things"} in the code that the design doesn't name ${dismissedExtra === 1 ? "was" : "were"} dismissed by a person`;
+  if (dismissedExtra)
     return run.flows
-      ? `The code has everything its target flows add${run.claims ? " and everything the change states it will have" : ""}; ${things}.`
-      : `The code has everything the change states it will have; ${things}.`;
-  }
+      ? `The code has everything its target flows add${run.claims ? " and everything the change states it will have" : ""}; ${things(dismissedExtra)}.`
+      : `The code has everything the change states it will have; ${things(dismissedExtra)}.`;
   return run.flows
     ? `The code has everything its target flows add, and nothing they don't name${run.claims ? ", and everything the change states it will have" : ""}.`
     : "The code has everything the change states it will have, and nothing its design doesn't name.";
