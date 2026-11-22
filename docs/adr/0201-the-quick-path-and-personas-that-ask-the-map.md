@@ -245,8 +245,8 @@ None is needed. No stored file changes shape and no schema version moves. An org
 ## Not verified
 
 - No code was run for this ADR; "How it is today" is from reading the files named.
-- The names an assistant gives a map tool (`mcp__atticus__<tool>` in Claude Code for a server named `atticus`; `atticus/<tool>` in a Copilot agent file) and Copilot's `handoffs` keys are as their documentation had them when this was written. The by-hand run in Copilot before the release (step 6 of the plan) is where they are proved. The Claude Code plugin's own server may be named otherwise there.
-- Whether VS Code starts the map tools on Windows from the npm shim.
+- The names an assistant gives a map tool (`mcp__atticus__<tool>` in Claude Code for a server named `atticus`; `atticus/<tool>` in a Copilot agent file) and Copilot's `handoffs` keys are as their documentation had them when this was written. The Claude Code plugin's own server may be named otherwise there. As released (2.0.0-beta.30, 2026-11-22): the starter personas were run with a real model on the field-shaped Forge estate on 2026-11-19 (the addendum of that date says what it found). A run in Copilot in VS Code, where the `atticus/*` names and the hand-off buttons would be proved, was not made before the release.
+- Whether VS Code starts the map tools on Windows from the npm shim. As released: the committed `.vscode/mcp.json` entry starts `node` with a one-line launcher (through the shell on Windows only), and a test starts that entry with no shell against an `atticus.cmd` on PATH and lists the tools, on Windows and Linux CI. VS Code itself on Windows was not tried by hand.
 
 ## Amendment, 2026-11-18: after the review of the map tools and personas
 
@@ -274,7 +274,7 @@ The owner's decisions and the fixes an independent review of decisions 6 and 7 a
 ### Not verified, added
 
 - The name Claude Code gives a plugin's MCP server was not found in the page read for this amendment (the sub-agents reference, which was cut short); `mcp__<server>__<tool>` for a named server is as that page shows.
-- VS Code reads `.claude/agents` as well as `.github/agents`, so each persona may be listed twice there. Not tried.
+- VS Code reads `.claude/agents` as well as `.github/agents`, so each persona may be listed twice there. Not tried (still not tried as released in 2.0.0-beta.30).
 
 ## Addendum
 

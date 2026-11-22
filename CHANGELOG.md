@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## 2.0.0-beta.30 (unreleased)
+## 2.0.0-beta.30 (2026-11-22)
 
 ### Added
 
@@ -164,6 +164,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **A cut-over is never checked from the code (ADR 0203, ADR 0206).** It happens in a live system Atticus never connects to: it is "not checkable", and a named person says how they checked it. What a quick change's spec deltas mean is never read from prose; only its In the code rows are checked. A quick change that removes a call states it as Has `other`: removals are checked on the staged path.
 - **One repo's Apply on the big estate at 60 repos is not 15 s (ADR 0205).** The big estate (100,407 records, every flow through every service) is a stress test, not the field's shape: one repo's Apply there takes about 42 to 47 CPU s in the app (41 s on the clock at the quietest, a load of 4) and about 51 as a command; the passes over the whole estate (the join, the merge, the features, the glossary) are most of it. ADR 0205's addendum (accepted 2026-11-22) built the one patch it could prove and that saves its phase, each repo's projection kept (off by default, above); a shared trace for entry points with one start was proven but measured to save nothing, and taken back. The join and the merge patched for a one-repo change are not in beta.30 (the owner's decision of 2026-11-22): they have no proof yet, their design stays in the ADR for a later release, and with them it would still be about 38 CPU s. 15 s there needs the features traced another way.
 - **On macOS the app may let go of its memory every half minute (ADR 0205).** `os.freemem` counts only free pages there, often under the 256 MB floor on a Mac in use: the next Apply reads its caches from disk, slower, never wrong. It waits for a measurement on a Mac.
+- **Not in this release, planned for beta.31 (ADR 0207, the owner's decision of 2026-11-22).** Before a run over many repos (`atticus map --all`, `verify --all --write`, Apply to every repo), a plan that says which repos, how many builds, a time estimate, files held now, version skew and how far undo reaches, with `--plan` and one question; three more map tools, `owners`, `consumers_of` and `similar_changes`; moving a quick change to the stages; a planned topic carrying its schema and settings; and the property nightly on Windows, with a slow disk and a file really held by another process. Until then a quick change that needs the stages is a new change, and the property nightly runs on Linux only.
+- **Mixed versions on one metarepo are not supported across this release (ADR 0124 addendum E-ids).** An older Atticus that builds a metarepo beta.30 upgraded makes the old loose-end ids again and shows again the loose ends a person took off the map: install beta.30 for everyone who builds, then run `atticus upgrade` once.
 
 ### Local API 3.18.0
 
