@@ -120,7 +120,12 @@ const REPO_RULES = ["feature.unknown-repo", "operation.unknown-repo"] as const;
  * acceptance is read off its fingerprint, so the acceptance stays on file.
  */
 export const acceptedRepos = (
-  e: Pick<Estate, "accepted">,
+  e: Pick<Estate, "accepted"> & Partial<Pick<Estate, "archivedRepos">>,
   rules: readonly string[] = REPO_RULES,
 ): Set<string> =>
-  new Set((e.accepted ?? []).filter((a) => rules.includes(a.rule)).map((a) => a.id));
+  new Set(
+    (e.accepted ?? [])
+      // An archived repo takes no new work: an acceptance from before it was archived is void.
+      .filter((a) => rules.includes(a.rule) && !e.archivedRepos?.has(a.id))
+      .map((a) => a.id),
+  );

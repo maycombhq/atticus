@@ -60,6 +60,8 @@ const NO: [string, string][] = [
   ["delta.deploy-order", "a wrong order is not a matter of opinion"],
   ["operation.no-undo", "a wrong order is not a matter of opinion"],
   ["operation.order", "a wrong order is not a matter of opinion"],
+  ["feature.archived-repo", "An archived repo takes no new work"],
+  ["operation.archived-repo", "An archived repo takes no new work"],
   ["stories.note-overrides-code", "A document never overrides a fact verified from code"],
   ["feature.nothing-placed", "belongs on the quick path"],
   ["small.no-target-flow", "belongs on the quick path"],

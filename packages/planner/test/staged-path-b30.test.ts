@@ -184,8 +184,8 @@ describe("the manifests the estate reads agree with the workspace's reader", () 
     );
     expect(issues.map((i) => [i.rule, i.message])).toEqual([
       [
-        "feature.unknown-repo",
-        'New flow "Nightly screen" is put in repo forge-batch, which the estate doesn\'t have. The manifest marks forge-batch archived.',
+        "feature.archived-repo",
+        'New flow "Nightly screen" is put in repo forge-batch, which the manifest marks archived: an archived repo takes no new work, and that can\'t be accepted. Put it in the repo that took over its work, or take archived off in the manifest.',
       ],
     ]);
   });

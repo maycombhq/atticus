@@ -80,6 +80,10 @@ const WAYS_ON: [readonly string[] | RegExp, string][] = [
     "It is about data safety: answer its question with a choice, or fix the draft as the message says.",
   ],
   [
+    ["feature.archived-repo", "operation.archived-repo"],
+    "An archived repo takes no new work, whatever the catalog still holds of it: put the work in the repo that took it over, or take archived off in the manifest.",
+  ],
+  [
     /^delta\.(at|uses)-/,
     "The place cites code that isn't there: give new: <file> for new code, or cite the line that is.",
   ],

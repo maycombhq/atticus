@@ -11,6 +11,7 @@ import { loadChangeContext } from "@maycombhq/changes";
 import {
   architectureStage,
   checkOperations,
+  checkPlacement,
   checkStageDraft,
   consumerIssues,
   EXPAND_AGENT,
@@ -880,12 +881,32 @@ describe("the review's other refusals", () => {
       join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
       MANIFEST.replace(/ {2}- id: forge-stock\n(?: {4}.*\n){3}/, ""),
     );
-    const got = rules(OPERATIONS, await estate(root)).filter((m) =>
-      m.startsWith("operation.unknown-repo"),
-    );
+    const all = rules(OPERATIONS, await estate(root));
+    // Its own rule, which a person can't accept (ADR 0203 B addendum): never unknown-repo.
+    expect(all.filter((m) => m.startsWith("operation.unknown-repo"))).toEqual([]);
+    const got = all.filter((m) => m.startsWith("operation.archived-repo"));
     expect(got).toHaveLength(2);
+    // A new flow there too, though its records are still in the catalog; and an operation the
+    // feature lists there.
+    const placed = FeaturePlacement.parse({
+      ...placement(),
+      newFlows: [{ name: "Stock screen", repo: "forge-stock", why: "Screens stock." }],
+    });
+    expect(
+      checkPlacement(placed, await estate(root))
+        .filter((i) => i.rule.endsWith("-repo"))
+        .map((i) => [i.rule, i.target, i.blocking]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["feature.archived-repo", "Stock screen:forge-stock", true],
+        ["feature.archived-repo", "deployment:forge-stock", true],
+      ]),
+    );
+    expect(
+      checkPlacement(placed, await estate(root)).filter((i) => i.rule === "feature.unknown-repo"),
+    ).toEqual([]);
     expect(got[0]).toBe(
-      "operation.unknown-repo: Operation deploy-new names repo forge-stock, which the estate doesn't have and this change doesn't plan: name a repo from the index, or mark it newRepo: true in feature.yaml. The manifest marks forge-stock archived.",
+      "operation.archived-repo: Operation deploy-new names repo forge-stock, which the manifest marks archived: an archived repo takes no new work, and that can't be accepted. Name the repo that took over its work, or take archived off in the manifest.",
     );
   });
 

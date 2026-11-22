@@ -219,3 +219,20 @@ describe("one id accepted under two rules is known under both", () => {
     }
   });
 });
+
+describe("an archived repo is never known as accepted", () => {
+  it("an acceptance of an unknown repo no longer covers it once the manifest marks it archived", () => {
+    const accepted = [
+      { id: "forge-batch", by: "pat", why: "Created this week", rule: "feature.unknown-repo" },
+      { id: "forge-queue", by: "pat", why: "Created this week", rule: "operation.unknown-repo" },
+    ];
+    expect([...acceptedRepos({ accepted })].sort()).toEqual(["forge-batch", "forge-queue"]);
+    expect([...acceptedRepos({ accepted, archivedRepos: new Set(["forge-batch"]) })]).toEqual([
+      "forge-queue",
+    ]);
+    // Its finding is another rule, so another fingerprint: the acceptance is not read off it.
+    expect(issueFingerprint("feature.archived-repo", "Nightly screen:forge-batch")).not.toBe(
+      issueFingerprint("feature.unknown-repo", "Nightly screen:forge-batch"),
+    );
+  });
+});

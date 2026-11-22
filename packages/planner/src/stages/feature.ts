@@ -21,6 +21,7 @@ import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
 import {
+  archivedRepoWords,
   estateIndex,
   estateRepos,
   loadEstate,
@@ -260,8 +261,18 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // passes with a note; anything else is refused.
   const repos = estateRepos(e);
   for (const n of p.newFlows)
-    if (repos.has(n.repo)) continue;
-    else if (n.newRepo && !e.archivedRepos.has(n.repo))
+    if (e.archivedRepos.has(n.repo))
+      issue(
+        "feature.archived-repo",
+        `${n.name}:${n.repo}`,
+        archivedRepoWords(
+          `New flow "${n.name}" is put in`,
+          n.repo,
+          "Put it in the repo that took over its work",
+        ),
+      );
+    else if (repos.has(n.repo)) continue;
+    else if (n.newRepo)
       out.push({
         rule: "feature.planned-repo",
         target: `${n.name}:${n.repo}`,
@@ -278,7 +289,17 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
   // catalog doesn't have.
   for (const o of p.operations ?? [])
     for (const repo of o.repos.filter((r) => !repos.has(r) || e.archivedRepos.has(r)))
-      if (o.newRepo && !e.archivedRepos.has(repo))
+      if (e.archivedRepos.has(repo))
+        issue(
+          "feature.archived-repo",
+          `${o.kind}:${repo}`,
+          archivedRepoWords(
+            `Operation "${o.what}" is put in`,
+            repo,
+            "Put it in the repo that took over its work",
+          ),
+        );
+      else if (o.newRepo)
         out.push({
           rule: "feature.planned-repo",
           target: `${o.kind}:${repo}`,

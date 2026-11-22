@@ -106,6 +106,14 @@ export function unreadRepos(e: Pick<Estate, "records" | "manifestRepos">): Set<s
  * Why a repo a draft names isn't the estate's, when the manifests can say: it is archived, or a
  * manifest didn't read. Words that follow the finding's own sentence; empty when neither.
  */
+/**
+ * ADR 0203 B addendum: an archived repo takes no new work, whatever the catalog still holds of
+ * it. Its finding has its own rule (`feature.archived-repo`, `operation.archived-repo`), which a
+ * person can't accept, so an acceptance of the repo as unknown never covers it.
+ */
+export const archivedRepoWords = (what: string, repo: string, way: string) =>
+  `${what} repo ${repo}, which the manifest marks archived: an archived repo takes no new work, and that can't be accepted. ${way}, or take archived off in the manifest.`;
+
 export function notEstateWhy(
   e: Pick<Estate, "archivedRepos" | "manifestProblems">,
   repo: string,

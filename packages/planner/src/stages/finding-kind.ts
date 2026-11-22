@@ -77,6 +77,9 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.deploy-missing",
   "delta.deploy-unknown-repo",
   "delta.deploy-unknown-migration",
+  // ADR 0203 B addendum: the manifest settles it; answering a question never passes it.
+  "feature.archived-repo",
+  "operation.archived-repo",
   "stories.no-criteria",
   "stories.field-not-checked",
   "stories.unknown-check",
