@@ -539,7 +539,7 @@ export async function conformChange(
       // repo no manifest lists) or cloned here, so that comes first in each claim's next step.
       const conformCmd = `atticus change conform ${change}`;
       const first = listed
-        ? `Clone ${repo} first: atticus workspace sync. Then check again: ${conformCmd}.`
+        ? `Clone ${repo} first: atticus workspace sync. Then read it into facts (/atticus-map ${repo}, then atticus verify ${repo} --write) and check again: ${conformCmd}.`
         : `Add ${repo} to the estate first: create it on your Git host if it is new, then atticus repo add <its clone URL> --id ${repo}. Then read it into facts (/atticus-map ${repo}, then atticus verify ${repo} --write) and check again: ${conformCmd}.`;
       for (const c of judged.claims) if (c.outcome === "unconfirmed") c.next = first;
       const result: Api.ConformRepoResultT = {
