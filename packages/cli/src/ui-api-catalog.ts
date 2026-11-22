@@ -577,7 +577,10 @@ export function uiCatalogRoutes(r: Router, ctx: ServerContext, asJob: LocalJob):
               },
             };
           },
-          { for: { action: "map-edits" as const }, hearsStop: true },
+          // Nothing it runs reads the signal before it takes anything back (the check build
+          // doesn't), and a Stop in the build after would end it with the lines taken back and
+          // the map not built: it doesn't offer Stop (the review of ADR 0202).
+          { for: { action: "map-edits" as const } },
         );
       })
   );

@@ -25,6 +25,12 @@ const JOBS: [string, string, boolean | "caller", string][] = [
   ["ui-api-steps.ts", '"Joining the estate\'s flows"', false, "estate join reads no signal"],
   ["ui-api-steps.ts", '"Syncing every wiki"', false, "sources sync reads no signal"],
   ["ui-api-steps.ts", "worktrees", false, "workspace prune reads no signal"],
+  [
+    "ui-api-steps.ts",
+    "`Sync, read and apply ${n} repo",
+    true,
+    "ADR 0204 decision 4: reposRun reads the signal between its parts",
+  ],
   ["ui-api-catalog.ts", "`Promote on ${repo}`", false, "a fact line and a dry verify"],
   ["ui-api-catalog.ts", "`Dismiss on ${repo}`", false, "one line written"],
   [
@@ -54,6 +60,12 @@ const JOBS: [string, string, boolean | "caller", string][] = [
     "to the map`",
     true,
     "Apply my changes: Stop until the first change is written",
+  ],
+  [
+    "ui-api-catalog.ts",
+    '"Undo the change to the map"',
+    false,
+    "ADR 0204 2.4: it takes back what an Apply wrote, then builds; nothing reads the signal before it writes",
   ],
   // Jobs started directly.
   ["ui-api.ts", '"local",', "caller", "asJob itself: as its caller says"],
