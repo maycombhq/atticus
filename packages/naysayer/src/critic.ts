@@ -477,6 +477,7 @@ export async function runCritic(
         problems,
         lenses: ai.runs.map((r) => ({
           lens: r.persona ?? r.lens,
+          ...(r.persona ? { persona: r.persona } : {}),
           agent: r.agent,
           state: r.state,
           ...(r.held ? { held: true } : {}),

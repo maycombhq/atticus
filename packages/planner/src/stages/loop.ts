@@ -2363,7 +2363,10 @@ export async function retireSettledEscalations(
   const round = (await roundsOf(root, change, gate).catch(() => [] as number[])).at(-1);
   if (round === undefined) return false;
   const meta = await readRoundMeta(root, change, gate, round).catch(() => undefined);
-  const complete = !(meta?.lenses ?? []).some((l) => l.state === "waiting" || l.state === "failed");
+  // A persona lens never holds anything (ADR 0203 C): the round is complete without it.
+  const complete = !(meta?.lenses ?? []).some(
+    (l) => !l.persona && (l.state === "waiting" || l.state === "failed"),
+  );
   const { findings } = await readRound(root, change, gate, round);
   const known = assistantNames(await context());
   let any = false;
@@ -2476,8 +2479,18 @@ async function lensesIn(
 }> {
   const rt = o.criticRuntime ?? o.runtime;
   const out: { run: Run; lens: string; runId: string; round: number }[] = [];
-  for (const w of await waitingLenses(root, change, review.gate, review.round)) {
+  // A persona lens's answer that came is read in; one that hasn't is never waited on (ADR 0203 C).
+  const held = new Set(
+    (await waitingLenses(root, change, review.gate, review.round)).map((w) => w.runId),
+  );
+  for (const w of await waitingLenses(root, change, review.gate, review.round, {
+    personas: true,
+  })) {
     const run = await rt.result(w.runId).catch(() => undefined);
+    if (!held.has(w.runId)) {
+      if (run?.state === "validated") await completeLensRun(root, run, { now: at });
+      continue;
+    }
     if (run?.state === "validated") {
       await completeLensRun(root, run, { now: at });
       continue;
@@ -2612,7 +2625,8 @@ async function criticRound(
         round: r.round,
       },
     };
-  const first = r.lenses.find((l) => l.state === "waiting" && l.runId);
+  // A persona lens never holds the stage (ADR 0203 C): its answer is read in when it comes.
+  const first = r.lenses.find((l) => l.state === "waiting" && l.runId && !l.persona);
   if (first)
     return {
       issues: [],

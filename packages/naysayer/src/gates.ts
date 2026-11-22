@@ -94,7 +94,8 @@ export async function gateStatusOf(
   // gate doesn't open on layer 1 alone while one is out.
   const waiting = round
     ? ((await readRoundMeta(root, change.id, gate, round))?.lenses ?? [])
-        .filter((l) => l.state === "waiting" && l.runId)
+        // ADR 0203 C: a persona lens never holds a gate; its answer, when it comes, is read in.
+        .filter((l) => l.state === "waiting" && l.runId && !l.persona)
         .map((l) => ({ lens: l.lens, runId: l.runId! }))
     : [];
   const proposed = findings.filter((f) => f.proposal && f.finding.severity === "blocking");

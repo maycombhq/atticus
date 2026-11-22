@@ -368,7 +368,13 @@ export async function checkFindings(
     try {
       const meta = parse(await readFile(join(dir, "meta", "round.yaml"), "utf8")) as {
         state?: string;
-        lenses?: { lens?: string; state?: string; runId?: string; reason?: string }[];
+        lenses?: {
+          lens?: string;
+          state?: string;
+          runId?: string;
+          reason?: string;
+          persona?: string;
+        }[];
       } | null;
       hasMeta = true;
       if (meta?.state === "in-progress") {
@@ -376,7 +382,9 @@ export async function checkFindings(
         continue;
       }
       for (const l of meta?.lenses ?? [])
-        if (l.state === "waiting")
+        // ADR 0203 C: a persona lens never holds a gate; its answer is read in when it comes.
+        if (l.persona) continue;
+        else if (l.state === "waiting")
           reasons.push({
             code: "lens-waiting",
             message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) is waiting for its hand-off answer${l.runId ? ` (Done on run ${l.runId} in Model runs, or atticus handoff done ${l.runId})` : ""}.`,

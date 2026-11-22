@@ -1,8 +1,18 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { gateStatus, personaLenses, readRound, roundsOf, runCritic } from "../src/index.js";
+import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { changeStore, checkFindings } from "@maycombhq/changes";
+import {
+  completeLensRun,
+  gateStatus,
+  personaLenses,
+  readRound,
+  readRoundMeta,
+  roundsOf,
+  runCritic,
+  waitingLenses,
+} from "../src/index.js";
 import { CHANGE, NOW, forgeChangeRoot } from "./helpers.js";
 
 /**
@@ -127,6 +137,92 @@ describe("a persona's naysayer with gates runs as a lens", () => {
       persona: NAYSAYER,
     });
     expect(all[0]!.agent.id).toBe(NAYSAYER);
+  });
+});
+
+/** The naysayer's answer, as its assistant writes it. */
+const ASKED = [
+  "findings:",
+  `  - rule: persona.${NAYSAYER}`,
+  "    kind: issue",
+  "    artifact: design.md",
+  "    locator: { line: 5 }",
+  "    summary: Nothing says who else reads the daily limit.",
+  "    why: Another reader would see a limit the transfer already passed.",
+  "    fix: Name every reader of account.daily_limit.",
+  "    evidence:",
+  `      - { path: design.md, line: 5, quote: "${QUOTED}" }`,
+  "",
+].join("\n");
+
+describe("a persona lens never holds a gate (ADR 0203 C, the owner's decision of 2026-11-21)", () => {
+  it("handed to the assistant and not answered, it holds nothing: the gate, the lifecycle and the stage don't wait", async () => {
+    const r = await root("[plan]");
+    const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
+    const out = await runCritic(r, CHANGE, { now: NOW, runtime: rt, gate: "plan" });
+    const persona = out.lenses.find((l) => l.persona === NAYSAYER)!;
+    expect(persona).toMatchObject({ state: "waiting" });
+    // Answer the four questions; leave the persona with the assistant.
+    for (const l of out.lenses.filter((x) => x.state === "waiting" && !x.persona)) {
+      await writeFile(
+        join(r, ".runs", CHANGE, l.runId!, `findings-${l.lens}.yaml`),
+        "findings: []\n",
+      );
+      await completeLensRun(r, await rt.done(l.runId!), { now: NOW });
+    }
+    const s = await gateStatus(r, CHANGE, "plan");
+    expect(s.waiting).toEqual([]);
+    expect(s.reasons.join("\n")).not.toContain(NAYSAYER);
+    const change = await changeStore(r).read(CHANGE);
+    expect((await checkFindings(r, change, ["plan"])).map((x) => x.code)).not.toContain(
+      "lens-waiting",
+    );
+    // What a stage waits on: none.
+    expect(await waitingLenses(r, CHANGE, "plan")).toEqual([]);
+    // It is still on file, so its answer can be read in when it comes.
+    const meta = await readRoundMeta(r, CHANGE, "plan", 1);
+    expect(meta?.lenses.find((l) => l.runId === persona.runId)).toMatchObject({
+      lens: NAYSAYER,
+      state: "waiting",
+      persona: NAYSAYER,
+    });
+  });
+
+  it("an answer that comes after the gate moved on is read into the newest round, never dropped", async () => {
+    const r = await root("[plan]");
+    const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
+    const first = await runCritic(r, CHANGE, { now: NOW, runtime: rt, gate: "plan" });
+    const persona = first.lenses.find((l) => l.persona === NAYSAYER)!;
+    // A new round runs at the gate before the persona's assistant answers.
+    const asked: string[] = [];
+    const quiet = new MockRuntime(
+      (q: AiRequest) => {
+        asked.push(q.agent.id);
+        return "findings: []\n";
+      },
+      { now: () => new Date(NOW) },
+    );
+    await runCritic(r, CHANGE, { now: "2026-10-21T09:00:00Z", runtime: quiet, gate: "plan" });
+    expect((await roundsOf(r, CHANGE, "plan")).at(-1)).toBe(2);
+    // The late answer.
+    await writeFile(join(r, ".runs", CHANGE, persona.runId!, `findings-${NAYSAYER}.yaml`), ASKED);
+    const done = await completeLensRun(r, await rt.done(persona.runId!), {
+      now: "2026-10-21T10:00:00Z",
+    });
+    expect(done.findings.map((f) => f.finding.rule)).toEqual([`persona.${NAYSAYER}`]);
+    // In the gate's newest round, where every reader looks.
+    const newest = (await readRound(r, CHANGE, "plan", 2)).findings.map((x) => x.finding);
+    expect(newest.filter((f) => f.lens === "persona")).toEqual([
+      expect.objectContaining({
+        persona: NAYSAYER,
+        severity: "risk",
+        round: 2,
+        summary: "Nothing says who else reads the daily limit.",
+      }),
+    ]);
+    expect(
+      (await gateStatus(r, CHANGE, "plan")).findings.some((x) => x.finding.lens === "persona"),
+    ).toBe(true);
   });
 });
 

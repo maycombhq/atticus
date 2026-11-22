@@ -62,19 +62,23 @@ export interface WaitingLens {
 
 /**
  * The AI lenses of a round at a gate that are still with the person's assistant: the newest
- * round, or the round given (a stage waits on its own round, whatever ran at the gate since).
+ * round, or the round given (a stage waits on its own round, whatever ran at the gate since). A
+ * persona lens is never one: nothing waits on it (ADR 0203 C), and its answer is read in when
+ * it comes.
  */
 export async function waitingLenses(
   root: string,
   change: string,
   gate: string,
   of?: number,
+  /** Also the persona lenses still out: to read in an answer that came, never to wait on one. */
+  o: { personas?: boolean } = {},
 ): Promise<WaitingLens[]> {
   const round = of ?? (await roundsOf(root, change, gate)).at(-1);
   if (round === undefined) return [];
   const meta = await readRoundMeta(root, change, gate, round);
   return (meta?.lenses ?? [])
-    .filter((l) => l.state === "waiting" && l.runId)
+    .filter((l) => l.state === "waiting" && l.runId && (o.personas || !l.persona))
     .map((l) => ({ lens: l.lens, runId: l.runId!, round }));
 }
 
@@ -161,6 +165,14 @@ export async function completeLensRun(
     runId: run.runId,
     ...(entry.promptSha256 ? { promptSha256: entry.promptSha256 } : {}),
   };
+  // ADR 0203 C: a persona lens never holds a gate, so the gate may have had a round since it was
+  // handed off. Its answer is read into the gate's newest round, where every reader looks, so a
+  // late answer is never lost; nobody waited for it.
+  const persona = entry.persona ?? (entry.lens !== lens ? entry.lens : undefined);
+  const newest = (await roundsOf(root, changeId, gateId)).at(-1) ?? round;
+  const into = persona && newest > round ? newest : round;
+  const intoMeta =
+    into === round ? meta : ((await readRoundMeta(root, changeId, gateId, into)) ?? meta);
   let outcome: LensRun;
   let discarded: Discarded[] = [];
   let findings: CriticFinding[] = [];
@@ -191,24 +203,25 @@ export async function completeLensRun(
     await checkAbsences(root, ctx.records, parsed.hits, codeSearchFor(opts.codeSearch));
     discarded = parsed.discarded;
     const hits = mergeHits(parsed.hits, ctx.systemOf);
-    const existing = await readRound(root, changeId, gateId, round);
-    const prior = (await roundsOf(root, changeId, gateId)).filter((n) => n < round).at(-1);
+    const existing = await readRound(root, changeId, gateId, into);
+    const prior = (await roundsOf(root, changeId, gateId)).filter((n) => n < into).at(-1);
     // Findings carried from the last reviewed draft (ADR 0115 addendum, 2026-10-25) aren't
-    // written twice when the lens raises them again.
+    // written twice when the lens raises them again; nor, read into a later round, one that round
+    // already has.
     const carriedAi = new Set(
-      meta.findings.filter((f) => f.layer === "ai" && f.unchanged).map((f) => f.id),
+      intoMeta.findings.filter((f) => f.layer === "ai" && f.unchanged).map((f) => f.id),
     );
     findings = await writeHits(root, hits, {
       known: assistantNames(ctx.lifecycle),
       change: changeId,
       gate: gateId,
-      round,
+      round: into,
       now,
       priorRound: prior,
       taken: new Set(existing.findings.map((s) => s.finding.id)),
       skip: new Set(
         existing.findings
-          .filter((s) => carriedAi.has(s.finding.id))
+          .filter((s) => into !== round || carriedAi.has(s.finding.id))
           .map((s) => fingerprint(s.finding)),
       ),
     });
@@ -220,6 +233,18 @@ export async function completeLensRun(
       ? { ...base, state: "failed", reason: parsed.malformed }
       : { ...base, state: "ran", ...(out.reason ? { reason: out.reason } : {}) };
   }
+  // A persona lens that didn't review is said, never failed: it holds nothing (ADR 0203 C).
+  if (persona && outcome.state === "failed")
+    outcome = {
+      ...outcome,
+      state: "skipped",
+      reason: `${persona} didn't review (${outcome.reason ?? "no review"}); a persona lens never holds the gate`,
+    };
+  if (into !== round && outcome.state === "ran")
+    outcome = {
+      ...outcome,
+      reason: `answered after round ${into} ran at the ${gateId} gate: its findings are in round ${into}`,
+    };
 
   // The round records the lens as read in (or failed), its findings and what was discarded.
   const lenses = meta.lenses.map((l) => {
@@ -232,21 +257,19 @@ export async function completeLensRun(
     outcome.state === "ran"
       ? [...new Set([...meta.rules.ran, ...entry.rules])].sort()
       : meta.rules.ran;
+  const written = findings.map((f) => ({
+    id: f.finding.id,
+    layer: f.layer,
+    rule: f.finding.rule,
+    severity: f.finding.severity,
+    ...(f.carried ? { carried: true } : {}),
+  }));
   await writeFileAtomic(
     join(metaDir, "round.yaml"),
     toCanonicalYaml(
       {
         ...meta,
-        findings: [
-          ...meta.findings,
-          ...findings.map((f) => ({
-            id: f.finding.id,
-            layer: f.layer,
-            rule: f.finding.rule,
-            severity: f.finding.severity,
-            ...(f.carried ? { carried: true } : {}),
-          })),
-        ],
+        findings: [...meta.findings, ...(into === round ? written : [])],
         rules: { ...meta.rules, ran: ranRules },
         lenses,
         discarded: [...meta.discarded, ...discarded],
@@ -254,6 +277,12 @@ export async function completeLensRun(
       ROUND_LEADING,
     ),
   );
+  // The newest round lists the findings read into it.
+  if (into !== round && written.length)
+    await writeFileAtomic(
+      join(folder, "review", gateId, String(into), "meta", "round.yaml"),
+      toCanonicalYaml({ ...intoMeta, findings: [...intoMeta.findings, ...written] }, ROUND_LEADING),
+    );
 
   const change = await changeStore(root).read(changeId);
   const lifecycle = await loadChangeContext(root);

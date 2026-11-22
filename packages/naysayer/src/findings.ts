@@ -447,6 +447,11 @@ export interface RoundLens {
   promptSha256?: string;
   /** The hand-off run a waiting (or read-in) lens was with. */
   runId?: string;
+  /**
+   * ADR 0203 C: the persona whose naysayer this lens is (its `lens` is the persona's name). A
+   * persona lens never holds a gate: waiting or not, nothing waits on it.
+   */
+  persona?: string;
   /** The batched hand-off it was asked in with the round's other lenses (ADR 0185). */
   batch?: string;
   /** What the lens was sent, sized to need (ai.ts LensContext). */
