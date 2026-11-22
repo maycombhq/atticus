@@ -372,9 +372,10 @@ export function conformClaims(input: ClaimsInput): {
   /** Which claimed values are written on the fact's cited lines, and which are its reading. */
   const writtenWhy = (f: Fact, values: [string, string | undefined][]): string | undefined => {
     if (!input.lineAt) return undefined;
-    const lines = citedLines(f).map((l) => l.toLowerCase());
+    const lines = citedLines(f);
     const given = values.filter((v): v is [string, string] => !!v[1]);
-    const on = given.filter(([, v]) => lines.some((l) => l.includes(v.toLowerCase())));
+    // The word itself on the line, never a part of a longer one (the review of ADR 0206).
+    const on = given.filter(([, v]) => lines.some((l) => wordOn(l, v)));
     const off = given.filter((g) => !on.includes(g));
     const words = (xs: [string, string][]) => xs.map(([k, v]) => `${k} ${v}`).join(", ");
     return [
