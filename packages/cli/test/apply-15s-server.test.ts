@@ -32,10 +32,13 @@ const made: string[] = [];
 const servers: RunningServer[] = [];
 // One clock for both sides: a question's and a decision's times are written into the files.
 beforeAll(() => {
+  // The machine's memory as roomy, whatever else runs on it: the server keeps what it keeps.
+  appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-11-21T09:00:00Z"));
 });
 afterAll(() => {
+  delete appMemory.system;
   vi.useRealTimers();
 });
 afterEach(async () => {

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   appMemory,
   appMemoryHeld,
@@ -25,8 +25,13 @@ import {
  */
 const MB = 1024 * 1024;
 const dirs: string[] = [];
+// The machine's memory as roomy, whatever else runs on it: these tests are of what is kept.
+beforeEach(() => {
+  appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+});
 afterEach(async () => {
   while (appMemory.on) stopAppMemory();
+  delete appMemory.system;
   delete recordCacheHooks.memoryMaxBytes;
   delete recordCacheHooks.now;
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));

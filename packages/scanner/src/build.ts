@@ -1032,7 +1032,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       Object.assign(pairs, i.extraPairs?.get(r.id) ?? {});
       const ai: Record<string, { runtime: string; run: string }> = {};
       const targets = targetsFromAnswers(r.id, f.facts, i.questions, { repoType: r.type, ai });
-      factRepos.push({ repo: r.id, facts: f.facts, targets, pairs, aiTargets: ai });
+      factRepos.push({ repo: r.id, facts: f.facts, targets, pairs, aiTargets: ai, sha: f.sha });
       if (f.meta.contracts) contracts.push(f.meta.contracts);
       sources.push({
         repo: r.id,

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   afterResultPending,
+  appMemory,
   factsParseHooks,
   factsParseStats,
   forgetFactsParses,
@@ -13,7 +14,13 @@ import {
   startAppMemory,
   stopAppMemory,
 } from "@maycombhq/core";
-import { buildAndWrite, buildCacheHooks, buildCacheStats } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  buildCacheHooks,
+  buildCacheStats,
+  projectionHooks,
+  projectionStats,
+} from "@maycombhq/scanner";
 import type { CatalogDiff } from "@maycombhq/scanner";
 import { writeFactsHooks, writeFactsIntoCatalog } from "../src/map-render-commands.js";
 import { bigRepoFacts, bigRepoId, makeBigEstate, writeBigRepo } from "./big-estate.js";
@@ -91,9 +98,11 @@ function stepsOff(off: boolean): void {
   if (off) {
     writeFactsHooks.fullDiff = true;
     factsParseHooks.off = true;
+    projectionHooks.off = true;
   } else {
     delete writeFactsHooks.fullDiff;
     delete factsParseHooks.off;
+    delete projectionHooks.off;
   }
 }
 
@@ -105,6 +114,7 @@ afterEach(async () => {
   delete factsParseHooks.check;
   delete buildCacheHooks.checkTexts;
   delete recordCacheHooks.checkMemory;
+  delete projectionHooks.check;
   await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -114,11 +124,16 @@ async function applies(shape: string, off: boolean) {
   made.push(dir);
   stepsOff(off);
   // Step 4, as the app's server keeps it: the last build's texts and the facts parses in memory.
-  if (!off) startAppMemory();
+  // The machine's memory as roomy, whatever else runs on it (the test is of what is kept).
+  if (!off) {
+    appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+    startAppMemory();
+  }
   try {
     return await appliesIn(dir, shape, off);
   } finally {
     if (!off) stopAppMemory();
+    delete appMemory.system;
   }
 }
 
@@ -174,6 +189,10 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       // and every catalog parse a write's read takes from memory against its file's parse.
       buildCacheHooks.checkTexts = true;
       recordCacheHooks.checkMemory = true;
+      // The addendum's step 1, both ways: each kept projection frozen, and compared with one
+      // made now each time it is taken from memory.
+      projectionHooks.check = true;
+      const projectionsKept = projectionStats.kept;
       const parsesFromMemory = recordCacheStats.fromMemory;
       const kept = factsParseStats.kept;
       const fromMemory = buildCacheStats().textsFromMemory;
@@ -183,6 +202,9 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       delete factsParseHooks.check;
       delete buildCacheHooks.checkTexts;
       delete recordCacheHooks.checkMemory;
+      delete projectionHooks.check;
+      // Every write after the first kept the projections of the repos it didn't change.
+      expect(projectionStats.kept - projectionsKept, "projections kept").toBeGreaterThan(8);
       // Every write after the first read the catalog's parses from the server's memory.
       expect(
         recordCacheStats.fromMemory - parsesFromMemory,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  appMemory,
   factsParseHooks,
   forgetFactsParses,
   recordCacheHooks,
@@ -11,7 +12,7 @@ import {
   startAppMemory,
   stopAppMemory,
 } from "@maycombhq/core";
-import { buildCacheHooks } from "@maycombhq/scanner";
+import { buildCacheHooks, projectionHooks } from "@maycombhq/scanner";
 import type { Desc } from "./commands.js";
 import { commitCode, writeOrgPack, type Estate } from "./estate.js";
 import { Model, type Changes } from "./model.js";
@@ -217,8 +218,12 @@ export class World {
   serve(): void {
     if (this.serving) return;
     this.serving = true;
+    // The machine's memory as roomy, whatever else runs on it: the server keeps what it keeps.
+    appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
     startAppMemory();
     buildCacheHooks.checkTexts = true;
+    // ADR 0205's addendum: each kept pass result checked against the pass made now.
+    projectionHooks.check = true;
     factsParseHooks.check = true;
     recordCacheHooks.checkMemory = true;
   }
@@ -231,6 +236,8 @@ export class World {
     stopAppMemory();
     releaseAppMemory();
     forgetFactsParses();
+    delete appMemory.system;
+    delete projectionHooks.check;
     delete buildCacheHooks.checkTexts;
     delete factsParseHooks.check;
     delete recordCacheHooks.checkMemory;

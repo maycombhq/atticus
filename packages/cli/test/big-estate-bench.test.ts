@@ -12,12 +12,14 @@ import {
   estateFacts,
   manifestToV1,
   parseBuildManifest,
+  projectionHooks,
   serializeBuildManifest,
   serializeBuildManifestV1,
 } from "@maycombhq/scanner";
 import { setFlagsFromString, getHeapStatistics } from "node:v8";
 import { runInNewContext } from "node:vm";
 import {
+  appMemory,
   appMemoryHeld,
   factsParseHooks,
   releaseAppMemory,
@@ -67,6 +69,15 @@ const READS = process.env.ATTICUS_BENCH_READS !== "0";
  * before the result, no memory kept): the before and after of one build of the code.
  */
 const APP = !!process.env.ATTICUS_BENCH_APP;
+/**
+ * ADR 0205's addendum: ATTICUS_BENCH_ROOMY=1 reads the machine's memory as roomy for the app's
+ * rule (the V8 heap's rule still holds), so what a server with room keeps is measured on a
+ * machine whose container is nearly full: at 60 repos of the big estate this one's is (6 GiB,
+ * shared), and the rule lets everything go.
+ */
+const ROOMY = !!process.env.ATTICUS_BENCH_ROOMY;
+/** ATTICUS_BENCH_ADDENDUM_OFF=1: the addendum's steps off (the way before them), the rest on. */
+const ADDENDUM_OFF = !!process.env.ATTICUS_BENCH_ADDENDUM_OFF;
 const STEPS_OFF = !!process.env.ATTICUS_BENCH_STEPS_OFF;
 const say = (l: string) => console.log(`bench ${l}`);
 const quiet = { out: () => undefined, err: (l: string) => say(`  err: ${l.slice(0, 200)}`) };
@@ -157,7 +168,12 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
     if (STEPS_OFF) {
       writeFactsHooks.fullDiff = true;
       factsParseHooks.off = true;
-    } else if (APP) startAppMemory();
+    }
+    if (ADDENDUM_OFF || STEPS_OFF) projectionHooks.off = true;
+    if (APP && !STEPS_OFF) {
+      if (ROOMY) appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+      startAppMemory();
+    }
     // Two changes of one repo, each `verify <repo> --write`'s catalog write: the first after
     // the code changed (an upgrade: the build cache's texts are another version's), the second
     // as every write after it.
@@ -217,7 +233,9 @@ describe.skipIf(!ON)("the big estate's speeds (benchmark)", () => {
       const without = getHeapStatistics().used_heap_size;
       say(
         `the app's memory: ${Object.entries(held)
-          .map(([k, v]) => `${k} ${(v / 1e6).toFixed(0)} MB`)
+          .map(([k, v]) =>
+            k.includes("a count") ? `${k} ${v}` : `${k} ${(v / 1e6).toFixed(0)} MB`,
+          )
           .join(
             ", ",
           )}; the heap ${(withIt / 1e9).toFixed(2)} GB with it, ${(without / 1e9).toFixed(2)} GB let go (${((withIt - without) / 1e6).toFixed(0)} MB held)`,

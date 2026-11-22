@@ -1,7 +1,7 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   appMemoryHeld,
   forgetFactsParses,
@@ -27,8 +27,13 @@ import {
  * yet on disk (up to 256 MB), and the last build's texts, which are kept only up to a size.
  */
 const dirs: string[] = [];
+// The machine's memory as roomy, whatever else runs on it: these tests are of what is kept.
+beforeEach(() => {
+  appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+});
 afterEach(async () => {
   while (appMemory.on) stopAppMemory();
+  delete appMemory.system;
   forgetFactsParses();
   delete buildCacheHooks.stamp;
   delete buildCacheHooks.textsMaxBytes;
