@@ -2489,6 +2489,16 @@ async function lensesIn(
     const run = await rt.result(w.runId).catch(() => undefined);
     if (!held.has(w.runId)) {
       if (run?.state === "validated") await completeLensRun(root, run, { now: at });
+      // Gone or cancelled: recorded as skipped, with why (failLens), never waited on.
+      else if (!run || run.state === "cancelled")
+        await failLens(
+          root,
+          change,
+          review.gate,
+          review.round,
+          w.runId,
+          run ? `its run ${w.runId} was cancelled` : `its run ${w.runId} is no longer there`,
+        );
       continue;
     }
     if (run?.state === "validated") {

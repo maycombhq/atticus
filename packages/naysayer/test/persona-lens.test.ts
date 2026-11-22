@@ -11,6 +11,7 @@ import {
 } from "@maycombhq/changes";
 import {
   completeLensRun,
+  failLens,
   gateStatus,
   lastReviewed,
   personaLenses,
@@ -194,6 +195,25 @@ describe("a persona lens never holds a gate (ADR 0203 C, the owner's decision of
       state: "waiting",
       persona: NAYSAYER,
     });
+  });
+
+  it("a persona run that is cancelled or gone is recorded as skipped, with why, never failed", async () => {
+    const r = await root("[plan]");
+    const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
+    const out = await runCritic(r, CHANGE, { now: NOW, runtime: rt, gate: "plan" });
+    const persona = out.lenses.find((l) => l.persona === NAYSAYER)!;
+    await failLens(r, CHANGE, "plan", 1, persona.runId!, `its run ${persona.runId} was cancelled`);
+    const meta = await readRoundMeta(r, CHANGE, "plan", 1);
+    expect(meta?.lenses.find((l) => l.runId === persona.runId)).toMatchObject({
+      state: "skipped",
+      persona: NAYSAYER,
+      reason: `${NAYSAYER} didn't review (its run ${persona.runId} was cancelled); a persona lens never holds the gate`,
+    });
+    // A lens of the four questions is still recorded as failed: it holds the gate.
+    const other = out.lenses.find((l) => l.state === "waiting" && !l.persona)!;
+    await failLens(r, CHANGE, "plan", 1, other.runId!, "its run is no longer there");
+    const after = await readRoundMeta(r, CHANGE, "plan", 1);
+    expect(after?.lenses.find((l) => l.runId === other.runId)?.state).toBe("failed");
   });
 
   it("an answer that comes after the gate moved on is read into the newest round, never dropped", async () => {

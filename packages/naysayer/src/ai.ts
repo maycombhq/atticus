@@ -303,6 +303,13 @@ function codeRule(repos: readonly CodeRepo[]): string {
   ].join(" ");
 }
 
+/**
+ * ADR 0203 C: why a persona lens that didn't review (its answer, its run cancelled or gone) is
+ * recorded as skipped, never failed: a persona lens never holds the gate.
+ */
+export const personaSkipped = (persona: string, reason?: string) =>
+  `${persona} didn't review (${reason ?? "no review"}); a persona lens never holds the gate`;
+
 /** What a lens is told about the facts people recorded (ADR 0115 addendum, W2). */
 export const RECORDED_RULE = `People recorded facts and decisions on this change's findings at its reviews; the "recorded-by-people" data block lists each with the gate, who and when. A fact a person recorded is not raised again: don't report it as a finding or a gap, at this gate or any other. You may challenge one only with new evidence you cite (a line of the draft, the estate or the code that contradicts it), naming the recorded finding in why.`;
 
@@ -1319,7 +1326,7 @@ export async function runLenses(
   for (const r of runs)
     if (r.persona && r.state === "failed") {
       r.state = "skipped";
-      r.reason = `${r.persona} didn't review (${r.reason ?? "no review"}); a persona lens never holds the gate`;
+      r.reason = personaSkipped(r.persona, r.reason);
     }
   // ADR 0185: the lenses waiting for the person's assistant, asked in one prompt as well. A batch
   // that can't be made leaves each lens its own prompt, as before.

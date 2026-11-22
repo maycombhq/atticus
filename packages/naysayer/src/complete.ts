@@ -8,7 +8,14 @@ import {
 } from "@maycombhq/changes";
 import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
-import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
+import {
+  leftOut,
+  parseLensOutput,
+  personaSkipped,
+  type Discarded,
+  type LensName,
+  type LensRun,
+} from "./ai.js";
 import { checkAbsences, codeSearchFor, type CodeSearch } from "./code.js";
 import { draftDocs, DRAFT_DIR, keepLensRecords } from "./critic.js";
 import { CriticError } from "./errors.js";
@@ -238,7 +245,7 @@ export async function completeLensRun(
     outcome = {
       ...outcome,
       state: "skipped",
-      reason: `${persona} didn't review (${outcome.reason ?? "no review"}); a persona lens never holds the gate`,
+      reason: personaSkipped(persona, outcome.reason),
     };
   if (into !== round && outcome.state === "ran")
     outcome = {
@@ -324,7 +331,8 @@ export async function completeLensBatch(
 /**
  * Record a lens of a round as failed without an answer to read: its run is gone (a cleaned
  * runs folder, another machine) or was cancelled. The round then says the lens never reviewed,
- * and the gate stays closed on it rather than waiting for ever or opening.
+ * and the gate stays closed on it rather than waiting for ever or opening. A persona lens is
+ * recorded as skipped, with why: it never holds the gate (ADR 0203 C).
  */
 export async function failLens(
   root: string,
@@ -336,8 +344,13 @@ export async function failLens(
 ): Promise<void> {
   const meta = await readRoundMeta(root, change, gate, round);
   if (!meta || !meta.lenses.some((l) => l.runId === runId && l.state === "waiting")) return;
+  // A persona lens is recorded as skipped, with why: it never holds the gate (ADR 0203 C).
   const lenses = meta.lenses.map((l) =>
-    l.runId === runId ? { ...l, state: "failed" as const, reason } : l,
+    l.runId !== runId
+      ? l
+      : l.persona
+        ? { ...l, state: "skipped" as const, reason: personaSkipped(l.persona, reason) }
+        : { ...l, state: "failed" as const, reason },
   );
   await writeFileAtomic(
     join(changeFolder(root, change), "review", gate, String(round), "meta", "round.yaml"),
