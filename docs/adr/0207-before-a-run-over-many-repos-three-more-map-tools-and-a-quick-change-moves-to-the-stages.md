@@ -1,6 +1,6 @@
 # 0207. Before a run over many repos Atticus says what it will do, three more map tools, a quick change moves to the stages, and a planned topic carries its schema
 
-- Status: proposed (2026-11-22, for the owner's approval before any code)
+- Status: accepted (2026-11-22, by the owner, with the recommended answers: the question is asked for a run that writes to two or more repos, never for `verify --all` without `--write`; the Undo row says how far undo reaches, with no run-level undo in beta.30; the move keeps the table's operation rows as evidence with the note, and seeds no `_operations.yaml`; a new topic with no schema is a note)
 - Date: 2026-11-22
 - Release: 2.0.0-beta.30, items 4, 21, 23 and 26 of [the field plan](../plan/field-reliability-and-ease.md) by the owner's decision of 2026-11-22; item 3's nightly is listed at the end and needs no ADR
 - Decides: what ADR 0202 left open ("The plan before a multi-repo action", under Not decided here) and what ADR 0201 and ADR 0203 left open ("moving a change from the quick path to the stages")
