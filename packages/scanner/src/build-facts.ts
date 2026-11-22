@@ -57,16 +57,32 @@ import { estateRepos, isPrototypeRepo } from "./merge-input.js";
  * the projection from there; any other is projected. Outside a server, or with no slot hash
  * (a caller that read no slot), nothing is kept. Let go by the app's rule, and kept only up to a
  * count of records and facts.
+ *
+ * **Off by default** (the owner's decision of 2026-11-22): measured, it cuts its own phase every
+ * time but not the Apply's total beyond the runs' spread, and holds more memory. The code and its
+ * proof stay; it is switched on only by `ATTICUS_PROJECTION_MEMO=on` in the environment of the
+ * app's server (`atticus ui`), where measurements show a real gain (`projectionMemoOn`).
  */
 export const projectionHooks: {
-  /** The way before the step: every repo projected (the equivalence tests' "off"). */
+  /** The way before the step: every repo projected (the equivalence tests' "off"); wins over `on`. */
   off?: boolean;
+  /** The proof's tests: the step on, as its setting turns it on. */
+  on?: boolean;
   /**
    * The step's proof: each projection kept is frozen (a pass that changed one would throw), and
    * each taken from memory is compared with a projection made now, or a throw.
    */
   check?: boolean;
 } = {};
+/** The setting that switches the step on: `ATTICUS_PROJECTION_MEMO=on` (any other value: off). */
+export const PROJECTION_MEMO_ENV = "ATTICUS_PROJECTION_MEMO";
+
+/** Whether the step is on: off by default, on by its setting or the tests' hook; `off` wins. */
+export function projectionMemoOn(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (projectionHooks.off) return false;
+  return !!projectionHooks.on || env[PROJECTION_MEMO_ENV] === "on";
+}
+
 /** How many repos were projected, and how many projections were taken from memory (the tests). */
 export const projectionStats = { projected: 0, kept: 0 };
 
@@ -136,7 +152,7 @@ function projectionOf(
       ...(r.targets ? { targets: r.targets } : {}),
       renames,
     });
-  const keeping = !projectionHooks.off && appMemory.on && appMemoryInUse();
+  const keeping = projectionMemoOn() && appMemory.on && appMemoryInUse();
   const key = keeping ? projectionKey(op, r, renames) : undefined;
   const had = projections.get(r.repo);
   if (key !== undefined && had?.key === key) {

@@ -12,7 +12,12 @@ import {
   serializeRecord,
   settleAfterResult,
 } from "@maycombhq/core";
-import { buildAndWrite, buildCacheStats } from "@maycombhq/scanner";
+import {
+  buildAndWrite,
+  buildCacheStats,
+  projectionHooks,
+  projectionStats,
+} from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { main } from "../src/main.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
@@ -34,11 +39,18 @@ const servers: RunningServer[] = [];
 beforeAll(() => {
   // The machine's memory as roomy, whatever else runs on it: the server keeps what it keeps.
   appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+  // ADR 0205's addendum, step 1: off by default (the owner's decision of 2026-11-22), switched on
+  // here as its setting does, with its check (each projection taken from memory compared with
+  // one made now, each kept one frozen).
+  projectionHooks.on = true;
+  projectionHooks.check = true;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-11-21T09:00:00Z"));
 });
 afterAll(() => {
   delete appMemory.system;
+  delete projectionHooks.on;
+  delete projectionHooks.check;
   vi.useRealTimers();
 });
 afterEach(async () => {
@@ -202,6 +214,7 @@ describe("one repo's Apply in the app's server and as commands (ADR 0205 step 4)
   it("gives the same bytes and says the same, with a facts file, the org pack, a curated decision and a hand edit changed between", async () => {
     // The app's side: one server, its memory on, every Apply through its route.
     const fromMemory = buildCacheStats().textsFromMemory;
+    const projectionsKept = projectionStats.kept;
     let server: RunningServer | undefined;
     let lastPlan: string | undefined;
     const app = await steps(async (root, confirm) => {
@@ -252,10 +265,13 @@ describe("one repo's Apply in the app's server and as commands (ADR 0205 step 4)
     expect(appMemory.on).toBe(false);
     // The server's Applies took the last build's texts from its memory.
     expect(buildCacheStats().textsFromMemory - fromMemory).toBeGreaterThanOrEqual(2);
+    // And the repos' projections the Apply didn't change (the addendum's step 1, on here).
+    expect(projectionStats.kept - projectionsKept, "projections kept").toBeGreaterThan(0);
 
     // The commands' side: nothing in memory between them.
     forgetFactsParses();
     const was = buildCacheStats().textsFromMemory;
+    const projectionsWere = projectionStats.kept;
     const cmd = await steps(async (root, confirm) => {
       const lines: string[] = [];
       const code = await main(
@@ -280,6 +296,7 @@ describe("one repo's Apply in the app's server and as commands (ADR 0205 step 4)
       return { code, ...(refused ? { refused } : {}) };
     });
     expect(buildCacheStats().textsFromMemory - was, "nothing kept in memory by a command").toBe(0);
+    expect(projectionStats.kept - projectionsWere, "no projection kept by a command").toBe(0);
 
     expect(app.said).toEqual(cmd.said);
     // The steps did what they say: two written, one refused for the hand edit, confirmed, one more.

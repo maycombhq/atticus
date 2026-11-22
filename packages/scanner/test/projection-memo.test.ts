@@ -15,7 +15,9 @@ import {
 } from "@maycombhq/core";
 import {
   factsEstateRecords,
+  PROJECTION_MEMO_ENV,
   projectionHooks,
+  projectionMemoOn,
   projectionStats,
   type FactsEstateRepo,
 } from "../src/index.js";
@@ -27,6 +29,10 @@ import {
  * repo whose inputs are the same. The proof: the kept projection is what a projection now gives
  * (checked both ways with the hook), a change of each input misses for the repos it reaches, and
  * outside a server nothing is kept. Invented Forge estates (CLAUDE.md rule 3).
+ *
+ * The owner's decision of 2026-11-22: the step is off by default, kept with its proof, and on only
+ * by a setting (`ATTICUS_PROJECTION_MEMO=on` in the server's environment) where measurements show
+ * a real gain. Its proof tests run with it on (`projectionHooks.on`, as the setting does).
  */
 const FIXTURES = join(__dirname, "..", "..", "..", "fixtures", "estate-facts");
 
@@ -44,14 +50,21 @@ beforeAll(async () => {
   collisionOp = await loadOrgPack(join(FIXTURES, "collision", "org-pack"));
 });
 // The machine's memory as roomy, whatever else runs on it: these tests are of what is kept.
+const envWas = process.env[PROJECTION_MEMO_ENV];
 beforeEach(() => {
   appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
+  delete process.env[PROJECTION_MEMO_ENV];
+  // The proof's tests: the step on, as the setting turns it on.
+  projectionHooks.on = true;
 });
 afterEach(() => {
   while (appMemory.on) stopAppMemory();
   delete appMemory.system;
   delete projectionHooks.check;
   delete projectionHooks.off;
+  delete projectionHooks.on;
+  if (envWas === undefined) delete process.env[PROJECTION_MEMO_ENV];
+  else process.env[PROJECTION_MEMO_ENV] = envWas;
 });
 
 const estate = () => ["forge-web", "forge-customers", "forge-ledger"].map((r) => slot(FIXTURES, r));
@@ -170,5 +183,55 @@ describe("each repo's projection kept by its inputs in the app's memory (ADR 020
     const rec = again.per.get("forge-web")!.newRecords[0]!;
     expect(Object.isFrozen(rec)).toBe(true);
     expect(Object.isFrozen(rec.evidence)).toBe(true);
+  });
+});
+
+describe("the step is off by default, on only by its setting (the owner's decision of 2026-11-22)", () => {
+  it("is off with no setting: in the app's server every repo is projected every build, nothing kept", () => {
+    delete projectionHooks.on;
+    expect(projectionMemoOn({})).toBe(false);
+    expect(projectionMemoOn()).toBe(false);
+    startAppMemory();
+    const given = estate();
+    const p = { ...projectionStats };
+    factsEstateRecords(op, given);
+    factsEstateRecords(op, given);
+    expect(projectionStats.kept - p.kept, "nothing taken from memory").toBe(0);
+    expect(projectionStats.projected - p.projected).toBe(6);
+    expect(appMemoryHeld()["each repo's projection (records kept, a count)"] ?? 0).toBe(0);
+  });
+
+  it(`${PROJECTION_MEMO_ENV}=on switches it on in the app's server; any other value leaves it off`, () => {
+    delete projectionHooks.on;
+    expect(PROJECTION_MEMO_ENV).toBe("ATTICUS_PROJECTION_MEMO");
+    expect(projectionMemoOn({ [PROJECTION_MEMO_ENV]: "on" })).toBe(true);
+    for (const v of ["", "off", "1", "true", "ON "])
+      expect(projectionMemoOn({ [PROJECTION_MEMO_ENV]: v }), JSON.stringify(v)).toBe(false);
+    process.env[PROJECTION_MEMO_ENV] = "on";
+    expect(projectionMemoOn()).toBe(true);
+    const given = estate();
+    // Outside a server, still nothing kept.
+    let p = { ...projectionStats };
+    factsEstateRecords(op, given);
+    factsEstateRecords(op, given);
+    expect(projectionStats.kept - p.kept).toBe(0);
+    startAppMemory();
+    projectionHooks.check = true;
+    factsEstateRecords(op, given);
+    p = { ...projectionStats };
+    factsEstateRecords(op, given);
+    expect(projectionStats.kept - p.kept, "all three from memory").toBe(3);
+  });
+
+  it("the off hook (the equivalence tests' way before the step) wins over the setting", () => {
+    process.env[PROJECTION_MEMO_ENV] = "on";
+    projectionHooks.off = true;
+    expect(projectionMemoOn()).toBe(false);
+    startAppMemory();
+    const given = estate();
+    factsEstateRecords(op, given);
+    const p = { ...projectionStats };
+    factsEstateRecords(op, given);
+    expect(projectionStats.kept - p.kept).toBe(0);
   });
 });

@@ -19,6 +19,7 @@ import {
   buildCacheHooks,
   buildCacheStats,
   projectionHooks,
+  projectionMemoOn,
   projectionStats,
 } from "@maycombhq/scanner";
 import type { CatalogDiff } from "@maycombhq/scanner";
@@ -115,6 +116,7 @@ afterEach(async () => {
   delete buildCacheHooks.checkTexts;
   delete recordCacheHooks.checkMemory;
   delete projectionHooks.check;
+  delete projectionHooks.on;
   await Promise.all(made.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -190,7 +192,10 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       buildCacheHooks.checkTexts = true;
       recordCacheHooks.checkMemory = true;
       // The addendum's step 1, both ways: each kept projection frozen, and compared with one
-      // made now each time it is taken from memory.
+      // made now each time it is taken from memory. It is off by default (the owner's decision of
+      // 2026-11-22), so this run switches it on as its setting does.
+      expect(projectionMemoOn(), "the addendum's step 1 is off by default").toBe(false);
+      projectionHooks.on = true;
       projectionHooks.check = true;
       const projectionsKept = projectionStats.kept;
       const parsesFromMemory = recordCacheStats.fromMemory;
@@ -203,6 +208,7 @@ describe("one repo's Apply with ADR 0205's steps on and off: the same bytes, the
       delete buildCacheHooks.checkTexts;
       delete recordCacheHooks.checkMemory;
       delete projectionHooks.check;
+      delete projectionHooks.on;
       // Every write after the first kept the projections of the repos it didn't change.
       expect(projectionStats.kept - projectionsKept, "projections kept").toBeGreaterThan(8);
       // Every write after the first read the catalog's parses from the server's memory.

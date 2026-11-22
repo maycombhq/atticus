@@ -222,7 +222,10 @@ export class World {
     appMemory.system = () => ({ free: 64 * 2 ** 30, total: 64 * 2 ** 30 });
     startAppMemory();
     buildCacheHooks.checkTexts = true;
-    // ADR 0205's addendum: each kept pass result checked against the pass made now.
+    // ADR 0205's addendum, step 1: off by default (the owner's decision of 2026-11-22), on in
+    // the harness's server as its setting turns it on, and each kept projection checked against
+    // the projection made now.
+    projectionHooks.on = true;
     projectionHooks.check = true;
     factsParseHooks.check = true;
     recordCacheHooks.checkMemory = true;
@@ -237,6 +240,7 @@ export class World {
     releaseAppMemory();
     forgetFactsParses();
     delete appMemory.system;
+    delete projectionHooks.on;
     delete projectionHooks.check;
     delete buildCacheHooks.checkTexts;
     delete factsParseHooks.check;

@@ -76,7 +76,11 @@ const APP = !!process.env.ATTICUS_BENCH_APP;
  * shared), and the rule lets everything go.
  */
 const ROOMY = !!process.env.ATTICUS_BENCH_ROOMY;
-/** ATTICUS_BENCH_ADDENDUM_OFF=1: the addendum's steps off (the way before them), the rest on. */
+/**
+ * ATTICUS_BENCH_ADDENDUM_OFF=1: the addendum's steps off (the way before them), the rest on. Its
+ * step 1 is off by default since the owner's decision of 2026-11-22: measure it on with
+ * ATTICUS_PROJECTION_MEMO=on, the setting the app's server reads.
+ */
 const ADDENDUM_OFF = !!process.env.ATTICUS_BENCH_ADDENDUM_OFF;
 const STEPS_OFF = !!process.env.ATTICUS_BENCH_STEPS_OFF;
 const say = (l: string) => console.log(`bench ${l}`);
