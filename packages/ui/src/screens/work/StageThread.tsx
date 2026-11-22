@@ -469,6 +469,11 @@ export function FindingCardInThread(p: {
           )}
         </div>
       )}
+      {open && p.it.view.personOnly && (
+        <p className="work-say">
+          {T.personOnly(p.it.view.personOnly.why, p.it.view.personOnly.because)}
+        </p>
+      )}
       {open && ac && !ac.can && ac.why && (
         <p className="work-say">
           {ac.why === "assistant" && ac.as ? A.cantAssistant(ac.as) : A.cant[ac.why]}

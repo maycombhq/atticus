@@ -3503,6 +3503,19 @@ export const StageFindingView = z.object({
    * assistant's resolution): who, why and when. Optional.
    */
   accepted: StageAcceptance.optional(),
+  /**
+   * 3.19.0 (ADR 0115 addendum, the review of b30/review2-fixes): on an open blocking or risk
+   * finding of the critic's, where the app runs inside a Copilot session Atticus started
+   * (`assistant-session`) or a coding assistant's terminal (`assistant-terminal`, `because`
+   * names the variable): Not relevant, Apply without a patch and Waive are left out of `options`,
+   * since POST /api/findings/{changeId}/{findingId}/action refuses them there. Optional.
+   */
+  personOnly: z
+    .object({
+      why: z.enum(["assistant-session", "assistant-terminal"]),
+      because: z.string().optional(),
+    })
+    .optional(),
 });
 export const StageReviewView = z.object({
   change: z.string(),

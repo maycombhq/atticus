@@ -7,6 +7,7 @@ import { Finding } from "@maycombhq/core";
 import { readRound, writeGateRound } from "@maycombhq/naysayer";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
+import { stageReviewView } from "../src/ui-api-stages.js";
 
 /**
  * The review of b30/review2-fixes (ADR 0115 addendum, 2026-11-22): the app's own finding action,
@@ -149,5 +150,33 @@ describe("POST /api/findings/{changeId}/{findingId}/action where an assistant wo
     const r = await act("f-block", { action: "not-relevant", reason: "known" });
     expect(r.status).toBe(200);
     expect(r.body.state).toBe("dismissed");
+  }, 60_000);
+});
+
+describe("the stories stage's thread where an assistant works", () => {
+  it("offers no Not relevant, Apply without a patch or Waive on a blocking or risk finding, and says why", async () => {
+    const root = await seeded();
+    const of = async (env: Record<string, string>) =>
+      new Map(
+        (await stageReviewView(root, CHANGE, "stories", { user: "pat", env })).findings.map((f) => [
+          f.finding.id,
+          f,
+        ]),
+      );
+    const there = await of({ CLAUDECODE: "1" });
+    for (const id of ["f-block", "f-risk"]) {
+      expect(there.get(id)!.options).toMatchObject({ apply: false, dismiss: false, waive: false });
+      expect(there.get(id)!.personOnly).toEqual({
+        why: "assistant-terminal",
+        because: "CLAUDECODE is set",
+      });
+    }
+    expect(there.get("f-idea")!.options).toMatchObject({ apply: true, dismiss: true });
+    expect(there.get("f-idea")!.personOnly).toBeUndefined();
+    const acp = await of({ ATTICUS_ACP_SESSION: "s-1" });
+    expect(acp.get("f-block")!.personOnly).toEqual({ why: "assistant-session" });
+    const own = await of({});
+    expect(own.get("f-block")!.options).toMatchObject({ apply: true, dismiss: true, waive: true });
+    expect(own.get("f-block")!.personOnly).toBeUndefined();
   }, 60_000);
 });

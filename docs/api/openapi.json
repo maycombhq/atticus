@@ -57657,6 +57657,25 @@
                     "at"
                   ],
                   "additionalProperties": false
+                },
+                "personOnly": {
+                  "type": "object",
+                  "properties": {
+                    "why": {
+                      "type": "string",
+                      "enum": [
+                        "assistant-session",
+                        "assistant-terminal"
+                      ]
+                    },
+                    "because": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "why"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -58156,6 +58175,25 @@
                             "by",
                             "why",
                             "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "personOnly": {
+                          "type": "object",
+                          "properties": {
+                            "why": {
+                              "type": "string",
+                              "enum": [
+                                "assistant-session",
+                                "assistant-terminal"
+                              ]
+                            },
+                            "because": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "why"
                           ],
                           "additionalProperties": false
                         }
