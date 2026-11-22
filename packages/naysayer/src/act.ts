@@ -45,6 +45,7 @@ import {
 } from "./proposals.js";
 import { checkRoundRule } from "./gates.js";
 import { parse } from "yaml";
+import { STAGE_GATE_PREFIX } from "./gate-rounds.js";
 
 export type Action = z.infer<typeof FindingAction>;
 
@@ -257,7 +258,14 @@ export async function act(
     if (f.layer === "constitution")
       throw new CriticError(
         "refused",
-        `${f.id} comes from a constitution rule (${f.rule}), which can never be waived. Fix it.`,
+        // Rule 6 (ADR 0203 A.3): said here, at any gate, not left to how a stage's finding is projected.
+        `${f.id} comes from a constitution rule (${f.rule}), which can never be waived or accepted (rule 6). Fix it.`,
+      );
+    // ADR 0203 A.4: a stage's finding not on the accept list says the way on its fix gives.
+    if (!f.waivable && f.gate.startsWith(STAGE_GATE_PREFIX))
+      throw new CriticError(
+        "refused",
+        `${f.id} (rule ${f.rule}) can't be accepted. ${f.fix.text.replace(/^.*?It can't be accepted: /s, "")}`,
       );
     if (!f.waivable)
       throw new CriticError("refused", `Rule ${f.rule} says its findings can't be waived. Fix it.`);
@@ -432,7 +440,8 @@ async function afterLimit(
   ).length;
   if (left)
     return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}; once every one is acted on, ${checkRoundRule(f.round)}.`;
-  if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
+  if ((await checkRoundDue(root, change, f.gate, assistantNames(ctx))).length === 0)
+    return undefined;
   return `The ${f.gate} gate has no critic round left, but ${checkRoundRule(f.round)}: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
 }
 

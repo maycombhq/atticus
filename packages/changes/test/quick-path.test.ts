@@ -22,6 +22,18 @@ const FORGE_CHANGE = join(
   "../../../fixtures/forge-change/openspec/changes/add-transfer-limit",
 );
 const REQUIREMENTS = "# Shipped-orders event\r\n\r\nWhat is wanted and why.\r\n";
+/** ADR 0206: what the code will have, one row a repo of tasks.md, a person checks each. */
+const IN_THE_CODE = [
+  "",
+  "## In the code",
+  "",
+  "| Repo | Task | Has | What | Spec |",
+  "| --- | --- | --- | --- | --- |",
+  ...["forge-ledger", "forge-portal-bff"].map(
+    (r) => `| ${r} | - | other | A person checks the transfer limit's part here. | - |`,
+  ),
+  "",
+].join("\n");
 
 async function quickChange() {
   const root = await forgeMetarepo();
@@ -74,6 +86,13 @@ describe("a change made from a requirements file", () => {
     ).toEqual(["proposal", "specs", "design", "tasks"]);
     for (const f of ["proposal.md", "design.md", "tasks.md", "specs"])
       await cp(join(FORGE_CHANGE, f), join(dir, f), { recursive: true });
+    // ADR 0206: a quick change's design.md says what the code will have before its plan hand-off.
+    const refused = await assess(await loadChangeContext(root), c);
+    expect(refused.blockers.map((b) => b.code)).toContain("design.code-table");
+    await writeFile(
+      join(dir, "design.md"),
+      (await readFile(join(dir, "design.md"), "utf8")) + IN_THE_CODE,
+    );
     await passedRound(root, c.id, "plan");
     const h = await handoff(root, c.id, {
       gitHost: host(),

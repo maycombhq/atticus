@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import type { SourceInput } from "@maycombhq/ai";
-import { writeFileAtomic } from "@maycombhq/changes";
-import { estateRepos, notEstateWhy, type Estate } from "./estate.js";
+import { realUndo, writeFileAtomic } from "@maycombhq/changes";
+import { archivedRepoWords, estateRepos, notEstateWhy, type Estate } from "./estate.js";
 import type { StageIssue } from "./loop.js";
 import { schemaProblems } from "./schema-words.js";
 import {
@@ -27,26 +27,6 @@ export const OPERATIONS_FILE = "target-flows/_operations.yaml";
 type Rec = Estate["records"][number] & Record<string, unknown>;
 type Cite = { repo?: string; path?: string; line?: number };
 const TODAY_KINDS = ["Component", "Deployment", "Setting", "GatewayRoute", "Endpoint"];
-/** An undo that says how: not empty, a dash, "n/a", "none" or "tbd", and more than a word. */
-/**
- * An undo that says how: not empty, a dash, "n/a", "none" or "tbd", more than a word, and not a
- * sentence that only says no undo applies ("Not applicable here.", "Nothing to undo.").
- */
-const BACK = String.raw`(?:roll(?:ed|ing)?\s*back|rollback|revert(?:ed)?|undo(?:ne)?|back(?:ed)?\s*out|backout)`;
-const NO_UNDO = new RegExp(
-  [
-    String.raw`^(?:(?:it|this|that)\s+)?(?:n\/?a|none(?:\s+needed)?|tbd|todo|-+|not\s+applicable|(?:does\s*n[o']t|does\s+not|doesn't)\s+apply|nothing\s+to\s+undo|no\s+undo(?:\s+is)?(?:\s+needed)?)\b(?:\s+(?:here|to\s+.+|for\s+.+|needed|is\s+needed))?$`,
-    // "There is nothing to roll back.", "Nothing to back out here."
-    String.raw`^(?:there\s+is\s+|there's\s+)?nothing\s+to\s+${BACK}(?:\s+(?:here|now|for\s+.+))?$`,
-    // "No rollback is possible.", "No revert is needed."
-    String.raw`^no\s+${BACK}(?:\s+(?:is|was))?(?:\s+(?:possible|needed|required|applies))?(?:\s+(?:here|now|for\s+.+))?$`,
-    // "It can't be rolled back.", "This cannot be undone."
-    String.raw`^(?:(?:it|this|that)\s+)?(?:can(?:no|')t|cannot|can\s+not)\s+be\s+${BACK}(?:\s+(?:here|now))?$`,
-  ].join("|"),
-  "i",
-);
-const realUndo = (undo: string | undefined) =>
-  !!undo && bare(undo).length >= 10 && !NO_UNDO.test(bare(undo));
 const andList = (xs: string[]) =>
   xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
@@ -288,8 +268,15 @@ export function checkOperations(
   ]);
   const ids = ops.map((o) => o.id);
   for (const o of ops) {
-    // An archived repo takes no new work, whatever the catalog still holds of it.
-    for (const repo of o.repos.filter((r) => !known.has(r) || e.archivedRepos.has(r)))
+    // An archived repo takes no new work, whatever the catalog still holds of it: its own rule,
+    // which can't be accepted (ADR 0203 B addendum).
+    for (const repo of o.repos.filter((r) => e.archivedRepos.has(r)))
+      issue(
+        "archived-repo",
+        `${o.id}:${repo}`,
+        archivedRepoWords(`Operation ${o.id} names`, repo, "Name the repo that took over its work"),
+      );
+    for (const repo of o.repos.filter((r) => !known.has(r) && !e.archivedRepos.has(r)))
       issue(
         "unknown-repo",
         `${o.id}:${repo}`,

@@ -99,6 +99,42 @@ describe("the critic's four questions in C3", () => {
     expect(Finding.parse({ ...f, lens: "delivery" }).lens).toBe("delivery");
     expect(Finding.parse({ ...f, lens: "ship" }).lens).toBe("ship");
   });
+
+  it("ADR 0203 C.3: a persona's finding has lens persona and the persona's name, never one without the other", () => {
+    const f = {
+      schemaVersion: 1,
+      id: "f1",
+      kind: "issue",
+      change: "c",
+      gate: "design",
+      round: 1,
+      rule: "persona.qa-naysayer",
+      layer: "org",
+      severity: "risk",
+      artifact: "design.md",
+      locator: { line: 3 },
+      summary: "Something.",
+      why: "Because.",
+      fix: { text: "Fix it." },
+      evidence: [{ source: "artifact", path: "design.md", line: 3 }],
+      waivable: false,
+      createdAt: "2026-11-19T09:00:00Z",
+    };
+    expect(Finding.parse({ ...f, lens: "persona", persona: "qa-naysayer" })).toMatchObject({
+      lens: "persona",
+      persona: "qa-naysayer",
+    });
+    const without = Finding.safeParse({ ...f, lens: "persona" });
+    expect(without.error?.issues.map((i) => i.message)).toEqual([
+      "a finding of the persona lens names its persona",
+    ]);
+    const stray = Finding.safeParse({ ...f, lens: "complete", persona: "qa-naysayer" });
+    expect(stray.error?.issues.map((i) => i.message)).toEqual([
+      "only a finding of the persona lens names a persona",
+    ]);
+    // The rules' lenses stay the four questions and the old names.
+    expect(ChecklistRule.safeParse({ ...rule, lens: "persona" }).success).toBe(false);
+  });
 });
 
 describe("the default change types ask the four questions (the product owner, 2026-10-24)", () => {

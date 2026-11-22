@@ -137,7 +137,7 @@ describe("Code against design (ADR 0114)", () => {
     expect(none).toContain(esc(C.notChecked("add-transfer-limit")));
     expect(none).toContain("atticus change conform add-transfer-limit");
     const early = renderToStaticMarkup(<ConformanceView c={{ ...VIEW, flows: 0, results: [] }} />);
-    expect(early).toContain(esc(C.noTargets("add-transfer-limit")));
+    expect(early).toContain(esc(C.nothingYet("add-transfer-limit")));
     expect(early).toContain("atticus change architecture add-transfer-limit");
   });
 

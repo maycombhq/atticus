@@ -705,6 +705,7 @@ Usage:
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
+  atticus review <requirements.md|change> [--no-ai] [--mode m] [--write] [--json]  Review a requirements file without refusing it: the door check's reasons, the map's standing of each id it cites, and each naysayer whose heading it has; --write adds them as open rows of their role's tables. Creates nothing else; exits 0 unless the file can't be read
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
@@ -898,7 +899,7 @@ function num(v: unknown): number | undefined {
 }
 
 /** The commands that are one word: what follows it on the line is never a command word. */
-const ONE_WORD = new Set(["selfcheck", "status", "doctor"]);
+const ONE_WORD = new Set(["selfcheck", "status", "doctor", "review"]);
 
 /**
  * The command as the log names it (ADR 0050): its words, never a value. The first two
@@ -2317,10 +2318,12 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const { verifyCommand } = await import("./verify-commands.js");
     const counts = countFlags(v.values, io);
     if (counts === undefined) return 2;
-    return withBuildConfirm(io, counts, (c) =>
+    // --write is a switch, so a --root right after it is read (it once took --root as its value).
+    const at = text(v.values.root) ? resolve(text(v.values.root)!) : root;
+    const write = v.values.write === true;
+    const code = await withBuildConfirm(io, counts, (c) =>
       verifyCommand(
-        // --write is a switch, so a --root right after it is read (it once took --root as its value).
-        text(v.values.root) ? resolve(text(v.values.root)!) : root,
+        at,
         repo,
         {
           ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
@@ -2333,15 +2336,21 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
                   .filter(Boolean),
               }
             : {}),
-          write: v.values.write === true,
+          write,
           verbose: v.values.verbose === true,
           json: v.values.json === true,
           ...(v.values.skipped === true ? { skipped: true } : {}),
+          // ADR 0205 step 2: the command prints its lines, then writes its local caches under
+          // the scan's lock, before it ends (below).
+          ...(write ? { cachesAfterResult: true } : {}),
           ...c,
         },
         io,
       ),
     );
+    if (write)
+      await (await import("@maycombhq/core")).settleAfterResult({ root: at, name: "scan" });
+    return code;
   }
   if (group === "scan" && command === "verify") {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -3511,6 +3520,19 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       io,
     );
   }
+  // ADR 0203 C.4: a requirements file reviewed, never refused.
+  if (group === "review")
+    return (await import("./review-commands.js")).reviewCommand(
+      root,
+      command,
+      {
+        noAi: values["no-ai"] === true,
+        write: values.write === true,
+        json,
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+      },
+      io,
+    );
   if (group === "findings") {
     if (!command) {
       io.err("findings needs a change id");

@@ -6,8 +6,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
+import { z } from "zod";
 import { MockRuntime } from "@maycombhq/ai";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { Api, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { changeFolder } from "@maycombhq/changes";
 import { orgFlowVersionOf } from "@maycombhq/openspec-adapter";
 import { EXPAND_AGENT, OPERATIONS_FILE } from "@maycombhq/planner";
@@ -221,6 +222,159 @@ describe("atticus upgrade to beta.30: org-flow 3, and a change done through stor
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
       expect(changedPaths(root)).toEqual([]);
       expect(await bytesOf(root)).toEqual(upgraded);
+    },
+    T,
+  );
+});
+
+/** Every file of the metarepo but git's own, with the sha-256 of its bytes. */
+async function everyFile(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const f of ((await readdir(root, { recursive: true })) as string[]).sort()) {
+    const rel = f.replace(/\\/g, "/");
+    if (rel === ".git" || rel.startsWith(".git/")) continue;
+    const data = await readFile(join(root, f)).catch(() => undefined);
+    if (data) out.set(rel, createHash("sha256").update(data).digest("hex"));
+  }
+  return out;
+}
+
+/**
+ * ADR 0206, Migration: a stored conformance check as beta.28.5 wrote it (no claims) reads as it
+ * did, after the upgrade too: `--latest` prints what beta.28.5 itself printed for it (its output,
+ * kept in fixtures/upgrade-b30/conform-28.5.latest.txt, made by the CLI built from the tag
+ * v2.0.0-beta.28.5 on this metarepo), and every file the upgrade isn't meant to write (all but
+ * the files its steps name, the folder of each, its stamp, its backup and its record) is byte for
+ * byte the same; and
+ * a result this release writes, with claims, still
+ * parses with beta.28.5's shape of ConformRepoResult (a copy, kept here as that version had it:
+ * a plain object, so an older reader drops the keys it doesn't know).
+ */
+const B285_CONFORM_RESULT = z.object({
+  schemaVersion: z.literal(1),
+  change: z.string(),
+  repo: z.string(),
+  ref: z.string(),
+  commit: z.string(),
+  base: z.string(),
+  task: z.string().optional(),
+  checkedAt: z.string(),
+  counts: z.object({
+    found: z.number().int(),
+    missing: z.number().int(),
+    stillThere: z.number().int(),
+    unexpected: z.number().int(),
+  }),
+  items: z.array(
+    z.object({
+      status: z.enum(["found", "missing", "still-there", "unexpected"]),
+      check: z.enum(["call", "publish", "table", "column", "migration", "trigger", "endpoint"]),
+      flow: z.string().optional(),
+      item: z.number().int().positive().optional(),
+      task: z.string().optional(),
+      what: z.string(),
+      record: z.string().optional(),
+      at: z.array(
+        z.object({
+          source: z.enum(["artifact", "code"]),
+          repo: z.string().optional(),
+          path: z.string(),
+          line: z.number().int().positive().optional(),
+        }),
+      ),
+    }),
+  ),
+  unchecked: z.array(
+    z.object({
+      flow: z.string(),
+      item: z.number().int().positive().optional(),
+      kind: z.string(),
+      why: z.string(),
+    }),
+  ),
+  problems: z.array(z.string()),
+});
+
+describe("a stored conformance check from beta.28.5 (ADR 0206)", () => {
+  it(
+    "reads as it did after the upgrade, byte for byte, and a result with claims parses with beta.28.5's shape",
+    async () => {
+      const root = await b285Metarepo();
+      const file = join(changeFolder(root, STAGED), "conform/forge-ledger.yaml");
+      await mkdir(dirname(file), { recursive: true });
+      await cp(join(FIXTURES, "upgrade-b30/conform-28.5.yaml"), file);
+      git(root, "add", "-A");
+      git(root, "commit", "-q", "-m", "a conformance check as beta.28.5 kept it");
+      const latest = async () => {
+        const c = io();
+        expect(
+          await main(["change", "conform", STAGED, "--latest", "--root", root], c.io, {
+            quiet: true,
+          }),
+        ).toBe(0);
+        return c.out;
+      };
+      // What beta.28.5 printed for it, line for line.
+      const b285 = (await readFile(join(FIXTURES, "upgrade-b30/conform-28.5.latest.txt"), "utf8"))
+        .split("\n")
+        .filter(Boolean);
+      const said = await latest();
+      expect(said).toEqual(b285);
+      const before = await bytesOf(root);
+      const every = await everyFile(root);
+      const meant = new Set((await upgradeCheck(root, B30)).pending.flatMap((p) => p.files));
+      expect(meant.size).toBeGreaterThan(0);
+      expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
+      expect(await bytesOf(root)).toEqual(before);
+      const now = await everyFile(root);
+      // What the upgrade is meant to write: the files its steps name (org-flow's step names the
+      // schema and writes its folder, the templates beside it), its stamp (.atticus/metarepo.yaml),
+      // the backup it takes first (.atticus/backups/) and its record of what ran.
+      const folders = [...meant].map((f) => f.slice(0, f.lastIndexOf("/") + 1));
+      const own = (f: string) =>
+        f === ".index/upgraded.json" ||
+        f === ".atticus/metarepo.yaml" ||
+        f.startsWith(".atticus/backups/") ||
+        // A read's parse cache, which any command reading the catalog keeps (core's
+        // record-cache.ts, out of Git), written by the reads around the upgrade, not by it.
+        f.startsWith(".atticus/cache/") ||
+        meant.has(f);
+      const moved = [...new Set([...every.keys(), ...now.keys()])].filter(
+        (f) => every.get(f) !== now.get(f),
+      );
+      expect(
+        moved.filter((f) => !own(f) && !folders.some((d) => f.startsWith(d))),
+        JSON.stringify(moved),
+      ).toEqual([]);
+      // And it did write what it is meant to.
+      expect(moved).toContain(`${ORG_FLOW}/schema.yaml`);
+      expect(changedPaths(root).filter((f) => f.includes("/conform/"))).toEqual([]);
+      expect(await latest()).toEqual(b285);
+
+      const stored = parse(await readFile(file, "utf8")) as Record<string, unknown>;
+      const newer = {
+        ...stored,
+        counts: {
+          ...(stored.counts as object),
+          claims: { present: 1, differs: 0, missing: 0, notCheckable: 0, unconfirmed: 0 },
+        },
+        claims: [
+          {
+            outcome: "present",
+            check: "deployment",
+            repo: "forge-ledger",
+            from: { file: "target-flows/_operations.yaml", line: 8, operation: "deploy-anvil" },
+            expected: "platform anvil, env prod",
+            what: "forge-ledger runs on anvil in prod.",
+            at: [{ source: "code", repo: "forge-ledger", path: "deploy/anvil.yaml", line: 3 }],
+            next: "Nothing: the line is cited for the reviewer.",
+          },
+        ],
+      };
+      expect(Api.ConformRepoResult.safeParse(newer).success).toBe(true);
+      const old = B285_CONFORM_RESULT.safeParse(newer);
+      expect(old.success).toBe(true);
+      expect(old.data).not.toHaveProperty("claims");
     },
     T,
   );

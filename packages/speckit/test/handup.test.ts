@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import { MockGitHost } from "@maycombhq/adapters";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { Finding, toCanonicalYaml } from "@maycombhq/core";
 import { handDown, handUp } from "../src/index.js";
 import { CHANGE, git, NOW, speckitRoot, worktree } from "./helpers.js";
 
@@ -66,6 +67,55 @@ async function ready() {
 }
 
 describe("hand-up", () => {
+  it(
+    "ADR 0203 A: a stage finding a person accepted reaches the lens as a recorded fact, so it isn't raised again",
+    async () => {
+      const { root, host } = await ready();
+      const f = Finding.parse({
+        schemaVersion: 1,
+        id: "stage-0123456789ab",
+        kind: "issue",
+        change: CHANGE,
+        gate: "stage-stories",
+        round: 1,
+        rule: "stories.field-no-error-case",
+        layer: "org",
+        lens: "complete",
+        severity: "blocking",
+        artifact: "stage/stories-answer.yaml",
+        locator: { heading: "s1:POST /transfers:amount" },
+        summary: "No criterion says what happens when amount is wrong.",
+        why: "No criterion says what happens when amount is wrong.",
+        fix: { text: "Add one." },
+        evidence: [{ source: "artifact", path: "stage/stories-answer.yaml" }],
+        waivable: true,
+        state: "waived",
+        resolution: {
+          action: "waive",
+          by: "pat",
+          at: "2026-11-19T10:00:00Z",
+          reason: "The gateway refuses a bad amount before the ledger sees it",
+        },
+        createdAt: "2026-11-19T09:00:00Z",
+      });
+      const dir = join(root, "openspec/changes", CHANGE, "review/stage-stories/1");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${f.id}.yaml`), toCanonicalYaml(f, ["schemaVersion", "id"]));
+      const seen: AiRequest[] = [];
+      const runtime = new MockRuntime((req) => {
+        seen.push(req);
+        return "findings: []\n";
+      });
+      await handUp(root, CHANGE, "1.2", { by: "dev", now: NOW, gitHost: host, runtime, git });
+      const p = seen[0]!.pack.prompt;
+      expect(p).toMatch(
+        /<atticus-data id="recorded-by-people"[^>]*>[\s\S]*The gateway refuses a bad amount before the ledger sees it/,
+      );
+      expect(p).toContain("A fact a person recorded is not raised again");
+    },
+    T,
+  );
+
   it(
     "marks the task done, attaches plan.md and tasks.md, runs the complete lens and the drift check",
     async () => {

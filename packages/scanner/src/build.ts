@@ -64,12 +64,14 @@ import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import {
+  buildCacheHooks,
   buildKeyOf,
   hitManifestText,
   isWrittenManifest,
   keepReaders,
   keptReaders,
   keepBuild,
+  readersUsedNow,
   loadKept,
   loadReadersTrust,
   readersKeyOf,
@@ -1127,7 +1129,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       Object.assign(pairs, i.extraPairs?.get(r.id) ?? {});
       const ai: Record<string, { runtime: string; run: string }> = {};
       const targets = targetsFromAnswers(r.id, f.facts, i.questions, { repoType: r.type, ai });
-      factRepos.push({ repo: r.id, facts: f.facts, targets, pairs, aiTargets: ai });
+      factRepos.push({ repo: r.id, facts: f.facts, targets, pairs, aiTargets: ai, sha: f.sha });
       if (f.meta.contracts) contracts.push(f.meta.contracts);
       sources.push({
         repo: r.id,
@@ -1897,8 +1899,13 @@ function serializedOf(
     return hit;
   }
   let text = kept ? kept.get(hashOf()) : undefined;
-  if (text !== undefined) textReused();
-  else text = serializeRecord(r);
+  if (text !== undefined) {
+    textReused();
+    if (buildCacheHooks.checkTexts && text !== serializeRecord(r))
+      throw new Error(
+        `ADR 0205: a kept text isn't the serialization of its record (${r.kind}/${r.id})`,
+      );
+  } else text = serializeRecord(r);
   SERIALIZED.set(key, text);
   if (SERIALIZED.size > SERIALIZED_MAX) SERIALIZED.delete(SERIALIZED.keys().next().value!);
   return text;
@@ -3982,6 +3989,12 @@ export interface BuildAndWrite {
    * that read still matched the files (beta.28.1: so the caller doesn't read 97,000 files again).
    */
   catalog?: CatalogRecord[];
+  /**
+   * ADR 0205 step 1: after a write, with `read`, the record files (paths under catalog/generated)
+   * whose text the write added, changed or removed, sorted; undefined where that read no longer
+   * matched the files (a caller then compares the whole catalog).
+   */
+  changedFiles?: string[];
   /** With `check`: whether catalog/generated is what the slots build. */
   upToDate?: boolean;
   /**
@@ -4049,6 +4062,12 @@ export async function buildAndWrite(
     read?: CatalogFilesRead;
     /** Beta.28.1: with `check`, keep no read cache of the catalog either (a preview's). */
     keepNoReads?: boolean;
+    /**
+     * ADR 0205 step 2: given, a written build's local caches (the build kept, the written texts'
+     * parses) are handed to it to write after the caller's result, still under its lock
+     * (`runAfterResult`), not written before this returns. A cache never changes a byte.
+     */
+    cachesAfter?: (work: () => Promise<void>) => void;
   },
 ): Promise<BuildAndWrite> {
   const pack = await packOf(root);
@@ -4152,12 +4171,20 @@ export async function buildAndWrite(
   });
   mark("report");
   // The build cache keeps what these inputs build, written or refused (point 9); not over a
-  // catalog a newer Atticus wrote (beta.28.2), whose build.json this one doesn't read.
-  if (!guard.refused?.reasons.includes("newer-atticus"))
-    await keepBuild(build as unknown as Parameters<typeof keepBuild>[0], {
-      path: target.manifest,
-      text: manifests.mine,
-    });
+  // catalog a newer Atticus wrote (beta.28.2), whose build.json this one doesn't read. ADR 0205
+  // step 2: a written build's is kept after the caller's result when it asks.
+  const readers = o.cachesAfter ? readersUsedNow() : undefined;
+  const keep = () =>
+    guard.refused?.reasons.includes("newer-atticus")
+      ? Promise.resolve()
+      : keepBuild(
+          build as unknown as Parameters<typeof keepBuild>[0],
+          { path: target.manifest, text: manifests.mine },
+          readers,
+        );
+  const later: (() => Promise<void>)[] = [];
+  if (o.cachesAfter && !guard.refused) later.push(keep);
+  else await keep();
   mark("keep build");
   if (guard.refused) {
     await writeBuildReport(undoDir, report);
@@ -4199,17 +4226,39 @@ export async function buildAndWrite(
   });
   const after = catalogAfterWrite(build, target, onDisk, o.read);
   const catalog = after?.records;
+  // ADR 0205 step 1: what the write changed, by the hashes the guards read, where the caller's
+  // read is still the files the build was checked against.
+  const changedFiles =
+    o.read && sameFilesAs(o.read, target.generated, onDisk)
+      ? [
+          ...[...build.files].flatMap(([p, t]) =>
+            onDisk.get(p)?.sha === fileShaOf(build, p, t) ? [] : [p],
+          ),
+          ...[...onDisk.keys()].filter((p) => !build.files.has(p)),
+        ].sort(cmpText)
+      : undefined;
   mark("catalog after the write");
   // beta.28.2: the parses of the texts written kept for the next read, which parsed them again.
-  if (after && o.read)
-    await keepWrittenParses(
-      o.read,
-      after.written,
-      [...onDisk.keys()].filter((p) => !build.files.has(p)),
-      writtenStats,
-    ).catch(() => undefined);
+  if (after && o.read) {
+    const read = o.read;
+    const gone = [...onDisk.keys()].filter((p) => !build.files.has(p));
+    const parses = () =>
+      keepWrittenParses(read, after.written, gone, writtenStats).catch(() => undefined);
+    if (o.cachesAfter) later.push(parses);
+    else await parses();
+  }
+  if (later.length)
+    o.cachesAfter!(async () => {
+      for (const w of later) await w();
+    });
   mark("parses kept");
-  return { build, guard, write, ...(catalog ? { catalog } : {}) };
+  return {
+    build,
+    guard,
+    write,
+    ...(catalog ? { catalog } : {}),
+    ...(changedFiles ? { changedFiles } : {}),
+  };
 }
 
 /**

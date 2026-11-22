@@ -333,7 +333,7 @@ async function newWithoutBrief(
  * a topic or an entry by its name where one record has it. A name several records have answers
  * with their ids. Read from the files: nothing is built or written, not even the index.
  */
-async function mapLookup(
+export async function mapLookup(
   root: string,
 ): Promise<{ has: (id: string) => boolean | string[]; map: RequirementsMap }> {
   const { readCatalog } = await import("@maycombhq/scanner");
@@ -682,6 +682,7 @@ export async function changeStatus(
           nextStep: said.nextStep,
           ...(said.stepFirst ? { stepFirst: true } : {}),
           reasons: r.reasons,
+          ...(r.notes?.length ? { notes: r.notes } : {}),
           risk: r.risk,
           tests: r.tests,
           privacy: r.privacy,
@@ -699,6 +700,10 @@ export async function changeStatus(
   io.out(`State: ${r.state}`);
   // B-change: where the stages' work is, when it ran ahead of the gates.
   if (r.progress) io.out(`Work: ${r.progress.summary}`);
+  // ADR 0203 A.5: what people accepted at the stages, a line a stage.
+  const { acceptedStatus, readAccepted } = await import("@maycombhq/planner");
+  for (const l of acceptedStatus(await readAccepted(root, r.change.id).catch(() => new Map())))
+    io.out(`Accepted: ${l}`);
   io.out(`Next: ${said.nextStep}`);
   io.out(
     `Risk: ${r.risk.level} (${r.risk.score})${r.risk.factors.length ? ": " : ""}${r.risk.factors
@@ -730,6 +735,8 @@ export async function changeStatus(
     io.out("Blocked by:");
     for (const x of r.reasons) io.out(`  - ${x.message}`);
   }
+  // ADR 0206: notes, never refusals.
+  for (const n of r.notes ?? []) io.out(`Note: ${n}`);
   // A gate whose critic rounds are used up: what a person does next, in the critic's words.
   for (const line of critic) io.out(`Critic: ${line}`);
   return 0;

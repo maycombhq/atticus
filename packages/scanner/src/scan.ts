@@ -18,6 +18,7 @@ import {
   throwIfCancelled,
   type CatalogRecord,
   type Dialect,
+  type Fact,
   type FrameworkModel,
   type OrgPack,
   type ScannerPlugin,
@@ -56,6 +57,7 @@ import {
 import { pluginApplies, usablePlugins, withPluginScan } from "./plugins.js";
 import {
   factsSlotStaleness,
+  readFactsSlot,
   serializeReadersSlot,
   sha256Of,
   SLOT_VERSION,
@@ -219,6 +221,12 @@ export interface EstateScan {
    * changed source files no fact covers yet, or the built-in readers.
    */
   basis?: Record<string, FactBasis>;
+  /**
+   * With `carryFacts` (ADR 0206): per repo read from facts, the verified facts its records rest
+   * on at the commit read (the snapshot carried there, or the snapshot itself when it is of that
+   * commit), so a check can read what the catalog doesn't hold (a deployment's host).
+   */
+  facts?: Record<string, readonly Fact[]>;
   /**
    * The production repos not read in full, in manifest order (beta.26): empty when every one was.
    * Archived repos and prototypes are never listed.
@@ -803,6 +811,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         `${s.repo}: read from its facts snapshot (commit ${s.commit?.slice(0, 7) ?? "unknown"}); its readers' read is kept beside it as the cross-check, never merged.`,
       );
     } else if (results.some((x) => x.repo === s.repo)) basis[s.repo] = { from: "readers" };
+  // ADR 0206: the facts each repo's records rest on at the commit read, for a check of claims.
+  const factsOf: Record<string, readonly Fact[]> = {};
+  if (o.carryFacts)
+    for (const [repo, b] of Object.entries(basis)) {
+      if (b.from !== "facts") continue;
+      const at = factsAt.get(repo);
+      const snap = at?.slot ? undefined : await readFactsSlot(o.root, repo);
+      factsOf[repo] = at?.slot?.ok ? at.slot.facts : snap?.ok ? snap.facts : [];
+    }
   const merged = { records: build.records, stats: build.stats, invalid: build.invalid };
   const applied = build.curated;
   const notes = [...factNotes, ...build.notes];
@@ -881,6 +898,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     notes,
     ...(build.federated ? { federated: build.federated } : {}),
     basis,
+    ...(o.carryFacts ? { facts: factsOf } : {}),
     build,
     unread: productionRepos(op).flatMap((r) => {
       const u = unreadOf.get(r.id);

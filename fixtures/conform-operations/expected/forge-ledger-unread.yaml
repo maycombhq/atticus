@@ -1,0 +1,42 @@
+# forge-ledger again, with deploy/anvil.yaml changed on the branch and no fact covering it: what
+# would be present differently or missing from facts can't be told (a reference may be in the
+# file no fact covers), and is said so. A file in the
+# commit's tree is git's to say, so the pipeline file is still missing; and a secret's literal a
+# verified fact found on its line is present differently whatever else is unread (the re-review).
+- outcome: unconfirmed
+  check: deployment
+  operation: deploy-anvil
+  line: 8
+  expected: platform anvil, env prod
+  found: platform hosts, env prod
+  what: "Atticus couldn't confirm that forge-ledger runs on anvil in prod: no fact covers deploy/anvil.yaml, which changed since forge-ledger was read."
+  at: [forge-ledger:deploy/hosts.yaml:2, artifact:target-flows/_operations.yaml:8]
+- outcome: present-differently
+  check: secret
+  operation: ledger-key
+  line: 23
+  expected: key ledger.client.key
+  found: key ledger.client.key, set to a literal in deploy/values-prod.yaml
+  what: "forge-ledger sets ledger.client.key to a literal in deploy/values-prod.yaml: keep it in the secret store."
+  at: [forge-ledger:deploy/values-prod.yaml:1, artifact:target-flows/_operations.yaml:23]
+- outcome: missing
+  check: pipeline
+  operation: anvil-pipeline
+  line: 28
+  expected: file .anvil/pipeline.yaml
+  what: forge-ledger has no .anvil/pipeline.yaml.
+  at: [artifact:target-flows/_operations.yaml:28]
+- outcome: not-checkable
+  check: config
+  operation: notify
+  line: 33
+  expected: nothing a scan can find
+  what: "notify in forge-ledger says nothing a scan can find: it gives no sets."
+  at: [artifact:target-flows/_operations.yaml:33]
+- outcome: not-checkable
+  check: cut-over
+  operation: switch
+  line: 37
+  expected: "undo: Point the traffic back at the hosts, which stay up for one release."
+  what: "switch is a cut-over in forge-ledger: an act in a live system, which Atticus never connects to."
+  at: [artifact:target-flows/_operations.yaml:37]

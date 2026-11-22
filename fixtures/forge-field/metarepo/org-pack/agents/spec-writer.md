@@ -116,6 +116,35 @@ the interface and data changes with their consumers, the order across repos, and
 undone. What was turned down, and why, in a line each. Where a heading of the template doesn't
 apply to this change, say so in a line under it; don't drop the heading.
 
+Then, at the end of `design.md`, what the code will have, one row each, under `## In the code`.
+After the build each row is looked for in the branch's code and answered present, present
+differently, missing, not checkable or not confirmed; the change's map, impact and estimate are
+read from it. The plan hand-off refuses a design without it.
+
+```markdown
+## In the code
+
+| Repo         | Task | Has       | What                                                                     | Spec                                             |
+| ------------ | ---- | --------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| forge-orders | t1   | publishes | `forge.orders.shipped`                                                   | orders-shipped: An order that ships is published |
+| forge-ledger | t4   | listens   | `forge.orders.shipped`                                                   | orders-shipped: An order that ships is published |
+| forge-ledger | t4   | calls     | `forge-orders GET /v1/orders/{id}`                                       | orders-shipped: An order that ships is published |
+| forge-orders | -    | cut-over  | undo: route the traffic back to the old hosts, which stay up one release | -                                                |
+```
+
+- **Repo** is a `## <repo>` heading of `tasks.md`; every such repo has at least one row.
+  **Task** is a task id under it, or `-`. **Spec** is `<capability>: <Requirement name>` of a
+  `### Requirement:` you wrote under `specs/`, or `-`.
+- **Has** is one of: `serves` (`METHOD /path`), `listens` (a topic), `calls` (a component or
+  repo, then `METHOD /path`), `publishes` (a topic), `table`, `column` (`table.column`),
+  `migration` (a file), `deployment` (`platform <p>, env <e>`), `route` (`host <h>, basePath
+  </p>`), `config` (`key <k>, env <e>, value <v>`), `secret` (`key <k>`: never a value),
+  `pipeline` (`file <path>`), `cut-over` (`undo:` and how it is taken back), `other` (words: a
+  person checks it).
+- Every component and topic a row names is in the map or under `## Planned`.
+- Write a row for each thing the code will have that a scan can find, and an `other` row for work
+  no scan can see. What isn't in a row is not checked.
+
 **`tasks.md`**, from the developer's section:
 
 ```markdown

@@ -81,6 +81,8 @@ async function frameworksKnownTo(root: string): Promise<string[]> {
 }
 
 export interface VerifyCommandOptions {
+  /** ADR 0205 step 2 (the app's Apply): the write's caches written after its result. */
+  cachesAfterResult?: boolean;
   /** The repo's checkout, when not the base clone or (adopted in place) the root itself. */
   dir?: string;
   /** The commit the facts must be of; default the checkout's HEAD. */
@@ -747,6 +749,7 @@ export async function verifyCommand(
           ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
           ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
           ...(o.plan !== undefined ? { plan: o.plan } : {}),
+          ...(o.cachesAfterResult ? { cachesAfterResult: true } : {}),
           onRefused: (r) => {
             refusedBuild = r.guard.refused;
             if (r.guard.refused) o.onBuildRefused?.(r.guard.refused);
@@ -1052,6 +1055,7 @@ export async function verifyCommand(
       ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
       ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
       ...(o.plan !== undefined ? { plan: o.plan } : {}),
+      ...(o.cachesAfterResult ? { cachesAfterResult: true } : {}),
       ...(o.onBuildRefused
         ? {
             onRefused: (r: { guard: { refused?: BuildRefusal } }) =>

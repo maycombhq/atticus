@@ -1,0 +1,42 @@
+# The operations of move-orders-to-anvil (ADR 0203 part B, ADR 0206): invented Forge names.
+schemaVersion: 1
+change: move-orders-to-anvil
+waves:
+  - { repos: [forge-orders], why: The pilot. }
+  - { repos: [forge-ledger] }
+operations:
+  - id: deploy-anvil
+    kind: deployment
+    repos: [forge-orders, forge-ledger]
+    what: Deploy the service on Anvil beside its hosts.
+    sets: { platform: anvil, env: prod }
+  - id: route-anvil
+    kind: route
+    repos: [forge-orders]
+    what: Serve the service at its Anvil host.
+    sets: { host: orders.anvil.forge.example, basePath: /orders }
+  - id: retry-setting
+    kind: config
+    repos: [forge-orders]
+    what: Keep five retries on Anvil.
+    sets: { key: orders.retry.max, env: prod, value: "5" }
+  - id: ledger-key
+    kind: secret
+    repos: [forge-orders, forge-ledger]
+    what: Keep the ledger client key where secrets are kept.
+    sets: { key: ledger.client.key }
+  - id: anvil-pipeline
+    kind: pipeline
+    repos: [forge-orders, forge-ledger]
+    what: Build and deploy on Anvil's pipeline.
+    sets: { file: .anvil/pipeline.yaml }
+  - id: notify
+    kind: config
+    repos: [forge-ledger]
+    what: Tell the operations channel when a wave starts.
+  - id: switch
+    kind: cut-over
+    repos: [forge-orders, forge-ledger]
+    what: Move the traffic to Anvil.
+    after: [deploy-anvil]
+    undo: Point the traffic back at the hosts, which stay up for one release.

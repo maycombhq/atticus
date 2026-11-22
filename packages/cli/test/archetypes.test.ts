@@ -2,27 +2,34 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { MockGitHost } from "@maycombhq/adapters";
-import { MockRuntime } from "@maycombhq/ai";
+import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
   changeFolder,
   changeFootprint,
+  changeReport,
   changeStore,
   loadChangeContext,
   requireValid,
 } from "@maycombhq/changes";
-import { readChangeFiles } from "@maycombhq/naysayer";
+import { gateStatus, readChangeFiles } from "@maycombhq/naysayer";
 import { checkStageDraft, EXPAND_AGENT, metarepoOpenSpec } from "@maycombhq/planner";
-import { buildAndWrite } from "@maycombhq/scanner";
+import { buildAndWrite, readFactsSlot } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
-import { readyTasksOf } from "@maycombhq/taskrun";
+import { conformChange, readyTasksOf } from "@maycombhq/taskrun";
+import type { GitRunner } from "@maycombhq/workspace";
+import type { Api, Fact } from "@maycombhq/core";
+import { bigRepoId } from "./big-estate.js";
 import { changeHandoff, changeNew } from "../src/change-commands.js";
 import { critic } from "../src/critic-commands.js";
 import { main } from "../src/main.js";
 import type { NextStep } from "../src/next-commands.js";
 import { readyLines, taskRunReady } from "../src/run-ready-commands.js";
+import { handoffReview } from "../src/handoff-review.js";
+import { reviewCommand } from "../src/review-commands.js";
 import { stageCli } from "../src/stage-commands.js";
 import {
   ARCHETYPES,
@@ -42,14 +49,16 @@ import {
   STAGED_EVENT,
   STAGED_MIGRATION,
   STAGED_MIXED,
+  given,
   STAGED_NO_STEP,
   STAGED_NOTHING,
   STAGED_PRODUCT,
   TOPIC,
   UNREAD_REPO,
   type Archetype,
+  withoutCodeTable,
 } from "./archetypes-changes.js";
-import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
+import { FIELD_TOPIC_LISTENER, makeFieldEstate, writeChangeFiles } from "./field-estate.js";
 
 /**
  * ADR 0201 (2.0.0-beta.30, slice 1): the three kinds of change the stages refused or made hard at
@@ -65,6 +74,11 @@ import { makeFieldEstate, writeChangeFiles } from "./field-estate.js";
  */
 
 const NOW = "2026-11-18T09:00:00Z";
+/** ADR 0203 A: a consumer nothing knows: no record, no manifest, not planned, not declared outside. */
+const GHOST = "forge-ghost";
+/** A repo and a component nothing knows either, for an operation and a call (ADR 0203 A). */
+const GHOST_SVC = "forge-ghost-svc";
+const EVIL_SVC = "forge-evil-svc";
 const T = 300_000;
 const META = "forge/forge";
 
@@ -82,6 +96,8 @@ const SHAPE = {
   emptyRepo: EMPTY_REPO,
   unreadRepo: UNREAD_REPO,
   topic: TOPIC,
+  // ADR 0206: the moved services' prod deployments on their hosts, read from facts.
+  deployments: [0, 1, 4],
 };
 
 interface Made {
@@ -160,6 +176,46 @@ async function nextFor(root: string, change: string): Promise<NextStep[]> {
   return steps;
 }
 
+// ADR 0203 C: the starter application architect's naysayer, as an org pack copies it.
+const NAYSAYER = "application-architect-naysayer";
+const STARTER_NAYSAYER = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../assistant-files/starter/agents",
+  `${NAYSAYER}.md`,
+);
+
+/** The naysayer's answer: one question, quoting `quoted` of the file it reviews. */
+const naysayerAnswer =
+  (quoted: string, artifact = "requirements.md") =>
+  (req: AiRequest): string => {
+    let line = 1;
+    for (const m of req.pack.prompt.matchAll(/^(\d+): (.*)$/gm))
+      if (m[2]!.trimEnd() === quoted) {
+        line = Number(m[1]);
+        break;
+      }
+    return [
+      "findings:",
+      `  - rule: persona.${NAYSAYER}`,
+      "    kind: issue",
+      `    artifact: ${artifact}`,
+      `    locator: { line: ${line} }`,
+      "    summary: Nothing says who runs it at night.",
+      "    why: Someone is paged when it fails.",
+      "    fix: Name who runs it.",
+      "    evidence:",
+      `      - { path: ${artifact}, line: ${line}, quote: ${JSON.stringify(quoted)} }`,
+      "",
+    ].join("\n");
+  };
+
+/** A model in which only the naysayer finds something. */
+const naysayerModel = (quoted: string) =>
+  new MockRuntime(
+    (req) => (req.agent.id === NAYSAYER ? naysayerAnswer(quoted)(req) : "findings: []"),
+    { now: () => new Date(NOW) },
+  );
+
 /** A model that finds nothing wrong, and the agents that asked it. */
 function calmCritic() {
   const asked: string[] = [];
@@ -216,6 +272,70 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     beforeAll(async () => {
       file = await requirementsFile(m, a.id, a.requirements, eol);
     });
+
+    it(
+      "atticus review says what the door would, the map's standing and the naysayer's questions, exits 0, and --write adds rows once (ADR 0203 C.4)",
+      async () => {
+        // A copy, so the door check above and --from below read the file as it was written.
+        const copy = await requirementsFile(m, `${a.id}-review`, a.requirements, eol);
+        const plain = await run(["review", copy, "--no-ai", "--root", m.root]);
+        expect(plain.err).toEqual([]);
+        expect(plain.code).toBe(0);
+        for (const l of plain.out.filter((x) => x.startsWith(copy)))
+          expect(l).toMatch(/requirements\.md:\d+: atticus: .+ \[.+\]$/);
+        if (a === NEW_EVENT)
+          expect(plain.out).toContain(
+            `${copy}:${lineOf(a.requirements, `\`${UNREAD_REPO}\``)}: atticus: ${UNREAD_REPO} is in the manifest, not read: atticus map ${UNREAD_REPO} [${UNREAD_REPO}]`,
+          );
+
+        // The application architect's naysayer, as the org pack keeps it: no gates needed here.
+        const agents = join(m.root, "org-pack", "agents");
+        await mkdir(agents, { recursive: true });
+        const persona = join(agents, `${NAYSAYER}.md`);
+        await writeFile(persona, await readFile(STARTER_NAYSAYER, "utf8"));
+        try {
+          const before = await readFile(copy, "utf8");
+          const quoted =
+            a.requirements.split("\n")[lineOf(a.requirements, "## Application architect") + 1]!;
+          const says = async (write: boolean) => {
+            const c = capture();
+            const code = await reviewCommand(m.root, copy, { write }, c.io, {
+              runtime: naysayerModel(quoted),
+              now: new Date(NOW),
+            });
+            expect(c.err).toEqual([]);
+            expect(code).toBe(0);
+            return c.out;
+          };
+          const once = await says(true);
+          expect(once).toContain(
+            `${copy}:${lineOf(a.requirements, quoted)}: ${NAYSAYER}: Nothing says who runs it at night. [requirements.md:${lineOf(a.requirements, quoted)}]`,
+          );
+          expect(once.at(-1)).toMatch(new RegExp(`^Added \\d+ rows? to `));
+          const after = await readFile(copy, "utf8");
+          // Only rows were added, under the role's table, with the file's line endings.
+          const kept = before.split(eol);
+          const now = after.split(eol);
+          expect(
+            now.filter((l) => !kept.includes(l)).every((l) => l.endsWith(" | - | - | open |")),
+          ).toBe(true);
+          expect(now.filter((l) => kept.includes(l))).toEqual(kept);
+          if (eol === "\r\n") expect(/[^\r]\n/.test(after)).toBe(false);
+          // A second --write adds nothing.
+          expect((await says(true)).at(-1)).toBe(`${copy} has every row already.`);
+          expect(await readFile(copy, "utf8")).toBe(after);
+          // And the door now refuses for the open rows.
+          const door = await run(["change", "new", "--from", copy, "--check", "--root", m.root]);
+          expect(door.code).toBe(1);
+          expect(door.err.join("\n")).toContain(
+            openWords("Application architect", "Nothing says who runs it at night."),
+          );
+        } finally {
+          await rm(persona, { force: true });
+        }
+      },
+      T,
+    );
 
     it(
       "the door check passes its requirements file and creates nothing (--check)",
@@ -308,9 +428,39 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     );
 
     it(
+      "without design.md's In the code, next asks for it and the plan hand-off is refused with what to fix (ADR 0206)",
+      async () => {
+        await writeChangeFiles(m.root, a.id, {
+          ...a.files,
+          "design.md": withoutCodeTable(a.files["design.md"]!),
+        });
+        const step = (await nextFor(m.root, a.id)).find((s) => s.step === "quick-define");
+        expect(step, "no quick-define step without the table").toBeDefined();
+        expect(step!.why).toContain("design.md's ## In the code");
+        const status = await run(["change", "status", a.id, "--root", m.root]);
+        expect(status.out).toContain(
+          "  - design.md doesn't say what the code will have: add ## In the code with the columns Repo, Task, Has, What, Spec, a row for each thing a repo's code or deployment will have. A repo whose work no scan can see gets a row with Has other.",
+        );
+        const h = await run(["change", "handoff", a.id, "--root", m.root]);
+        expect(h.code).not.toBe(0);
+        expect([...h.out, ...h.err].join("\n")).toContain(
+          "design.md doesn't say what the code will have",
+        );
+      },
+      T,
+    );
+
+    it(
       "its four files pass openspec validate --strict, and next offers the hand-off",
       async () => {
         await writeChangeFiles(m.root, a.id, a.files);
+        // ADR 0206: its In the code reads, and nothing is refused for it.
+        const status = await run(["change", "status", a.id, "--json", "--root", m.root]);
+        const said = JSON.parse(status.out.join("\n")) as {
+          reasons: { code: string; message: string }[];
+          notes?: string[];
+        };
+        expect(said.reasons.filter((r) => r.code === "design.code-table")).toEqual([]);
         expect(Object.keys(a.files).sort()).toEqual(
           ["design.md", "proposal.md", a.spec, "tasks.md"].sort(),
         );
@@ -629,6 +779,259 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
   );
 
   // ------------------------------------------------- the door refuses (ADR 0201 part 2)
+
+  // ADR 0206: the quick changes' rows read by the map, impact and estimate, and checked against
+  // the code after the build. The scan of a branch is the estate's facts with what the branch
+  // adds, given through `scanAt`; git answers the branch and its base. The metarepo is real.
+  const SNAP = (root: string, repo: string) =>
+    readFactsSlot(root, repo).then((s) => (s?.ok ? s.facts : []));
+  const gitAt =
+    (commit: string, base: string): GitRunner =>
+    async (args) => ({
+      stdout: args[0] === "merge-base" ? base : args[0] === "rev-parse" ? commit : "",
+      stderr: "",
+    });
+  const fact = (repo: string, f: Record<string, unknown>) =>
+    ({
+      repo,
+      commit: "b".repeat(40),
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+      ...f,
+    }) as unknown as Fact;
+
+  it(
+    "the new product's map, impact and estimate are read from its In the code, and its rows are checked on a branch (ADR 0206)",
+    async () => {
+      const a = NEW_PRODUCT;
+      const map = await run(["change", "map", a.id, "--json", "--root", m.root]);
+      const drawn = JSON.parse(map.out.join("\n")) as Api.ChangeMapT;
+      expect(drawn).toMatchObject({ from: "design", rows: 4 });
+      for (const r of [PORTAL_API, PORTAL_WEB])
+        expect(drawn.nodes.find((n) => n.id === r)?.legend).toBe("new");
+      const impact = JSON.parse(
+        (await run(["change", "impact", a.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeImpactT;
+      expect(impact.breaks).toBe(0);
+      expect(
+        impact.reaches?.find((x) => x.has === "calls" && x.name.startsWith(bigRepoId(0)))?.ids,
+      ).toEqual([bigRepoId(0)]);
+      const est = JSON.parse(
+        (await run(["change", "estimate", a.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeEstimateT;
+      expect(est.units.map((u) => [u.repo, u.class])).toEqual([
+        [PORTAL_API, "quick/table/new-table"],
+        [PORTAL_API, "quick/serves"],
+        [PORTAL_API, "quick/calls"],
+        [PORTAL_WEB, "quick/calls/new-entry"],
+      ]);
+
+      // The service's branch has its table and entry; the pages' repo isn't made yet.
+      await mkdir(join(m.root, "workspace", PORTAL_API), { recursive: true });
+      const r = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => ({
+          records: [],
+          files: [],
+          problems: [],
+          basis: { from: "facts", unread: [] },
+          facts:
+            commit === "a".repeat(40)
+              ? []
+              : [
+                  fact(repo, {
+                    kind: "store",
+                    id: "s-0",
+                    store: "approvals",
+                    name: "approval_requests",
+                    op: "write",
+                    columns: ["id"],
+                    cite: { file: "db/V1__approvals.sql", line: 1, value: "approval_requests" },
+                  }),
+                  fact(repo, {
+                    kind: "entry",
+                    id: "e-0",
+                    entryType: "rest",
+                    method: "POST",
+                    path: "/v1/approvals/{id}/decision",
+                    cite: {
+                      file: "src/Approvals.java",
+                      line: 9,
+                      value: "/v1/approvals/{id}/decision",
+                    },
+                  }),
+                ],
+        }),
+      });
+      const api = r.results.find((x) => x.repo === PORTAL_API)!;
+      expect(api.claims!.map((c) => [c.check, c.outcome])).toEqual([
+        ["table", "present"],
+        ["endpoint", "present"],
+        ["call", "missing"],
+      ]);
+      const web = r.results.find((x) => x.repo === PORTAL_WEB)!;
+      expect(web.claims!.map((c) => c.outcome)).toEqual(["unconfirmed"]);
+      expect(web.problems).toEqual([
+        `${PORTAL_WEB} isn't a repo of the estate yet: if it is new, create it on your Git host, then add it (atticus repo add <its clone URL> --id ${PORTAL_WEB}), and check again.`,
+      ]);
+    },
+    T,
+  );
+
+  it(
+    "the new event's publish is present on its branch; the listener nobody read couldn't be confirmed (ADR 0206)",
+    async () => {
+      const a = NEW_EVENT;
+      const base = await SNAP(m.root, NEW_PUBLISHER);
+      const r = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => ({
+          records: [],
+          files: [],
+          problems: [],
+          basis: { from: "facts", unread: [] },
+          facts:
+            commit === "a".repeat(40)
+              ? base
+              : [
+                  ...base,
+                  fact(repo, {
+                    kind: "call",
+                    id: "c-refund-publish",
+                    callType: "event-topic",
+                    method: "publish",
+                    path: TOPIC,
+                    cite: { file: "src/RefundEvents.java", line: 4, value: TOPIC },
+                  }),
+                ],
+        }),
+      });
+      const pub = r.results.find((x) => x.repo === NEW_PUBLISHER)!;
+      expect(pub.claims!.map((c) => [c.check, c.outcome])).toEqual([["publish", "present"]]);
+      expect(pub.claims![0]!.at).toEqual([
+        { source: "code", repo: NEW_PUBLISHER, path: "src/RefundEvents.java", line: 4 },
+      ]);
+      expect(pub.items.filter((i) => i.status === "unexpected")).toEqual([]);
+      const listener = r.results.find((x) => x.repo === UNREAD_REPO)!;
+      expect(listener.claims!.map((c) => [c.check, c.outcome])).toEqual([
+        ["listener", "unconfirmed"],
+      ]);
+      expect(listener.claims![0]!.what).toBe(
+        `Atticus couldn't confirm that ${UNREAD_REPO} listens to ${TOPIC}: nobody has read ${UNREAD_REPO} at this commit.`,
+      );
+      expect(listener.problems[0]).toContain(`${UNREAD_REPO} has no clone here`);
+    },
+    T,
+  );
+
+  it(
+    "the quick migration's rows checked on each repo's branch, and its Go/no-go hand-off not held by the cut-over a person has waived (ADR 0206)",
+    async () => {
+      const a = MIGRATION;
+      const repos = [...MOVED, EMPTY_REPO];
+      for (const r of repos) await mkdir(join(m.root, "workspace", r), { recursive: true });
+      const base = new Map<string, Fact[]>();
+      for (const r of repos) base.set(r, await SNAP(m.root, r));
+      const r1 = await conformChange(m.root, a.id, {
+        git: gitAt("c".repeat(40), "a".repeat(40)),
+        now: NOW,
+        scanAt: async (repo, commit) => {
+          const before = base.get(repo) ?? [];
+          const at = (o: { unread?: string[]; facts?: Fact[]; lines?: Map<string, string[]> }) => ({
+            records: [],
+            files: [],
+            problems: [],
+            basis: { from: "facts" as const, unread: o.unread ?? [] },
+            facts: o.facts ?? before,
+            ...(o.lines ? { lines: o.lines } : {}),
+          });
+          if (commit === "a".repeat(40)) return at({});
+          // As the staged migration: the first on Anvil, the second still on its hosts, the
+          // third's descriptor changed and no fact covers it; the routing repo is empty.
+          if (repo === MOVED[0])
+            return at({
+              facts: [
+                ...before,
+                fact(repo, {
+                  kind: "deploy",
+                  id: "d-anvil",
+                  env: "prod",
+                  platform: "anvil",
+                  resourceName: repo,
+                  cite: { file: "deploy/anvil.yaml", line: 1, value: repo },
+                }),
+              ],
+              lines: new Map([["deploy/anvil.yaml", [`name: ${repo} platform: anvil env: prod`]]]),
+            });
+          return at({ unread: repo === MOVED[2] ? ["deploy/anvil.yaml"] : [] });
+        },
+      });
+      const of = (repo: string) =>
+        r1.results.find((x) => x.repo === repo)!.claims!.map((c) => [c.check, c.outcome]);
+      expect(of(MOVED[0])).toEqual([["deployment", "present"]]);
+      expect(of(MOVED[1])).toEqual([["deployment", "present-differently"]]);
+      expect(of(MOVED[2])).toEqual([["deployment", "unconfirmed"]]);
+      expect(of(EMPTY_REPO)).toEqual([
+        ["route", "missing"],
+        ["cut-over", "not-checkable"],
+      ]);
+      const cut = r1.results
+        .find((x) => x.repo === EMPTY_REPO)!
+        .claims!.find((c) => c.check === "cut-over")!;
+      const id = `conform-not-checked-cut-over-${EMPTY_REPO}-undo-route-the-three-services-back-to-their-old-hosts-which-stay-up-until-the`;
+      expect(cut.next).toBe(
+        `Check it by hand, then say how: atticus finding ${a.id} ${id} waive --reason "<how it was checked>".`,
+      );
+
+      // The Go/no-go hand-off itself: held by the cut-over until a named person says how it was
+      // checked, then held only by what the code still lacks.
+      const store = changeStore(m.root);
+      const was = await store.read(a.id);
+      // As if it were built and through QA: its Go/no-go is what the test reads.
+      await store.write({
+        ...was,
+        state: "release-ready",
+        history: [
+          ...was.history,
+          { from: was.state, to: "release-ready", at: NOW, by: "pat", reason: "the test" },
+        ],
+      });
+      try {
+        const held = async () =>
+          (await changeReport(m.root, a.id)).blockers.flatMap((b) =>
+            "finding" in b && b.finding ? [b.finding] : [],
+          );
+        expect(await held()).toContain(id);
+        const w = await run([
+          "finding",
+          a.id,
+          id,
+          "waive",
+          "--reason",
+          "Routed back and forth with the platform team on 2026-11-21.",
+          "--by",
+          "pat",
+          "--root",
+          m.root,
+        ]);
+        expect(w.code, w.err.join("\n")).toBe(0);
+        const after = await held();
+        expect(after).not.toContain(id);
+        expect(after.sort()).toEqual(
+          [
+            `conform-differs-deployment-${MOVED[1]}-platform-anvil-env-prod`,
+            `conform-missing-route-${EMPTY_REPO}-host-anvil-forge-example`,
+          ].sort(),
+        );
+      } finally {
+        await store.write(was);
+      }
+    },
+    T,
+  );
 
   describe("the door check refuses", () => {
     const base = NEW_EVENT.requirements;
@@ -1067,6 +1470,119 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
   );
 
   it(
+    "the migration's operations checked on each repo's branch: present, present differently, couldn't confirm, and the cut-over a person checks (ADR 0206)",
+    async () => {
+      const g = STAGED_MIGRATION;
+      for (const r of MOVED) await mkdir(join(m.root, "workspace", r), { recursive: true });
+      const anvil = (repo: string) =>
+        ({
+          repo,
+          commit: "c".repeat(40),
+          verified: "line",
+          by: "assistant",
+          conf: "declared",
+          kind: "deploy",
+          id: "d-anvil",
+          env: "prod",
+          platform: "anvil",
+          resourceName: repo,
+          cite: { file: "deploy/anvil.yaml", line: 1, value: repo },
+        }) as unknown as Fact;
+      const base = new Map<string, Fact[]>();
+      for (const r of MOVED)
+        base.set(r, await readFactsSlot(m.root, r).then((s) => (s?.ok ? s.facts : [])));
+      const git: GitRunner = async (args) => ({
+        stdout:
+          args[0] === "merge-base" ? "a".repeat(40) : args[0] === "rev-parse" ? "c".repeat(40) : "",
+        stderr: "",
+      });
+      const run1 = await conformChange(m.root, g.id, {
+        git,
+        now: NOW,
+        scanAt: async (repo, commit) => {
+          const before = base.get(repo) ?? [];
+          if (commit === "a".repeat(40))
+            return {
+              records: [],
+              files: [],
+              problems: [],
+              basis: { from: "facts", unread: [] },
+              facts: before,
+            };
+          // The first is on Anvil; the second still only on its hosts; the third's descriptor
+          // changed on the branch and no fact covers it yet.
+          if (repo === MOVED[0])
+            return {
+              records: [],
+              files: [],
+              problems: [],
+              basis: { from: "facts", unread: [] },
+              facts: [...before, anvil(repo)],
+              lines: new Map([["deploy/anvil.yaml", [`name: ${repo} platform: anvil`]]]),
+            };
+          return {
+            records: [],
+            files: [],
+            problems: [],
+            basis: { from: "facts", unread: repo === MOVED[2] ? ["deploy/anvil.yaml"] : [] },
+            facts: before,
+          };
+        },
+      });
+      const of = (repo: string) =>
+        run1.results
+          .find((x) => x.repo === repo)!
+          .claims!.map((c) => [c.from.operation, c.outcome]);
+      expect(of(MOVED[0])).toEqual([
+        ["deploy-anvil", "present"],
+        ["switch", "not-checkable"],
+      ]);
+      expect(of(MOVED[1])).toEqual([
+        ["deploy-anvil", "present-differently"],
+        ["switch", "not-checkable"],
+      ]);
+      expect(of(MOVED[2])).toEqual([
+        ["deploy-anvil", "unconfirmed"],
+        ["switch", "not-checkable"],
+      ]);
+      const present = run1.results[0]!.claims![0]!;
+      expect(present.why).toBe(
+        `Written on the cited lines: platform anvil. The assistant's reading of deploy/anvil.yaml:1: env prod.`,
+      );
+      expect(run1.results.find((x) => x.repo === MOVED[1])!.claims![0]!.what).toBe(
+        `${MOVED[1]} runs on hosts in prod, not on anvil.`,
+      );
+      // The answer the owner chose: a cut-over holds the gate until a named person says how it
+      // was checked; couldn't confirm is a note in the hand-off PR, never a finding.
+      let gate = await gateStatus(m.root, g.id, "conform");
+      expect(gate.open.blocking).toBe(4);
+      for (const r of MOVED) {
+        const w = await run([
+          "finding",
+          g.id,
+          `conform-not-checked-cut-over-switch-${r}`,
+          "waive",
+          "--reason",
+          "Pointed back and forth on the Anvil console with the platform team on 2026-11-21.",
+          "--by",
+          "pat",
+          "--root",
+          m.root,
+        ]);
+        expect(w.code, w.err.join("\n")).toBe(0);
+      }
+      gate = await gateStatus(m.root, g.id, "conform");
+      expect(gate.open.blocking).toBe(1);
+      // The estimate counts each operation task.
+      const est = JSON.parse(
+        (await run(["change", "estimate", g.id, "--json", "--root", m.root])).out.join("\n"),
+      ) as Api.ChangeEstimateT;
+      expect(est.units.filter((u) => u.from === "operations")).toHaveLength(6);
+    },
+    T,
+  );
+
+  it(
     "a change of flows and operations: one deploy order, the operations' tasks beside the flow's, and the capabilities named",
     async () => {
       const x = STAGED_MIXED;
@@ -1107,18 +1623,28 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       );
       const v = await metarepoOpenSpec(m.root)!.validate({ item: x.id, strict: true });
       expect(v.items[0]!.issues.filter((i) => i.level !== "INFO")).toEqual([]);
-      // The estimate sizes the flow's step and says the operation tasks it leaves out.
-      const e = await run(["change", "estimate", x.id, "--root", m.root]);
-      expect(e.err.join("\n")).toContain(
-        "2 operation tasks are not in this estimate (2 operations): estimates.yaml has no class for operations yet.",
+      // ADR 0206: the estimate sizes the flow's step and each operation task, citing the file.
+      const e = await run(["change", "estimate", x.id, "--json", "--root", m.root]);
+      expect(e.code).toBe(0);
+      const units = (
+        JSON.parse(e.out.join("\n")) as {
+          units: { flow: string; repo: string; class: string; from?: string; source: string }[];
+        }
+      ).units;
+      expect(
+        units.filter((u) => u.from === "operations").map((u) => [u.flow, u.repo, u.class]),
+      ).toEqual([
+        ["o1.1", NEW_PUBLISHER, "operation/config"],
+        ["o2.1", EMPTY_REPO, "operation/config"],
+      ]);
+      expect(units.find((u) => u.from === "operations")!.source).toBe(
+        `openspec/changes/${x.id}/target-flows/_operations.yaml`,
       );
-      // Conformance reads the flow, and says the operations are not checked.
+      // Conformance reads the flow and the operations' claims; it never says they aren't checked.
       const c = await run(["change", "conform", x.id, "--latest", "--root", m.root]);
       expect(c.code).toBe(0);
       expect(c.err.join("\n")).not.toContain("Unrecognized key");
-      expect(c.out.at(-1)).toBe(
-        "2 operations are not checked: Atticus doesn't check operations against the code in this release.",
-      );
+      expect(c.out.join("\n")).not.toContain("doesn't check operations");
     },
     T,
   );
@@ -1143,6 +1669,287 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       const small = await refusesOnce(["change", "small", g.id], g.small);
       expect(small).toContain("The answer changes no step of any flow");
       expect((await loopOf(g.id, "small")).state).toBe("stopped");
+    },
+    T,
+  );
+
+  // ------------------------------------------------------------- ADR 0203 parts A and C
+
+  /** The newest round of a gate's findings. */
+  const gateFindings = async (id: string, gate: string) => {
+    const dir = join(changeFolder(m.root, id), "review", gate);
+    const n = Math.max(...(await readdir(dir)).map(Number).filter((x) => x > 0));
+    return (await readdir(join(dir, String(n))))
+      .filter((f) => f.endsWith(".yaml"))
+      .map(
+        async (f) =>
+          parse(await readFile(join(dir, String(n), f), "utf8")) as Record<string, unknown>,
+      );
+  };
+
+  it(
+    "new event: a consumer nothing knows blocks, a person accepts it, and the stages finish; status and the PR body list the acceptance",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-accepted" };
+      const ghost = e.architecture.replace(`, ${UNREAD_REPO}]`, `, ${GHOST}]`);
+      const ghostStories = e.stories.replace(`, ${UNREAD_REPO}]`, `, ${GHOST}]`);
+      expect(ghost).toContain(GHOST);
+      await change(e, "feature");
+      expect((await stage(["change", "feature", e.id], e.feature)).result.state).toBe("done");
+
+      // The architecture stage stops on it: three drafts had it, and nothing knows forge-ghost.
+      const first = assistant(ghost);
+      const c1 = capture();
+      expect(
+        await stageCli(m.root, ["change", "architecture", e.id], {}, c1.io, {
+          runtime: first.runtime,
+          now: new Date(NOW),
+        }),
+      ).toBe(1);
+      expect(c1.err.join("\n")).toContain(`lists consumer ${GHOST}, which isn't in the catalog`);
+      const [projected] = await Promise.all(await gateFindings(e.id, "stage-architecture"));
+      expect(projected).toMatchObject({
+        rule: "delta.unknown-consumer",
+        severity: "blocking",
+        waivable: true,
+        state: "open",
+        locator: { record: GHOST },
+      });
+
+      // A person accepts it, with a name and a reason, as a waiver.
+      const why = "Its team reads the topic; the repo comes into the map next quarter";
+      const w = await run([
+        "finding",
+        e.id,
+        String(projected!.id),
+        "waive",
+        "--reason",
+        why,
+        "--by",
+        "pat",
+        "--root",
+        m.root,
+      ]);
+      expect(w.err.join("\n")).not.toContain("Error");
+      expect(w.code).toBe(0);
+
+      // Run again: its files pass, the critic reviews, done with no new draft.
+      const again = assistant(ghost);
+      const c2 = capture();
+      expect(
+        await stageCli(m.root, ["change", "architecture", e.id], { json: true }, c2.io, {
+          runtime: again.runtime,
+          now: new Date(NOW),
+        }),
+      ).toBe(0);
+      expect((JSON.parse(c2.out.join("\n")) as { state: string }).state).toBe("done");
+      expect(again.drafts).toEqual([]);
+      const design = await readFile(join(changeFolder(m.root, e.id), "design.md"), "utf8");
+      expect(design).toContain(
+        `- ${GHOST} (of ${SETTLE_FLOW.id}): accepted by pat: ${why}; its use can't be checked.`,
+      );
+
+      // The stories stage takes the accepted consumer with a note, and makes no task for it.
+      const stories = await stage(["plan", "stories", e.id], ghostStories);
+      expect(stories.result.state).toBe("done");
+      const note = stories.result.findings.find((f) => f.rule === "stories.unknown-consumer");
+      expect(note).toMatchObject({ blocking: false });
+      expect(note!.message).toContain(
+        `${GHOST} is accepted by pat: ${why}, so its use can't be checked.`,
+      );
+      expect((await tasksOf(m.root, e.id)).map((t) => t.repo)).toEqual([NEW_PUBLISHER]);
+
+      // Shown in change status and the hand-off PR's body, one line each: rule, who, why.
+      const status = await run(["change", "status", e.id, "--root", m.root]);
+      expect(status.out).toContain(
+        "Accepted: 1 finding accepted at the architecture stage: delta.unknown-consumer, by pat.",
+      );
+      const body = await handoffReview(m.root, e.id);
+      expect(body).toContain(
+        `### Accepted by people\n\n- \`delta.unknown-consumer\` at the architecture stage, by \`pat\`: \`${why}\``,
+      );
+    },
+    T,
+  );
+
+  /**
+   * A stage whose draft keeps a finding a person may accept: run once (it stops or asks), the
+   * finding accepted by pat as a waiver, then run again: done, with no new draft.
+   */
+  async function acceptedThenDone(args: string[], answer: string, id: string, rule: string) {
+    const first = assistant(answer);
+    await stageCli(m.root, args, {}, capture().io, { runtime: first.runtime, now: new Date(NOW) });
+    const gate = `stage-${args[0] === "plan" ? "stories" : args[1]}`;
+    const projected = (await Promise.all(await gateFindings(id, gate))).find(
+      (f) => f.rule === rule,
+    );
+    expect(projected, `no ${rule} on ${gate}`).toMatchObject({ waivable: true, state: "open" });
+    const w = await run([
+      "finding",
+      id,
+      String(projected!.id),
+      "waive",
+      "--reason",
+      "It is created in the same release",
+      "--by",
+      "pat",
+      "--root",
+      m.root,
+    ]);
+    expect(w.code, w.err.join("\n")).toBe(0);
+    const again = assistant(answer);
+    const c = capture();
+    await stageCli(m.root, args, { json: true }, c.io, {
+      runtime: again.runtime,
+      now: new Date(NOW),
+    });
+    expect((JSON.parse(c.out.join("\n")) as { state: string }).state).toBe("done");
+    expect(again.drafts).toEqual([]);
+    return projected!;
+  }
+
+  it(
+    "operation.unknown-repo accepted: the repo is known as a new repo, and its operation's task is under it",
+    async () => {
+      const x = { ...STAGED_MIXED, id: "publish-settled-refunds-ghost-repo" };
+      const architecture = x.architecture.replace(
+        `    repos: [${EMPTY_REPO}]\n    what: Set the topic's retention to seven days.`,
+        `    repos: [${EMPTY_REPO}, ${GHOST_SVC}]\n    what: Set the topic's retention to seven days.`,
+      );
+      expect(architecture).toContain(GHOST_SVC);
+      const stories = x.stories.replace(
+        given(EMPTY_REPO, "the topic's retention is seven days in its deploy files"),
+        given(EMPTY_REPO, "the topic's retention is seven days in its deploy files") +
+          given(GHOST_SVC, "the topic's retention is seven days in its deploy files"),
+      );
+      expect(stories).toContain(GHOST_SVC);
+      await change(x, "feature");
+      await stage(["change", "feature", x.id], x.feature);
+      const f = await acceptedThenDone(
+        ["change", "architecture", x.id],
+        architecture,
+        x.id,
+        "operation.unknown-repo",
+      );
+      expect(f).toMatchObject({ locator: { record: GHOST_SVC } });
+      const s = await stage(["plan", "stories", x.id], stories);
+      expect(s.result.findings.filter((i) => i.blocking).map((i) => i.message)).toEqual([]);
+      expect(s.result.state).toBe("done");
+      const ghost = (await tasksOf(m.root, x.id)).find((t) => t.repo === GHOST_SVC);
+      expect(ghost, "no task under the accepted repo").toBeDefined();
+      // tasks.md puts it under the repo's own heading. The task run's words for a repo no
+      // manifest lists are ADR 0201's, tested on the quick path above (this change is in define).
+      expect(await fileOf(x.id, "tasks.md")).toContain(`## ${GHOST_SVC}`);
+    },
+    T,
+  );
+
+  it(
+    "delta.unknown-component accepted: the call's target is known as accepted, and the stories name it",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-ghost-target" };
+      const architecture = e.architecture.replace(
+        `to: { component: ${FIELD_TOPIC_LISTENER}, entry: ${TOPIC} }`,
+        `to: { component: ${GHOST_SVC}, entry: ${TOPIC} }`,
+      );
+      expect(architecture).toContain(GHOST_SVC);
+      await change(e, "feature");
+      await stage(["change", "feature", e.id], e.feature);
+      const f = await acceptedThenDone(
+        ["change", "architecture", e.id],
+        architecture,
+        e.id,
+        "delta.unknown-component",
+      );
+      expect(f).toMatchObject({ locator: { record: GHOST_SVC } });
+      const s = await stage(["plan", "stories", e.id], e.stories);
+      expect(s.result.findings.filter((i) => i.blocking).map((i) => i.message)).toEqual([]);
+      expect(s.result.state).toBe("done");
+      const story = await readFile(
+        join(changeFolder(m.root, e.id), "stories", "s1-settle-refund.md"),
+        "utf8",
+      );
+      expect(story).toContain(`goes to ${GHOST_SVC} ${TOPIC}`);
+
+      // The acceptance covers that component only. Drafted again to the same one: still accepted.
+      const same = assistant(architecture);
+      const c1 = capture();
+      await stageCli(m.root, ["change", "architecture", e.id], { json: true, force: true }, c1.io, {
+        runtime: same.runtime,
+        now: new Date(NOW),
+      });
+      expect((JSON.parse(c1.out.join("\n")) as { state: string }).state).toBe("done");
+      // Drafted to another component nothing knows: a new open finding, and the stage isn't done.
+      const evil = assistant(architecture.replace(GHOST_SVC, EVIL_SVC));
+      const c2 = capture();
+      await stageCli(m.root, ["change", "architecture", e.id], { json: true, force: true }, c2.io, {
+        runtime: evil.runtime,
+        now: new Date(NOW),
+      });
+      expect(c2.out.join("\n")).not.toContain('"state": "done"');
+      const now = await Promise.all(await gateFindings(e.id, "stage-architecture"));
+      expect(now.map((x) => [(x.locator as { record?: string }).record, x.state])).toEqual([
+        [EVIL_SVC, "open"],
+      ]);
+      expect(String(now[0]!.summary)).toContain(EVIL_SVC);
+    },
+    T,
+  );
+
+  it(
+    "a persona's naysayer with gates: [design] runs at the design gate; its finding is a risk with lens persona, and the gate isn't held",
+    async () => {
+      const e = { ...STAGED_EVENT, id: "publish-settled-refunds-persona" };
+      const agents = join(m.root, "org-pack", "agents");
+      await mkdir(agents, { recursive: true });
+      const persona = join(agents, `${NAYSAYER}.md`);
+      const starter = await readFile(STARTER_NAYSAYER, "utf8");
+      await writeFile(
+        persona,
+        starter.replace(
+          "\nowns: Application architect\n",
+          "\nowns: Application architect\ngates: [design]\n",
+        ),
+      );
+      try {
+        await change(e, "feature");
+        await stage(["change", "feature", e.id], e.feature);
+        const brief = e.brief.split("\n")[2]!;
+        const lens = naysayerAnswer(brief, "brief.md");
+        const drafts: string[] = [];
+        const runtime = new MockRuntime(
+          (req) => {
+            if (req.agent.id === NAYSAYER) return lens(req);
+            if (req.agent.id.endsWith("-critic")) return "findings: []";
+            if (req.agent.id === EXPAND_AGENT) return "terms: [settled refund]\nnames: []\n";
+            drafts.push(req.agent.id);
+            return e.architecture;
+          },
+          { now: () => new Date(NOW) },
+        );
+        const c = capture();
+        expect(
+          await stageCli(m.root, ["change", "architecture", e.id], { json: true }, c.io, {
+            runtime,
+            now: new Date(NOW),
+          }),
+        ).toBe(0);
+        expect((JSON.parse(c.out.join("\n")) as { state: string }).state).toBe("done");
+        const found = (await Promise.all(await gateFindings(e.id, "design"))).filter(
+          (f) => f.lens === "persona",
+        );
+        expect(found.length).toBeGreaterThan(0);
+        expect(found[0]).toMatchObject({
+          lens: "persona",
+          persona: NAYSAYER,
+          rule: `persona.${NAYSAYER}`,
+          severity: "risk",
+        });
+        const s = await run(["findings", e.id, "--root", m.root]);
+        expect(s.out.join("\n")).not.toMatch(/design gate is closed/);
+      } finally {
+        await rm(persona, { force: true });
+      }
     },
     T,
   );

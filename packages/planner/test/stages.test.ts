@@ -716,7 +716,7 @@ describe("the architecture stage", () => {
     >[2];
     const got = checkDeltas([d], e, p).map((i) => [i.rule, i.target]);
     expect(got).toEqual([
-      ["delta.unknown-entry", "forge-orders.place-order#1"],
+      ["delta.unknown-entry", "forge-orders.place-order#1:forge-stock:POST /stock/reserve"],
       ["delta.entry-exists", "forge-orders.place-order#2"],
       ["delta.table-exists", "forge-orders.place-order#5"],
       ["delta.unknown-column", "forge-orders.place-order#6:colour"],

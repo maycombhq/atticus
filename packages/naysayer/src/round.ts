@@ -25,7 +25,14 @@ import { buildContext, type CriticContext, type GateDef } from "./context.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { questionOfRule, typeTakes } from "./questions.js";
 import { CriticError } from "./errors.js";
-import { assistantClosed, readProposals, writeProposals, type Proposal } from "./proposals.js";
+import {
+  assistantClosed,
+  assistantNames,
+  BUILT_IN_AGENTS,
+  readProposals,
+  writeProposals,
+  type Proposal,
+} from "./proposals.js";
 import {
   askedElsewhere,
   decidedElsewhere,
@@ -46,6 +53,8 @@ import {
   type EffectiveRule,
   type PackSource,
 } from "./rules.js";
+import { personaLensesAt, type PersonaLens } from "./personas.js";
+import { STAGE_GATE_PREFIX } from "./gate-rounds.js";
 
 /**
  * The parts of a critic round that `runCritic` (a whole round) and `completeLensRun` (one AI
@@ -151,6 +160,13 @@ export async function resolveGate(
         ? `There is no gate ${id}. Gates: ${lifecycle.orgPack.gates.gates.map((g) => g.id).join(", ")}.`
         : `${change.id} is ${change.state}, which has no gate; name one with --gate.`,
     );
+  // ADR 0203 A.1: stage-<stage> is the stages' own gate; a gates.yaml gate of that name would
+  // mix a critic's rounds with the stage's findings, so it is refused (the schema is C6's).
+  if (gate.id.startsWith(STAGE_GATE_PREFIX))
+    throw new CriticError(
+      "refused",
+      `Rename gate ${gate.id} in org-pack/gates.yaml: ${STAGE_GATE_PREFIX}<stage> is the name Atticus keeps for a stage's own findings (ADR 0203).`,
+    );
   return { lifecycle, change, type, gate };
 }
 
@@ -161,6 +177,8 @@ export interface Layers {
   layered: ReturnType<typeof layerRules>;
   problems: string[];
   skipped: { rule: string; reason: string }[];
+  /** ADR 0203 C: the personas' naysayers this gate runs as lenses; their rules are in applicable. */
+  personas: PersonaLens[];
 }
 
 /** The critic's context (the change's files, the catalog) and the rules that apply at the gate. */
@@ -178,7 +196,7 @@ export async function prepareLayers(
   // What people answered for the change: part of the brief the lenses review against.
   ctx.answers = await changeAnswers(root, change.id);
   // What people recorded on the change's findings, at any gate (W2): the lenses read it as data.
-  ctx.recorded = await recordedFacts(root, change.id);
+  ctx.recorded = await recordedFacts(root, change.id, assistantNames(lifecycle));
   // ADR 0140: the reads and open link questions the change's calls rest on.
   ctx.estate = await loadEstateReads(root, ctx);
 
@@ -195,7 +213,16 @@ export async function prepareLayers(
     if (why) skipped.push({ rule: r.id, reason: why });
     else applicable.push(r);
   }
-  return { ctx, applicable, layered, problems, skipped };
+  // ADR 0203 C.1: a naysayer whose frontmatter gives this gate runs as a lens; none otherwise.
+  const personas = await personaLensesAt(
+    root,
+    gate.id,
+    lifecycle.orgPack.gates.gates.map((x) => x.id),
+    lifecycle.orgPack.runtime.budgets.defaultTokens,
+  ).catch(() => ({ lenses: [] as PersonaLens[], notes: [] as string[] }));
+  problems.push(...personas.notes);
+  applicable.push(...personas.lenses.map((p) => p.rule));
+  return { ctx, applicable, layered, problems, skipped, personas: personas.lenses };
 }
 
 export interface CriticFinding {
@@ -235,8 +262,11 @@ export async function writeHits(
      * problem isn't written twice.
      */
     skip?: ReadonlySet<string>;
+    /** The names that are an AI's (assistantNames): Atticus's own agents at least. */
+    known?: readonly string[];
   },
 ): Promise<CriticFinding[]> {
+  const known = o.known ?? BUILT_IN_AGENTS;
   const prior = new Map<string, Finding>();
   const proposed = new Map<string, Proposal>();
   if (o.priorRound !== undefined) {
@@ -245,7 +275,7 @@ export async function writeHits(
       if (
         (["dismissed", "waived", "asked"].includes(s.finding.state) || wroteIn(s.finding)) &&
         // An assistant's resolution of a blocking or risk finding is never carried as a decision.
-        !assistantClosed(s.finding)
+        !assistantClosed(s.finding, known)
       )
         prior.set(fingerprint(s.finding), s.finding);
     // What an assistant proposed about a finding that comes back unchanged waits on a person still;
@@ -255,7 +285,7 @@ export async function writeHits(
   }
   const elsewhere = await askedElsewhere(root, o.change, o.gate);
   // A person's decision at another gate holds here too (W2), as it does within a gate.
-  const decided = await decidedElsewhere(root, o.change, o.gate);
+  const decided = await decidedElsewhere(root, o.change, o.gate, known);
   const taken = o.taken ?? new Set<string>();
   const findings: CriticFinding[] = [];
   const carriedProposals: Proposal[] = [];

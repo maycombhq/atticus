@@ -65,7 +65,7 @@ Then, in your assistant, run `/define-change` on a requirements file. For each r
 3. A person in that role answers each one, or accepts going on without an answer and says why.
 4. The next persona starts.
 
-When every role has had its turn, `atticus change new --from requirements.md --check` says whether the file passes, and the same command without `--check` makes the change. Then the spec writer, a separate agent, writes the change's `proposal.md`, spec deltas, `design.md` and `tasks.md` from the cleared requirements, in the shape of OpenSpec's own templates, and never touches the requirements file: when something is unclear it stops and names the section to reopen. `atticus change status <id>` then says what the change still needs, and when nothing blocks, a person raises the hand-off. Nothing here approves anything: merging the hand-off's pull request does.
+When every role has had its turn, `atticus change new --from requirements.md --check` says whether the file passes, and the same command without `--check` makes the change. Then the spec writer, a separate agent, writes the change's `proposal.md`, spec deltas, `design.md` and `tasks.md` from the cleared requirements, in the shape of OpenSpec's own templates, and never touches the requirements file: when something is unclear it stops and names the section to reopen. Its `design.md` ends with `## In the code`, a row for each thing a repo's code or deployment will have, which the plan hand-off needs and the code is checked against after the build ([What a quick change's code will have](openspec.md#what-a-quick-changes-code-will-have)). `atticus change status <id>` then says what the change still needs, and when nothing blocks, a person raises the hand-off. Nothing here approves anything: merging the hand-off's pull request does.
 
 Three rules are in every one of these files:
 
@@ -109,6 +109,30 @@ An agent with no naysayer, like the spec writer, leaves `role` and `handoffs` ou
 3. One line in the order of `org-pack/skills/define-change/SKILL.md`, and the hand-offs of the naysayer before it and of its own naysayer (to the next persona, or to `spec-writer` when it is last).
 
 Then `atticus skills write`.
+
+## A naysayer as a lens of the critic
+
+A naysayer can also ask its questions of a change at a gate, after the critic's four questions (ADR 0203). Give it the gate ids of `gates.yaml` in its frontmatter:
+
+```markdown
+---
+name: ledger-architect-naysayer
+owns: Ledger architect
+gates: [design]
+---
+```
+
+With no `gates` it never runs in the critic; the starters ship without it. It runs through the critic's own code: its file's body is what it looks for, Atticus's output format and quote rule hold, and a finding whose quote isn't on the line it cites is dropped. Its findings are risks with lens `persona` and its name: shown, handed back to your assistant once, never blocking and never holding the gate. Nothing waits for a persona lens your assistant hasn't answered yet: when its answer comes (`atticus handoff done <run>`), its findings are read into the gate's newest round, even if a round ran since. A gate id `gates.yaml` lacks is said in the round's notes. Another team's agents (`agents/imported/`) are never run as lenses.
+
+## Reviewing a requirements file
+
+`atticus review <requirements.md | change>` reviews the file without refusing it:
+
+- the door check's reasons (an open question, an id not in the map, a row that doesn't read), as findings;
+- the map's standing of each id the file cites: a manifest repo nobody read (`atticus map <repo>`), an id listed under Planned, and an id an open change touches (`atticus change conflicts --touching <id>`);
+- unless `--no-ai`, each naysayer whose `owns` heading the file has, as a lens over the file (`--mode` picks the runtime).
+
+Each finding prints as `<file>:<line>: <who asks>: <question> [<evidence>]`, and the command exits 0 unless the file can't be read. `--write` adds each finding not already there as an open row of its role's table, making the table or the heading when it is missing and keeping the file's line endings; nothing else in the file changes. `atticus change new --from` stays the only door that refuses. The checklist rules need a change's artifacts and type, so they run at a gate (`atticus critic`). A review of a file outside a change keeps its model runs under `.runs/atticus-review/`, as every run is kept on this machine; for a change, under that change's runs.
 
 ## Limits
 
