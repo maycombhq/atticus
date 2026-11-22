@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { factsParseHooks, factsParseStats, forgetFactsParses, parseFacts } from "@maycombhq/core";
 import {
   buildCacheDirOf,
+  buildCacheHooks,
   factsParseStore,
   keepBuild,
   loadReadersTrust,
@@ -38,6 +39,8 @@ const dirs: string[] = [];
 afterEach(async () => {
   forgetFactsParses();
   delete factsParseHooks.off;
+  delete buildCacheHooks.stamp;
+  delete buildCacheHooks.nodeVersion;
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -94,5 +97,39 @@ describe("facts parsed once for their bytes (ADR 0205 step 3)", () => {
     expect(isDeepStrictEqual(parseFacts(text), again)).toBe(true);
     expect(factsParseStats.parsed - before.parsed).toBe(1);
     expect(factsParseStore).toBeDefined();
+  });
+
+  it("misses on disk for another build version (another code's stamp) and another Node (a refused file's words are Node's)", async () => {
+    const state = await mkdtemp(join(tmpdir(), "atticus-facts-store-"));
+    dirs.push(state);
+    // A text that doesn't parse: its issue's message is JSON.parse's, in Node's own words.
+    const broken = `${fact("e-a", 1)}\n{"kind": "entry",\n`;
+    const keep = async () => {
+      await loadReadersTrust(state);
+      forgetFactsParses();
+      parseFacts(text);
+      parseFacts(broken);
+      await keepBuild({ records: [], files: new Map<string, string>() });
+    };
+    /** In a next process (nothing in memory): how many of the two texts were parsed again. */
+    const parsedNext = async () => {
+      forgetFactsParses();
+      await loadReadersTrust(state);
+      const was = factsParseStats.parsed;
+      parseFacts(text);
+      parseFacts(broken);
+      return factsParseStats.parsed - was;
+    };
+    buildCacheHooks.stamp = "a".repeat(64);
+    await keep();
+    expect(await readdir(join(buildCacheDirOf(state), "facts"))).toHaveLength(2);
+    expect(await parsedNext(), "the same code and Node: both kept").toBe(0);
+    buildCacheHooks.stamp = "b".repeat(64);
+    expect(await parsedNext(), "another build version").toBe(2);
+    buildCacheHooks.stamp = "a".repeat(64);
+    buildCacheHooks.nodeVersion = "v0.0.0-other";
+    expect(await parsedNext(), "another Node").toBe(2);
+    delete buildCacheHooks.nodeVersion;
+    expect(await parsedNext(), "back to the code and Node that kept them").toBe(0);
   });
 });

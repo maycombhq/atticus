@@ -46,6 +46,8 @@ export const buildCacheHooks: {
   stamp?: string | null;
   /** ADR 0205 step 4's proof: each kept text a build uses is checked against its record's serialization, or a throw. */
   checkTexts?: boolean;
+  /** The tests: the Node a facts parse on disk is kept for, in place of this one's. */
+  nodeVersion?: string;
 } = {};
 
 const stats = {
@@ -469,8 +471,15 @@ const freshFacts = new Map<string, Uint8Array>();
 let freshFactsBytes = 0;
 const usedFacts = new Set<string>();
 const FRESH_FACTS_MAX = 256 * 1024 * 1024;
+/**
+ * A parse's key: the text's hash, the code's stamp and the Node that parsed it. A refused file's
+ * issue carries JSON.parse's message, which is Node's own words (V8's), and Node's version isn't
+ * in the code's stamp, so a parse is kept for the Node that made it (the review of ADR 0205).
+ */
 const factsKeyOf = (textSha: string) =>
-  sha(`${BUILD_CACHE_FORMAT}\u0000${codeStamp()}\u0000facts\u0000${textSha}`);
+  sha(
+    `${BUILD_CACHE_FORMAT}\u0000${codeStamp()}\u0000${buildCacheHooks.nodeVersion ?? process.version}\u0000facts\u0000${textSha}`,
+  );
 
 export const factsParseStore = {
   get(textSha: string): Uint8Array | undefined {
