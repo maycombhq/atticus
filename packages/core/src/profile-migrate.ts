@@ -1,25 +1,29 @@
 import { isMap, parseDocument } from "yaml";
-import { PROFILE_SCHEMA_VERSION } from "./schema/orgpack.js";
+import { PROFILE_SCHEMA_VERSION, PROFILE_TOPICS_VERSION } from "./schema/orgpack.js";
 
 /**
- * profile.yaml version 1 → 2 (ADR 0162 amendment). Version 2 adds a system's `topics`; a file
- * without them names no topic, as version 1 did, so the step writes the new number only and keeps
- * the file's comments, order and line layout. Nothing is moved from `aliases` to `topics`: which
- * alias is a topic is a person's call. A version-1 profile stays valid, so `atticus upgrade` has no
- * step for it; `addProfileSystem` applies this when it writes a topic.
+ * profile.yaml moved up to the version a write needs (ADR 0162 amendment: 2 for a system's
+ * `topics`; ADR 0204: 3 for the declared arrows, `links`). A file without what the new version
+ * adds says what it said, so the step writes the new number only and keeps the file's comments,
+ * order and line layout. Nothing is moved: which alias is a topic is a person's call. A version-1
+ * or 2 profile stays valid, so `atticus upgrade` has no step for it; `addProfileSystem` applies
+ * this when it writes a topic (to 2), `declareArrow` when it writes an arrow (to 3). A file at
+ * `to` or above is left as it is.
  */
-export function migrateProfileText(text: string): { text: string; changed: boolean } {
+export function migrateProfileText(
+  text: string,
+  to: number = PROFILE_TOPICS_VERSION,
+): { text: string; changed: boolean } {
   const doc = parseDocument(text);
-  if (!isMap(doc.contents) || doc.get("schemaVersion") !== 1) return { text, changed: false };
-  const line = /^schemaVersion:[ \t]*1[ \t]*(#.*)?$/m;
+  const at = isMap(doc.contents) ? doc.get("schemaVersion") : undefined;
+  if (typeof at !== "number" || at >= to || to > PROFILE_SCHEMA_VERSION)
+    return { text, changed: false };
+  const line = new RegExp(`^schemaVersion:[ \\t]*${at}[ \\t]*(#.*)?$`, "m");
   if (line.test(text))
     return {
-      text: text.replace(
-        line,
-        (_m, c?: string) => `schemaVersion: ${PROFILE_SCHEMA_VERSION}${c ? ` ${c}` : ""}`,
-      ),
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: ${to}${c ? ` ${c}` : ""}`),
       changed: true,
     };
-  doc.set("schemaVersion", PROFILE_SCHEMA_VERSION);
+  doc.set("schemaVersion", to);
   return { text: doc.toString(), changed: true };
 }

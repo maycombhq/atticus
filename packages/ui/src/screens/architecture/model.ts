@@ -342,6 +342,8 @@ export function canvasGraph(
       e.gaps.includes(DECLARED_TOPIC) ||
       (!!e.joins?.length && e.joins.every((j) => j.how === "declared"));
     const paired = !!e.joins?.length && e.joins.every((j) => j.how === "person");
+    const by = new Set((e.joins ?? []).map((j) => j.declaredBy));
+    const declaredBy = by.size === 1 ? [...by][0] : undefined;
     // ADR 0181: a link resting on the AI's pairing says so in its label (◆ and words).
     const ai = aiJoins(e);
     const dependency = e.type === "depends-on";
@@ -353,11 +355,14 @@ export function canvasGraph(
       to: listens ? e.from : e.to,
       type: e.type,
       count: e.count,
-      label: declared
-        ? `${label} · ${COPY.topics.declaredMark}`
-        : paired
-          ? `${label} · ${COPY.connect.pairedMark}`
-          : label,
+      // ADR 0204 1.6: a declared arrow says who declared it; the label carries it, not the dash.
+      label: declaredBy
+        ? `${label} · ${COPY.connectAB.declaredBy(declaredBy)}`
+        : declared
+          ? `${label} · ${COPY.topics.declaredMark}`
+          : paired
+            ? `${label} · ${COPY.connect.pairedMark}`
+            : label,
       async: e.sync === "async" || e.type === "publishes" || e.type === "subscribes",
       gaps: e.gaps,
       ...(declared ? { declared: true } : {}),

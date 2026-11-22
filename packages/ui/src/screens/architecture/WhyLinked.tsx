@@ -4,6 +4,7 @@ import { api, useApi, writtenOf, type Loaded } from "../../api/client.js";
 import { Citation, CitationDetails, useEvidence, type FactsView } from "../../app/evidence.js";
 import { escapeCloses, focusIfLost } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { DeclaredArrowLink } from "./ConnectAB.js";
 import { CopyButton, message } from "../run/shared.js";
 import { CorrectionNext } from "../../app/correction-next.js";
 import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
@@ -1152,6 +1153,9 @@ export function LinkWrong(p: {
       (e: unknown) => setSaving({ state: "error", text: message(e) }),
     );
   };
+  // ADR 0204 1.6: a declared arrow's panel is the person's word, with its Remove, not a fact's.
+  if (declared && p.join.declaredBy)
+    return <DeclaredArrowLink join={p.join} from={p.join.from} to={p.join.to} />;
   return (
     <div className="li-fix">
       <button

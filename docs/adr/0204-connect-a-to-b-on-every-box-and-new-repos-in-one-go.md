@@ -76,12 +76,12 @@ links:
   - from: { repo: forge-edge-proxy } # or { system: <id> }
     to: { repo: forge-ledger-svc } # or { system: <id> }
     why: The proxy's target is set at deploy time; the platform team confirmed it.
-    by: Ada Example
+    by: ada.example
     at: 2026-11-18T10:02:00Z
     planned: true # optional: not built yet
 ```
 
-- `from` and `to` each name a repo of the manifests or a system of the profiles, one of the two; they differ; a pair (`from`, `to`) is listed once. `why` is 3 to 500 characters and required. `by` is the Git user, `at` the instant; both are data, not a comment, so the map can say who.
+- `from` and `to` each name a repo of the manifests or a system of the profiles, one of the two; they differ; a pair (`from`, `to`) is listed once. `why` is 3 to 500 characters and required. `by` is the Git user, `at` the instant; both are data, not a comment, so the map can say who. Amended 2026-11-21 (the second review, while version 3 is unreleased): `by` is the Git handle Atticus records (one line, at most 100 characters, the character rule of a team's people), and a `repo` end has the record id rule, so neither carries a sentence into a brief or a path.
 - It is written to the profile of the caller's platform (the manifest that lists the repo, or the profile that has the system), else the callee's. The write is `declareLink`'s: comments and order kept, previewed line by line, refused whole if the file changed.
 - Why the profile and not the corrections file: a correction is about one fact of one repo's code (`fact` and `target` are required), and a declared arrow has no fact; an outside system has no corrections file. Why not `systems[].calls`: that item names a gateway route, not a box, and a repo-to-repo arrow would have to invent a System to hang from. Both stay as they are.
 
@@ -212,7 +212,7 @@ A declared arrow is a hint to where to look, never evidence (hard rules 4 and 6)
 
 A.1. **The action and the command.** **Find it in the code** is offered on the result of a declared arrow (2.4), on its panel, and in the `declared` row of 1.3. In a terminal: `atticus connect find <A> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]`, the sibling of `atticus connect match`, with its modes: where the app can start the assistant it is one unattended session, else the brief is written for the person's assistant and **Read the answer** goes on (4.4's words).
 
-A.2. **It is one job of up to four parts**, with the part, Stop and time left on the page as in decision 4: read B whole first when B is a repo with no facts on file (the ordinary read); the find session in A; `verify <A> --write` (which builds); the outcome (A.5). A is never read whole again: the session is given the files of A.3 only.
+A.2. **It is one job of up to four parts**, with the part, Stop and time left on the page as in decision 4: read B whole first when B is a repo with no facts on file (the ordinary read); the find session in A; `verify <A> --write` (which builds); the outcome (A.5). A is never read whole again: the session is given the files of A.3 only. Amended 2026-11-21 (the owner's decision that nothing stays out of beta.30, and the third review): reading B is the job's first part, never a refusal: it is B's ordinary read (`atticus map --all --repos <B>`, its own session's limits, verify `--write`'s guarded build), said as a part with Stop heard before and after it; where the app can't start the assistant the find pauses with what to paste (`readFirst`) and the same button finds the arrow after. The find's session runs no command, and the files of A.3 are given by their real paths, each under A's clone.
 
 A.3. **The hint is the profile's `links` item**, an input the build already reads, so there is no new contract. From it Atticus writes a brief, `facts/<A>.find.md`, beside the facts as `<repo>.gaps.md` is (ADR 0157): derived, written again each time, not a contract. It holds:
 

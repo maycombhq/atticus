@@ -282,11 +282,10 @@ test("a line dragged from a repo and dropped anywhere on another box opens Conne
   // whatever its size (Windows' fonts draw the boxes at another size).
   await page.mouse.move(b.x + b.width * 0.3, b.y + Math.min(b.height / 2, 60), { steps: 12 });
   await page.mouse.up();
-  await expect(
-    page.getByRole("heading", { name: /Connect forge-studio to another box/ }),
-  ).toBeVisible();
-  // The box it was dropped on is picked: the panel never opens with nothing chosen.
-  await expect(page.getByLabel("The other box")).toHaveValue("system:llm");
+  // ADR 0204: Connect <caller> to <callee>, the line's start the caller, the box it was dropped
+  // on the other: the panel never opens with nothing chosen.
+  await expect(page.getByRole("heading", { name: "Connect forge-studio to llm" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "forge-studio calls llm" })).toBeChecked();
 });
 
 test("a line dropped on the inspector connects to no box hidden beneath it", async ({ page }) => {
@@ -304,7 +303,5 @@ test("a line dropped on the inspector connects to no box hidden beneath it", asy
   await page.mouse.down();
   await page.mouse.move(b.x + b.width / 2, b.y + Math.min(b.height / 2, 80), { steps: 12 });
   await page.mouse.up();
-  await expect(
-    page.getByRole("heading", { name: /Connect forge-studio to another box/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^Connect forge-studio to / })).toHaveCount(0);
 });
