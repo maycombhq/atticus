@@ -57,7 +57,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - "Apply" means only "update the map from what was read": Apply fix → **Write the fix**, Apply to similar → **Write to similar**; "applies", "the commands still apply" and the like say what they mean
   - loose call → **call with no arrow**
   - curated decision → one of **your changes** (everything a person told Atticus that the build keeps: an answer, a correction, a triage choice, a tag, a kept edit, a deleted link), named as the one meant where it helps (your answer, your correction, your kept edit); "make them curated" → "keep them as your edits"; **decision** is left for the AI's decisions and the knowledge kind
-  - a loose end, when it is an HTTP call (a webhook a repo sends included) → **a call with no arrow** (in the gap questions)
+  - a loose end, when it is a call (an HTTP call, a webhook a repo sends, a GraphQL or a gRPC call) → **a call with no arrow** (in the gap questions)
   - the answers and corrections (shown together) → **your changes**
   - system (for a box outside the estate) → **outside system**: "Repo, outside system or team", "Outside systems of the profile", "Rename to a real repo or outside system"
   - readers slot, source slot, facts slot, "a slot behind it" → said without the slot word in everyday text (Scans, Cross-check, the scan's and the upgrade's lines); kept on Catalog builds, the page for diagnosing a build

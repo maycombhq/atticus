@@ -11,11 +11,11 @@ import { overlaps, splitWords, tokens } from "./words.js";
  */
 
 /**
- * v30 slice 8: an Unresolved record that is an HTTP call: on the map, a call with no arrow. A
- * webhook the component sends (`webhook-send`, a vendor spec's) is an outbound HTTP call too.
+ * v30 slice 8: an Unresolved record that is a call: on the map, a call with no arrow. An HTTP
+ * call, a webhook the component sends (`webhook-send`, a vendor spec's), a GraphQL or a gRPC call.
  */
-const isHttpCall = (kind: string): boolean =>
-  kind === "http-call" || kind === "call" || kind === "webhook-send";
+const CALL_KINDS = new Set(["http-call", "call", "webhook-send", "graphql-call", "grpc-call"]);
+const isHttpCall = (kind: string): boolean => CALL_KINDS.has(kind);
 
 export type LooseEndKind = "unknown-caller" | "unknown-trigger" | "one-end" | "loose-end";
 

@@ -79,6 +79,19 @@ describe("featureFlows", () => {
     expect(w!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
       "scoring has a call with no arrow (POST loans.checked): Atticus couldn't tell where it goes",
     );
+    // A GraphQL or a gRPC call is a call too.
+    for (const [kind, raw] of [
+      ["graphql-call", "QUERY Query.loansChecked"],
+      ["grpc-call", "loans.Checks/Check"],
+    ]) {
+      const other = records.map((r) =>
+        r.kind === "Unresolved" ? ({ ...r, unresolvedKind: kind, raw } as typeof r) : r,
+      );
+      const [o] = featureFlows([...other, ...detectFeatures(other)]);
+      expect(o!.looseEnds.find((e) => e.kind === "loose-end")?.text).toBe(
+        `scoring has a call with no arrow (${raw}): Atticus couldn't tell where it goes`,
+      );
+    }
     // Any other kind (a topic listened to, a table) stays a loose end in words.
     const topic = records.map((r) =>
       r.kind === "Unresolved"

@@ -362,7 +362,9 @@ describe("impact", () => {
       "event-publish",
       "balance-viewed",
     );
-    const ix = await openIndex(await forgeRoot([extra.record, hook, topic]));
+    const gql = loose("portal-bff.graphql-call.rates", "graphql-call", "QUERY Query.rates");
+    const grpc = loose("portal-bff.grpc-call.rates", "grpc-call", "fx.Rates/Get");
+    const ix = await openIndex(await forgeRoot([extra.record, hook, topic, gql, grpc]));
     const r = impact(ix, "ledger-api.post-transfer")!;
     // portal-bff calls it; portal-ui calls portal-bff; ledger-api subscribes to what portal-bff publishes.
     expect(r.affected.map((a) => a.id)).toEqual([
@@ -393,6 +395,16 @@ describe("impact", () => {
       field: "raw",
       question: "portal-bff has a call with no arrow (POST statement.ready). Where does it go?",
     });
+    // A GraphQL or a gRPC call is a call too.
+    for (const [record, raw] of [
+      ["portal-bff.graphql-call.rates", "QUERY Query.rates"],
+      ["portal-bff.grpc-call.rates", "fx.Rates/Get"],
+    ])
+      expect(r.gaps).toContainEqual({
+        record,
+        field: "raw",
+        question: `portal-bff has a call with no arrow (${raw}). Where does it go?`,
+      });
     // Any other kind stays a loose end in words.
     expect(r.gaps).toContainEqual({
       record: "portal-bff.event-publish.balance-viewed",

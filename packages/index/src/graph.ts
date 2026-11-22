@@ -297,12 +297,11 @@ export function impact(
         )
         .all(a.id) as { json: string }[]) {
         const x = JSON.parse(u.json) as { id: string; raw: string; unresolvedKind?: string };
-        // v30 slice 8 (docs/guide/words.md): an HTTP call's loose end is a call with no arrow; a
-        // webhook the component sends (webhook-send) is an outbound HTTP call too.
-        const call =
-          x.unresolvedKind === "http-call" ||
-          x.unresolvedKind === "call" ||
-          x.unresolvedKind === "webhook-send";
+        // v30 slice 8 (docs/guide/words.md): a call's loose end is a call with no arrow: an HTTP
+        // call, a webhook the component sends, a GraphQL or a gRPC call.
+        const call = ["http-call", "call", "webhook-send", "graphql-call", "grpc-call"].includes(
+          x.unresolvedKind ?? "",
+        );
         addGap({
           record: x.id,
           field: "raw",
