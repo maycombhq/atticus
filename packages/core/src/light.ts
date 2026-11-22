@@ -21,3 +21,5 @@ export { printToCurrent, withPrinter } from "./printer.js";
 export { atticusHandles, onAtticusSignal } from "./process-trees.js";
 // Beta.27 review: whether a word typed where a name goes is a key (`atticus secret`).
 export { keyIsSecret } from "./cite.js";
+// Beta.30 (ADR 0202 point 8): the line after every refusal compares Atticus versions.
+export { atticusVersionOf, newerThan } from "./version-order.js";

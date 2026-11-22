@@ -355,7 +355,9 @@ describe("the build's confirm steps", () => {
     expect(last.removed).toHaveLength(n);
     for (const x of last.removed) {
       expect(x.reasons).toContain("slot");
-      expect(x.explainedBy.join(" ")).toMatch(/slot changed/);
+      // "stored read", never "slot", in what a person reads (docs/guide/words.md; 81a4904e).
+      expect(x.explainedBy.join(" ")).toMatch(/stored read( \(built-in readers\))? changed/);
+      expect(x.explainedBy.join(" ")).not.toMatch(/slot/);
     }
     const before = await catalog();
     const plan = r.body.pending.plan as string;

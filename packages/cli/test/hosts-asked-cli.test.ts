@@ -105,7 +105,14 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
         ["src/app/owners/owner.service.ts:10", "src/app/owners/owner.service.ts:14"],
       ],
     ]);
-    expect(s1.out.some((l) => l.startsWith("Calls to localhost:9966 join no repo"))).toBe(true);
+    // v30 slice 8 (2c687fb9, 026a3332): what to do first, then what happened, then what it leaves.
+    const said = s1.out.find((l) =>
+      l.split("\n")[1]?.startsWith("Calls to localhost:9966 join no repo"),
+    );
+    expect(said, s1.out.join("\n")).toBeDefined();
+    expect(said!.split("\n")[0]).toMatch(
+      /^Answer it: atticus questions answer q-[0-9a-f]+ --option <n>/,
+    );
     expect(await interfaces(root)).not.toContain("forge-web->forge-customers POST /owners");
 
     const a = io();

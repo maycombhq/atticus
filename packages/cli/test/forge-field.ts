@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { devNull, tmpdir } from "node:os";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { factsDirOf, type Fact } from "@maycombhq/core";
@@ -91,6 +92,19 @@ const quickChangeYaml = (id: string, title: string) =>
   ].join("\n");
 
 /**
+ * An empty Git config file, made once: what the clones' git reads as its user config. Not
+ * os.devNull: Git for Windows refuses \\.\nul as a config file ("unable to access").
+ */
+let emptyConfig: string | undefined;
+export function emptyGitConfig(): string {
+  if (!emptyConfig) {
+    emptyConfig = join(mkdtempSync(join(tmpdir(), "atticus-gitconfig-")), "empty.gitconfig");
+    writeFileSync(emptyConfig, "");
+  }
+  return emptyConfig;
+}
+
+/**
  * A clone's one commit, made the same on every machine: a fixed author, committer, date and
  * message, and the files as they are (LF: .gitattributes), so its id is the same where the
  * fixture is seeded as where it was written. The facts of a repo with a clone cite that commit.
@@ -105,7 +119,7 @@ export function commitClone(dir: string): string {
     GIT_AUTHOR_DATE: "2026-11-01T09:00:00Z",
     GIT_COMMITTER_DATE: "2026-11-01T09:00:00Z",
     // Hermetic: no user or system config (a template, a hook, another object format) is read.
-    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_GLOBAL: emptyGitConfig(),
     GIT_CONFIG_NOSYSTEM: "1",
   };
   const git = (...a: string[]) =>

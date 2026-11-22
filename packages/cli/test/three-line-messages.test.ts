@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { WORDS_LINK } from "@maycombhq/scanner";
+import { NEWER_ATTICUS_COMMAND, WORDS_LINK } from "@maycombhq/scanner";
 import { addressRefusal } from "../src/model-address.js";
 import { newerWords } from "../src/upgrade.js";
 
@@ -26,6 +26,8 @@ describe("a long refusal in three lines", () => {
       /^Install the newer Atticus before working here \(npm i -g @maycombhq\/atticus@beta\)/,
     );
     expect(lines[0]).toContain("git checkout -- .atticus/metarepo.yaml");
+    // The install is the scanner's one command for a newer Atticus no stamp names (90d860cf).
+    expect(lines[0]).toContain(`(${NEWER_ATTICUS_COMMAND})`);
   });
 
   it("a model address not confirmed: where to confirm, what, nothing sent", async () => {

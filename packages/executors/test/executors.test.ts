@@ -219,7 +219,20 @@ describe("executors over all three transports", () => {
     expect(t).toMatchObject({ status: "timed-out", fallback: true });
 
     // A key the executor did use: only a newer approval may run it again.
-    const used = JSON.parse(await readFile(state, "utf8").catch(() => '{"used":[],"runs":[]}'));
+    // The slow run timed out, but its program may still be writing the state file as it is
+    // stopped (Windows ends it later): read it once it is whole.
+    const whole = async () => {
+      for (let i = 0; ; i++) {
+        const text = await readFile(state, "utf8").catch(() => '{"used":[],"runs":[]}');
+        try {
+          return JSON.parse(text) as { used: string[] };
+        } catch (e) {
+          if (i >= 40) throw e;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+    };
+    const used = await whole();
     used.used.push((await store.get(step.id))!.runs.at(-1)!.idempotencyKey);
     await writeFile(state, JSON.stringify(used));
     await expect(

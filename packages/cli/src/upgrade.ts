@@ -50,6 +50,7 @@ import {
   writeFileAtomic,
   newerThan,
 } from "@maycombhq/core";
+import { NEWER_ATTICUS_COMMAND } from "@maycombhq/scanner";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
@@ -783,7 +784,8 @@ export function newerWords(c: UpgradeCheck): string {
     return `This metarepo was upgraded by Atticus ${v}; this is ${c.atticus}. Install ${v} or later before working in it, so nothing it wrote is lost.`;
   // v30 slice 8: what to do first, then what happened, then that nothing changed.
   return [
-    `Install ${u?.atticus ? `Atticus ${u.atticus} or later` : "the newer Atticus"} before working here (npm i -g @maycombhq/atticus@beta), so nothing it wrote is lost; if the file was edited by hand, put it back: git checkout -- .atticus/metarepo.yaml`,
+    // The one install command (90d860cf): at the version the stamp names, else the scanner's.
+    `Install ${u?.atticus ? `Atticus ${u.atticus} or later` : "the newer Atticus"} before working here (${u?.atticus ? installCommand(u.atticus) : NEWER_ATTICUS_COMMAND}), so nothing it wrote is lost; if the file was edited by hand, put it back: git checkout -- .atticus/metarepo.yaml`,
     `This metarepo was upgraded by a newer or unknown Atticus${u?.atticus ? ` (${u.atticus})` : ""}: .atticus/metarepo.yaml isn't a stamp Atticus ${c.atticus} reads (${u?.why ?? "unreadable"}).`,
     "Nothing was changed.",
   ].join("\n");

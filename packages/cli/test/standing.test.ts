@@ -77,6 +77,14 @@ async function newerCatalog(root: string, atticus?: string) {
   await writeFile(buildManifestPath(root), newerManifest(atticus));
 }
 const NO_EXT = { [EXTENSION_NEEDS]: undefined };
+/** A Git user for one run, whatever the machine's own Git config holds. */
+const A_GIT_USER = {
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "user.name",
+  GIT_CONFIG_VALUE_0: "Pat",
+  GIT_CONFIG_KEY_1: "user.email",
+  GIT_CONFIG_VALUE_1: "pat@example.com",
+};
 
 describe("atticus status: the five states, each with one command", () => {
   it(
@@ -320,7 +328,9 @@ describe("every refusal ends with the same line, on standard error (ADR 0202 poi
     async () => {
       const root = await upToDate();
       await stampAt(root, "9.1.0");
-      const r = await run(["upgrade", "--root", root], NO_EXT);
+      // A person with a Git user, as on a developer's machine: on a runner with none, the note
+      // that the OS user stands in comes first (ADR 0073), and isn't what this test is about.
+      const r = await run(["upgrade", "--root", root], { ...NO_EXT, ...A_GIT_USER });
       expect(r.code).toBe(1);
       expect(r.err).toEqual([
         `This metarepo was upgraded by Atticus 9.1.0; this is ${VERSION}. Install 9.1.0 or later before working in it, so nothing it wrote is lost.`,

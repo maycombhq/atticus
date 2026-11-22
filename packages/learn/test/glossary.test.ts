@@ -38,6 +38,10 @@ describe("the product glossary (WP5.1)", () => {
     expect(termNamed("org-pack")?.term).toBe("org pack");
     expect(termNamed("snow")?.term).toBe("service desk");
     expect(termNamed("nothing like it")).toBeUndefined();
+    // v30 slice 8 (62830d60): one name per thing; an old name still finds the word that replaced it.
+    expect(termNamed("Estate map")?.term).toBe("Map");
+    expect(termNamed("trust")?.term).toBe("Read status");
+    expect(termNamed("loose call")?.term).toBe("call with no arrow");
   });
 
   it("is what atticus explain says for a term, after ids and before a command's name", async () => {
@@ -58,8 +62,11 @@ describe("the product glossary (WP5.1)", () => {
   it("is the same list as the app's What the words mean", async () => {
     const copyFile = join(HERE, "../../ui/src/copy.ts");
     const { COPY } = (await import(copyFile)) as {
-      COPY: { glossary: { terms: { term: string; says: string }[] } };
+      COPY: { glossary: { terms: { term: string; says: string; was?: string }[] } };
     };
-    expect(COPY.glossary.terms).toEqual(PRODUCT_TERMS.map(({ term, says }) => ({ term, says })));
+    // The app says under a renamed word the names it replaces (v30 slice 8); so does this list.
+    expect(COPY.glossary.terms).toStrictEqual(
+      PRODUCT_TERMS.map(({ term, says, was }) => (was ? { term, says, was } : { term, says })),
+    );
   });
 });

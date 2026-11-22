@@ -34,7 +34,11 @@ test("every page in More pages opens on an Atticus 2 change without an API error
   const hrefs = await page
     .locator("#more-pages a")
     .evaluateAll((as) => as.map((x) => x.getAttribute("href")!));
-  expect(hrefs).toHaveLength(21);
+  // v30 slice 8 (56f9d489): Contracts, Impact and Decided by AI, about one box, are opened from
+  // its panel, and their estate-wide pages are here; the Ecosystem map, folded into the Map, isn't.
+  expect(hrefs).toHaveLength(23);
+  for (const p of ["#/contracts", "#/impact", "#/decisions"]) expect(hrefs).toContain(p);
+  expect(hrefs).not.toContain("#/map");
   // A change's pages keep the change picked.
   expect(hrefs).toContain(`#/arch-review?change=${CHANGE}`);
   for (const href of hrefs) {

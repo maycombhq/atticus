@@ -1,7 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { atticusVersionOf, catalogDirOf, newerThan, type Api } from "@maycombhq/core";
+// Light only at the top (core/light: no schema, zod or YAML reader): every command runs in
+// refusalScope, atticus --help too (startup.test.ts). The rest of core is loaded when read.
+import type { Api } from "@maycombhq/core";
+import { atticusVersionOf, newerThan } from "@maycombhq/core/light";
 import type { BuildRefusal } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { isMetarepo } from "./metarepo-guard.js";
@@ -43,6 +46,8 @@ export const EXTENSION_NEEDS = "ATTICUS_EXTENSION_NEEDS";
 const versionOf = atticusVersionOf;
 
 /** Whether a folder holds a file whose name ends so, at any depth. */
+const catalogDirOf = async (root: string) => (await import("@maycombhq/core")).catalogDirOf(root);
+
 async function hasFile(dir: string, ending = ""): Promise<boolean> {
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => []))
     if (
@@ -61,7 +66,7 @@ const hasRecords = (dir: string) => hasFile(dir, ".yaml");
  * slot under catalog/sources. Told from the folders alone; no record is read.
  */
 async function slotsStepWaits(root: string): Promise<boolean> {
-  const sources = join(catalogDirOf(root), "sources");
+  const sources = join(await catalogDirOf(root), "sources");
   if (
     await stat(join(sources, "build.json")).then(
       () => true,
@@ -71,7 +76,7 @@ async function slotsStepWaits(root: string): Promise<boolean> {
     return false;
   for (const sub of ["readers", "facts", "legacy"])
     if (await hasFile(join(sources, sub))) return false;
-  return hasRecords(join(catalogDirOf(root), "generated"));
+  return hasRecords(join(await catalogDirOf(root), "generated"));
 }
 
 /**
@@ -134,8 +139,8 @@ export async function standing(root: string, o: StandingOptions = {}): Promise<A
   const builtBy = versionOf(newerCatalog?.files.find((f) => f.atticus)?.atticus);
   const catalog: Api.StandingViewT["catalog"] = newerCatalog
     ? "newer"
-    : (await hasRecords(join(catalogDirOf(root), "generated"))) ||
-        (await hasFile(join(catalogDirOf(root), "sources"), ".json"))
+    : (await hasRecords(join(await catalogDirOf(root), "generated"))) ||
+        (await hasFile(join(await catalogDirOf(root), "sources"), ".json"))
       ? "read"
       : "none";
   const stampPart = c.stamp ? W.stamp(c.stamp.atticus) : c.unreadStamp ? W.stampUnread : W.noStamp;

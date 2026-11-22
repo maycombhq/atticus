@@ -1224,6 +1224,33 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
       },
       T,
     );
+
+    it(
+      "records no one, so with no Git user it says nothing of who it would record (--check)",
+      async () => {
+        // A machine with no Git user (a fresh CI runner): the check creates nothing and records
+        // no one, so the note that the OS user stands in for a person isn't said.
+        const empty = join(m.dir, "no-git-user.gitconfig");
+        await writeFile(empty, "");
+        const kept = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_CONFIG_NOSYSTEM };
+        process.env.GIT_CONFIG_GLOBAL = empty;
+        process.env.GIT_CONFIG_NOSYSTEM = "1";
+        try {
+          const file = await requirementsFile(m, "no-git-user", "# A plain note\n\nWhy.\n");
+          const r = await run(["change", "new", "--from", file, "--check", "--root", m.root]);
+          expect(r.err).toEqual([]);
+          expect(r.code).toBe(0);
+        } finally {
+          for (const [k, v] of [
+            ["GIT_CONFIG_GLOBAL", kept.g],
+            ["GIT_CONFIG_NOSYSTEM", kept.s],
+          ] as const)
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+      },
+      T,
+    );
   });
 });
 

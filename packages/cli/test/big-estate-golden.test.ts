@@ -35,6 +35,10 @@ import { v1Of } from "./build-json-v1.js";
  * estate's loose calls that shared a fact id across repos, one record before, are a record each:
  * Unresolved went from 20 files to 28, and both build.json digests were recorded again. No other
  * kind's digest moved.
+ *
+ * The plain words (81a4904e, 2.0.0-beta.30): the README `atticus init` writes in catalog/curated
+ * says "Your changes", and build.json records that folder's tree hash; both build.json digests
+ * were recorded again and no record's digest moved.
  */
 const GOLDEN = join(import.meta.dirname, "golden", "big-estate.json");
 let dir: string | undefined;

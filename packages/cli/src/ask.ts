@@ -2,7 +2,7 @@
  * ADR 0202 point 9: when the command line may ask its one question, and how. Kept apart from the
  * commands so `bin.ts` loads nothing more to decide it.
  */
-import { assistantSession } from "./assistant-session.js";
+import { underAssistant } from "./assistant-env.js";
 
 /**
  * A question is asked only of a person at a terminal: standard input and output are both a
@@ -20,7 +20,7 @@ export function canAsk(o: {
 }): boolean {
   if (!o.stdinTTY || !o.stdoutTTY) return false;
   if (o.env.CI !== undefined && o.env.CI !== "") return false;
-  if (o.env.ATTICUS_ACP_SESSION || assistantSession(o.env)) return false;
+  if (o.env.ATTICUS_ACP_SESSION || underAssistant(o.env)) return false;
   const by = o.env.ATTICUS_STARTED_BY?.trim();
   if (by && by !== "terminal") return false;
   const end = o.argv.indexOf("--");

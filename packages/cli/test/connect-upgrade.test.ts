@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { declareArrow } from "@maycombhq/core";
 import { buildAndWrite } from "@maycombhq/scanner";
@@ -22,7 +22,8 @@ const files = (dir: string) => {
     for (const n of readdirSync(d)) {
       const p = join(d, n);
       if (statSync(p).isDirectory()) walk(p);
-      else out.set(relative(g.root, p), readFileSync(p, "utf8"));
+      // Keys with "/" on every machine, as PROFILE.join("/") and the expected lists are.
+      else out.set(relative(g.root, p).split(sep).join("/"), readFileSync(p, "utf8"));
     }
   };
   walk(dir);

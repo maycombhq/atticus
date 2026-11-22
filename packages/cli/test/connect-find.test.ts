@@ -285,11 +285,13 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       expect(p.readable(no), no).toMatch(/outside/);
     // Every file it may read beside those three is A's, under its checkout (by real path: a
     // sibling folder whose name starts with A's, forge-orders-other, is not under it).
-    const home = realpathSync(join(g.root, "workspace", A));
+    // realpathSync.native: on Windows the temporary folder may be named in its short form
+    // (C:\Users\RUNNER~1) here and in its long one in what the session was given.
+    const home = realpathSync.native(join(g.root, "workspace", A));
     for (const f of s.readRoots!.filter(
       (x) => ![join(facts, `${A}.find.md`), join(facts, `${A}.jsonl`), answer].includes(x),
     )) {
-      const r = relative(home, realpathSync(f));
+      const r = relative(home, realpathSync.native(f));
       expect(r && !r.startsWith("..") && !isAbsolute(r), f).toBe(true);
     }
     // The third review: it runs no command, and the prompts agree.
