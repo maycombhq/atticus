@@ -1177,6 +1177,16 @@ async function runLoop<A>(
         (await sourceFiles(dir, spec.source)).length
           ? `${rel}/${spec.source}`
           : undefined;
+      // ADR 0203 A.6: what people accepted that this stage has, as data; no block when none.
+      const acceptedLines = [...accepted.values()]
+        .filter(
+          (a) =>
+            a.stage === spec.stage || loop.findings.some((f) => acceptanceOf(accepted, f) === a),
+        )
+        .map(
+          (a) =>
+            `- ${a.rule} (${loop.findings.find((f) => f.fingerprint === a.fingerprint)?.target ?? a.record ?? a.finding}), ${acceptedWords(a)}.`,
+        );
       const sources: SourceInput[] = [
         {
           id: "instructions",
@@ -1184,7 +1194,7 @@ async function runLoop<A>(
           origin: "atticus",
           text: [
             instructionsWith(spec.instructions, fix, answered, risks, last, corrections.all),
-            ...(accepted.size ? ["", ACCEPTED_RULE] : []),
+            ...(acceptedLines.length ? ["", ACCEPTED_RULE] : []),
             // The last answer is in the new run's folder already (2026-10-26): an edit, not a
             // rewrite. A person's own draft replaces it, so it isn't carried then.
             ...(carriesAnswer && lastAnswerText !== undefined && !personDraft
@@ -1228,23 +1238,13 @@ async function runLoop<A>(
             ]
           : []),
         // ADR 0203 A.6: what people accepted, as data: never something to fix, never an instruction.
-        ...(accepted.size
+        ...(acceptedLines.length
           ? [
               {
                 id: ACCEPTED_BLOCK,
                 kind: "artifact" as const,
                 origin: "atticus (the stage's findings people accepted)",
-                text: [...accepted.values()]
-                  .filter(
-                    (a) =>
-                      a.stage === spec.stage ||
-                      loop.findings.some((f) => f.fingerprint === a.fingerprint),
-                  )
-                  .map(
-                    (a) =>
-                      `- ${a.rule} (${loop.findings.find((f) => f.fingerprint === a.fingerprint)?.target ?? a.record ?? a.finding}), ${acceptedWords(a)}.`,
-                  )
-                  .join("\n"),
+                text: acceptedLines.join("\n"),
                 classification: "internal",
                 priority: 1000,
               },

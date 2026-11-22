@@ -25,6 +25,7 @@ import {
   renderStoryFile,
   StoriesAnswerSchema,
   taskPromptFiles,
+  writeStageGate,
   type Accepted,
   type DeltaStory,
 } from "../src/index.js";
@@ -277,6 +278,54 @@ describe("the drafter is told what people accepted, as data", () => {
     expect(p).toContain(
       'People accepted findings of this stage; the "accepted-by-people" data block lists each with who and why. They are not problems to fix and not questions to ask: leave what each is about as it is.',
     );
+  });
+});
+
+describe("an acceptance of another stage's finding the draft doesn't have", () => {
+  it("gives the drafter no accepted-by-people block, and no rule about one", async () => {
+    const root = await estateRoot();
+    // A person accepted a finding of the stories stage; the feature stage has nothing of it.
+    const target = "1.3:deliver_by";
+    const fp = issueFingerprint("stories.field-not-checked", target);
+    await writeStageGate(
+      root,
+      [
+        {
+          fingerprint: fp,
+          rule: "stories.field-not-checked",
+          target,
+          message: "Task 1.3 has criteria that check no value of deliver_by: write one.",
+          blocking: true,
+          source: "stage",
+          seenIn: [1],
+        },
+      ],
+      new Map(),
+      {
+        change: CHANGE,
+        stage: "stories",
+        source: "stage/stories.yaml",
+        rerun: `atticus change stories ${CHANGE}`,
+        now: "2026-11-19T09:00:00Z",
+      },
+    );
+    await act(root, CHANGE, `stage-${fp}`, "waive", { by: "pat", reason: "Checked by hand" });
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        if (req.agent.id.endsWith("-critic")) return "findings: []";
+        if (req.agent.id === EXPAND_AGENT) return "terms: []\nnames: []\n";
+        prompts.push(req.pack.prompt);
+        return placed;
+      },
+      { now: () => NOW },
+    );
+    await featureStage(root, CHANGE, { runtime, now: NOW });
+    expect(prompts.length).toBeGreaterThan(0);
+    for (const p of prompts) {
+      expect(p).not.toContain('id="accepted-by-people"');
+      expect(p).not.toContain("People accepted findings of this stage");
+    }
   });
 });
 
