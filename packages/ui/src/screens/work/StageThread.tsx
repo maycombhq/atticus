@@ -377,6 +377,11 @@ export function FindingCardInThread(p: {
   }, [accepting]);
   const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
   const open = f.state === "open";
+  // Make the fix by what it does (the review of b30/review2-fixes): for a file the assistant
+  // drafts, or one with no editor here, it fills the reply to the assistant, which any open issue
+  // may; in the editor, saving records the fix (Apply), so only where Apply is offered.
+  const toAssistant = p.it.assistantWrites || !p.it.edit;
+  const makeFix = toAssistant ? open && f.kind === "issue" : o.apply;
   const where = `${f.artifact}${f.locator.line ? `:${f.locator.line}` : ""}`;
   const act = (action: "apply" | "not-relevant" | "ask", reason?: string) => {
     if (action === "not-relevant" && !reason?.trim())
@@ -429,14 +434,12 @@ export function FindingCardInThread(p: {
           >
             {T.reply}
           </button>
-          {o.apply && (
+          {makeFix && (
             <button
               type="button"
               className="btn"
               aria-label={T.makeFixFor(f.id)}
-              onClick={() =>
-                p.it.assistantWrites || !p.it.edit ? p.onFixToAssistant(p.it) : setEditing(true)
-              }
+              onClick={() => (toAssistant ? p.onFixToAssistant(p.it) : setEditing(true))}
             >
               {T.makeFix}
             </button>

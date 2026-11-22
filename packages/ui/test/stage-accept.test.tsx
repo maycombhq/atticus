@@ -455,10 +455,17 @@ describe("a critic's finding where an assistant works (the review of b30/review2
     gate: "plan",
     artifact: "proposal.md",
   });
-  const card = (view: Partial<FindingItem["view"]>) =>
+  const card = (
+    view: Partial<FindingItem["view"]>,
+    o: { assistantWrites?: boolean; edit?: FindingItem["edit"] } = {},
+  ) =>
     renderToStaticMarkup(
       <FindingCardInThread
-        it={{ ...item(critic, view), assistantWrites: false }}
+        it={{
+          ...item(critic, view),
+          assistantWrites: o.assistantWrites ?? false,
+          ...(o.edit ? { edit: o.edit } : {}),
+        }}
         change={CHANGE}
         onReplyTo={() => undefined}
         onFixToAssistant={() => undefined}
@@ -486,5 +493,22 @@ describe("a critic's finding where an assistant works (the review of b30/review2
     const own = card({ options: { ...options, dismiss: true } });
     expect(own).toContain(`>${esc(T.notRelevant)}<`);
     expect(own).not.toContain(esc(T.personOnly("assistant-session")));
+  });
+
+  it("keeps Make the fix where it only fills the reply to the assistant, and drops it where it would record a fix", () => {
+    const options = { fix: critic.fix.text, apply: false, dismiss: false, waive: false };
+    const held = {
+      options,
+      personOnly: { why: "assistant-terminal" as const, because: "CLAUDECODE is set" },
+    };
+    const make = `aria-label="${esc(T.makeFixFor(critic.id))}"`;
+    // The assistant drafts the file: the button fills the reply box (fixToAssistant).
+    expect(card(held, { assistantWrites: true })).toContain(make);
+    // No editor for it here: the same.
+    expect(card(held)).toContain(make);
+    // A file the person edits in the app: saving records a fix with no patch, refused there.
+    expect(card(held, { edit: { artifact: "proposal" } as FindingItem["edit"] })).not.toContain(
+      make,
+    );
   });
 });
