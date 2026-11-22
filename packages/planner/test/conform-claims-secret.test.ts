@@ -106,4 +106,25 @@ describe("a secret's key (ADR 0206, the review's blocker 1)", () => {
     expect(r.claims[0]!.outcome).toBe("present");
     expect(r.claims[0]!.why).toBe("Written on the cited lines: source env:LEDGER_CLIENT_KEY.");
   });
+
+  it("a literal a verified fact found is present differently whatever else is unread (the re-review)", () => {
+    const r = run(
+      [claim("secret", { key: "ledger.client.key" })],
+      [
+        fact({
+          kind: "config",
+          id: "k-0",
+          settingKind: "config",
+          key: "ledger.client.key",
+          source: "literal:deploy/values-prod.yaml",
+          cite,
+        }),
+      ],
+      values,
+      { basis: { from: "facts", unread: ["deploy/anvil.yaml"] } },
+    );
+    expect(r.claims[0]!.outcome).toBe("present-differently");
+    expect(r.claims[0]!.next).toContain("waive the finding with a reason");
+    expect(JSON.stringify(r)).not.toContain(PLAIN);
+  });
 });

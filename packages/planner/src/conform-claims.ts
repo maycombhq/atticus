@@ -767,7 +767,7 @@ export function conformClaims(input: ClaimsInput): {
           };
           const says = `${repo} keeps ${e.key}${envWords} by a reference to where secrets are kept`;
           const lit = inEnv.find(literal);
-          const hit = lit ? undefined : inEnv.find((f) => f.source && shownOn(f));
+          const hit = inEnv.find((f) => f.source && shownOn(f));
           const doubt = lit || hit ? undefined : inEnv.find((f) => !literal(f));
           if (doubt) {
             matched.add(doubt.id);
@@ -786,8 +786,22 @@ export function conformClaims(input: ClaimsInput): {
             });
             break;
           }
+          // The re-review: a literal a verified fact found on its line is there whatever else is
+          // unread, so it is present differently (conform.differs), never a note.
+          if (lit) {
+            matched.add(lit.id);
+            push(c, {
+              outcome: "present-differently",
+              expected,
+              found: `key ${e.key}, set to a literal in ${literalIn(lit)}`,
+              what: `${repo} sets ${e.key} to a literal in ${literalIn(lit)}: keep it in the secret store.`,
+              at: [codeCite(lit), claimCite(c)],
+              fact: lit.id,
+            });
+            break;
+          }
           if (!hit && !lit && noEnv(c, expected, says, inEnv, keyed)) break;
-          const o = hit ? undefined : (lit ?? keyed[0]);
+          const o = hit ? undefined : keyed[0];
           judge(
             c,
             expected,
@@ -795,12 +809,8 @@ export function conformClaims(input: ClaimsInput): {
             hit,
             o && {
               fact: o,
-              found: lit
-                ? `key ${e.key}, set to a literal in ${literalIn(lit)}`
-                : `key ${e.key}, env ${o.env ?? "none"}`,
-              what: lit
-                ? `${repo} sets ${e.key} to a literal in ${literalIn(lit)}: keep it in the secret store`
-                : `${repo} sets ${e.key} in ${o.env ?? "no env"}, not in ${e.env}`,
+              found: `key ${e.key}, env ${o.env ?? "none"}`,
+              what: `${repo} sets ${e.key} in ${o.env ?? "no env"}, not in ${e.env}`,
             },
             `${repo} doesn't set ${e.key}${envWords}`,
             hit ? `Written on the cited lines: source ${hit.source}.` : undefined,
