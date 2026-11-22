@@ -389,3 +389,65 @@ describe("a find whose callee isn't read yet, where the app can't start the assi
     expect(asked[1]).not.toHaveProperty("read");
   });
 });
+
+describe("a find stopped by the callee's read (the final review)", () => {
+  it("names the callee's read, offers no answer to read, and finds again from the same button", async () => {
+    const { FindButton } = await import("../src/screens/architecture/ConnectAB.js");
+    const answers = [
+      {
+        brief: "facts/forge-edge-proxy.find.md",
+        leftOut: [],
+        notBuilt: {
+          repo: "forge-ledger-svc",
+          readFailed: true as const,
+          message: "Not read",
+          lines: ["Part 2 of forge-ledger-svc was refused."],
+          command: "atticus connect find forge-edge-proxy --to forge-ledger-svc",
+        },
+      },
+      {
+        brief: "facts/forge-edge-proxy.find.md",
+        leftOut: [],
+        notBuilt: {
+          repo: "forge-ledger-svc",
+          message: "Saved, not built",
+          lines: [],
+          refused: {
+            reasons: ["large-removals" as const],
+            message: "12 records would go.",
+            command: "atticus verify forge-ledger-svc --write --allow-removals 12",
+          },
+          command: "atticus connect find forge-edge-proxy --to forge-ledger-svc",
+        },
+      },
+    ];
+    const asked: Api.ConnectFindRequestT[] = [];
+    const m = mount(
+      FindButton as never,
+      {
+        v: { ...v, mechanism: "declared" },
+        reload: () => undefined,
+        io: {
+          find: (body: Api.ConnectFindRequestT) => {
+            asked.push(body);
+            return Promise.resolve(answers.shift()!);
+          },
+        },
+      } as never,
+    );
+    const button = (name: string) =>
+      all(m.tree).find((e) => e.type === "button" && text(e.props.children) === name);
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(W.findReadFailed("forge-ledger-svc"));
+    expect(text(m.tree)).toContain("Part 2 of forge-ledger-svc was refused.");
+    expect(button(W.readAnswer)).toBeUndefined();
+    (button(W.find)!.props.onClick as () => void)();
+    for (let n = 0; n < 4; n++) await tick();
+    m.render();
+    expect(text(m.tree)).toContain(W.findNotBuiltRead("forge-ledger-svc"));
+    expect(button(W.readAnswer)).toBeUndefined();
+    expect(asked.every((x) => !("read" in x))).toBe(true);
+  });
+});

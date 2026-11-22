@@ -596,6 +596,80 @@ describe("Find it in the code (ADR 0204 A.2 to A.6)", () => {
       const r = Api.FindResult.parse((j.result as { answer: unknown }).answer);
       expect(r.entry?.outcome).toBeDefined();
     }, 300_000);
+
+    // The final review: B's read is judged by its result, not only by what is on record after.
+    const plain = async () => {
+      const r = await g.call("/api/connect/find", "POST", {
+        from: A,
+        to: { repo: B },
+        mode: "copilot-acp",
+      });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      return Api.FindResult.parse(r.body);
+    };
+
+    it("a read of B that fails stops the find with the read's lines, before A's session", async () => {
+      unread();
+      findHooks.read = async (root, _repo, io) => {
+        // Half of B on record, and the read ended over a refused part.
+        writeFileSync(slot(), kept.split("\n").slice(0, 1).join("\n") + "\n");
+        io.err(`Part 2 of ${B} was refused: the session ended before its facts were written.`);
+        return 1;
+      };
+      steps.length = 0;
+      findHooks.runner = session([], { looked: [FILE], none: "No line calls the ledger." });
+      const report = readFileSync(join(g.root, "facts", `${A}.find.yaml`), "utf8");
+      const r = await plain();
+      expect(r.entry).toBeUndefined();
+      expect(r.notBuilt).toMatchObject({ repo: B, readFailed: true });
+      expect(r.notBuilt!.message).toMatch(new RegExp(`^Not read: the read of ${B} ended`));
+      expect(r.notBuilt!.lines.join("\n")).toContain(`Part 2 of ${B} was refused`);
+      expect(r.notBuilt!.command).toBe(`atticus connect find ${A} --to ${B}`);
+      expect(steps).toEqual([]);
+      expect(readFileSync(join(g.root, "facts", `${A}.find.yaml`), "utf8")).toBe(report);
+      writeFileSync(slot(), kept);
+    }, 300_000);
+
+    it("a read of B whose build refused says it waits for a confirm, named as B's, before A's session", async () => {
+      unread();
+      findHooks.read = async (root, _repo, _io, _signal, o) => {
+        writeFileSync(slot(), kept);
+        o?.onBuildRefused?.({
+          reasons: ["large-removals"],
+          message: "The build would remove 12 records.",
+          removals: [],
+          allowRemovals: 12,
+        } as never);
+        return 1;
+      };
+      steps.length = 0;
+      const r = await plain();
+      expect(r.entry).toBeUndefined();
+      expect(r.notBuilt).toMatchObject({
+        repo: B,
+        refused: {
+          reasons: ["large-removals"],
+          command: `atticus verify ${B} --write --allow-removals 12`,
+        },
+      });
+      expect(r.notBuilt!.message).toMatch(new RegExp(`^Saved, not built: ${B}'s read is saved`));
+      expect(steps).toEqual([]);
+    }, 300_000);
+
+    it("a read of B that ends with nothing on record is said, and nothing else runs", async () => {
+      unread();
+      findHooks.read = async () => 0;
+      steps.length = 0;
+      const r = await g.call("/api/connect/find", "POST", {
+        from: A,
+        to: { repo: B },
+        mode: "copilot-acp",
+      });
+      expect(r.status).toBe(409);
+      expect(JSON.stringify(r.body)).toContain(`The read of ${B} ended with nothing on record`);
+      expect(steps).toEqual([]);
+      writeFileSync(slot(), kept);
+    }, 300_000);
   });
 });
 

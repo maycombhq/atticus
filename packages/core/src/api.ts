@@ -6827,6 +6827,12 @@ export const FindResult = z.object({
    */
   notBuilt: z
     .object({
+      /**
+       * The final review: B's, when the stop is B's read whole first (A.2's first part): its build
+       * refused (`refused`), or the read itself didn't finish (`readFailed`). A's otherwise.
+       */
+      repo: z.string().optional(),
+      readFailed: z.literal(true).optional(),
       message: z.string(),
       lines: z.array(z.string()),
       refused: BuildRefusalView.optional(),

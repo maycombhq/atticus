@@ -258,7 +258,13 @@ export const findHooks: {
     o: Pick<VerifyCommandOptions, "onBuildRefused">,
   ) => Promise<number>;
   verifyOptions?: Omit<VerifyCommandOptions, "write">;
-  read?: (root: string, repo: string, io: Output, signal?: AbortSignal) => Promise<number>;
+  read?: (
+    root: string,
+    repo: string,
+    io: Output,
+    signal?: AbortSignal,
+    o?: Pick<VerifyCommandOptions, "onBuildRefused">,
+  ) => Promise<number>;
 } = {};
 
 const verifyWrite = async (
@@ -273,9 +279,18 @@ const verifyWrite = async (
 };
 
 /** B read whole, as any read: atticus map --all --repos <B> through the assistant. */
-const readWhole = async (root: string, repo: string, io: Output, signal?: AbortSignal) => {
+const readWhole = async (
+  root: string,
+  repo: string,
+  io: Output,
+  signal?: AbortSignal,
+  o: Pick<VerifyCommandOptions, "onBuildRefused"> = {},
+) => {
   const { mapAllCommand } = await import("./map-all.js");
-  return mapAllCommand(root, { repos: [repo], mode: "copilot-acp" }, io, signal ? { signal } : {});
+  return mapAllCommand(root, { repos: [repo], mode: "copilot-acp" }, io, {
+    ...(signal ? { signal } : {}),
+    ...(o.onBuildRefused ? { onBuildRefused: o.onBuildRefused } : {}),
+  });
 };
 
 /** Text from an answer or a verifier, shown on a terminal: its control characters escaped. */
@@ -507,8 +522,49 @@ export async function runFind(
     const signal = currentSignal();
     await step(`Reading ${b} whole first (${read}): the find looks for a call to what it serves`);
     if (signal?.aborted) throw new CancelledError();
-    await (findHooks.read ?? readWhole)(root, b, io, signal);
+    // The final review: B's read is judged by its result. A read that failed (a session that
+    // ended, a part refused) or a build of B that refused stops the find here, said as B's, with
+    // the read's lines: A's session is never spent on half of B.
+    const { refusalView } = await import("./build-report.js");
+    let bRefused: Api.BuildRefusalViewT | undefined;
+    const lines: string[] = [];
+    const heard = (w: (l: string) => void) => (l: string) => {
+      lines.push(l);
+      w(l);
+    };
+    const code = await (findHooks.read ?? readWhole)(
+      root,
+      b,
+      { ...io, out: heard(io.out), err: heard(io.err) },
+      signal,
+      { onBuildRefused: (r) => (bRefused = refusalView(root, r, `atticus verify ${b} --write`)) },
+    );
     if (signal?.aborted) throw new CancelledError();
+    const again = `atticus connect find ${o.from} --to ${b}`;
+    if (bRefused)
+      return {
+        brief: files.brief,
+        leftOut: [],
+        notBuilt: {
+          repo: b,
+          message: `Saved, not built: ${b}'s read is saved, and its build waits for you to confirm what it lists (Set up › Activity › Catalog builds). The find stopped before reading ${o.from}; once ${b} is built, find the arrow again: ${again}`,
+          lines: lines.slice(-50),
+          refused: bRefused,
+          command: again,
+        },
+      };
+    if (code !== 0 && code !== APPLIED_WITH_LEFT_OUT)
+      return {
+        brief: files.brief,
+        leftOut: [],
+        notBuilt: {
+          repo: b,
+          readFailed: true,
+          message: `Not read: the read of ${b} ended before it finished (exit ${code}), so the find stopped before reading ${o.from}. What it said is below; read ${b} again (${read}), then find the arrow again: ${again}`,
+          lines: lines.slice(-50),
+          command: again,
+        },
+      };
     if (!(await onRecord(b)))
       throw conflict(
         `The read of ${b} ended with nothing on record, so the find can't say what ${b} serves: see the read's lines, then find the arrow again.`,

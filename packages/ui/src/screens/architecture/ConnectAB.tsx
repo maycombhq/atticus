@@ -548,7 +548,13 @@ export function FindButton(p: {
       {notBuilt && (
         <div className="stack">
           <p role="status" className="ev-say">
-            {notBuilt.refused ? W.findNotBuilt(v.fromName) : W.findNotVerified(v.fromName)}
+            {notBuilt.readFailed
+              ? W.findReadFailed(notBuilt.repo ?? v.toName)
+              : notBuilt.refused
+                ? notBuilt.repo
+                  ? W.findNotBuiltRead(notBuilt.repo)
+                  : W.findNotBuilt(v.fromName)
+                : W.findNotVerified(v.fromName)}
           </p>
           {notBuilt.refused && <RefusalLink refused={notBuilt.refused} />}
           {notBuilt.lines.length > 0 && (
@@ -557,7 +563,8 @@ export function FindButton(p: {
               {notBuilt.lines.join("\n")}
             </pre>
           )}
-          {!handoff && (
+          {/* B's read stopped the find (the final review): no answer to read; Find it again. */}
+          {!handoff && !notBuilt.repo && (
             <button type="button" className="btn" onClick={() => go(true)} disabled={busy}>
               {W.readAnswer}
             </button>

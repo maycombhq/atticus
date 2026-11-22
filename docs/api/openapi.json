@@ -45032,6 +45032,13 @@
           "notBuilt": {
             "type": "object",
             "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "readFailed": {
+                "type": "boolean",
+                "const": true
+              },
               "message": {
                 "type": "string"
               },
