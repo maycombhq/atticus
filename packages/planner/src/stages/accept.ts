@@ -29,14 +29,32 @@ const ABOUT_ONE_ID: ReadonlySet<string> = new Set([
   "stories.unknown-consumer",
 ]);
 
+/**
+ * Why a rule a person can't accept can't be, as a kind: one for each row of the ADR's table. The
+ * command line says the row in its words (wayOn); the app says it in its copy file's words.
+ */
+export type WayOnKind =
+  | "document-over-code"
+  | "nothing-to-plan"
+  | "needs-catalog"
+  | "contradicts-fact"
+  | "data-safety"
+  | "archived-repo"
+  | "cites-missing-code"
+  | "order"
+  | "answer-shape"
+  | "next-stage-needs";
+
 /** The way on for a rule a person can't accept: the ADR's table, row by row. */
-const WAYS_ON: [readonly string[] | RegExp, string][] = [
+const WAYS_ON: [readonly string[] | RegExp, WayOnKind, string][] = [
   [
     ["stories.note-cite", "stories.note-conflict", "stories.note-overrides-code"],
+    "document-over-code",
     "A document never overrides a fact verified from code (rule 6): fix the note, or the code.",
   ],
   [
     ["feature.nothing-placed", "small.no-target-flow"],
+    "nothing-to-plan",
     "Nothing is left to plan, so accepting it can't work: a change with no flow and no operation belongs on the quick path (atticus change new --from <requirements.md>).",
   ],
   [
@@ -52,6 +70,7 @@ const WAYS_ON: [readonly string[] | RegExp, string][] = [
       "stories.unknown-column",
       "stories.unknown-entry",
     ],
+    "needs-catalog",
     "The next stage needs today's steps, or the column's type and classification, from the catalog: put it under newFlows or mark it new, or read the repo (atticus map <repo>).",
   ],
   [
@@ -64,6 +83,7 @@ const WAYS_ON: [readonly string[] | RegExp, string][] = [
       "delta.stale",
       "delta.read-and-changed",
     ],
+    "contradicts-fact",
     "The draft contradicts a verified fact, and a document never overrides one (rule 6): take new off, or run the stage again.",
   ],
   [
@@ -77,22 +97,27 @@ const WAYS_ON: [readonly string[] | RegExp, string][] = [
       "delta.no-columns",
       "stories.write-no-migration",
     ],
+    "data-safety",
     "It is about data safety: answer its question with a choice, or fix the draft as the message says.",
   ],
   [
     ["feature.archived-repo", "operation.archived-repo"],
+    "archived-repo",
     "Put the work in the repo that took over the archived repo's work, or take archived off in the manifest: an archived repo takes no new work, whatever the catalog still holds of it.",
   ],
   [
     /^delta\.(at|uses)-/,
+    "cites-missing-code",
     "The place cites code that isn't there: give new: <file> for new code, or cite the line that is.",
   ],
   [
     /^(delta\.(deploy-|key-)|operation\.)/,
+    "order",
     "The message gives the order or the fix; a wrong order is not a matter of opinion.",
   ],
   [
     /^(stage\.|design\.)/,
+    "answer-shape",
     "The answer doesn't read, or a design element is unmapped: fix the file the message names.",
   ],
 ];
@@ -101,11 +126,18 @@ const WAY_ON_DEFAULT =
 
 export const acceptableStageRule = (rule: string): boolean => ACCEPTABLE_STAGE_RULES.has(rule);
 
+const rowOf = (rule: string) =>
+  WAYS_ON.find(([rules]) => (rules instanceof RegExp ? rules.test(rule) : rules.includes(rule)));
+
 /** Why a rule not on the list can't be accepted, and the way on. */
 export function wayOn(rule: string): string {
-  for (const [rules, words] of WAYS_ON)
-    if (rules instanceof RegExp ? rules.test(rule) : rules.includes(rule)) return words;
-  return WAY_ON_DEFAULT;
+  return rowOf(rule)?.[2] ?? WAY_ON_DEFAULT;
+}
+
+/** The row of a rule a person can't accept, as a kind; undefined for a rule they may accept. */
+export function wayOnKind(rule: string): WayOnKind | undefined {
+  if (acceptableStageRule(rule)) return undefined;
+  return rowOf(rule)?.[1] ?? "next-stage-needs";
 }
 
 /** A person's acceptance of a stage finding, as its file records it. */
