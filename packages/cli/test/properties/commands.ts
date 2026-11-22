@@ -1134,10 +1134,43 @@ export async function act(
         };
       const undone = w.undoable.slice(-k);
       const restored = undone[0]!.model;
+      // What `undo <k>` leaves, file by file: each as it was before the oldest undone write that
+      // changed it, else as it is. A hand edit made between two undone writes is no write's, and
+      // undoing the later write's discard brings it back (seed 69889499: upgrade, a hand edit,
+      // its discard, undo 2).
+      const left = (key: "generated" | "sources") => {
+        const out = new Map(undone[undone.length - 1]!.after[key]);
+        const paths = new Set(
+          undone.flatMap((e) => [...e.before[key].keys(), ...e.after[key].keys()]),
+        );
+        for (const p of paths) {
+          const e = undone.find((x) => x.before[key].get(p) !== x.after[key].get(p));
+          if (!e) continue;
+          const v = e.before[key].get(p);
+          if (v === undefined) out.delete(p);
+          else out.set(p, v);
+        }
+        return out;
+      };
+      const expected = {
+        ...undone[0]!.before,
+        generated: left("generated"),
+        sources: left("sources"),
+      };
+      const handEdits = [
+        ...restored.handEdits,
+        ...undone
+          .slice(1)
+          .flatMap((e) =>
+            e.model.handEdits.filter(
+              (h) => expected.generated.get(h.path) === e.before.generated.get(h.path),
+            ),
+          ),
+      ].filter((h, i, all) => all.findIndex((x) => x.path === h.path) === i);
       const outcome = await sut().undo(w.root, { n: k, yes: true });
       const afterUndo = await w.snap();
       // Undoing a discard brings its hand edits back, and undo refuses over hand edits.
-      const back = d.back !== false && !restored.handEdits.length;
+      const back = d.back !== false && !handEdits.length;
       const backOutcome =
         outcome.wrote && back ? await sut().undo(w.root, { n: 1, yes: true }) : undefined;
       const stays = back && !!backOutcome?.wrote;
@@ -1156,7 +1189,7 @@ export async function act(
         )
           carry.slots.add(r.slot);
       const undo = {
-        before: undone[0]!.before,
+        before: expected,
         after: undone[undone.length - 1]!.after,
         afterUndo,
         back,
@@ -1181,7 +1214,7 @@ export async function act(
           m.facts = restored.facts;
           m.legacyJoins = restored.legacyJoins;
           m.beta26 = restored.beta26;
-          m.handEdits = restored.handEdits;
+          m.handEdits = handEdits;
         },
       };
     }

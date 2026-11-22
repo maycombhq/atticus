@@ -1,0 +1,54 @@
+{
+  "invariant": "undo-restores",
+  "note": "undo-restores: atticus catalog undo 1 (two writes: the upgrade and a discard) left catalog/generated unlike before the writes it took back: endpoint/ledger-api.get-r0.yaml. The hand edit made between the two writes came back with the discard's undo, which is the product's rule; the harness expected the snapshot before the upgrade, which no write's undo restores for a file the upgrade didn't change (CI run 45044760377, Windows, Node 22). The harness now expects each file as it was before the oldest undone write that changed it.",
+  "seed": 69889499,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": [],
+          "filler": 10
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": []
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "change"
+    },
+    {
+      "t": "discard-edits",
+      "wrong": false
+    },
+    {
+      "t": "undo",
+      "n": 1,
+      "yes": true,
+      "back": false
+    }
+  ]
+}
