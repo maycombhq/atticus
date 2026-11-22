@@ -5677,7 +5677,7 @@ export const COPY = {
     confirm: (from: string, to: string, n: number) =>
       `Delete ${from} → ${to}, ${n} call${n === 1 ? "" : "s"}?`,
     intro:
-      "Your decision is written to catalog/curated, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
+      "The deleted link is written to catalog/curated as one of your changes, for review in a pull request, and the catalog is built without the link. Bring it back any time from Deleted links, in the map's tools.",
     yes: "Delete",
     no: "Cancel",
     reading: "Reading every call on this link…",
