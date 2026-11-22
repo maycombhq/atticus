@@ -20,7 +20,14 @@ export const ownerWords = (o: Owner) =>
 
 /** ADR 0206: a quick change's impact, from its design.md's In the code: who each row reaches. */
 function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
-  if (!i.reaches?.length) return <p>{I.quickNoTable(i.change)}</p>;
+  const ops = i.operations ?? [];
+  const kinds = [...new Set(ops.map((o) => o.has))];
+  if (!i.reaches?.length)
+    return (
+      <p>
+        {ops.length ? I.quickOperationsOnly(i.change, ops.length, kinds) : I.quickNoTable(i.change)}
+      </p>
+    );
   return (
     <>
       <p>{I.quick}</p>
@@ -40,21 +47,34 @@ function QuickImpact({ i }: { i: Api.ChangeImpactT }) {
               <td className="mono">{I.reachRow(r.line, r.has)}</td>
               <td className="mono">{r.name}</td>
               <td>
-                {r.has === "calls"
-                  ? r.ids.length
-                    ? `${I.newCaller(r.ids[0]!)}${r.owner ? ` (${I.owned(r.owner)})` : ""}`
-                    : I.notInMap
-                  : !r.ids.length
+                {r.has === "deployment"
+                  ? !r.ids.length
                     ? I.notInMap
                     : r.receivers.length
-                      ? r.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", ")
-                      : I.nobodyReceives}
+                      ? I.calledBy(
+                          r.receivers
+                            .map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id))
+                            .join(", "),
+                        )
+                      : I.nobodyCalls
+                  : r.has === "calls"
+                    ? r.ids.length
+                      ? `${I.newCaller(r.ids[0]!)}${r.owner ? ` (${I.owned(r.owner)})` : ""}`
+                      : I.notInMap
+                    : !r.ids.length
+                      ? I.notInMap
+                      : r.receivers.length
+                        ? r.receivers
+                            .map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id))
+                            .join(", ")
+                        : I.nobodyReceives}
               </td>
               <td>{r.further || ""}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      {ops.length > 0 && <p>{I.operationRows(ops.length, kinds)}</p>}
     </>
   );
 }

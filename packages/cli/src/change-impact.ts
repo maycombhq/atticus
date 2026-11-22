@@ -69,6 +69,12 @@ export const CHANGE_IMPACT_WORDS = {
     `${id}: a quick change says what its code will have, not which fields change, so Atticus can't tell what breaks; here is who each part it names reaches. Each owner confirms.`,
   quickNoTable: (id: string) =>
     `${id}'s impact is read from design.md's ## In the code, which it doesn't have yet: the spec writer writes it (/define-change ${id}).`,
+  quickOperationsOnly: (id: string, n: number, kinds: string[]) =>
+    `${id}'s design.md has ## In the code, but its ${n === 1 ? "row is an operation" : `${n} rows are operations`} (${kinds.join(", ")}), which name no call, entry, topic, table or deployment the map can follow, so the map can't say who ${n === 1 ? "it reaches" : "they reach"}. Each row is checked against the code: atticus change conform ${id}.`,
+  operationRows: (n: number, kinds: string[]) =>
+    `${n} more ${n === 1 ? "row is an operation" : "rows are operations"} (${kinds.join(", ")}): conform checks ${n === 1 ? "it" : "them"} against the code.`,
+  calledBy: (who: string) => `  Called by ${who}: each must still reach it where it is deployed.`,
+  nobodyCalls: "  Nothing in the map calls it.",
   reach: (name: string, has: string, line: number) => `${name} (design.md:${line}, ${has}):`,
   receivedBy: (who: string) => `  Received by ${who}.`,
   newCaller: (target: string, owner: string) => `  A new caller of ${target}, owned by ${owner}.`,
@@ -85,6 +91,7 @@ async function quickReaches(
   change: string,
   records: CatalogRecord[],
   problems: string[],
+  operations: { line: number; has: string }[] = [],
 ): Promise<Reach[] | undefined> {
   const q = await quickViewOf(root, change);
   if (!q) return undefined;
@@ -155,7 +162,37 @@ async function quickReaches(
           further: 0,
         });
         continue;
-      } else continue;
+      } else if (row.has === "deployment") {
+        // The persona check of beta.30: what a deployment moves is called by these, from the map.
+        const callers = [
+          ...new Set(
+            records
+              .filter(
+                (r) =>
+                  r.kind === "Interface" &&
+                  (r as { to?: string }).to === comp &&
+                  (r as { from?: string }).from !== comp,
+              )
+              .map((r) => String((r as { from?: string }).from ?? ""))
+              .filter(Boolean),
+          ),
+        ].sort();
+        out.push({
+          line: row.line,
+          has: row.has,
+          name: comp,
+          ids: rec(comp) ? [comp] : [],
+          receivers: callers.map((id) => {
+            const owner = ownerOf(id);
+            return { id, kind: rec(id)?.kind ?? "Component", ...(owner ? { owner } : {}) };
+          }),
+          further: 0,
+        });
+        continue;
+      } else {
+        operations.push({ line: row.line, has: row.has });
+        continue;
+      }
       const walk = ids.length ? receiversOfAll(ix, ids, 4, { owner: sides.owner }) : undefined;
       out.push({
         line: row.line,
@@ -204,9 +241,10 @@ export async function changeImpactOf(
   if (!t) return undefined;
   const problems = [...t.problems];
   // ADR 0206: a change with no target flow, read from its design.md's In the code.
+  const operations: { line: number; has: string }[] = [];
   const reaches = t.deltas.length
     ? undefined
-    : await quickReaches(root, change, t.records, problems);
+    : await quickReaches(root, change, t.records, problems, operations);
   const owners = new Map<string, string>();
   try {
     for (const r of await loadRepos(root)) owners.set(r.id, r.owner);
@@ -224,6 +262,7 @@ export async function changeImpactOf(
     ...impact,
     flows: t.deltas.length,
     ...(reaches ? { from: "design" as const, reaches } : {}),
+    ...(reaches && operations.length ? { operations } : {}),
     problems,
   };
 }
@@ -232,10 +271,28 @@ export async function changeImpactOf(
 export function impactLines(i: Api.ChangeImpactT): string[] {
   const W = CHANGE_IMPACT_WORDS;
   if (!i.flows && i.from === "design") {
-    if (!i.reaches?.length) return [W.quickNoTable(i.change), ...i.problems.map(W.problem)];
+    const ops = i.operations ?? [];
+    const kinds = [...new Set(ops.map((o) => o.has))];
+    if (!i.reaches?.length)
+      return [
+        ops.length ? W.quickOperationsOnly(i.change, ops.length, kinds) : W.quickNoTable(i.change),
+        ...i.problems.map(W.problem),
+      ];
     const out = [W.quick(i.change)];
     for (const r of i.reaches) {
       out.push(W.reach(r.name, r.has, r.line));
+      if (r.has === "deployment") {
+        out.push(
+          !r.ids.length
+            ? W.notInMap
+            : r.receivers.length
+              ? W.calledBy(
+                  r.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", "),
+                )
+              : W.nobodyCalls,
+        );
+        continue;
+      }
       if (r.has === "calls") {
         out.push(
           r.ids.length ? W.newCaller(r.ids[0]!, r.owner ?? "no team on record") : W.notInMap,
@@ -252,6 +309,7 @@ export function impactLines(i: Api.ChangeImpactT): string[] {
         );
       if (r.further) out.push(W.further(r.further));
     }
+    if (ops.length) out.push(W.operationRows(ops.length, kinds));
     return [...out, ...i.problems.map(W.problem)];
   }
   if (!i.flows) return [W.noTargets(i.change), ...i.problems.map(W.problem)];

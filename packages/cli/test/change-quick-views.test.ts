@@ -162,4 +162,55 @@ describe("a quick change's map, impact and estimate, from design.md's In the cod
     },
     T,
   );
+
+  it(
+    "a migration's table of operation rows only is told from no table, and a deployment names who calls what moves",
+    async () => {
+      const text = await readFile(designFile(), "utf8");
+      const rows = (r: string[]) =>
+        `## In the code\n\n| Repo | Task | Has | What | Spec |\n| --- | --- | --- | --- | --- |\n${r.join("\n")}\n`;
+      const only = (r: string[]) => withoutCodeTable(text).replace(/\n*$/, `\n\n${rows(r)}`);
+      const ROUTE = `| ${PUBLISHER} | t1 | route | host ${PUBLISHER}.forge.example | - |`;
+      const CONFIG = `| ${PUBLISHER} | t1 | config | key forge.retry.max, env prod | - |`;
+      try {
+        await writeFile(designFile(), only([ROUTE, CONFIG]));
+        const r = await run(["change", "impact", ID]);
+        expect(r.code).toBe(0);
+        expect(r.out[0]).toBe(
+          `${ID}'s design.md has ## In the code, but its 2 rows are operations (route, config), which name no call, entry, topic, table or deployment the map can follow, so the map can't say who they reach. Each row is checked against the code: atticus change conform ${ID}.`,
+        );
+        expect(r.out.join("\n")).not.toContain("which it doesn't have yet");
+        const none = await json<Api.ChangeImpactT>(["change", "impact", ID]);
+        expect(none).toMatchObject({ from: "design", reaches: [] });
+        expect(none.operations!.map((o) => o.has)).toEqual(["route", "config"]);
+
+        await writeFile(
+          designFile(),
+          only([`| ${PUBLISHER} | t1 | deployment | platform anvil, env prod | - |`, ROUTE]),
+        );
+        const i = await json<Api.ChangeImpactT>(["change", "impact", ID]);
+        expect(i.operations!.map((o) => o.has)).toEqual(["route"]);
+        const dep = i.reaches!.find((x) => x.has === "deployment")!;
+        expect(dep.name).toBe(PUBLISHER);
+        expect(dep.ids).toEqual([PUBLISHER]);
+        // Who calls the moved component, read from the map's calls into it.
+        const callers = dep.receivers.map((x) => x.id);
+        expect(callers.length).toBeGreaterThan(0);
+        expect(callers).not.toContain(PUBLISHER);
+        expect(dep.receivers.every((x) => x.kind === "Component")).toBe(true);
+        const said = await run(["change", "impact", ID]);
+        const lines = said.out.join("\n");
+        expect(lines).toContain(`${PUBLISHER} (design.md:`);
+        expect(lines).toContain(
+          `  Called by ${dep.receivers.map((x) => (x.owner ? `${x.id} (${x.owner})` : x.id)).join(", ")}: each must still reach it where it is deployed.`,
+        );
+        expect(lines).toContain(
+          "1 more row is an operation (route): conform checks it against the code.",
+        );
+      } finally {
+        await writeFile(designFile(), text);
+      }
+    },
+    T,
+  );
 });

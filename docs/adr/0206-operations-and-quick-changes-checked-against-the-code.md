@@ -245,3 +245,9 @@ An independent review of the build found these; each is fixed with its tests. Wh
 - **A waived or dismissed finding** no longer keeps `atticus change conform` at exit 1. In the app, a change with no target flow leads a repo's result with its claims' counts.
 - **Migration, as tested.** The test is `packages/cli/test/upgrade-b30-operations.test.ts`. `--latest` on the stored beta.28.5 result is compared with what the CLI built from the tag `v2.0.0-beta.28.5` printed for it (`fixtures/upgrade-b30/conform-28.5.latest.txt`), before and after the upgrade; every file but git's own is hashed, and only the files the upgrade's steps name (and the folder of each), and its own record, may change.
 - **WCAG 2.1 AA of the Stated section** is checked with axe in a journey (`packages/journeys/tests/41-conformance-stated.spec.ts`), with a claim of each outcome.
+
+## Addendum, 2026-11-22: the real-model persona check of beta.30
+
+C4 additive; no schema change, no migration.
+
+- **Impact tells "no table" from "only operation rows".** A migration's `## In the code` of deployment, route, config, secret and cut-over rows was told "design.md has no ## In the code". `ChangeImpact.operations` lists the rows that are operations (each with its line and Has): with no reach, impact says the table's rows are operations the map can't follow, which conform checks, and with reaches it counts them after. A `deployment` row is a reach: its `name` and `ids` are the component the repo deploys, its `receivers` the components the map shows calling it ("Called by …: each must still reach it where it is deployed."), on the CLI and the app.

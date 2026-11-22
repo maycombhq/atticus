@@ -2022,6 +2022,14 @@ export const COPY = {
       "A quick change says what its code will have, not which fields change, so Atticus can't tell what breaks. Here is who each part it names reaches; each owner confirms.",
     quickNoTable: (id: string) =>
       `${id}'s impact is read from design.md's In the code, which it doesn't have yet: the spec writer writes it.`,
+    /** The persona check of beta.30: a table of operation rows only is a table, not none. */
+    quickOperationsOnly: (id: string, n: number, kinds: string[]) =>
+      `${id}'s design.md has In the code, but its ${n === 1 ? "row is an operation" : `${n} rows are operations`} (${kinds.join(", ")}), which name no call, entry, topic, table or deployment the map can follow, so the map can't say who ${n === 1 ? "it reaches" : "they reach"}. Checking the code checks each row.`,
+    operationRows: (n: number, kinds: string[]) =>
+      `${n} more ${n === 1 ? "row is an operation" : "rows are operations"} (${kinds.join(", ")}): checking the code checks ${n === 1 ? "it" : "them"}.`,
+    /** A deployment row: who calls what it moves, from the map. */
+    calledBy: (who: string) => `Called by ${who}: each must still reach it where it is deployed`,
+    nobodyCalls: "Nothing in the map calls it",
     reachesCaption: "What each row of In the code names, and who receives it",
     reachCol: { row: "Row", names: "Names", receivers: "Received by", further: "Further" },
     /** A row of design.md's In the code, by its line and what it has (ADR 0206). */

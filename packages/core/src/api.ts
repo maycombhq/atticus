@@ -778,6 +778,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the limits (`allowRemovals`), its hand edits (`discardEdits`) or both, with the `plan` of the
  *   list, all three from the refused run's job result (`confirm`). Additive only.
  */
+// Also in 3.19.0 (ADR 0201 addendum 2026-11-22, the persona check of beta.30): the map tool
+// `conflicts` with an id (`atticus change conflicts --touching <id> --json`) lists after the
+// pairs, as they were, each open change whose tasks.md or target flows name the id
+// (`{ change, touches, where: [{ file, line, heading?, task?, tasks?, text }] }`). Additive only.
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
 export const API_VERSION = "3.19.0";
@@ -4181,6 +4185,12 @@ export const ChangeImpact = z.object({
       }),
     )
     .optional(),
+  /**
+   * 3.19.0 (the persona check of beta.30, additive): the rows of In the code that are operations
+   * (a route, a config, a secret, a pipeline, a cut-over, a migration, other), which name nothing
+   * the map can follow; conform checks them. A table of these alone is a table, not none.
+   */
+  operations: z.array(z.object({ line: z.number().int(), has: z.string() })).optional(),
   breaks: z.number().int(),
   mayBreak: z.number().int(),
   /** 2.81.0 (ADR 0181): of the callers that break, those whose every link the AI decided. */

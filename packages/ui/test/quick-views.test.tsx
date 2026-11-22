@@ -103,4 +103,46 @@ describe("a quick change's picture and impact (ADR 0206)", () => {
     const none = renderToStaticMarkup(<ImpactView i={{ ...IMPACT, reaches: [] }} />);
     expect(none).toContain(esc(I.quickNoTable(ID)));
   });
+
+  it("a table of operation rows only is told from no table, and a deployment names who calls it", () => {
+    const ops = renderToStaticMarkup(
+      <ImpactView
+        i={{
+          ...IMPACT,
+          reaches: [],
+          operations: [
+            { line: 20, has: "route" },
+            { line: 21, has: "config" },
+          ],
+        }}
+      />,
+    );
+    expect(ops).toContain(esc(I.quickOperationsOnly(ID, 2, ["route", "config"])));
+    expect(ops).not.toContain(esc(I.quickNoTable(ID)));
+    const moved = renderToStaticMarkup(
+      <ImpactView
+        i={{
+          ...IMPACT,
+          reaches: [
+            {
+              line: 20,
+              has: "deployment",
+              name: "forge-svc-01",
+              ids: ["forge-svc-01"],
+              receivers: [
+                { id: "forge-svc-00", kind: "Component", owner: "team-forge" },
+                { id: "forge-gw-01", kind: "Component", owner: "team-platform" },
+              ],
+              further: 0,
+            },
+          ],
+          operations: [{ line: 21, has: "route" }],
+        }}
+      />,
+    );
+    expect(moved).toContain(
+      esc(I.calledBy("forge-svc-00 (team-forge), forge-gw-01 (team-platform)")),
+    );
+    expect(moved).toContain(esc(I.operationRows(1, ["route"])));
+  });
 });
