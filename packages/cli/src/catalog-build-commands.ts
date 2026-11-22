@@ -45,7 +45,8 @@ import {
   UNRESOLVED_IDS_COMMAND,
   unresolvedIdsUndoneWords,
   undoneFiles,
-  UPGRADE_FIRST,
+  UPGRADE_RENAMES,
+  refusedBeforeSlots,
   writeCuratedEdits,
   type BuildAndWrite,
   type BuildRefusal,
@@ -138,9 +139,10 @@ export function refusalHint(r: BuildRefusal, command: string): string {
   // Beta.28.2 (ADR 0197): its own words, never the upgrade's.
   if (r.reasons.includes("newer-atticus"))
     return r.message.split("\n").slice(1).join(" ") || r.message;
-  // ADR 0124 addendum E-ids (2026-11-21): a change of an old loose end's id the build won't guess.
-  const first = r.message.split("\n").filter((l) => l.startsWith(UPGRADE_FIRST));
-  if (first.length) return first.join(" ");
+  // ADR 0124 addendum E-ids (2026-11-22): a build that waits for the loose ends' step says it.
+  const renames = r.message.split("\n").find((l) => l.startsWith(UPGRADE_RENAMES));
+  if (renames)
+    return `${renames} It shows what it would do first; atticus upgrade --yes applies it.`;
   if (r.reasons.includes("not-upgraded"))
     return "This catalog was written before beta.27: run atticus upgrade (it shows what it would do; atticus upgrade --yes applies it).";
   // ADR 0197 review: build.json doesn't read; building again is the only way on, never curate.
@@ -792,7 +794,8 @@ async function planEdits(
   // A catalog with no build.json (written before beta.27, or an undo took the upgrade back): no
   // file under it is a hand edit yet, and `atticus upgrade` adopts every one of them.
   Object.defineProperty(out, "notUpgraded", {
-    value: !!g.refused?.reasons.includes("not-upgraded"),
+    // ADR 0124 addendum E-ids (2026-11-22): not a build that waits for the loose ends' step.
+    value: !!g.refused && refusedBeforeSlots(g.refused),
     enumerable: false,
   });
   // ADR 0197 review: a build.json that doesn't read lists every file as a hand edit; none is one

@@ -535,6 +535,20 @@ export function oldLooseEndId(id: string): boolean {
 }
 
 /**
+ * ADR 0124 addendum E-ids (the review of 5cc4ce87, I1): whether an id, with no record to tell
+ * by, may be a loose end's id of the form before beta.30, given the repos' id parts
+ * (`factIdPart` of each repo): what `oldLooseEndId` reads, or a listener of a component whose id
+ * has a dot (`unresolved.forge.ledger.on-x`), whose first part is no repo's (under a repo's id,
+ * the same shape is the new form).
+ */
+export function mayBeOldLooseEndId(id: string, repoParts: ReadonlySet<string>): boolean {
+  if (oldLooseEndId(id)) return true;
+  if (!id.startsWith("unresolved.")) return false;
+  const parts = id.slice("unresolved.".length).split(".");
+  return parts.length > 2 && parts.at(-1)!.startsWith("on-") && !repoParts.has(parts[0]!);
+}
+
+/**
  * ADR 0124 addendum E-ids: the id a loose end of the new form (`unresolved.<repo>.<rest>`) had
  * before beta.30 (`unresolved.<rest>`); undefined for a record of any other form.
  */

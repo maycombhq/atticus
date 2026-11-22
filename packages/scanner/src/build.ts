@@ -54,9 +54,8 @@ import {
   type TermsResult,
   unresolvedIdsNow,
   unsetHostOf,
-  oldLooseEndId,
+  mayBeOldLooseEndId,
   oldIdOfLooseEnd,
-  deserializeRecord,
 } from "@maycombhq/core";
 import { applyPipelineModels } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -153,6 +152,7 @@ import {
   type ReadersSlotT,
 } from "./slots.js";
 import { phaseClock } from "./build-phases.js";
+import { looseEndIdsNamed } from "./old-ids-named.js";
 
 /**
  * The build (ADR 0195 point 2): `catalog/generated` made from the source slots and the build
@@ -234,172 +234,66 @@ export interface BuildInputs {
   /** Pairings not written yet (a preview's), by repo, over those on file. */
   extraPairs?: Map<string, Record<string, PersonPair>>;
   /**
-   * ADR 0124 addendum E-ids, its dated part of 2026-11-21: for each loose end's id from before
-   * beta.30 a current change of yours still names, the repos its old record cited, from the
-   * committed catalog (`oldLooseEndsCited`); an id with no such record isn't here.
+   * ADR 0124 addendum E-ids, its dated part of 2026-11-22: the loose ends' ids (`unresolved.…`)
+   * the inputs name, each with the input files that name it (`looseEndIdsNamed`): a build that
+   * would name one of the old form again with its repo refuses until `atticus upgrade`.
    */
-  oldCited?: Record<string, string[]>;
-  /**
-   * The same ids with no such record: the loose ends of that fact id under a repo's id the
-   * committed catalog has (`catalog/generated` as the last build wrote it), by old id. A build of
-   * this Atticus that applied a suppress of the old id left out the one it took off.
-   */
-  oldShown?: Record<string, string[]>;
+  looseEndIdsNamed?: Record<string, string[]>;
   problems: string[];
 }
 
-/**
- * The repos the old record of each loose end's id from before beta.30 cited, where a committed
- * catalog still has it: catalog/generated (until the build that names it again with its repo)
- * and the copy the upgrade to stored reads kept (`legacy/generated-before-upgrade/`). Only files
- * of the metarepo, never this machine's undo copies or build report, so the same commit builds
- * the same catalog.
- */
-export async function oldLooseEndsCited(
-  root: string,
-  targets: Iterable<string>,
-): Promise<Record<string, string[]>> {
-  const out: Record<string, string[]> = {};
-  for (const t of [...new Set(targets)].sort(cmpText))
-    for (const dir of [generatedDirOf(root), generatedBeforeUpgradeDirOf(root)]) {
-      const text = await readText(join(dir, "unresolved", `${t}.yaml`));
-      const p = text === undefined ? undefined : deserializeRecord(text);
-      if (!p?.ok || p.record.kind !== "Unresolved" || p.record.id !== t) continue;
-      out[t] = [...new Set(p.record.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort(
-        cmpText,
-      );
-      break;
-    }
-  return out;
+/** An old loose end's id an input names, which this build names again with its repo. */
+export interface OldIdNamed {
+  /** The id before beta.30 (`unresolved.<fact id>`, `unresolved.<component>.<name>`). */
+  old: string;
+  /** The loose ends this build has under a repo's id that had it, by id. */
+  ids: string[];
+  /** The input files that name it, relative to the root. */
+  inputs: string[];
 }
 
 /**
- * For each old id, the loose ends of its fact id under a repo's id that catalog/generated has now
- * (`unresolved.<repo>.<rest>` for `unresolved.<rest>`), from the file names: what the last build
- * of this Atticus showed of them.
+ * ADR 0124 addendum E-ids, its dated part of 2026-11-22 (the owner: one deterministic rule): the
+ * old loose ends' ids an input names that this build would name again with their repo. Told by
+ * the records before the decisions apply (`oldIdOfLooseEnd`, by the record, so a listener of a
+ * component whose id has a dot is one too) and by the inputs as committed, never by this
+ * machine's files: a build with any refuses, so the old record stays in catalog/generated and the
+ * upgrade step decides by it, on every machine the same. An old id the build still has as a
+ * record (a legacy repo's, kept as adopted) is no rename.
  */
-export async function oldLooseEndsShown(
-  root: string,
-  targets: Iterable<string>,
-): Promise<Record<string, string[]>> {
-  const names = (
-    await readdir(join(generatedDirOf(root), "unresolved")).catch(() => [] as string[])
-  )
-    .filter((n) => n.endsWith(".yaml"))
-    .map((n) => n.slice(0, -".yaml".length));
-  const out: Record<string, string[]> = {};
-  for (const t of new Set(targets)) {
-    const rest = t.slice("unresolved.".length);
-    const ids = names.filter((id) => {
-      const after = id.slice("unresolved.".length);
-      const dot = after.indexOf(".");
-      return id.startsWith("unresolved.") && dot > 0 && after.slice(dot + 1) === rest;
-    });
-    if (ids.length) out[t] = ids.sort(cmpText);
-  }
-  return out;
-}
-
-/**
- * What this machine knows of the old records' repos: each loose end of the form before beta.30
- * an undo copy holds (newest copy first), then the latest build's report (a rename's removal lists
- * the repos its old record cited). The upgrade step reads it; a build reads it only in its guard
- * (whether to refuse), never for what it writes, so the same commit builds the same catalog.
- */
-export async function oldLooseEndsKnownHere(
-  root: string,
-  undoDir: string,
-): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>();
-  const repos = (r: CatalogRecord) =>
-    [...new Set(r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort(cmpText);
-  for (const u of await listUndo(undoDir))
-    for (const f of u.files)
-      if (f.before === "file" && /(^|\/)generated\/unresolved\/[^/]+\.ya?ml$/.test(f.path)) {
-        const text = await readText(join(undoDir, String(u.n), "files", ...f.path.split("/")));
-        const p = text === undefined ? undefined : deserializeRecord(text);
-        if (!p?.ok || out.has(p.record.id)) continue;
-        const ids = unresolvedIdsNow(p.record);
-        if (ids.length && !(ids.length === 1 && ids[0] === p.record.id))
-          out.set(p.record.id, repos(p.record));
-      }
-  for (const x of (await readBuildReport(root))?.removed ?? [])
-    if (x.kind === "Unresolved" && !out.has(x.id) && renamedIdsOf(x.explainedBy[0] ?? ""))
-      out.set(x.id, [...x.repos].sort(cmpText));
-  return out;
-}
-
-/** A change of an old id applied to a loose end this build has (`carriedTargets`). */
-export interface CarriedTarget {
-  decision: string;
-  from: string;
-  to: string;
-  toRepo: string;
-  /** How its repo was told: the old record cited it, the last catalog showed it, the first by id. */
-  by: "cited" | "shown" | "first";
-  /** Every repo that has a loose end of that fact id now, by id. */
-  repos: string[];
-}
-
-/** The words of a build that refuses rather than guess (`guardBuild`). */
-export const UPGRADE_FIRST = "Run atticus upgrade first:";
-
-/**
- * ADR 0124 addendum E-ids, its dated part of 2026-11-21 (the owner: every gap closed): a current
- * change of yours whose target is a loose end's id from before beta.30 that this build names
- * again with its repo applies, in memory, to the loose end it is now, by the upgrade step's rule:
- * the repo its old record cited (`cited`), else the first repo by id (as beta.28.5's merge cited
- * a shared id; a suppressed loose end had no record). So what a person took off the map stays off
- * until `atticus upgrade` carries the change; the change's file is never written by a build. Not
- * where no loose end of the cited repo is there, nor onto an id another change already names.
- */
-export function carriedTargets(
+export function oldIdsNamedOf(
   records: readonly CatalogRecord[],
-  decisions: readonly CatalogRecord[],
-  cited: Readonly<Record<string, readonly string[]>>,
-  shown: Readonly<Record<string, readonly string[]>> = {},
-): { decisions: CatalogRecord[]; carried: CarriedTarget[] } {
+  named: ReadonlyMap<string, readonly string[]>,
+): OldIdNamed[] {
+  if (!named.size) return [];
   const present = new Set(records.map((r) => r.id));
-  const byOld = new Map<string, { id: string; repo: string }[]>();
+  const byOld = new Map<string, string[]>();
   for (const r of records) {
     const o = oldIdOfLooseEnd(r);
-    if (!o || present.has(o)) continue;
-    const part = r.id.slice("unresolved.".length).split(".")[0]!;
-    const repo = r.evidence.find((e) => e.repo && factIdPart(e.repo) === part)?.repo;
-    if (repo) byOld.set(o, [...(byOld.get(o) ?? []), { id: r.id, repo }]);
+    if (!o || present.has(o) || !named.has(o)) continue;
+    byOld.set(o, [...(byOld.get(o) ?? []), r.id]);
   }
-  const current = (d: CatalogRecord): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
-    d.kind === "CuratedDecision" && d.status === "current";
-  const named = new Set(decisions.filter(current).map((d) => d.target));
-  const carried: CarriedTarget[] = [];
-  const out = decisions.map((d) => {
-    if (!current(d) || d.action === "alias" || !oldLooseEndId(d.target) || present.has(d.target))
-      return d;
-    const cs = [...(byOld.get(d.target) ?? [])].sort((a, b) => cmpText(a.repo, b.repo));
-    const was = cited[d.target];
-    // With no old record in the committed files: the one loose end a suppress left out of the
-    // catalog the last build of this Atticus wrote, where it showed the others.
-    const seen = shown[d.target] ?? [];
-    const left = seen.length ? cs.filter((c) => !seen.includes(c.id)) : [];
-    const by: CarriedTarget["by"] = was
-      ? "cited"
-      : d.action === "suppress" && left.length === 1
-        ? "shown"
-        : "first";
-    const to =
-      by === "cited" ? cs.find((c) => was!.includes(c.repo)) : by === "shown" ? left[0] : cs[0];
-    if (!to || named.has(to.id)) return d;
-    carried.push({
-      decision: d.id,
-      from: d.target,
-      to: to.id,
-      toRepo: to.repo,
-      by,
-      repos: cs.map((c) => c.repo),
-    });
-    return { ...d, target: to.id } as CatalogRecord;
-  });
-  return { decisions: out, carried: carried.sort((a, b) => cmpText(a.decision, b.decision)) };
+  return [...byOld]
+    .map(([old, ids]) => ({ old, ids: [...ids].sort(cmpText), inputs: [...named.get(old)!] }))
+    .sort((a, b) => cmpText(a.old, b.old));
+}
+
+/** The words a build that waits for the loose ends' step starts with (`guardBuild`). */
+export const UPGRADE_RENAMES = "Run atticus upgrade: it renames ";
+
+/** The refusal's first line, for `n` old ids your changes name (ADR 0124 addendum E-ids). */
+export const upgradeRenamesWords = (n: number) =>
+  `${UPGRADE_RENAMES}${n} loose end${n === 1 ? "" : "s"} your changes name and carries your changes in one write.`;
+
+/**
+ * Whether a `not-upgraded` refusal is a catalog from before the slots (no build.json), not a
+ * build that waits for the loose ends' step: what curating, an undo and the app tell them by.
+ */
+export function refusedBeforeSlots(r: { reasons: readonly string[]; message: string }): boolean {
+  return (
+    r.reasons.includes("not-upgraded") &&
+    r.message.split("\n").some((l) => / was written before beta\.27 /.test(l))
+  );
 }
 
 const sha = (text: string) => sha256Of(text);
@@ -687,18 +581,14 @@ export async function loadBuildInputs(
   for (const f of federated)
     put(`federated/${f.id}`, await treeHash(f.dir, (r) => r.startsWith(".") || r === "workspace"));
   mark("the other inputs");
-  const oldTargets = curated.records.flatMap((d) =>
-    d.kind === "CuratedDecision" && d.status === "current" && oldLooseEndId(d.target)
-      ? [d.target]
-      : [],
-  );
-  const oldCited = oldTargets.length ? await oldLooseEndsCited(root, oldTargets) : {};
-  const oldShown = oldTargets.length
-    ? await oldLooseEndsShown(
-        root,
-        oldTargets.filter((t) => !oldCited[t]),
-      )
-    : {};
+  // ADR 0124 addendum E-ids (2026-11-22): the loose ends' ids the inputs name.
+  const named = await looseEndIdsNamed(root, {
+    curatedDir,
+    curated: curated.records,
+    ...(o.questions ? { questions: o.questions } : {}),
+    ...(o.pending ? { pending: o.pending } : {}),
+  });
+  mark("the loose ends the inputs name");
   return {
     root,
     op,
@@ -714,8 +604,7 @@ export async function loadBuildInputs(
     inputsDir,
     inputHashes,
     curatedDir,
-    ...(Object.keys(oldCited).length ? { oldCited } : {}),
-    ...(Object.keys(oldShown).length ? { oldShown } : {}),
+    ...(named.size ? { looseEndIdsNamed: Object.fromEntries(named) } : {}),
     problems,
   };
 }
@@ -830,8 +719,11 @@ export interface Build {
   orphanedDecisions: string[];
   /** Each of them, by its id, with its target (ADR 0124 addendum E-ids: an old loose end's id). */
   orphanedTargets?: Record<string, string>;
-  /** Changes of yours that still name an old loose end's id, applied to its new one (`carriedTargets`). */
-  carriedTargets?: CarriedTarget[];
+  /**
+   * ADR 0124 addendum E-ids (2026-11-22): the old loose ends' ids an input names that this build
+   * names again with their repo (`oldIdsNamedOf`); the guard refuses while there are any.
+   */
+  oldIdsNamed?: OldIdNamed[];
   linkEvidence?: LinkEvidenceResult;
   shared?: SharedJoinResult;
   terms?: TermsResult;
@@ -1756,12 +1648,12 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   // addendum: "an added record can't be a curated decision"), and an assert naming `kind` is
   // refused by applyCurated like any other protected field.
   const sorted = [...records].sort(byKindId);
-  // ADR 0124 addendum E-ids (2026-11-21): a change of an old loose end's id applies to the one
-  // this build names again with its repo, in memory, until the upgrade carries it.
-  const carry = carriedTargets(sorted, i.curated.records, i.oldCited ?? {}, i.oldShown ?? {});
-  const applied = applyCurated(sorted, carry.decisions);
+  // ADR 0124 addendum E-ids (2026-11-22): an old loose end's id an input names, which this build
+  // names again with its repo; the guard refuses such a build until the upgrade.
+  const oldIdsNamed = oldIdsNamedOf(sorted, new Map(Object.entries(i.looseEndIdsNamed ?? {})));
+  const applied = applyCurated(sorted, i.curated.records);
   const present = new Set(sorted.map((r) => r.id));
-  const orphanedOf = carry.decisions
+  const orphanedOf = i.curated.records
     .filter(
       (d): d is Extract<CatalogRecord, { kind: "CuratedDecision" }> =>
         d.kind === "CuratedDecision" && d.status === "current",
@@ -1876,7 +1768,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
     },
     orphanedDecisions,
     orphanedTargets,
-    ...(carry.carried.length ? { carriedTargets: carry.carried } : {}),
+    ...(oldIdsNamed.length ? { oldIdsNamed } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(shared ? { shared } : {}),
     ...(projection ? { terms: projection.terms } : {}),
@@ -3341,24 +3233,21 @@ export async function guardBuild(
     }
   }
 
-  // ---- ADR 0124 addendum E-ids (2026-11-21): a change of an old loose end's id that this build
-  // would apply by the first repo by id, where more than one repo has that loose end and this
-  // machine knows the old record cited another (an undo copy, the build report): it doesn't
-  // guess. Only whether to write reads this machine's files; what a build writes never does.
-  const guessed = (b.carriedTargets ?? []).filter((c) => c.by === "first" && c.repos.length > 1);
-  if (guessed.length) {
-    const known = await oldLooseEndsKnownHere(root, o.undoDir);
-    const wrong = guessed.filter(
-      (c) => known.has(c.from) && !known.get(c.from)!.includes(c.toRepo),
+  // ---- ADR 0124 addendum E-ids, its dated part of 2026-11-22 (the owner: one deterministic
+  // rule): a build that would name a loose end of the old form again with its repo while an input
+  // still names the old id refuses, writing nothing. The old record stays in catalog/generated,
+  // so `atticus upgrade` decides by it, renames the loose end and carries the input in one write,
+  // the same on every machine: told by the build and the committed inputs alone.
+  const named = b.oldIdsNamed ?? [];
+  if (named.length) {
+    if (!reasons.includes("not-upgraded")) reasons.push("not-upgraded");
+    lines.push(
+      upgradeRenamesWords(named.length),
+      ...named
+        .slice(0, 20)
+        .map((x) => `  ${x.old}, now ${x.ids.join(" and ")}: named in ${x.inputs.join(", ")}`),
+      ...(named.length > 20 ? [`  and ${named.length - 20} more`] : []),
     );
-    if (wrong.length) {
-      if (!reasons.includes("not-upgraded")) reasons.push("not-upgraded");
-      const count = (n: number) => (n === 2 ? "two" : n === 3 ? "three" : String(n));
-      for (const c of wrong)
-        lines.push(
-          `${UPGRADE_FIRST} your change ${c.decision} names ${c.from}, a loose end ${count(c.repos.length)} repos now have; the upgrade knows which one you saw.`,
-        );
-    }
   }
 
   // ---- no empty catalog over a full one
@@ -4490,22 +4379,17 @@ export function buildLines(root: string, r: BuildAndWrite): string[] {
     out.push(
       `${x.repo}: ${x.why === "archived" ? "archived" : "no longer in the manifests"}, so its slots aren't built from; they are kept (${x.files.join(", ")}). atticus catalog prune lists them to remove.`,
     );
-  // ADR 0124 addendum E-ids: a decision of a loose end's id from before beta.30 waits for the
-  // upgrade that carries it, never for its target to return (it doesn't, under that id). Only
-  // where this build has that loose end under its repo's id has the upgrade something to carry:
-  // a legacy repo's loose ends keep their old ids (ADR 0195 point 6) until it is read from facts.
-  const carriable = new Set(r.build.records.flatMap((x) => oldIdOfLooseEnd(x) ?? []));
-  for (const c of r.build.carriedTargets ?? [])
-    out.push(
-      `Your change ${c.decision} still names ${c.from}: run atticus upgrade to carry it (this build applies it to ${c.to}).`,
-    );
+  // ADR 0124 addendum E-ids: a decision of a loose end's id from before beta.30 that no loose end
+  // of this build had (one it had makes the build wait for the upgrade, `guardBuild`) is kept,
+  // never said to apply again when an id of that form returns. A legacy repo's loose ends keep
+  // their old ids (ADR 0195 point 6) until it is read from facts. Told with the repos' id parts,
+  // so a listener of a component whose id has a dot is one too (the review of 5cc4ce87, I1).
+  const repoParts = new Set(r.build.listed.map((x) => factIdPart(x)));
   for (const d of r.build.orphanedDecisions) {
     const target = r.build.orphanedTargets?.[d];
     out.push(
-      target && oldLooseEndId(target)
-        ? carriable.has(target)
-          ? `Your change ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it): run atticus upgrade, which carries it to its repo's id.`
-          : `Your change ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it), and this build has no loose end of that id under its repo's: it is kept, and applies again once the loose end is back. A repo whose read is still the one the upgrade kept gets its repo's id in its loose ends when its facts are applied (atticus verify <repo> --write); atticus upgrade then carries your change to it.`
+      target && mayBeOldLooseEndId(target, repoParts)
+        ? `Your change ${d} targets ${target}, a loose end's id from before beta.30 (no repo in it), and this build has no loose end of that id under its repo's: it is kept, and applies again once the loose end is back. A repo whose read is still the one the upgrade kept gets its repo's id in its loose ends when its facts are applied (atticus verify <repo> --write): that build waits for atticus upgrade, which renames them and carries your changes in one write.`
         : `Your change ${d} targets a record that isn't in the build; it is kept and applies again when its target returns.`,
     );
   }

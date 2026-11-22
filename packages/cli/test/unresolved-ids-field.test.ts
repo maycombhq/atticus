@@ -128,6 +128,22 @@ describe("every repo's loose call has a record of its own, and impact names it",
       dirs.push(dir);
       const root = join(dir, "forge");
       await cp(FIXTURE, root, { recursive: true });
+      // The owner, 2026-11-22 (ADR 0124 addendum E-ids): while an input names an old loose end's
+      // id, the build that would rename it waits for atticus upgrade, writing nothing.
+      const w = quiet();
+      expect(await main(["catalog", "build", "--root", root], w.io)).toBe(1);
+      expect([...w.out, ...w.err].join("\n")).toContain(
+        "Run atticus upgrade: it renames 6 loose ends",
+      );
+      // With no input naming one, a build renames them itself.
+      for (const rel of [
+        "catalog/curated/curateddecision",
+        "facts/forge-ledger.crosscheck.yaml",
+        "openspec/changes/rates-from-ledger",
+        "questions",
+        "specs/forge-ledger/forge-ledger.read-the-rates.yaml",
+      ])
+        await rm(join(root, ...rel.split("/")), { recursive: true, force: true });
       const q = quiet();
       expect(await main(["catalog", "build", "--root", root], q.io), q.err.join("\n")).toBe(0);
       const records = (await readCatalog(join(root, "catalog", "generated"))).records;

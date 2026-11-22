@@ -27,3 +27,4 @@ export * from "./upgrade-slots.js";
 export * from "./scan-write.js";
 export * from "./crosscheck.js";
 export * from "./crosscheck-promote.js";
+export * from "./old-ids-named.js";

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { projectFacts, unresolvedIdsNow, type CatalogRecord, type Fact } from "../src/index.js";
+import {
+  mayBeOldLooseEndId,
+  oldLooseEndId,
+  projectFacts,
+  unresolvedIdsNow,
+  type CatalogRecord,
+  type Fact,
+} from "../src/index.js";
 
 /**
  * ADR 0124 addendum (E-ids, 2026-11-19): an Unresolved record's id carries its repo,
@@ -113,5 +120,25 @@ describe("an Unresolved record's id carries its repo (ADR 0124 addendum E-ids)",
     // Not a loose end the facts projection makes (a built-in reader's), or no repo: none.
     expect(unresolvedIdsNow(rec("ledger-api.http-call.abc123", ["forge-ledger"]))).toEqual([]);
     expect(unresolvedIdsNow(rec("unresolved.c-1", []))).toEqual([]);
+  });
+});
+
+/**
+ * The review of 5cc4ce87 (I1): with no record to tell by, an id of the old form whose listener's
+ * component has a dot (`unresolved.forge.ledger.on-x`) has more parts than the words-only test
+ * reads; told apart by the repos' id parts, as the upgrade step tells it.
+ */
+describe("an old loose end's id, told with no record (ADR 0124 addendum E-ids)", () => {
+  const repos = new Set(["forge-ledger", "forge-notify"]);
+  it("reads a dotted component's listener as old where its first part is no repo's", () => {
+    expect(oldLooseEndId("unresolved.forge.ledger.on-x")).toBe(false);
+    expect(mayBeOldLooseEndId("unresolved.forge.ledger.on-x", repos)).toBe(true);
+    // The same shape under a repo's id is the new form.
+    expect(mayBeOldLooseEndId("unresolved.forge-notify.ledger.on-x", repos)).toBe(false);
+    // The forms the words-only test reads, and none of the others.
+    expect(mayBeOldLooseEndId("unresolved.c-1", repos)).toBe(true);
+    expect(mayBeOldLooseEndId("unresolved.forge-ledger.on-x", repos)).toBe(true);
+    expect(mayBeOldLooseEndId("unresolved.forge-ledger.c-1", repos)).toBe(false);
+    expect(mayBeOldLooseEndId("ledger-api.http-call.abc123", repos)).toBe(false);
   });
 });

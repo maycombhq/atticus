@@ -1,27 +1,25 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { isScalar, parse, parseDocument, Scalar, visit, type Document } from "yaml";
+import { isScalar, parse, parseDocument, Scalar, visit } from "yaml";
 import {
   acquireLock,
   askedGapQuestionId,
   catalogDirOf,
-  changesDirOf,
   factIdPart,
-  factsDirOf,
   Finding,
   listQuestions,
   loadOrgPack,
+  mayBeOldLooseEndId,
   newerThan,
   oldIdOfLooseEnd,
-  oldLooseEndId,
   orgPackDirOf,
   parseRecord,
   Question,
   questionFileOf,
   questionFileText,
   recordPath,
-  specsDirOf,
+  unresolvedIdOf,
   unresolvedIdsNow,
   type CatalogRecord,
 } from "@maycombhq/core";
@@ -34,11 +32,13 @@ import { loadRepos } from "@maycombhq/workspace";
  *
  * One plan (`planOf`) gives both what the step lists and what it writes, so every file it writes
  * is in the upgrade's backup; the write refuses a file the list didn't name (the review of
- * 93ddfc5e). An old id goes to one id: the repo the old catalog's record cited (the record on
- * disk, in an undo copy of the build that renamed it, or in that build's report), else the repo
- * beta.28.5's merge cited, the first by id. Another repo's loose end of the same fact id appears
- * as a new loose end: nobody saw it, so no decision of the old one is its. A carry never goes
- * over a file there, or onto an id another decision already targets: the step refuses.
+ * 93ddfc5e). An old id goes to one id, decided only by committed files (the owner, 2026-11-22):
+ * the repo the old record in catalog/generated cited (it is still there: a beta.30 build refuses
+ * to rename a loose end an input names, `oldIdsNamedOf`), else, with no record (a suppressed
+ * loose end), the repo beta.28.5's merge cited, the first by id. Another repo's loose end of the
+ * same fact id appears as a new loose end: nobody saw it, so no decision of the old one is its.
+ * A carry never goes over a file there, or onto an id another decision already targets: the
+ * step refuses.
  *
  * Where record ids are kept, and what this step does with each:
  * - `catalog/generated/`: the build's. The step builds once, under the scan's lock, through the
@@ -122,34 +122,10 @@ async function builtBefore(root: string): Promise<boolean | undefined> {
 /** The repo part of a new id (`factIdPart` of the repo). */
 const repoPartOf = (id: string) => id.slice(PREFIX.length).split(".")[0]!;
 
-/** The input files a step carries ids in, with whether each is a question. */
-async function inputFiles(
-  root: string,
-  curatedDir: string,
-): Promise<{ path: string; question?: true; curated?: true }[]> {
-  const out: { path: string; question?: true; curated?: true }[] = [];
-  for (const p of await walk(curatedDir, yamlFile)) out.push({ path: p, curated: true });
-  // A change's YAML files, not the archive: an archived change is history.
-  const changes = changesDirOf(root);
-  for (const p of await walk(changes, yamlFile))
-    if (!posix(relative(changes, p)).startsWith("archive/")) out.push({ path: p });
-  for (const p of await walk(specsDirOf(root), yamlFile)) out.push({ path: p });
-  for (const p of await walk(factsDirOf(root), (n) => n.endsWith(".crosscheck.yaml")))
-    out.push({ path: p });
-  const qs = (await listQuestions(root).catch(() => ({ questions: [] as Question[] }))).questions;
-  for (const q of qs) out.push({ path: questionFileOf(root, q.id), question: true });
-  return out;
-}
-
-/** Each string scalar of a YAML document, in order (seq items included). */
-function scalars(doc: Document): string[] {
-  const out: string[] = [];
-  visit(doc, {
-    Scalar(_, node) {
-      if (typeof node.value === "string") out.push(node.value);
-    },
-  });
-  return out;
+/** Each string scalar of a YAML document, in order, and the id a value names (the scanner's). */
+async function scalarsOf(text: string): Promise<string[]> {
+  const { stringScalars } = await import("@maycombhq/scanner");
+  return stringScalars(parseDocument(text));
 }
 const idOfValue = (v: string) => (v.startsWith(KEYED) ? v.slice(KEYED.length) : v);
 
@@ -208,13 +184,7 @@ interface Plan {
 /** Whether a scalar may name a loose end by an id of the old form (no build to tell by). */
 function mayBeOld(v: string, now: ReadonlySet<string>, repoParts: ReadonlySet<string>): boolean {
   const id = idOfValue(v);
-  if (!id.startsWith(PREFIX) || now.has(id)) return false;
-  if (oldLooseEndId(id)) return true;
-  // A listener of a component whose id has a dot: its first part is no repo's.
-  const parts = id.slice(PREFIX.length).split(".");
-  return (
-    parts.length > 2 && parts[parts.length - 1]!.startsWith("on-") && !repoParts.has(parts[0]!)
-  );
+  return id.startsWith(PREFIX) && !now.has(id) && mayBeOldLooseEndId(id, repoParts);
 }
 
 /**
@@ -228,19 +198,22 @@ async function planOf(root: string): Promise<Plan | undefined> {
   const op = await loadOrgPack(orgPackDirOf(root));
   const curatedDir = scanner.curatedDirOf(root, op);
   const gen = await generatedLooseEnds(root);
-  const renamedGen = before ? gen.filter((g) => isOld(g.r)) : [];
-  const now = new Set(gen.filter((g) => !renamedGen.includes(g)).map((g) => g.r.id));
+  const oldGen = gen.filter((g) => isOld(g.r));
+  const now = new Set(gen.filter((g) => !oldGen.includes(g)).map((g) => g.r.id));
   const repoParts = new Set((await loadRepos(root).catch(() => [])).map((r) => factIdPart(r.id)));
-  const inputs = await inputFiles(root, curatedDir);
+  const inputs = await scanner.looseEndInputFiles(root, curatedDir);
   const texts = new Map<string, string>();
   for (const f of inputs) {
     const t = await readText(f.path);
     if (t !== undefined && t.includes(PREFIX)) texts.set(f.path, t);
   }
-  const named = [...texts.values()].some((t) =>
-    scalars(parseDocument(t)).some((v) => mayBeOld(v, now, repoParts)),
-  );
-  if (!renamedGen.length && !named) return { writes: [], files: [], builds: false };
+  let named = false;
+  for (const t of texts.values())
+    if ((await scalarsOf(t)).some((v) => mayBeOld(v, now, repoParts))) {
+      named = true;
+      break;
+    }
+  if (!(before && oldGen.length) && !named) return { writes: [], files: [], builds: false };
 
   // ---- what each old id is now: the loose ends a build makes with no decision applied
   scanner.forgetKeptReads();
@@ -253,46 +226,29 @@ async function planOf(root: string): Promise<Plan | undefined> {
     const repo = r.evidence.find((e) => e.repo && factIdPart(e.repo) === repoPartOf(r.id))?.repo;
     if (repo) candidates.set(o, [...(candidates.get(o) ?? []), { id: r.id, repo }]);
   }
-  // The repos the old catalog's record of each old id cited: on disk, else what this machine
-  // knows (an undo copy of the build that renamed it, else that build's report).
+  // The loose ends of the old form on disk that the step's build names again: every one of a
+  // catalog an earlier build wrote, else those a build would rename now (a legacy repo's, once it
+  // is read from facts).
+  const renamedGen = oldGen.filter((g) => before || !rawIds.has(g.r.id));
+  // The owner, 2026-11-22: the repos the old record of each old id cited, from catalog/generated
+  // only, committed and the same on every machine. It is there: a beta.30 build that would
+  // rename a loose end an input names refuses (`oldIdsNamedOf`), writing nothing.
   const cited = new Map<string, string[]>();
-  for (const g of renamedGen)
+  for (const g of oldGen)
     if (!cited.has(g.r.id))
       cited.set(g.r.id, [...new Set(g.r.evidence.flatMap((e) => (e.repo ? [e.repo] : [])))].sort());
-  for (const [id, repos] of await scanner.oldLooseEndsKnownHere(
-    root,
-    await scanner.undoDirOf(root),
-  ))
-    if (!cited.has(id)) cited.set(id, repos);
-  // With neither, the catalog a build of this Atticus wrote (committed): the one loose end of the
-  // fact id a suppress of the old id left out of it, as that build applied it (`carriedTargets`).
-  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
-  const suppressed = new Set(
-    curatedNow.records.flatMap((d) =>
-      d.kind === "CuratedDecision" && d.status === "current" && d.action === "suppress"
-        ? [d.target]
-        : [],
-    ),
-  );
-  const shown = await scanner.oldLooseEndsShown(
-    root,
-    [...candidates.keys()].filter((o) => !cited.has(o) && suppressed.has(o)),
-  );
   const map = new Map<string, string>();
   for (const [o, cs] of candidates) {
     const sorted = [...cs].sort((a, b) => (a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : 0));
     const was = cited.get(o);
-    const seen = shown[o] ?? [];
-    const left = seen.length ? sorted.filter((c) => !seen.includes(c.id)) : [];
-    // The repo the old record cited; else the one a build left out; else the one beta.28.5's
-    // merge cited (the first by id). A record that cited a repo that no longer has the call
-    // carries to none.
-    const to = was
-      ? sorted.find((c) => was.includes(c.repo))
-      : left.length === 1
-        ? left[0]
-        : sorted[0];
-    if (to) map.set(o, to.id);
+    // The repo the old record cited (a record that cited a repo with no such loose end now goes
+    // to the id that repo gives it, kept until its loose end is back); with no record, the one
+    // beta.28.5's merge cited, the first by id.
+    const to = was?.length
+      ? (sorted.find((c) => was.includes(c.repo))?.id ??
+        unresolvedIdOf(was[0]!, o.slice(PREFIX.length)))
+      : sorted[0]?.id;
+    if (to) map.set(o, to);
   }
 
   // ---- the inputs, carried in memory
@@ -311,6 +267,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
     const next = carriedText(t, map);
     if (next !== undefined) carried.set(path, next);
   }
+  const curatedNow = await scanner.readCatalog(curatedDir, { cacheRoot: root, fresh: true });
   const curatedNext: CatalogRecord[] = [];
   for (const r of curatedNow.records) {
     const from = join(curatedDir, ...recordPath(r).split("/"));
@@ -403,6 +360,10 @@ async function planOf(root: string): Promise<Plan | undefined> {
       write(path, doc.toString());
     }
   }
+  // Pending (the owner, 2026-11-22): a catalog an earlier build wrote, or an input that names an
+  // old id a build would rename. A loose end no input names a normal build renames as now.
+  const builds = (before && renamedGen.length > 0) || writes.length > 0 || !!refused;
+  if (!builds) return { writes: [], files: [], builds: false };
   const files = [
     ...writes.map((w) => posix(relative(root, w.path))),
     ...renamedGen.map((g) => posix(relative(root, g.path))),
@@ -411,7 +372,7 @@ async function planOf(root: string): Promise<Plan | undefined> {
   return {
     writes,
     files: [...new Set(files)].sort(),
-    builds: renamedGen.length > 0 || writes.length > 0 || !!refused,
+    builds,
     curatedNext,
     ...(questions ? { questions } : {}),
     op,
@@ -426,13 +387,18 @@ async function planOf(root: string): Promise<Plan | undefined> {
  * that which repo each goes to can't be known before. Undefined when there are none.
  */
 export async function legacyLooseEndsWords(root: string): Promise<string | undefined> {
-  const records = (await generatedLooseEnds(root)).filter((g) => oldLooseEndId(g.r.id)).length;
+  const records = (await generatedLooseEnds(root)).filter((g) => isOld(g.r)).length;
+  const repoParts = new Set((await loadRepos(root).catch(() => [])).map((r) => factIdPart(r.id)));
   const scanner = await import("@maycombhq/scanner");
   const curatedDir = scanner.curatedDirOf(root, await loadOrgPack(orgPackDirOf(root)));
   let decisions = 0;
   for (const p of await walk(curatedDir, yamlFile)) {
     const r = recordOf(await readText(p));
-    if (r?.kind === "CuratedDecision" && r.status === "current" && oldLooseEndId(r.target))
+    if (
+      r?.kind === "CuratedDecision" &&
+      r.status === "current" &&
+      mayBeOldLooseEndId(r.target, repoParts)
+    )
       decisions++;
   }
   if (!records && !decisions) return undefined;
@@ -444,7 +410,7 @@ export async function legacyLooseEndsWords(root: string): Promise<string | undef
       : records
         ? ends
         : `${named.replace(/ one$/, " a loose end by an id from before beta.30 (unresolved.<fact id>)")}`;
-  return `${what}. The upgrade keeps them, as it keeps every record it moves into stored reads; once a repo's facts are applied (atticus verify <repo> --write), its loose ends are named with their repo, and atticus upgrade then carries what names them. Which repo each id goes to can't be known before then.`;
+  return `${what}. The upgrade keeps them, as it keeps every record it moves into stored reads. Once a repo's facts are applied (atticus verify <repo> --write), a build that would name a loose end your changes name with its repo waits for atticus upgrade, which renames it and carries your changes in one write. Which repo each id goes to can't be known before then.`;
 }
 
 /** The files the step would change (what `unresolvedIdsApply` writes, and only those). */
