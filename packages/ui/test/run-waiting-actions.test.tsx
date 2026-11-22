@@ -48,6 +48,6 @@ it("keeps what Done did, and the next prompt, as a note once the run is validate
   (done.props.onClick as () => void)();
   await new Promise((r) => setTimeout(r, 0));
   expect(flashed).toEqual([
-    { text: "Wrote proposal.md.", href: "#/runs?run=run-3", link: R.nextPrompt },
+    { text: "Wrote proposal.md.", href: "#/activity?tab=runs&run=run-3", link: R.nextPrompt },
   ]);
 });

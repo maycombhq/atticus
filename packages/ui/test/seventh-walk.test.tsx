@@ -101,8 +101,8 @@ describe("answers offered for Apply after the page is left", () => {
     expect(all(n.tree).some((e) => e.type === ApplyAndPropose)).toBe(false);
   });
 
-  it("Home's line names answers as well as corrections", () => {
-    expect(COPY.propose.applyFirst).toMatch(/answers/);
+  it("Home's line names answers as well as corrections: your changes (v30 slice 8)", () => {
+    expect(COPY.propose.applyFirst).toMatch(/your changes/);
   });
 });
 

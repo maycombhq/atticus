@@ -56,7 +56,9 @@ it("prepares the step as a hand-off and links to its run", async () => {
   (b.props.onClick as () => void)();
   await vi.waitFor(() => {
     m.render();
-    expect(all(m.tree).find((e) => e.type === "a")?.props.href).toBe("#/runs?run=run-9");
+    expect(all(m.tree).find((e) => e.type === "a")?.props.href).toBe(
+      "#/activity?tab=runs&run=run-9",
+    );
   });
   expect(posted).toEqual([{ args: ["plan", "stories", "c1"] }]);
 });

@@ -36,7 +36,7 @@ it("links the run a step still waits on", async () => {
   };
   const m = await press();
   const link = all(m.tree).find((e) => e.type === "a")!;
-  expect(link.props.href).toBe("#/runs?run=run-20261108-0001");
+  expect(link.props.href).toBe("#/activity?tab=runs&run=run-20261108-0001");
   expect(text(link.props.children)).toBe(T.handoffOpenWaiting);
 });
 

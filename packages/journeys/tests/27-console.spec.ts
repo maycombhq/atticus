@@ -51,14 +51,14 @@ test("opens the Console on a fresh metarepo, and starts a scan whose lines it sh
   // only as the guard for a scan that read nothing, which writes no slot and runs no build, and
   // says so ("every slot and catalog/generated", where beta.26 said "catalog/generated").
   await expect(log).toContainText(
-    "Nothing written: the scan read no repo in full, so every slot and catalog/generated are as they were",
+    "The catalog wasn't changed: the scan read no repo in full, so the catalog and every stored read are as they were",
   );
   // In the app's words, the command after them.
   await expect(log).toContainText(
     "forge-ledger: not cloned here; clone it with Sync repos on Set up › Repos (in a terminal: atticus workspace sync)",
   );
   await expect(log).not.toContainText('"stats"');
-  await expect(page.getByText("Nothing written: the catalog is as it was.")).toBeVisible();
+  await expect(page.getByText("The catalog wasn't changed.")).toBeVisible();
   expect(catalogFiles(app().root)).toEqual(before);
   await accessible(page, "the Console with a scan");
 });

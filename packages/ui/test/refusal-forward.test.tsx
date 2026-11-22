@@ -127,7 +127,7 @@ describe("a refused build has one button that goes forward", () => {
     const linked = view(r);
     expect(primaries(linked)).toBe(1);
     expect(linked).toContain(
-      `<a class="btn primary" href="#/catalog-builds">${esc(WY.buildAgainOn)}<`,
+      `<a class="btn primary" href="#/activity?tab=catalog-builds">${esc(WY.buildAgainOn)}<`,
     );
   });
 
@@ -139,7 +139,7 @@ describe("a refused build has one button that goes forward", () => {
     const elsewhere = view(r);
     expect(primaries(elsewhere)).toBe(1);
     expect(elsewhere).toContain(
-      `<a class="btn primary" href="#/catalog-builds?at=upgrade">${esc(WY.upgradeOnBuilds)}<`,
+      `<a class="btn primary" href="#/activity?tab=catalog-builds&amp;at=upgrade">${esc(WY.upgradeOnBuilds)}<`,
     );
   });
 
@@ -248,14 +248,16 @@ describe("rejected facts and facts of another commit", () => {
     expect(newer).toContain(`>${esc(WY.copyInstall)}<`);
     const bug = panel({ confirm: { refused: ["unexplained-removals", "empty"] } });
     expect(primaries(bug)).toBe(1);
-    expect(bug).toContain(`<a class="btn primary" href="#/catalog-builds">${esc(WY.seeOnBuilds)}<`);
+    expect(bug).toContain(
+      `<a class="btn primary" href="#/activity?tab=catalog-builds">${esc(WY.seeOnBuilds)}<`,
+    );
     expect(bug).toContain("atticus support bundle");
     const empty = panel({ confirm: { refused: ["empty"] } });
     expect(empty).toContain(`<a class="btn primary" href="#/trust">${esc(WY.readOnTrust)}<`);
     const old = panel({ confirm: { upgrade: true, command: "atticus upgrade --yes" } });
     expect(primaries(old)).toBe(1);
     expect(old).toContain(
-      `<a class="btn primary" href="#/catalog-builds?at=upgrade">${esc(WY.upgradeOnBuilds)}<`,
+      `<a class="btn primary" href="#/activity?tab=catalog-builds&amp;at=upgrade">${esc(WY.upgradeOnBuilds)}<`,
     );
   });
 });

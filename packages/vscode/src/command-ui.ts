@@ -1803,12 +1803,13 @@ export class CommandUi {
       {
         modal: true,
         detail:
-          "Changes are checked against the accepted catalog. Walk the ecosystem map with the architect first, then accept it and commit catalog/baseline.yaml through a pull request.",
+          "Changes are checked against the accepted catalog. Walk the Map with the architect first, then accept it and commit catalog/baseline.yaml through a pull request.",
       },
       "Open the map",
       "Accept it",
     );
-    if (pick === "Open the map") await vscode.commands.executeCommand("atticus.showApp", "#/map");
+    if (pick === "Open the map")
+      await vscode.commands.executeCommand("atticus.showApp", "#/canvas");
     else if (pick === "Accept it") await this.pickAndRun(root, "baseline");
   }
 

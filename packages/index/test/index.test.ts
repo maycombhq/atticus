@@ -140,6 +140,35 @@ describe("the local index", () => {
     ix.close();
   });
 
+  it("lists a repo's components by its repo, both of them, page by page (Impact of a repo box)", async () => {
+    // v30 slice 8: a repo with two components; ledger-worker is the invented second.
+    const worker = parseRecord({
+      schemaVersion: 1,
+      status: "current",
+      kind: "Component",
+      id: "ledger-worker",
+      confidence: "verified",
+      system: "ledger",
+      repo: "forge-ledger",
+      type: "forge-service",
+      evidence: [{ source: "config", repo: "forge-ledger", path: "worker/forge.yaml", line: 2 }],
+    });
+    if (!worker.ok) throw new Error(JSON.stringify(worker.issues));
+    const ix = await openIndex(await forgeRoot([worker.record]));
+    const all = ix.list("Component", { repo: "forge-ledger", limit: 500 });
+    expect(all.items.map((r) => r.id)).toEqual(["ledger-api", "ledger-worker"]);
+    expect(all.total).toBe(2);
+    expect(all.next).toBeUndefined();
+    // One to a page: the cursor keeps to the repo.
+    const p1 = ix.list("Component", { repo: "forge-ledger", limit: 1 });
+    expect(p1.items.map((r) => r.id)).toEqual(["ledger-api"]);
+    expect(p1.total).toBe(2);
+    const p2 = ix.list("Component", { repo: "forge-ledger", limit: 1, cursor: p1.next! });
+    expect(p2.items.map((r) => r.id)).toEqual(["ledger-worker"]);
+    expect(p2.next).toBeUndefined();
+    ix.close();
+  });
+
   it("lists one kind page by page", async () => {
     const ix = await openIndex(await forgeRoot());
     const p1 = ix.list("Column", { limit: 4 });
@@ -153,6 +182,13 @@ describe("the local index", () => {
       "portal-bff",
       "portal-ui",
     ]);
+    // v30 slice 8 (3.19.0, additive): a repo's components, for Impact asked of a repo box. The
+    // repo's name is in neither the id nor the name (forge-portal-bff holds portal-bff).
+    expect(ix.list("Component", { repo: "forge-portal-bff" }).items.map((r) => r.id)).toEqual([
+      "portal-bff",
+    ]);
+    expect(ix.list("Component", { q: "forge-portal-bff" }).total).toBe(0);
+    expect(ix.list("Component", { repo: "forge-nowhere" }).total).toBe(0);
     // A count of one confidence by total, without reading every record (the Contracts ring).
     const all = ix.list("Column", { limit: 500 }).items;
     const verified = ix.list("Column", { confidence: "verified", limit: 1 });
@@ -300,7 +336,35 @@ describe("impact", () => {
       evidence: [{ source: "code", repo: "forge-portal-bff", path: "src/Rates.java", line: 3 }],
     });
     if (!extra.ok) throw new Error(JSON.stringify(extra.issues));
-    const ix = await openIndex(await forgeRoot([extra.record]));
+    // A webhook portal-bff sends (an outbound HTTP call) and a topic it publishes no one reads.
+    const loose = (id: string, unresolvedKind: string, raw: string) => {
+      const p = parseRecord({
+        schemaVersion: 1,
+        kind: "Unresolved",
+        id,
+        status: "current",
+        confidence: "inferred",
+        unresolvedKind,
+        raw,
+        owner: "portal-bff",
+        evidence: [{ source: "code", repo: "forge-portal-bff", path: "src/Hooks.java", line: 7 }],
+      });
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    };
+    const hook = loose(
+      "portal-bff.webhook-send.statement-ready-post",
+      "webhook-send",
+      "POST statement.ready",
+    );
+    const topic = loose(
+      "portal-bff.event-publish.balance-viewed",
+      "event-publish",
+      "balance-viewed",
+    );
+    const gql = loose("portal-bff.graphql-call.rates", "graphql-call", "QUERY Query.rates");
+    const grpc = loose("portal-bff.grpc-call.rates", "grpc-call", "fx.Rates/Get");
+    const ix = await openIndex(await forgeRoot([extra.record, hook, topic, gql, grpc]));
     const r = impact(ix, "ledger-api.post-transfer")!;
     // portal-bff calls it; portal-ui calls portal-bff; ledger-api subscribes to what portal-bff publishes.
     expect(r.affected.map((a) => a.id)).toEqual([
@@ -322,7 +386,31 @@ describe("impact", () => {
     expect(r.gaps).toContainEqual({
       record: "portal-bff.unresolved-1",
       field: "raw",
-      question: expect.stringContaining("GET https://fx.example.com/rates"),
+      // v30 slice 8: an HTTP call's loose end, in the glossary's words.
+      question:
+        "portal-bff has a call with no arrow (GET https://fx.example.com/rates). Where does it go?",
+    });
+    expect(r.gaps).toContainEqual({
+      record: "portal-bff.webhook-send.statement-ready-post",
+      field: "raw",
+      question: "portal-bff has a call with no arrow (POST statement.ready). Where does it go?",
+    });
+    // A GraphQL or a gRPC call is a call too.
+    for (const [record, raw] of [
+      ["portal-bff.graphql-call.rates", "QUERY Query.rates"],
+      ["portal-bff.grpc-call.rates", "fx.Rates/Get"],
+    ])
+      expect(r.gaps).toContainEqual({
+        record,
+        field: "raw",
+        question: `portal-bff has a call with no arrow (${raw}). Where does it go?`,
+      });
+    // Any other kind stays a loose end in words.
+    expect(r.gaps).toContainEqual({
+      record: "portal-bff.event-publish.balance-viewed",
+      field: "raw",
+      question:
+        "portal-bff has a loose end Atticus couldn't follow (balance-viewed). Where does it go?",
     });
 
     const audit = impact(ix, "audit-svc")!;

@@ -60,7 +60,7 @@ describe("the confirmed address", () => {
     expect(
       await addressRefusal(root, { type: "bedrock", settings: { region: "eu-west-1" } }),
     ).toBeUndefined();
-    expect(await addressRefusal(root, sink)).toMatch(/127\.0\.0\.1:9.*AI settings/s);
+    expect(await addressRefusal(root, sink)).toMatch(/AI settings.*127\.0\.0\.1:9/s);
     // A provider with no address of its own, a CA of the settings' choosing, a plugin: asked.
     for (const m of [
       { type: "openai-compatible", settings: { baseUrl: "https://llm.example/v1" } },
@@ -138,7 +138,7 @@ adapters:
       else process.env.ANTHROPIC_API_KEY = prev.k;
       sinkSrv.close();
     }
-    expect(err.join("\n")).toMatch(/haven't confirmed.*AI settings/s);
+    expect(err.join("\n")).toMatch(/AI settings.*haven't confirmed/s);
     expect(code).toBe(2);
     expect(got).toEqual([]);
   });

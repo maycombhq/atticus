@@ -693,6 +693,12 @@ function atticusIn(head: string): string | undefined {
 export const NEWER_ATTICUS_COMMAND = "npm i -g @maycombhq/atticus@beta";
 
 /**
+ * v30 slice 8: where a message with a house word left in it points for what the word means (the
+ * glossary, one name per thing).
+ */
+export const WORDS_LINK = "Words: docs/guide/words.md.";
+
+/**
  * The refusal's words for files a newer Atticus wrote (ADR 0197, beta.28.2): upgrade Atticus,
  * and never `atticus upgrade`, which would take a newer catalog for an older one.
  */

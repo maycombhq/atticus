@@ -141,13 +141,14 @@ export const WORDS = {
     "joined-by-folder-name":
       "Open Why is this linked?, and say where it goes if the guess is wrong; or name the service in the setting's target.",
     "joined-despite-conflict":
-      "Settle the host conflict on Map › Trust (list the host in the manifest, or correct the deploy file).",
+      "Settle the host conflict on Map › Read status (list the host in the manifest, or correct the deploy file).",
     "joined-by-service-name":
       "Open Why is this linked?, and say where it goes if the guess is wrong; or have the caller's own Service read so its namespace is known, or call the Service by its full .svc.cluster.local name.",
     "joined-by-path-overlap":
       "Set the service's basePath in repos.manifest.yaml (the path its routes sit under), or have its context path setting read; or say where it goes if the guess is wrong.",
-    unverified: "Read the repo and verify it; Map › Trust lists what isn't checked yet.",
-    question: "Answer the open question on Questions; Map › Trust lists the repo's questions.",
+    unverified: "Read the repo and verify it; Map › Read status lists what isn't checked yet.",
+    question:
+      "Answer the open question on Questions; Map › Read status lists the repo's questions.",
     corrected: "Run atticus verify on the repo with --write to apply the correction.",
     "not-in-shared-map":
       "Ask the team that owns the system (their map is theirs to change), refresh it with atticus join shared refresh, or correct the call if it goes elsewhere.",
@@ -155,7 +156,7 @@ export const WORDS = {
     "no-publisher": COPY.topics.noPublisherFix,
     "declared-topic": COPY.topics.declaredFix,
   } as Record<string, string>,
-  repoCounts: "See what each count holds on Map › Trust",
+  repoCounts: "See what each count holds on Map › Read status",
   edges: (n: number, hidden: number) =>
     `${n} link${n === 1 ? "" : "s"}${hidden ? `, ${hidden} implied link${hidden === 1 ? "" : "s"} hidden` : ""}`,
   outsideMark: "outside",

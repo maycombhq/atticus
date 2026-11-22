@@ -138,7 +138,7 @@
           },
           {
             "name": "diagram",
-            "description": "A repo on the Architecture canvas, or one of its flows: /diagram [repo] [flow]"
+            "description": "A repo on the Map, or one of its flows: /diagram [repo] [flow]"
           },
           {
             "name": "changemap",
@@ -264,7 +264,7 @@
       },
       {
         "command": "atticus.diagram",
-        "title": "Open a repo on the Architecture canvas",
+        "title": "Open a repo on the Map",
         "category": "Atticus"
       },
       {

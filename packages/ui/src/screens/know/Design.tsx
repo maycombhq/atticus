@@ -68,14 +68,17 @@ export function ContractList({
   title,
   pick,
   picked,
+  filter = "",
 }: {
   kind: string;
   title: string;
   pick: (r: Rec) => void;
   picked?: string;
+  /** v30 slice 8: the filter it opens with (a box's name, from the box's panel). */
+  filter?: string;
 }) {
   // A large estate (1,000s of endpoints) is a page and a filter, never a silent first 200.
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(filter);
   const [more, setMore] = useState<{ items: Rec[]; next?: string; for: string }>();
   const path = `/api/catalog/${kind}?limit=200${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`;
   const l = useApi<{ items: Rec[]; total: number; next?: string }>(path);
@@ -355,7 +358,9 @@ function ContractDetail({ r }: { r: Rec }) {
   );
 }
 
-export function Contracts() {
+/** The contracts, estate-wide; `?q=` (a box's panel's link) filters the lists to one box. */
+export function Contracts({ hash = "" }: { hash?: string }) {
+  const filter = queryParam(hash, "q") ?? "";
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
   // Counted by the index, however many there are: never "N of 500" for an estate of thousands.
   const iface = useApi<{ total: number }>("/api/catalog/Interface?limit=1");
@@ -381,18 +386,24 @@ export function Contracts() {
             style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}
           >
             <ContractList
+              key={`Endpoint:${filter}`}
+              filter={filter}
               kind="Endpoint"
               title={T.apis}
               pick={setPicked}
               {...(picked ? { picked: picked.id } : {})}
             />
             <ContractList
+              key={`Interface:${filter}`}
+              filter={filter}
               kind="Interface"
               title={T.interfacesAndEvents}
               pick={setPicked}
               {...(picked ? { picked: picked.id } : {})}
             />
             <ContractList
+              key={`Table:${filter}`}
+              filter={filter}
               kind="Table"
               title={T.dataStores}
               pick={setPicked}

@@ -296,11 +296,18 @@ export function impact(
           "SELECT json FROM records WHERE kind = 'Unresolved' AND json_extract(json, '$.owner') = ? ORDER BY id",
         )
         .all(a.id) as { json: string }[]) {
-        const x = JSON.parse(u.json) as { id: string; raw: string };
+        const x = JSON.parse(u.json) as { id: string; raw: string; unresolvedKind?: string };
+        // v30 slice 8 (docs/guide/words.md): a call's loose end is a call with no arrow: an HTTP
+        // call, a webhook the component sends, a GraphQL or a gRPC call.
+        const call = ["http-call", "call", "webhook-send", "graphql-call", "grpc-call"].includes(
+          x.unresolvedKind ?? "",
+        );
         addGap({
           record: x.id,
           field: "raw",
-          question: `${a.id} has a loose end Atticus couldn't follow (${x.raw}). Where does it go?`,
+          question: call
+            ? `${a.id} has a call with no arrow (${x.raw}). Where does it go?`
+            : `${a.id} has a loose end Atticus couldn't follow (${x.raw}). Where does it go?`,
         });
       }
   }
