@@ -59,7 +59,7 @@ Read in the code on `main` at `134bc15`. No code was run.
 
 ### 1. Git stays the store of record
 
-Every record, answer, correction, rule and approval stays a file in the metarepo, in git. A team
+Every record, answer, correction and rule stays a file in the metarepo, in git; an approval stays the merged pull request on the Git host (ADR 0073). A team
 server (decision 5) holds a clone and commits for the people using it; it adds no database of
 record. Anything live (presence, typing, a job's progress) is held in memory or in git-ignored
 files and is never the only copy of a decision.
