@@ -187,10 +187,10 @@ export function pairsOf(what: string): Record<string, string> | undefined {
   }
   for (const k of Object.keys(out)) {
     const v = out[k]!;
-    const inner = isQuoted(v) ? v.slice(1, -1) : v;
-    // A quote is a whole value's or nothing's.
-    if (/["`]/.test(inner)) return undefined;
-    out[k] = inner;
+    // A value that opens with a quote is quoted whole, or it doesn't read (`"a",b`); a quote
+    // inside a plain value is its own (`{"a":1}`).
+    if (/^["`]/.test(v) && !isQuoted(v)) return undefined;
+    out[k] = isQuoted(v) ? v.slice(1, -1) : v;
   }
   return Object.keys(out).length ? out : undefined;
 }

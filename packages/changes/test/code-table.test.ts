@@ -110,6 +110,8 @@ describe("design.md's In the code (ADR 0206)", () => {
     expect(pairsOf('key k, value "a", "b"')).toBeUndefined();
     expect(pairsOf('key k, value "a",b')).toBeUndefined();
     expect(pairsOf("key k, value `a")).toBeUndefined();
+    // A quote inside a plain value is the value's own, as before this change.
+    expect(pairsOf('key k, value {"a":1}')).toEqual({ key: "k", value: '{"a":1}' });
   });
 
   it("a secret row with a stray piece is refused at the check, as before", () => {

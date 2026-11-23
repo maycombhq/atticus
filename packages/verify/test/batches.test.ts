@@ -296,6 +296,11 @@ describe("isDeployFile", () => {
     "k8s/ledger-api.yaml",
     "deploy/values-prod.yaml",
     "infra/lib/stack.ts",
+    "Dockerfile-prod",
+    "Dockerfile_dev",
+    "packages/api/k8s/deployment.yaml",
+    "apps/web/deploy/run.sh",
+    "packages/ledger/deploy/index.ts",
   ])("%s is a deploy or pipeline file", (p) => {
     expect(isDeployFile(p)).toBe(true);
   });
@@ -305,7 +310,6 @@ describe("isDeployFile", () => {
     "src/app/deployment/deployment.component.ts",
     "src/main/java/com/forge/infra/DbConfig.java",
     "src/pipelines/etl.py",
-    "packages/ledger/deploy/index.ts",
     "infra/package.json",
     "deploy/pom.xml",
     "pom.xml",
@@ -314,6 +318,8 @@ describe("isDeployFile", () => {
     "src/lint/dockerfile-rules.ts",
     "docs/compose-guide.yaml",
     "README.md",
+    "src/main/resources/values.yaml",
+    "src/test/resources/docker-compose.yml",
   ])("%s is not", (p) => {
     expect(isDeployFile(p)).toBe(false);
   });

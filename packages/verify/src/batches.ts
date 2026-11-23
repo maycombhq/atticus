@@ -80,14 +80,14 @@ const DEPLOY_DIR =
  * the deploy files a repo can hold at its root). Case as the tools write them.
  */
 const DEPLOY_NAME =
-  /(^|\/)(Dockerfile(\.[\w.-]+)?|Containerfile|Jenkinsfile(\.[\w.-]+)?|Procfile|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines[\w.-]*\.ya?ml|cloudbuild[\w.-]*\.ya?ml|bitbucket-pipelines\.ya?ml|serverless\.ya?ml|skaffold\.ya?ml|Chart\.yaml|values[\w.-]*\.ya?ml|template\.ya?ml|manifest\.ya?ml|[^/]+\.tf|[^/]+\.tfvars|[^/]+\.bicep|[^/]+\.hcl)$/;
+  /(^|\/)(Dockerfile([._-][\w.-]+)?|Containerfile|Jenkinsfile(\.[\w.-]+)?|Procfile|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines[\w.-]*\.ya?ml|cloudbuild[\w.-]*\.ya?ml|bitbucket-pipelines\.ya?ml|serverless\.ya?ml|skaffold\.ya?ml|Chart\.yaml|values[\w.-]*\.ya?ml|template\.ya?ml|manifest\.ya?ml|[^/]+\.tf|[^/]+\.tfvars|[^/]+\.bicep|[^/]+\.hcl)$/;
 
 /** The build files of `BUILD` that say how code is built, not where it runs. */
 const BUILD_ONLY =
   /(^|\/)(pom\.xml|[^/]+[-_.]pom\.xml|[^/]+\.pom|gradle\/[\w-]+\.versions\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln)|Makefile)$/;
 
 /** Source code's own folders, where a folder named `charts` or `infra` is code, not a deploy. */
-const SOURCE_DIR = /(^|\/)(src|lib|app|apps|packages)\//;
+const SOURCE_DIR = /(^|\/)(src|lib|app)\//;
 
 /**
  * Whether a path is a deploy or pipeline file: named as one, or under a deploy folder
@@ -97,7 +97,9 @@ const SOURCE_DIR = /(^|\/)(src|lib|app|apps|packages)\//;
  */
 export function isDeployFile(path: string): boolean {
   if (BUILD_ONLY.test(path)) return false;
-  if (DEPLOY_NAME.test(path)) return true;
+  // Inside source code, a deploy file's name is a test's or a template's (`src/test/resources/
+  // docker-compose.yml`), and a deploy folder is code (`src/app/charts/`).
+  if (DEPLOY_NAME.test(path)) return !SOURCE_DIR.test(path);
   const m = DEPLOY_DIR.exec(path);
   // A deploy folder inside source code (`src/app/charts/`) is code; one with code in it
   // (`infra/lib/stack.ts`) is a deploy.
