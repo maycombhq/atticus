@@ -558,6 +558,7 @@ Usage:
   atticus rules try <repo> --rule <key> [--files <n>] [--compare]   One small Copilot session on a few files the rule names: the facts it would add or change; writes nothing
   atticus rules import <their metarepo> --type <t> --team <team> --at <tag>   A copy of another product team's type rules pinned at their tag, in reading-rules/imported/<team>/, each a draft until reviewed and set active
   atticus rules notes --type <t> [--save]   The repo type's notes that read as an instruction to a reader, offered (with --save written) as draft reading rules
+  atticus rules learn [--json]          Learn from my corrections: the assistant drafts reading rules from every pairing a person made since the last run; each is re-read on the files it names, and is written active with its proof when the re-read reproduces the corrections and moves no arrow a person touched, else stays a draft saying why (ADR 0208)
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections, documents), names and ids first [--by words|meaning|both] [--kind k,k] [--limit n] [--json]
@@ -1785,8 +1786,13 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
         },
         io,
       );
+    // ADR 0208: Learn from my corrections.
+    if (command === "learn") {
+      const { rulesLearnCommand } = await import("./learn-corrections.js");
+      return rulesLearnCommand(root, { json: values.json === true }, io);
+    }
     io.err(
-      "atticus rules list | add | activate | off | draft | try | import | notes (atticus help rules)",
+      "atticus rules list | add | activate | off | draft | try | learn | import | notes (atticus help rules)",
     );
     return 2;
   }

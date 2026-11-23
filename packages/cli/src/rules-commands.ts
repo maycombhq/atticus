@@ -79,7 +79,7 @@ export function scopeFile(s: Scope): { rel: string; layer: Layer } | string {
   return { rel: `repos/${s.repo}.yaml`, layer: "repo" };
 }
 
-async function loadDoc(root: string, rel: string) {
+export async function loadDoc(root: string, rel: string) {
   const path = join(rulesDirOf(root), ...rel.split("/"));
   const onDisk = await readFile(path, "utf8").catch(() => undefined);
   const text = onDisk ?? "schemaVersion: 1\nrules: []\noff: []\n";
@@ -90,7 +90,7 @@ async function loadDoc(root: string, rel: string) {
  * Write a layer's file back, checked, and only when it still holds `before` (as read; undefined
  * when it wasn't there), so an edit made meanwhile is never lost. `null`: written whatever it holds.
  */
-async function saveDoc(
+export async function saveDoc(
   path: string,
   doc: ReturnType<typeof parseDocument>,
   before: string | undefined | null,
@@ -277,7 +277,7 @@ export async function rulesSetCommand(
   what: "activate" | "off",
   key: string | undefined,
   s: Scope,
-  o: { reason?: string },
+  o: { reason?: string; by?: string },
   io: Output,
 ): Promise<number> {
   const f = scopeFile(s);
@@ -305,6 +305,15 @@ export async function rulesSetCommand(
       return 2;
     }
     item.set("status", "active");
+    // ADR 0208: a person's activation stands in for a learned rule's proof, and says so.
+    if (item.has("learned")) {
+      const { gitUser } = await import("@maycombhq/workspace");
+      item.delete("learned");
+      item.set(
+        "by",
+        `learned from corrections; set active by ${o.by ?? (await gitUser(root)).handle} (ADR 0176)`,
+      );
+    }
     const files = item.get("files");
     hasFiles = isSeq(files) && files.items.length > 0;
   } else {
@@ -442,6 +451,8 @@ export async function rulesDraftCommand(
     mode?: string;
     runner?: AcpStepRunner;
     signal?: AbortSignal;
+    /** ADR 0208: what was missed, given (Learn's corrections with their lines), not looked up. */
+    missed?: string[];
   },
   io: Output,
 ): Promise<number> {
@@ -481,7 +492,7 @@ export async function rulesDraftCommand(
     repos,
     file,
     ...(o.about ? { about: o.about } : {}),
-    missed: await missedOf(root, ids),
+    missed: o.missed ?? (await missedOf(root, ids)),
   });
   const promptRel = `${relOf(root)}/drafting/${o.type ? `type-${o.type}` : `repo-${o.repo}`}.md`;
   await mkdir(join(rulesDirOf(root), "drafting"), { recursive: true });
@@ -638,20 +649,7 @@ export async function rulesTryCommand(
     io.err(`No file of ${repo} is one ${rule.key} names (${(rule.files ?? []).join(", ")}).`);
     return 2;
   }
-  // Inside the metarepo by its relative path (C:\\repo2 isn't inside C:\\repo); else as given.
-  const rel = relative(root, dir);
-  const checkout = rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.replace(/\\/g, "/") : dir;
-  const prompt = [
-    `# Try the reading rule ${rule.key} on ${repo}`,
-    "",
-    `Read only these files of ${repo} (its checkout is \`${checkout}\`), by Atticus's reading rules (the /atticus-map rules) and this one:`,
-    "",
-    `- ${rule.key}: ${rule.rule.replace(/\s+/g, " ")}${exampleOf(rule.example)}`,
-    "",
-    ...files.map((f) => `- \`${f}\``),
-    "",
-    `Write the facts you read to \`${tryRel}\` only (one JSON object per line, as the facts file takes them), and nothing else. Don't run atticus verify: this is a try.`,
-  ].join("\n");
+  const prompt = rereadPrompt(root, { repo, dir, rule, files, tryRel, why: "this is a try" });
   const op = await loadOrgPack(orgPackDirOf(root));
   const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
   await mkdir(join(factsDirOf(root), ".try"), { recursive: true });
@@ -673,10 +671,71 @@ export async function rulesTryCommand(
       onProgress: io.out,
     });
   } catch (e2) {
+    await rm(tryPath, { force: true });
     io.err((e2 as Error).message);
     return e2 instanceof AcpSignInError ? 1 : 2;
   }
   return show();
+}
+
+/** The prompt of a re-read of some files of a repo with one rule (rules try, ADR 0208's Learn). */
+export function rereadPrompt(
+  root: string,
+  o: {
+    repo: string;
+    dir: string;
+    rule: ReadingRule;
+    files: readonly string[];
+    tryRel: string;
+    why: string;
+  },
+): string {
+  // Inside the metarepo by its relative path (C:\\repo2 isn't inside C:\\repo); else as given.
+  const rel = relative(root, o.dir);
+  const checkout =
+    rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.replace(/\\/g, "/") : o.dir;
+  return [
+    `# Try the reading rule ${o.rule.key} on ${o.repo}`,
+    "",
+    `Read only these files of ${o.repo} (its checkout is \`${checkout}\`), by Atticus's reading rules (the /atticus-map rules) and this one:`,
+    "",
+    `- ${o.rule.key}: ${o.rule.rule.replace(/\s+/g, " ")}${exampleOf(o.rule.example)}`,
+    "",
+    ...o.files.map((f) => `- \`${f}\``),
+    "",
+    `Write the facts you read to \`${o.tryRel}\` only (one JSON object per line, as the facts file takes them), and nothing else. Don't run atticus verify: ${o.why}.`,
+  ].join("\n");
+}
+
+/**
+ * ADR 0208: one unattended re-read of `files` with `rule`, into facts/.try/<repo>.<key>.jsonl,
+ * returned as text and always removed, on a throw or a Stop too.
+ */
+export async function rereadWith(
+  root: string,
+  o: {
+    repo: string;
+    dir: string;
+    rule: ReadingRule;
+    files: readonly string[];
+    runner: AcpStepRunner;
+    signal?: AbortSignal | undefined;
+  },
+): Promise<string> {
+  const tryRel = `${factsRelOf(root)}/.try/${o.repo}.${o.rule.key}.jsonl`;
+  const tryPath = join(root, ...tryRel.split("/"));
+  try {
+    await mkdir(join(factsDirOf(root), ".try"), { recursive: true });
+    await o.runner({
+      line: rereadPrompt(root, { ...o, tryRel, why: "Atticus verifies what you write" }),
+      change: `rules-learn-${o.repo}`,
+      writeRoots: [join(factsDirOf(root), ".try")],
+      ...(o.signal ? { signal: o.signal } : {}),
+    });
+    return await readFile(tryPath, "utf8").catch(() => "");
+  } finally {
+    await rm(tryPath, { force: true });
+  }
 }
 
 /** atticus rules import: a pinned copy of another product team's type rules. */

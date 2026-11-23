@@ -14,7 +14,7 @@ Atticus tells a reader (Copilot, or another assistant) how to read a repo. Your 
 A later layer adds to the earlier ones, and may switch one off for its scope, saying why.
 
 ```yaml
-schemaVersion: 1
+schemaVersion: 2
 rules:
   - key: path-from-field
     rule: >-
@@ -43,6 +43,36 @@ Drafts aren't given to reads until a person runs `atticus rules activate <key> -
 ## Try it, then apply it
 
 `atticus rules try forge-refunds --rule path-from-field` runs one small Copilot session on a few files the rule names and shows the facts it would add or change; it writes nothing. Once a rule is active, `atticus map --all --stale` tops up only the files it names in each repo read before it.
+
+## Learn from my corrections
+
+`atticus rules learn`, or **Learn from my corrections** on Map › Decided by AI (ADR 0208), turns the pairings you made on the map into rules, without you confirming each one:
+
+1. It takes every pairing a person made (a corrected AI pairing or a canvas pairing; never the AI's lines or a spread's) that no proven rule names yet, and hands each to your assistant with its cited lines. The assistant adds draft rules to `types/<type>.yaml`.
+2. Each draft is re-read on every file its `files` name in each corrected repo (at most 500 a repo), into `facts/.try/`, which is always removed after. The re-read is checked on its lines by the verifier, put with every other repo's facts, and the estate join run without your pairings of those calls.
+3. A rule is written `status: active` when the join itself draws each correction it names (the same API, by code: no pairing, answer or guess), no call a person paired, declined or answered changes, and no arrow a person deleted on the canvas could be drawn again. Any other stays a draft with `learned.why`. While a deleted arrow names an end that isn't a repo (a system, a label), no rule is proven.
+
+```yaml
+schemaVersion: 2
+rules:
+  - key: path-from-constant
+    status: active
+    rule: >-
+      A call's path is never the field that holds it: write the path its constant holds.
+    files: ["src/main/java/**/*Client.java"]
+    learned:
+      corrections: ["forge-billing src/main/java/forge/billing/PartnerClient.java:31"]
+      by: pat
+      at: 2026-11-08T10:15:00.000Z
+      proof:
+        repos: [forge-billing]
+        reread: ["forge-billing src/main/java/forge/billing/PartnerClient.java"]
+        reproduced: ["forge-billing src/main/java/forge/billing/PartnerClient.java:31"]
+```
+
+A learned rule is given only to the reads of the repos in `proof.repos`; for every other repo of the type it is a draft until Learn proves it there, or a person runs `atticus rules activate <key> --type <type>`, which replaces `learned` with a note that they set it active. A failed draft uses none of its corrections up: the next run asks again. A run with nothing new asks nothing and writes nothing.
+
+**Versions:** `learned` needs `schemaVersion: 2`; Learn moves a file it writes to from 1 to 2 by the number only. Atticus beta.30 refuses a version 2 file whole, so a team upgrades together before anyone runs Learn.
 
 ## Take another team's rules
 

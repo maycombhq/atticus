@@ -791,6 +791,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
+// Next minor (ADR 0208; the integrator sets API_VERSION): POST /api/reading-rules/learn, Learn
+// from my corrections as a local job, its result LearnCorrectionsResult. Additive only.
 export const API_VERSION = "3.19.0";
 export const DEFAULT_PORT = 4321;
 
@@ -6867,6 +6869,43 @@ export const RuleFromPairingResult = z.object({
   activate: z.string(),
 });
 export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
+/**
+ * ADR 0208 (additive, 3.19.0's next minor): POST /api/reading-rules/learn, Learn from my
+ * corrections, a local job; its result's `extra` is this. `corrections`: the person's pairings
+ * no proven rule names yet; `active`: each rule the estate join proved (the corrections it drew
+ * by itself), active for the repos it was proven on; `draft`: each rule that stays a draft, with
+ * its reasons; `untaught`: a correction no drafted rule names, or of a repo with no type.
+ */
+export const LearnCorrectionsResult = z.object({
+  corrections: z.number().int().nonnegative(),
+  active: z.array(z.object({ key: z.string(), file: z.string(), reproduced: z.array(z.string()) })),
+  draft: z.array(
+    z.object({
+      key: z.string(),
+      file: z.string(),
+      /** Why it stays a draft, each by kind with what it is about (the app words each). */
+      reasons: z.array(
+        z.object({
+          kind: z.enum([
+            "not-reproduced",
+            "touched",
+            "deleted",
+            "unresolved-delete",
+            "no-files",
+            "too-many-files",
+            "no-checkout",
+            "rejected",
+          ]),
+          about: z.string().optional(),
+        }),
+      ),
+      /** The same in the command line's words, as `learned.why` keeps it. */
+      why: z.string(),
+    }),
+  ),
+  untaught: z.array(z.object({ correction: z.string(), kind: z.enum(["no-type", "not-named"]) })),
+});
+export type LearnCorrectionsResultT = z.infer<typeof LearnCorrectionsResult>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type DeclarableRouteViewT = z.infer<typeof DeclarableRouteView>;
@@ -10082,6 +10121,20 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/reading-rules/learn": {
+    post: {
+      id: "learnFromCorrections",
+      summary:
+        "Learn from my corrections as a local job (ADR 0208): the assistant drafts reading rules from the person's pairings since the last run; each is re-read on the files it names and written active with its proof when the re-read reproduces them and moves no arrow a person touched, else stays a draft saying why. 409 where AI is off or copilot-acp isn't allowed. Its job's result is LearnCorrectionsResult",
+      tag: "views",
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is LearnCorrectionsResult",
+      },
+      errors: [409],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -11170,6 +11223,7 @@ export function openApiDocument(): Record<string, unknown> {
     SavedCanvasViews,
     CodeLink,
     RuleFromPairingResult,
+    LearnCorrectionsResult,
     Question,
     QuestionList,
     AnsweredQuestion,
