@@ -73,7 +73,9 @@ export function noDeployNote(
     files.length === 1
       ? "1 deploy or pipeline file isn't"
       : `${files.length} deploy or pipeline files aren't`;
-  return `${repo} has no deploy fact, and ${n} read: ${shown}${more}. A change that moves or ships ${repo} has nothing to stand on until then: read it, or say in the reviewed file why it holds no deploy.`;
+  const them = files.length === 1 ? "it" : "them";
+  const holds = files.length === 1 ? "it holds" : "they hold";
+  return `${repo} has no deploy fact, and ${n} read: ${shown}${more}. A change that moves or ships ${repo} has nothing to stand on until then: read ${them}, or say in the reviewed file why ${holds} no deploy.`;
 }
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
