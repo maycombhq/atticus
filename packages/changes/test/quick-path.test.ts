@@ -93,6 +93,20 @@ describe("a change made from a requirements file", () => {
       join(dir, "design.md"),
       (await readFile(join(dir, "design.md"), "utf8")) + IN_THE_CODE,
     );
+    // v31 (WP-05): a task with no acceptance criteria at all refuses the hand-off, with its line.
+    const bare = await assess(await loadChangeContext(root), c);
+    expect(bare.blockers.filter((b) => b.code === "stories.no-criteria").length).toBe(5);
+    expect(bare.blockers.find((b) => b.code === "stories.no-criteria")?.message).toMatch(
+      /^tasks\.md:5: task 1\.1 \(Add V3__add_daily_limit\.sql\) has no acceptance criteria\./,
+    );
+    const tasks = await readFile(join(dir, "tasks.md"), "utf8");
+    await writeFile(
+      join(dir, "tasks.md"),
+      tasks.replace(
+        /^(- \[ \] .*)$/gm,
+        "$1\n  - Given a transfer, when it is made, then the limit is applied.",
+      ),
+    );
     await passedRound(root, c.id, "plan");
     const h = await handoff(root, c.id, {
       gitHost: host(),

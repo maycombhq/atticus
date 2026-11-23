@@ -114,8 +114,9 @@ const BEFORE = {
   // added) and the self-check line; and after ADR 0132 asked where a new component runs (the
   // format's runsOn line and one rule); and after ADR 0180 asked what a new component is (the
   // runsOn line's `type`, and the component-types source listing the organisation's types); and
-  // after ADR 0203 B gave the format operations, waves and a deploy step's operation (one rule)
-  arch: "09996b7bda34fe68a0924eeee23cd957a6be232bec7a35eacc6d566cac839022",
+  // after ADR 0203 B gave the format operations, waves and a deploy step's operation (one rule);
+  // and after ADR 0207 part 4 gave a publish step its topic (the format's topic line, one rule)
+  arch: "f4bf69d297af0ac2d8d746e57d56a8b5fa42d94cc7e3dff8dd3a85f84b6bd353",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed

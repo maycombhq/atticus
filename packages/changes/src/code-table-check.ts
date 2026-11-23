@@ -10,6 +10,7 @@ import {
 } from "./code-table.js";
 import type { ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
+import { checkQuickTasks } from "./quick-tasks.js";
 import { decodeRequirements, parseRequirements, REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder } from "./store.js";
 
@@ -75,8 +76,15 @@ export async function codeTableState(
     artifact: "design",
     message: r.message,
   }));
-  const notes = table.found
-    ? specNamesNotInRows(table, specs, (id) => has(id) || planned.includes(id))
-    : [];
+  // v31 (WP-05): each task checked as the stories stage checks a story's; only none blocks.
+  const found = checkQuickTasks({ tasks, table, specs, has, planned });
+  for (const f of found.filter((x) => x.blocking))
+    reasons.push({ code: "stories.no-criteria", artifact: "tasks", message: f.message });
+  const notes = [
+    ...(table.found
+      ? specNamesNotInRows(table, specs, (id) => has(id) || planned.includes(id))
+      : []),
+    ...found.filter((x) => !x.blocking).map((x) => x.message),
+  ];
   return { applies: true, table, reasons, notes };
 }

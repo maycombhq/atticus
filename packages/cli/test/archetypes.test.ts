@@ -571,7 +571,9 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         );
         expect(c.err).toEqual([]);
         expect(code).toBe(0);
-        expect(c.out[0]).toMatch(
+        // v31 (WP-05): first the knowledge the change leads to, written to knowledge.yaml.
+        expect(c.out[0]).toMatch(/^Knowledge: /);
+        expect(c.out[1]).toMatch(
           new RegExp(`^Hand-off PR #1 \\(handoff/${a.id}/plan\\) is open: `),
         );
         expect(published).toHaveLength(1);
@@ -584,6 +586,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
             `${at}/design.md`,
             `${at}/tasks.md`,
             `${at}/change.yaml`,
+            `${at}/knowledge.yaml`,
           ]),
         );
         // Raised: a person merges it. Still never a stage.

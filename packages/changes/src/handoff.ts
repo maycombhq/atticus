@@ -166,6 +166,8 @@ export async function handoffFilesOf(
     "stage/drafted.yaml",
     "stage/stories-numbers.yaml",
     "stage/stories-shape.yaml",
+    // v31 (WP-05): the knowledge that applies, which the PR's body lists, rides as a file too.
+    "knowledge.yaml",
   ])
     if (await present(own)) files.add(own);
   // ADR 0201: the requirements file a change was made from rides with its first phase's

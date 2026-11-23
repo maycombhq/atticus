@@ -782,6 +782,9 @@ export async function changeHandoff(
     const ref = /^(define|design|plan|build|qa|release)$/.test(phase)
       ? handoffBranch(id, phase)
       : `change/${id}`;
+    // v31 (WP-05): a quick change's knowledge list, written before its plan hand-off.
+    const known = await (await import("./quick-knowledge.js")).quickKnowledgeLine(root, c);
+    if (known) io.out(known);
     const h = await handoff(root, id, {
       gitHost,
       by: o.by,
