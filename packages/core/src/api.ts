@@ -6867,6 +6867,19 @@ export const RuleFromPairingResult = z.object({
   activate: z.string(),
 });
 export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
+/**
+ * ADR 0208 (additive, 3.19.0's next minor): POST /api/reading-rules/learn, Learn from my
+ * corrections, a local job; its result's `extra` is this. `corrections`: the person's pairings
+ * since the last run; `active`: each rule a re-read proved (the corrections it reproduced);
+ * `draft`: each rule that stays a draft, with why; `untaught`: a correction no rule names.
+ */
+export const LearnCorrectionsResult = z.object({
+  corrections: z.number().int().nonnegative(),
+  active: z.array(z.object({ key: z.string(), file: z.string(), reproduced: z.array(z.string()) })),
+  draft: z.array(z.object({ key: z.string(), file: z.string(), why: z.string() })),
+  untaught: z.array(z.object({ correction: z.string(), why: z.string() })),
+});
+export type LearnCorrectionsResultT = z.infer<typeof LearnCorrectionsResult>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type DeclarableRouteViewT = z.infer<typeof DeclarableRouteView>;
@@ -10082,6 +10095,20 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/reading-rules/learn": {
+    post: {
+      id: "learnFromCorrections",
+      summary:
+        "Learn from my corrections as a local job (ADR 0208): the assistant drafts reading rules from the person's pairings since the last run; each is re-read on the files it names and written active with its proof when the re-read reproduces them and moves no arrow a person touched, else stays a draft saying why. 409 where AI is off or copilot-acp isn't allowed. Its job's result is LearnCorrectionsResult",
+      tag: "views",
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is LearnCorrectionsResult",
+      },
+      errors: [409],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -11170,6 +11197,7 @@ export function openApiDocument(): Record<string, unknown> {
     SavedCanvasViews,
     CodeLink,
     RuleFromPairingResult,
+    LearnCorrectionsResult,
     Question,
     QuestionList,
     AnsweredQuestion,

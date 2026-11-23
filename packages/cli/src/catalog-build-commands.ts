@@ -1783,6 +1783,44 @@ export async function applyMapEdits(
         return 1;
       }
     }
+    // ADR 0208 (WP-04): a pairing spreads to the repo's like calls (its own batch, undone on
+    // Decisions; this Apply's Undo takes its lines back too); any other change says why not.
+    const { factsRelOf, onlyThisArrow, ONLY_THIS_ARROW, readBatch } =
+      await import("@maycombhq/core");
+    const { spreadPairing } = await import("./ai-decide.js");
+    for (const [i, e] of o.edits.entries()) {
+      const said = `Change ${i + 1} of ${n}`;
+      const why =
+        onlyThisArrow(e) ?? ("pair" in e && !e.pair.to.repo ? ONLY_THIS_ARROW.system : "");
+      if (why || !("pair" in e)) {
+        io.out(`${said}: ${why}.`);
+        continue;
+      }
+      for (const x of e.pair.pairs)
+        try {
+          const p = { repo: e.pair.from, call: x.call, to: e.pair.to.repo!, api: x.api };
+          const r = await spreadPairing(root, p, { by, ...(o.now ? { now: o.now } : {}) });
+          if (!r.batch) {
+            io.out(
+              `${said}: ${x.call} applies to this call only: ${r.noRule ?? "nothing like it"}.`,
+            );
+            continue;
+          }
+          const lines = ((await readBatch(root, r.batch))?.applied ?? []).flatMap((a) =>
+            a.kind === "link" ? [a.line] : [],
+          );
+          const rel = `${factsRelOf(root)}/${e.pair.from}.corrections.jsonl`;
+          wrote.push({ edit: i, file: rel, lines });
+          inputs.add(rel);
+          io.out(
+            `${said}: spread to ${r.spread.length} like call${r.spread.length === 1 ? "" : "s"} by ${r.rule?.match}, as your rule (${r.batch}, one Undo on Decisions).`,
+          );
+        } catch (err) {
+          io.err(
+            `${said}: the spread didn't run (${(err as Error).message}); the change is saved.`,
+          );
+        }
+    }
     io.out(`${n} change${n === 1 ? "" : "s"} saved. Building the catalog once, with all of them.`);
     await mapEditHooks.beforeBuild?.();
     const c = await buildAfterDecisions(root, targets, io, { inputs, pending });

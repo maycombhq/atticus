@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import type { Loaded } from "../../api/client.js";
+import { followJob } from "../../app/job.js";
 import {
   AiChip,
   AiMark,
@@ -81,6 +82,90 @@ function DecisionRow(p: { d: Decision; onOpen: (d: Decision) => void; onClose: (
       )}
       <AiMark item={d.item} run={d.run} onOpen={p.onOpen} onClose={p.onClose} />
     </li>
+  );
+}
+
+const L = D.learn;
+type Learning =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "done"; r: Api.LearnCorrectionsResultT }
+  | { state: "failed"; why: string };
+
+/** ADR 0208: what a Learn run did: the rules made active, those left drafts and why. */
+export function LearnResultView({ r }: { r: Api.LearnCorrectionsResultT }) {
+  if (!r.corrections) return <div className="state">{L.none}</div>;
+  return (
+    <div className="stack" style={{ gap: 4 }} role="status">
+      <p style={{ margin: 0 }}>{L.since(r.corrections)}</p>
+      <ul style={{ margin: 0 }}>
+        {r.active.map((a) => (
+          <li key={a.key}>{L.active(a.key, a.file, a.reproduced.length)}</li>
+        ))}
+        {r.draft.map((x) => (
+          <li key={x.key}>
+            {L.draft(x.key, x.file)} <span className="muted">{x.why}</span>
+          </li>
+        ))}
+        {r.untaught.map((u) => (
+          <li key={u.correction}>{L.untaught(u.correction, u.why)}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** ADR 0208: one button over every correction since the last run (POST /api/reading-rules/learn). */
+export function LearnPanel(p: {
+  initial?: Learning;
+  run?: () => Promise<Api.LearnCorrectionsResultT>;
+  onDone?: () => void;
+}) {
+  const [s, setS] = useState<Learning>(p.initial ?? { state: "idle" });
+  const run =
+    p.run ??
+    (async () =>
+      (await followJob("/api/reading-rules/learn", {})).result as Api.LearnCorrectionsResultT);
+  const go = async () => {
+    setS({ state: "running" });
+    try {
+      setS({ state: "done", r: await run() });
+      p.onDone?.();
+    } catch (e) {
+      setS({ state: "failed", why: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  return (
+    <section className="stack" aria-labelledby="decisions-learn" style={{ gap: 8 }}>
+      <h3 id="decisions-learn" className="hud" style={{ margin: 0 }}>
+        {L.title}
+      </h3>
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        {L.intro}
+      </p>
+      <div>
+        <button
+          type="button"
+          className="btn"
+          disabled={s.state === "running"}
+          aria-busy={s.state === "running"}
+          onClick={() => void go()}
+        >
+          {L.run}
+        </button>
+      </div>
+      {s.state === "running" && (
+        <div className="state" role="status">
+          {L.running}
+        </div>
+      )}
+      {s.state === "failed" && (
+        <div className="state error" role="alert">
+          {L.failed(s.why)}
+        </div>
+      )}
+      {s.state === "done" && <LearnResultView r={s.r} />}
+    </section>
   );
 }
 
@@ -233,6 +318,7 @@ export function DecisionsPage(p: {
                     </>
                   )}
                 </section>
+                <LearnPanel {...(p.of.reload ? { onDone: p.of.reload } : {})} />
                 <section className="stack" aria-labelledby="decisions-batches" style={{ gap: 8 }}>
                   <h3 id="decisions-batches" className="hud" style={{ margin: 0 }}>
                     {D.batchesTitle}

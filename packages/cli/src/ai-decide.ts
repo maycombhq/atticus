@@ -58,6 +58,7 @@ import {
   type AuditItemT,
   type AuditTally,
   type BatchItemT,
+  type CandidateApi,
   type DecideNow,
   type DecideSettings,
   type DecisionBatchT,
@@ -101,7 +102,7 @@ const AI_RUNTIME: AiRuntime = "copilot-acp";
 
 // ------------------------------------------------------------------ files
 
-async function factsOf(root: string, repo: string): Promise<Fact[]> {
+export async function factsOf(root: string, repo: string): Promise<Fact[]> {
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
   if (!text.trim()) return [];
   const r = parseFacts(text);
@@ -113,13 +114,13 @@ const correctionsFile = (root: string, repo: string) =>
 const correctionsRel = (root: string, repo: string) =>
   `${factsRelOf(root)}/${repo}.corrections.jsonl`;
 
-async function correctionsOf(root: string, repo: string) {
+export async function correctionsOf(root: string, repo: string) {
   const text = await readFile(correctionsFile(root, repo), "utf8").catch(() => "");
   return parseCorrections(text).corrections;
 }
 
 /** The repos with a corrections file. */
-async function correctedRepos(root: string): Promise<string[]> {
+export async function correctedRepos(root: string): Promise<string[]> {
   return (await readdir(factsDirOf(root)).catch(() => [] as string[]))
     .filter((n) => n.endsWith(".corrections.jsonl"))
     .map((n) => n.slice(0, -".corrections.jsonl".length))
@@ -207,7 +208,7 @@ async function coversCall(match: string, f: FactOf<"call">, facts: readonly Fact
  * too), by call fact id. The AI pairs none of them and no spread reaches them: a person's word
  * stands over the AI's, and the join ranks the person's answer above an AI pairing.
  */
-async function answeredByPerson(
+export async function answeredByPerson(
   root: string,
   repo: string,
   facts: readonly Fact[],
@@ -1181,15 +1182,223 @@ async function correctLink(
       : undefined,
     true,
   );
-  // The spread: every other call of the repo the rule covers that the AI paired, or that is loose.
-  const spread: Api.SpreadItemViewT[] = [];
-  const add: string[] = [ownLine];
-  const remove: string[] = [];
   const appliedItems: BatchItemT[] = [{ kind: "link", repo, fact: f.id, line: ownLine }];
+  const plan = rule
+    ? await planPairSpread(root, {
+        repo,
+        f,
+        facts,
+        corrections,
+        match: rule.match,
+        target,
+        box: target ?? aiRepo,
+        lineFor,
+        revert: true,
+      })
+    : { spread: [], add: [], remove: [], applied: [], reverted: [] };
+  const { spread, remove } = plan;
+  const add = [ownLine, ...plan.add];
+  appliedItems.push(...plan.applied);
+  const revertedItems = plan.reverted;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const { estateRepos } = await import("@maycombhq/scanner");
+  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
+  const shape = `link:${repoType ?? repo}:${rule?.match ?? f.path}`;
+  const n = await shapeCount(root, shape);
+  const rel = correctionsRel(root, repo);
+  const result: Api.CorrectDecisionResultT = {
+    written: !req.preview,
+    ...(req.preview ? {} : { batch }),
+    item: req.item,
+    answer: entry
+      ? `${target} ${[entry.method?.toUpperCase(), entry.path].filter(Boolean).join(" ")}`
+      : "none",
+    ...(rule ? { rule } : {}),
+    ...(similar && !rule && noRule ? { noRule } : {}),
+    spread,
+    counts: counted(spread),
+    ...(n >= RULE_AFTER_CORRECTIONS && repoType && entry
+      ? { makeRule: { corrections: n, shape, repo, line: ownLine } }
+      : {}),
+    files: [rel, ...(req.preview ? [] : [batchRelOf(root, batch)])],
+    verify: [`atticus verify ${repo} --write`],
+    commit: `git add ${rel} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${repo}: an AI pairing corrected${rule ? `, and spread by ${rule.match}` : ""}`)}"`,
+  };
+  if (req.preview) return result;
+  await rewriteCorrections(root, repo, { remove, add });
+  await writeBatch(root, {
+    schema: 1,
+    id: batch,
+    kind: "rule",
+    at,
+    by: o.by,
+    correction: {
+      item: req.item,
+      answer,
+      ...(rule ? { rule: { from: req.item, match: rule.match, kind: rule.kind as RuleKind } } : {}),
+      run: standing.ai.run,
+      shape,
+    },
+    applied: appliedItems,
+    reverted: revertedItems,
+  });
+  return result;
+}
+
+/** The API of `target` the shapes rank first for a call (ADR 0178), or undefined (a tie, none). */
+export function bestApiOf(o: {
+  repo: string;
+  call: FactOf<"call">;
+  target: string;
+  apis: readonly CandidateApi[];
+  settings: Readonly<Record<string, string>>;
+}): CandidateApi | undefined {
+  if (!o.apis.length) return undefined;
+  const s = linkCandidates({
+    from: o.repo,
+    facts: [o.call],
+    join: { joins: [], asks: [], misses: [], outside: [], left: [] },
+    apis: o.apis,
+    pairs: {},
+    to: { repo: o.target },
+    settings: o.settings,
+  }).calls[0]?.suggestion?.api;
+  return s ? o.apis.find((a) => a.id === s) : undefined;
+}
+
+/**
+ * ADR 0208 (WP-04): a person's pairing made on the canvas (Connect to…, an add or a redirect of
+ * Edit the map) spreads as a corrected AI pairing does: the rule `deriveMatch` gives (the call's
+ * own folder, or what it shares with the AI's pairings to the box it was joined to) pairs the
+ * repo's other loose and AI-paired calls it covers with the target's API the shapes rank first,
+ * as the person's rule, in one batch with one Undo. It only adds lines; a person's word stands.
+ */
+export async function spreadPairing(
+  root: string,
+  p: { repo: string; call: string; to: string; api: string },
+  o: { by: string; now?: Date; preview?: boolean; env?: NodeJS.ProcessEnv },
+): Promise<Api.CorrectDecisionResultT> {
+  if (inAcpSession(o.env))
+    throw new DecideError("refused", "A spread is a person's: a Copilot session acts as no one.");
+  const item = `link:${p.repo}:${p.call}`;
+  const facts = await factsOf(root, p.repo);
+  const f = facts.find((x): x is FactOf<"call"> => x.id === p.call && x.kind === "call");
+  const corrections = await correctionsOf(root, p.repo);
+  const st = f ? linksFor(f, corrections)[0] : undefined;
+  const at = (o.now ?? new Date()).toISOString();
+  const batch = newBatchId(o.now ?? new Date());
+  const none = (noRule: string): Api.CorrectDecisionResultT => ({
+    written: false,
+    item,
+    answer: p.to,
+    noRule,
+    spread: [],
+    counts: counted([]),
+    files: [],
+    verify: [],
+    commit: "",
+  });
+  if (!f || !st || st.ai || st.link?.repo !== p.to || st.link.entry !== p.api)
+    return none("the person's pairing isn't the call's standing line: nothing to spread");
+  const subject = subjectOfCall(f);
+  if (!subject) return none("the call's path is a name, not a path a rule can name");
+  // Siblings: the AI's pairings to the box the AI had joined this call to, if it had.
+  const wasAi = corrections.filter((c) => c.ai && c.fact === f.id).at(-1)?.link?.repo;
+  const siblings = standingAi(corrections)
+    .filter((c) => wasAi && c.link?.repo === wasAi)
+    .map((c) => facts.find((x): x is FactOf<"call"> => x.id === c.fact && x.kind === "call"))
+    .flatMap((x) => (x ? [subjectOfCall(x)] : []))
+    .filter((s): s is RuleSubject => !!s);
+  const d = deriveMatch(subject, siblings);
+  if (d.match === "/**") return none("the calls share no path narrower than every path");
+  const lineFor = (c: FactOf<"call">, api?: { id: string; method?: string; path: string }) =>
+    correctionLine(
+      FactCorrection.parse({
+        schemaVersion: 2,
+        fact: c.id,
+        target: { kind: "call", file: c.cite.file, line: c.cite.line, value: c.cite.value },
+        action: "link",
+        link: {
+          repo: p.to,
+          entry: api!.id,
+          ...(api!.method ? { method: api!.method.toUpperCase() } : {}),
+          path: api!.path,
+        },
+        by: o.by,
+        at,
+        batch,
+        rule: { from: item, match: d.match },
+      }),
+    );
+  const plan = await planPairSpread(root, {
+    ...{ repo: p.repo, f, facts, corrections, match: d.match, target: p.to, box: p.to, lineFor },
+    revert: false,
+  });
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const { estateRepos } = await import("@maycombhq/scanner");
+  const repoType = estateRepos(op).find((r) => r.id === p.repo)?.type;
+  const shape = `link:${repoType ?? p.repo}:${d.match}`;
+  const rel = correctionsRel(root, p.repo);
+  const write = !o.preview && plan.add.length > 0;
+  const result: Api.CorrectDecisionResultT = {
+    written: write,
+    ...(write ? { batch } : {}),
+    item,
+    answer: `${p.to} ${[st.link.method, st.link.path].filter(Boolean).join(" ")}`,
+    rule: { ...d, derived: true },
+    ...(plan.add.length ? {} : { noRule: "no other call of the repo is like it" }),
+    spread: plan.spread,
+    counts: counted(plan.spread),
+    files: write ? [rel, batchRelOf(root, batch)] : [],
+    verify: [`atticus verify ${p.repo} --write`],
+    commit: `git add ${rel} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${p.repo}: a pairing spread by ${d.match}`)}"`,
+  };
+  if (!write) return result;
+  await rewriteCorrections(root, p.repo, { add: plan.add });
+  await writeBatch(root, {
+    schema: 1,
+    id: batch,
+    kind: "rule",
+    at,
+    by: o.by,
+    correction: { item, answer: p.to, rule: { from: item, ...d }, shape },
+    applied: plan.applied,
+    reverted: [],
+  });
+  return result;
+}
+
+/**
+ * The spread of a pairing rule (ADR 0181, part 2) over every other call of the repo it covers
+ * that the AI paired or that is loose: a person's word (a pairing, a none, an edit of where it
+ * goes, an answered targets question) stands. `revert`: an AI pairing the rule covers whose call
+ * has no API of the target is taken away (a correction of the AI); else it is left (ADR 0208, a
+ * canvas pairing only adds, so the Apply's Undo takes back exactly its lines).
+ */
+async function planPairSpread(
+  root: string,
+  o: {
+    repo: string;
+    f: FactOf<"call">;
+    facts: readonly Fact[];
+    corrections: readonly FactCorrection[];
+    match: string;
+    target: string | undefined;
+    box: string;
+    lineFor: (c: FactOf<"call">, api?: { id: string; method?: string; path: string }) => string;
+    revert: boolean;
+  },
+) {
+  const { repo, f, facts, corrections, target, lineFor } = o;
+  const rule = { match: o.match };
+  const spread: Api.SpreadItemViewT[] = [];
+  const add: string[] = [];
+  const remove: string[] = [];
+  const appliedItems: BatchItemT[] = [];
   const revertedItems: BatchItemT[] = [];
-  if (rule) {
+  {
     const { candidatesOf, settingsOf } = await import("./ui-api-links.js");
-    const box = { repo: target ?? aiRepo };
+    const box = { repo: o.box };
     const cands =
       box.repo !== repo ? await candidatesOf(root, repo, box).catch(() => undefined) : undefined;
     const loose = new Set(
@@ -1197,19 +1406,8 @@ async function correctLink(
     );
     const apis = (cands?.view.apis ?? []).filter((a) => a.kind !== "operation");
     const settings = settingsOf(facts);
-    const bestOf = (c: FactOf<"call">) => {
-      if (!target || !apis.length) return undefined;
-      const s = linkCandidates({
-        from: repo,
-        facts: [c],
-        join: { joins: [], asks: [], misses: [], outside: [], left: [] },
-        apis,
-        pairs: {},
-        to: { repo: target },
-        settings,
-      }).calls[0]?.suggestion?.api;
-      return s ? apis.find((a) => a.id === s) : undefined;
-    };
+    const bestOf = (c: FactOf<"call">) =>
+      target ? bestApiOf({ repo, call: c, target, apis, settings }) : undefined;
     const words = (c: FactOf<"call">) =>
       `${repo}'s call ${[c.method?.toUpperCase(), c.path].filter(Boolean).join(" ")} (${c.cite.file}:${c.cite.line})`;
     // Round 48: a call whose targets question a person answered is theirs too.
@@ -1260,7 +1458,7 @@ async function correctLink(
           now: `${target} ${[api.method, api.path].filter(Boolean).join(" ")}`,
           change: !st ? "applied" : same ? "confirmed" : "replaced",
         });
-      } else if (st?.ai) {
+      } else if (st?.ai && o.revert) {
         const l = correctionLine(st);
         remove.push(l);
         revertedItems.push({ kind: "link", repo, fact: c.id, line: l });
@@ -1268,49 +1466,7 @@ async function correctLink(
       }
     }
   }
-  const op = await loadOrgPack(orgPackDirOf(root));
-  const { estateRepos } = await import("@maycombhq/scanner");
-  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
-  const shape = `link:${repoType ?? repo}:${rule?.match ?? f.path}`;
-  const n = await shapeCount(root, shape);
-  const rel = correctionsRel(root, repo);
-  const result: Api.CorrectDecisionResultT = {
-    written: !req.preview,
-    ...(req.preview ? {} : { batch }),
-    item: req.item,
-    answer: entry
-      ? `${target} ${[entry.method?.toUpperCase(), entry.path].filter(Boolean).join(" ")}`
-      : "none",
-    ...(rule ? { rule } : {}),
-    ...(similar && !rule && noRule ? { noRule } : {}),
-    spread,
-    counts: counted(spread),
-    ...(n >= RULE_AFTER_CORRECTIONS && repoType && entry
-      ? { makeRule: { corrections: n, shape, repo, line: ownLine } }
-      : {}),
-    files: [rel, ...(req.preview ? [] : [batchRelOf(root, batch)])],
-    verify: [`atticus verify ${repo} --write`],
-    commit: `git add ${rel} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${repo}: an AI pairing corrected${rule ? `, and spread by ${rule.match}` : ""}`)}"`,
-  };
-  if (req.preview) return result;
-  await rewriteCorrections(root, repo, { remove, add });
-  await writeBatch(root, {
-    schema: 1,
-    id: batch,
-    kind: "rule",
-    at,
-    by: o.by,
-    correction: {
-      item: req.item,
-      answer,
-      ...(rule ? { rule: { from: req.item, match: rule.match, kind: rule.kind as RuleKind } } : {}),
-      run: standing.ai.run,
-      shape,
-    },
-    applied: appliedItems,
-    reverted: revertedItems,
-  });
-  return result;
+  return { spread, add, remove, applied: appliedItems, reverted: revertedItems };
 }
 
 // ------------------------------------------------------------------ Undo

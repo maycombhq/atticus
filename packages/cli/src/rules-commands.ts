@@ -79,7 +79,7 @@ export function scopeFile(s: Scope): { rel: string; layer: Layer } | string {
   return { rel: `repos/${s.repo}.yaml`, layer: "repo" };
 }
 
-async function loadDoc(root: string, rel: string) {
+export async function loadDoc(root: string, rel: string) {
   const path = join(rulesDirOf(root), ...rel.split("/"));
   const onDisk = await readFile(path, "utf8").catch(() => undefined);
   const text = onDisk ?? "schemaVersion: 1\nrules: []\noff: []\n";
@@ -90,7 +90,7 @@ async function loadDoc(root: string, rel: string) {
  * Write a layer's file back, checked, and only when it still holds `before` (as read; undefined
  * when it wasn't there), so an edit made meanwhile is never lost. `null`: written whatever it holds.
  */
-async function saveDoc(
+export async function saveDoc(
   path: string,
   doc: ReturnType<typeof parseDocument>,
   before: string | undefined | null,
@@ -442,6 +442,8 @@ export async function rulesDraftCommand(
     mode?: string;
     runner?: AcpStepRunner;
     signal?: AbortSignal;
+    /** ADR 0208: what was missed, given (Learn's corrections with their lines), not looked up. */
+    missed?: string[];
   },
   io: Output,
 ): Promise<number> {
@@ -481,7 +483,7 @@ export async function rulesDraftCommand(
     repos,
     file,
     ...(o.about ? { about: o.about } : {}),
-    missed: await missedOf(root, ids),
+    missed: o.missed ?? (await missedOf(root, ids)),
   });
   const promptRel = `${relOf(root)}/drafting/${o.type ? `type-${o.type}` : `repo-${o.repo}`}.md`;
   await mkdir(join(rulesDirOf(root), "drafting"), { recursive: true });

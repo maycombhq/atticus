@@ -129,6 +129,7 @@ export const NEWER_GUARDED_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/links/match/done",
   "POST /api/map/edits",
   "POST /api/reading-rules/from-pairing",
+  "POST /api/reading-rules/learn",
   "POST /api/boxes",
   "POST /api/declared-links",
   "POST /api/declared-links/undo",

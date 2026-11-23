@@ -7829,6 +7829,21 @@ export const COPY = {
    * correction spreads to everything like it; every batch is one Undo away.
    */
   decisions: {
+    /** ADR 0208: Learn from my corrections, one button over every correction since the last run. */
+    learn: {
+      title: "Learn from my corrections",
+      intro:
+        "Your assistant reads every pairing you made since the last run, with the lines it cites, and drafts reading rules so a read gets them right by itself. Each rule is tested by re-reading only the files it names: one whose re-read reproduces your corrections and moves no arrow a person set is written active, with its proof; any other stays a draft and says why. The rules file is reviewed in a pull request like code.",
+      run: "Learn from my corrections",
+      running: "Learning: the assistant drafts rules, then each is re-read…",
+      failed: (why: string) => `Learn didn't finish: ${why}`,
+      none: "No correction since the last run: nothing was asked and nothing written.",
+      since: (n: number) => `${n} correction${n === 1 ? "" : "s"} since the last run.`,
+      active: (key: string, file: string, n: number) =>
+        `${key} is active in ${file}: a re-read reproduced ${n} correction${n === 1 ? "" : "s"}.`,
+      draft: (key: string, file: string) => `${key} stays a draft in ${file}:`,
+      untaught: (c: string, why: string) => `Not learned from ${c}: ${why}.`,
+    },
     chip: "Detected by AI",
     /** Spoken after the chip: what it means, so the chip is never colour alone. */
     chipWhy:
