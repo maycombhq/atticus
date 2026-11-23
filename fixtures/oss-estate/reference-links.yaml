@@ -1,0 +1,214 @@
+# The true arrows of the public estate (README.md), written by hand from the two repos' source
+# at the pinned commits: every HTTP call the Angular app's services make, each to the REST API's
+# entry it reaches. `at` is the call's line in spring-petclinic-angular; `note` names the entry
+# of spring-petclinic-rest (method and path as its openapi.yml declares it under
+# /petclinic/api, and the line of its path key, which every method on that path shares), then
+# the id the catalog gives that entry's Endpoint record. oss-estate-join.test.ts checks each
+# drawn Interface's `endpoint` against that id, and the Endpoint record's method and path
+# against the entry written here. The format is the one `atticus measure links` reads
+# (docs/guide/measure.md).
+estate: petclinic
+repos:
+  - repo: spring-petclinic-rest
+    entries:
+      - entry: GET /petclinic/api/oops
+        at: src/main/resources/openapi.yml:33
+      - entry: GET /petclinic/api/owners
+        at: src/main/resources/openapi.yml:65
+      - entry: POST /petclinic/api/owners
+        at: src/main/resources/openapi.yml:65
+      - entry: GET /petclinic/api/v2/owners
+        at: src/main/resources/openapi.yml:139
+      - entry: DELETE /petclinic/api/owners/{ownerId}
+        at: src/main/resources/openapi.yml:206
+      - entry: GET /petclinic/api/owners/{ownerId}
+        at: src/main/resources/openapi.yml:206
+      - entry: PUT /petclinic/api/owners/{ownerId}
+        at: src/main/resources/openapi.yml:206
+      - entry: POST /petclinic/api/owners/{ownerId}/pets
+        at: src/main/resources/openapi.yml:362
+      - entry: GET /petclinic/api/owners/{ownerId}/pets/{petId}
+        at: src/main/resources/openapi.yml:411
+      - entry: PUT /petclinic/api/owners/{ownerId}/pets/{petId}
+        at: src/main/resources/openapi.yml:411
+      - entry: POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits
+        at: src/main/resources/openapi.yml:528
+      - entry: GET /petclinic/api/pettypes
+        at: src/main/resources/openapi.yml:586
+      - entry: POST /petclinic/api/pettypes
+        at: src/main/resources/openapi.yml:586
+      - entry: DELETE /petclinic/api/pettypes/{petTypeId}
+        at: src/main/resources/openapi.yml:670
+      - entry: GET /petclinic/api/pettypes/{petTypeId}
+        at: src/main/resources/openapi.yml:670
+      - entry: PUT /petclinic/api/pettypes/{petTypeId}
+        at: src/main/resources/openapi.yml:670
+      - entry: GET /petclinic/api/pets
+        at: src/main/resources/openapi.yml:838
+      - entry: GET /petclinic/api/v2/pets
+        at: src/main/resources/openapi.yml:872
+      - entry: DELETE /petclinic/api/pets/{petId}
+        at: src/main/resources/openapi.yml:926
+      - entry: GET /petclinic/api/pets/{petId}
+        at: src/main/resources/openapi.yml:926
+      - entry: PUT /petclinic/api/pets/{petId}
+        at: src/main/resources/openapi.yml:926
+      - entry: GET /petclinic/api/visits
+        at: src/main/resources/openapi.yml:1093
+      - entry: POST /petclinic/api/visits
+        at: src/main/resources/openapi.yml:1093
+      - entry: DELETE /petclinic/api/visits/{visitId}
+        at: src/main/resources/openapi.yml:1177
+      - entry: GET /petclinic/api/visits/{visitId}
+        at: src/main/resources/openapi.yml:1177
+      - entry: PUT /petclinic/api/visits/{visitId}
+        at: src/main/resources/openapi.yml:1177
+      - entry: GET /petclinic/api/specialties
+        at: src/main/resources/openapi.yml:1344
+      - entry: POST /petclinic/api/specialties
+        at: src/main/resources/openapi.yml:1344
+      - entry: DELETE /petclinic/api/specialties/{specialtyId}
+        at: src/main/resources/openapi.yml:1428
+      - entry: GET /petclinic/api/specialties/{specialtyId}
+        at: src/main/resources/openapi.yml:1428
+      - entry: PUT /petclinic/api/specialties/{specialtyId}
+        at: src/main/resources/openapi.yml:1428
+      - entry: GET /petclinic/api/vets
+        at: src/main/resources/openapi.yml:1595
+      - entry: POST /petclinic/api/vets
+        at: src/main/resources/openapi.yml:1595
+      - entry: DELETE /petclinic/api/vets/{vetId}
+        at: src/main/resources/openapi.yml:1680
+      - entry: GET /petclinic/api/vets/{vetId}
+        at: src/main/resources/openapi.yml:1680
+      - entry: PUT /petclinic/api/vets/{vetId}
+        at: src/main/resources/openapi.yml:1680
+      - entry: POST /petclinic/api/users
+        at: src/main/resources/openapi.yml:1847
+    calls: []
+  - repo: spring-petclinic-angular
+    calls:
+      - call: GET /petclinic/api/owners
+        at: src/app/owners/owner.service.ts:48
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/owners at src/main/resources/openapi.yml:65, endpoint spring-petclinic-rest.get-owner-3134d1
+      - call: GET /petclinic/api/owners/{id}
+        at: src/app/owners/owner.service.ts:54
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/owners/{ownerId} at src/main/resources/openapi.yml:206, endpoint spring-petclinic-rest.get-owner-7cbb5e
+      - call: POST /petclinic/api/owners
+        at: src/app/owners/owner.service.ts:60
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/owners at src/main/resources/openapi.yml:65, endpoint spring-petclinic-rest.post-owner
+      - call: PUT /petclinic/api/owners/{id}
+        at: src/app/owners/owner.service.ts:67
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/owners/{ownerId} at src/main/resources/openapi.yml:206, endpoint spring-petclinic-rest.put-owner
+      - call: DELETE /petclinic/api/owners/{id}
+        at: src/app/owners/owner.service.ts:73
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/owners/{ownerId} at src/main/resources/openapi.yml:206, endpoint spring-petclinic-rest.delete-owner
+      - call: GET /petclinic/api/owners
+        at: src/app/owners/owner.service.ts:83
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/owners at src/main/resources/openapi.yml:65, endpoint spring-petclinic-rest.get-owner-3134d1
+      - call: GET /petclinic/api/pets
+        at: src/app/pets/pet.service.ts:48
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/pets at src/main/resources/openapi.yml:838, endpoint spring-petclinic-rest.get-pet-bf0aa2
+      - call: GET /petclinic/api/pets/{id}
+        at: src/app/pets/pet.service.ts:55
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/pets/{petId} at src/main/resources/openapi.yml:926, endpoint spring-petclinic-rest.get-pet-b5ef08
+      - call: POST /petclinic/api/owners/{ownerId}/pets
+        at: src/app/pets/pet.service.ts:64
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/owners/{ownerId}/pets at src/main/resources/openapi.yml:362, endpoint spring-petclinic-rest.post-pet
+      - call: PUT /petclinic/api/pets/{id}
+        at: src/app/pets/pet.service.ts:71
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/pets/{petId} at src/main/resources/openapi.yml:926, endpoint spring-petclinic-rest.put-pet-b5ef08
+      - call: DELETE /petclinic/api/pets/{id}
+        at: src/app/pets/pet.service.ts:78
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/pets/{petId} at src/main/resources/openapi.yml:926, endpoint spring-petclinic-rest.delete-pet
+      - call: GET /petclinic/api/pettypes
+        at: src/app/pettypes/pettype.service.ts:48
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/pettypes at src/main/resources/openapi.yml:586, endpoint spring-petclinic-rest.get-pettype-78e085
+      - call: GET /petclinic/api/pettypes/{id}
+        at: src/app/pettypes/pettype.service.ts:55
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/pettypes/{petTypeId} at src/main/resources/openapi.yml:670, endpoint spring-petclinic-rest.get-pettype-eb07ba
+      - call: PUT /petclinic/api/pettypes/{id}
+        at: src/app/pettypes/pettype.service.ts:62
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/pettypes/{petTypeId} at src/main/resources/openapi.yml:670, endpoint spring-petclinic-rest.put-pettype
+      - call: POST /petclinic/api/pettypes
+        at: src/app/pettypes/pettype.service.ts:69
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/pettypes at src/main/resources/openapi.yml:586, endpoint spring-petclinic-rest.post-pettype
+      - call: DELETE /petclinic/api/pettypes/{id}
+        at: src/app/pettypes/pettype.service.ts:76
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/pettypes/{petTypeId} at src/main/resources/openapi.yml:670, endpoint spring-petclinic-rest.delete-pettype
+      - call: GET /petclinic/api/specialties
+        at: src/app/specialties/specialty.service.ts:48
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/specialties at src/main/resources/openapi.yml:1344, endpoint spring-petclinic-rest.get-specialty-5838ce
+      - call: GET /petclinic/api/specialties/{id}
+        at: src/app/specialties/specialty.service.ts:55
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/specialties/{specialtyId} at src/main/resources/openapi.yml:1428, endpoint spring-petclinic-rest.get-specialty-d26b19
+      - call: POST /petclinic/api/specialties
+        at: src/app/specialties/specialty.service.ts:62
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/specialties at src/main/resources/openapi.yml:1344, endpoint spring-petclinic-rest.post-specialty
+      - call: PUT /petclinic/api/specialties/{id}
+        at: src/app/specialties/specialty.service.ts:69
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/specialties/{specialtyId} at src/main/resources/openapi.yml:1428, endpoint spring-petclinic-rest.put-specialty
+      - call: DELETE /petclinic/api/specialties/{id}
+        at: src/app/specialties/specialty.service.ts:76
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/specialties/{specialtyId} at src/main/resources/openapi.yml:1428, endpoint spring-petclinic-rest.delete-specialty
+      - call: GET /petclinic/api/vets
+        at: src/app/vets/vet.service.ts:49
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/vets at src/main/resources/openapi.yml:1595, endpoint spring-petclinic-rest.get-vet-0f5370
+      - call: GET /petclinic/api/vets/{id}
+        at: src/app/vets/vet.service.ts:56
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/vets/{vetId} at src/main/resources/openapi.yml:1680, endpoint spring-petclinic-rest.get-vet-2da934
+      - call: PUT /petclinic/api/vets/{id}
+        at: src/app/vets/vet.service.ts:63
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/vets/{vetId} at src/main/resources/openapi.yml:1680, endpoint spring-petclinic-rest.put-vet
+      - call: POST /petclinic/api/vets
+        at: src/app/vets/vet.service.ts:70
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/vets at src/main/resources/openapi.yml:1595, endpoint spring-petclinic-rest.post-vet
+      - call: DELETE /petclinic/api/vets/{id}
+        at: src/app/vets/vet.service.ts:77
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/vets/{vetId} at src/main/resources/openapi.yml:1680, endpoint spring-petclinic-rest.delete-vet
+      - call: GET /petclinic/api/visits
+        at: src/app/visits/visit.service.ts:48
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/visits at src/main/resources/openapi.yml:1093, endpoint spring-petclinic-rest.get-visit-eba52e
+      - call: GET /petclinic/api/visits/{id}
+        at: src/app/visits/visit.service.ts:55
+        reaches: spring-petclinic-rest
+        note: GET /petclinic/api/visits/{visitId} at src/main/resources/openapi.yml:1177, endpoint spring-petclinic-rest.get-visit-585c76
+      - call: POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits
+        at: src/app/visits/visit.service.ts:65
+        reaches: spring-petclinic-rest
+        note: POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits at src/main/resources/openapi.yml:528, endpoint spring-petclinic-rest.post-visit-476ca7
+      - call: PUT /petclinic/api/visits/{id}
+        at: src/app/visits/visit.service.ts:72
+        reaches: spring-petclinic-rest
+        note: PUT /petclinic/api/visits/{visitId} at src/main/resources/openapi.yml:1177, endpoint spring-petclinic-rest.put-visit
+      - call: DELETE /petclinic/api/visits/{id}
+        at: src/app/visits/visit.service.ts:79
+        reaches: spring-petclinic-rest
+        note: DELETE /petclinic/api/visits/{visitId} at src/main/resources/openapi.yml:1177, endpoint spring-petclinic-rest.delete-visit

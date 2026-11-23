@@ -13,7 +13,8 @@ import type { EffectiveRule } from "./rules.js";
  * (`org-pack/agents/<name>-naysayer.md`, ADR 0201) whose frontmatter gives `gates: [design, …]`
  * runs at those gates after the four questions, through the same code: an agent definition and
  * one rule built in memory, `persona.<name>`, org layer, severity risk, whose look-for is the
- * file's body. No `gates`, no lens: the starters ship without it. Another team's agents
+ * file's body. No `gates`, no lens: of the starters, only the application architect's and the
+ * security naysayers give `gates: [design]` (v31). Another team's agents
  * (`agents/imported/`, ADR 0177) are never run as lenses. The file's words are the
  * organisation's, reviewed like the rest of the org pack; what the lens reads is data.
  */

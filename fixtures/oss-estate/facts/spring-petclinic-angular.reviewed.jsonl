@@ -1,0 +1,13 @@
+{"path": "src/app/**/*.component.ts", "why": "Components; their screens are recorded from the routing modules, their data comes through the services"}
+{"path": "src/app/**/*.component.html", "why": "Templates"}
+{"path": "src/app/**/*.css", "why": "Styles"}
+{"path": "src/app/**/*.spec.ts", "why": "Unit tests"}
+{"path": "src/app/testing/**", "why": "Test helpers"}
+{"path": "src/app/**/*.model.ts", "why": "Client models"}
+{"path": "src/app/**/*.module.ts", "why": "Angular modules wiring components"}
+{"path": "src/app/**/*.resolver.ts", "why": "Route resolvers calling the services"}
+{"path": "src/app/parts/**", "why": "Shared layout parts"}
+{"path": "src/assets/**", "why": "Static assets"}
+{"path": "e2e/**", "why": "End-to-end tests"}
+{"path": "docs/js/routes.js", "why": "Compodoc's generated documentation of the routes, not code the app runs"}
+{"path": "src/*", "why": "Bootstrap, index and global styles"}
