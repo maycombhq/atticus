@@ -748,6 +748,13 @@ export async function verifyCommand(
     io.err(`atticus verify ${repo}: ${e.message}`);
     return 2;
   }
+  // ADR 0208: a person's correction gone stale under a learned rule refuses the write.
+  if (o.write) {
+    const { staleUnderLearned } = await import("./learn-corrections.js");
+    const refused = await staleUnderLearned(root, repo, dir, report);
+    for (const l of refused) io.err(l);
+    if (refused.length) return 1;
+  }
   const reviewedBad = reviewedProblemsOf(reviewed.bad, report).map((p) => ({
     ...p,
     message: `${rel}/${repo}.reviewed.jsonl ${p.message}`,

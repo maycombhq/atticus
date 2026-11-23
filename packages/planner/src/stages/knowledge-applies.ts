@@ -5,7 +5,7 @@ import { z } from "zod";
 import { changeFolder } from "@maycombhq/changes";
 import { changesRelOf, toCanonicalYaml } from "@maycombhq/core";
 import { nodesById, openIndex } from "@maycombhq/index";
-import type { ContextReport } from "../engine.js";
+import { reportOf, type ContextReport } from "../engine.js";
 
 /**
  * The knowledge that applies to a change, listed (ADR 0124, Part 5). Every stage's context
@@ -62,6 +62,11 @@ export const KnowledgeApplies = z.strictObject({
       }),
     )
     .default([]),
+  /**
+   * v31 (WP-05): why the list couldn't be made, when it couldn't (the index didn't read).
+   * Optional and additive: the file stays version 1.
+   */
+  note: z.string().optional(),
   /** Knowledge the selection left out for room, by stage: a person may confirm one. */
   nearMisses: z
     .array(
@@ -122,6 +127,7 @@ export async function recordKnowledge(
   const before = await readKnowledgeApplies(root, change);
   if (!before && !picked.length && !left.length) return;
   const doc: KnowledgeApplies = before ?? { schemaVersion: 1, change, items: [], nearMisses: [] };
+  delete doc.note;
   const byId = new Map(doc.items.map((i) => [i.id, i] as const));
   for (const p of picked) {
     const cur = byId.get(p.id);
@@ -157,6 +163,58 @@ export async function recordKnowledge(
       })),
   ];
   await write(root, doc);
+}
+
+/** The room a quick change's knowledge selection has, in tokens. */
+export const QUICK_KNOWLEDGE_TOKENS = 4000;
+
+/**
+ * v31 (WP-05): a quick change runs no stage, so no stage's selection lists its knowledge. At its
+ * plan hand-off the index selects it, with no model, from the map ids the change cites (seeds)
+ * and its words, and it is recorded as a stage's is, under `quick`. knowledge.yaml is written
+ * even when nothing is found, so the hand-off says so; an index that can't be read is a note.
+ */
+export async function recordQuickKnowledge(
+  root: string,
+  change: string,
+  input: { ids: string[]; text: string; title?: string },
+  o: { open?: typeof openIndex } = {},
+): Promise<{ found: number; note?: string }> {
+  let note: string | undefined;
+  try {
+    const ix = await (o.open ?? openIndex)(root, { embeddings: "off", embedOnOpen: 0 });
+    try {
+      const s = await ix.select(input, {
+        budget: QUICK_KNOWLEDGE_TOKENS,
+        kinds: [...KNOWLEDGE_INDEX_KINDS],
+        meaning: false,
+        exclude: [change],
+      });
+      // A glossary term the map generated from the code (term.*) is not the org's knowledge.
+      const own = (x: { id: string; kind: string }) =>
+        !(x.kind === "GlossaryTerm" && x.id.startsWith("term."));
+      const r = reportOf(s, QUICK_KNOWLEDGE_TOKENS);
+      await recordKnowledge(root, change, "quick", {
+        ...r,
+        picked: r.picked.filter(own),
+        leftOut: r.leftOut.filter(own),
+      });
+    } finally {
+      ix.close();
+    }
+  } catch (e) {
+    note = `the index couldn't be read (${(e as Error).message.split("\n")[0]})`;
+  }
+  const doc = (await readKnowledgeApplies(root, change)) ?? {
+    schemaVersion: 1 as const,
+    change,
+    items: [],
+    nearMisses: [],
+  };
+  if (note) await write(root, { ...doc, note });
+  else if (!doc.items.length && !doc.nearMisses.length) await write(root, doc);
+  const found = doc.items.filter((i) => i.status !== "excluded").length;
+  return { found, ...(note ? { note } : {}) };
 }
 
 /** Why an item is listed when only a task's selection picked it (B-task-knowledge). */
@@ -386,7 +444,8 @@ export function knowledgeAppliesMarkdown(
   const t = o.text ?? ((x: string) => x);
   const shown = doc.items.filter((i) => i.status !== "excluded");
   const lines = ["### Applies to this change", ""];
-  if (!shown.length) lines.push("Nothing in the org's knowledge was picked for this change.");
+  if (doc.note) lines.push(`Not listed: ${doc.note}.`);
+  else if (!shown.length) lines.push("Nothing in the org's knowledge was picked for this change.");
   for (const i of shown) {
     const why = [
       i.status,

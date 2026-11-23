@@ -378,6 +378,22 @@ export const DeltaStep = z.strictObject({
       consumers: z.array(Id).optional(),
     })
     .optional(),
+  /**
+   * ADR 0207 part 4: a publish to a topic this change adds says what the topic is, as a new
+   * table does: its format, the repo's file that will hold its schema, its key, each field's
+   * type and classification, and free settings (partitions, retention, a dead-letter topic).
+   * Optional and additive: the flow delta stays at version 2.
+   */
+  topic: z
+    .strictObject({
+      format: z.enum(["json", "avro", "protobuf", "other"]),
+      schemaFile: text().optional(),
+      key: text().optional(),
+      fields: z.record(z.string(), text()).optional(),
+      classification: z.record(z.string(), text()).optional(),
+      settings: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    })
+    .optional(),
   fields: DeltaFields.optional(),
   /**
    * The drafter says the step's change breaks who uses it today, where no field is dropped

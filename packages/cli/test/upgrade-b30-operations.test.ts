@@ -92,7 +92,7 @@ async function runStages(root: string, change: string, stages: string[][], answe
   return a.drafts;
 }
 
-async function b285Metarepo(): Promise<string> {
+async function b285Metarepo(edit: (answers: string[]) => string[] = (a) => a): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "b30-ops-upgrade-"));
   roots.push(root);
   await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
@@ -121,7 +121,7 @@ async function b285Metarepo(): Promise<string> {
       readFile(join(STAGES, "corrections/answers", `${n}.yaml`), "utf8"),
     ),
   );
-  expect(await runStages(root, STAGED, ALL_STAGES, answers)).toHaveLength(3);
+  expect(await runStages(root, STAGED, ALL_STAGES, edit(answers))).toHaveLength(3);
   await writeFile(join(root, "openspec/config.yaml"), "schema: org-flow\n");
   await writeFile(join(root, ".gitignore"), "/workspace/\n/.atticus/*\n!/.atticus/metarepo.yaml\n");
   await mkdir(join(root, ".atticus"), { recursive: true });
@@ -222,6 +222,57 @@ describe("atticus upgrade to beta.30: org-flow 3, and a change done through stor
       expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
       expect(changedPaths(root)).toEqual([]);
       expect(await bytesOf(root)).toEqual(upgraded);
+    },
+    T,
+  );
+});
+
+/**
+ * ADR 0207 part 4, Migration: a change drafted before `topic` was there, whose delta publishes to
+ * a new topic with no `topic`, is byte for byte the same after the upgrade, each stage reads as
+ * done with no model call, and the only finding it gets for the topic is the note.
+ */
+const NEW_TOPIC_STEP = `      - op: add
+        after: 4
+        kind: publish
+        what: The placed order is published to forge.orders.screened
+        to: { component: forge-stock, entry: forge.orders.screened, new: true }
+        fields: { sends: [sku, quantity] }
+`;
+const NEW_TOPIC_CRITERION = `      - id: "1.4"
+        criteria:
+          - text: "Given an accepted order, when it is saved, then sku and quantity are published to forge.orders.screened"
+            checks: [sku, quantity]
+`;
+
+describe("atticus upgrade to beta.31: a delta that publishes to a new topic with no topic (ADR 0207)", () => {
+  it(
+    "leaves it byte for byte the same, and its only topic finding is the note",
+    async () => {
+      const root = await b285Metarepo(([feature, architecture, stories]) => [
+        feature!,
+        `${architecture!.trimEnd()}\n${NEW_TOPIC_STEP}`,
+        stories!.replace(/(\nrequests:)/, `\n${NEW_TOPIC_CRITERION.trimEnd()}$1`),
+      ]);
+      const before = await bytesOf(root);
+      const flow = await readFile(
+        join(changeFolder(root, STAGED), "target-flows/forge-orders.place-order.yaml"),
+        "utf8",
+      );
+      expect(flow).toContain("forge.orders.screened");
+      expect(flow).not.toContain("topic:");
+      expect(await upgradeCommand(root, { by: "pat" }, io().io, B30)).toBe(0);
+      expect(await bytesOf(root)).toEqual(before);
+      // Each stage reads as done, and no drafter is asked for anything.
+      expect(await runStages(root, STAGED, ALL_STAGES)).toEqual([]);
+      const loop = parse(
+        await readFile(join(changeFolder(root, STAGED), "stage/architecture.yaml"), "utf8"),
+      ) as { findings?: { rule: string; blocking: boolean }[] };
+      expect(
+        (loop.findings ?? [])
+          .filter((f) => f.rule.startsWith("delta.topic-"))
+          .map((f) => [f.rule, f.blocking]),
+      ).toEqual([["delta.topic-no-schema", false]]);
     },
     T,
   );

@@ -16,6 +16,7 @@ import {
   nextOwnersOf,
   PHASES,
   questionsRelOf,
+  quickPathOf,
   type ChangeHandoff,
   type ChangeLifecycle,
   type LifecycleState,
@@ -168,6 +169,8 @@ export async function handoffFilesOf(
     "stage/stories-shape.yaml",
   ])
     if (await present(own)) files.add(own);
+  // v31 (WP-05): a quick change's knowledge list, which no stage carries, rides as a file too.
+  if (quickPathOf(a.type) && (await present("knowledge.yaml"))) files.add("knowledge.yaml");
   // ADR 0201: the requirements file a change was made from rides with its first phase's
   // hand-off, as brief.md does.
   if (phase === a.type.phases[0] && (await present(REQUIREMENTS_FILE)))
@@ -286,7 +289,13 @@ export interface HandoffOptions extends HostOptions {
    * Markdown the PR body ends with (WP7.4): what the change does, its estimate and its open
    * findings, so an approver reads one page. The caller composes it.
    */
-  review?: string;
+  review?: string | (() => Promise<string>);
+  /**
+   * v31 (WP-05): work done once the hand-off's checks pass and before its files are gathered
+   * (the quick path's knowledge list), so a refused hand-off writes nothing. A failure of it is
+   * the caller's to say; it never stops the hand-off.
+   */
+  prepare?: (ctx: ChangeContext, a: Assessment) => Promise<void>;
   /** The metarepo's OpenSpec: the plan hand-off runs `openspec validate --strict` first. */
   openspec?: OpenSpec;
 }
@@ -325,6 +334,7 @@ export async function handoff(
   // ADR 0006 addendum: the stories' hand-off (the plan phase, whose files hold the specs) passes
   // OpenSpec's own validation first.
   if (opts.openspec && phase === "plan") await requireValid(opts.openspec, id);
+  await opts.prepare?.(ctx, a).catch(() => undefined);
 
   const { files, artifacts } = await handoffFilesOf(ctx, a, phase);
   const dir = changeFolder(root, id);
@@ -441,7 +451,7 @@ export async function handoff(
           change.state === "returned" ? nextAfterResubmit(a, phase) : next,
           [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
           reviewers,
-          opts.review,
+          typeof opts.review === "function" ? await opts.review() : opts.review,
         ),
       },
       opts.approval,
