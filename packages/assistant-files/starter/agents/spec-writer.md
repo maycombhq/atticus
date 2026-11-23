@@ -12,6 +12,9 @@ tools:
   - atticus/walk
   - atticus/show_code
   - atticus/impact
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/catalog_query
   - atticus/conflicts
   - atticus/changes

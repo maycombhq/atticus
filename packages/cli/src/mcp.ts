@@ -39,6 +39,8 @@ export interface McpTool {
    * no item yet is an empty list, not a failure; the b30 proof run).
    */
   answers?: RegExp;
+  /** Arguments of which one must be given (similar_changes: a change or a text). */
+  oneOf?: string[];
 }
 
 const s = (name: string, description: string, required = true): Arg => ({
@@ -331,6 +333,38 @@ export const MCP_TOOLS: McpTool[] = [
     answersOnExit: [1],
   },
   {
+    name: "owners",
+    description:
+      "Who owns a record, a repo or a system, and where it is said: the System record's id, or the manifest or profile file; \"no owner on record\" when none names one. The record's id and its system's id are in every answer; a manifest repo nobody read still has its manifest's owner, said \"not read\". An id the map lacks answers which it is (atticus owners).",
+    args: [s("id", "A record, repo or system id.")],
+    argv: (a) => ["owners", String(a.id), "--json"],
+    mapId: "id",
+  },
+  {
+    name: "consumers_of",
+    description:
+      "Who uses a topic, an API or a repo: for a topic the components that receive it (receivers) and what lies past them apart (further); for an API or a component the callers, each through the interface whose callee it is (path: the id, the interface, the caller). Each row has its record id and owner. Only what was read into the map. An id the map lacks answers which it is (atticus impact --receivers).",
+    args: [s("id", "A topic (by its id or its name), an API or a repo id.")],
+    argv: (a) => ["impact", String(a.id), "--receivers", "--json"],
+    mapId: "id",
+  },
+  {
+    name: "similar_changes",
+    description:
+      "The archived changes nearest a change or a text, best first, each with its archive folder (id), its change id, its file, and how they were matched (how: meaning or words). A hint where to look, not a fact; open changes that overlap are conflicts' answer (atticus change similar).",
+    args: [
+      s("change", "An open change's id: its title and brief are matched.", false),
+      s("text", "What the change is about, in a sentence or a brief.", false),
+    ],
+    argv: (a) => [
+      "change",
+      "similar",
+      ...(a.change ? ["--change", String(a.change)] : [String(a.text)]),
+      "--json",
+    ],
+    oneOf: ["change", "text"],
+  },
+  {
     name: "change_status",
     description:
       "A change's state, next step, what blocks it, its risk and the PR to merge (atticus change status).",
@@ -528,6 +562,8 @@ export async function handleMcp(
           return ok(text(`${arg.name} can't start with "-": it would be read as an option.`, true));
         a[arg.name] = value;
       }
+      if (tool.oneOf && !tool.oneOf.some((n) => a[n] !== undefined))
+        return ok(text(`${tool.name} needs ${tool.oneOf.join(" or ")}.`, true));
       const r = await run(tool.argv(a));
       // An id the map lacks is an answer (ADR 0201): planned, or not read yet.
       // The sentence may go on to say which of the three it is (the addendum of 2026-11-19), and a
