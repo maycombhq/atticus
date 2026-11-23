@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -720,6 +720,56 @@ const isNpx = (command: string) =>
 const seconds = (ms: number) => `${Math.round(ms / 100) / 10}s`;
 const shown = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 
+/**
+ * beta.32: runtime.yaml's default line (`npx --yes @github/copilot-language-server`) has npx ask
+ * npm about the package on every start, before the copy installed on this machine runs. Through a
+ * slow proxy that took a start past its limit on the owner's machine, with the server installed.
+ * So when the line runs that package through npx, with no version named, and the server is on
+ * the PATH here, the installed server runs, with the words after the package. Any other line
+ * (another package, a version pinned, an npx option Atticus doesn't know) runs as written.
+ */
+export function installedInsteadOfNpx(
+  parsed: { command: string; args: string[] },
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (!isNpx(parsed.command)) return parsed;
+  const quiet = new Set(["--yes", "-y", "--quiet", "-q"]);
+  let k = 0;
+  while (k < parsed.args.length && quiet.has(parsed.args[k]!)) k++;
+  if (parsed.args[k] !== NPM_PACKAGE) return parsed;
+  const installed = programOnPath(SERVER_PROGRAM, env, platform);
+  return installed ? { command: installed, args: parsed.args.slice(k + 1) } : parsed;
+}
+
+const SERVER_PROGRAM = "copilot-language-server";
+
+/** A program's full path on `env`'s PATH (on Windows, its .exe or .cmd), or undefined. */
+export function programOnPath(
+  name: string,
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  const win = platform === "win32";
+  const path = win
+    ? (Object.entries(env).find(([k]) => k.toUpperCase() === "PATH")?.[1] ?? "")
+    : (env.PATH ?? "");
+  const exts = win ? [".exe", ".cmd"] : [""];
+  for (const dir of path.split(win ? ";" : ":")) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      // The host's own join: the PATH is this machine's.
+      const full = join(dir, `${name}${ext}`);
+      try {
+        if (statSync(full).isFile()) return full;
+      } catch {
+        // not here
+      }
+    }
+  }
+  return undefined;
+}
+
 /** What the server did as it failed to start. */
 export type StartFailure =
   | { kind: "not-found"; why: string }
@@ -953,7 +1003,7 @@ async function startAcp(o: {
     }
   | typeof CUT
 > {
-  const parsed = commandLineOf(o.line);
+  const parsed = installedInsteadOfNpx(commandLineOf(o.line), o.env);
   const command = parsed.command;
   let args = parsed.args;
   let again: string | undefined;
@@ -1611,9 +1661,9 @@ export async function copilotAcpProbe(o: {
   timeoutMs?: number;
   spawn?: AcpSpawner;
 }): Promise<CopilotAcpProbe> {
-  const { command, args } = commandLineOf(o.command);
-  const plain = args.filter((a) => a !== "--acp");
   const env = { ...process.env, ...(o.env ?? {}) };
+  const { command, args } = installedInsteadOfNpx(commandLineOf(o.command), env);
+  const plain = args.filter((a) => a !== "--acp");
   let limit: number;
   try {
     limit = o.timeoutMs ?? startTimeoutOf(env);

@@ -25,7 +25,10 @@ copilotAcp:
 ```
 
 - `command` is the server's program and any words before `--acp`, on one line. Atticus adds
-  `--acp`. A path with spaces goes in double quotes. Where npx isn't allowed, give the server's full
+  `--acp`. When `command` runs `@github/copilot-language-server` through npx with no version
+  named and the server is installed on the machine (`copilot-language-server` on the PATH), Atticus
+  runs the installed server with the words after the package, so npx doesn't ask npm about the
+  package on every start (beta.32: through a slow proxy that alone could pass the start limit). A path with spaces goes in double quotes. Where npx isn't allowed, give the server's full
   path. If your server needs `--stdio` as well, add it here.
 - With `default: copilot-acp`, every step and `atticus map --all` use it without `--mode`. With
   `default: hand-off`, ask for it per command: `--mode copilot-acp`.
