@@ -1,5 +1,11 @@
 import { readdir } from "node:fs/promises";
-import { factsDirOf, listQuestions, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import {
+  factsDirOf,
+  hashCacheHooks,
+  listQuestions,
+  loadOrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import {
   buildCacheHooks,
   buildCatalog,
@@ -20,8 +26,10 @@ import {
  * the org pack; the catalog on disk, read as Apply reads it (`readCatalogWithFiles` with the
  * kept parses, `keep: false`); the hash of every record file that the write's guards make
  * (`hashFiles`, `keep: false`), where antivirus and a slow disk show; the questions; the estate
- * join over every repo's facts (`estateFacts`); then one catalog build with the build cache off,
- * because Apply's build always has a new facts slot and never hits the cache.
+ * join over every repo's facts (`estateFacts`); then one catalog build that never takes the last
+ * build whole, because Apply's build always has a new facts slot, but uses its texts as Apply's
+ * does (beta.32). With `--names`, how many record files the guards' hash read again: the rest
+ * were kept by size and time (hash-cache.ts).
  *
  * Not timed: the writes, the guards' other checks and the compare, which write or need a
  * written build; selfcheck writes nothing. So the figure is a floor for one repo's Apply.
@@ -42,6 +50,8 @@ export const TIMING_WORDS = {
   total: (ms: number, cpuMs: number) =>
     `One Apply, before its writes: ${sec(ms)} s wall, ${sec(cpuMs)} s CPU.`,
   repos: (n: number) => `Repos with facts: ${n}.`,
+  hashed: (again: number, of: number) =>
+    `The guards' hash read ${again} of ${of} record files again; the rest were kept by their size and times.`,
   failed:
     "atticus selfcheck --timing couldn't finish: a step failed. atticus selfcheck --timing --names says why, on this screen only.",
 } as const;
@@ -53,6 +63,8 @@ export interface PhaseTime {
 }
 export interface Timing {
   phases: PhaseTime[];
+  /** The guards' hash: the record files read again, of all. A count of the estate: `--names` only. */
+  hashed?: { again: number; of: number };
   totalMs: number;
   cpuMs: number;
 }
@@ -96,7 +108,21 @@ export async function timeOneBuild(root: string): Promise<Timing> {
   await timed(phases, READ_PHASE, () =>
     readCatalogWithFiles(generatedDirOf(root), { cacheRoot: root, keep: false }),
   );
-  await timed(phases, HASH_PHASE, () => hashFiles(generatedDirOf(root), { root, keep: false }));
+  let again = 0;
+  const onHashed = hashCacheHooks.onHashed;
+  hashCacheHooks.onHashed = (n) => {
+    again += n;
+    onHashed?.(n);
+  };
+  let disk: Awaited<ReturnType<typeof hashFiles>>;
+  try {
+    disk = await timed(phases, HASH_PHASE, () =>
+      hashFiles(generatedDirOf(root), { root, keep: false }),
+    );
+  } finally {
+    if (onHashed) hashCacheHooks.onHashed = onHashed;
+    else delete hashCacheHooks.onHashed;
+  }
   await timed(phases, QUESTIONS_PHASE, () => listQuestions(root));
   await timed(phases, JOIN_PHASE, () => estateFacts(root, op, ""));
 
@@ -116,7 +142,12 @@ export async function timeOneBuild(root: string): Promise<Timing> {
     if (wholeWas === undefined) delete buildCacheHooks.wholeOff;
     else buildCacheHooks.wholeOff = wholeWas;
   }
-  return { phases, totalMs: performance.now() - t0, cpuMs: cpuMsNow() - c0 };
+  return {
+    phases,
+    hashed: { again, of: disk.size },
+    totalMs: performance.now() - t0,
+    cpuMs: cpuMsNow() - c0,
+  };
 }
 
 /** The repos with a facts file (`<repo>.jsonl`), as `factsRepos` counts them (verify-commands.ts). */
@@ -134,7 +165,12 @@ export function timingLines(t: Timing, repos?: number): string[] {
       (p) => `  ${p.phase.padEnd(width)}  ${sec(p.ms)} s wall, ${sec(p.cpuMs)} s CPU`,
     ),
     TIMING_WORDS.total(t.totalMs, t.cpuMs),
-    ...(repos === undefined ? [] : [TIMING_WORDS.repos(repos)]),
+    ...(repos === undefined
+      ? []
+      : [
+          TIMING_WORDS.repos(repos),
+          ...(t.hashed ? [TIMING_WORDS.hashed(t.hashed.again, t.hashed.of)] : []),
+        ]),
     TIMING_WORDS.notWritten,
     TIMING_WORDS.apply,
   ];

@@ -1204,6 +1204,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       inputsDir: i.inputsDir,
       records: [...merged.records, ...i.curated.records],
       ingestors: listIngestors(),
+      mark: phaseClock("intake: "),
       // Intake stamps what it read; the build gives it no clock of its own (point 8).
       scannedAt: "1970-01-01T00:00:00.000Z",
     });
@@ -1211,7 +1212,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
     if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
   }
-  mark("3 intake");
+  mark("3 intake, and the merge again");
   await stage("each repo's records after the merge");
   let records = withoutHeardListeners(merged.records, projection);
   let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;

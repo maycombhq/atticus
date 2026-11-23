@@ -127,6 +127,18 @@ describe("atticus selfcheck --timing", () => {
       // one Apply times the repos was hours too many (1 h 20 min said on the owner's estate).
       expect(line).toMatch(/^Repos with facts: \d+\.$/);
       expect(named.out.join("\n")).not.toMatch(/at that each/);
+      // beta.32: how many record files the guards' hash read again, with --names only. The
+      // estate was built by its maker, never hashed with a cache here, so every one is read.
+      expect(named.out).toContainEqual(
+        expect.stringMatching(
+          /^The guards' hash read \d+ of \d+ record files again; the rest were kept by their size and times\.$/,
+        ),
+      );
+      expect(plain.out.join("\n")).not.toMatch(/guards' hash read/);
+      // The intake's stages are timed as phases of their own.
+      expect(plain.out).toContainEqual(
+        expect.stringMatching(/^ {2}intake: read, hash and classify +\d/),
+      );
     },
     T,
   );
