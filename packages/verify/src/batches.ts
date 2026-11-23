@@ -75,16 +75,33 @@ const BUILD =
   /(^|\/)(pom\.xml|[^/]+[-_.]pom\.xml|[^/]+\.pom|gradle\/[\w-]+\.versions\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln|tf|tfvars|bicep|hcl)|Dockerfile[^/]*|Containerfile|Jenkinsfile|Makefile|Procfile|(docker-)?compose[^/]*\.ya?ml|Chart\.yaml|values[^/]*\.ya?ml|azure-pipelines[^/]*\.ya?ml|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|serverless\.ya?ml|template\.ya?ml|manifest\.ya?ml)$/;
 const DEPLOY_DIR =
   /(^|\/)(\.github\/workflows|\.circleci|k8s|kubernetes|helm|charts|deploy|deployment|deployments|manifests|infra|terraform|pipelines?)\//;
-/** A deploy or pipeline file by its name, wherever it sits (v31 gate 0). */
+/**
+ * A deploy or pipeline file by its own name (v31 gate 0; widened after the review of PR #4 with
+ * the deploy files a repo can hold at its root). Case as the tools write them.
+ */
 const DEPLOY_NAME =
-  /(^|\/)(Dockerfile[^/]*|Containerfile|Jenkinsfile(\.[\w.-]+)?|Procfile|(docker-)?compose[^/]*\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines[^/]*\.ya?ml|cloudbuild[^/]*\.ya?ml|bitbucket-pipelines\.ya?ml)$/i;
+  /(^|\/)(Dockerfile(\.[\w.-]+)?|Containerfile|Jenkinsfile(\.[\w.-]+)?|Procfile|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines[\w.-]*\.ya?ml|cloudbuild[\w.-]*\.ya?ml|bitbucket-pipelines\.ya?ml|serverless\.ya?ml|skaffold\.ya?ml|Chart\.yaml|values[\w.-]*\.ya?ml|template\.ya?ml|manifest\.ya?ml|[^/]+\.tf|[^/]+\.tfvars|[^/]+\.bicep|[^/]+\.hcl)$/;
+
+/** The build files of `BUILD` that say how code is built, not where it runs. */
+const BUILD_ONLY =
+  /(^|\/)(pom\.xml|[^/]+[-_.]pom\.xml|[^/]+\.pom|gradle\/[\w-]+\.versions\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln)|Makefile)$/;
+
+/** Source code's own folders, where a folder named `charts` or `infra` is code, not a deploy. */
+const SOURCE_DIR = /(^|\/)(src|lib|app|apps|packages)\//;
 
 /**
- * Whether a path is a deploy or pipeline file: under a deploy folder (`DEPLOY_DIR`) or named as
- * one. Verify says when a repo has no deploy fact and such a file isn't read (v31 gate 0).
+ * Whether a path is a deploy or pipeline file: named as one, or under a deploy folder
+ * (`DEPLOY_DIR`) that isn't inside source code, and not a build file that only says how code is
+ * built (`BUILD_ONLY`: a pom or package.json in an `infra/` folder). Verify says when a repo has no deploy fact and such a file
+ * isn't read (v31 gate 0).
  */
 export function isDeployFile(path: string): boolean {
-  return DEPLOY_DIR.test(path) || DEPLOY_NAME.test(path);
+  if (BUILD_ONLY.test(path)) return false;
+  if (DEPLOY_NAME.test(path)) return true;
+  const m = DEPLOY_DIR.exec(path);
+  // A deploy folder inside source code (`src/app/charts/`) is code; one with code in it
+  // (`infra/lib/stack.ts`) is a deploy.
+  return !!m && !SOURCE_DIR.test(path.slice(0, m.index + 1));
 }
 
 const CONFIG =

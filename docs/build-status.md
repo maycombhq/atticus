@@ -675,6 +675,8 @@ The field-shaped estate as the default (2026-11-19; v30 slice 9; no ADR). **Work
 
 Gate 1 of the v31 plan and the freeze on the join (2026-11-22; [the v31 plan](plan/v31.md); no ADR, no contract change). **Works:** `atticus selfcheck --timing [--names] [--json]` (`packages/cli/src/selfcheck-timing.ts`): the read-only steps of one repo's Apply (org pack, catalog read with the kept parses, the guards' hash with `keep: false`, the questions, the estate join) and one catalog build with the build cache off, timed in turn, in fixed words and seconds; a failed step is one fixed sentence and exit 2. `scripts/check-frozen-files.mjs` in `pnpm lint` holds `packages/core/src/facts-join*.ts` at 5,424 lines together, and fails if `facts-join.ts` is gone. **Open:** the writes, the guards' other checks and the compare are not timed, so the figure is a floor; no number from the owner's machine yet (gate 1 is that run).
 
+The fixes from v31 gate 0 (2026-11-22; [the v31 plan](plan/v31.md#gate-0-result-2026-11-22); no ADR, no contract change). **Works:** a config row's value may hold a comma (`pairsOf`, `packages/changes/src/code-table.ts`; only a value is joined); verify notes a repo with no deploy fact while a deploy or pipeline file is unknown (`isDeployFile`, `packages/verify/src/batches.ts`; `noDeployNote`, `packages/cli/src/verify-commands.ts`). **Open:** the note isn't in `map --all`'s JSON apply path or the `--json` summary; a plain comma value is joined with no space, so a value whose code holds `a, b` must be quoted.
+
 ## How to work
 
 Follow `CLAUDE.md`: fixtures and tests first, `pnpm check` green, one commit per ticket with the attribution lines, never commit client data.

@@ -885,6 +885,20 @@ describe("atticus verify: a repo with no deploy fact and deploy files not read",
     expect(note).toMatch(/read it, or say in the reviewed file why it holds no deploy\.$/);
   });
 
+  it("says so on --write too, and the write goes ahead", async () => {
+    const noDeploy = ledger()
+      .split("\n")
+      .filter((l) => !l.includes('"kind":"deploy"'))
+      .join("\n");
+    const root = adoptedRepo(noDeploy);
+    const o = io();
+    await verifyCommand(root, "forge-ledger", { commit: "0123abc", write: true }, o.io);
+    expect(
+      o.out.some((l) => NOTE.test(l)),
+      [...o.out, ...o.err].join("\n"),
+    ).toBe(true);
+  });
+
   it("says nothing when the repo has a deploy fact", async () => {
     const root = adoptedRepo(ledger());
     const o = io();
@@ -908,5 +922,26 @@ describe("atticus verify: a repo with no deploy fact and deploy files not read",
     const o = io();
     await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io);
     expect(o.out.join("\n")).not.toMatch(/has no deploy fact/);
+  });
+});
+
+describe("noDeployNote", () => {
+  it("names up to three files, counts the rest, and speaks of them in the plural", async () => {
+    const { noDeployNote } = await import("../src/verify-commands.js");
+    const files = [
+      "k8s/a.yaml",
+      "k8s/b.yaml",
+      "Dockerfile",
+      ".github/workflows/ci.yml",
+      "src/app/x.ts",
+    ];
+    const note = noDeployNote("forge-ledger", [{ kind: "entry" }], files);
+    expect(note).toBe(
+      "forge-ledger has no deploy fact, and 4 deploy or pipeline files aren't read: .github/workflows/ci.yml, Dockerfile, k8s/a.yaml and 1 more. A change that moves or ships forge-ledger has nothing to stand on until then: read them, or say in the reviewed file why they hold no deploy.",
+    );
+    expect(noDeployNote("forge-ledger", [{ kind: "deploy" }], files)).toBeUndefined();
+    expect(
+      noDeployNote("forge-ledger", [], ["src/app/charts/bar.ts", "infra/package.json"]),
+    ).toBeUndefined();
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dirSource,
   FILE_KINDS,
+  isDeployFile,
   fileKinds,
   kindsOf,
   isSourceFile,
@@ -271,5 +272,49 @@ describe("planBatches with instructions that grow with a batch's kinds (A-lean)"
     const b = planBatches(dirSource(repo), { room: 500, overhead: () => 0 });
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
     expect(a.leastRoom).toBe(500);
+  });
+});
+
+// v31 gate 0, and the review of PR #4: what verify calls a deploy or pipeline file.
+describe("isDeployFile", () => {
+  it.each([
+    ".github/workflows/build.yml",
+    "Dockerfile",
+    "docker/Dockerfile.prod",
+    "Jenkinsfile",
+    "docker-compose.yml",
+    "compose.yaml",
+    ".gitlab-ci.yml",
+    "azure-pipelines.yml",
+    "cloudbuild.yaml",
+    "serverless.yml",
+    "skaffold.yaml",
+    "charts/ledger/Chart.yaml",
+    "main.tf",
+    "env/prod.tfvars",
+    "infra/main.bicep",
+    "k8s/ledger-api.yaml",
+    "deploy/values-prod.yaml",
+    "infra/lib/stack.ts",
+  ])("%s is a deploy or pipeline file", (p) => {
+    expect(isDeployFile(p)).toBe(true);
+  });
+
+  it.each([
+    "src/app/charts/bar-chart.component.ts",
+    "src/app/deployment/deployment.component.ts",
+    "src/main/java/com/forge/infra/DbConfig.java",
+    "src/pipelines/etl.py",
+    "packages/ledger/deploy/index.ts",
+    "infra/package.json",
+    "deploy/pom.xml",
+    "pom.xml",
+    "package.json",
+    "build.gradle",
+    "src/lint/dockerfile-rules.ts",
+    "docs/compose-guide.yaml",
+    "README.md",
+  ])("%s is not", (p) => {
+    expect(isDeployFile(p)).toBe(false);
   });
 });
