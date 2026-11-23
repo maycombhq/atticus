@@ -14,6 +14,9 @@ tools:
   - atticus/walk
   - atticus/show_code
   - atticus/impact
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/features
   - atticus/feature
   - atticus/knowledge_ask
