@@ -1,5 +1,5 @@
 /** The Atticus version this build reports (atticus --version, health, the support bundle). */
-export const VERSION = "2.0.0-beta.30";
+export const VERSION = "2.0.0-beta.31";
 
 /**
  * The one command that installs Atticus (beta.30), at an exact version: this one's, or the one

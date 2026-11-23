@@ -3,6 +3,8 @@ name: application-architect-naysayer
 description: Asks what the "Application architect" section got wrong or left out, with evidence from the map on every question. Challenges that section only.
 role: architect
 owns: Application architect
+# Runs at the design gate as a lens of the critic (ADR 0203 C); delete the line to turn it off.
+gates: [design]
 tools:
   - read
   - search

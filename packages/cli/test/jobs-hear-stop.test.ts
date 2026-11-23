@@ -17,6 +17,13 @@ const JOBS: [string, string, boolean | "caller", string][] = [
   // Local steps (asJob), one at a time.
   ["ui-api.ts", "`Applying to ${repo}`", true, "verify --write: Stop until the write"],
   ["ui-api.ts", '"Upgrading the metarepo"', false, "atticus upgrade reads no signal"],
+  // ADR 0208: the route gives Learn no signal, so its re-reads run to their end.
+  [
+    "ui-api-decisions.ts",
+    'asJob("Learn from my corrections"',
+    false,
+    "the route passes Learn no signal",
+  ],
   ["ui-api.ts", '"Proposing for review"', true, "checks the signal until the push"],
   ["ui-api.ts", '"Bringing in what merged"', true, "checks the signal until the tree changes"],
   ["ui-api.ts", "`Setting the upstream to", false, "two git calls, no signal"],

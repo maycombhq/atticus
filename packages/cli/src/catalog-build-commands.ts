@@ -1550,6 +1550,9 @@ export async function applyMapEdits(
     // the estate's join is kept under, so a pairing after a write would join again): one join,
     // its steps on the Console, Stop heard while it runs.
     const already = new Map<string, Map<string, string>>();
+    // v31 (ADR 0208): each repo pair's candidates for its spread, worked out here with the same
+    // join, so the spreads after the writes join nothing again.
+    const spreadCands = new Map<string, import("./ai-decide.js").SpreadCandidates | undefined>();
     const boxKey = (p: { from: string; to: Api.LinkBoxT }) =>
       JSON.stringify([p.from, p.to.repo ?? null, p.to.system ?? null]);
     const paired = o.edits.flatMap((e) => ("pair" in e && e.pair.pairs.length ? [e.pair] : []));
@@ -1562,7 +1565,14 @@ export async function applyMapEdits(
         title: "Reading the calls paired already",
         ...(signal ? { signal } : {}),
       });
+      const { candidatesOf } = await import("./ui-api-links.js");
       try {
+        for (const x of paired)
+          if (x.to.repo && x.to.repo !== x.from && !spreadCands.has(boxKey(x)))
+            spreadCands.set(
+              boxKey(x),
+              await candidatesOf(root, x.from, { repo: x.to.repo }).catch(() => undefined),
+            );
         for (const x of paired)
           if (!already.has(boxKey(x)))
             already.set(
@@ -1795,7 +1805,12 @@ export async function applyMapEdits(
       for (const x of e.pair.pairs)
         try {
           const p = { repo: e.pair.from, call: x.call, to: e.pair.to.repo, api: x.api };
-          const r = await spreadPairing(root, p, { by, ...(o.now ? { now: o.now } : {}) });
+          const cands = spreadCands.get(boxKey(e.pair));
+          const r = await spreadPairing(root, p, {
+            by,
+            ...(o.now ? { now: o.now } : {}),
+            ...(spreadCands.has(boxKey(e.pair)) ? { candidates: cands ?? null } : {}),
+          });
           if (!r.batch) {
             io.out(`${said}: ${x.call} applies to this call only: ${r.noRule}.`);
             continue;
