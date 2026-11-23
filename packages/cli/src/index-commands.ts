@@ -341,7 +341,9 @@ export async function ownersCommand(
         )
         .get(id);
       const read = cited !== undefined || existsSync(join(factsDirOf(root), `${id}.jsonl`));
-      const fault = read ? undefined : mapFault(ix, root);
+      // An empty map is no fault here: a manifest repo nobody read still has its manifest's
+      // owner (ADR 0207). Only a map whose records didn't read is.
+      const fault = read || !ix.kinds().length ? undefined : mapFault(ix, root);
       if (fault) {
         io.err(fault);
         return 1;

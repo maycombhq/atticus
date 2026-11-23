@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -315,5 +315,15 @@ describe("three more map tools (ADR 0207 part 2)", () => {
     const r = await call("owners", { id: "forge-vault" }, runIn(root));
     expect(r.result.isError).toBe(true);
     expect(r.result.content[0]!.text).toMatch(/couldn't be read whole[\s\S]*quillfeather\.yaml/);
+  }, 120_000);
+
+  it("owners: a metarepo with nothing read yet still gives a manifest repo's owner", async () => {
+    // Review of PR #6 (N1): an empty map is no fault for a repo the manifests name.
+    const root = await estate(false);
+    await rm(join(root, "catalog/generated"), { recursive: true, force: true });
+    const run = runIn(root);
+    const r = await call("owners", { id: "forge-vault" }, run);
+    expect(r.result.isError).toBeUndefined();
+    expect(json(r)).toMatchObject({ id: "forge-vault", owner: "team-vault", read: false });
   }, 120_000);
 });
