@@ -284,6 +284,14 @@ export function timeLeftWords(ms: number): string {
 }
 
 /**
+ * v31: whether `verify --all` over `repos` repos writes them with one build (two repos or more,
+ * with --write, unless ATTICUS_APPLY_ONE_BUILD=0). The app asks it too, for how Stop is said.
+ */
+export function oneBuildFor(write: boolean, repos: number): boolean {
+  return write && repos > 1 && process.env.ATTICUS_APPLY_ONE_BUILD !== "0";
+}
+
+/**
  * atticus verify --all [--write]: every repo read so far, one after another, as `atticus verify
  * <repo>` would, then a line saying how many passed. No model is called. Exits 1 when any repo
  * has rejected facts, so a script can tell.
@@ -347,11 +355,7 @@ export async function verifyAllCommand(
   // v31 (one build for many repos): with --write over two repos or more, each repo is verified as
   // before and its write held; the held writes are then one build, one guard and one undo step,
   // and each repo's own files after it. ATTICUS_APPLY_ONE_BUILD=0: each repo its own build.
-  const oneBuild =
-    each.write === true &&
-    repos.length > 1 &&
-    each.plan === undefined &&
-    process.env.ATTICUS_APPLY_ONE_BUILD !== "0";
+  const oneBuild = each.plan === undefined && oneBuildFor(each.write === true, repos.length);
   type WriteFacts = NonNullable<VerifyCommandOptions["writeFacts"]>;
   type Held = {
     repo: string;
@@ -433,7 +437,9 @@ export async function verifyAllCommand(
     if (i < repos.length - 1) releaseCurrent();
   }
   /** A held repo's write given its result (or its error), and its verify run to its end. */
+  const ended = new Set<Held>();
   const finish = async (h: Held, r: ReturnType<WriteFacts> | Error) => {
+    ended.add(h);
     if (r instanceof Error) h.reject(r);
     else h.resolve(r);
     let code: number;
@@ -446,33 +452,38 @@ export async function verifyAllCommand(
     onRepo?.(h.repo, code, h.leftOut());
     if (code !== 0) failed.push(h.repo);
   };
-  /** The held repos not written when Stop ended the run, and whether any repo was written. */
+  /** The held repos not written when Stop ended the run. */
   let notWritten: string[] | undefined;
-  let wroteAny = false;
   if (stoppedAt === undefined && held.length) {
     const { writeFactsIntoCatalog, writeManyFactsIntoCatalog } =
       await import("./map-render-commands.js");
-    let wrote: unknown[] | undefined;
     try {
       if (held.length > 1) {
         (io.progress ?? io.err)(`Writing the catalog once for ${held.length} repos…`);
         const [, , , first, out] = held[0]!.args;
-        wrote = await writeManyFactsIntoCatalog(
-          root,
-          held.map((h) => ({ repo: h.repo, facts: h.args[2], o: h.args[3] })),
-          { ...first, command: "atticus verify --all --write" },
-          out,
-          (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
-        );
+        try {
+          await writeManyFactsIntoCatalog(
+            root,
+            held.map((h) => ({ repo: h.repo, facts: h.args[2], o: h.args[3] })),
+            { ...first, command: "atticus verify --all --write" },
+            out,
+            (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
+          );
+        } catch (e) {
+          // Beta.28.5's rule for the one write: a file another program holds (or no room) ends
+          // it, nothing more is written, and each repo not written is said with its own command.
+          if (!isFileSystemError(e)) throw e;
+          for (const h of held) if (!ended.has(h)) await finish(h, e as Error);
+        }
       }
-      // One repo held, or the one build refused (each repo's own write says its own refusal):
-      // each repo's own write, as before, Stop heard between them.
-      for (const [k, h] of (wrote ? [] : held).entries()) {
+      // A prototype (left out of the one build), one repo held, or the one build refused (each
+      // repo's own write says its own refusal): each repo's own write, Stop heard between them.
+      const own = held.filter((h) => !ended.has(h));
+      for (const [k, h] of own.entries()) {
         if (signal?.aborted) throw new CancelledError();
-        notWritten = held.slice(k).map((x) => x.repo);
+        notWritten = own.slice(k).map((x) => x.repo);
         await finish(h, writeFactsIntoCatalog(...h.args));
-        wroteAny = true;
-        if (k < held.length - 1) releaseCurrent();
+        if (k < own.length - 1) releaseCurrent();
       }
       notWritten = undefined;
     } catch (e) {
@@ -488,7 +499,7 @@ export async function verifyAllCommand(
     onStopped?.(notReached);
     const not = [...failed.filter((r) => !notReached.includes(r)), ...notReached].sort();
     io.out(
-      wroteAny
+      [...ended].some((h) => !notWritten!.includes(h.repo))
         ? `Stopped after ${repos.length - notReached.length} of ${repos.length} repos. Not applied: ${not.join(", ")}.`
         : `Stopped before the catalog was written: none of the ${repos.length} repos was applied. Not applied: ${not.join(", ")}.`,
     );

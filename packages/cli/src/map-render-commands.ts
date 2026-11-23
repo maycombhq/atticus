@@ -13,6 +13,7 @@ import {
   isAdopted,
   isFileSystemError,
   isGuessedJoin,
+  questionStats,
   joinFlagsOf,
   listQuestions,
   loadOrgPack,
@@ -142,6 +143,15 @@ export interface WriteFactsResult {
    * its meta, and whether either changed. Left out for a prototype, which is never in the catalog.
    */
   snapshot?: { path: string; status: "written" | "unchanged"; facts: number; commit: string };
+  /**
+   * v31, one build for many repos: the run's own write, the same in every repo's result (each
+   * repo's `changes` are then the records citing that repo).
+   */
+  run?: {
+    repos: string[];
+    written: { written: number; unchanged: number; removed: number };
+    changes: CatalogDiff & { byKind: Record<string, KindCount> };
+  };
   /** ADR 0195 point 4: each record the build removed, with what explains it. */
   removed?: {
     kind: string;
@@ -587,11 +597,31 @@ async function questionSideOf(
   facts: readonly Fact[],
 ) {
   const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
+  // The other repos' facts as the assistant's files hold them: for the questions' suggestions.
+  return sideFor(op, { everyTarget, estate: await estateFacts(root, op, repo) }, repo, facts);
+}
+
+/** A repo's side from the questions and the estate's facts read once for a run (v31). */
+function sideFor(
+  op: Awaited<ReturnType<typeof loadOrgPack>>,
+  read: { everyTarget: Question[]; estate: Awaited<ReturnType<typeof estateFacts>> },
+  repo: string,
+  facts: readonly Fact[],
+) {
+  const { everyTarget, estate: e } = read;
   const answered = everyTarget.filter((q) => q.repo === repo);
   const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
   const ruled = ruledTargets(repo, facts, everyTarget, repoType ? { repoType } : {});
-  // The other repos' facts as the assistant's files hold them: for the questions' suggestions.
-  const estate = await estateFacts(root, op, repo);
+  const others = <T>(x: Record<string, T>) =>
+    Object.fromEntries(Object.entries(x).filter(([k]) => k !== repo));
+  const estate = {
+    repos: e.repos.filter((r) => r.repo !== repo),
+    targets: others(e.targets),
+    pairs: others(e.pairs),
+    aiTargets: others(e.aiTargets),
+    notes: e.notes.filter((n) => !n.startsWith(`${repo}: `)),
+    unverified: e.unverified.filter((r) => r !== repo),
+  };
   return { everyTarget, answered, ruled, estate };
 }
 
@@ -776,11 +806,18 @@ async function writeFactsOf(
   /** Whether the write gave its result: only then is a stop during its caches harmless. */
   let gave = false;
   try {
-    for (const it of items) writeFactsHooks.onWrite?.(it.repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
-    if (many && items.some((it) => isPrototypeRepo(op, it.repo))) return undefined;
+    // v31: a prototype is never in the catalog: it is left out of the one build, and its own
+    // write after says so.
+    const batch = many ? items.filter((it) => !isPrototypeRepo(op, it.repo)) : items;
+    for (const it of batch) writeFactsHooks.onWrite?.(it.repo);
+    if (!batch.length) return [];
+    // v31: what the one build's read says waits until the build is written; a refused one says
+    // nothing, and each repo's own write says it.
+    const said: string[] = [];
+    const note = many ? (l: string) => said.push(l) : (l: string) => io.err(l);
     const generated = join(catalogDirOf(root), "generated");
     // beta.28.2: each step's time, for the benchmark (nothing unless it listens).
     const mark = phaseClock("verify: ");
@@ -824,9 +861,9 @@ async function writeFactsOf(
       many ? "Reading the repos' contract files" : "Reading the repo's contract files",
     );
     const contracts: ContractsFileT[] = [];
-    for (const it of items)
-      contracts.push(await repoContractsOf(root, it.repo, it.o.dir, it.facts, (n) => io.err(n)));
-    const commits = items.map((it) => it.o.commit ?? snapshotCommitOf(it.facts));
+    for (const it of batch)
+      contracts.push(await repoContractsOf(root, it.repo, it.o.dir, it.facts, note));
+    const commits = batch.map((it) => it.o.commit ?? snapshotCommitOf(it.facts));
     type Projected = Awaited<ReturnType<typeof projectFactsIntoCatalog>>;
     let projectedOf: (i: number) => Promise<Projected>;
     let build: Projected["build"];
@@ -845,7 +882,7 @@ async function writeFactsOf(
       projectedOf = () => Promise.resolve(projected);
     } else {
       // v31: every repo's snapshot in one build.
-      snap = items.flatMap((it, i) =>
+      snap = batch.flatMap((it, i) =>
         factsSnapshotWrites(root, it.repo, it.facts, {
           commit: commits[i]!,
           contracts: contracts[i]!.entries.length ? contracts[i]! : null,
@@ -870,21 +907,26 @@ async function writeFactsOf(
       // The links the run made, unmade or changed are each said in the report of the repos of
       // the run at either end of them, and one with neither end in the run in every report: one
       // build has no write of one repo to tell them by (v31 notes, one-build.md).
-      const ran = new Set(items.map((it) => it.repo));
+      const ran = new Set(batch.map((it) => it.repo));
       const repoOf = new Map(
         [...existing.records, ...all.records].flatMap((r) =>
           r.kind === "Component" ? [[r.id, r.repo] as const] : [],
         ),
       );
+      // The questions and the estate's facts are read once for the run, and again only after a
+      // repo's questions wrote one: what each repo's own write would read at its turn.
+      let read: { at: number; side: Awaited<ReturnType<typeof questionSideOf>> } | undefined;
       projectedOf = async (i) => {
-        const repo = items[i]!.repo;
+        const repo = batch[i]!.repo;
+        if (read?.at !== questionStats.writes)
+          read = { at: questionStats.writes, side: await questionSideOf(root, op, "", []) };
         const p = projectionOf(repo, {
           op,
           existing: existing.records,
           build: all,
           snap,
           sharedMaps: inputs.shared.maps,
-          side: await questionSideOf(root, op, repo, items[i]!.facts),
+          side: sideFor(op, read.side, repo, batch[i]!.facts),
         });
         const ends = (l: LinkLine) => {
           const two = [repoOf.get(l.from), repoOf.get(l.to)];
@@ -901,9 +943,9 @@ async function writeFactsOf(
       };
     }
     mark("projection");
-    for (const p of build.problems.filter((p) => p.source === "build")) io.err(p.message);
+    for (const p of build.problems.filter((p) => p.source === "build")) note(p.message);
     for (const i of build.invalid)
-      io.err(
+      note(
         `A merged record isn't valid C1 (a bug): ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
       );
     // ADR 0195 (CS2): the facts snapshot, then the build from every slot, its guards, and only
@@ -950,18 +992,64 @@ async function writeFactsOf(
     // still matched the files; the whole catalog otherwise, or with the hook (the way before).
     // One build, one comparison, whatever the repos.
     const fast = !writeFactsHooks.fullDiff && built.changedFiles !== undefined;
-    let whole: CatalogDiff | undefined;
-    const diffOf = (p: Projected): CatalogDiff => {
-      if (whole) return whole;
-      whole = fast ? diffCatalogFiles(existing, build.records, built.changedFiles!) : p.diff;
-      if (fast) writeFactsHooks.onDiffs?.(whole, p.diff);
-      return whole;
+    const full = () => diffCatalogs([...existing.records], build.records);
+    const whole = fast ? diffCatalogFiles(existing, build.records, built.changedFiles!) : full();
+    if (fast) writeFactsHooks.onDiffs?.(whole, full());
+    const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
+    // A warning of the build, always said and never a failure (buildWarnings), and (ADR 0195
+    // point 4) the removals the build wrote, each with what explains it: once for the build.
+    const buildSaid = () => {
+      for (const x of buildWarnings(built.build)) io.out(`warning: ${x}`);
+      for (const l of buildLines(root, built)
+        .filter((l) => !l.startsWith("slots: "))
+        .slice(1))
+        if (o.verbose || w.removals.length) io.out(l);
     };
+    let run: WriteFactsResult["run"];
+    let mine = (_repo: string): CatalogDiff => whole;
+    if (many) {
+      // v31: the run's lines once, before any repo's own: what its read said, the build's
+      // warnings and removals, and the one write with every record it changed.
+      for (const l of said) io.err(l);
+      buildSaid();
+      const counts = `${w.written} files written, ${w.removed} removed, ${w.unchanged} unchanged`;
+      io.out(
+        `Wrote the catalog for ${batch.length} repos in one build: ${counts}. Each repo's specs, flows, questions, report and map below are of this one catalog, with every repo of the run in it. One undo step: atticus catalog undo takes the catalog write of the whole run back.`,
+      );
+      io.out(
+        diffIsEmpty(whole)
+          ? "  No catalog changes."
+          : `  Records: ${kindLine(countByKind(whole))}.`,
+      );
+      if (o.verbose) for (const l of diffLines(whole).slice(1)) io.out(`    ${l}`);
+      run = {
+        repos: batch.map((it) => it.repo),
+        written,
+        changes: { ...whole, byKind: countByKind(whole) },
+      };
+      // Each repo's own changes: the records that cite it, before the write or after.
+      const cites = new Map<string, Set<string>>();
+      for (const r of [...existing.records, ...build.records]) {
+        const k = `${r.kind}/${r.id}`;
+        const set = cites.get(k) ?? new Set<string>();
+        for (const e of r.evidence) if (e.repo) set.add(e.repo);
+        cites.set(k, set);
+      }
+      const of = (repo: string) => (r: { kind: string; id: string }) =>
+        !!cites.get(`${r.kind}/${r.id}`)?.has(repo);
+      mine = (repo) => ({
+        added: whole.added.filter(of(repo)),
+        removed: whole.removed.filter(of(repo)),
+        changed: whole.changed.filter(of(repo)),
+        evidenceOnly: whole.evidenceOnly.filter(of(repo)),
+      });
+    }
+    /** v31: the answers the run's questions opened again, which the one build still had. */
+    let reopenedInRun = 0;
     const after = async (
       { repo, facts, o }: FactsWrite,
       projected: Projected,
       snapshotCommit: string,
-      say: "one" | "first" | "rest",
     ): Promise<WriteFactsResult> => {
       const { answered, everyTarget, targets, ruled, estate, result, links, sharedMaps } =
         projected;
@@ -971,7 +1059,7 @@ async function writeFactsOf(
       await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
       await progress.step("Writing specs");
       await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
-      const diff = diffOf(projected);
+      const diff = mine(repo);
       const snapshot = {
         path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
         status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))
@@ -980,16 +1068,7 @@ async function writeFactsOf(
         facts: facts.length,
         commit: snapshotCommit,
       };
-      const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
-      // A warning of the build, always said and never a failure (buildWarnings), and (ADR 0195
-      // point 4) the removals the build wrote, each with what explains it: once for the build.
-      if (say !== "rest") {
-        for (const x of buildWarnings(built.build)) io.out(`warning: ${x}`);
-        for (const l of buildLines(root, built)
-          .filter((l) => !l.startsWith("slots: "))
-          .slice(1))
-          if (o.verbose || w.removals.length) io.out(l);
-      }
+      if (!many) buildSaid();
 
       // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
       // have are removed. A drafted flow (another template) is left alone.
@@ -1237,6 +1316,7 @@ async function writeFactsOf(
           continue;
         }
         reopened.add(q.id);
+        reopenedInRun++;
         const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
         await reopenQuestion(root, q.id, { why, at });
         lines.push(
@@ -1272,15 +1352,17 @@ async function writeFactsOf(
       // A few lines: counts by kind and the flows folder; every record and flow with --verbose
       // (or --json), so a first write of hundreds of records stays readable.
       const byKind = countByKind(diff);
-      const counts = `${written.written} files written, ${written.removed} removed, ${written.unchanged} unchanged`;
-      // v31: a run over many repos says its one build once, and that one undo takes it back.
-      if (say === "first")
+      if (!many) {
         io.out(
-          `Wrote the catalog for ${items.length} repos in one build: ${counts}. One undo step: atticus catalog undo takes the whole run back.`,
+          `Wrote the catalog for ${repo}: ${written.written} files written, ${written.removed} removed, ${written.unchanged} unchanged.`,
         );
-      else if (say === "one") io.out(`Wrote the catalog for ${repo}: ${counts}.`);
-      if (say !== "rest")
         io.out(diffIsEmpty(diff) ? "  No catalog changes." : `  Records: ${kindLine(byKind)}.`);
+      } else
+        io.out(
+          diffIsEmpty(diff)
+            ? `  ${repo}: no record of it changed.`
+            : `  ${repo}'s records: ${kindLine(byKind)}.`,
+        );
       if (o.verbose) for (const l of diffLines(diff).slice(1)) io.out(`    ${l}`);
       const specsRel = specRelOf(root, repo);
       io.out(`  Flows: ${flowPaths.length} in ${specsRel}/.`);
@@ -1325,6 +1407,7 @@ async function writeFactsOf(
         changes: { ...diff, byKind },
         links,
         snapshot,
+        ...(run ? { run } : {}),
         // ADR 0195 point 4: what the build removed, each with what explains it.
         removed: w.removals.map((x) => ({
           kind: x.kind,
@@ -1336,23 +1419,38 @@ async function writeFactsOf(
       };
     };
     if (!many) {
-      const r = await after(items[0]!, await projectedOf(0), commits[0]!, "one");
+      const r = await after(items[0]!, await projectedOf(0), commits[0]!);
       progress.end({ done: true });
       gave = true;
       return [r];
     }
     const results: (WriteFactsResult | Error)[] = [];
-    for (const [i, it] of items.entries()) {
+    for (const [i, it] of batch.entries()) {
       let r: WriteFactsResult | Error;
       try {
-        r = await after(it, await projectedOf(i), commits[i]!, i ? "rest" : "first");
+        r = await after(it, await projectedOf(i), commits[i]!);
       } catch (e) {
         // The catalog is written whole: a repo whose own files can't be written is that repo's.
         if (!isFileSystemError(e)) throw e;
         r = e as Error;
       }
       results.push(r);
-      await each!(i, r);
+      await each!(items.indexOf(it), r);
+    }
+    // An answer the run's questions opened again (ADR 0162, F8) is no answer: the next build
+    // drops what it joined, so the catalog is built again without it now. The repos' own Applies
+    // leave it until the next Apply when the last repo opens it (one-build.md).
+    if (reopenedInRun) {
+      const again = await buildAndWrite(root, {
+        command: `${o.command} (answers opened again)`,
+        ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+        ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+      });
+      if (again.guard.refused) for (const l of buildLines(root, again)) io.err(l);
+      else if (again.write && again.write.written + again.write.removed > 0)
+        io.out(
+          `Built the catalog again without the ${reopenedInRun === 1 ? "answer" : `${reopenedInRun} answers`} opened again: ${again.write.written} files written, ${again.write.removed} removed (one more undo step).`,
+        );
     }
     progress.end({ done: true });
     gave = true;

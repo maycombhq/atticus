@@ -351,6 +351,11 @@ describe("Stop during an Apply over several repos with one build (v31)", () => {
   it("asked while the one build is written: too late, and the run ends done with all applied", async () => {
     const r = await run("/api/facts/apply-all", ALL, (l) => l.startsWith("Writing contracts"));
     expect(r.asked).toBe(true);
+    // The run has one write: a Stop during it is too late for the run, said so, never "the run
+    // ends when this repo's write has finished".
+    expect(r.printed).toContain(TOO_LATE);
+    expect(r.printed).not.toContain(HEARD);
+    expect(r.printed).not.toContain(STOPPING_AFTER);
     expect(r.printed).not.toContain(STOPPING);
     expect(r.ended.state).toBe("done");
     expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
