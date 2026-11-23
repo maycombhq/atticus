@@ -454,6 +454,8 @@ export async function verifyAllCommand(
   };
   /** The held repos not written when Stop ended the run. */
   let notWritten: string[] | undefined;
+  /** A step after every repo's write failed (the review of PR #10): the run exits 1. */
+  let runFault = false;
   if (stoppedAt === undefined && held.length) {
     const { writeFactsIntoCatalog, writeManyFactsIntoCatalog } =
       await import("./map-render-commands.js");
@@ -465,7 +467,11 @@ export async function verifyAllCommand(
           await writeManyFactsIntoCatalog(
             root,
             held.map((h) => ({ repo: h.repo, facts: h.args[2], o: h.args[3] })),
-            { ...first, command: "atticus verify --all --write" },
+            {
+              ...first,
+              command: "atticus verify --all --write",
+              onRunFault: () => (runFault = true),
+            },
             out,
             (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
           );
@@ -518,7 +524,7 @@ export async function verifyAllCommand(
   io.out(
     `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
   );
-  return failed.length ? 1 : 0;
+  return failed.length || runFault ? 1 : 0;
 }
 
 /**

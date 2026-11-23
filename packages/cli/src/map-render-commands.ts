@@ -724,6 +724,11 @@ export interface WriteFactsOptions {
   /** Told the refused build, when a guard refused it (the app's and --json's report). */
   onRefused?: (r: BuildAndWrite) => void;
   /**
+   * v31, one build for many repos: told when a step after every repo's write failed (the build
+   * again without the answers the run opened again was refused or stopped), so the run exits 1.
+   */
+  onRunFault?: () => void;
+  /**
    * ADR 0205 step 2 (the app's Apply): the local caches are written after this returns, still
    * under the scan's lock (`runAfterResult`), so "done" shows first.
    */
@@ -1441,16 +1446,37 @@ async function writeFactsOf(
     // drops what it joined, so the catalog is built again without it now. The repos' own Applies
     // leave it until the next Apply when the last repo opens it (one-build.md).
     if (reopenedInRun) {
-      const again = await buildAndWrite(root, {
-        command: `${o.command} (answers opened again)`,
-        ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
-        ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
-      });
-      if (again.guard.refused) for (const l of buildLines(root, again)) io.err(l);
-      else if (again.write && again.write.written + again.write.removed > 0)
-        io.out(
-          `Built the catalog again without the ${reopenedInRun === 1 ? "answer" : `${reopenedInRun} answers`} opened again: ${again.write.written} files written, ${again.write.removed} removed (one more undo step).`,
+      // The review of PR #10: a command a person can run (the guards' lines name it with its
+      // flags), and a refusal or a file error is said and fails the run, never a silent "done".
+      const opened = reopenedInRun === 1 ? "the answer" : `the ${reopenedInRun} answers`;
+      try {
+        const again = await buildAndWrite(root, {
+          command: "atticus catalog build",
+          ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+          ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+          ...(o.cachesAfterResult
+            ? { cachesAfter: (w: () => Promise<void>) => later.push(w) }
+            : {}),
+        });
+        if (again.guard.refused) {
+          io.err(
+            `The catalog was written for every repo, but building it again without ${opened} this run opened again was refused:`,
+          );
+          for (const l of buildLines(root, again)) io.err(l);
+          await refusalEnds(root, again.guard.refused);
+          o.onRefused?.(again);
+          o.onRunFault?.();
+        } else if (again.write && again.write.written + again.write.removed > 0)
+          io.out(
+            `Built the catalog again without ${opened} this run opened again: ${again.write.written} files written, ${again.write.removed} removed. That is a second undo step (atticus catalog undo takes it back first, then the run's write); the repos' specs, flows, report and map above were written before it, and their next Apply writes them again.`,
+          );
+      } catch (e) {
+        if (!isFileSystemError(e)) throw e;
+        io.err(
+          `The catalog was written for every repo, but building it again without ${opened} this run opened again stopped: ${(e as Error).message} Run atticus catalog build when the file is free.`,
         );
+        o.onRunFault?.();
+      }
     }
     progress.end({ done: true });
     gave = true;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { answerQuestion, listQuestions, parseRecord } from "@maycombhq/core";
-import { buildAndWrite } from "@maycombhq/scanner";
+import { buildAndWrite, buildWriteHooks } from "@maycombhq/scanner";
 import { verifyAllCommand } from "../src/verify-commands.js";
 import { seedReadersSlots, verifyConfirmed } from "./seed-slots.js";
 
@@ -151,7 +151,9 @@ describe("one build for many repos and an answer opened again (v31)", () => {
         r.out.some((l) => l.startsWith("Asked again ")),
         r.out.join("\n"),
       ).toBe(true);
-    expect(a.out.join("\n")).toContain("Built the catalog again without the answer opened again");
+    expect(a.out.join("\n")).toContain(
+      "Built the catalog again without the answer this run opened again",
+    );
     // The repos' own Applies leave the catalog built with the answer (the last repo opened it
     // again after its build); the next build drops it. The one build's run is that next build.
     const seq = catalogOf(each);
@@ -162,5 +164,31 @@ describe("one build for many repos and an answer opened again (v31)", () => {
       "the repos' own Applies leave a stale catalog",
     ).toBeGreaterThan(0);
     expect(differences(catalogOf(one), next)).toEqual([]);
+  }, 600_000);
+
+  it("a refused build again is said with a command a person can run, and fails the run (the review of PR #10)", async () => {
+    const root = await estate();
+    // A person's edit of a record file while the run writes (the lock doesn't stop an editor):
+    // made once, right after the one build's record files are written.
+    buildWriteHooks.afterRecords = async () => {
+      buildWriteHooks.afterRecords = undefined;
+      const file = [...catalogOf(root).entries()].find(
+        ([p, text]) => !p.startsWith("catalog/.") && p.endsWith(".yaml") && /^name: /m.test(text),
+      )![0];
+      const text = readFileSync(join(root, file), "utf8");
+      writeFileSync(join(root, file), text.replace(/^name: .*$/m, "name: Renamed by hand"));
+    };
+    try {
+      const a = await run(root, true);
+      const said = a.out.join("\n");
+      expect(a.code, said).toBe(1);
+      expect(said).toContain(
+        "building it again without the answer this run opened again was refused",
+      );
+      expect(said).toContain("atticus catalog build");
+      expect(said).not.toContain("(answers opened again)");
+    } finally {
+      buildWriteHooks.afterRecords = undefined;
+    }
   }, 600_000);
 });

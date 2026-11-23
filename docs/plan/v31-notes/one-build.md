@@ -125,3 +125,14 @@ topic questions, its terms and its map, about 0.3 CPU s a repo. Verifying the 33
   and hands them to `writeManyFactsIntoCatalog` (`packages/cli/src/map-render-commands.ts`), which
   shares `writeFactsIntoCatalog`'s path (`writeFactsOf`): the lock, the catalog read, the one
   build (`buildCatalog` with every repo's snapshot), `buildAndWrite`, then each repo's files.
+
+## The second review (PR #10)
+
+- The build again without an answer the run opened again is `atticus catalog build`'s command in
+  its lines (a refusal names `atticus catalog build --discard-edits <n>`, as a person runs it),
+  and a refusal or a held file there is said and makes the run exit 1 (`onRunFault`). Its line
+  says it is a second undo step and that the repos' files above were written before it. Test:
+  `cli/test/apply-one-build-answers.test.ts`, a hand edit made while the run writes.
+- Open: the questions are read again when this process wrote one (`questionStats.writes`), so an
+  answer given by another process, or a hand edit or pull of `questions/` during the run, is not
+  seen by later repos; the one build froze the answers at its start either way.
