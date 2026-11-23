@@ -5,17 +5,22 @@
 // packages that grew most. Only the owner raises the budget, by editing the number below in a PR
 // that says why.
 //
-// Non-test source: the files under packages/<package>/src/ and the root scripts/ folder with a
-// code extension (CODE), leaving out every folder named test, tests, __tests__ or fixtures and
-// every *.test.* or *.spec.* file. Docs, markdown, YAML, JSON and the starter files are not code.
+// Non-test source: every file under packages/<package>/ and the root scripts/ folder with a code
+// extension (CODE), leaving out node_modules and build output (SKIP_DIR), every folder named
+// test, tests, __tests__ or fixtures, every *.test.* or *.spec.* file, and the folders listed in
+// EXCLUDE, each with its reason. A test or fixtures folder inside src/ is left out too: in this
+// repo the only ones are packages/intellij/src/test/ (the plugin's Kotlin tests and their
+// inputs), and a fixtures folder holds test inputs by this repo's convention. Docs, markdown,
+// YAML, JSON and the starter files are not code.
 //
 // The baseline is recorded below, package by package, as counted at the tag, rather than read
 // from git: CI clones shallow with no tags, a Windows checkout may have no git on the path for a
 // script, and counting the tag's tree would need its objects. The counts need nothing but the
 // working tree, so the check is the same offline, on Linux and on Windows. A new release records
-// a new baseline (`node scripts/check-size-budget.mjs --record` prints it).
+// a new baseline: `git archive <tag> packages scripts` into an empty folder, then
+// `node scripts/check-size-budget.mjs --record <that folder>` prints it.
 //
-//   node scripts/check-size-budget.mjs [--record]
+//   node scripts/check-size-budget.mjs [--record [folder]]
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -26,7 +31,10 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** How many non-test lines v31 may add over the baseline, in all. */
 export const BUDGET = 3500;
 export const BASELINE_TAG = "v2.0.0-beta.30";
-/** Non-test source lines per package at BASELINE_TAG (b6cf4c3); `scripts` is the root folder. */
+/**
+ * Non-test source lines per package at BASELINE_TAG (b6cf4c3), counted on `git archive` of the
+ * tag's packages/ and scripts/ with `--record`; `scripts` is the root folder.
+ */
 export const BASELINE = {
   adapters: 2924,
   adopt: 4571,
@@ -36,12 +44,12 @@ export const BASELINE = {
   changes: 8764,
   ci: 1362,
   cli: 85607,
-  conformance: 1611,
+  conformance: 1615,
   core: 50091,
   diagrams: 2703,
-  embed: 722,
-  evals: 7872,
-  executors: 948,
+  embed: 797,
+  evals: 7972,
+  executors: 1181,
   extractors: 23996,
   features: 2517,
   glossary: 1793,
@@ -58,7 +66,7 @@ export const BASELINE = {
   planner: 33959,
   reconcile: 820,
   release: 3420,
-  scanner: 17005,
+  scanner: 17530,
   sdk: 1779,
   server: 2490,
   site: 431,
@@ -67,15 +75,44 @@ export const BASELINE = {
   synth: 1704,
   taskrun: 3499,
   testgen: 3478,
-  ui: 85458,
+  ui: 85467,
   verify: 11691,
-  vscode: 15738,
+  vscode: 16012,
   workspace: 2079,
   scripts: 4846,
 };
 
-const CODE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|kt|css)$/;
-const SKIP_DIR = new Set(["test", "tests", "__tests__", "fixtures", "node_modules", "dist"]);
+const CODE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|kt|css|vue|py|sh|ps1)$/;
+const SKIP_DIR = new Set([
+  "test",
+  "tests",
+  "__tests__",
+  "fixtures",
+  // Installed packages and build output, never in git.
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".turbo",
+  ".gradle",
+]);
+
+/** Folders left out by path (from the repo root), each generated, or test code by another name. */
+export const EXCLUDE = {
+  // Generated: the SDK's npm layout, written by scripts/bundle/npm-sdk.mjs (gitignored).
+  "packages/sdk/npm": "generated",
+  // Generated: the UI's library build (vite build --mode lib, gitignored).
+  "packages/ui/dist-lib": "generated",
+  // Test code: the UI's Playwright end-to-end tests.
+  "packages/ui/e2e": "test",
+  // Test code: the VS Code extension's tests, run in an extension host.
+  "packages/vscode/test-vscode": "test",
+  // Test code: the end-to-end journeys (Playwright), a package of tests only.
+  "packages/journeys": "test",
+  // Test code: the M3 exit check's live run, a harness over mocks and recorded replay.
+  "packages/m3-exit": "test",
+};
 const TEST_FILE = /\.(test|spec)\.[^.]+$/;
 
 const linesOf = (text) =>
@@ -85,13 +122,14 @@ const linesOf = (text) =>
       ? text.split("\n").length - 1
       : text.split("\n").length;
 
-function countDir(dir) {
+function countDir(dir, rel) {
+  if (rel in EXCLUDE) return 0;
   let lines = 0;
   for (const name of readdirSync(dir).sort()) {
     const p = join(dir, name);
     const s = statSync(p);
     if (s.isDirectory()) {
-      if (!SKIP_DIR.has(name)) lines += countDir(p);
+      if (!SKIP_DIR.has(name)) lines += countDir(p, `${rel}/${name}`);
     } else if (CODE.test(name) && !TEST_FILE.test(name)) {
       lines += linesOf(readFileSync(p, "utf8"));
     }
@@ -105,15 +143,14 @@ export function count(root = ROOT) {
   const pkgs = join(root, "packages");
   if (existsSync(pkgs))
     for (const name of readdirSync(pkgs).sort()) {
-      const src = join(pkgs, name, "src");
-      if (existsSync(src) && statSync(src).isDirectory()) {
-        const n = countDir(src);
-        if (n) out[name] = n;
-      }
+      const dir = join(pkgs, name);
+      if (!statSync(dir).isDirectory()) continue;
+      const n = countDir(dir, `packages/${name}`);
+      if (n) out[name] = n;
     }
   const scripts = join(root, "scripts");
   if (existsSync(scripts)) {
-    const n = countDir(scripts);
+    const n = countDir(scripts, "scripts");
     if (n) out.scripts = n;
   }
   return out;
@@ -161,8 +198,9 @@ export function report(r, top = 5) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  if (process.argv.includes("--record")) {
-    console.log(JSON.stringify(count(), null, 2));
+  const at = process.argv.indexOf("--record");
+  if (at >= 0) {
+    console.log(JSON.stringify(count(process.argv[at + 1] ?? ROOT), null, 2));
     process.exit(0);
   }
   const r = check();

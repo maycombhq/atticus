@@ -4,10 +4,20 @@ Two public repos read at pinned commits, so the estate join can be scored in CI 
 offline, with no source checked out
 (`packages/cli/test/oss-estate-join.test.ts`):
 
-| Repo                       | Commit                                     | Licence    |
-| -------------------------- | ------------------------------------------ | ---------- |
-| `spring-petclinic-rest`    | `afc8fc1d3b8ec8de69414482b3bd70a1da78cb95` | Apache-2.0 |
-| `spring-petclinic-angular` | `7c9f1ab259f0dbc8a987c4e21d97dc616607b362` | Apache-2.0 |
+| Repo                       | Commit                                     |
+| -------------------------- | ------------------------------------------ |
+| `spring-petclinic-rest`    | `afc8fc1d3b8ec8de69414482b3bd70a1da78cb95` |
+| `spring-petclinic-angular` | `7c9f1ab259f0dbc8a987c4e21d97dc616607b362` |
+
+Licences, as each repo states them at its pinned commit:
+
+- `spring-petclinic-rest` has a `LICENSE.txt` with the Apache License 2.0, and its source files
+  carry Apache-2.0 headers: "Copyright 2002-2013 the original author or authors."
+- `spring-petclinic-angular` has no LICENSE file. Its `package.json` says `"license": "MIT"`,
+  while its source files carry Apache-2.0 headers: "Copyright 2016-2017 the original author or
+  authors."
+
+The Apache License 2.0 text: <https://www.apache.org/licenses/LICENSE-2.0>.
 
 Both are at `https://github.com/spring-petclinic/`. Only verified facts are stored here: each
 cites a file and line of its repo with a short quote of that one line (120 characters at most;

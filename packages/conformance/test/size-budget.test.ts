@@ -26,6 +26,7 @@ interface Result {
 }
 interface Lint {
   BUDGET: number;
+  EXCLUDE: Record<string, string>;
   BASELINE: Record<string, number>;
   count(root?: string): Record<string, number>;
   check(root?: string, o?: { baseline?: Record<string, number>; budget?: number }): Result;
@@ -57,6 +58,11 @@ describe("the size budget for non-test source", () => {
     expect(Object.values(BASELINE).every((n) => Number.isInteger(n) && n > 0)).toBe(true);
   });
 
+  it("marks each folder it leaves out by path as generated or as test code", async () => {
+    const { EXCLUDE } = await lint();
+    expect(Object.values(EXCLUDE).every((why) => why === "generated" || why === "test")).toBe(true);
+  });
+
   it("counts source code only: not tests, fixtures, docs, markdown or data", async () => {
     const { count } = await lint();
     const root = await repoWith({
@@ -68,14 +74,30 @@ describe("the size budget for non-test source", () => {
       "packages/core/src/e.yaml": 100,
       "packages/core/test/f.ts": 100,
       "packages/core/dist/g.js": 100,
+      "packages/core/.turbo/h.js": 100,
+      "packages/core/node_modules/x/i.js": 100,
+      // Code outside src/ counts: a bench, a package's scripts, its config.
+      "packages/core/bench/run.ts": 4,
+      "packages/core/vite.config.ts": 2,
+      "packages/core/scripts/gen.py": 3,
+      "packages/core/scripts/gen.sh": 1,
+      "packages/core/scripts/gen.ps1": 1,
+      "packages/ui/src/App.vue": 6,
       "packages/intellij/src/main/kotlin/H.kt": 7,
       "packages/intellij/src/test/kotlin/HTest.kt": 100,
       "packages/docs-only/README.md": 100,
+      // The listed folders: generated, or test code by another name.
+      "packages/sdk/npm/index.js": 100,
+      "packages/ui/dist-lib/index.js": 100,
+      "packages/ui/e2e/a.ts": 100,
+      "packages/vscode/test-vscode/a.ts": 100,
+      "packages/journeys/support/a.ts": 100,
+      "packages/m3-exit/live/a.mjs": 100,
       "fixtures/x/y.ts": 100,
       "docs/z.ts": 100,
       "scripts/check-a.mjs": 3,
     });
-    expect(count(root)).toEqual({ core: 15, intellij: 7, scripts: 3 });
+    expect(count(root)).toEqual({ core: 26, intellij: 7, ui: 6, scripts: 3 });
     // CRLF line ends count the same.
     const crlf = await repoWith({ "packages/core/src/a.ts": 10 }, "\r\n");
     expect(count(crlf)).toEqual({ core: 10 });
