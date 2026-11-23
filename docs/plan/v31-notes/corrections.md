@@ -34,3 +34,7 @@ Every canvas correction spreads, and Learn from my corrections (2026-11-22; ADR 
 - `scripts/check-surfaces.mjs`: 286 commands after merging map tools (both add one).
 - `docs/api/openapi.json` was regenerated from this branch; regenerate it again after merging the wave.
 - `packages/cli/src/newer-guard.ts`: `POST /api/reading-rules/learn` is guarded.
+
+## Found while building (read only)
+
+- A deleted arrow can be drawn again before this PR too: Delete this link writes a curated suppress of each Interface id, and an id is a hash of caller, callee, method and normalised path (`interfaceId`, `packages/core/src/identity.ts:42`) with no suppress of the pair anywhere in the build, so any read that changes a call's or an entry's path (a person's re-map, a code change read again) draws the pair through a new, unsuppressed Interface; ADR 0208 refuses that only in files an active learned rule names, and a pair-level suppress is the general fix, out of v31.

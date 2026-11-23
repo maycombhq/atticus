@@ -528,4 +528,120 @@ describe("Learn from my corrections (ADR 0208)", () => {
       expect(v.said).not.toContain("atticus rules off");
     });
   });
+
+  describe("a deleted arrow drawn again by a learned rule's next read fails closed (ADR 0208)", () => {
+    const CONTROLLER = "src/main/java/forge/billing/InvoicesController.java";
+    const V2 = "/v2/invoices/{id}/pay";
+    /** An active learned rule for forge-billing, naming every Java file. */
+    beforeEach(async () => {
+      await mkdir(join(root, "org-pack/reading-rules/types"), { recursive: true });
+      await writeFile(
+        join(root, RULES),
+        [
+          "schemaVersion: 2",
+          "rules:",
+          `  - key: ${KEY}`,
+          "    status: active",
+          `    rule: ${JSON.stringify(RULE)}`,
+          '    files: ["src/main/java/**/*.java"]',
+          "    learned:",
+          `      corrections: ["${ID(31)}"]`,
+          "      by: pat",
+          "      at: 2026-11-08T10:15:00.000Z",
+          "      proof:",
+          "        repos: [forge-billing]",
+          `        reread: ["forge-billing ${FILE}"]`,
+          `        reproduced: ["${ID(31)}"]`,
+          "",
+        ].join("\n"),
+      );
+    });
+    const del = (from: string, to: string) =>
+      deleteLink(
+        root,
+        { interfaces: ["if-00000000000000aa"], from, to, by: "dee", now: AT },
+        quiet,
+      );
+    const verify = async () => {
+      const said: string[] = [];
+      const code = await verifyCommand(
+        root,
+        "forge-billing",
+        { write: true },
+        { out: (l) => said.push(l), err: (l) => said.push(l) },
+      );
+      return { code, said: said.join("\n") };
+    };
+
+    it("as the caller: a call the rule now reads to a new path joins the deleted pair, so the write is refused", async () => {
+      // The next read: line 44 now reads as the capture route, which the gateway serves.
+      const file = join(root, "workspace/forge-billing", FILE);
+      const src = (await readFile(file, "utf8")).split("\n");
+      src[43] = `    post(refundPath, body); // "${ROUTE}"`;
+      await writeFile(file, src.join("\n"));
+      await appendFile(
+        join(root, "facts/forge-billing.jsonl"),
+        JSON.stringify(callFact("call.post.refund", ROUTE, 44)) + "\n",
+      );
+      await del("billing-api", "partner-gateway");
+      const facts = await readFile(join(root, "facts/forge-billing.jsonl"), "utf8");
+      const v = await verify();
+      expect(v.code).not.toBe(0);
+      expect(v.said).toContain(`${FILE}:44`);
+      expect(v.said).toContain("billing-api → partner-gateway");
+      expect(v.said).toContain(`atticus rules off ${KEY} --repo forge-billing`);
+      expect(v.said).toMatch(/delete the arrow again/);
+      expect(await readFile(join(root, "facts/forge-billing.jsonl"), "utf8")).toBe(facts);
+    });
+
+    it("as the callee: an entry the rule now reads at a new path draws a deleted caller's arrow, so the write is refused", async () => {
+      const lines = Array.from({ length: 20 }, (_, i) =>
+        i === 12 ? `    @PostMapping("${V2}")` : `    // line ${i + 1}`,
+      );
+      await writeFile(join(root, "workspace/forge-billing", CONTROLLER), lines.join("\n"));
+      await writeFile(
+        join(root, "facts/forge-billing.jsonl"),
+        (await readFile(join(root, "facts/forge-billing.jsonl"), "utf8"))
+          .split("\n")
+          .filter((l) => l.trim() && !l.includes(CONTROLLER))
+          .join("\n") +
+          "\n" +
+          JSON.stringify({
+            kind: "entry",
+            id: "entry.post.v2-invoices-id-pay",
+            repo: "forge-billing",
+            commit: "aaa1111",
+            entryType: "rest",
+            method: "POST",
+            path: V2,
+            handler: "InvoicesController.pay",
+            cite: { file: CONTROLLER, line: 13, value: V2 },
+            verified: "line",
+            by: "assistant",
+            conf: "declared",
+          }) +
+          "\n",
+      );
+      await appendFile(
+        join(root, "facts/forge-shop-bff.jsonl"),
+        JSON.stringify({
+          ...callFact("call.post.v2-invoices-id-pay", V2, 30),
+          repo: "forge-shop-bff",
+          base: "forge.billing.base-url",
+          cite: { file: "src/main/java/forge/shop/CheckoutController.java", line: 30, value: V2 },
+        }) + "\n",
+      );
+      await del("shop-bff", "billing-api");
+      const v = await verify();
+      expect(v.code).not.toBe(0);
+      expect(v.said).toContain(`${CONTROLLER}:13`);
+      expect(v.said).toContain("shop-bff → billing-api");
+    });
+
+    it("lets the write through where no learned rule names the file", async () => {
+      await writeFile(join(root, RULES), "schemaVersion: 1\nrules: []\n");
+      await del("billing-api", "partner-gateway");
+      expect((await verify()).said).not.toContain("delete the arrow again");
+    });
+  });
 });

@@ -1314,6 +1314,8 @@ export interface DeletedPair {
   to?: string | undefined;
   by: string;
   what: string;
+  /** The Interfaces the delete suppresses. */
+  interfaces: string[];
 }
 
 /**
@@ -1342,6 +1344,7 @@ export async function deletedPairs(root: string): Promise<DeletedPair[]> {
     to: repoOf.get(l.to),
     by: l.by,
     what: `${l.from} → ${l.to}`,
+    interfaces: l.decisions.map((d) => d.target),
   }));
 }
 

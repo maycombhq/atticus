@@ -22,6 +22,7 @@ import {
   correctedRepos,
   correctionsOf,
   decideIn,
+  deletedBlocks,
   deletedPairs,
   factsOf,
   inAcpSession,
@@ -390,10 +391,12 @@ export async function rulesLearnCommand(
 }
 
 /**
- * ADR 0208: a person's correction that a read no longer meets, in a file an active learned rule
- * names for this repo, fails closed: the lines that refuse the repo's write (verify --write and
- * Apply), each naming the correction and the two ways on, or none. A correction going stale
- * where no learned rule applies is said as before (corrections.stale).
+ * ADR 0208: what refuses a repo's write (verify --write and Apply) while an active learned rule
+ * names files of it, each line naming the place and the two ways on, or nothing:
+ * - a person's correction the read no longer meets, in a file the rule names;
+ * - a join of the read, with this repo at either end, on a pair a person deleted, whose
+ *   Interface the delete doesn't suppress (a new path), and whose line here the rule names.
+ * Where no learned rule applies, both are as before (corrections.stale, the build's suppress).
  */
 export async function staleUnderLearned(
   root: string,
@@ -407,6 +410,7 @@ export async function staleUnderLearned(
   const { effectiveRules } = await import("./reading-rules.js");
   const rules = (await effectiveRules(root, repo, { dir })).rules.filter((r) => r.learned?.proof);
   if (!rules.length) return [];
+  const ruleAt = (at: string) => rules.find((r) => ruleMatches(r, at.replace(/:\d+$/, "")));
   const { isAiBy, listQuestions, TARGETS_STEP_ID } = await import("@maycombhq/core");
   const calls = new Set(report.accepted.filter((f) => f.kind === "call").map(atOf));
   const gone = report.corrections.stale
@@ -419,12 +423,30 @@ export async function staleUnderLearned(
     if (q.state === "answered" && q.answer && !isAiBy(q.answer.by))
       for (const e of q.evidence.filter((x) => !calls.has(x)))
         gone.push({ at: e, what: `${q.answer.by}'s answer to ${q.id}` });
-  return gone.flatMap(({ at, what }) => {
-    const rule = rules.find((r) => ruleMatches(r, at.replace(/:\d+$/, "")));
+  const out = gone.flatMap(({ at, what }) => {
+    const rule = ruleAt(at);
     return rule
       ? [
           `${repo}: ${what} at ${at} meets no call in this read, and the learned rule ${rule.key} names that file, so the read may be the rule's doing. Nothing was written. Either turn the rule off for ${repo} (atticus rules off ${rule.key} --repo ${repo} --reason "..."), or answer the call again on the map (pair it, or say none), then verify again.`,
         ]
       : [];
   });
+  // A deleted pair drawn again through a new path: the join with this read in place.
+  const deleted = await deletedPairs(root);
+  if (!deleted.length) return out;
+  const { estateFacts, estateJoinOf } = await import("@maycombhq/scanner");
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const estate = await estateFacts(root, op, repo);
+  estate.repos.push({ repo, facts: [...report.accepted] });
+  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
+  for (const j of join.joins) {
+    const here = j.call.repo === repo ? j.call.at : j.entry.repo === repo ? j.entry.at : undefined;
+    const rule = here ? ruleAt(here) : undefined;
+    const hit = rule ? deletedBlocks(deleted, j.call.repo, j.entry.repo) : undefined;
+    if (hit && !hit.interfaces.includes(j.interface))
+      out.push(
+        `${repo}: this read joins ${j.call.repo} ${j.call.at} to ${j.entry.repo} ${j.entry.at}, drawing again the arrow ${hit.what} that ${hit.by} deleted, and the learned rule ${rule!.key} names ${here}. Nothing was written. Either turn the rule off for ${repo} (atticus rules off ${rule!.key} --repo ${repo} --reason "..."), or delete the arrow again on the map (or answer the call there), then verify again.`,
+      );
+  }
+  return out;
 }
