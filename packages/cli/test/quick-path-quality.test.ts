@@ -172,6 +172,8 @@ describe("the quick path's plan hand-off (v31, WP-05)", () => {
     async () => {
       const root = await quickChange();
       await writeFile(join(root, "org-pack/sources.yaml"), "schemaVersion: 3\n");
+      // An empty inputs/ folder is no source (review of PR #9).
+      await mkdir(join(root, "inputs"), { recursive: true });
       const dir = join(root, "openspec/changes", ID);
       await writeFile(
         join(dir, "tasks.md"),

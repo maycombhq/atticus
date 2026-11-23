@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { inputsDirOf, knowledgeDirOf, quickPathOf } from "@maycombhq/core";
 import {
@@ -26,13 +26,8 @@ async function hasSources(ctx: ChangeContext): Promise<boolean> {
       (x) => x.length > 0,
       () => false,
     );
-  if (
-    await stat(inputsDirOf(ctx.root)).then(
-      (s) => s.isDirectory(),
-      () => false,
-    )
-  )
-    return true;
+  // An inputs/ folder counts only when something is in it (review of PR #9).
+  if (await any(inputsDirOf(ctx.root))) return true;
   return any(knowledgeDirOf(ctx.root));
 }
 
