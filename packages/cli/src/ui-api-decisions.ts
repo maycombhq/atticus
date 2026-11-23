@@ -8,6 +8,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { correctDecision, decisionsView, DecideError, undoBatch } from "./ai-decide.js";
+import { captured, type LocalJob } from "./ui-api-steps.js";
 
 /**
  * ADR 0181 (C4 2.76.0): the AI's decisions in the app. GET /api/decisions is what every
@@ -105,4 +106,28 @@ export function uiDecisionRoutes(
         return { status: 200, body: out };
       })
   );
+}
+
+/**
+ * ADR 0208 (C4, additive): POST /api/reading-rules/learn, Learn from my corrections, one local
+ * job (one at a time with Apply); its result's `extra` is Api.LearnCorrectionsResult. Refused
+ * (409) where runtime.yaml turns AI off or doesn't allow the assistant's unattended runs.
+ */
+export function uiLearnRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
+  return r.add("POST", "/api/reading-rules/learn", async () => {
+    const op = await loadOrgPack(orgPackDirOf(ctx.root));
+    const { learnFromCorrections, learnRefusal } = await import("./learn-corrections.js");
+    const refused = learnRefusal(op);
+    if (refused) throw conflict(refused);
+    const { acpStepRunner } = await import("./copilot-acp-steps.js");
+    return asJob("Learn from my corrections", async () => {
+      let extra: Api.LearnCorrectionsResultT | undefined;
+      const res = await captured(async (io) => {
+        const runner = await acpStepRunner(ctx.root, { op });
+        extra = await learnFromCorrections(ctx.root, { by: ctx.user, runner }, io);
+        return 0;
+      });
+      return { ...res, ...(extra ? { extra } : {}) };
+    });
+  });
 }

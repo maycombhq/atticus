@@ -1,0 +1,23 @@
+{"path": "src/main/java/org/springframework/samples/petclinic/mapper/**", "why": "MapStruct mappers between entities and the generated DTOs; no boundary of their own"}
+{"path": "src/main/java/org/springframework/samples/petclinic/repository/**", "why": "Repository interfaces and their JDBC/JPA/Spring Data implementations of the tables recorded from @Table; the profile picks one"}
+{"path": "src/main/java/org/springframework/samples/petclinic/service/**", "why": "Service layer delegating to the repositories; no boundary of its own"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/advice/**", "why": "Exception handler shaping error responses"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/validation/**", "why": "Bean validation of a pet's birth date"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/RootRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/SpecialtyRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/UserRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VetRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VisitRestControllerV1.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v2/OwnerRestControllerV2.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/rest/controller/v2/PetRestControllerV2.java", "why": "Implements the API interface openapi-generator makes from openapi.yml; its routes are recorded from openapi.yml"}
+{"path": "src/main/java/org/springframework/samples/petclinic/security/**", "why": "Basic auth on when petclinic.security.enable=true (off in application.properties)"}
+{"path": "src/main/java/org/springframework/samples/petclinic/config/**", "why": "Swagger UI configuration"}
+{"path": "src/main/java/org/springframework/samples/petclinic/model/**", "why": "JPA entities; tables recorded from @Table"}
+{"path": "src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java", "why": "Spring Boot main class"}
+{"path": "src/main/resources/db/**", "why": "Schema and seed SQL for the local databases"}
+{"path": "src/main/resources/messages/**", "why": "Message bundles"}
+{"path": "src/main/resources/application-*.properties", "why": "Per-database profiles for local runs"}
+{"path": "src/main/resources/logback.xml", "why": "Logging"}

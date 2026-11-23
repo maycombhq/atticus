@@ -1,0 +1,264 @@
+schemaVersion: 1
+repo: spring-petclinic-rest
+commit: afc8fc1d3b8ec8de69414482b3bd70a1da78cb95
+entries:
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 34
+    provider: Spring PetClinic
+    hosts: &a1
+      - http://localhost:9966/petclinic/api
+    method: GET
+    path: /oops
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 66
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /owners
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 98
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /owners
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 140
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /v2/owners
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 207
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /owners/{ownerId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 260
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /owners/{ownerId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 309
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /owners/{ownerId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 363
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /owners/{ownerId}/pets
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 412
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /owners/{ownerId}/pets/{petId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 474
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /owners/{ownerId}/pets/{petId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 529
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /owners/{ownerId}/pets/{petId}/visits
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 587
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /pettypes
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 620
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /pettypes
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 671
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /pettypes/{petTypeId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 724
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /pettypes/{petTypeId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 784
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /pettypes/{petTypeId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 839
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /pets
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 873
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /v2/pets
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 927
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /pets/{petId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 980
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /pets/{petId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1040
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /pets/{petId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1094
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /visits
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1127
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /visits
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1178
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /visits/{visitId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1231
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /visits/{visitId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1291
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /visits/{visitId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1345
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /specialties
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1378
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /specialties
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1429
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /specialties/{specialtyId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1482
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /specialties/{specialtyId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1542
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /specialties/{specialtyId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1596
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /vets
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1630
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /vets
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1681
+    provider: Spring PetClinic
+    hosts: *a1
+    method: GET
+    path: /vets/{vetId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1734
+    provider: Spring PetClinic
+    hosts: *a1
+    method: PUT
+    path: /vets/{vetId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1794
+    provider: Spring PetClinic
+    hosts: *a1
+    method: DELETE
+    path: /vets/{vetId}
+  - format: openapi
+    file: src/main/resources/openapi.yml
+    line: 1848
+    provider: Spring PetClinic
+    hosts: *a1
+    method: POST
+    path: /users

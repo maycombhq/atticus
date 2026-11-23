@@ -1287,7 +1287,9 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
     const drafts: string[] = [];
     const runtime = new MockRuntime(
       (req) => {
-        if (req.agent.id.endsWith("-critic")) return "findings: []";
+        // The critic's lenses, and the starter naysayers a new metarepo runs at the design gate.
+        if (req.agent.id.endsWith("-critic") || req.agent.id.endsWith("-naysayer"))
+          return "findings: []";
         if (req.agent.id === EXPAND_AGENT) return "terms: [settled refund]\nnames: []\n";
         drafts.push(req.agent.id);
         return answer;
@@ -1986,14 +1988,11 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       const agents = join(m.root, "org-pack", "agents");
       await mkdir(agents, { recursive: true });
       const persona = join(agents, `${NAYSAYER}.md`);
+      // v31 (WP-06): the starter gives gates: [design] itself, so a new metarepo runs it there.
       const starter = await readFile(STARTER_NAYSAYER, "utf8");
-      await writeFile(
-        persona,
-        starter.replace(
-          "\nowns: Application architect\n",
-          "\nowns: Application architect\ngates: [design]\n",
-        ),
-      );
+      expect(starter).toContain("\nowns: Application architect\n");
+      expect(starter).toMatch(/\ngates: \[design\]\n/);
+      await writeFile(persona, starter);
       try {
         await change(e, "feature");
         await stage(["change", "feature", e.id], e.feature);
@@ -2003,7 +2002,8 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
         const runtime = new MockRuntime(
           (req) => {
             if (req.agent.id === NAYSAYER) return lens(req);
-            if (req.agent.id.endsWith("-critic")) return "findings: []";
+            if (req.agent.id.endsWith("-critic") || req.agent.id.endsWith("-naysayer"))
+              return "findings: []";
             if (req.agent.id === EXPAND_AGENT) return "terms: [settled refund]\nnames: []\n";
             drafts.push(req.agent.id);
             return e.architecture;

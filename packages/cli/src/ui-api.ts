@@ -1,5 +1,6 @@
 import { answerAsJob, tracked, trackedLocal } from "./ui-api-activity.js";
 import { uiCatalogRoutes } from "./ui-api-catalog.js";
+import { uiLearnRoutes } from "./ui-api-decisions.js";
 import { uiStepRoutes } from "./ui-api-steps.js";
 import { appMemoryApplied, printToCurrent } from "@maycombhq/core";
 import { createHash } from "node:crypto";
@@ -800,6 +801,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   uiStepRoutes(r, ctx, asJob);
   // ADR 0195 (CS3): the readers' cross-check, and the build's confirm steps, undo and prune.
   uiCatalogRoutes(r, ctx, asJob);
+  // ADR 0208: Learn from my corrections.
+  uiLearnRoutes(r, ctx, asJob);
   /**
    * Done: a hand-off's answer checked, and the step it finishes resumed (fourth UX walk). ADR
    * 0189: the same for the app's own check once the answer file is complete (`by: "app"`, from
