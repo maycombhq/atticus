@@ -22,7 +22,6 @@ import {
   JOINED_BY_AI,
   JOINED_BY_ANSWER,
   JOINED_BY_PERSON,
-  linkCandidates,
   linksFor,
   listBatches,
   listQuestions,
@@ -1490,27 +1489,16 @@ async function planPairSpread(
   const remove: string[] = [];
   const applied: BatchItemT[] = [];
   const reverted: BatchItemT[] = [];
-  const { candidatesOf, settingsOf } = await import("./ui-api-links.js");
+  const { candidatesOf } = await import("./ui-api-links.js");
   const cands =
     o.box !== repo
       ? await candidatesOf(root, repo, { repo: o.box }).catch(() => undefined)
       : undefined;
-  const status = new Map((cands?.view.calls ?? []).map((c) => [c.fact, c.status] as const));
+  const byFact = new Map((cands?.view.calls ?? []).map((c) => [c.fact, c] as const));
   const apis = (cands?.view.apis ?? []).filter((a) => a.kind !== "operation");
-  const settings = settingsOf(facts);
-  const bestOf = (c: FactOf<"call">) => {
-    if (!target || !apis.length) return undefined;
-    const s = linkCandidates({
-      from: repo,
-      facts: [c],
-      join: { joins: [], asks: [], misses: [], outside: [], left: [] },
-      apis,
-      pairs: {},
-      to: { repo: target },
-      settings,
-    }).calls[0]?.suggestion?.api;
-    return s ? apis.find((a) => a.id === s) : undefined;
-  };
+  // The API the shapes rank first for the call (ADR 0178), as the candidates list it.
+  const bestOf = (c: FactOf<"call">) =>
+    target ? apis.find((a) => a.id === byFact.get(c.id)?.suggestion?.api) : undefined;
   const words = (c: FactOf<"call">) =>
     `${repo}'s call ${[c.method?.toUpperCase(), c.path].filter(Boolean).join(" ")} (${c.cite.file}:${c.cite.line})`;
   // Round 48: a call whose targets question a person answered is theirs too.
@@ -1523,7 +1511,7 @@ async function planPairSpread(
     if (personEditOfTo(c, corrections)) continue; // a person said where it goes
     if (byPerson.has(c.id)) continue; // a person answered where it goes
     // Loose: on the candidates' list, and tied nowhere by the join (ADR 0208).
-    if (!st && (!status.has(c.id) || JOINED.has(status.get(c.id)!))) continue;
+    if (!st && (!byFact.has(c.id) || JOINED.has(byFact.get(c.id)!.status))) continue;
     const item = `link:${repo}:${c.id}`;
     const was = st?.ai
       ? `${st.link!.repo} ${[st.link!.method, st.link!.path].filter(Boolean).join(" ")}`

@@ -9,6 +9,7 @@ import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
 import { learnFromCorrections, type LearnDeps } from "../src/learn-corrections.js";
 import { effectiveRules } from "../src/reading-rules.js";
 import { rulesSetCommand } from "../src/rules-commands.js";
+import { verifyCommand } from "../src/verify-commands.js";
 import {
   AT,
   callFact,
@@ -79,7 +80,7 @@ async function threeCorrections() {
 /** The stand-in assistant: drafts the rule, then re-reads each line with the path `paths` gives. */
 function assistant(
   paths: Record<number, string>,
-  o: { files?: string[]; key?: string; fail?: boolean } = {},
+  o: { files?: string[]; key?: string; fail?: boolean; extra?: object[] } = {},
 ) {
   const steps: { change: string; line: string; writeRoots: string[] }[] = [];
   const key = o.key ?? KEY;
@@ -107,6 +108,7 @@ function assistant(
         const f = callFact(IDS[Number(n)]!, path, Number(n));
         return JSON.stringify({ ...f, verified: "none", cite: { ...f.cite, value: path } });
       });
+      facts.push(...(o.extra ?? []).map((x) => JSON.stringify(x)));
       await writeFile(join(root, `facts/.try/forge-billing.${key}.jsonl`), facts.join("\n") + "\n");
       if (o.fail) throw new Error("the session stopped");
     }
@@ -344,5 +346,186 @@ describe("Learn from my corrections (ADR 0208)", () => {
     expect(a.steps).toEqual([]);
     await appendFile(join(root, "org-pack/runtime.yaml"), "ai: off\n");
     await expect(learnFromCorrections(root, deps(a.runner))).rejects.toThrow(/AI on/);
+  });
+
+  describe("the callee side: a re-read moves an entry other repos' calls meet", () => {
+    const CONTROLLER = "src/main/java/forge/billing/InvoicesController.java";
+    const V2 = "/v2/invoices/{id}/pay";
+    /** The re-read's copy of the invoices entry, moved to /v2 as the controller's line says. */
+    const moved = {
+      kind: "entry",
+      id: "entry.post.v2-invoices-id-pay",
+      repo: "forge-billing",
+      commit: "aaa1111",
+      entryType: "rest",
+      method: "POST",
+      path: V2,
+      handler: "InvoicesController.pay",
+      cite: { file: CONTROLLER, line: 13, value: V2 },
+      verified: "none",
+      by: "assistant",
+      conf: "declared",
+    };
+    beforeEach(async () => {
+      const lines = Array.from({ length: 20 }, (_, i) =>
+        i === 12 ? `    @PostMapping("${V2}") // was "/invoices/{id}/pay"` : `    // line ${i + 1}`,
+      );
+      await writeFile(join(root, "workspace/forge-billing", CONTROLLER), lines.join("\n"));
+    });
+    const wide = (extra: object[]) =>
+      assistant(ALL, { files: ["src/main/java/**/*.java"], extra }).runner;
+
+    it("stays a draft when another repo's loose call would newly join it and a person deleted that arrow", async () => {
+      // The shop calls /v2 already: loose until the entry moves there.
+      await appendFile(
+        join(root, "facts/forge-shop-bff.jsonl"),
+        JSON.stringify({
+          ...callFact("call.post.v2-invoices-id-pay", V2, 30),
+          repo: "forge-shop-bff",
+          base: "forge.billing.base-url",
+          cite: { file: "src/main/java/forge/shop/CheckoutController.java", line: 30, value: V2 },
+        }) + "\n",
+      );
+      await deleteLink(
+        root,
+        {
+          interfaces: ["if-0000000000000009"],
+          from: "shop-bff",
+          to: "billing-api",
+          by: "dee",
+          now: AT,
+        },
+        quiet,
+      );
+      await threeCorrections();
+      const r = await learnFromCorrections(root, deps(wide([moved])));
+      expect(r.active).toEqual([]);
+      expect(r.draft[0]!.reasons).toContainEqual({
+        kind: "deleted",
+        about: "shop-bff → billing-api",
+      });
+    });
+
+    it("stays a draft when a person's pairing from another repo onto the entry would no longer join", async () => {
+      const CALLER = "src/main/java/forge/shop/CheckoutController.java";
+      await appendFile(
+        join(root, "facts/forge-shop-bff.corrections.jsonl"),
+        JSON.stringify({
+          schemaVersion: 2,
+          fact: "call.post.invoices-id-pay",
+          target: { kind: "call", file: CALLER, line: 18, value: "/invoices/{id}/pay" },
+          action: "link",
+          link: {
+            repo: "forge-billing",
+            entry: "entry.post.invoices-id-pay",
+            method: "POST",
+            path: "/invoices/{id}/pay",
+          },
+          by: "dee",
+          at: "2026-11-08T09:30:00.000Z",
+        }) + "\n",
+      );
+      // That pairing was learned from before (a rule proven on the shop): not asked about again.
+      await mkdir(join(root, "org-pack/reading-rules/types"), { recursive: true });
+      const shop = `forge-shop-bff ${CALLER}:18`;
+      await writeFile(
+        join(root, RULES),
+        [
+          "schemaVersion: 2",
+          "rules:",
+          "  - key: shop-billing-base",
+          "    status: active",
+          '    rule: "The shop calls the billing repo through its billing.base-url setting."',
+          '    files: ["src/main/java/forge/shop/**"]',
+          "    learned:",
+          `      corrections: ["${shop}"]`,
+          "      by: dee",
+          "      at: 2026-11-08T09:40:00.000Z",
+          "      proof:",
+          "        repos: [forge-shop-bff]",
+          `        reread: ["forge-shop-bff ${CALLER}"]`,
+          `        reproduced: ["${shop}"]`,
+          "",
+        ].join("\n"),
+      );
+      await threeCorrections();
+      const r = await learnFromCorrections(root, deps(wide([moved])));
+      expect(r.active).toEqual([]);
+      expect(r.draft[0]!.reasons).toContainEqual({ kind: "touched", about: shop });
+    });
+  });
+
+  describe("a person's correction going stale under a learned rule fails closed (ADR 0208)", () => {
+    const REFUND = 44;
+    beforeEach(async () => {
+      // The client has a refund call at line 44 too, read now under a new id and name.
+      const file = join(root, "workspace/forge-billing", FILE);
+      const src = (await readFile(file, "utf8")).split("\n");
+      src[REFUND - 1] = `    post(refundPath, body); // "${ROUTE}"`;
+      await writeFile(file, src.join("\n"));
+      await appendFile(
+        join(root, "facts/forge-billing.jsonl"),
+        JSON.stringify(callFact("call.post.refund-new", "refundPath", REFUND)) + "\n",
+      );
+      // The person's "none" of the call as it was read before.
+      await appendFile(
+        join(root, LINES),
+        JSON.stringify({
+          schemaVersion: 2,
+          fact: "call.post.refund-old",
+          target: { kind: "call", file: FILE, line: REFUND, value: "oldRefundPath" },
+          action: "unlink",
+          by: "dee",
+          at: "2026-11-08T09:30:00.000Z",
+        }) + "\n",
+      );
+    });
+    const verify = async () => {
+      const said: string[] = [];
+      const code = await verifyCommand(
+        root,
+        "forge-billing",
+        { write: true },
+        { out: (l) => said.push(l), err: (l) => said.push(l) },
+      );
+      return { code, said: said.join("\n") };
+    };
+
+    it("refuses the repo's write, naming the correction and both next steps, where a learned rule names its file", async () => {
+      await mkdir(join(root, "org-pack/reading-rules/types"), { recursive: true });
+      await writeFile(
+        join(root, RULES),
+        [
+          "schemaVersion: 2",
+          "rules:",
+          `  - key: ${KEY}`,
+          "    status: active",
+          `    rule: ${JSON.stringify(RULE)}`,
+          '    files: ["src/main/java/**/*Client.java"]',
+          "    learned:",
+          `      corrections: ["${ID(31)}"]`,
+          "      by: pat",
+          "      at: 2026-11-08T10:15:00.000Z",
+          "      proof:",
+          "        repos: [forge-billing]",
+          `        reread: ["forge-billing ${FILE}"]`,
+          `        reproduced: ["${ID(31)}"]`,
+          "",
+        ].join("\n"),
+      );
+      const facts = await readFile(join(root, "facts/forge-billing.jsonl"), "utf8");
+      const v = await verify();
+      expect(v.code).not.toBe(0);
+      expect(v.said).toContain(`${FILE}:${REFUND}`);
+      expect(v.said).toContain(`atticus rules off ${KEY} --repo forge-billing`);
+      expect(v.said).toMatch(/answer the call again/);
+      expect(await readFile(join(root, "facts/forge-billing.jsonl"), "utf8")).toBe(facts);
+      expect(existsSync(join(root, "catalog/sources/forge-billing"))).toBe(false);
+    });
+
+    it("behaves as before where no learned rule names the file", async () => {
+      const v = await verify();
+      expect(v.said).not.toContain("atticus rules off");
+    });
   });
 });

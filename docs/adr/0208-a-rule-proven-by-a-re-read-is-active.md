@@ -51,11 +51,13 @@ One job, `atticus rules learn` and the button on Map › Decided by AI (`POST /a
 3. **Re-read.** Each new draft is re-read on **every** file its `files` globs name in each corrected repo (`rereadWith`, the core `atticus rules try` shares), into `facts/.try/`, removed after, on a throw or a Stop too. A rule naming more than 500 files in a repo stays a draft, saying so. A draft that names none of the corrected files is not re-read.
 4. **Verify by the join.** The re-read is checked on its lines by the verifier (`branchFactsAt`, at the commit the corrected calls were read at); a rejection leaves the rule a draft. Its facts take the place of those files' facts, every other repo's facts are put beside them, the corrected calls' pairings and answers are left out, and the estate join is run. A rule is **proven** when:
    - for every correction it names, the join itself joins the call on that line to the person's API (the same entry, by code: not by a pairing, an answer, a label or a guess), so two repos serving one path, or a shorter path, prove nothing;
-   - no call a person paired, declined, re-pointed or answered changes in the re-read; and
-   - no call the re-read moved joins a repo whose arrow from its repo a person deleted, and no deleted arrow names an end Atticus can't tie to a repo.
+   - no call a person paired, declined, re-pointed or answered changes in the re-read, and no join a person made (a pairing or an answer) whose call **or entry** is in a re-read repo is lost from the join, whichever repo the call is in; and
+   - no join is new in the proof's join on a pair a person deleted, where the call's repo **or the entry's repo** is re-read (a re-read that moves an entry can bring another repo's loose call onto it), and no deleted arrow names an end Atticus can't tie to a repo.
 5. **Write.** A proven rule is written `status: active` with `learned` and its `proof`: the repos it was proven on, every file re-read, the corrections the join drew. Any other stays `draft` with `learned.why`, naming each reason; `learned.corrections` holds only the corrections the rule names. A throw before the verdicts are written takes the new drafts back out, so a run again doesn't find them twice.
 
 **Scope.** An active learned rule is given only to the reads of the repos in `proof.repos`; for every other repo of the type it is a draft (`effectiveRules`) until Learn proves it there, or a person sets it active. `atticus rules activate <key>` on a learned rule replaces `learned` with a note in `by` that a person set it active, as ADR 0176's activation of any draft.
+
+**Stale corrections fail closed.** A rule changes what later reads write, and a read can move a call so that a person's correction no longer meets it. So when `atticus verify <repo> --write` (and every Apply, which runs it) finds a person's correction (a pairing, a "none", an edit, or an answer's cited line) that meets no call of the read, in a file an active learned rule names for that repo, it refuses that repo's write, nothing written, naming the correction's line and the two ways on: turn the rule off for the repo (`atticus rules off <key> --repo <repo>`), or answer the call again on the map. A correction going stale where no learned rule applies is said as before (`corrections.stale`). A deleted arrow's suppress is by Interface, and a learned rule that could draw it again is never proven (above).
 
 ### 3. The schema step (C6)
 
@@ -95,7 +97,7 @@ Rule 6: a human approves every write to shared systems; AI never pushes to prote
 ## Consequences
 
 - A correction on the canvas is no longer one call at a time: loose and AI-paired calls like it are paired in the same Apply, with one Undo.
-- Reading rules can become active without a person's per-rule confirm, for the repos the estate join proved them on only; the proof and the pull request are the review.
+- Reading rules can become active without a person's per-rule confirm, for the repos the estate join proved them on only; the proof and the pull request are the review. A rule that later reads a file so a person's correction no longer meets its call doesn't change that arrow quietly: the write is refused until the person turns the rule off for the repo or answers again.
 - Deletes, unlinks and corrected option questions are not learned from yet: Learn reads pairings.
 
 ## Not decided here
@@ -108,6 +110,7 @@ Rule 6: a human approves every write to shared systems; AI never pushes to prote
 
 - `packages/cli/test/corrections-spread.test.ts`: each correction kind performed: a spread with its count, batch and one Undo, or why it doesn't spread; never a call the join ties somewhere, a person's call, or a box whose arrow a person deleted; a batch that can't be written takes its lines back.
 - `packages/cli/test/learn-from-corrections.test.ts`: three corrections the join draws by itself give one rule active for the repo it was proven on, and another repo of the type isn't given it; a shorter path, two repos serving the path, a call a person declined, a deleted arrow (written through the canvas's delete) and a delete whose end is a system each leave a draft saying why; a failed draft uses nothing up and a person can activate it; a stopped session leaves no `.try` file and no draft; a second run asks and writes nothing.
+- `packages/cli/test/learn-from-corrections.test.ts`, the callee side: a re-read moving an entry another repo's loose call then joins, on an arrow a person deleted; a person's pairing from another repo onto an entry the re-read moves. And a person's "none" going stale under an active learned rule refuses verify --write, naming both ways on; with no learned rule, as before.
 - `packages/core/test/reading-rules-v2.test.ts`: version 1 reads as before; `learned` only at 2; active only with a proof naming its repos; the migration, quoted too.
 - `packages/ui/test/decisions-learn.test.tsx`: the button, held with the reason where Learn can't run, its running, failed and empty states, and the reasons in the copy file's words.
 - `packages/cli/test/ui-api-map-edits-pair.test.ts`: a redirect's Apply says its delete half doesn't spread, and what its pairing spread.

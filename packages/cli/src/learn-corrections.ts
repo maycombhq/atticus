@@ -237,10 +237,11 @@ async function proveRule(
   const { listFiles } = await import("./reading-rules-files.js");
   const { rereadWith, tryDiff } = await import("./rules-commands.js");
   const estate = await estateFacts(root, op, "");
+  // The join as it is, to tell what the re-read changes in it.
+  const before = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
   const reasons: Reason[] = [];
   const reread: string[] = [];
   const repos = [...new Set(mine.map((x) => x.repo))];
-  const checks: { repo: string; moved: Set<string>; own: Set<string> }[] = [];
   for (const repo of repos) {
     const dir = await checkoutOf(root, repo).catch(() => undefined);
     if (!dir || !runner) return { reasons: [{ kind: "no-checkout", about: repo }] };
@@ -282,7 +283,6 @@ async function proveRule(
       if (set && (moved.has(atOf(f)) || !tried.has(atOf(f))))
         reasons.push({ kind: "touched", about: `${repo} ${atOf(f)}` });
     }
-    checks.push({ repo, moved, own });
   }
   const join = estateJoinOf(
     op,
@@ -311,13 +311,30 @@ async function proveRule(
     .map((x) => x.id);
   for (const x of mine)
     if (!reproduced.includes(x.id)) reasons.push({ kind: "not-reproduced", about: x.id });
-  // No call the re-read moved joins a repo whose arrow from its repo a person deleted.
-  for (const c of checks)
-    for (const j of join.joins) {
-      const hit = deleted.find((x) => x.from === c.repo && x.to === j.entry.repo);
-      if (hit && j.call.repo === c.repo && c.moved.has(j.call.at) && !c.own.has(j.call.at))
-        reasons.push({ kind: "deleted", about: hit.what });
-    }
+  // Both sides of every re-read repo: no join is new on a pair a person deleted, and no join a
+  // person made (a pairing, an answer) onto or from it is lost. The corrected calls aside.
+  const reRead = new Set(repos);
+  const ownAt = new Set(mine.map((x) => `${x.repo} ${x.c.target.file}:${x.c.target.line}`));
+  const keyOf = (j: (typeof before.joins)[number]) =>
+    `${j.call.repo} ${j.call.at} ${j.entry.repo} ${j.entry.fact}`;
+  const near = (j: (typeof before.joins)[number]) =>
+    (reRead.has(j.call.repo) || reRead.has(j.entry.repo)) &&
+    !ownAt.has(`${j.call.repo} ${j.call.at}`);
+  const had = new Set(before.joins.map(keyOf));
+  const now = new Set(join.joins.map(keyOf));
+  for (const j of join.joins.filter((x) => near(x) && !had.has(keyOf(x)))) {
+    const hit = deleted.find((x) => x.from === j.call.repo && x.to === j.entry.repo);
+    if (hit) reasons.push({ kind: "deleted", about: hit.what });
+  }
+  for (const j of before.joins.filter(near))
+    if (((j.paired && !j.paired.ai) || (j.how === "answer" && !j.aiAnswer)) && !now.has(keyOf(j)))
+      reasons.push({ kind: "touched", about: `${j.call.repo} ${j.call.at}` });
+  const seen = new Set<string>();
+  reasons.splice(
+    0,
+    reasons.length,
+    ...reasons.filter((r) => !seen.has(JSON.stringify(r)) && !!seen.add(JSON.stringify(r))),
+  );
   if (reasons.length) return { reasons };
   return { proof: { repos, reread, reproduced } };
 }
@@ -370,4 +387,44 @@ export async function rulesLearnCommand(
     "Review the rules file in a pull request; atticus rules list shows what each repo is given.",
   );
   return 0;
+}
+
+/**
+ * ADR 0208: a person's correction that a read no longer meets, in a file an active learned rule
+ * names for this repo, fails closed: the lines that refuse the repo's write (verify --write and
+ * Apply), each naming the correction and the two ways on, or none. A correction going stale
+ * where no learned rule applies is said as before (corrections.stale).
+ */
+export async function staleUnderLearned(
+  root: string,
+  repo: string,
+  dir: string,
+  report: {
+    accepted: readonly Fact[];
+    corrections: { stale: readonly { correction: FactCorrection; why: string }[] };
+  },
+): Promise<string[]> {
+  const { effectiveRules } = await import("./reading-rules.js");
+  const rules = (await effectiveRules(root, repo, { dir })).rules.filter((r) => r.learned?.proof);
+  if (!rules.length) return [];
+  const { isAiBy, listQuestions, TARGETS_STEP_ID } = await import("@maycombhq/core");
+  const calls = new Set(report.accepted.filter((f) => f.kind === "call").map(atOf));
+  const gone = report.corrections.stale
+    .filter((s) => s.why === "none" && !s.correction.ai)
+    .map((s) => ({
+      at: `${s.correction.target.file}:${s.correction.target.line}`,
+      what: `${s.correction.by}'s ${s.correction.action === "unlink" ? "none" : s.correction.action === "link" ? "pairing" : "correction"}`,
+    }));
+  for (const q of (await listQuestions(root, { repo, step: TARGETS_STEP_ID })).questions)
+    if (q.state === "answered" && q.answer && !isAiBy(q.answer.by))
+      for (const e of q.evidence.filter((x) => !calls.has(x)))
+        gone.push({ at: e, what: `${q.answer.by}'s answer to ${q.id}` });
+  return gone.flatMap(({ at, what }) => {
+    const rule = rules.find((r) => ruleMatches(r, at.replace(/:\d+$/, "")));
+    return rule
+      ? [
+          `${repo}: ${what} at ${at} meets no call in this read, and the learned rule ${rule.key} names that file, so the read may be the rule's doing. Nothing was written. Either turn the rule off for ${repo} (atticus rules off ${rule.key} --repo ${repo} --reason "..."), or answer the call again on the map (pair it, or say none), then verify again.`,
+        ]
+      : [];
+  });
 }
