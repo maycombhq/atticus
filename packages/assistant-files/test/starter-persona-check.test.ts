@@ -50,4 +50,12 @@ describe("the starter personas after the persona check", () => {
       'Under `## Data changes`, each new table and column with its classification, from security\'s section (marked "assumed" where it is an assumption), and the migration that creates it',
     );
   });
+
+  it("list the three map tools of ADR 0207: owners, consumers_of and similar_changes", async () => {
+    for (const f of await starterPersonaFiles()) {
+      if (!/^agents\/(?!.*-naysayer\.md$).+\.md$/.test(f.path)) continue;
+      for (const tool of ["owners", "consumers_of", "similar_changes"])
+        expect(f.text, f.path).toContain(`  - atticus/${tool}\n`);
+    }
+  });
 });
