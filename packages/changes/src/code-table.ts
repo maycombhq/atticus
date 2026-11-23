@@ -167,16 +167,59 @@ const ONE = /^\S+$/;
 
 /** The pairs of an operation's row, `platform anvil, env prod`; undefined when one doesn't read. */
 export function pairsOf(what: string): Record<string, string> | undefined {
+  const pieces = splitOutsideQuotes(what);
+  if (!pieces) return undefined;
   const out: Record<string, string> = {};
-  for (const part of what
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean)) {
+  let last: string | undefined;
+  for (const raw of pieces) {
+    const part = raw.trim();
     const m = /^([A-Za-z]+)\s+(.+)$/.exec(part);
-    if (!m) return undefined;
-    out[m[1]!] = m[2]!.trim().replace(/^"(.*)"$/, "$1");
+    if (m && PAIR_WORDS.has(m[1]!)) {
+      last = m[1]!;
+      out[last] = m[2]!.trim();
+      continue;
+    }
+    // v31 gate 0: only a value holds a comma (`value a,b`): a piece after it that doesn't start
+    // with a pair's word is the value's, joined with no space, as code holds it. Any other pair
+    // still refuses a stray piece, so a mistyped word or a bare secret never reads.
+    if (last !== "value" || isQuoted(out.value!)) return undefined;
+    out.value = `${out.value},${part}`;
+  }
+  for (const k of Object.keys(out)) {
+    const v = out[k]!;
+    // A value that opens with a quote is quoted whole, or it doesn't read (`"a",b`); a quote
+    // inside a plain value is its own (`{"a":1}`).
+    if (/^["`]/.test(v) && !isQuoted(v)) return undefined;
+    out[k] = isQuoted(v) ? v.slice(1, -1) : v;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Every word that starts a pair, of any kind of row. */
+const PAIR_WORDS = new Set(Object.values(PAIRS).flat());
+
+const isQuoted = (v: string) =>
+  v.length >= 2 && (v[0] === '"' || v[0] === "`") && v.at(-1) === v[0];
+
+/** Splits on commas, but not inside "double quotes" or `backticks`; undefined for a quote left open. */
+function splitOutsideQuotes(s: string): string[] | undefined {
+  const parts: string[] = [];
+  let cur = "";
+  let quote: string | undefined;
+  for (const ch of s) {
+    if (quote) {
+      if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "`") quote = ch;
+    else if (ch === ",") {
+      parts.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (quote) return undefined;
+  parts.push(cur);
+  return parts.filter((p) => p.trim() !== "");
 }
 
 /** A row's undo, from `undo: <sentence>` in its What. */
@@ -215,7 +258,7 @@ function whatProblem(r: CodeRow): string | undefined {
   const need = (h: string) =>
     NEEDS[h]
       ? `a ${h} row needs ${NEEDS[h]![0]}, for example ${NEEDS[h]![1]}.`
-      : `a ${h} row needs pairs from ${PAIRS[h as HasWord]!.join(", ")}, for example ${EXAMPLE_PAIRS[h]}.`;
+      : `a ${h} row needs pairs from ${PAIRS[h as HasWord]!.join(", ")}, for example ${EXAMPLE_PAIRS[h]}${h === "config" ? '; a value with a comma in "double quotes"' : ""}.`;
   switch (r.has) {
     case "serves":
       return HTTP_ENTRY.test(w) ? undefined : need("serves");

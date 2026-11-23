@@ -66,6 +66,82 @@ describe("design.md's In the code (ADR 0206)", () => {
     expect(checkCodeTable(t, ctx())).toEqual([]);
   });
 
+  it("a value with a comma reads whole: quoted, in backticks, or plain (v31 gate 0)", () => {
+    // Gate 0: `spring.profiles.active` is `postgres,spring-data-jpa`, and no form of it read.
+    const want = { key: "spring.profiles.active", env: "prod", value: "postgres,spring-data-jpa" };
+    expect(
+      pairsOf('key spring.profiles.active, env prod, value "postgres,spring-data-jpa"'),
+    ).toEqual(want);
+    expect(
+      pairsOf("key spring.profiles.active, env prod, value `postgres,spring-data-jpa`"),
+    ).toEqual(want);
+    expect(pairsOf("key spring.profiles.active, env prod, value postgres,spring-data-jpa")).toEqual(
+      want,
+    );
+    // Plain, a space after the comma is dropped, so it compares with the value as code holds it.
+    expect(pairsOf("key hosts, value a.example, b.example")).toEqual({
+      key: "hosts",
+      value: "a.example,b.example",
+    });
+    // Quoted, the value is kept as written.
+    expect(pairsOf('key hosts, value "a.example, b.example"')).toEqual({
+      key: "hosts",
+      value: "a.example, b.example",
+    });
+    // A pair's word after a comma still starts a pair; a quote keeps it in the value.
+    expect(pairsOf("key k, value a, env prod")).toEqual({ key: "k", value: "a", env: "prod" });
+    expect(pairsOf('key k, value "a, env prod"')).toEqual({ key: "k", value: "a, env prod" });
+    expect(pairsOf("receipts are kept, for seven years")).toBeUndefined();
+  });
+
+  it("only a value is joined: every other pair, a secret's included, still refuses a stray piece", () => {
+    // Review of PR #4: joining any pair let a bare secret ride in an env, and hid mistyped words.
+    expect(pairsOf("key ledger.client.key, env prod, s3cr3tValue")).toBeUndefined();
+    expect(pairsOf("key ledger.client.key, s3cr3tValue")).toBeUndefined();
+    expect(pairsOf("host orders.example, basepath /orders")).toBeUndefined();
+    expect(pairsOf("platform anvil, environment prod")).toBeUndefined();
+    expect(pairsOf("host a.example, /x")).toBeUndefined();
+    expect(pairsOf("platform anvil, prod")).toBeUndefined();
+    expect(pairsOf("file .anvil/a.yaml, .anvil/b.yaml")).toBeUndefined();
+  });
+
+  it("a quote that isn't closed, or doesn't wrap the whole value, doesn't read", () => {
+    expect(pairsOf('key k, value "abc, env prod')).toBeUndefined();
+    expect(pairsOf('key k, value "a", "b"')).toBeUndefined();
+    expect(pairsOf('key k, value "a",b')).toBeUndefined();
+    expect(pairsOf("key k, value `a")).toBeUndefined();
+    // A quote inside a plain value is the value's own, as before this change.
+    expect(pairsOf('key k, value {"a":1}')).toEqual({ key: "k", value: '{"a":1}' });
+  });
+
+  it("a secret row with a stray piece is refused at the check, as before", () => {
+    const design = DESIGN.replace(
+      "key refunds.signing.key, env prod",
+      "key refunds.signing.key, env prod, s3cr3t",
+    );
+    expect(design).not.toBe(DESIGN);
+    expect(
+      checkCodeTable(parseCodeTable(design), ctx())
+        .map((p) => p.message)
+        .join(" "),
+    ).toMatch(/a secret row needs pairs from key, env/);
+  });
+
+  it("a config row with a comma in its value passes the check", () => {
+    const design = DESIGN.replace(
+      "key refunds.receipts.keep, env prod, value 7y",
+      "key refunds.receipts.keep, env prod, value 7y,30d",
+    );
+    expect(design).not.toBe(DESIGN);
+    const t = parseCodeTable(design);
+    expect(pairsOf(t.rows[10]!.what)).toEqual({
+      key: "refunds.receipts.keep",
+      env: "prod",
+      value: "7y,30d",
+    });
+    expect(checkCodeTable(t, ctx())).toEqual([]);
+  });
+
   it("CRLF and a UTF-8 mark read the same", () => {
     const crlf = "﻿" + DESIGN.replace(/\n/g, "\r\n");
     expect(parseCodeTable(crlf).rows.map((r) => r.line)).toEqual(
