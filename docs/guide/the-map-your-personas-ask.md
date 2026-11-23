@@ -26,7 +26,7 @@ The tools a persona asks most:
 | `conflicts`       | Open changes that overlap; with an id, those overlaps, then each open change whose tasks or flows name it, with the line.   |
 | `owners`          | Who owns a record, a repo or a system, and where it is said: the System record, or the manifest or profile file.            |
 | `consumers_of`    | Who uses a topic, an API or a repo: a topic's receivers, an API's callers, each with its id and owner.                      |
-| `similar_changes` | The archived changes nearest a change or a text, each with its folder and file. A hint where to look, never a fact.         |
+| `similar_changes` | The archived changes nearest a change or a text (one, not both), each with its folder and file. A hint, never a fact.       |
 | `features`        | The features the estate has, with their entry points.                                                                       |
 | `knowledge_ask`   | The organisation's own standards, processes and decisions that may answer a question, each with its page.                   |
 

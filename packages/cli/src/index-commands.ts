@@ -13,6 +13,9 @@ import {
   type Affected,
   type CatalogIndex,
 } from "@maycombhq/index";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { factsDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { mapSides, NO_OWNER } from "./map-lacks.js";
 import { table } from "./table.js";
@@ -43,7 +46,7 @@ export async function askCommand(
   io: Output,
 ): Promise<number> {
   const sides = await mapSides(root);
-  const asked = await withIndex(root, io, (ix) => {
+  const translated = await withIndex(root, io, (ix) => {
     return translate(
       question,
       askLookup(ix),
@@ -51,6 +54,20 @@ export async function askCommand(
       (id) => sides.lacks(id, ix),
     );
   });
+  // ADR 0207: "who owns <repo>" asks of the repo the manifests list, as `owners` answers it, not
+  // of its component or a word search (review of PR #6).
+  const repo = /\b(?:who owns|owner of)\s+(?:the\s+)?(?:repo\s+)?`?([a-z0-9][\w.-]*[a-z0-9])/i
+    .exec(question)?.[1]
+    ?.toLowerCase();
+  const asked: typeof translated =
+    repo && sides.repo(repo)
+      ? {
+          action: "owner",
+          id: repo,
+          query: repo,
+          explanation: `Read as: the owner recorded for the repo ${repo}.`,
+        }
+      : translated;
   // The question names something the map lacks, and the map couldn't be read: an error that
   // says what is wrong, never an empty answer read as "planned or not read".
   if (asked.action === "query" && asked.fault) {
@@ -66,7 +83,7 @@ export async function askCommand(
             asked.id,
             {
               json: o.json === true,
-              ...(asked.receivers ? { receivers: true } : {}),
+              ...(asked.receivers ? { receivers: true, whole: true } : {}),
               // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
               ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
             },
@@ -223,6 +240,8 @@ export async function impactCommand(
     /** With `receivers`: more roots (a topic's other consumers' Endpoints), and its name. */
     also?: string[];
     label?: string;
+    /** With `receivers` and `json`: the whole walk too (affected, gaps), as ask answers. */
+    whole?: boolean;
   },
   io: Output,
 ): Promise<number> {
@@ -256,7 +275,10 @@ export async function impactCommand(
       const r = receiversOfAll(ix, [rootId, ...(also ?? [])], o.depth ?? 4, owners);
       const label = also?.length ? (o.label ?? (o.also ? rootId : id)) : rootId;
       if (o.json) {
-        io.out(JSON.stringify({ ...named, ...r }, null, 2));
+        // ADR 0207 `consumers_of`: the receivers and what lies past them; ask keeps the walk.
+        const { root, roots, receivers, further } = r;
+        const kept = { root, ...(roots ? { roots } : {}), receivers, further };
+        io.out(JSON.stringify({ ...named, ...(o.whole ? r : kept) }, null, 2));
         return 0;
       }
       said(io);
@@ -312,27 +334,36 @@ export async function ownersCommand(
       const system = kind === "System" ? found.id : ix.systemOf(kind, found.id);
       at = { id: found.id, kind, ...(system ? { system } : {}), read: true };
     } else if (sides.repo(id)) {
-      let comps: string[] = [];
-      try {
-        comps = ix.query(`kind:component repo:${id}`, { limit: 50 }).rows.map((r) => r.id);
-      } catch {
-        // not a value the query language takes
+      // Read: its facts are there, or a record of the map cites it (a repo with no component).
+      const cited = ix.db
+        .prepare(
+          "SELECT 1 FROM evidence WHERE repo = ?1 UNION ALL SELECT 1 FROM records WHERE json_extract(json, '$.repo') = ?1 LIMIT 1",
+        )
+        .get(id);
+      const read = cited !== undefined || existsSync(join(factsDirOf(root), `${id}.jsonl`));
+      const fault = read ? undefined : mapFault(ix, root);
+      if (fault) {
+        io.err(fault);
+        return 1;
       }
-      const system =
-        sides.repo(id)!.system ?? (comps[0] ? ix.systemOf("Component", comps[0]) : undefined);
-      at = { id, kind: "Repo", ...(system ? { system } : {}), read: comps.length > 0 };
+      const comp = ix.query(`kind:component repo:${id}`, { limit: 1 }).rows[0]?.id;
+      const system = sides.repo(id)!.system ?? (comp ? ix.systemOf("Component", comp) : undefined);
+      at = { id, kind: "Repo", ...(system ? { system } : {}), read };
     } else {
       io.err(mapFault(ix, root) ?? (found ? severalNamed(id, found.several) : sides.lacks(id, ix)));
       return 1;
     }
+    // A repo's own manifest row is the most exact word on it (review of PR #6).
+    const own = at.kind === "Repo" ? sides.repo(id)!.said : undefined;
     const sys = at.system
       ? (ix.get("System", at.system) as { owner?: string } | undefined)
       : undefined;
-    const viaFile = sys?.owner ? undefined : sides.ownerSaid(at);
-    const owned = sys?.owner
-      ? { owner: sys.owner, from: { system: at.system! } }
+    const bySystem = !own && sys?.owner;
+    const viaFile = bySystem ? undefined : (own ?? sides.ownerSaid(at));
+    const owned = bySystem
+      ? { owner: sys.owner!, from: { system: at.system! } }
       : viaFile && { owner: viaFile.owner, from: { file: viaFile.file } };
-    const where = sys?.owner ? `the System record ${at.system}` : viaFile?.file;
+    const where = bySystem ? `the System record ${at.system}` : viaFile?.file;
     const answer = {
       ...at,
       ...(owned ?? {}),

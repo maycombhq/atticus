@@ -17,6 +17,22 @@ Branch `b31/map-tools`. What the shared files should say, for whoever merges the
 - The starter personas (not the naysayers) list the three tools. An org pack keeps its own files:
   [The map your personas ask](../../guide/the-map-your-personas-ask.md) gives the three lines to add.
 
+## Decided in review (PR #6)
+
+- `ask "who owns <repo>"` for a repo the manifests list asks of the repo (as `owners` does), not
+  of its component and not as a word search, so a repo nobody read gets its manifest's owner.
+- `owners` on a repo: its own manifest row's owner comes first, then the catalog's System record,
+  then a profile's or another repo's row for its system. For any other record the order is
+  `impact`'s: the System record, then the profile, then the manifest.
+- A repo is read when the map cites it (a record's evidence or `repo`) or its facts file is
+  there, so a repo with no component (schemas, a library) is read. A broken map is an error,
+  never "not read".
+- `similar_changes` takes `change` or `text`, never both: both is an error result.
+- `consumers_of` (`impact --receivers --json`) answers `root`, `roots` (several), `receivers` and
+  `further` only; `ask`'s receivers answer keeps the whole walk as before.
+- Tests patch the Forge metarepo in a temp folder instead of extending `fixtures/forge-field`:
+  that fixture's generator (`scripts/write-field-fixture.mjs`) belongs to another v31 branch.
+
 ## docs/build-status.md
 
 - ADR 0207 part 2, three more map tools: built on `b31/map-tools` (tests:

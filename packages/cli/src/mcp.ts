@@ -39,7 +39,7 @@ export interface McpTool {
    * no item yet is an empty list, not a failure; the b30 proof run).
    */
   answers?: RegExp;
-  /** Arguments of which one must be given (similar_changes: a change or a text). */
+  /** Arguments of which exactly one must be given (similar_changes: a change or a text). */
   oneOf?: string[];
 }
 
@@ -351,7 +351,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "similar_changes",
     description:
-      "The archived changes nearest a change or a text, best first, each with its archive folder (id), its change id, its file, and how they were matched (how: meaning or words). A hint where to look, not a fact; open changes that overlap are conflicts' answer (atticus change similar).",
+      "The archived changes nearest a change or a text (one of the two, never both), best first, each with its archive folder (id), its change id, its file, and how they were matched (how: meaning or words). A hint where to look, not a fact; open changes that overlap are conflicts' answer (atticus change similar).",
     args: [
       s("change", "An open change's id: its title and brief are matched.", false),
       s("text", "What the change is about, in a sentence or a brief.", false),
@@ -562,8 +562,14 @@ export async function handleMcp(
           return ok(text(`${arg.name} can't start with "-": it would be read as an option.`, true));
         a[arg.name] = value;
       }
-      if (tool.oneOf && !tool.oneOf.some((n) => a[n] !== undefined))
-        return ok(text(`${tool.name} needs ${tool.oneOf.join(" or ")}.`, true));
+      const given1 = tool.oneOf?.filter((n) => a[n] !== undefined).length;
+      if (tool.oneOf && given1 !== 1)
+        return ok(
+          text(
+            `${tool.name} ${given1 ? "takes" : "needs"} ${tool.oneOf.join(" or ")}${given1 ? ", not both" : ""}.`,
+            true,
+          ),
+        );
       const r = await run(tool.argv(a));
       // An id the map lacks is an answer (ADR 0201): planned, or not read yet.
       // The sentence may go on to say which of the three it is (the addendum of 2026-11-19), and a

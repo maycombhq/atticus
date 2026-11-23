@@ -39,9 +39,11 @@ const runIn =
   };
 
 /**
- * The Forge estate, with: the Reports system's owner said only by the manifest (taken off its
- * System record), a manifest repo nobody read (forge-vault, owned by team-vault), and the
- * archived changes of fixtures/past-changes.
+ * The Forge estate, patched in the test (the field fixture's generator is another branch's): the
+ * Reports system's owner taken off its System record; manifest repos nobody read, two of one
+ * system with different owners (forge-vault, forge-vault-ui) and one of a system the catalog
+ * owns (forge-ledger-batch); a repo read into facts with no component (forge-schemas); an open
+ * change that plans forge-approvals-api; and the archived changes of fixtures/past-changes.
  */
 async function estate(archive = true): Promise<string> {
   const root = join(await mkdtemp(join(tmpdir(), "atticus-map-tools-")), "meta");
@@ -59,7 +61,29 @@ async function estate(archive = true): Promise<string> {
   }
   await appendFile(
     join(root, MANIFEST),
-    "  - id: forge-vault\n    url: https://git.example.com/forge/forge-vault.git\n    type: spring-boot\n    owner: team-vault\n",
+    [
+      ["forge-vault", "team-vault", "vault"],
+      ["forge-vault-ui", "team-vault-ui", "vault"],
+      ["forge-ledger-batch", "team-batch", "ledger"],
+      ["forge-schemas", "team-schemas", "schemas"],
+    ]
+      .map(
+        ([id, owner, system]) =>
+          `  - id: ${id}\n    url: https://git.example.com/forge/${id}.git\n    type: spring-boot\n    owner: ${owner}\n    system: ${system}\n`,
+      )
+      .join(""),
+  );
+  await mkdir(join(root, "facts"), { recursive: true });
+  await writeFile(join(root, "facts/forge-schemas.jsonl"), "");
+  const change = join(root, "openspec/changes/forge-approvals");
+  await mkdir(change, { recursive: true });
+  await writeFile(
+    join(change, "change.yaml"),
+    "schemaVersion: 1\nid: forge-approvals\ntitle: Approvals portal\ntype: quick\nstate: plan\nauthors: {}\ncreatedAt: 2026-11-19T05:00:00Z\ncreatedBy: pat\nhandoffs: []\nhistory:\n  - from: draft\n    to: plan\n    at: 2026-11-19T05:00:00Z\n    by: pat\n    reason: Created\nowners: {}\nsystems: []\ntouches:\n  dataStores: []\n  interfaces: []\n  records: []\n  repos: []\n  tables: []\n",
+  );
+  await writeFile(
+    join(change, "tasks.md"),
+    "# Tasks\n\n## forge-approvals-api\n\n- [ ] t1 Add the service\n",
   );
   if (archive)
     await cp(join(FIX, "past-changes"), join(root, "openspec/changes/archive"), {
@@ -93,6 +117,10 @@ describe("three more map tools (ADR 0207 part 2)", () => {
     const neither = await call("similar_changes", {}, fake);
     expect(neither.result.isError).toBe(true);
     expect(neither.result.content[0]!.text).toBe("similar_changes needs change or text.");
+    // Both: refused too, never one silently dropped.
+    const both = await call("similar_changes", { change: "a-change", text: "words" }, fake);
+    expect(both.result.isError).toBe(true);
+    expect(both.result.content[0]!.text).toBe("similar_changes takes change or text, not both.");
     expect(calls).toHaveLength(4);
     const names = MCP_TOOLS.map((t) => t.name);
     expect(names.indexOf("owners")).toBe(names.indexOf("conflicts") + 1);
@@ -142,10 +170,36 @@ describe("three more map tools (ADR 0207 part 2)", () => {
       expect(json(await call("owners", { id: "forge-vault" }, run))).toEqual({
         id: "forge-vault",
         kind: "Repo",
+        system: "vault",
         owner: "team-vault",
         from: { file: MANIFEST },
         read: false,
         said: `forge-vault is owned by team-vault (${MANIFEST}). It is not read into the map yet.`,
+      });
+      // A repo's own manifest row wins over a sibling's row of the same system, and over the
+      // catalog's System record.
+      expect(json(await call("owners", { id: "forge-vault-ui" }, run))).toMatchObject({
+        system: "vault",
+        owner: "team-vault-ui",
+        from: { file: MANIFEST },
+        read: false,
+      });
+      expect(json(await call("owners", { id: "forge-ledger-batch" }, run))).toMatchObject({
+        system: "ledger",
+        owner: "team-batch",
+        from: { file: MANIFEST },
+        read: false,
+      });
+      // Read with no component: records cite it, or its facts file is there.
+      expect(json(await call("owners", { id: "forge-gateway" }, run))).toMatchObject({
+        kind: "Repo",
+        owner: "team-platform",
+        read: true,
+      });
+      expect(json(await call("owners", { id: "forge-schemas" }, run))).toMatchObject({
+        kind: "Repo",
+        owner: "team-schemas",
+        read: true,
       });
       // Nobody names one.
       expect(json(await call("owners", { id: "audit-svc" }, run))).toEqual({
@@ -159,18 +213,29 @@ describe("three more map tools (ADR 0207 part 2)", () => {
 
     it("owners and consumers_of: an id the map lacks is an answer, not an error", async () => {
       const run = runIn(root);
+      const said = async (name: string, id: string) => {
+        const r = await call(name, { id }, run);
+        expect(r.result.isError, `${name} ${id}`).toBeUndefined();
+        return r.result.content[0]!.text;
+      };
       for (const name of ["owners", "consumers_of"]) {
-        const r = await call(name, { id: "forge-portal" }, run);
-        expect(r.result.isError, name).toBeUndefined();
-        expect(r.result.content[0]!.text, name).toBe(
+        expect(await said(name, "forge-portal")).toBe(
           "forge-portal is not in the map: planned or not read. Neither: no manifest lists forge-portal and no open change plans it. Did you mean forge-portal-ui?",
         );
+        expect(await said(name, "forge-approvals-api")).toBe(
+          "forge-approvals-api is not in the map: planned or not read. forge-approvals-api is planned by change forge-approvals.",
+        );
       }
+      // In the manifests and not read: consumers_of says so; owners gives the manifest's owner.
+      expect(await said("consumers_of", "forge-vault")).toBe(
+        "forge-vault is not in the map: planned or not read. forge-vault is in the manifests and hasn't been read (atticus map forge-vault).",
+      );
+      expect(JSON.parse(await said("owners", "forge-vault"))).toMatchObject({ read: false });
     }, 120_000);
 
     it('ask "who owns" answers what owners answers', async () => {
       const run = runIn(root);
-      for (const id of ["ledger-api", "reports-job", "audit-svc"]) {
+      for (const id of ["ledger-api", "reports-job", "audit-svc", "forge-vault", "forge-ledger"]) {
         const asked = json(await call("ask", { question: `who owns ${id}` }, run));
         const { readAs, query, ...rest } = asked;
         expect(readAs).toMatch(/^Read as: the owner recorded for/);
@@ -193,6 +258,8 @@ describe("three more map tools (ADR 0207 part 2)", () => {
         receivers: { id: string }[];
       };
       expect(byName.receivers.map((r) => r.id)).toContain("reports-job");
+      // Only what the ADR names: the receivers, what lies past them, and the root.
+      expect(Object.keys(topic).sort()).toEqual(["further", "receivers", "root"]);
       const api = json(await call("consumers_of", { id: "ledger-api" }, run)) as {
         receivers: { id: string; path: string[]; owner?: string }[];
       };
@@ -237,5 +304,16 @@ describe("three more map tools (ADR 0207 part 2)", () => {
     const r = await call("similar_changes", { text: "raise the daily limit" }, runIn(root));
     expect(r.result.isError).toBeUndefined();
     expect(json(r).changes).toEqual([]);
+  }, 120_000);
+
+  it('owners: a map that couldn\'t be read is an error, never "not read"', async () => {
+    const root = await estate(false);
+    await writeFile(
+      join(root, "catalog/generated/component/quillfeather.yaml"),
+      "kind: Component\nid: [oops\n",
+    );
+    const r = await call("owners", { id: "forge-vault" }, runIn(root));
+    expect(r.result.isError).toBe(true);
+    expect(r.result.content[0]!.text).toMatch(/couldn't be read whole[\s\S]*quillfeather\.yaml/);
   }, 120_000);
 });
