@@ -63,6 +63,7 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.topic-twice",
   "delta.topic-classification",
   "delta.topic-secret",
+  "delta.topic-on-step",
   "delta.bad-migration",
   "delta.no-columns",
   "delta.sent-not-stored",

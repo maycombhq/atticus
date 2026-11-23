@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -120,6 +120,9 @@ describe("the quick path's plan hand-off (v31, WP-05)", () => {
       ).toBe(1);
       expect(c.err.join("\n")).toContain("task t2 (Write the limit's runbook)");
       expect(gh.journal).toHaveLength(0);
+      // Refused: nothing is written, the knowledge list neither.
+      expect(c.out.join("\n")).not.toContain("Knowledge:");
+      expect(existsSync(join(root, "openspec/changes", ID, "knowledge.yaml"))).toBe(false);
     },
     T,
   );
@@ -160,6 +163,34 @@ describe("the quick path's plan hand-off (v31, WP-05)", () => {
         items: [],
         nearMisses: [],
       });
+    },
+    T,
+  );
+
+  it(
+    "says no knowledge source is set up when the metarepo has none",
+    async () => {
+      const root = await quickChange();
+      await writeFile(join(root, "org-pack/sources.yaml"), "schemaVersion: 3\n");
+      const dir = join(root, "openspec/changes", ID);
+      await writeFile(
+        join(dir, "tasks.md"),
+        TASKS.replace(
+          "- [ ] t2 Write the limit's runbook",
+          "- [ ] t2 Write the limit's runbook\n  - Given the runbook, when a limit is raised by hand, then it says who may do it.",
+        ),
+      );
+      const c = capture();
+      const code = await changeHandoff(root, ID, { by: "pat", approve: true, repo: REPO }, c.io, {
+        gitHost: new MockGitHost([{ repo: REPO }]),
+        now: NOW,
+        publisher: { publish: async () => ({ commit: "abc1234" }) },
+      });
+      expect(c.err).toEqual([]);
+      expect(code).toBe(0);
+      expect(c.out).toContain(
+        "Knowledge: nothing listed. No knowledge sources are set up: add a wiki with atticus sources add <type> <location>, or drop documents in inputs/ (atticus intake add <files>).",
+      );
     },
     T,
   );

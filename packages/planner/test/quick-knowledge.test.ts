@@ -65,6 +65,43 @@ describe("a quick change's knowledge list", () => {
     );
   });
 
+  it("doesn't count a glossary term the map generated (term.*) as the org's knowledge", async () => {
+    const root = metarepo(false);
+    const term = join(root, "catalog/generated/glossaryterm/term.account.yaml");
+    mkdirSync(dirname(term), { recursive: true });
+    writeFileSync(
+      term,
+      readFileSync(
+        join(
+          FIX,
+          "upgrade-b30/unresolved-ids/metarepo/catalog/generated/glossaryterm/term.account.yaml",
+        ),
+      ),
+    );
+    const r = await recordQuickKnowledge(root, "shipped-orders", {
+      ...INPUT,
+      text: `${INPUT.text} The account is posted.`,
+      ids: [...INPUT.ids, "term.account"],
+    });
+    expect(r.found).toBe(0);
+    expect((await readKnowledgeApplies(root, "shipped-orders"))?.items).toEqual([]);
+  });
+
+  it("writes why when the index can't be read, and never fails", async () => {
+    const root = metarepo(true);
+    const r = await recordQuickKnowledge(root, "shipped-orders", INPUT, {
+      open: async () => {
+        throw new Error("the index is locked\nmore");
+      },
+    });
+    expect(r).toEqual({ found: 0, note: "the index couldn't be read (the index is locked)" });
+    const doc = await readKnowledgeApplies(root, "shipped-orders");
+    expect(doc?.note).toBe("the index couldn't be read (the index is locked)");
+    expect(knowledgeAppliesMarkdown(doc!)).toContain(
+      "Not listed: the index couldn't be read (the index is locked).",
+    );
+  });
+
   it("keeps a person's status when it runs again", async () => {
     const root = metarepo(true);
     await recordQuickKnowledge(root, "shipped-orders", INPUT);

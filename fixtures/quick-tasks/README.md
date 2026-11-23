@@ -10,6 +10,9 @@ criteria of a task in the two ways the plan hand-off reads:
 
 r1 has both, and an error case of its own. r2 has only its requirement's scenario, which names no
 failure (a note). r3 has its own criterion, which names an entry nothing has (a note), and calls
-another system with no error case (a note). r4 has neither, so the hand-off is refused. Everything
+another system with no error case (a note). r4 has neither, so the hand-off is refused. r5's row names the
+requirement r2 already took the one scenario of (a scenario vouches for one task, claimed in
+tasks.md's order), so it is refused too, naming the scenario and r2. The indented line under
+`### Notes` belongs to no task. Everything
 here is invented. The expected findings are in `packages/changes/test/quick-tasks.test.ts`,
 written by hand.

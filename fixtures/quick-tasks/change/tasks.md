@@ -7,3 +7,8 @@
 - [ ] r3 Read the account's name from forge-ledger (after r1)
   - Given a receipt, when GET /v1/receipts/{id}/audit is called, then the account's name is in it.
 - [ ] r4 Write the receipts runbook
+- [ ] r5 Serve a receipt as a PDF (after r2)
+
+### Notes
+
+  - Given a note under a heading, when it is read, then it is no task's criterion.
