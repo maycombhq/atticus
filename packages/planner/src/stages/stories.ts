@@ -69,6 +69,7 @@ import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
+import { topicTaskLines } from "./topic.js";
 import {
   allowedValuesSource,
   columnsOf,
@@ -3010,6 +3011,8 @@ export interface StoryFileExtras {
   asker?: { command: string; rerun: string };
   /** ADR 0203 A: what people accepted at the change's stages, said under the task it is about. */
   accepted?: readonly Accepted[];
+  /** ADR 0207 part 4: a planned topic's criteria for its publisher's task, and its listeners' fields. */
+  topics?: ReturnType<typeof topicTaskLines>;
 }
 
 /** ADR 0203 A: a field-not-checked finding's target: the task and the fields, sorted. */
@@ -3447,6 +3450,7 @@ export function renderStoryFile(
       "",
       ...stepLines,
       `- Fields: ${t.fields.join(", ") || "none"}`,
+      ...(t === s.tasks[0] && x.topics?.reads.get(s.flow) ? [x.topics.reads.get(s.flow)!] : []),
       // B-short: a place Files to touch already names (a file to change, a new file), with the
       // code it calls said under Code it calls, isn't said twice; a place the flow leaves open is.
       ...whereLines(t).filter((l) => !/^- Where it goes: (change |new file )/.test(l)),
@@ -3485,10 +3489,12 @@ export function renderStoryFile(
   const crit = s.tasks.map((t) => ({
     t,
     cs: w.tasks.find((y) => y.id === t.id)?.criteria ?? [],
+    // ADR 0207 part 4: the defining step's topic gives its task two criteria of its own.
+    topic: partsOf(t).flatMap((p) => x.topics?.criteria.get(`${s.flow}#${p.position}`) ?? []),
   }));
-  if (!crit.some((y) => y.cs.length)) lines.push("- None yet.", "");
-  for (const { t, cs } of crit) {
-    if (!cs.length) continue;
+  if (!crit.some((y) => y.cs.length || y.topic.length)) lines.push("- None yet.", "");
+  for (const { t, cs, topic } of crit) {
+    if (!cs.length && !topic.length) continue;
     if (many) lines.push(`Task ${label(t)}:`, "");
     // Its entry (unless it is the story's own, said in Context), validation and error on a line
     // of their own under it, not a bullet: the readers of this list (test generation, the story
@@ -3506,6 +3512,7 @@ export function renderStoryFile(
           ...fromLine(c),
         ];
       }),
+      ...topic.map((c) => `- ${sentence(c)} (from the topic in target-flows/${s.flow}.yaml)`),
       "",
     );
   }
@@ -3824,6 +3831,8 @@ export async function writeStories(
       await rm(join(dir, "tasks", p));
   // ADR 0006 addendum: the OpenSpec specs the stories make, and the proposal naming them.
   const spec = await openspecFiles(root, change, stories, a, extras.estate);
+  // ADR 0207 part 4: what a planned topic gives its publisher's and listeners' tasks.
+  const topics = topicTaskLines((await readDeltas(dir)).deltas);
   const files: string[] = [];
   for (const s of stories) {
     const w = a.stories.find((x) => x.id === s.id) ?? {
@@ -3836,6 +3845,7 @@ export async function writeStories(
     };
     const x = {
       ...extras,
+      topics,
       requests,
       // B-task-knowledge: the selection this run made, over any the caller passed in.
       knowledge,

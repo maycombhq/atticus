@@ -790,8 +790,13 @@ export async function changeHandoff(
       ...(o.repo ? { repo: o.repo } : {}),
       ...(o.base ? { base: o.base } : {}),
       publisher: handoffPublisherFor(deps, io, gitHost),
+      // v31 (WP-05): a quick change's knowledge list, once the hand-off's checks pass.
+      prepare: async (ctx, a) => {
+        const line = await (await import("./quick-knowledge.js")).quickKnowledgeLine(ctx, a);
+        if (line) io.out(line);
+      },
       // WP7.4: the PR reviews itself: the change as a picture, its estimate, its open findings.
-      review: await (await import("./handoff-review.js")).handoffReview(root, id),
+      review: async () => (await import("./handoff-review.js")).handoffReview(root, id),
       ...(metarepoOpenSpec(root) ? { openspec: metarepoOpenSpec(root)! } : {}),
     });
     // Fifth UX walk: a manual Git host records the PR as a step the person does first.

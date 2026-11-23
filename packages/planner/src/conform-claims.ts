@@ -11,7 +11,9 @@ import {
 } from "@maycombhq/changes";
 import { normalizePath, RecordId, type Fact } from "@maycombhq/core";
 import type { ConformCite, ConformItem } from "./conform.js";
+import { readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { OPERATIONS_FILE, readOperations } from "./stages/operations.js";
+import { topicClaims } from "./stages/topic.js";
 import { redactWords, type Operation } from "./stages/schema.js";
 
 /**
@@ -41,6 +43,8 @@ export type ClaimCheck =
   | "config"
   | "secret"
   | "pipeline"
+  /** ADR 0207 part 4: a planned topic's schema file, by its path in the repo. */
+  | "schema"
   | "cut-over"
   | "other";
 
@@ -285,6 +289,17 @@ export async function readClaims(
     const text = await readFile(join(changeDir, ...OPERATIONS_FILE.split("/")), "utf8");
     claims.push(...operationClaims(ops.file.operations, operationLines(text)));
   }
+  // ADR 0207 part 4: each planned topic's schema file, from the target flows.
+  const flows = await readDeltas(changeDir);
+  const at = new Map<string, number>();
+  for (const d of flows.deltas) {
+    const text = await readFile(join(changeDir, TARGET_DIR, `${d.flow}.yaml`), "utf8").catch(
+      () => "",
+    );
+    const n = text.split(/\r?\n/).findIndex((l) => /^\s*schemaFile:/.test(l));
+    if (n >= 0) at.set(d.flow, n + 1);
+  }
+  claims.push(...topicClaims(flows.deltas, at));
   const design = await readFile(join(changeDir, CODE_TABLE_FILE), "utf8").catch(() => undefined);
   const t = design === undefined ? undefined : parseCodeTable(design);
   if (t) {
@@ -638,7 +653,7 @@ export function conformClaims(input: ClaimsInput): {
       );
       continue;
     }
-    if (c.check === "pipeline" || c.check === "migration") {
+    if (c.check === "pipeline" || c.check === "migration" || c.check === "schema") {
       if (!e.file) {
         notCheckable(
           c,

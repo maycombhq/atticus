@@ -49,6 +49,9 @@ import {
   STAGED_EVENT,
   STAGED_MIGRATION,
   STAGED_MIXED,
+  STAGED_NEW_TOPIC,
+  NEW_TOPIC,
+  LISTENER_FLOW,
   given,
   STAGED_NO_STEP,
   STAGED_NOTHING,
@@ -571,7 +574,9 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         );
         expect(c.err).toEqual([]);
         expect(code).toBe(0);
-        expect(c.out[0]).toMatch(
+        // v31 (WP-05): first the knowledge the change leads to, written to knowledge.yaml.
+        expect(c.out[0]).toMatch(/^Knowledge: /);
+        expect(c.out[1]).toMatch(
           new RegExp(`^Hand-off PR #1 \\(handoff/${a.id}/plan\\) is open: `),
         );
         expect(published).toHaveLength(1);
@@ -584,6 +589,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
             `${at}/design.md`,
             `${at}/tasks.md`,
             `${at}/change.yaml`,
+            `${at}/knowledge.yaml`,
           ]),
         );
         // Raised: a person merges it. Still never a stage.
@@ -1344,6 +1350,52 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
 
       // To the end: the stories' tasks are written, under the publisher's repo.
       expect((await tasksOf(m.root, e.id)).map((t) => t.repo)).toEqual([NEW_PUBLISHER]);
+    },
+    T,
+  );
+
+  it(
+    "new topic (ADR 0207 part 4): the topic's schema and settings reach design.md and the tasks",
+    async () => {
+      const e = STAGED_NEW_TOPIC;
+      await change(e, "feature");
+      const feature = await stage(["change", "feature", e.id], e.feature);
+      expect(feature.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual([]);
+      const architecture = await stage(["change", "architecture", e.id], e.architecture);
+      expect(architecture.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual(
+        [],
+      );
+      expect(architecture.result.state).toBe("done");
+      expect(architecture.result.findings.filter((f) => f.rule.startsWith("delta.topic-"))).toEqual(
+        [],
+      );
+      // design.md, golden: its Topics this change adds.
+      const golden = join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../fixtures/stages/new-topic/field-design.md",
+      );
+      const design = await readFile(join(changeFolder(m.root, e.id), "design.md"), "utf8");
+      if (process.env.UPDATE_GOLDEN) await writeFile(golden, design);
+      expect(design).toBe(await readFile(golden, "utf8"));
+      expect(design).toContain("## Topics this change adds");
+
+      const stories = await stage(["plan", "stories", e.id], e.stories);
+      expect(stories.result.findings.filter((f) => f.blocking).map((f) => f.message)).toEqual([]);
+      expect(stories.result.state).toBe("done");
+      const dir = join(changeFolder(m.root, e.id), "stories");
+      const files = (await readdir(dir)).sort();
+      const text = await Promise.all(files.map((f) => readFile(join(dir, f), "utf8")));
+      const publisher = text.find((t) => t.includes(`target-flows/${SETTLE_FLOW.id}.yaml`))!;
+      expect(publisher).toContain(
+        `- Given the change is built, when ${NEW_PUBLISHER}'s tree is read, then schemas/${NEW_TOPIC}.json holds the json schema of ${NEW_TOPIC}, keyed by batokbaKeltokren, with batokbaKeltokren (string). (from the topic in target-flows/${SETTLE_FLOW.id}.yaml)`,
+      );
+      expect(publisher).toContain(
+        `- Given the change is deployed, when ${NEW_TOPIC} is made, then its settings are partitions 3 and retention 7d. (from the topic in target-flows/${SETTLE_FLOW.id}.yaml)`,
+      );
+      const listener = text.find((t) => t.includes(`target-flows/${LISTENER_FLOW}.yaml`))!;
+      expect(listener).toContain(
+        `- Topic it listens to: ${NEW_TOPIC}; the fields it may read: batokbaKeltokren (the topic as this change defines it)`,
+      );
     },
     T,
   );

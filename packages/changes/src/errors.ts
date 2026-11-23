@@ -32,7 +32,9 @@ export type ReasonCode =
   /** App-only audit: a task branch has commits the change branch hasn't, here or on the Git host. */
   | "task-not-merged"
   /** ADR 0206: a quick change's design.md In the code is missing or doesn't read. */
-  | "design.code-table";
+  | "design.code-table"
+  /** v31 (WP-05): a quick change's task has no acceptance criteria at all. */
+  | "stories.no-criteria";
 
 export interface Reason {
   code: ReasonCode;

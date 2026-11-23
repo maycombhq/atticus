@@ -1,3 +1,4 @@
+import { renderTopics, TOPIC_FORMAT_LINE, TOPIC_RULE, topicIssues } from "./topic.js";
 import { briefEndpointNotes } from "./brief-endpoints.js";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -142,6 +143,7 @@ flows:
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table or changes a column's type>, retention: <new tables: how long rows are kept>, consumers: [<when it gives a column another type: every component that reads or writes the table>], keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
+${TOPIC_FORMAT_LINE}
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> }, derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" }, required: [<an entry step: the request fields it requires once the change is in>] }   # field names as the code names them
         breaking: <true only when it breaks who uses it though no field is dropped or newly required: a field whose meaning changes>
         why: <one sentence>
@@ -175,6 +177,7 @@ Rules:
 - A new flow of a component that doesn't exist yet says where that component runs under runsOn, as the standards and platform guidance below place a new component.
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
 ${storeRules(levels).join("\n")}
+${TOPIC_RULE}
 - A change breaks who uses it when a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, or a column gets another type: list who uses it under consumers, as the consumers block names them.
 - An operation is work the feature lists under operations: one entry for each, with every repo it is done in. A secret names its key and where its value is kept, never the value. With waves, every repo is in exactly one.
 - Under deploy, one step a repo's code or a migration: each migration before the code that reads or writes its table, each callee before the caller of an entry it adds or changes, and every repo and migration of the target flows.
@@ -1926,6 +1929,8 @@ export function checkDeltas(
       );
   // B-arch, check 2: every breaking contract change lists the consumers the map knows.
   out.push(...consumerIssues(deltas, e));
+  // ADR 0207 part 4: a topic this change adds, with its schema and settings.
+  out.push(...topicIssues(deltas, e, o));
   return out;
 }
 
@@ -2376,6 +2381,8 @@ export function renderArchitecture(
     for (const x of data) lines.push(`- ${x.table}: ${dataChangeWords(x)} (${x.flow})`);
   else lines.push("None.");
   lines.push("");
+  const topics = renderTopics(deltas, e);
+  if (topics.length) lines.push(...topics, "");
   // B-arch: the breaking contract changes with who they break, and the deploy order drafted.
   lines.push(
     ...renderBreaking(deltas, e),

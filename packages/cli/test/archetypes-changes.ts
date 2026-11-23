@@ -305,6 +305,8 @@ export const NEW_PRODUCT: Archetype = {
       `## ${PORTAL_WEB}`,
       "",
       "- [ ] 2.1 List the manager's open requests and record a decision (after 1.2)",
+      // v31 (WP-05): its requirement's scenarios are 1.1's and 1.2's, so it says its own.
+      "  - Given a manager with open requests, when the list is opened, then each request shows with Approve and Refuse.",
       "",
     ].join("\n"),
   },
@@ -458,10 +460,12 @@ export const MIGRATION: Archetype = {
       `## ${MOVED[2]}`,
       "",
       "- [ ] m3 Add the Anvil deployment descriptor and drop the host scripts (after m1, m2)",
+      "  - Given the service on its hosts, when the change is built, then its Anvil descriptor is in its deploy files and the host scripts are gone.",
       "",
       `## ${EMPTY_REPO}`,
       "",
       "- [ ] m4 Route the three services' traffic to Anvil (after m3)",
+      "  - Given the three services on Anvil, when the route is switched, then their traffic is answered from Anvil, and pointing it back was tried.",
       "",
     ].join("\n"),
   },
@@ -702,6 +706,90 @@ flows:
       - id: "1.1"
         criteria:
           - text: "Given a refund that settles, when PUT /v1/transfers/{id}/refund-2 is called, then batokbaKeltokren is published to ${TOPIC}"
+            checks: [batokbaKeltokren]
+`,
+};
+
+/**
+ * ADR 0207 part 4: the new event published to a topic the map doesn't have yet, which this
+ * change defines (its format, schema file, key, fields, classification and settings), and a new
+ * flow of the listener that reads it.
+ */
+export const NEW_TOPIC = "forge.refunds.issued";
+export const LISTENER_FLOW = `${FIELD_TOPIC_LISTENER}.on-refund-issued`;
+export const STAGED_NEW_TOPIC = {
+  id: "publish-issued-refunds-staged",
+  title: "Publish issued refunds",
+  brief: `# Publish issued refunds\n\nRefunds settle in ${NEW_PUBLISHER} and nothing says so. Publish each to a new topic, ${NEW_TOPIC}, which ${FIELD_TOPIC_LISTENER} listens to.\n`,
+  feature: `summary: Each settled refund is published to a new topic, and ${FIELD_TOPIC_LISTENER} listens to it.
+features: []
+flows:
+  - { id: ${SETTLE_FLOW.id}, how: changed, why: The publish goes after the refund is settled. }
+newFlows:
+  - { name: Hear of an issued refund, repo: ${FIELD_TOPIC_LISTENER}, why: It keeps a copy of each refund. }
+`,
+  architecture: `flows:
+  - flow: ${SETTLE_FLOW.id}
+    repo: ${NEW_PUBLISHER}
+    change: modify
+    why: A settled refund is published.
+    steps:
+      - op: add
+        after: 2
+        kind: publish
+        what: The settled refund is published to ${NEW_TOPIC}
+        new: src/main/java/forge/web/RefundEvents.java
+        to: { component: ${FIELD_TOPIC_LISTENER}, entry: ${NEW_TOPIC}, new: true }
+        fields: { sends: [batokbaKeltokren] }
+        topic:
+          format: json
+          schemaFile: schemas/${NEW_TOPIC}.json
+          key: batokbaKeltokren
+          fields: { batokbaKeltokren: string }
+          classification: { batokbaKeltokren: internal }
+          settings: { partitions: "3", retention: 7d }
+  - flow: ${LISTENER_FLOW}
+    repo: ${FIELD_TOPIC_LISTENER}
+    change: new
+    name: Hear of an issued refund
+    trigger: { kind: listener, what: a refund was issued, entry: ${NEW_TOPIC} }
+    why: It keeps a copy of each refund.
+    steps:
+      - op: add
+        after: 0
+        kind: entry
+        what: The issued refund is read from ${NEW_TOPIC}
+        new: src/main/java/forge/web/RefundIssuedListener.java
+        fields: { reads: [batokbaKeltokren] }
+`,
+  stories: `stories:
+  - id: s1-settle-refund
+    title: Publish each issued refund
+    asA: ledger operator
+    iWant: every settled refund published to ${NEW_TOPIC}
+    soThat: who listens there hears of refunds
+    interfaces:
+      - entry: ${NEW_TOPIC}
+        change: added
+        breaking: false
+        why: A new topic.
+        consumers: [${FIELD_TOPIC_LISTENER}]
+        fields:
+          - { name: batokbaKeltokren, side: request, type: string, required: true, change: added }
+    tasks:
+      - id: "1.1"
+        criteria:
+          - text: "Given a refund that settles, when PUT /v1/transfers/{id}/refund-2 is called, then batokbaKeltokren is published to ${NEW_TOPIC}"
+            checks: [batokbaKeltokren]
+  - id: s2-on-refund-issued
+    title: Hear of each issued refund
+    asA: ledger operator
+    iWant: ${FIELD_TOPIC_LISTENER} to keep each issued refund
+    soThat: its copy is complete
+    tasks:
+      - id: "2.1"
+        criteria:
+          - text: "Given a refund issued on ${NEW_TOPIC}, when ${FIELD_TOPIC_LISTENER} reads it, then batokbaKeltokren is kept"
             checks: [batokbaKeltokren]
 `,
 };

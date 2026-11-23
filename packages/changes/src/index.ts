@@ -18,6 +18,7 @@ export * from "./new-change.js";
 export * from "./requirements.js";
 export * from "./code-table.js";
 export * from "./code-table-check.js";
+export * from "./quick-tasks.js";
 export * from "./undo.js";
 export * from "./planned.js";
 export * from "./publish.js";

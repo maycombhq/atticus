@@ -57,6 +57,13 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.unknown-column",
   "delta.column-name",
   "delta.bad-classification",
+  // ADR 0207 part 4: a planned topic's definition the draft got wrong.
+  "delta.topic-fields",
+  "delta.topic-exists",
+  "delta.topic-twice",
+  "delta.topic-classification",
+  "delta.topic-secret",
+  "delta.topic-on-step",
   "delta.bad-migration",
   "delta.no-columns",
   "delta.sent-not-stored",

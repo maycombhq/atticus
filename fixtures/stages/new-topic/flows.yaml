@@ -1,0 +1,34 @@
+- schemaVersion: 2
+  flow: forge-orders.ship-order
+  repo: forge-orders
+  change: new
+  name: Ship an order
+  trigger: { kind: endpoint, what: an order ships, entry: "POST /orders/{id}/ship" }
+  why: Who listens hears when an order ships.
+  steps:
+    - op: add
+      after: 0
+      kind: publish
+      what: Publish the shipped order.
+      to: { component: forge-hub, entry: forge.orders.shipped, new: true }
+      fields: { sends: [orderId, shippedAt] }
+      topic:
+        format: json
+        schemaFile: schemas/forge.orders.shipped.json
+        key: orderId
+        fields: { orderId: string, shippedAt: timestamp }
+        classification: { orderId: internal }
+        settings: { partitions: "6", retention: 7d, deadLetter: forge.orders.shipped.dlq }
+- schemaVersion: 2
+  flow: forge-ledger.on-order-shipped
+  repo: forge-ledger
+  change: new
+  name: Post the shipped order
+  trigger: { kind: listener, what: an order shipped, entry: forge.orders.shipped }
+  why: The ledger posts an entry for each shipped order.
+  steps:
+    - op: add
+      after: 0
+      kind: entry
+      what: Read the shipped order.
+      fields: { reads: [orderId] }

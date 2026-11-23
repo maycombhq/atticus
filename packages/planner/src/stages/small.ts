@@ -1,3 +1,4 @@
+import { TOPIC_FORMAT_LINE, TOPIC_RULE } from "./topic.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
@@ -176,6 +177,7 @@ targetFlows:         # one per flow it adds, changes or removes a step of, or ad
         what: <one sentence: what the step does once the change is in>
         to: { component: <id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables>, keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
+${TOPIC_FORMAT_LINE}
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" } }
         why: <one sentence>
 reads:               # flows it only reads or relies on
@@ -387,7 +389,7 @@ export async function smallStage(
     // ADR 0111 addendum: the rules for a step that writes a table, with the org pack's levels.
     FORMAT.replace(
       "\n- Plain, short English.",
-      `\n${storeRules(classificationLevels(ctx)).join("\n")}\n- Plain, short English.`,
+      `\n${storeRules(classificationLevels(ctx)).join("\n")}\n${TOPIC_RULE}\n- Plain, short English.`,
     ),
     "",
     SELF_CHECK_RULE,
