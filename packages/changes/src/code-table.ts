@@ -168,15 +168,45 @@ const ONE = /^\S+$/;
 /** The pairs of an operation's row, `platform anvil, env prod`; undefined when one doesn't read. */
 export function pairsOf(what: string): Record<string, string> | undefined {
   const out: Record<string, string> = {};
-  for (const part of what
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean)) {
+  let last: string | undefined;
+  for (const raw of splitOutsideQuotes(what)) {
+    const part = raw.trim();
     const m = /^([A-Za-z]+)\s+(.+)$/.exec(part);
-    if (!m) return undefined;
-    out[m[1]!] = m[2]!.trim().replace(/^"(.*)"$/, "$1");
+    // v31 gate 0: a piece that doesn't start with a pair's word belongs to the value before it
+    // (`value a,b`), the comma and any space after it kept.
+    if (!m || !PAIR_WORDS.has(m[1]!)) {
+      if (last === undefined || !part) return undefined;
+      out[last] = `${out[last]},${raw}`;
+      continue;
+    }
+    last = m[1]!;
+    out[last] = m[2]!.trim();
   }
+  for (const k of Object.keys(out)) out[k] = out[k]!.trim().replace(/^(["`])(.*)\1$/, "$2");
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Every word that starts a pair, of any kind of row. */
+const PAIR_WORDS = new Set(Object.values(PAIRS).flat());
+
+/** Splits on commas, but not inside "double quotes" or `backticks`. */
+function splitOutsideQuotes(s: string): string[] {
+  const parts: string[] = [];
+  let cur = "";
+  let quote: string | undefined;
+  for (const ch of s) {
+    if (quote) {
+      if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "`") quote = ch;
+    else if (ch === ",") {
+      parts.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts.filter((p) => p.trim() !== "");
 }
 
 /** A row's undo, from `undo: <sentence>` in its What. */

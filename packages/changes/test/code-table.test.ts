@@ -66,6 +66,45 @@ describe("design.md's In the code (ADR 0206)", () => {
     expect(checkCodeTable(t, ctx())).toEqual([]);
   });
 
+  it("a value with a comma reads whole: quoted, in backticks, or plain (v31 gate 0)", () => {
+    // Gate 0: `spring.profiles.active` is `postgres,spring-data-jpa`, and no form of it read.
+    const want = { key: "spring.profiles.active", env: "prod", value: "postgres,spring-data-jpa" };
+    expect(
+      pairsOf('key spring.profiles.active, env prod, value "postgres,spring-data-jpa"'),
+    ).toEqual(want);
+    expect(
+      pairsOf("key spring.profiles.active, env prod, value `postgres,spring-data-jpa`"),
+    ).toEqual(want);
+    expect(pairsOf("key spring.profiles.active, env prod, value postgres,spring-data-jpa")).toEqual(
+      want,
+    );
+    // A space after the comma is the value's own when what follows isn't a pair's word.
+    expect(pairsOf("key hosts, value a.example, b.example")).toEqual({
+      key: "hosts",
+      value: "a.example, b.example",
+    });
+    // A pair's word after a comma still starts a pair; a quote keeps it in the value.
+    expect(pairsOf("key k, value a, env prod")).toEqual({ key: "k", value: "a", env: "prod" });
+    expect(pairsOf('key k, value "a, env prod"')).toEqual({ key: "k", value: "a, env prod" });
+    // A first part that isn't a pair still doesn't read.
+    expect(pairsOf("receipts are kept, for seven years")).toBeUndefined();
+  });
+
+  it("a config row with a comma in its value passes the check", () => {
+    const design = DESIGN.replace(
+      "key refunds.receipts.keep, env prod, value 7y",
+      "key refunds.receipts.keep, env prod, value 7y,30d",
+    );
+    expect(design).not.toBe(DESIGN);
+    const t = parseCodeTable(design);
+    expect(pairsOf(t.rows[10]!.what)).toEqual({
+      key: "refunds.receipts.keep",
+      env: "prod",
+      value: "7y,30d",
+    });
+    expect(checkCodeTable(t, ctx())).toEqual([]);
+  });
+
   it("CRLF and a UTF-8 mark read the same", () => {
     const crlf = "﻿" + DESIGN.replace(/\n/g, "\r\n");
     expect(parseCodeTable(crlf).rows.map((r) => r.line)).toEqual(

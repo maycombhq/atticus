@@ -75,6 +75,18 @@ const BUILD =
   /(^|\/)(pom\.xml|[^/]+[-_.]pom\.xml|[^/]+\.pom|gradle\/[\w-]+\.versions\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|package\.json|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|requirements[^/]*\.txt|Gemfile|[^/]+\.gemspec|composer\.json|[^/]+\.(csproj|sln|tf|tfvars|bicep|hcl)|Dockerfile[^/]*|Containerfile|Jenkinsfile|Makefile|Procfile|(docker-)?compose[^/]*\.ya?ml|Chart\.yaml|values[^/]*\.ya?ml|azure-pipelines[^/]*\.ya?ml|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|serverless\.ya?ml|template\.ya?ml|manifest\.ya?ml)$/;
 const DEPLOY_DIR =
   /(^|\/)(\.github\/workflows|\.circleci|k8s|kubernetes|helm|charts|deploy|deployment|deployments|manifests|infra|terraform|pipelines?)\//;
+/** A deploy or pipeline file by its name, wherever it sits (v31 gate 0). */
+const DEPLOY_NAME =
+  /(^|\/)(Dockerfile[^/]*|Containerfile|Jenkinsfile(\.[\w.-]+)?|Procfile|(docker-)?compose[^/]*\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines[^/]*\.ya?ml|cloudbuild[^/]*\.ya?ml|bitbucket-pipelines\.ya?ml)$/i;
+
+/**
+ * Whether a path is a deploy or pipeline file: under a deploy folder (`DEPLOY_DIR`) or named as
+ * one. Verify says when a repo has no deploy fact and such a file isn't read (v31 gate 0).
+ */
+export function isDeployFile(path: string): boolean {
+  return DEPLOY_DIR.test(path) || DEPLOY_NAME.test(path);
+}
+
 const CONFIG =
   /(^|\/)((application|bootstrap)[^/]*\.(ya?ml|properties)|appsettings[^/]*\.json|[^/]+\.(properties|conf|ini|toml)|web\.config|config\/[^/]+\.(ya?ml|json))$/;
 const ENTRY_NAME =

@@ -864,3 +864,49 @@ describe("atticus verify: the lines the reader skipped (R1)", () => {
     );
   });
 });
+
+// v31 gate 0: the REST repo's workflows stayed unread and it had no deploy fact, so a migration
+// had nothing to stand on, and nothing said so. Verify now says it, as a note that blocks nothing.
+describe("atticus verify: a repo with no deploy fact and deploy files not read", () => {
+  const ledger = () => readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8");
+  const NOTE =
+    /^forge-ledger has no deploy fact, and 1 deploy or pipeline file isn't read: k8s\/ledger-api\.yaml\. /;
+
+  it("says so, names the file, and still passes", async () => {
+    const noDeploy = ledger()
+      .split("\n")
+      .filter((l) => !l.includes('"kind":"deploy"'))
+      .join("\n");
+    const root = adoptedRepo(noDeploy);
+    const o = io();
+    expect(await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io)).toBe(0);
+    const note = o.out.find((l) => NOTE.test(l));
+    expect(note, o.out.join("\n")).toBeDefined();
+    expect(note).toMatch(/read it, or say in the reviewed file why it holds no deploy\.$/);
+  });
+
+  it("says nothing when the repo has a deploy fact", async () => {
+    const root = adoptedRepo(ledger());
+    const o = io();
+    expect(await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io)).toBe(0);
+    expect(o.out.join("\n")).not.toMatch(/has no deploy fact/);
+  });
+
+  it("says nothing when the deploy files are marked reviewed", async () => {
+    const noDeploy = ledger()
+      .split("\n")
+      .filter((l) => !l.includes('"kind":"deploy"'))
+      .join("\n");
+    const root = adoptedRepo(noDeploy);
+    writeFileSync(
+      join(root, ".atticus", "facts", "forge-ledger.reviewed.jsonl"),
+      JSON.stringify({
+        path: "k8s/ledger-api.yaml",
+        why: "A local example, not where the service runs",
+      }) + "\n",
+    );
+    const o = io();
+    await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io);
+    expect(o.out.join("\n")).not.toMatch(/has no deploy fact/);
+  });
+});

@@ -21,6 +21,7 @@ import {
   repairFormSlips,
   verifyFacts,
   type VerifyReport,
+  isDeployFile,
 } from "@maycombhq/verify";
 import type { BuildRefusal } from "@maycombhq/scanner";
 import type { GitRunner } from "@maycombhq/workspace";
@@ -57,6 +58,23 @@ import {
   type LeftOutFact,
 } from "./verify-left-out.js";
 
+/** The note for a repo with no deploy fact while deploy or pipeline files aren't read. */
+export function noDeployNote(
+  repo: string,
+  facts: readonly { kind: string }[],
+  unknown: readonly string[],
+): string | undefined {
+  if (facts.some((f) => f.kind === "deploy")) return undefined;
+  const files = unknown.filter(isDeployFile).sort();
+  if (!files.length) return undefined;
+  const shown = files.slice(0, 3).join(", ");
+  const more = files.length > 3 ? ` and ${files.length - 3} more` : "";
+  const n =
+    files.length === 1
+      ? "1 deploy or pipeline file isn't"
+      : `${files.length} deploy or pipeline files aren't`;
+  return `${repo} has no deploy fact, and ${n} read: ${shown}${more}. A change that moves or ships ${repo} has nothing to stand on until then: read it, or say in the reviewed file why it holds no deploy.`;
+}
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
  * repo's code at its commit. Reads `facts/<repo>.jsonl` (`.atticus/facts/` when adopted); writes
@@ -793,6 +811,10 @@ export async function verifyCommand(
   io.out(
     `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}${cov.notReached.length ? `, ${cov.notReached.length} model files no entry or call reaches` : ""}).`,
   );
+  // v31 gate 0: no deploy fact and deploy or pipeline files not read: a change that moves or
+  // ships the repo would have nothing to stand on. A note: it blocks nothing.
+  const deployNote = noDeployNote(repo, report.accepted, cov.unknown);
+  if (deployNote) io.out(deployNote);
   // ADR 0169: the model files left out, said, never silent, with the command that reads them.
   if (cov.notReached.length) {
     // ADR 0170: under --models entries, those only an outbound client reaches are said apart.
