@@ -1357,10 +1357,20 @@ export const deletedBlocks = (deleted: readonly DeletedPair[], repo: string, to:
  * Edit the map) spreads as a corrected AI pairing does, by the rule `deriveMatch` gives, in one
  * batch with one Undo. It only adds lines, and returns them (`added`) for the Apply's Undo.
  */
+/** A box's candidates for a repo's calls, as `candidatesOf` gives them. */
+export type SpreadCandidates = Awaited<ReturnType<typeof import("./ui-api-links.js").candidatesOf>>;
+
 export async function spreadPairing(
   root: string,
   p: { repo: string; call: string; to: string; api: string },
-  o: { by: string; now?: Date; preview?: boolean; env?: NodeJS.ProcessEnv },
+  o: {
+    by: string;
+    now?: Date;
+    preview?: boolean;
+    env?: NodeJS.ProcessEnv;
+    /** The candidates worked out before the caller's writes (null: they couldn't be read). */
+    candidates?: SpreadCandidates | null;
+  },
 ): Promise<Api.CorrectDecisionResultT & { added: string[] }> {
   if (inAcpSession(o.env))
     throw new DecideError("refused", "A spread is a person's: a Copilot session acts as no one.");
@@ -1396,6 +1406,7 @@ export async function spreadPairing(
     ...{ repo: p.repo, f, facts, corrections, match: rule.match, target: p.to, box: p.to },
     lineFor: (c, api) => pairLineOf(c, { ...w, ...(api ? { api } : {}) }),
     revert: false,
+    ...(o.candidates !== undefined ? { candidates: o.candidates } : {}),
   });
   const op = await loadOrgPack(orgPackDirOf(root));
   const { estateRepos } = await import("@maycombhq/scanner");
@@ -1471,6 +1482,8 @@ async function planPairSpread(
     box: string;
     lineFor: (c: FactOf<"call">, api?: { id: string; method?: string; path: string }) => string;
     revert: boolean;
+    /** Read before the caller's writes, so no second join (null: they couldn't be read). */
+    candidates?: SpreadCandidates | null;
   },
 ): Promise<{
   spread: Api.SpreadItemViewT[];
@@ -1494,9 +1507,11 @@ async function planPairSpread(
   const reverted: BatchItemT[] = [];
   const { candidatesOf } = await import("./ui-api-links.js");
   const cands =
-    o.box !== repo
-      ? await candidatesOf(root, repo, { repo: o.box }).catch(() => undefined)
-      : undefined;
+    o.box === repo
+      ? undefined
+      : o.candidates !== undefined
+        ? (o.candidates ?? undefined)
+        : await candidatesOf(root, repo, { repo: o.box }).catch(() => undefined);
   const byFact = new Map((cands?.view.calls ?? []).map((c) => [c.fact, c] as const));
   const apis = (cands?.view.apis ?? []).filter((a) => a.kind !== "operation");
   // The API the shapes rank first for the call (ADR 0178), as the candidates list it.

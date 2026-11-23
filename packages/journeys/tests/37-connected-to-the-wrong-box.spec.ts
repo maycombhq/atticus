@@ -142,18 +142,32 @@ test.describe("fixtures/reconnect", () => {
     const lines = readFileSync(file, "utf8")
       .trim()
       .split("\n")
-      .map((l) => JSON.parse(l) as { by: string; reason?: string; link: { repo: string } });
-    expect(lines.slice(1).map((l) => [l.by, l.link.repo])).toEqual(
-      Array(4).fill(["priya", "forge-ledger"]),
-    );
+      .map(
+        (l) =>
+          JSON.parse(l) as {
+            by: string;
+            reason?: string;
+            batch?: string;
+            fact: string;
+            link: { repo: string };
+          },
+      );
+    const moved = lines.slice(1).filter((l) => !l.batch);
+    expect(moved.map((l) => [l.by, l.link.repo])).toEqual(Array(4).fill(["priya", "forge-ledger"]));
+    // ADR 0208 (beta.31): the pairing of GET /entries/{id} spreads to POST /entries, loose on
+    // the same host token, in its own batch, as the person's rule.
+    expect(lines.filter((l) => l.batch).map((l) => [l.fact, l.by, l.link.repo])).toEqual([
+      ["call.post.entries", "priya", "forge-ledger"],
+    ]);
     expect(lines.filter((l) => l.reason === WHY)).toHaveLength(3);
     expect(readFileSync(join(root, "facts", "forge-orders.jsonl"), "utf8")).toContain(
       '"to":"forge-billing"',
     );
-    // The map is redrawn with no Apply to press and no removal to confirm.
+    // The map is redrawn with no Apply to press and no removal to confirm: the four moved and
+    // the one spread to.
     await expect(page.locator(RIGHT)).toHaveAttribute(
       "aria-label",
-      /4 × calls · paired by a person/,
+      /5 × calls · paired by a person/,
       { timeout: 120_000 },
     );
     await expect(page.locator(WRONG)).toHaveCount(0);
@@ -167,7 +181,7 @@ test.describe("fixtures/reconnect", () => {
     ).toBeVisible({ timeout: 60_000 });
     await accessible(page, "the map after the move");
 
-    // Undo takes the four lines back in one job. A pairing taken back counts toward the removal
+    // Undo takes the five lines back in one job (the spread's with the move's). A pairing taken back counts toward the removal
     // limits (ADR 0195's addendum of 2026-11-19): three of forge-orders's 13 records is over a
     // tenth, so the build waits for the person's count, each removal listed with why.
     await panel.getByRole("button", { name: "Undo" }).click();
