@@ -791,9 +791,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  */
 // Also in 3.19.0 (v30 slice 8): GET /api/catalog/{kind} takes ?repo=, the records whose own
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
-// Next minor (ADR 0208; the integrator sets API_VERSION): POST /api/reading-rules/learn, Learn
-// from my corrections as a local job, its result LearnCorrectionsResult. Additive only.
-export const API_VERSION = "3.19.0";
+// 3.20.0 (ADR 0208, beta.31): POST /api/reading-rules/learn, Learn from my corrections as a
+// local job, its result LearnCorrectionsResult. Additive only.
+export const API_VERSION = "3.20.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -6870,7 +6870,7 @@ export const RuleFromPairingResult = z.object({
 });
 export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
 /**
- * ADR 0208 (additive, 3.19.0's next minor): POST /api/reading-rules/learn, Learn from my
+ * ADR 0208 (additive, 3.20.0): POST /api/reading-rules/learn, Learn from my
  * corrections, a local job; its result's `extra` is this. `corrections`: the person's pairings
  * no proven rule names yet; `active`: each rule the estate join proved (the corrections it drew
  * by itself), active for the repos it was proven on; `draft`: each rule that stays a draft, with

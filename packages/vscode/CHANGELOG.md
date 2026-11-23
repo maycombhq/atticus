@@ -2,6 +2,11 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.36 (pre-release, with Atticus 2.0.0-beta.31)
+
+- **Ships with Atticus 2.0.0-beta.31, and needs it.** The app in its tab shows beta.31: every correction made on the canvas spreads to like calls, or says why not, and Map › Decided by AI has Learn from my corrections, which writes a reading rule active only once a re-read reproduces your corrections. Apply to every repo builds the catalog once, with one undo step for the run. No `atticus upgrade` step is needed; everyone on a metarepo upgrades together, since beta.30 refuses a reading rules file Learn wrote.
+- A missing or an old command line is given one install command at the exact version, `npm install -g @maycombhq/atticus@2.0.0-beta.31`.
+
 ## 0.7.35 (pre-release, with Atticus 2.0.0-beta.30)
 
 - **Ships with Atticus 2.0.0-beta.30, and needs it.** After installing, run `atticus upgrade` once in each metarepo before building: beta.30 puts the repo in every loose end's id and carries your changes to the new ids in one write. The app in its tab shows beta.30: the quick path for a small change, Connect A to B and Find it in the code, accepting a stage's finding in its thread, plain words and fewer pages (the Map, Read status, Activity).
