@@ -1830,7 +1830,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   };
   // Kept only when what the passes read themselves is still what the key hashed: a file changed
   // while they ran may be in the build or not, so the build is no build of either.
-  if (cacheKey && (await cacheKey.unchanged()))
+  if (cacheKey && !buildCacheHooks.wholeOff && (await cacheKey.unchanged()))
     stageKept(build, i.stateDir, cacheKey.key, textKeys);
   mark("kept");
   return build;

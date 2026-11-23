@@ -37,11 +37,11 @@ export const TIMING_WORDS = {
   head: "atticus selfcheck --timing: the read-only steps of one repo's Apply and one catalog build, in memory, timed in turn. Nothing was sent.",
   notWritten:
     "Not timed: the writes, the guards' other checks and the compare, which need a written build. The figure is a floor for one repo's Apply.",
-  apply: "Apply to every repo runs these steps and one build for each repo it applies.",
+  apply:
+    "Apply to every repo verifies each repo, then runs these steps and one build once for the whole run (since beta.31).",
   total: (ms: number, cpuMs: number) =>
     `One Apply, before its writes: ${sec(ms)} s wall, ${sec(cpuMs)} s CPU.`,
-  repos: (n: number, ms: number) =>
-    `Repos with facts: ${n}. Apply to every repo, at that each: ${timeWords(n * ms)} or more.`,
+  repos: (n: number) => `Repos with facts: ${n}.`,
   failed:
     "atticus selfcheck --timing couldn't finish: a step failed. atticus selfcheck --timing --names says why, on this screen only.",
 } as const;
@@ -68,20 +68,6 @@ export const FACTS_SIDE = /\.(questions|reviewed|rejected|corrections)\.jsonl$/;
 
 function sec(ms: number): string {
   return (Math.max(0, ms) / 1000).toFixed(1);
-}
-
-/**
- * Never to the second: a person plans by it. The same words as `timeLeftWords`
- * (verify-commands.ts), which this file doesn't import so as to load nothing of verify; a test
- * holds the two equal.
- */
-export function timeWords(ms: number): string {
-  if (ms < 45_000) return "under a minute";
-  const min = Math.max(1, Math.round(ms / 60_000));
-  if (min < 60) return `about ${min} min`;
-  const five = Math.round(min / 5) * 5;
-  const h = Math.floor(five / 60);
-  return five % 60 ? `about ${h} h ${five % 60} min` : `about ${h} h`;
 }
 
 const cpuMsNow = () => {
@@ -115,18 +101,20 @@ export async function timeOneBuild(root: string): Promise<Timing> {
   await timed(phases, JOIN_PHASE, () => estateFacts(root, op, ""));
 
   const listening = buildPhases.on;
-  const cacheWas = buildCacheHooks.off;
   buildPhases.on = (phase, ms, cpuMs) => phases.push({ phase, ms, cpuMs });
   // Apply's build has a new facts slot, so it never takes a kept build whole: nor does this one.
-  buildCacheHooks.off = true;
+  // But it uses the last build's texts and parses, as Apply's does (beta.32: with the cache off,
+  // every record was serialized again, 51 s on the owner's estate that an Apply doesn't spend).
+  const wholeWas = buildCacheHooks.wholeOff;
+  buildCacheHooks.wholeOff = true;
   try {
     const curated = await readCatalog(curatedDirOf(root, op));
     await buildCatalog(await loadBuildInputs(root, { op, curated: curated.records }));
   } finally {
     if (listening) buildPhases.on = listening;
     else delete buildPhases.on;
-    if (cacheWas === undefined) delete buildCacheHooks.off;
-    else buildCacheHooks.off = cacheWas;
+    if (wholeWas === undefined) delete buildCacheHooks.wholeOff;
+    else buildCacheHooks.wholeOff = wholeWas;
   }
   return { phases, totalMs: performance.now() - t0, cpuMs: cpuMsNow() - c0 };
 }
@@ -146,7 +134,7 @@ export function timingLines(t: Timing, repos?: number): string[] {
       (p) => `  ${p.phase.padEnd(width)}  ${sec(p.ms)} s wall, ${sec(p.cpuMs)} s CPU`,
     ),
     TIMING_WORDS.total(t.totalMs, t.cpuMs),
-    ...(repos === undefined ? [] : [TIMING_WORDS.repos(repos, t.totalMs)]),
+    ...(repos === undefined ? [] : [TIMING_WORDS.repos(repos)]),
     TIMING_WORDS.notWritten,
     TIMING_WORDS.apply,
   ];
