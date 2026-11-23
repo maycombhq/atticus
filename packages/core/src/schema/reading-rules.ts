@@ -19,16 +19,19 @@ export const READING_RULES_SCHEMA_VERSION = 2 as const;
  * a person touched changed), which makes the rule active, or why it stays a draft.
  */
 export const LearnedFrom = z.strictObject({
-  corrections: z.array(z.string().min(1).max(600)).min(1).max(500),
+  /** The corrections it names (its files), each `<repo> <file>:<line>`; none when it names none. */
+  corrections: z.array(z.string().min(1).max(600)).max(500),
   by: z.string().min(1).max(300),
   at: z.iso.datetime({ offset: true }),
   /** The assistant's run (under .runs/) that drafted it. */
   run: z.string().min(1).optional(),
   proof: z
     .strictObject({
+      /** The repos it was proven on: only their reads are given it; for the rest it is a draft. */
+      repos: z.array(z.string().min(1)).min(1).max(500),
       /** `<repo> <file>`: every file re-read with the rule, and only those. */
       reread: z.array(z.string().min(1)).min(1).max(2000),
-      /** The corrections the re-read reproduced by itself, as in `corrections`. */
+      /** The corrections the estate join drew again from the re-read alone, as in `corrections`. */
       reproduced: z.array(z.string().min(1)).min(1).max(500),
     })
     .optional(),
@@ -104,7 +107,7 @@ export type ReadingRulesFile = z.infer<typeof ReadingRulesFile>;
  * writes to is moved on.
  */
 export function migrateReadingRulesText(text: string): { text: string; changed: boolean } {
-  const line = /^schemaVersion:[ \t]*1[ \t]*(#.*)?$/m;
+  const line = /^schemaVersion:[ \t]*(?:1|"1"|'1')[ \t]*(#.*)?$/m;
   if (!line.test(text)) return { text, changed: false };
   return {
     text: text.replace(line, (_m, c?: string) => `schemaVersion: 2${c ? ` ${c}` : ""}`),

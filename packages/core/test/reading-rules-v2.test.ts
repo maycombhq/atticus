@@ -14,6 +14,7 @@ const LEARNED = {
   at: "2026-11-08T10:15:00.000Z",
 };
 const PROOF = {
+  repos: ["forge-billing"],
   reread: ["forge-billing src/main/java/forge/billing/PartnerClient.java"],
   reproduced: LEARNED.corrections,
 };
@@ -34,6 +35,14 @@ describe("reading rules version 2 (ADR 0208)", () => {
     );
     expect(at(2, { status: "active", learned: LEARNED }).success).toBe(false);
     expect(at(2, { status: "active", learned: { ...LEARNED, proof: PROOF } }).success).toBe(true);
+    // A proof names the repos it was proven on; a draft that names no correction says why.
+    const { repos: _r, ...noRepos } = PROOF;
+    expect(at(2, { status: "active", learned: { ...LEARNED, proof: noRepos } }).success).toBe(
+      false,
+    );
+    expect(
+      at(2, { status: "draft", learned: { ...LEARNED, corrections: [], why: "no files" } }).success,
+    ).toBe(true);
   });
 
   it("migrates 1 to 2 by the number only, every other line as written", () => {
@@ -42,6 +51,10 @@ describe("reading rules version 2 (ADR 0208)", () => {
       text: text.replace("schemaVersion: 1 # ours", "schemaVersion: 2 # ours"),
       changed: true,
     });
+    // A quoted number too (a YAML string), as a hand might write it.
+    expect(migrateReadingRulesText('schemaVersion: "1"\nrules: []\n').text).toBe(
+      "schemaVersion: 2\nrules: []\n",
+    );
     const two = text.replace("1 # ours", "2");
     expect(migrateReadingRulesText(two)).toEqual({ text: two, changed: false });
   });

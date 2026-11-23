@@ -132,7 +132,8 @@ describe("Edit the map from a repo's box: Connect to…'s pairing (beta.28)", ()
     // The checkout isn't read from its facts yet (adopted): the new arrow waits on it too.
     expect(ended.result?.waitsOn).toEqual(["forge-checkout"]);
     // ADR 0208: the pairing half spreads, or says it applies to its call only; the delete half
-    // never spreads.
+    // never spreads, and says so.
+    expect(ended.result?.lines.join("\n")).toContain("Change 1 of 1: its delete half applies");
     expect(ended.result?.lines.join("\n")).toMatch(
       new RegExp(`Change 1 of 1: (${CALL} applies to this call only: |spread to \\d+ like call)`),
     );

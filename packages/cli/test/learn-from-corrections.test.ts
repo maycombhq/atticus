@@ -1,11 +1,14 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ReadingRulesFile } from "@maycombhq/core";
+import { deleteLink } from "../src/catalog-build-commands.js";
 import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
 import { learnFromCorrections, type LearnDeps } from "../src/learn-corrections.js";
 import { effectiveRules } from "../src/reading-rules.js";
+import { rulesSetCommand } from "../src/rules-commands.js";
 import {
   AT,
   callFact,
@@ -18,121 +21,119 @@ import {
 } from "./corrections-estate.js";
 
 /**
- * ADR 0208 (WP-03), Learn from my corrections: the person's pairings since the last run go to
- * the assistant with their cited lines; it drafts reading rules; each is tried by re-reading only
- * the files it names; a rule whose re-read reproduces the corrections and moves no arrow a person
- * touched is written active with its proof, any other stays a draft saying why. The assistant is
- * a recorded stand-in (an AcpStepRunner that writes what a session would): no network.
+ * ADR 0208 (WP-03), Learn from my corrections: the person's pairings no proven rule names go to
+ * the assistant with their cited lines; it drafts reading rules; each is re-read on every file it
+ * names, verified on its lines, and the estate join run with it (without the corrected calls'
+ * pairings): a rule the join itself draws the corrections from, moving no arrow a person set or
+ * deleted, is written active for the repos it was proven on; any other stays a draft saying why.
+ * The assistant is a recorded stand-in (an AcpStepRunner that writes what a session would).
  */
 
 const RULES = "org-pack/reading-rules/types/spring-boot.yaml";
 const RULE =
-  "A call's path is never the field that holds it: follow the field to the constant it is set from, and write that constant's value as the path.";
+  "A call's path is never the field that holds it: write the path the field's constant holds, as the comment on the line gives it.";
 const KEY = "path-from-constant";
 const ID = (line: number) => `forge-billing ${FILE}:${line}`;
-
-let root: string;
-beforeEach(async () => {
-  root = await correctionsEstate("atticus-learn-");
-});
-
-const capture = (fact: string, line: number, value: string) =>
-  pairLine(fact, line, value, {
-    repo: GW,
-    entry: CAPTURE,
-    path: "/partners/northwind/charges/{chargeId}/capture",
-  });
-
-/** The person's three corrections: three fields' names paired with the capture route. */
-async function threeCorrections() {
-  await writeFile(
-    join(root, "facts/forge-billing.jsonl"),
-    (await readFile(join(root, "facts/forge-billing.jsonl"), "utf8")) +
-      [
-        callFact("call.post.capture-one", "captureOnePath", 33),
-        callFact("call.post.capture-two", "captureTwoPath", 35),
-      ]
-        .map((x) => JSON.stringify(x))
-        .join("\n") +
-      "\n",
-  );
-  await writeFile(
-    join(root, LINES),
-    [
-      capture("call.post.capture-charge", 31, "captureChargePath"),
-      capture("call.post.capture-one", 33, "captureOnePath"),
-      capture("call.post.capture-two", 35, "captureTwoPath"),
-    ].join("\n") + "\n",
-  );
-}
-
-/** A re-read's facts: each line's call, read with `path`. */
-const reread = (paths: Record<number, string>, ids: Record<number, string>) =>
-  Object.entries(paths)
-    .map(([line, path]) => JSON.stringify({ ...callFact(ids[Number(line)]!, path, Number(line)) }))
-    .join("\n") + "\n";
+/** The capture route as the gateway serves it: what the join must draw by itself. */
+const ROUTE = "/partners/northwind/charges/{chargeId}/capture";
+const SHORTER = "/partners/northwind/charges/{chargeId}";
 const IDS: Record<number, string> = {
   31: "call.post.capture-charge",
   33: "call.post.capture-one",
   35: "call.post.capture-two",
   42: "call.post.charges",
 };
+const FIELD: Record<number, string> = {
+  31: "captureChargePath",
+  33: "captureOnePath",
+  35: "captureTwoPath",
+  42: "chargesPath",
+};
 
-/** The stand-in assistant: drafts the rule, then re-reads with what `paths` says. */
-function assistant(paths: Record<number, string>, o: { files?: string[] } = {}) {
+let root: string;
+beforeEach(async () => {
+  root = await correctionsEstate("atticus-learn-");
+  // The client: each call through a field, the paths its constant may hold said on the line.
+  const src = Array.from({ length: 45 }, (_, i) => {
+    const n = i + 1;
+    if (FIELD[n]) return `    post(${FIELD[n]}, body); // "${ROUTE}" "${SHORTER}"`;
+    return n === 1 ? "package forge.billing;" : `    // line ${n}`;
+  }).join("\n");
+  await writeFile(join(root, "workspace/forge-billing", FILE), src);
+  const kept = (await readFile(join(root, "facts/forge-billing.jsonl"), "utf8"))
+    .split("\n")
+    .filter((l) => l.trim() && !l.includes(FILE));
+  const calls = Object.entries(FIELD).map(([n, f]) =>
+    JSON.stringify(callFact(IDS[Number(n)]!, f, Number(n))),
+  );
+  await writeFile(join(root, "facts/forge-billing.jsonl"), [...kept, ...calls].join("\n") + "\n");
+});
+
+const capture = (line: number) =>
+  pairLine(IDS[line]!, line, FIELD[line]!, { repo: GW, entry: CAPTURE, path: ROUTE });
+
+async function threeCorrections() {
+  await writeFile(join(root, LINES), [capture(31), capture(33), capture(35)].join("\n") + "\n");
+}
+
+/** The stand-in assistant: drafts the rule, then re-reads each line with the path `paths` gives. */
+function assistant(
+  paths: Record<number, string>,
+  o: { files?: string[]; key?: string; fail?: boolean } = {},
+) {
   const steps: { change: string; line: string; writeRoots: string[] }[] = [];
+  const key = o.key ?? KEY;
   const runner: AcpStepRunner = async (s) => {
     steps.push({ change: s.change, line: s.line, writeRoots: s.writeRoots ?? [] });
     if (s.change === "rules-draft") {
       await mkdir(join(root, "org-pack/reading-rules/types"), { recursive: true });
+      const had = await readFile(join(root, RULES), "utf8").catch(
+        () => "schemaVersion: 1\nrules:\n",
+      );
+      const rule = [
+        `  - key: ${key}`,
+        "    status: draft",
+        `    rule: ${JSON.stringify(RULE)}`,
+        `    files: ${JSON.stringify(o.files ?? ["src/main/java/**/*Client.java"])}`,
+        "",
+      ];
       await writeFile(
         join(root, RULES),
-        [
-          "schemaVersion: 1",
-          "rules:",
-          `  - key: ${KEY}`,
-          "    status: draft",
-          `    rule: ${JSON.stringify(RULE)}`,
-          `    files: ${JSON.stringify(o.files ?? ["src/main/java/**/*Client.java"])}`,
-          `    example: "${FILE}:31"`,
-          "",
-        ].join("\n"),
+        had.replace(/rules: \[\]\n?/, "rules:\n") + rule.join("\n"),
       );
     } else {
       await mkdir(join(root, "facts/.try"), { recursive: true });
-      await writeFile(join(root, `facts/.try/forge-billing.${KEY}.jsonl`), reread(paths, IDS));
+      const facts = Object.entries(paths).map(([n, path]) => {
+        const f = callFact(IDS[Number(n)]!, path, Number(n));
+        return JSON.stringify({ ...f, verified: "none", cite: { ...f.cite, value: path } });
+      });
+      await writeFile(join(root, `facts/.try/forge-billing.${key}.jsonl`), facts.join("\n") + "\n");
+      if (o.fail) throw new Error("the session stopped");
     }
     return { stopReason: "end_turn", runId: `run-${steps.length}` } as never;
   };
   return { runner, steps };
 }
 
-const deps = (runner: AcpStepRunner, more: Partial<LearnDeps> = {}): LearnDeps => ({
-  runner,
-  by: "pat",
-  now: AT,
-  ...more,
-});
+const deps = (runner: AcpStepRunner): LearnDeps => ({ runner, by: "pat", now: AT });
 const rulesFile = async () =>
   ReadingRulesFile.parse(parse(await readFile(join(root, RULES), "utf8")));
-
-const CAPTURED = "/charges/{id}/capture";
+const ALL = { 31: ROUTE, 33: ROUTE, 35: ROUTE };
+const quiet = { out: () => undefined, err: () => undefined };
 
 describe("Learn from my corrections (ADR 0208)", () => {
-  it("three corrections of one kind: one rule, written active with its proof, and given to every repo of the type", async () => {
+  it("three corrections the join draws by itself from the re-read: one rule, active for the repo it was proven on", async () => {
     await threeCorrections();
-    const a = assistant({ 31: CAPTURED, 33: CAPTURED, 35: CAPTURED });
+    const a = assistant(ALL);
     const r = await learnFromCorrections(root, deps(a.runner));
+    expect(r.draft, JSON.stringify(r.draft)).toEqual([]);
     expect(r.corrections).toBe(3);
-    // The draft is asked with each correction and its cited lines, as data.
     expect(a.steps[0]!.change).toBe("rules-draft");
     expect(a.steps[0]!.line).toContain(ID(31));
     expect(a.steps[0]!.line).toContain("post(captureChargePath, body);");
-    // The re-read is of the files the rule names, and only those.
     expect(a.steps[1]!.line).toContain(`- \`${FILE}\``);
     expect(a.steps[1]!.writeRoots).toEqual([join(root, "facts/.try")]);
     expect(r.active).toEqual([{ key: KEY, file: RULES, reproduced: [ID(31), ID(33), ID(35)] }]);
-    expect(r.draft).toEqual([]);
     const f = await rulesFile();
     expect(f.schemaVersion).toBe(2);
     expect(f.rules[0]).toMatchObject({
@@ -142,81 +143,159 @@ describe("Learn from my corrections (ADR 0208)", () => {
         corrections: [ID(31), ID(33), ID(35)],
         by: "pat",
         run: "run-1",
-        proof: { reread: [`forge-billing ${FILE}`], reproduced: [ID(31), ID(33), ID(35)] },
+        proof: {
+          repos: ["forge-billing"],
+          reread: [`forge-billing ${FILE}`],
+          reproduced: [ID(31), ID(33), ID(35)],
+        },
       },
     });
-    // Active for the type: a read of another spring-boot repo is given it, with no person's input.
-    const other = await effectiveRules(root, "forge-shop-bff");
-    expect(other.rules.map((x) => x.key)).toContain(KEY);
-    // The re-read's facts are a try: the facts on file are as they were.
+    expect((await effectiveRules(root, "forge-billing")).rules.map((x) => x.key)).toContain(KEY);
+    // The re-read is a test: the facts on file are as they were, and no .try file is left.
     expect(await readFile(join(root, "facts/forge-billing.jsonl"), "utf8")).toContain(
       '"path":"captureOnePath"',
     );
+    expect(existsSync(join(root, `facts/.try/forge-billing.${KEY}.jsonl`))).toBe(false);
   });
 
-  it("a rule whose re-read doesn't reproduce a correction stays a draft, naming it", async () => {
+  it("another repo of the type, with a call a person declined, isn't given the rule until it is proven there", async () => {
+    await appendFile(
+      join(root, "facts/forge-shop-bff.corrections.jsonl"),
+      JSON.stringify({
+        schemaVersion: 2,
+        fact: "call.post.invoices-id-pay",
+        target: { kind: "call", file: "src/Pay.java", line: 3, value: "/invoices/{id}/pay" },
+        action: "unlink",
+        by: "dee",
+        at: "2026-11-08T09:30:00.000Z",
+      }) + "\n",
+    );
     await threeCorrections();
-    const a = assistant({ 31: CAPTURED, 33: CAPTURED, 35: "/charges" });
-    const r = await learnFromCorrections(root, deps(a.runner));
+    await learnFromCorrections(root, deps(assistant(ALL).runner));
+    const bff = await effectiveRules(root, "forge-shop-bff");
+    expect(bff.rules.map((x) => x.key)).not.toContain(KEY);
+    expect(bff.drafts.map((x) => x.key)).toContain(KEY);
+  });
+
+  it("stays a draft when the join wouldn't draw the correction itself: a shorter path", async () => {
+    await threeCorrections();
+    const r = await learnFromCorrections(root, deps(assistant({ ...ALL, 35: SHORTER }).runner));
     expect(r.active).toEqual([]);
-    expect(r.draft).toHaveLength(1);
-    expect(r.draft[0]!.why).toContain(ID(35));
+    expect(r.draft[0]!.reasons).toEqual([{ kind: "not-reproduced", about: ID(35) }]);
     const f = await rulesFile();
-    expect(f.rules[0]).toMatchObject({ status: "draft", learned: { by: "pat" } });
-    expect(f.rules[0]!.learned!.proof).toBeUndefined();
+    expect(f.rules[0]).toMatchObject({
+      status: "draft",
+      learned: { corrections: [ID(31), ID(33), ID(35)] },
+    });
     expect(f.rules[0]!.learned!.why).toContain(ID(35));
   });
 
-  it("a rule that would change a call a person declined stays a draft", async () => {
+  it("stays a draft when two repos serve the path (the join asks, it draws nothing)", async () => {
+    await appendFile(
+      join(root, "facts/forge-shop-bff.jsonl"),
+      JSON.stringify({
+        kind: "entry",
+        id: "entry.post.capture-too",
+        repo: "forge-shop-bff",
+        commit: "aaa1111",
+        entryType: "rest",
+        method: "POST",
+        path: ROUTE,
+        handler: "CaptureToo",
+        cite: { file: "src/main/java/forge/shop/Capture.java", line: 4, value: ROUTE },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      }) + "\n",
+    );
     await threeCorrections();
-    await writeFile(
+    const r = await learnFromCorrections(root, deps(assistant(ALL).runner));
+    expect(r.active).toEqual([]);
+    expect(r.draft[0]!.reasons.map((x) => x.kind)).toContain("not-reproduced");
+  });
+
+  it("stays a draft when it would change a call a person declined", async () => {
+    await threeCorrections();
+    await appendFile(
       join(root, LINES),
-      (await readFile(join(root, LINES), "utf8")) +
-        JSON.stringify({
-          schemaVersion: 2,
-          fact: "call.post.charges",
-          target: { kind: "call", file: FILE, line: 42, value: "/charges" },
-          action: "unlink",
+      JSON.stringify({
+        schemaVersion: 2,
+        fact: IDS[42],
+        target: { kind: "call", file: FILE, line: 42, value: FIELD[42] },
+        action: "unlink",
+        by: "dee",
+        at: "2026-11-08T09:30:00.000Z",
+      }) + "\n",
+    );
+    const r = await learnFromCorrections(root, deps(assistant({ ...ALL, 42: ROUTE }).runner));
+    expect(r.draft[0]!.reasons).toContainEqual({
+      kind: "touched",
+      about: `forge-billing ${FILE}:42`,
+    });
+  });
+
+  it("stays a draft when it would draw again an arrow deleted on the canvas, and fails closed on an end it can't tie to a repo", async () => {
+    await threeCorrections();
+    const del = (from: string, to: string, n: number) =>
+      deleteLink(
+        root,
+        // Each its own second: a delete's group is named by its time (Deleted links).
+        {
+          interfaces: [`if-000000000000000${n}`],
+          from,
+          to,
           by: "dee",
-          at: "2026-11-08T09:30:00.000Z",
-        }) +
-        "\n",
-    );
-    const a = assistant({ 31: CAPTURED, 33: CAPTURED, 35: CAPTURED, 42: "/charges/{id}/x" });
-    const r = await learnFromCorrections(root, deps(a.runner));
-    expect(r.active).toEqual([]);
-    expect(r.draft[0]!.why).toMatch(new RegExp(`${FILE}:42.*dee`));
-  });
-
-  it("a rule that would draw again an arrow a person deleted stays a draft", async () => {
-    await threeCorrections();
-    // The re-read also moves a call no one corrected onto the box whose arrow was deleted.
-    const a = assistant({ 31: CAPTURED, 33: CAPTURED, 35: CAPTURED, 42: CAPTURED });
-    const r = await learnFromCorrections(
+          now: new Date(AT.getTime() + n * 1000),
+        },
+        quiet,
+      );
+    await del("billing-api", "partner-gateway", 1);
+    const r = await learnFromCorrections(root, deps(assistant({ ...ALL, 42: ROUTE }).runner));
+    expect(r.draft[0]!.reasons).toContainEqual({
+      kind: "deleted",
+      about: "billing-api → partner-gateway",
+    });
+    // A delete whose end is a system, not a repo's component: no rule is proven while it stands.
+    await del("billing", "platform", 2);
+    const again = await learnFromCorrections(
       root,
-      deps(a.runner, {
-        deleted: async () => [
-          { from: "forge-billing", to: GW, by: "dee", what: "billing-api → partner-gateway" },
-        ],
-      }),
+      deps(assistant(ALL, { key: "path-from-constant-two" }).runner),
     );
-    expect(r.active).toEqual([]);
-    expect(r.draft[0]!.why).toContain("billing-api → partner-gateway");
+    expect(again.active).toEqual([]);
+    expect(again.draft[0]!.reasons).toEqual([
+      { kind: "unresolved-delete", about: "billing → platform" },
+    ]);
   });
 
-  it("a rule that names none of the corrected files stays a draft", async () => {
+  it("a failed draft uses no correction up: the next run asks again; a person can still activate it", async () => {
     await threeCorrections();
-    const a = assistant({ 31: CAPTURED }, { files: ["src/main/resources/**/*.yml"] });
-    const r = await learnFromCorrections(root, deps(a.runner));
-    expect(r.active).toEqual([]);
-    expect(r.draft[0]!.why).toMatch(/names none of the corrected files/);
-    expect(a.steps.map((s) => s.change)).toEqual(["rules-draft"]);
+    await learnFromCorrections(root, deps(assistant({ ...ALL, 35: SHORTER }).runner));
+    const b = assistant(ALL, { key: "path-from-constant-two" });
+    const r = await learnFromCorrections(root, deps(b.runner));
+    expect(b.steps.length).toBeGreaterThan(0);
+    expect(r.active.map((x) => x.key)).toEqual(["path-from-constant-two"]);
+    // ADR 0176's way: a person sets the learned draft active; their word replaces `learned`.
+    const said: string[] = [];
+    const io = { out: (l: string) => said.push(l), err: (l: string) => said.push(l) };
+    const code = await rulesSetCommand(
+      root,
+      "activate",
+      KEY,
+      { type: "spring-boot" },
+      { by: "dee" },
+      io,
+    );
+    expect(code, said.join("\n")).toBe(0);
+    const k = (await rulesFile()).rules.find((x) => x.key === KEY)!;
+    expect(k.status).toBe("active");
+    expect(k.learned).toBeUndefined();
+    expect(k.by).toContain("set active by dee");
+    expect((await effectiveRules(root, "forge-shop-bff")).rules.map((x) => x.key)).toContain(KEY);
   });
 
-  it("run again with no new correction: nothing is asked and nothing is written", async () => {
+  it("run again after a proof with nothing new: nothing is asked and nothing written", async () => {
     await threeCorrections();
-    const a = assistant({ 31: CAPTURED, 33: CAPTURED, 35: CAPTURED });
-    await learnFromCorrections(root, deps(a.runner));
+    await learnFromCorrections(root, deps(assistant(ALL).runner));
     const before = await readFile(join(root, RULES), "utf8");
     const b = assistant({});
     const r = await learnFromCorrections(root, deps(b.runner));
@@ -225,35 +304,45 @@ describe("Learn from my corrections (ADR 0208)", () => {
     expect(await readFile(join(root, RULES), "utf8")).toBe(before);
   });
 
-  it("learns nothing from the AI's pairings, a spread's lines, or with AI off", async () => {
+  it("a session that stops in the re-read leaves no .try file and takes its drafts back", async () => {
+    await threeCorrections();
+    await expect(
+      learnFromCorrections(root, deps(assistant(ALL, { fail: true }).runner)),
+    ).rejects.toThrow(/stopped/);
+    expect(existsSync(join(root, `facts/.try/forge-billing.${KEY}.jsonl`))).toBe(false);
+    expect(existsSync(join(root, RULES))).toBe(false);
+  });
+
+  it("a rule naming none of the corrected files stays a draft and isn't re-read", async () => {
+    await threeCorrections();
+    const a = assistant(ALL, { files: ["src/main/resources/**/*.yml"] });
+    const r = await learnFromCorrections(root, deps(a.runner));
+    expect(r.draft[0]!.reasons).toEqual([{ kind: "no-files" }]);
+    expect((await rulesFile()).rules[0]!.learned!.corrections).toEqual([]);
+    expect(a.steps.map((s) => s.change)).toEqual(["rules-draft"]);
+  });
+
+  it("learns nothing from the AI's pairings or a spread's lines, and refuses with AI off", async () => {
     await writeFile(
       join(root, LINES),
       [
         pairLine(
-          "call.post.capture-charge",
+          IDS[31]!,
           31,
-          "captureChargePath",
-          {
-            repo: GW,
-            entry: CAPTURE,
-            path: "/x",
-          },
+          FIELD[31]!,
+          { repo: GW, entry: CAPTURE, path: ROUTE },
           { run: "r0" },
         ),
         JSON.stringify({
-          ...JSON.parse(capture("call.post.charges", 42, "/charges")),
-          rule: { from: "link:forge-billing:call.post.capture-charge", match: "/charges/**" },
+          ...JSON.parse(capture(42)),
+          rule: { from: `link:forge-billing:${IDS[31]}`, match: "/charges/**" },
         }),
       ].join("\n") + "\n",
     );
     const a = assistant({});
     expect((await learnFromCorrections(root, deps(a.runner))).corrections).toBe(0);
     expect(a.steps).toEqual([]);
-    await threeCorrections();
-    await writeFile(
-      join(root, "org-pack/runtime.yaml"),
-      (await readFile(join(root, "org-pack/runtime.yaml"), "utf8")) + "ai: off\n",
-    );
-    await expect(learnFromCorrections(root, deps(a.runner))).rejects.toThrow(/AI off/);
+    await appendFile(join(root, "org-pack/runtime.yaml"), "ai: off\n");
+    await expect(learnFromCorrections(root, deps(a.runner))).rejects.toThrow(/AI on/);
   });
 });

@@ -26,6 +26,13 @@ describe("Learn from my corrections (ADR 0208)", () => {
     expect(h).toMatch(/<button type="button" class="btn"[^>]*>Learn from my corrections</);
   });
 
+  it("holds the button, saying why, where AI is off or copilot-acp isn't allowed", () => {
+    const h = renderToStaticMarkup(<LearnPanel off />);
+    expect(h).toContain('disabled=""');
+    expect(h).toContain('aria-describedby="decisions-learn-off"');
+    expect(h).toContain(esc(L.off));
+  });
+
   it("says it is running (the button held), or why it failed", () => {
     const running = renderToStaticMarkup(<LearnPanel initial={{ state: "running" }} />);
     expect(running).toContain(esc(L.running));
@@ -61,10 +68,14 @@ describe("Learn from my corrections (ADR 0208)", () => {
             {
               key: "soap-action",
               file: "org-pack/reading-rules/types/spring-boot.yaml",
-              why: "it didn't reproduce forge-billing src/A.java:9",
+              reasons: [
+                { kind: "not-reproduced", about: "forge-billing src/A.java:9" },
+                { kind: "no-files" },
+              ],
+              why: "the command line's words",
             },
           ],
-          untaught: [{ correction: "forge-billing src/B.java:3", why: "its repo has no type" }],
+          untaught: [{ correction: "forge-billing src/B.java:3", kind: "no-type" }],
         }}
       />,
     );
@@ -75,7 +86,11 @@ describe("Learn from my corrections (ADR 0208)", () => {
     expect(h).toContain(
       esc(L.draft("soap-action", "org-pack/reading-rules/types/spring-boot.yaml")),
     );
-    expect(h).toContain(esc("it didn't reproduce forge-billing src/A.java:9"));
-    expect(h).toContain(esc(L.untaught("forge-billing src/B.java:3", "its repo has no type")));
+    // The reasons in the copy file's words, never the command line's.
+    expect(h).toContain(
+      esc(`${L.why["not-reproduced"]!("forge-billing src/A.java:9")}; ${L.why["no-files"]!("")}`),
+    );
+    expect(h).not.toContain("the command line");
+    expect(h).toContain(esc(L.untaught["no-type"]!("forge-billing src/B.java:3")));
   });
 });

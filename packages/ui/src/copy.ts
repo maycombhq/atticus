@@ -7833,16 +7833,31 @@ export const COPY = {
     learn: {
       title: "Learn from my corrections",
       intro:
-        "Your assistant reads every pairing you made since the last run, with the lines it cites, and drafts reading rules so a read gets them right by itself. Each rule is tested by re-reading only the files it names: one whose re-read reproduces your corrections and moves no arrow a person set is written active, with its proof; any other stays a draft and says why. The rules file is reviewed in a pull request like code.",
+        "Your assistant reads every pairing you made that no proven rule covers yet, with the lines it cites, and drafts reading rules so a read gets them right by itself. Each rule is tested by re-reading every file it names, checking the re-read on its lines and joining the estate with it: a rule the join draws your corrections from by itself, moving no arrow a person set or deleted, is written active for the repos it was proven on; any other stays a draft and says why. The rules file is reviewed in a pull request like code.",
       run: "Learn from my corrections",
-      running: "Learning: the assistant drafts rules, then each is re-read…",
+      off: "Learn runs your assistant unattended: runtime.yaml must have AI on and allow copilot-acp with Copilot (Set up › AI).",
+      running: "Learning: the assistant drafts rules, then each is re-read and joined…",
       failed: (why: string) => `Learn didn't finish: ${why}`,
       none: "No correction since the last run: nothing was asked and nothing written.",
       since: (n: number) => `${n} correction${n === 1 ? "" : "s"} since the last run.`,
       active: (key: string, file: string, n: number) =>
-        `${key} is active in ${file}: a re-read reproduced ${n} correction${n === 1 ? "" : "s"}.`,
+        `${key} is active in ${file}: the join draws ${n} correction${n === 1 ? "" : "s"} from the re-read by itself.`,
       draft: (key: string, file: string) => `${key} stays a draft in ${file}:`,
-      untaught: (c: string, why: string) => `Not learned from ${c}: ${why}.`,
+      why: {
+        "not-reproduced": (x: string) => `the join doesn't draw ${x} from the re-read by itself`,
+        touched: (x: string) => `it changes the call at ${x}, which a person set`,
+        deleted: (x: string) => `it could draw again the arrow ${x}, which a person deleted`,
+        "unresolved-delete": (x: string) =>
+          `the deleted arrow ${x} names an end that isn't a repo, so Learn can't show it stays deleted`,
+        "no-files": () => "it names none of the corrected files",
+        "too-many-files": (x: string) => `it names more files in ${x} than one re-read takes`,
+        "no-checkout": (x: string) => `there is no checkout of ${x} to re-read`,
+        rejected: (x: string) => `the verifier rejected the re-read of ${x}`,
+      } as Record<string, (about: string) => string>,
+      untaught: {
+        "no-type": (c: string) => `Not learned from ${c}: its repo has no type in the manifest.`,
+        "not-named": (c: string) => `Not learned from ${c}: no drafted rule names its file.`,
+      } as Record<string, (c: string) => string>,
     },
     chip: "Detected by AI",
     /** Spoken after the chip: what it means, so the chip is never colour alone. */

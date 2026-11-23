@@ -100,15 +100,18 @@ export function LearnResultView({ r }: { r: Api.LearnCorrectionsResultT }) {
       <p style={{ margin: 0 }}>{L.since(r.corrections)}</p>
       <ul style={{ margin: 0 }}>
         {r.active.map((a) => (
-          <li key={a.key}>{L.active(a.key, a.file, a.reproduced.length)}</li>
+          <li key={`${a.file}#${a.key}`}>{L.active(a.key, a.file, a.reproduced.length)}</li>
         ))}
         {r.draft.map((x) => (
-          <li key={x.key}>
-            {L.draft(x.key, x.file)} <span className="muted">{x.why}</span>
+          <li key={`${x.file}#${x.key}`}>
+            {L.draft(x.key, x.file)}{" "}
+            <span className="muted">
+              {x.reasons.map((w) => L.why[w.kind]?.(w.about ?? "") ?? w.kind).join("; ")}
+            </span>
           </li>
         ))}
         {r.untaught.map((u) => (
-          <li key={u.correction}>{L.untaught(u.correction, u.why)}</li>
+          <li key={u.correction}>{L.untaught[u.kind]?.(u.correction)}</li>
         ))}
       </ul>
     </div>
@@ -118,6 +121,8 @@ export function LearnResultView({ r }: { r: Api.LearnCorrectionsResultT }) {
 /** ADR 0208: one button over every correction since the last run (POST /api/reading-rules/learn). */
 export function LearnPanel(p: {
   initial?: Learning;
+  /** Learn can't run here (AI off, or copilot-acp not allowed): the button is held, saying why. */
+  off?: boolean;
   run?: () => Promise<Api.LearnCorrectionsResultT>;
   onDone?: () => void;
 }) {
@@ -147,13 +152,19 @@ export function LearnPanel(p: {
         <button
           type="button"
           className="btn"
-          disabled={s.state === "running"}
+          disabled={s.state === "running" || p.off}
           aria-busy={s.state === "running"}
+          {...(p.off ? { "aria-describedby": "decisions-learn-off" } : {})}
           onClick={() => void go()}
         >
           {L.run}
         </button>
       </div>
+      {p.off && (
+        <p id="decisions-learn-off" className="muted" style={{ margin: 0 }}>
+          {L.off}
+        </p>
+      )}
       {s.state === "running" && (
         <div className="state" role="status">
           {L.running}
@@ -318,7 +329,10 @@ export function DecisionsPage(p: {
                     </>
                   )}
                 </section>
-                <LearnPanel {...(p.of.reload ? { onDone: p.of.reload } : {})} />
+                <LearnPanel
+                  off={!v.decide.decideIn?.includes("copilot-acp")}
+                  {...(p.of.reload ? { onDone: p.of.reload } : {})}
+                />
                 <section className="stack" aria-labelledby="decisions-batches" style={{ gap: 8 }}>
                   <h3 id="decisions-batches" className="hud" style={{ margin: 0 }}>
                     {D.batchesTitle}

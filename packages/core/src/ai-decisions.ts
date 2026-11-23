@@ -296,32 +296,6 @@ export const DecisionBatch = z.strictObject({
 });
 export type DecisionBatchT = z.infer<typeof DecisionBatch>;
 
-/**
- * ADR 0208 (WP-04): what each correction on the canvas does to like cases. A pairing (Connect
- * to…, an add or a redirect from a repo's box) spreads as a corrected AI pairing does: the rule
- * `deriveMatch` gives re-checks the repo's other loose and AI-paired calls, in one batch with one
- * Undo, never a call a person paired, declined or answered. The rest apply to their arrow only,
- * for the reason given.
- */
-export const ONLY_THIS_ARROW = {
-  delete:
-    "applies to this arrow only: a delete takes away the calls behind it, and Atticus never deletes an arrow a person didn't pick",
-  declare:
-    "applies to this arrow only: a declaration is written on the system's profile, which every read of that system uses already",
-  link: "applies to this arrow only: a declared arrow names its two boxes, so nothing else is like it",
-  system:
-    "applies to this arrow only: an outside system's APIs are its profile's, which every caller of it reads already",
-} as const;
-
-/** Why a canvas change's add spreads to nothing (its delete half never does), or undefined when it spreads. */
-export function onlyThisArrow(
-  e: { kind: "delete" } | { add: { kind: "topic" | "call" | "link" } } | { pair: unknown },
-): string | undefined {
-  if ("pair" in e) return undefined;
-  if ("add" in e) return e.add.kind === "link" ? ONLY_THIS_ARROW.link : ONLY_THIS_ARROW.declare;
-  return ONLY_THIS_ARROW.delete;
-}
-
 /** ADR 0181: corrections of the same shape that make a reading rule worth proposing (ADR 0176). */
 export const RULE_AFTER_CORRECTIONS = 3;
 

@@ -46975,6 +46975,34 @@
                 "file": {
                   "type": "string"
                 },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "not-reproduced",
+                          "touched",
+                          "deleted",
+                          "unresolved-delete",
+                          "no-files",
+                          "too-many-files",
+                          "no-checkout",
+                          "rejected"
+                        ]
+                      },
+                      "about": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "why": {
                   "type": "string"
                 }
@@ -46982,6 +47010,7 @@
               "required": [
                 "key",
                 "file",
+                "reasons",
                 "why"
               ],
               "additionalProperties": false
@@ -46995,13 +47024,17 @@
                 "correction": {
                   "type": "string"
                 },
-                "why": {
-                  "type": "string"
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "no-type",
+                    "not-named"
+                  ]
                 }
               },
               "required": [
                 "correction",
-                "why"
+                "kind"
               ],
               "additionalProperties": false
             }

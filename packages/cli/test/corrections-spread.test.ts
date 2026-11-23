@@ -1,16 +1,18 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify } from "yaml";
 import { beforeEach, describe, expect, it } from "vitest";
+import { readBatch, readQuestion, writeQuestion, type Api } from "@maycombhq/core";
 import {
+  correctDecision,
+  decideAnswers,
   ONLY_THIS_ARROW,
   onlyThisArrow,
-  readBatch,
-  readQuestion,
-  writeQuestion,
-  type Api,
-} from "@maycombhq/core";
-import { correctDecision, decideAnswers, spreadPairing, undoBatch } from "../src/ai-decide.js";
+  spreadPairing,
+  undoBatch,
+} from "../src/ai-decide.js";
+import { deleteLink } from "../src/catalog-build-commands.js";
+import { candidatesOf } from "../src/ui-api-links.js";
 import {
   AT,
   BFF,
@@ -161,14 +163,96 @@ describe("every correction kind spreads to like cases, or says why not (ADR 0208
     await expectSpread(r, 2);
   });
 
-  it("a delete, a declaration and an arrow to an outside system apply to their arrow only, saying why", () => {
-    expect(onlyThisArrow({ kind: "delete" })).toBe(ONLY_THIS_ARROW.delete);
-    expect(onlyThisArrow({ add: { kind: "topic" } })).toBe(ONLY_THIS_ARROW.declare);
-    expect(onlyThisArrow({ add: { kind: "call" } })).toBe(ONLY_THIS_ARROW.declare);
-    expect(onlyThisArrow({ add: { kind: "link" } })).toBe(ONLY_THIS_ARROW.link);
-    expect(onlyThisArrow({ pair: {} })).toBeUndefined();
-    for (const why of Object.values(ONLY_THIS_ARROW))
-      expect(why).toMatch(/^applies to this arrow only: /);
+  it("a delete, a declaration, an arrow to an outside system and a redirect's delete half say why they don't spread", () => {
+    const del = { interfaces: ["if-1"], from: "billing-api", to: "partner-gateway" };
+    const pair = { from: "forge-billing", to: { repo: GW }, pairs: [{ call: "c", api: CAPTURE }] };
+    const sys = { ...pair, to: { system: "northwind-pay" } };
+    const topic = { kind: "topic", system: "billing", topic: "t", side: "publishes" } as const;
+    const link = {
+      kind: "link",
+      from: { repo: "forge-billing" },
+      to: { repo: GW },
+      why: "it calls it",
+    } as const;
+    expect(onlyThisArrow({ kind: "delete", delete: del })).toBe(ONLY_THIS_ARROW.delete);
+    expect(onlyThisArrow({ kind: "add", add: topic })).toBe(ONLY_THIS_ARROW.declare);
+    expect(onlyThisArrow({ kind: "add", add: link })).toBe(ONLY_THIS_ARROW.link);
+    expect(onlyThisArrow({ kind: "add", pair: sys })).toBe(ONLY_THIS_ARROW.system);
+    expect(onlyThisArrow({ kind: "add", pair })).toBeUndefined();
+    expect(onlyThisArrow({ kind: "redirect", delete: del, pair })).toBe(ONLY_THIS_ARROW.redirect);
+    expect(ONLY_THIS_ARROW.redirect).toMatch(/delete half/);
+  });
+
+  it("never re-points a call the join ties somewhere already (joined, here, undrawn)", async () => {
+    // The shop serves the refunds call's path: the join ties the call there by its path.
+    await appendFile(
+      join(root, "facts/forge-shop-bff.jsonl"),
+      JSON.stringify({
+        kind: "entry",
+        id: "entry.post.charges-id-refunds",
+        repo: BFF,
+        commit: "aaa1111",
+        entryType: "rest",
+        method: "POST",
+        path: "/charges/{id}/refunds",
+        handler: "Refunds",
+        cite: {
+          file: "src/main/java/forge/shop/Refunds.java",
+          line: 4,
+          value: "/charges/{id}/refunds",
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      }) + "\n",
+    );
+    await lines(person("call.post.charges-capture", 40, "/charges/{id}/capture"));
+    const status = (await candidatesOf(root, "forge-billing", { repo: GW })).view.calls.find(
+      (c) => c.fact === "call.post.charges-refunds",
+    )?.status;
+    expect(["joined", "here", "undrawn"]).toContain(status);
+    const r = await spreadPairing(
+      root,
+      { ...PAIR, call: "call.post.charges-capture" },
+      { by: "pat", now: AT },
+    );
+    expect(r.spread.map((s) => s.item)).not.toContain(
+      "link:forge-billing:call.post.charges-refunds",
+    );
+    expect(r.spread.length).toBeGreaterThan(0);
+  });
+
+  it("never pairs a call with a box whose arrow from the repo a person deleted", async () => {
+    await lines(person("call.post.charges-capture", 40, "/charges/{id}/capture"));
+    const quiet = { out: () => undefined, err: () => undefined };
+    await deleteLink(
+      root,
+      {
+        interfaces: ["if-0000000000000001"],
+        from: "billing-api",
+        to: "partner-gateway",
+        by: "dee",
+      },
+      quiet,
+    );
+    const r = await spreadPairing(
+      root,
+      { ...PAIR, call: "call.post.charges-capture" },
+      { by: "pat", now: AT },
+    );
+    expect(r).toMatchObject({ written: false, spread: [] });
+    expect(r.noRule).toMatch(/dee deleted the arrow billing-api → partner-gateway/);
+  });
+
+  it("takes its lines back when its batch can't be written", async () => {
+    await lines(person("call.post.charges-capture", 40, "/charges/{id}/capture"));
+    const before = await readFile(join(root, LINES), "utf8");
+    // A file where the batches' folder goes: the batch can't be written.
+    await writeFile(join(root, "decisions"), "not a folder");
+    await expect(
+      spreadPairing(root, { ...PAIR, call: "call.post.charges-capture" }, { by: "pat", now: AT }),
+    ).rejects.toThrow();
+    expect(await readFile(join(root, LINES), "utf8")).toBe(before);
   });
 
   it("a canvas pairing with nothing like it says it applies to this call only", async () => {

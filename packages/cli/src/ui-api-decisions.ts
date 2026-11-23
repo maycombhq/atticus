@@ -116,14 +116,10 @@ export function uiDecisionRoutes(
 export function uiLearnRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
   return r.add("POST", "/api/reading-rules/learn", async () => {
     const op = await loadOrgPack(orgPackDirOf(ctx.root));
-    const { acpStepRunner, copilotAcpAllowed } = await import("./copilot-acp-steps.js");
-    if (op.runtime.ai === "off")
-      throw conflict("runtime.yaml turns AI off here (ai: off): Learn needs the assistant.");
-    if (!copilotAcpAllowed(op))
-      throw conflict(
-        "Learn runs the assistant unattended: runtime.yaml must allow copilot-acp (modes.allowed).",
-      );
-    const { learnFromCorrections } = await import("./learn-corrections.js");
+    const { learnFromCorrections, learnRefusal } = await import("./learn-corrections.js");
+    const refused = learnRefusal(op);
+    if (refused) throw conflict(refused);
+    const { acpStepRunner } = await import("./copilot-acp-steps.js");
     return asJob("Learn from my corrections", async () => {
       let extra: Api.LearnCorrectionsResultT | undefined;
       const res = await captured(async (io) => {

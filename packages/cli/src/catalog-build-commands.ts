@@ -1785,32 +1785,22 @@ export async function applyMapEdits(
     }
     // ADR 0208 (WP-04): a pairing spreads to the repo's like calls (its own batch, undone on
     // Decisions; this Apply's Undo takes its lines back too); any other change says why not.
-    const { factsRelOf, onlyThisArrow, ONLY_THIS_ARROW, readBatch } =
-      await import("@maycombhq/core");
-    const { spreadPairing } = await import("./ai-decide.js");
+    const { onlyThisArrow, spreadPairing } = await import("./ai-decide.js");
     for (const [i, e] of o.edits.entries()) {
       const said = `Change ${i + 1} of ${n}`;
-      const why =
-        onlyThisArrow(e) ?? ("pair" in e && !e.pair.to.repo ? ONLY_THIS_ARROW.system : "");
-      if (why || !("pair" in e)) {
-        io.out(`${said}: ${why}.`);
-        continue;
-      }
+      const why = onlyThisArrow(e);
+      if (why) io.out(`${said}: ${why}.`);
+      if (!("pair" in e) || !e.pair.to.repo) continue;
+      const rel = `${posix(relative(root, factsDirOf(root)))}/${e.pair.from}.corrections.jsonl`;
       for (const x of e.pair.pairs)
         try {
-          const p = { repo: e.pair.from, call: x.call, to: e.pair.to.repo!, api: x.api };
+          const p = { repo: e.pair.from, call: x.call, to: e.pair.to.repo, api: x.api };
           const r = await spreadPairing(root, p, { by, ...(o.now ? { now: o.now } : {}) });
           if (!r.batch) {
-            io.out(
-              `${said}: ${x.call} applies to this call only: ${r.noRule ?? "nothing like it"}.`,
-            );
+            io.out(`${said}: ${x.call} applies to this call only: ${r.noRule}.`);
             continue;
           }
-          const lines = ((await readBatch(root, r.batch))?.applied ?? []).flatMap((a) =>
-            a.kind === "link" ? [a.line] : [],
-          );
-          const rel = `${factsRelOf(root)}/${e.pair.from}.corrections.jsonl`;
-          wrote.push({ edit: i, file: rel, lines });
+          wrote.push({ edit: i, file: rel, lines: r.added });
           inputs.add(rel);
           io.out(
             `${said}: spread to ${r.spread.length} like call${r.spread.length === 1 ? "" : "s"} by ${r.rule?.match}, as your rule (${r.batch}, one Undo on Decisions).`,

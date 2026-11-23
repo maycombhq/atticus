@@ -58,7 +58,6 @@ import {
   type AuditItemT,
   type AuditTally,
   type BatchItemT,
-  type CandidateApi,
   type DecideNow,
   type DecideSettings,
   type DecisionBatchT,
@@ -1123,83 +1122,24 @@ async function correctLink(
   const similar = req.similar !== false;
   let rule: Api.CorrectDecisionResultT["rule"];
   let noRule: string | undefined;
-  const standingAll = standingAi(corrections);
   if (similar) {
     if (req.match)
       rule = { kind: ruleKindOf(req.match, subjectOfCall(f)), match: req.match, derived: false };
-    else {
-      const subject = subjectOfCall(f);
-      const siblings = standingAll
-        .filter((c) => c !== standing && c.link?.repo === aiRepo)
-        .map((c) => facts.find((x): x is FactOf<"call"> => x.id === c.fact && x.kind === "call"))
-        .flatMap((x) => (x ? [subjectOfCall(x)] : []))
-        .filter((s): s is RuleSubject => !!s);
-      if (!subject)
-        noRule = "the call's path is a name, not a path a rule can name: give one with match";
-      else {
-        const d = deriveMatch(subject, siblings);
-        if (d.match === "/**")
-          noRule =
-            "the calls share no path narrower than every path: give a rule with match, or correct it alone";
-        else rule = { ...d, derived: true };
-      }
-    }
+    else ({ rule, noRule } = ruleOfPairing(f, aiSiblings(corrections, facts, aiRepo, standing)));
   }
   const at = (o.now ?? new Date()).toISOString();
   const batch = newBatchId(o.now ?? new Date());
-  const lineFor = (
-    c: FactOf<"call">,
-    api?: { id: string; method?: string; path: string },
-    own?: boolean,
-  ) =>
-    correctionLine(
-      FactCorrection.parse({
-        schemaVersion: 2,
-        fact: c.id,
-        target: { kind: "call", file: c.cite.file, line: c.cite.line, value: c.cite.value },
-        action: api ? "link" : "unlink",
-        ...(api
-          ? {
-              link: {
-                repo: target,
-                entry: api.id,
-                ...(api.method ? { method: api.method.toUpperCase() } : {}),
-                path: api.path,
-              },
-            }
-          : {}),
-        by: o.by,
-        at,
-        batch,
-        ...(own && rule ? { match: rule.match } : {}),
-        ...(!own && rule ? { rule: { from: req.item, match: rule.match } } : {}),
-      }),
-    );
-  const ownLine = lineFor(
-    f,
-    entry
-      ? { id: entry.id, ...(entry.method ? { method: entry.method } : {}), path: entry.path }
-      : undefined,
-    true,
-  );
-  const appliedItems: BatchItemT[] = [{ kind: "link", repo, fact: f.id, line: ownLine }];
+  const w = { to: target, by: o.by, at, batch };
+  const ownLine = pairLineOf(f, { ...w, ...(entry ? { api: entry } : {}), match: rule?.match });
   const plan = rule
     ? await planPairSpread(root, {
-        repo,
-        f,
-        facts,
-        corrections,
+        ...{ repo, f, facts, corrections, target, box: target ?? aiRepo, revert: true },
+        lineFor: (c, api) =>
+          pairLineOf(c, { ...w, ...(api ? { api } : {}), from: req.item, match: rule.match }),
         match: rule.match,
-        target,
-        box: target ?? aiRepo,
-        lineFor,
-        revert: true,
       })
-    : { spread: [], add: [], remove: [], applied: [], reverted: [] };
-  const { spread, remove } = plan;
-  const add = [ownLine, ...plan.add];
-  appliedItems.push(...plan.applied);
-  const revertedItems = plan.reverted;
+    : EMPTY_PLAN;
+  if (plan.blocked) noRule = plan.blocked;
   const op = await loadOrgPack(orgPackDirOf(root));
   const { estateRepos } = await import("@maycombhq/scanner");
   const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
@@ -1214,70 +1154,212 @@ async function correctLink(
       ? `${target} ${[entry.method?.toUpperCase(), entry.path].filter(Boolean).join(" ")}`
       : "none",
     ...(rule ? { rule } : {}),
-    ...(similar && !rule && noRule ? { noRule } : {}),
-    spread,
-    counts: counted(spread),
+    ...(similar && noRule ? { noRule } : {}),
+    spread: plan.spread,
+    counts: counted(plan.spread),
     ...(n >= RULE_AFTER_CORRECTIONS && repoType && entry
       ? { makeRule: { corrections: n, shape, repo, line: ownLine } }
       : {}),
     files: [rel, ...(req.preview ? [] : [batchRelOf(root, batch)])],
     verify: [`atticus verify ${repo} --write`],
-    commit: `git add ${rel} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${repo}: an AI pairing corrected${rule ? `, and spread by ${rule.match}` : ""}`)}"`,
+    commit: commitOf(
+      root,
+      repo,
+      batch,
+      `an AI pairing corrected${rule ? `, and spread by ${rule.match}` : ""}`,
+    ),
   };
   if (req.preview) return result;
-  await rewriteCorrections(root, repo, { remove, add });
-  await writeBatch(root, {
-    schema: 1,
-    id: batch,
-    kind: "rule",
-    at,
-    by: o.by,
-    correction: {
-      item: req.item,
-      answer,
-      ...(rule ? { rule: { from: req.item, match: rule.match, kind: rule.kind as RuleKind } } : {}),
-      run: standing.ai.run,
-      shape,
+  await writeSpread(
+    root,
+    repo,
+    { add: [ownLine, ...plan.add], remove: plan.remove },
+    {
+      schema: 1,
+      id: batch,
+      kind: "rule",
+      at,
+      by: o.by,
+      correction: {
+        item: req.item,
+        answer,
+        ...(rule
+          ? { rule: { from: req.item, match: rule.match, kind: rule.kind as RuleKind } }
+          : {}),
+        run: standing.ai.run,
+        shape,
+      },
+      applied: [{ kind: "link", repo, fact: f.id, line: ownLine }, ...plan.applied],
+      reverted: plan.reverted,
     },
-    applied: appliedItems,
-    reverted: revertedItems,
-  });
+  );
   return result;
 }
 
-/** The API of `target` the shapes rank first for a call (ADR 0178), or undefined (a tie, none). */
-export function bestApiOf(o: {
-  repo: string;
-  call: FactOf<"call">;
-  target: string;
-  apis: readonly CandidateApi[];
-  settings: Readonly<Record<string, string>>;
-}): CandidateApi | undefined {
-  if (!o.apis.length) return undefined;
-  const s = linkCandidates({
-    from: o.repo,
-    facts: [o.call],
-    join: { joins: [], asks: [], misses: [], outside: [], left: [] },
-    apis: o.apis,
-    pairs: {},
-    to: { repo: o.target },
-    settings: o.settings,
-  }).calls[0]?.suggestion?.api;
-  return s ? o.apis.find((a) => a.id === s) : undefined;
+/** A pairing line of a call, to `to`'s API (or none), the person's; `from`: a spread's line. */
+function pairLineOf(
+  c: FactOf<"call">,
+  o: {
+    to?: string | undefined;
+    api?: { id: string; method?: string | undefined; path: string };
+    by: string;
+    at: string;
+    batch: string;
+    match?: string | undefined;
+    from?: string;
+  },
+): string {
+  return correctionLine(
+    FactCorrection.parse({
+      schemaVersion: 2,
+      fact: c.id,
+      target: { kind: "call", file: c.cite.file, line: c.cite.line, value: c.cite.value },
+      action: o.api ? "link" : "unlink",
+      ...(o.api
+        ? {
+            link: {
+              repo: o.to,
+              entry: o.api.id,
+              ...(o.api.method ? { method: o.api.method.toUpperCase() } : {}),
+              path: o.api.path,
+            },
+          }
+        : {}),
+      by: o.by,
+      at: o.at,
+      batch: o.batch,
+      ...(o.match && !o.from ? { match: o.match } : {}),
+      ...(o.match && o.from ? { rule: { from: o.from, match: o.match } } : {}),
+    }),
+  );
+}
+
+/** What a derived rule may share: the calls of the AI's standing pairings to `box`, but `except`. */
+function aiSiblings(
+  corrections: readonly FactCorrection[],
+  facts: readonly Fact[],
+  box: string | undefined,
+  except?: FactCorrection,
+): RuleSubject[] {
+  return standingAi(corrections)
+    .filter((c) => !!box && c !== except && c.link?.repo === box)
+    .map((c) => facts.find((x): x is FactOf<"call"> => x.id === c.fact && x.kind === "call"))
+    .flatMap((x) => (x ? [subjectOfCall(x)] : []))
+    .filter((s): s is RuleSubject => !!s);
+}
+
+/** The rule a pairing's correction spreads (ADR 0181 part 2), or why none. */
+function ruleOfPairing(
+  f: FactOf<"call">,
+  siblings: readonly RuleSubject[],
+): { rule?: NonNullable<Api.CorrectDecisionResultT["rule"]>; noRule?: string } {
+  const subject = subjectOfCall(f);
+  if (!subject)
+    return { noRule: "the call's path is a name, not a path a rule can name: give one with match" };
+  const d = deriveMatch(subject, siblings);
+  if (d.match === "/**")
+    return {
+      noRule:
+        "the calls share no path narrower than every path: give a rule with match, or correct it alone",
+    };
+  return { rule: { ...d, derived: true } };
+}
+
+const commitOf = (root: string, repo: string, batch: string, words: string) =>
+  `git add ${correctionsRel(root, repo)} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${repo}: ${words}`)}"`;
+
+/** The lines written, then the batch; a batch that can't be written takes its lines back. */
+async function writeSpread(
+  root: string,
+  repo: string,
+  lines: { add: string[]; remove: string[] },
+  batch: DecisionBatchT,
+): Promise<void> {
+  await rewriteCorrections(root, repo, lines);
+  try {
+    await writeBatch(root, batch);
+  } catch (e) {
+    await rewriteCorrections(root, repo, { remove: lines.add, add: lines.remove });
+    throw e;
+  }
 }
 
 /**
+ * ADR 0208 (WP-04): what each canvas change does to like cases, in the Apply's lines. A pairing
+ * spreads (`spreadPairing`); the rest apply to their arrow only, for the reason given.
+ */
+export const ONLY_THIS_ARROW = {
+  delete:
+    "applies to this arrow only: a delete takes away the calls behind it, and Atticus never deletes an arrow a person didn't pick",
+  declare:
+    "applies to this arrow only: a declaration is written on the system's profile, which every read of that system uses already",
+  link: "applies to this arrow only: a declared arrow names its two boxes, so nothing else is like it",
+  system:
+    "applies to this arrow only: an outside system's APIs are its profile's, which every caller of it reads already",
+  redirect:
+    "its delete half applies to the old arrow only; its pairing spreads as any pairing does",
+} as const;
+
+/** Why a canvas change spreads to nothing (a redirect: said of its delete half), or undefined. */
+export function onlyThisArrow(e: Api.MapEditT): string | undefined {
+  if (e.kind === "redirect")
+    return "pair" in e ? ONLY_THIS_ARROW.redirect : ONLY_THIS_ARROW.declare;
+  if ("pair" in e) return e.pair.to.repo ? undefined : ONLY_THIS_ARROW.system;
+  if ("add" in e) return e.add.kind === "link" ? ONLY_THIS_ARROW.link : ONLY_THIS_ARROW.declare;
+  return ONLY_THIS_ARROW.delete;
+}
+
+/** An arrow a person deleted on the canvas, its two ends as repos where they name one. */
+export interface DeletedPair {
+  from?: string | undefined;
+  to?: string | undefined;
+  by: string;
+  what: string;
+}
+
+/**
+ * ADR 0208: the arrows deleted on the canvas, each end tied to its repo by the manifest's
+ * component or the catalog's Component; an end that names no repo (a system, a label) is left
+ * undefined, and `deletedBlocks` reads it as any repo (fail closed).
+ */
+export async function deletedPairs(root: string): Promise<DeletedPair[]> {
+  const { deletedLinks } = await import("./catalog-build-commands.js");
+  const links = (await deletedLinks(root)).links;
+  if (!links.length) return [];
+  const { estateRepos, readCatalog } = await import("@maycombhq/scanner");
+  const repoOf = new Map<string, string>();
+  for (const r of estateRepos(await loadOrgPack(orgPackDirOf(root)))) {
+    repoOf.set(r.id, r.id);
+    if (r.component) repoOf.set(r.component, r.id);
+  }
+  const cat = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
+    () => undefined,
+  );
+  for (const x of cat?.records ?? [])
+    if (x.kind === "Component" && (x as { repo?: string }).repo)
+      repoOf.set(x.id, (x as { repo: string }).repo);
+  return links.map((l) => ({
+    from: repoOf.get(l.from),
+    to: repoOf.get(l.to),
+    by: l.by,
+    what: `${l.from} → ${l.to}`,
+  }));
+}
+
+/** The delete that forbids pairing `repo`'s calls with `to`, an unresolved end counting as any. */
+export const deletedBlocks = (deleted: readonly DeletedPair[], repo: string, to: string) =>
+  deleted.find((d) => (d.from ?? repo) === repo && (d.to ?? to) === to);
+
+/**
  * ADR 0208 (WP-04): a person's pairing made on the canvas (Connect to…, an add or a redirect of
- * Edit the map) spreads as a corrected AI pairing does: the rule `deriveMatch` gives (the call's
- * own folder, or what it shares with the AI's pairings to the box it was joined to) pairs the
- * repo's other loose and AI-paired calls it covers with the target's API the shapes rank first,
- * as the person's rule, in one batch with one Undo. It only adds lines; a person's word stands.
+ * Edit the map) spreads as a corrected AI pairing does, by the rule `deriveMatch` gives, in one
+ * batch with one Undo. It only adds lines, and returns them (`added`) for the Apply's Undo.
  */
 export async function spreadPairing(
   root: string,
   p: { repo: string; call: string; to: string; api: string },
   o: { by: string; now?: Date; preview?: boolean; env?: NodeJS.ProcessEnv },
-): Promise<Api.CorrectDecisionResultT> {
+): Promise<Api.CorrectDecisionResultT & { added: string[] }> {
   if (inAcpSession(o.env))
     throw new DecideError("refused", "A spread is a person's: a Copilot session acts as no one.");
   const item = `link:${p.repo}:${p.call}`;
@@ -1287,93 +1369,93 @@ export async function spreadPairing(
   const st = f ? linksFor(f, corrections)[0] : undefined;
   const at = (o.now ?? new Date()).toISOString();
   const batch = newBatchId(o.now ?? new Date());
-  const none = (noRule: string): Api.CorrectDecisionResultT => ({
+  const result = (r: Partial<Api.CorrectDecisionResultT>, added: string[] = []) => ({
     written: false,
     item,
     answer: p.to,
-    noRule,
     spread: [],
     counts: counted([]),
     files: [],
-    verify: [],
+    verify: [`atticus verify ${p.repo} --write`],
     commit: "",
+    ...r,
+    added,
   });
   if (!f || !st || st.ai || st.link?.repo !== p.to || st.link.entry !== p.api)
-    return none("the person's pairing isn't the call's standing line: nothing to spread");
-  const subject = subjectOfCall(f);
-  if (!subject) return none("the call's path is a name, not a path a rule can name");
+    return result({
+      noRule: "the person's pairing isn't the call's standing line: nothing to spread",
+    });
   // Siblings: the AI's pairings to the box the AI had joined this call to, if it had.
   const wasAi = corrections.filter((c) => c.ai && c.fact === f.id).at(-1)?.link?.repo;
-  const siblings = standingAi(corrections)
-    .filter((c) => wasAi && c.link?.repo === wasAi)
-    .map((c) => facts.find((x): x is FactOf<"call"> => x.id === c.fact && x.kind === "call"))
-    .flatMap((x) => (x ? [subjectOfCall(x)] : []))
-    .filter((s): s is RuleSubject => !!s);
-  const d = deriveMatch(subject, siblings);
-  if (d.match === "/**") return none("the calls share no path narrower than every path");
-  const lineFor = (c: FactOf<"call">, api?: { id: string; method?: string; path: string }) =>
-    correctionLine(
-      FactCorrection.parse({
-        schemaVersion: 2,
-        fact: c.id,
-        target: { kind: "call", file: c.cite.file, line: c.cite.line, value: c.cite.value },
-        action: "link",
-        link: {
-          repo: p.to,
-          entry: api!.id,
-          ...(api!.method ? { method: api!.method.toUpperCase() } : {}),
-          path: api!.path,
-        },
-        by: o.by,
-        at,
-        batch,
-        rule: { from: item, match: d.match },
-      }),
-    );
+  const { rule, noRule } = ruleOfPairing(f, aiSiblings(corrections, facts, wasAi));
+  if (!rule) return result({ noRule: noRule! });
+  const w = { to: p.to, by: o.by, at, batch, from: item, match: rule.match };
   const plan = await planPairSpread(root, {
-    ...{ repo: p.repo, f, facts, corrections, match: d.match, target: p.to, box: p.to, lineFor },
+    ...{ repo: p.repo, f, facts, corrections, match: rule.match, target: p.to, box: p.to },
+    lineFor: (c, api) => pairLineOf(c, { ...w, ...(api ? { api } : {}) }),
     revert: false,
   });
   const op = await loadOrgPack(orgPackDirOf(root));
   const { estateRepos } = await import("@maycombhq/scanner");
-  const repoType = estateRepos(op).find((r) => r.id === p.repo)?.type;
-  const shape = `link:${repoType ?? p.repo}:${d.match}`;
-  const rel = correctionsRel(root, p.repo);
+  const shape = `link:${estateRepos(op).find((r) => r.id === p.repo)?.type ?? p.repo}:${rule.match}`;
   const write = !o.preview && plan.add.length > 0;
-  const result: Api.CorrectDecisionResultT = {
-    written: write,
-    ...(write ? { batch } : {}),
-    item,
-    answer: `${p.to} ${[st.link.method, st.link.path].filter(Boolean).join(" ")}`,
-    rule: { ...d, derived: true },
-    ...(plan.add.length ? {} : { noRule: "no other call of the repo is like it" }),
-    spread: plan.spread,
-    counts: counted(plan.spread),
-    files: write ? [rel, batchRelOf(root, batch)] : [],
-    verify: [`atticus verify ${p.repo} --write`],
-    commit: `git add ${rel} ${batchRelOf(root, batch).replace(/\/[^/]+$/, "/")}\ngit commit -m "${safeMessage(`${p.repo}: a pairing spread by ${d.match}`)}"`,
-  };
-  if (!write) return result;
-  await rewriteCorrections(root, p.repo, { add: plan.add });
-  await writeBatch(root, {
-    schema: 1,
-    id: batch,
-    kind: "rule",
-    at,
-    by: o.by,
-    correction: { item, answer: p.to, rule: { from: item, ...d }, shape },
-    applied: plan.applied,
-    reverted: [],
-  });
-  return result;
+  const out = result(
+    {
+      written: write,
+      ...(write ? { batch, files: [correctionsRel(root, p.repo), batchRelOf(root, batch)] } : {}),
+      answer: `${p.to} ${[st.link.method, st.link.path].filter(Boolean).join(" ")}`,
+      rule,
+      ...(plan.add.length
+        ? {}
+        : { noRule: plan.blocked ?? "no other call of the repo is like it" }),
+      spread: plan.spread,
+      counts: counted(plan.spread),
+      commit: commitOf(root, p.repo, batch, `a pairing spread by ${rule.match}`),
+    },
+    write ? plan.add : [],
+  );
+  if (!write) return out;
+  await writeSpread(
+    root,
+    p.repo,
+    { add: plan.add, remove: [] },
+    {
+      schema: 1,
+      id: batch,
+      kind: "rule",
+      at,
+      by: o.by,
+      correction: {
+        item,
+        answer: p.to,
+        rule: { from: item, kind: rule.kind, match: rule.match },
+        shape,
+      },
+      applied: plan.applied,
+      reverted: [],
+    },
+  );
+  return out;
 }
+
+const EMPTY_PLAN = {
+  spread: [],
+  add: [],
+  remove: [],
+  applied: [],
+  reverted: [],
+  blocked: undefined,
+};
+/** A call the join ties somewhere already: never re-pointed by a spread (ADR 0208). */
+const JOINED = new Set(["paired", "joined", "here", "undrawn"]);
 
 /**
  * The spread of a pairing rule (ADR 0181, part 2) over every other call of the repo it covers
- * that the AI paired or that is loose: a person's word (a pairing, a none, an edit of where it
- * goes, an answered targets question) stands. `revert`: an AI pairing the rule covers whose call
- * has no API of the target is taken away (a correction of the AI); else it is left (ADR 0208, a
- * canvas pairing only adds, so the Apply's Undo takes back exactly its lines).
+ * that the AI paired or that is loose (the join ties it nowhere): a person's word (a pairing, a
+ * none, an edit of where it goes, an answered targets question) stands, and so does a call the
+ * join ties somewhere. Nothing is paired with a box whose arrow from this repo a person deleted
+ * (`blocked`). `revert`: an AI pairing the rule covers whose call has no API of the target is
+ * taken away; else it is left (ADR 0208, a canvas pairing only adds).
  */
 async function planPairSpread(
   root: string,
@@ -1388,85 +1470,94 @@ async function planPairSpread(
     lineFor: (c: FactOf<"call">, api?: { id: string; method?: string; path: string }) => string;
     revert: boolean;
   },
-) {
+): Promise<{
+  spread: Api.SpreadItemViewT[];
+  add: string[];
+  remove: string[];
+  applied: BatchItemT[];
+  reverted: BatchItemT[];
+  blocked?: string | undefined;
+}> {
   const { repo, f, facts, corrections, target, lineFor } = o;
-  const rule = { match: o.match };
+  const del = target ? deletedBlocks(await deletedPairs(root), repo, target) : undefined;
+  if (del)
+    return {
+      ...EMPTY_PLAN,
+      blocked: `${del.by} deleted the arrow ${del.what}: a spread never pairs ${repo}'s calls with ${target}`,
+    };
   const spread: Api.SpreadItemViewT[] = [];
   const add: string[] = [];
   const remove: string[] = [];
-  const appliedItems: BatchItemT[] = [];
-  const revertedItems: BatchItemT[] = [];
-  {
-    const { candidatesOf, settingsOf } = await import("./ui-api-links.js");
-    const box = { repo: o.box };
-    const cands =
-      box.repo !== repo ? await candidatesOf(root, repo, box).catch(() => undefined) : undefined;
-    const loose = new Set(
-      (cands?.view.calls ?? []).filter((c) => c.status !== "paired").map((c) => c.fact),
-    );
-    const apis = (cands?.view.apis ?? []).filter((a) => a.kind !== "operation");
-    const settings = settingsOf(facts);
-    const bestOf = (c: FactOf<"call">) =>
-      target ? bestApiOf({ repo, call: c, target, apis, settings }) : undefined;
-    const words = (c: FactOf<"call">) =>
-      `${repo}'s call ${[c.method?.toUpperCase(), c.path].filter(Boolean).join(" ")} (${c.cite.file}:${c.cite.line})`;
-    // Round 48: a call whose targets question a person answered is theirs too.
-    const byPerson = await answeredByPerson(root, repo, facts);
-    for (const c of facts) {
-      if (c.kind !== "call" || c.id === f.id) continue;
-      if (!(await coversCall(rule.match, c, facts))) continue;
-      const st = linksFor(c, corrections)[0];
-      if (st && !st.ai) continue; // a person's word stands
-      if (personEditOfTo(c, corrections)) continue; // a person said where it goes
-      if (byPerson.has(c.id)) continue; // a person answered where it goes
-      const item = `link:${repo}:${c.id}`;
-      const was = st?.ai
-        ? `${st.link!.repo} ${[st.link!.method, st.link!.path].filter(Boolean).join(" ")}`
-        : undefined;
-      if (!st && !loose.has(c.id)) continue; // joined from the code: not the AI's, not open
-      if (!target) {
-        const l = lineFor(c);
-        add.push(l);
-        appliedItems.push({ kind: "link", repo, fact: c.id, line: l });
-        spread.push({
-          item,
-          repo,
-          what: words(c),
-          ...(was ? { was } : {}),
-          now: "none",
-          change: st ? "replaced" : "applied",
-        });
-        continue;
-      }
-      const same = st?.ai && st.link?.repo === target;
-      const api = same
+  const applied: BatchItemT[] = [];
+  const reverted: BatchItemT[] = [];
+  const { candidatesOf, settingsOf } = await import("./ui-api-links.js");
+  const cands =
+    o.box !== repo
+      ? await candidatesOf(root, repo, { repo: o.box }).catch(() => undefined)
+      : undefined;
+  const status = new Map((cands?.view.calls ?? []).map((c) => [c.fact, c.status] as const));
+  const apis = (cands?.view.apis ?? []).filter((a) => a.kind !== "operation");
+  const settings = settingsOf(facts);
+  const bestOf = (c: FactOf<"call">) => {
+    if (!target || !apis.length) return undefined;
+    const s = linkCandidates({
+      from: repo,
+      facts: [c],
+      join: { joins: [], asks: [], misses: [], outside: [], left: [] },
+      apis,
+      pairs: {},
+      to: { repo: target },
+      settings,
+    }).calls[0]?.suggestion?.api;
+    return s ? apis.find((a) => a.id === s) : undefined;
+  };
+  const words = (c: FactOf<"call">) =>
+    `${repo}'s call ${[c.method?.toUpperCase(), c.path].filter(Boolean).join(" ")} (${c.cite.file}:${c.cite.line})`;
+  // Round 48: a call whose targets question a person answered is theirs too.
+  const byPerson = await answeredByPerson(root, repo, facts);
+  for (const c of facts) {
+    if (c.kind !== "call" || c.id === f.id) continue;
+    if (!(await coversCall(o.match, c, facts))) continue;
+    const st = linksFor(c, corrections)[0];
+    if (st && !st.ai) continue; // a person's word stands
+    if (personEditOfTo(c, corrections)) continue; // a person said where it goes
+    if (byPerson.has(c.id)) continue; // a person answered where it goes
+    // Loose: on the candidates' list, and tied nowhere by the join (ADR 0208).
+    if (!st && (!status.has(c.id) || JOINED.has(status.get(c.id)!))) continue;
+    const item = `link:${repo}:${c.id}`;
+    const was = st?.ai
+      ? `${st.link!.repo} ${[st.link!.method, st.link!.path].filter(Boolean).join(" ")}`
+      : undefined;
+    const same = st?.ai && st.link?.repo === target;
+    const api = !target
+      ? undefined
+      : same
         ? {
             id: st!.link!.entry ?? "",
             ...(st!.link!.method ? { method: st!.link!.method } : {}),
             path: st!.link!.path,
           }
         : bestOf(c);
-      if (api && api.id) {
-        const l = lineFor(c, api);
-        add.push(l);
-        appliedItems.push({ kind: "link", repo, fact: c.id, line: l });
-        spread.push({
-          item,
-          repo,
-          what: words(c),
-          ...(was ? { was } : {}),
-          now: `${target} ${[api.method, api.path].filter(Boolean).join(" ")}`,
-          change: !st ? "applied" : same ? "confirmed" : "replaced",
-        });
-      } else if (st?.ai && o.revert) {
-        const l = correctionLine(st);
-        remove.push(l);
-        revertedItems.push({ kind: "link", repo, fact: c.id, line: l });
-        spread.push({ item, repo, what: words(c), ...(was ? { was } : {}), change: "reverted" });
-      }
+    if (!target || (api && api.id)) {
+      const l = lineFor(c, api);
+      add.push(l);
+      applied.push({ kind: "link", repo, fact: c.id, line: l });
+      spread.push({
+        item,
+        repo,
+        what: words(c),
+        ...(was ? { was } : {}),
+        now: api ? `${target} ${[api.method, api.path].filter(Boolean).join(" ")}` : "none",
+        change: !st ? "applied" : same ? "confirmed" : "replaced",
+      });
+    } else if (st?.ai && o.revert) {
+      const l = correctionLine(st);
+      remove.push(l);
+      reverted.push({ kind: "link", repo, fact: c.id, line: l });
+      spread.push({ item, repo, what: words(c), ...(was ? { was } : {}), change: "reverted" });
     }
   }
-  return { spread, add, remove, applied: appliedItems, reverted: revertedItems };
+  return { spread, add, remove, applied, reverted };
 }
 
 // ------------------------------------------------------------------ Undo
