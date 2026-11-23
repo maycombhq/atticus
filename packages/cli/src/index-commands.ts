@@ -7,11 +7,15 @@ import {
   runContextTool,
   askLookup,
   mapFault,
+  OUTSIDE,
   severalNamed,
   translate,
   type Affected,
   type CatalogIndex,
 } from "@maycombhq/index";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { factsDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { mapSides, NO_OWNER } from "./map-lacks.js";
 import { table } from "./table.js";
@@ -42,7 +46,7 @@ export async function askCommand(
   io: Output,
 ): Promise<number> {
   const sides = await mapSides(root);
-  const asked = await withIndex(root, io, (ix) => {
+  const translated = await withIndex(root, io, (ix) => {
     return translate(
       question,
       askLookup(ix),
@@ -50,6 +54,20 @@ export async function askCommand(
       (id) => sides.lacks(id, ix),
     );
   });
+  // ADR 0207: "who owns <repo>" asks of the repo the manifests list, as `owners` answers it, not
+  // of its component or a word search (review of PR #6).
+  const repo = /\b(?:who owns|owner of)\s+(?:the\s+)?(?:repo\s+)?`?([a-z0-9][\w.-]*[a-z0-9])/i
+    .exec(question)?.[1]
+    ?.toLowerCase();
+  const asked: typeof translated =
+    repo && sides.repo(repo)
+      ? {
+          action: "owner",
+          id: repo,
+          query: repo,
+          explanation: `Read as: the owner recorded for the repo ${repo}.`,
+        }
+      : translated;
   // The question names something the map lacks, and the map couldn't be read: an error that
   // says what is wrong, never an empty answer read as "planned or not read".
   if (asked.action === "query" && asked.fault) {
@@ -57,19 +75,21 @@ export async function askCommand(
     return 1;
   }
   const answer = (to: Output) =>
-    asked.action === "impact"
-      ? impactCommand(
-          root,
-          asked.id,
-          {
-            json: o.json === true,
-            ...(asked.receivers ? { receivers: true } : {}),
-            // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
-            ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
-          },
-          to,
-        )
-      : queryCommand(root, asked.query, { json: o.json === true }, to);
+    asked.action === "owner"
+      ? ownersCommand(root, asked.id, { json: o.json === true }, to)
+      : asked.action === "impact"
+        ? impactCommand(
+            root,
+            asked.id,
+            {
+              json: o.json === true,
+              ...(asked.receivers ? { receivers: true, whole: true } : {}),
+              // Beta.30: a topic with one Endpoint per consumer is received at every one of them.
+              ...(asked.also?.length ? { also: asked.also, label: asked.named ?? asked.id } : {}),
+            },
+            to,
+          )
+        : queryCommand(root, asked.query, { json: o.json === true }, to);
   if (!o.json) {
     io.out(asked.explanation);
     io.out(`Query: ${asked.query}`);
@@ -220,13 +240,25 @@ export async function impactCommand(
     /** With `receivers`: more roots (a topic's other consumers' Endpoints), and its name. */
     also?: string[];
     label?: string;
+    /** With `receivers` and `json`: the whole walk too (affected, gaps), as ask answers. */
+    whole?: boolean;
   },
   io: Output,
 ): Promise<number> {
   const sides = await mapSides(root);
   return withIndex(root, io, (ix) => {
     // The one lookup show and walk make (mapIdOf): the id, or the record whose name it is.
-    const found = mapIdOf(ix, id, "records");
+    let found = mapIdOf(ix, id, "records");
+    let also = o.also;
+    // ADR 0207 `consumers_of`: a topic by its name or a repo by its id, as ask reads them.
+    if (o.receivers && !also && (!found || "several" in found)) {
+      const hit = askLookup(ix)(id);
+      const h = hit?.topic ?? hit;
+      if (h && h.kind !== OUTSIDE) {
+        found = { id: h.id, said: [] };
+        also = h.also ?? h.ids?.slice(1);
+      }
+    }
     if (!found || "several" in found) {
       // "Not in the map" only when the map was read whole and has no such id (ADR 0201).
       const fault = mapFault(ix, root);
@@ -240,10 +272,13 @@ export async function impactCommand(
     };
     const owners = { owner: sides.owner };
     if (o.receivers) {
-      const r = receiversOfAll(ix, [rootId, ...(o.also ?? [])], o.depth ?? 4, owners);
-      const label = o.also?.length ? (o.label ?? rootId) : rootId;
+      const r = receiversOfAll(ix, [rootId, ...(also ?? [])], o.depth ?? 4, owners);
+      const label = also?.length ? (o.label ?? (o.also ? rootId : id)) : rootId;
       if (o.json) {
-        io.out(JSON.stringify({ ...named, ...r }, null, 2));
+        // ADR 0207 `consumers_of`: the receivers and what lies past them; ask keeps the walk.
+        const { root, roots, receivers, further } = r;
+        const kept = { root, ...(roots ? { roots } : {}), receivers, further };
+        io.out(JSON.stringify({ ...named, ...(o.whole ? r : kept) }, null, 2));
         return 0;
       }
       said(io);
@@ -275,6 +310,70 @@ export async function impactCommand(
       io.out("Open questions:");
       for (const g of r.gaps) io.out(`  - ${g.question} (${g.record})`);
     }
+    return 0;
+  });
+}
+
+/**
+ * atticus owners <id> (ADR 0207): who owns a record, a repo or a system, and where it is said:
+ * the System record's owner, else the manifest's or a profile's, with its file. A manifest repo
+ * nobody read still has its manifest's owner. Exit 1 for an id the map and manifests lack.
+ */
+export async function ownersCommand(
+  root: string,
+  id: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  const sides = await mapSides(root);
+  return withIndex(root, io, (ix) => {
+    const found = mapIdOf(ix, id, "records");
+    let at: { id: string; kind: string; system?: string; read: boolean };
+    if (found && "id" in found) {
+      const kind = ix.find(found.id)[0]!.kind;
+      const system = kind === "System" ? found.id : ix.systemOf(kind, found.id);
+      at = { id: found.id, kind, ...(system ? { system } : {}), read: true };
+    } else if (sides.repo(id)) {
+      // Read: its facts are there, or a record of the map cites it (a repo with no component).
+      const cited = ix.db
+        .prepare(
+          "SELECT 1 FROM evidence WHERE repo = ?1 UNION ALL SELECT 1 FROM records WHERE json_extract(json, '$.repo') = ?1 LIMIT 1",
+        )
+        .get(id);
+      const read = cited !== undefined || existsSync(join(factsDirOf(root), `${id}.jsonl`));
+      // An empty map is no fault here: a manifest repo nobody read still has its manifest's
+      // owner (ADR 0207). Only a map whose records didn't read is.
+      const fault = read || !ix.kinds().length ? undefined : mapFault(ix, root);
+      if (fault) {
+        io.err(fault);
+        return 1;
+      }
+      const comp = ix.query(`kind:component repo:${id}`, { limit: 1 }).rows[0]?.id;
+      const system = sides.repo(id)!.system ?? (comp ? ix.systemOf("Component", comp) : undefined);
+      at = { id, kind: "Repo", ...(system ? { system } : {}), read };
+    } else {
+      io.err(mapFault(ix, root) ?? (found ? severalNamed(id, found.several) : sides.lacks(id, ix)));
+      return 1;
+    }
+    // A repo's own manifest row is the most exact word on it (review of PR #6).
+    const own = at.kind === "Repo" ? sides.repo(id)!.said : undefined;
+    const sys = at.system
+      ? (ix.get("System", at.system) as { owner?: string } | undefined)
+      : undefined;
+    const bySystem = !own && sys?.owner;
+    const viaFile = bySystem ? undefined : (own ?? sides.ownerSaid(at));
+    const owned = bySystem
+      ? { owner: sys.owner!, from: { system: at.system! } }
+      : viaFile && { owner: viaFile.owner, from: { file: viaFile.file } };
+    const where = bySystem ? `the System record ${at.system}` : viaFile?.file;
+    const answer = {
+      ...at,
+      ...(owned ?? {}),
+      said:
+        (owned ? `${at.id} is owned by ${owned.owner} (${where}).` : `${at.id}: ${NO_OWNER}.`) +
+        (at.read ? "" : " It is not read into the map yet."),
+    };
+    io.out(o.json ? JSON.stringify(answer, null, 2) : answer.said);
     return 0;
   });
 }
