@@ -202,7 +202,8 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus context outline <repo> <path>  A file's declarations with their annotations, from its syntax tree; a document's headings
   atticus context tools [--json]       The read-only tools a step's model may call beside its pack, and their caps
   atticus context call <tool> --input <json> [--run <run>] [--round n] [--json]  Run one tool call a model made; with --run it is kept in the run's record
-  atticus impact <id>                  What a change to a record reaches, with owners and open questions
+  atticus impact <id> [--receivers] [--json]  What a change to a record reaches, with owners and open questions; with --receivers, who uses it: a topic's receivers, an API's or a repo's callers
+  atticus owners <id> [--json]         Who owns a record, a repo or a system, and where it is said: its System record, or the manifest or profile file
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]

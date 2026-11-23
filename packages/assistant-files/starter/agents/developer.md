@@ -17,6 +17,9 @@ tools:
   - atticus/files
   - atticus/outline
   - atticus/impact
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/conflicts
 handoffs:
   - to: developer-naysayer

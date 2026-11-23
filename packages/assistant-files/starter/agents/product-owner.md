@@ -12,6 +12,9 @@ tools:
   - atticus/similar
   - atticus/show
   - atticus/impact
+  - atticus/owners
+  - atticus/consumers_of
+  - atticus/similar_changes
   - atticus/features
   - atticus/feature
   - atticus/changes
