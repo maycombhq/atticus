@@ -381,9 +381,13 @@ describe("the starter personas and the define-change skill (ADR 0201)", () => {
       expect(Object.keys(fm), name).toEqual(
         name === "spec-writer"
           ? ["name", "description", "owns", "tools"]
-          : ["name", "description", "role", "owns", "tools", "handoffs"],
+          : // v31 (WP-06): these two run at the design gate in a new metarepo.
+            ["application-architect-naysayer", "security-naysayer"].includes(name)
+            ? ["name", "description", "role", "owns", "gates", "tools", "handoffs"]
+            : ["name", "description", "role", "owns", "tools", "handoffs"],
       );
       expect(fm.name).toBe(name);
+      if ("gates" in fm) expect(fm.gates, name).toEqual(["design"]);
       expect(String(fm.description).length, name).toBeGreaterThan(40);
       expect(String(fm.description), name).not.toContain("\n");
       owns.set(name, String(fm.owns));

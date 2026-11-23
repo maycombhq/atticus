@@ -1,0 +1,18 @@
+# The two public repos of the estate (README.md), as `atticus repos discover` typed them at
+# gate 0, with the owner and system a person gave. The URLs are the public ones; nothing here is
+# cloned by the test.
+schemaVersion: 3
+platform: github
+repos:
+  - id: spring-petclinic-angular
+    url: https://github.com/spring-petclinic/spring-petclinic-angular
+    defaultBranch: master
+    type: frontend
+    owner: team-clinic
+    system: petclinic
+  - id: spring-petclinic-rest
+    url: https://github.com/spring-petclinic/spring-petclinic-rest
+    defaultBranch: master
+    type: spring-boot
+    owner: team-clinic
+    system: petclinic
