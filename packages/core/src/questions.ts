@@ -184,9 +184,17 @@ export const questionFileOf = (root: string, id: string) => fileOf(root, id);
 export const questionFileText = (q: Question) =>
   `# A question from ${q.askedBy.command} (ADR 0078). Answer it with atticus questions answer ${q.id}, or in the app.\n${stringify(Question.parse(q))}`;
 
+/**
+ * v31 (one build for many repos): how many times this process changed a question file's text, so
+ * a run that reads the questions once reads them again only after one changed.
+ */
+export const questionStats = { writes: 0 };
+
 async function write(root: string, q: Question, before?: { text: string }): Promise<void> {
   await mkdir(questionsDirOf(root), { recursive: true });
   const text = questionFileText(q);
+  const was = before?.text ?? (await readFile(fileOf(root, q.id), "utf8").catch(() => undefined));
+  if (was !== text) questionStats.writes++;
   if (before) await writeFileIfUnchanged(fileOf(root, q.id), before.text, text);
   else await writeFileAtomic(fileOf(root, q.id), text);
 }

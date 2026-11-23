@@ -96,7 +96,7 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
   return (
     r
       .add("POST", "/api/facts/apply-all", async ({ body }) => {
-        const { factsRepos, verifyAllCommand } = await import("./verify-commands.js");
+        const { factsRepos, oneBuildFor, verifyAllCommand } = await import("./verify-commands.js");
         const { APPLIED_WITH_LEFT_OUT } = await import("./verify-left-out.js");
         // Beta.28.4 (ADR 0198): the repos to apply, when the page lists them (the map's bar: the
         // repos whose corrections wait). Each is checked against the facts on file before a job
@@ -121,9 +121,11 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
           : only.length === 1
             ? `Applying to ${only[0]}`
             : `Applying to ${only.length} repos`;
-        // Several repos: Stop during one repo's write ends the run after it, and says so.
+        // Several repos, each its own write: Stop during one repo's write ends the run after it,
+        // and says so. v31, one build: the run has one write, so a Stop during it is too late.
+        const n = (only ?? read).length;
         const several = {
-          ...((only ?? read).length > 1 ? { severalWrites: STOP_AFTER_REPO } : {}),
+          ...(n > 1 && !oneBuildFor(true, n) ? { severalWrites: STOP_AFTER_REPO } : {}),
           for: { action: "apply-all" as const },
           hearsStop: true,
         };

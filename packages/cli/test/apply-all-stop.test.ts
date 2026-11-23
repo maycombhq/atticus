@@ -170,7 +170,15 @@ const ALL = { repos: [R1, R2, R3] };
 /** True once the run is on its second repo. */
 const onSecond = (all: string[]) => all.some((l) => l.startsWith(`Repo 2 of 3: ${R2}`));
 
-describe("Stop during an Apply over several repos (beta.28.4)", () => {
+describe("Stop during an Apply over several repos (beta.28.4), each repo its own build", () => {
+  // v31: the per-repo loop is ATTICUS_APPLY_ONE_BUILD=0's (and a refused one build's) way; the
+  // one build's Stop is below.
+  beforeAll(() => {
+    process.env.ATTICUS_APPLY_ONE_BUILD = "0";
+  });
+  afterAll(() => {
+    delete process.env.ATTICUS_APPLY_ONE_BUILD;
+  });
   it("not stopped: every repo applied, as before", async () => {
     const r = await run("/api/facts/apply-all", ALL);
     expect(r.ended.state, r.ended.result?.lines.join("\n")).toBe("done");
@@ -294,6 +302,64 @@ describe("Stop during an Apply over several repos (beta.28.4)", () => {
     expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
     expect(r.ended.result?.stopped).toBeUndefined();
     expect(differences(await filesOf(r.root), after[2]!)).toEqual([]);
+  }, 600_000);
+});
+
+describe("Stop during an Apply over several repos with one build (v31)", () => {
+  /** Every file but the repos' verify reports, whose links one build lists at each repo's ends. */
+  const butReports = (d: string[]) => d.filter((p) => !p.endsWith(".verify.yaml"));
+  it("not stopped: every repo applied in one build", async () => {
+    const r = await run("/api/facts/apply-all", ALL);
+    expect(r.ended.state, r.ended.result?.lines.join("\n")).toBe("done");
+    expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
+    expect(r.ended.result?.lines.join("\n")).toContain(
+      "Wrote the catalog for 3 repos in one build",
+    );
+    expect(butReports(differences(await filesOf(r.root), after[2]!))).toEqual([]);
+    expect(r.ended.progress).toEqual({ done: 3, total: 3, message: "Done" });
+  }, 600_000);
+
+  it("asked as the second repo is verified: nothing of any repo is written", async () => {
+    const r = await run("/api/facts/apply-all", ALL, (l) => l.startsWith(`Repo 2 of 3: ${R2}`));
+    expect(r.asked).toBe(true);
+    expect(r.ended.state).toBe("cancelled");
+    expect(r.ended.result).toMatchObject({ applied: [], notApplied: [R1, R2, R3], stopped: true });
+    expect(r.ended.result?.lines).toContain(
+      `Stopped before the catalog was written: none of the 3 repos was applied. Not applied: ${R1}, ${R2}, ${R3}.`,
+    );
+    const left = differences(await filesOf(r.root), await filesOf(waiting));
+    expect(left.filter((p) => !p.startsWith("facts/"))).toEqual([]);
+    // The lock is free: a repo's own Apply runs.
+    expect((await r.applyOne(R1)).state).toBe("done");
+  }, 600_000);
+
+  it("asked while the one build is built: nothing of any repo is written", async () => {
+    const r = await run(
+      "/api/facts/apply-all",
+      ALL,
+      (l, all) =>
+        all.some((x) => x.startsWith("Writing the catalog once for 3 repos")) &&
+        l.startsWith("Building the catalog: pass 2 of"),
+    );
+    expect(r.asked).toBe(true);
+    expect(r.ended.state).toBe("cancelled");
+    expect(r.ended.result).toMatchObject({ applied: [], notApplied: [R1, R2, R3], stopped: true });
+    const left = differences(await filesOf(r.root), await filesOf(waiting));
+    expect(left.filter((p) => !p.startsWith("facts/"))).toEqual([]);
+  }, 600_000);
+
+  it("asked while the one build is written: too late, and the run ends done with all applied", async () => {
+    const r = await run("/api/facts/apply-all", ALL, (l) => l.startsWith("Writing contracts"));
+    expect(r.asked).toBe(true);
+    // The run has one write: a Stop during it is too late for the run, said so, never "the run
+    // ends when this repo's write has finished".
+    expect(r.printed).toContain(TOO_LATE);
+    expect(r.printed).not.toContain(HEARD);
+    expect(r.printed).not.toContain(STOPPING_AFTER);
+    expect(r.printed).not.toContain(STOPPING);
+    expect(r.ended.state).toBe("done");
+    expect(r.ended.result).toMatchObject({ code: 0, applied: [R1, R2, R3], notApplied: [] });
+    expect(butReports(differences(await filesOf(r.root), after[2]!))).toEqual([]);
   }, 600_000);
 });
 

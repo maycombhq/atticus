@@ -11,7 +11,9 @@ import {
   factsDirOf,
   factsRelOf,
   isAdopted,
+  isFileSystemError,
   isGuessedJoin,
+  questionStats,
   joinFlagsOf,
   listQuestions,
   loadOrgPack,
@@ -88,6 +90,7 @@ import {
   sourcesRelOf,
   type BuildAndWrite,
   type CatalogDiff,
+  type SlotWrite,
 } from "@maycombhq/scanner";
 import { readNotSettled, repoOfTarget } from "./answer-reopen.js";
 import {
@@ -140,6 +143,15 @@ export interface WriteFactsResult {
    * its meta, and whether either changed. Left out for a prototype, which is never in the catalog.
    */
   snapshot?: { path: string; status: "written" | "unchanged"; facts: number; commit: string };
+  /**
+   * v31, one build for many repos: the run's own write, the same in every repo's result (each
+   * repo's `changes` are then the records citing that repo).
+   */
+  run?: {
+    repos: string[];
+    written: { written: number; unchanged: number; removed: number };
+    changes: CatalogDiff & { byKind: Record<string, KindCount> };
+  };
   /** ADR 0195 point 4: each record the build removed, with what explains it. */
   removed?: {
     kind: string;
@@ -540,13 +552,7 @@ export async function projectFactsIntoCatalog(
   const existing =
     given.existing ?? (await readCatalog(join(catalogDirOf(root), "generated"), cacheOpts)).records;
   await step("Reading the questions and the estate's facts");
-  const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
-  const answered = everyTarget.filter((q) => q.repo === repo);
-  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
-  const targetsOpts = repoType ? { repoType } : {};
-  const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
-  // The other repos' facts as the assistant's files hold them: for the questions' suggestions.
-  const estate = await estateFacts(root, op, repo);
+  const side = await questionSideOf(root, op, repo, facts);
   // ADR 0195 (CS2): the build with this repo's facts snapshot in place of its slot, every other
   // repo from its own slot (facts or readers), nothing read from the catalog it replaces. The
   // contract files ride in the snapshot's meta (ADR 0151); a preview passes the checkout's.
@@ -580,6 +586,59 @@ export async function projectFactsIntoCatalog(
     },
   );
   await step("Comparing the build with the catalog on file");
+  return projectionOf(repo, { op, existing, build, snap, sharedMaps: inputs.shared.maps, side });
+}
+
+/** What the write asks about a repo's calls reads: the questions and the estate's facts. */
+async function questionSideOf(
+  root: string,
+  op: Awaited<ReturnType<typeof loadOrgPack>>,
+  repo: string,
+  facts: readonly Fact[],
+) {
+  const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
+  // The other repos' facts as the assistant's files hold them: for the questions' suggestions.
+  return sideFor(op, { everyTarget, estate: await estateFacts(root, op, repo) }, repo, facts);
+}
+
+/** A repo's side from the questions and the estate's facts read once for a run (v31). */
+function sideFor(
+  op: Awaited<ReturnType<typeof loadOrgPack>>,
+  read: { everyTarget: Question[]; estate: Awaited<ReturnType<typeof estateFacts>> },
+  repo: string,
+  facts: readonly Fact[],
+) {
+  const { everyTarget, estate: e } = read;
+  const answered = everyTarget.filter((q) => q.repo === repo);
+  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
+  const ruled = ruledTargets(repo, facts, everyTarget, repoType ? { repoType } : {});
+  const others = <T>(x: Record<string, T>) =>
+    Object.fromEntries(Object.entries(x).filter(([k]) => k !== repo));
+  const estate = {
+    repos: e.repos.filter((r) => r.repo !== repo),
+    targets: others(e.targets),
+    pairs: others(e.pairs),
+    aiTargets: others(e.aiTargets),
+    notes: e.notes.filter((n) => !n.startsWith(`${repo}: `)),
+    unverified: e.unverified.filter((r) => r !== repo),
+  };
+  return { everyTarget, answered, ruled, estate };
+}
+
+/** A repo's part of a build: its records, flows and join, and what they change on file. */
+function projectionOf(
+  repo: string,
+  x: {
+    op: Awaited<ReturnType<typeof loadOrgPack>>;
+    existing: readonly CatalogRecord[];
+    build: Awaited<ReturnType<typeof buildCatalog>>;
+    snap: SlotWrite[];
+    sharedMaps: Awaited<ReturnType<typeof loadBuildInputs>>["shared"]["maps"];
+    side: Awaited<ReturnType<typeof questionSideOf>>;
+  },
+) {
+  const { op, existing, build, snap, sharedMaps } = x;
+  const { answered, everyTarget, ruled, estate } = x.side;
   const mine = build.facts.get(repo);
   const result = {
     records: build.records,
@@ -616,7 +675,7 @@ export async function projectFactsIntoCatalog(
     build,
     snap,
     evidenceProblems: build.problems.filter((p) => p.source === "build").map((p) => p.message),
-    sharedMaps: inputs.shared.maps,
+    sharedMaps,
   };
 }
 
@@ -649,44 +708,92 @@ export const writeFactsHooks: {
   onDiffs?: (changed: CatalogDiff, whole: CatalogDiff) => void;
 } = {};
 
+/** What a write of a repo's verified facts into the catalog is told. */
+export interface WriteFactsOptions {
+  dir: string;
+  command: string;
+  now?: Date;
+  verbose?: boolean;
+  /** The commit verify checked the facts at (the snapshot's commit); default the facts' own. */
+  commit?: string;
+  /** Verify's verdict that the read is complete: the snapshot's meta says `readComplete`. */
+  readComplete?: boolean;
+  /** `--allow-removals <count>` and `--discard-edits <count>` (ADR 0195 point 4). */
+  allowRemovals?: number;
+  discardEdits?: number;
+  /** Told the refused build, when a guard refused it (the app's and --json's report). */
+  onRefused?: (r: BuildAndWrite) => void;
+  /**
+   * v31, one build for many repos: told when a step after every repo's write failed (the build
+   * again without the answers the run opened again was refused or stopped), so the run exits 1.
+   */
+  onRunFault?: () => void;
+  /**
+   * ADR 0205 step 2 (the app's Apply): the local caches are written after this returns, still
+   * under the scan's lock (`runAfterResult`), so "done" shows first.
+   */
+  cachesAfterResult?: boolean;
+  /**
+   * The app's confirm (no flag takes it): the plan of the refusal the counts confirm, worked
+   * out again under the lock; another list writes nothing (the review of beta.27).
+   */
+  plan?: string;
+}
+
 export async function writeFactsIntoCatalog(
   root: string,
   repo: string,
   facts: readonly Fact[],
   /** verbose: list every record changed and flow written, not only the counts. */
-  o: {
-    dir: string;
-    command: string;
-    now?: Date;
-    verbose?: boolean;
-    /** The commit verify checked the facts at (the snapshot's commit); default the facts' own. */
-    commit?: string;
-    /** Verify's verdict that the read is complete: the snapshot's meta says `readComplete`. */
-    readComplete?: boolean;
-    /** `--allow-removals <count>` and `--discard-edits <count>` (ADR 0195 point 4). */
-    allowRemovals?: number;
-    discardEdits?: number;
-    /** Told the refused build, when a guard refused it (the app's and --json's report). */
-    onRefused?: (r: BuildAndWrite) => void;
-    /**
-     * ADR 0205 step 2 (the app's Apply): the local caches are written after this returns, still
-     * under the scan's lock (`runAfterResult`), so "done" shows first.
-     */
-    cachesAfterResult?: boolean;
-    /**
-     * The app's confirm (no flag takes it): the plan of the refusal the counts confirm, worked
-     * out again under the lock; another list writes nothing (the review of beta.27).
-     */
-    plan?: string;
-  },
+  o: WriteFactsOptions,
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
+  const r = await writeFactsOf(root, [{ repo, facts, o }], o, io);
+  return r?.[0] instanceof Error ? undefined : r?.[0];
+}
+
+/** One repo of a write over many: its kept facts and its own write's options. */
+export interface FactsWrite {
+  repo: string;
+  facts: readonly Fact[];
+  o: WriteFactsOptions;
+}
+
+/**
+ * v31, one build for many repos (`verify --all --write`): several repos' kept facts written with
+ * one build, one guard and one undo step, under one lock; then, in turn, each repo's contracts,
+ * specs, flows, questions, report and map, as its own write writes them, and `each` told its
+ * result (or the file system's error that ended it) before the next repo's. Undefined, with
+ * nothing written or said, when the one build is refused, the lock is held or a repo is a
+ * prototype: the caller then runs each repo's own write, which says its own refusal. Stop is
+ * heard until the catalog is written, as in one repo's write. `o` is the run's: its command,
+ * counts and caches.
+ */
+export function writeManyFactsIntoCatalog(
+  root: string,
+  items: readonly FactsWrite[],
+  o: WriteFactsOptions,
+  io: Output,
+  each: (i: number, r: WriteFactsResult | Error) => Promise<void>,
+): Promise<unknown[] | undefined> {
+  return writeFactsOf(root, items, o, io, each);
+}
+
+async function writeFactsOf(
+  root: string,
+  items: readonly FactsWrite[],
+  o: WriteFactsOptions,
+  io: Output,
+  each?: (i: number, r: WriteFactsResult | Error) => Promise<void>,
+): Promise<(WriteFactsResult | Error)[] | undefined> {
+  const many = each !== undefined;
+  const { repo, facts } = items[0]!;
   let lock: Awaited<ReturnType<typeof acquireLock>>;
   try {
     lock = await acquireLock(root, "scan", o.command);
   } catch (e) {
     if (e instanceof LockHeldError) {
-      io.err(e.message);
+      if (!many) io.err(e.message);
       return undefined;
     }
     throw e;
@@ -704,10 +811,18 @@ export async function writeFactsIntoCatalog(
   /** Whether the write gave its result: only then is a stop during its caches harmless. */
   let gave = false;
   try {
-    writeFactsHooks.onWrite?.(repo);
     // The write builds: its inputs as the files hold them now, never the app's kept copies (CS3).
     forgetKeptReads();
     const op = await loadOrgPack(orgPackDirOf(root));
+    // v31: a prototype is never in the catalog: it is left out of the one build, and its own
+    // write after says so.
+    const batch = many ? items.filter((it) => !isPrototypeRepo(op, it.repo)) : items;
+    for (const it of batch) writeFactsHooks.onWrite?.(it.repo);
+    if (!batch.length) return [];
+    // v31: what the one build's read says waits until the build is written; a refused one says
+    // nothing, and each repo's own write says it.
+    const said: string[] = [];
+    const note = many ? (l: string) => said.push(l) : (l: string) => io.err(l);
     const generated = join(catalogDirOf(root), "generated");
     // beta.28.2: each step's time, for the benchmark (nothing unless it listens).
     const mark = phaseClock("verify: ");
@@ -726,11 +841,11 @@ export async function writeFactsIntoCatalog(
     );
     // ADR 0133: a prototype's facts are kept and compared with the estate, never written into
     // the catalog, its specs or its map, and nothing is asked about its calls.
-    if (isPrototypeRepo(op, repo)) {
+    if (!many && isPrototypeRepo(op, repo)) {
       for (const n of prototypeLeftOut({ repo, facts, existing: [], op, decisions: [] }).notes)
         io.out(n);
       const none = diffCatalogs(existing.records, existing.records);
-      return {
+      const none_ = {
         written: { written: 0, unchanged: 0, removed: 0 },
         flows: [],
         questions: [],
@@ -743,45 +858,105 @@ export async function writeFactsIntoCatalog(
           changed: [],
         },
       };
+      return [none_];
     }
-    const rerun = `atticus verify ${repo} --write`;
-    // ADR 0151: this repo's contract files, read at the facts' commit; kept beside its facts and
+    // ADR 0151: each repo's contract files, read at the facts' commit; kept beside its facts and
     // in the snapshot's meta, written only once the build passes its guards.
-    await progress.step("Reading the repo's contract files");
-    const contracts = await repoContractsOf(root, repo, o.dir, facts, (n) => io.err(n));
-    const snapshotCommit = o.commit ?? snapshotCommitOf(facts);
-    const projected = await projectFactsIntoCatalog(root, repo, facts, {
-      op,
-      existing: existing.records,
-      contracts,
-      commit: snapshotCommit,
-      ...(o.readComplete ? { readComplete: true } : {}),
-      step: (what, brief) => progress.step(what, brief),
-      tick: () => progress.tick(),
-    });
-    const {
-      answered,
-      everyTarget,
-      targets,
-      ruled,
-      estate,
-      result,
-      links,
-      evidenceProblems,
-      sharedMaps,
-      build,
-      snap,
-    } = projected;
+    await progress.step(
+      many ? "Reading the repos' contract files" : "Reading the repo's contract files",
+    );
+    const contracts: ContractsFileT[] = [];
+    for (const it of batch)
+      contracts.push(await repoContractsOf(root, it.repo, it.o.dir, it.facts, note));
+    const commits = batch.map((it) => it.o.commit ?? snapshotCommitOf(it.facts));
+    type Projected = Awaited<ReturnType<typeof projectFactsIntoCatalog>>;
+    let projectedOf: (i: number) => Promise<Projected>;
+    let build: Projected["build"];
+    let snap: SlotWrite[];
+    if (!many) {
+      const projected = await projectFactsIntoCatalog(root, repo, facts, {
+        op,
+        existing: existing.records,
+        contracts: contracts[0]!,
+        commit: commits[0]!,
+        ...(o.readComplete ? { readComplete: true } : {}),
+        step: (what, brief) => progress.step(what, brief),
+        tick: () => progress.tick(),
+      });
+      ({ build, snap } = projected);
+      projectedOf = () => Promise.resolve(projected);
+    } else {
+      // v31: every repo's snapshot in one build.
+      snap = batch.flatMap((it, i) =>
+        factsSnapshotWrites(root, it.repo, it.facts, {
+          commit: commits[i]!,
+          contracts: contracts[i]!.entries.length ? contracts[i]! : null,
+          ...(it.o.readComplete ? { readComplete: true } : {}),
+        }),
+      );
+      await progress.step("Reading the build's inputs");
+      const inputs = await loadBuildInputs(root, { op });
+      const all = await buildCatalog(
+        { ...inputs, slots: await withSlotWrites(root, inputs.slots, snap) },
+        {
+          onPass: (n, of, what) => progress.step(buildPassLine(n, of, what), buildPassBrief(n)),
+          onStage: (n, of, _what, stage) =>
+            progress.step(buildStageLine(n, of, stage), buildPassBrief(n, stage)),
+          tick: () => progress.tick(),
+        },
+      );
+      build = all;
+      await progress.step("Comparing the build with the catalog on file");
+      // Each repo's questions are read as its turn comes, after the repos before it asked theirs,
+      // as its own write after theirs reads them.
+      // The links the run made, unmade or changed are each said in the report of the repos of
+      // the run at either end of them, and one with neither end in the run in every report: one
+      // build has no write of one repo to tell them by (v31 notes, one-build.md).
+      const ran = new Set(batch.map((it) => it.repo));
+      const repoOf = new Map(
+        [...existing.records, ...all.records].flatMap((r) =>
+          r.kind === "Component" ? [[r.id, r.repo] as const] : [],
+        ),
+      );
+      // The questions and the estate's facts are read once for the run, and again only after a
+      // repo's questions wrote one: what each repo's own write would read at its turn.
+      let read: { at: number; side: Awaited<ReturnType<typeof questionSideOf>> } | undefined;
+      projectedOf = async (i) => {
+        const repo = batch[i]!.repo;
+        if (read?.at !== questionStats.writes)
+          read = { at: questionStats.writes, side: await questionSideOf(root, op, "", []) };
+        const p = projectionOf(repo, {
+          op,
+          existing: existing.records,
+          build: all,
+          snap,
+          sharedMaps: inputs.shared.maps,
+          side: sideFor(op, read.side, repo, batch[i]!.facts),
+        });
+        const ends = (l: LinkLine) => {
+          const two = [repoOf.get(l.from), repoOf.get(l.to)];
+          return two.includes(repo) || !two.some((r) => r !== undefined && ran.has(r));
+        };
+        const { added, removed, changed } = p.links;
+        p.links = {
+          ...p.links,
+          added: added.filter(ends),
+          removed: removed.filter(ends),
+          changed: changed.filter(ends),
+        };
+        return p;
+      };
+    }
     mark("projection");
-    for (const p of evidenceProblems) io.err(p);
-    for (const i of result.invalid)
-      io.err(
+    for (const p of build.problems.filter((p) => p.source === "build")) note(p.message);
+    for (const i of build.invalid)
+      note(
         `A merged record isn't valid C1 (a bug): ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
       );
     // ADR 0195 (CS2): the facts snapshot, then the build from every slot, its guards, and only
     // then the write: a refused build writes nothing, the snapshot and the companions included.
     const built = await buildAndWrite(root, {
-      command: rerun,
+      command: many ? o.command : `atticus verify ${repo} --write`,
       build,
       slots: snap,
       read: existing,
@@ -810,375 +985,502 @@ export async function writeFactsIntoCatalog(
     // lists now (its own plan with it) for the page to show.
     if (built.changed) io.err(pageChanged("what the build would remove or discard"));
     if (built.guard.refused || built.changed) {
+      // v31: the one build refused writes nothing and says nothing: each repo's own write does.
+      if (many) return undefined;
       if (built.guard.refused) for (const l of buildLines(root, built)) io.err(l);
       if (built.guard.refused) await refusalEnds(root, built.guard.refused);
       if (built.guard.refused) o.onRefused?.(built);
       return undefined;
     }
-    // ADR 0151, 0164: the contract companion and this repo's specs, kept beside its facts.
-    await progress.step("Writing contracts");
-    await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
-    await progress.step("Writing specs");
-    await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const w = built.write!;
     // ADR 0205 step 1: what the write changed, compared record by record where the catalog read
     // still matched the files; the whole catalog otherwise, or with the hook (the way before).
+    // One build, one comparison, whatever the repos.
     const fast = !writeFactsHooks.fullDiff && built.changedFiles !== undefined;
-    const diff = fast
-      ? diffCatalogFiles(existing, result.records, built.changedFiles!)
-      : projected.diff;
-    if (fast) writeFactsHooks.onDiffs?.(diff, projected.diff);
-    const snapshot = {
-      path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
-      status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))
-        ? ("written" as const)
-        : ("unchanged" as const),
-      facts: facts.length,
-      commit: snapshotCommit,
-    };
+    const full = () => diffCatalogs([...existing.records], build.records);
+    const whole = fast ? diffCatalogFiles(existing, build.records, built.changedFiles!) : full();
+    if (fast) writeFactsHooks.onDiffs?.(whole, full());
     const written = { written: w.written, unchanged: w.unchanged, removed: w.removed };
-    // A warning of the build, always said and never a failure (buildWarnings).
-    for (const x of buildWarnings(built.build)) io.out(`warning: ${x}`);
-    // ADR 0195 point 4: the removals the build wrote, each with what explains it, are said.
-    for (const l of buildLines(root, built)
-      .filter((l) => !l.startsWith("slots: "))
-      .slice(1))
-      if (o.verbose || w.removals.length) io.out(l);
-
-    // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
-    // have are removed. A drafted flow (another template) is left alone.
-    // A flow the facts project into an invalid Flow (a call-out that names no call: the verifier
-    // keeps the fact, since its line holds) is left out and said, never a crash after the
-    // catalog is written.
-    const flows = result.flows.filter((f) => {
-      const p = parseRecord(f);
-      if (p.ok) return true;
-      io.err(
-        `The flow ${f.id} isn't written to ${specRelOf(root, repo)}/: ${p.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}. Have your assistant fix its flow fact (each call-out step's ref names the call it makes), then run ${rerun}.`,
+    // A warning of the build, always said and never a failure (buildWarnings), and (ADR 0195
+    // point 4) the removals the build wrote, each with what explains it: once for the build.
+    const buildSaid = () => {
+      for (const x of buildWarnings(built.build)) io.out(`warning: ${x}`);
+      for (const l of buildLines(root, built)
+        .filter((l) => !l.startsWith("slots: "))
+        .slice(1))
+        if (o.verbose || w.removals.length) io.out(l);
+    };
+    let run: WriteFactsResult["run"];
+    let mine = (_repo: string): CatalogDiff => whole;
+    if (many) {
+      // v31: the run's lines once, before any repo's own: what its read said, the build's
+      // warnings and removals, and the one write with every record it changed.
+      for (const l of said) io.err(l);
+      buildSaid();
+      const counts = `${w.written} files written, ${w.removed} removed, ${w.unchanged} unchanged`;
+      io.out(
+        `Wrote the catalog for ${batch.length} repos in one build: ${counts}. Each repo's specs, flows, questions, report and map below are of this one catalog, with every repo of the run in it. One undo step: atticus catalog undo takes the catalog write of the whole run back.`,
       );
-      return false;
-    });
-    await progress.step("Writing the flows");
-    const spec = await readRepoSpec(root, repo, { cacheRoot: root });
-    const ids = new Set(flows.map((f) => f.id));
-    for (const f of spec.flows)
-      if (f.template === FACTS_TEMPLATE && !ids.has(f.id)) await removeFlow(root, repo, f.id);
-    const flowPaths: string[] = [];
-    for (const f of flows) flowPaths.push(await writeFlow(root, repo, f));
-    const files: Record<string, string> = {};
-    for (const f of flows)
-      for (const p of flowFiles(f)) {
-        const text = await readFile(join(o.dir, ...p.split("/")), "utf8").catch(() => undefined);
-        if (text !== undefined) files[p] = specFileHash(text);
-      }
-    // The review of beta.28.1: the snapshot's commit (an earlier copy written back keeps its own
-    // older one, so the smallest among the facts may be no commit this read was of).
-    const commit =
-      snapshotCommit !== "unknown" ? snapshotCommit : facts.map((f) => f.commit).sort()[0];
-    const kept = spec.flows.filter((f) => f.template !== FACTS_TEMPLATE).map((f) => f.id);
-    const header = spec.header;
-    await writeSpecHeader(root, {
-      schemaVersion: SPEC_HEADER_SCHEMA_VERSION,
-      repo,
-      template: header?.template ?? FACTS_TEMPLATE,
-      templateReviewed: header?.templateReviewed ?? false,
-      ...(commit ? { commit } : {}),
-      ...(header?.drafted ? { drafted: header.drafted } : {}),
-      flows: [...new Set([...kept, ...ids])].sort(),
-      files: Object.fromEntries(
-        Object.entries({ ...(header?.files ?? {}), ...files }).sort(([a], [b]) => (a < b ? -1 : 1)),
-      ),
-      questions: header?.questions ?? [],
-    });
-
-    // Calls nothing joins: a host no repo lists (ADR 0088), or no target and no host (ADR 0078).
-    await progress.step("Asking about the calls nothing joins");
-    const at = (o.now ?? new Date()).toISOString();
-    const hosts = await askHosts(root, result.records, { command: o.command, rerun, now: o.now });
-    const loose = new Set(result.unresolved.map((u) => u.factId));
-    // A call whose target names nothing in the estate that two or more entries serve is asked
-    // too (the join fallback, ADR 0124 addendum C-join).
-    const ambiguous = new Set(
-      (result.join?.asks ?? [])
-        .filter((a) => a.reason === "ambiguous" && a.call.repo === repo)
-        .map((a) => a.call.fact),
-    );
-    const named = new Set(facts.filter((f) => f.kind === "call" && f.to).map((f) => f.id));
-    const raised: Question[] = [...hosts.raised];
-    const lines = [...hosts.lines];
-    // Q1: the calls that go the same way (the repo, the target named or host or base, the path
-    // prefix) are asked once; a call a person's answer already names isn't asked again.
-    // Beta.27: a gateway's forwarding call to a token target URL (one only its `<URL>` line
-    // writes too) is asked in the join's words below (read the repo again), never on its own.
-    const tokenAsked = new Set(
-      (result.join?.asks ?? [])
-        .filter(
-          (a) =>
-            a.reason === "unknown-host" && a.call.repo === repo && !!a.host && isTokenHost(a.host),
-        )
-        .map((a) => a.call.fact),
-    );
-    const asked = new Set(
-      [...loose, ...ambiguous].filter(
-        (id) =>
-          !tokenAsked.has(id) &&
-          targets[id] === undefined &&
-          !answered.some((q) => q.state === "answered" && q.id === targetId(facts, repo, id)),
-      ),
-    );
-    const drafted = groupedTargetDrafts(facts, result.records, op, result.join?.asks, {
-      ask: asked,
-      split: splitTargetGroups(answered),
-      // ADR 0162 (F8): the suggestions read the estate's facts and the earlier answers.
-      estate: estate.repos,
-      questions: everyTarget,
-    });
-    const refreshed: Question[] = [];
-    for (const t of drafted) {
-      // Beta.12: a question asked before, still open, takes today's options (the ranked
-      // suggestions, why each is suggested, the repos read since) in place: the same id.
-      const r = await raiseQuestions(
-        root,
-        [t.draft],
-        { step: TARGETS_STEP, repo, command: o.command, rerun, at },
-        { refresh: true },
+      io.out(
+        diffIsEmpty(whole)
+          ? "  No catalog changes."
+          : `  Records: ${kindLine(countByKind(whole))}.`,
       );
-      refreshed.push(...r.refreshed);
-      for (const q of r.raised) {
-        raised.push(q);
-        lines.push(
-          t.factIds.length > 1
-            ? `${t.factIds.length} calls go the same way and name no target the estate has: asked once, ${q.id}: ${q.question} One answer names the target of all of them. Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
-            : named.has(t.factId)
-              ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
-              : ambiguous.has(t.factId)
-                ? `More than one entry of the estate could answer a call: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
-                : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
-        );
+      if (o.verbose) for (const l of diffLines(whole).slice(1)) io.out(`    ${l}`);
+      run = {
+        repos: batch.map((it) => it.repo),
+        written,
+        changes: { ...whole, byKind: countByKind(whole) },
+      };
+      // Each repo's own changes: the records that cite it, before the write or after.
+      const cites = new Map<string, Set<string>>();
+      for (const r of [...existing.records, ...build.records]) {
+        const k = `${r.kind}/${r.id}`;
+        const set = cites.get(k) ?? new Set<string>();
+        for (const e of r.evidence) if (e.repo) set.add(e.repo);
+        cites.set(k, set);
       }
-    }
-    // Beta.24 review: the join's questions about a host nothing resolves, raised as files so the
-    // app shows them (they were only counted): a gateway's token target URL as a targets question
-    // in the join's words (read the repo again, or name the target); any other host as a hosts
-    // question, when none asks about it yet. A call asked another way already isn't asked again.
-    const hostsNow = (await listQuestions(root, { step: HOSTS_STEP })).questions;
-    const hostDrafts = joinHostQuestionDrafts({
-      repo,
-      facts,
-      asks: result.join?.asks ?? [],
-      records: result.records,
-      repos: await loadRepos(root).catch(() => []),
-      skip: new Set([...drafted.flatMap((t) => t.factIds), ...Object.keys(targets)]),
-      hostsAsked: new Set(hostsNow.flatMap((q) => hostOfQuestion(q) ?? [])),
-    });
-    const joinHostAsked: { id: string; host: string }[] = [];
-    for (const d of hostDrafts) {
-      const r = await raiseQuestions(
-        root,
-        [d.draft],
-        { step: d.step, repo, command: o.command, rerun, at },
-        { refresh: d.step === TARGETS_STEP },
-      );
-      refreshed.push(...r.refreshed);
-      const q = r.of[0];
-      if (q) joinHostAsked.push({ id: q.id, host: d.host });
-      for (const x of r.raised) {
-        raised.push(x);
-        lines.push(
-          d.step === TARGETS_STEP
-            ? `${d.factIds.length === 1 ? "A call goes" : `${d.factIds.length} calls go`} to ${d.host}, a token no fact sets: asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n>, then ${rerun}.`
-            : `Calls to ${d.host} join no repo: no repo lists it under hosts. Asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n> (1 is ${x.options[0]!.label}), then ${rerun}.`,
-        );
-      }
-    }
-    for (const s of staleJoinHostQuestions({
-      repo,
-      open: everyTarget.filter((q) => q.state === "open" && isJoinHostQuestion(q)),
-      drafted: joinHostAsked,
-      ...(result.join ? { join: result.join } : {}),
-      // Beta.25: a hosts question the join raised retires too once it no longer asks it.
-      hostsOpen: (await listQuestions(root, { step: HOSTS_STEP, state: "open", repo })).questions,
-      stillAsked: new Set([...hosts.raised, ...hosts.reasked, ...hosts.open].map((q) => q.id)),
-    })) {
-      await retireQuestion(root, s.id, {
-        why: s.why,
-        at,
-        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+      const of = (repo: string) => (r: { kind: string; id: string }) =>
+        !!cites.get(`${r.kind}/${r.id}`)?.has(repo);
+      mine = (repo) => ({
+        added: whole.added.filter(of(repo)),
+        removed: whole.removed.filter(of(repo)),
+        changed: whole.changed.filter(of(repo)),
+        evidenceOnly: whole.evidenceOnly.filter(of(repo)),
       });
-      lines.push(`Retired ${s.id}: ${s.why}.`);
     }
-    if (refreshed.length)
-      lines.push(
-        `Refreshed ${refreshed.length === 1 ? "1 open question" : `${refreshed.length} open questions`} asked before (${refreshed.map((q) => q.id).join(", ")}): the same id, with today's options, ranked by the estate as read now, each saying why it is suggested.`,
-      );
-    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
-    // of the profile names: who owns it (a system or a team, from the picker).
-    const topicDrafts = topicQuestionDrafts(repo, result.records);
-    for (const t of topicDrafts) {
-      const r = await raiseQuestions(root, [t.draft], {
-        step: TOPICS_STEP_ID,
+    /** v31: the answers the run's questions opened again, which the one build still had. */
+    let reopenedInRun = 0;
+    const after = async (
+      { repo, facts, o }: FactsWrite,
+      projected: Projected,
+      snapshotCommit: string,
+    ): Promise<WriteFactsResult> => {
+      const { answered, everyTarget, targets, ruled, estate, result, links, sharedMaps } =
+        projected;
+      const rerun = `atticus verify ${repo} --write`;
+      // ADR 0151, 0164: the contract companion and this repo's specs, kept beside its facts.
+      await progress.step("Writing contracts");
+      await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
+      await progress.step("Writing specs");
+      await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
+      const diff = mine(repo);
+      const snapshot = {
+        path: `${sourcesRelOf(root)}/facts/${repo}.jsonl`,
+        status: w.slots.some((x) => x.startsWith(`${sourcesRelOf(root)}/facts/${repo}.`))
+          ? ("written" as const)
+          : ("unchanged" as const),
+        facts: facts.length,
+        commit: snapshotCommit,
+      };
+      if (!many) buildSaid();
+
+      // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
+      // have are removed. A drafted flow (another template) is left alone.
+      // A flow the facts project into an invalid Flow (a call-out that names no call: the verifier
+      // keeps the fact, since its line holds) is left out and said, never a crash after the
+      // catalog is written.
+      const flows = result.flows.filter((f) => {
+        const p = parseRecord(f);
+        if (p.ok) return true;
+        io.err(
+          `The flow ${f.id} isn't written to ${specRelOf(root, repo)}/: ${p.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}. Have your assistant fix its flow fact (each call-out step's ref names the call it makes), then run ${rerun}.`,
+        );
+        return false;
+      });
+      await progress.step("Writing the flows");
+      const spec = await readRepoSpec(root, repo, { cacheRoot: root });
+      const ids = new Set(flows.map((f) => f.id));
+      for (const f of spec.flows)
+        if (f.template === FACTS_TEMPLATE && !ids.has(f.id)) await removeFlow(root, repo, f.id);
+      const flowPaths: string[] = [];
+      for (const f of flows) flowPaths.push(await writeFlow(root, repo, f));
+      const files: Record<string, string> = {};
+      for (const f of flows)
+        for (const p of flowFiles(f)) {
+          const text = await readFile(join(o.dir, ...p.split("/")), "utf8").catch(() => undefined);
+          if (text !== undefined) files[p] = specFileHash(text);
+        }
+      // The review of beta.28.1: the snapshot's commit (an earlier copy written back keeps its own
+      // older one, so the smallest among the facts may be no commit this read was of).
+      const commit =
+        snapshotCommit !== "unknown" ? snapshotCommit : facts.map((f) => f.commit).sort()[0];
+      const kept = spec.flows.filter((f) => f.template !== FACTS_TEMPLATE).map((f) => f.id);
+      const header = spec.header;
+      await writeSpecHeader(root, {
+        schemaVersion: SPEC_HEADER_SCHEMA_VERSION,
         repo,
+        template: header?.template ?? FACTS_TEMPLATE,
+        templateReviewed: header?.templateReviewed ?? false,
+        ...(commit ? { commit } : {}),
+        ...(header?.drafted ? { drafted: header.drafted } : {}),
+        flows: [...new Set([...kept, ...ids])].sort(),
+        files: Object.fromEntries(
+          Object.entries({ ...(header?.files ?? {}), ...files }).sort(([a], [b]) =>
+            a < b ? -1 : 1,
+          ),
+        ),
+        questions: header?.questions ?? [],
+      });
+
+      // Calls nothing joins: a host no repo lists (ADR 0088), or no target and no host (ADR 0078).
+      await progress.step("Asking about the calls nothing joins");
+      const at = (o.now ?? new Date()).toISOString();
+      const hosts = await askHosts(root, result.records, { command: o.command, rerun, now: o.now });
+      const loose = new Set(result.unresolved.map((u) => u.factId));
+      // A call whose target names nothing in the estate that two or more entries serve is asked
+      // too (the join fallback, ADR 0124 addendum C-join).
+      const ambiguous = new Set(
+        (result.join?.asks ?? [])
+          .filter((a) => a.reason === "ambiguous" && a.call.repo === repo)
+          .map((a) => a.call.fact),
+      );
+      const named = new Set(facts.filter((f) => f.kind === "call" && f.to).map((f) => f.id));
+      const raised: Question[] = [...hosts.raised];
+      const lines = [...hosts.lines];
+      // Q1: the calls that go the same way (the repo, the target named or host or base, the path
+      // prefix) are asked once; a call a person's answer already names isn't asked again.
+      // Beta.27: a gateway's forwarding call to a token target URL (one only its `<URL>` line
+      // writes too) is asked in the join's words below (read the repo again), never on its own.
+      const tokenAsked = new Set(
+        (result.join?.asks ?? [])
+          .filter(
+            (a) =>
+              a.reason === "unknown-host" &&
+              a.call.repo === repo &&
+              !!a.host &&
+              isTokenHost(a.host),
+          )
+          .map((a) => a.call.fact),
+      );
+      const asked = new Set(
+        [...loose, ...ambiguous].filter(
+          (id) =>
+            !tokenAsked.has(id) &&
+            targets[id] === undefined &&
+            !answered.some((q) => q.state === "answered" && q.id === targetId(facts, repo, id)),
+        ),
+      );
+      const drafted = groupedTargetDrafts(facts, result.records, op, result.join?.asks, {
+        ask: asked,
+        split: splitTargetGroups(answered),
+        // ADR 0162 (F8): the suggestions read the estate's facts and the earlier answers.
+        estate: estate.repos,
+        questions: everyTarget,
+      });
+      const refreshed: Question[] = [];
+      for (const t of drafted) {
+        // Beta.12: a question asked before, still open, takes today's options (the ranked
+        // suggestions, why each is suggested, the repos read since) in place: the same id.
+        const r = await raiseQuestions(
+          root,
+          [t.draft],
+          { step: TARGETS_STEP, repo, command: o.command, rerun, at },
+          { refresh: true },
+        );
+        refreshed.push(...r.refreshed);
+        for (const q of r.raised) {
+          raised.push(q);
+          lines.push(
+            t.factIds.length > 1
+              ? `${t.factIds.length} calls go the same way and name no target the estate has: asked once, ${q.id}: ${q.question} One answer names the target of all of them. Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+              : named.has(t.factId)
+                ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+                : ambiguous.has(t.factId)
+                  ? `More than one entry of the estate could answer a call: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+                  : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+          );
+        }
+      }
+      // Beta.24 review: the join's questions about a host nothing resolves, raised as files so the
+      // app shows them (they were only counted): a gateway's token target URL as a targets question
+      // in the join's words (read the repo again, or name the target); any other host as a hosts
+      // question, when none asks about it yet. A call asked another way already isn't asked again.
+      const hostsNow = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+      const hostDrafts = joinHostQuestionDrafts({
+        repo,
+        facts,
+        asks: result.join?.asks ?? [],
+        records: result.records,
+        repos: await loadRepos(root).catch(() => []),
+        skip: new Set([...drafted.flatMap((t) => t.factIds), ...Object.keys(targets)]),
+        hostsAsked: new Set(hostsNow.flatMap((q) => hostOfQuestion(q) ?? [])),
+      });
+      const joinHostAsked: { id: string; host: string }[] = [];
+      for (const d of hostDrafts) {
+        const r = await raiseQuestions(
+          root,
+          [d.draft],
+          { step: d.step, repo, command: o.command, rerun, at },
+          { refresh: d.step === TARGETS_STEP },
+        );
+        refreshed.push(...r.refreshed);
+        const q = r.of[0];
+        if (q) joinHostAsked.push({ id: q.id, host: d.host });
+        for (const x of r.raised) {
+          raised.push(x);
+          lines.push(
+            d.step === TARGETS_STEP
+              ? `${d.factIds.length === 1 ? "A call goes" : `${d.factIds.length} calls go`} to ${d.host}, a token no fact sets: asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n>, then ${rerun}.`
+              : `Calls to ${d.host} join no repo: no repo lists it under hosts. Asked ${x.id}: ${x.question} Answer it: atticus questions answer ${x.id} --option <n> (1 is ${x.options[0]!.label}), then ${rerun}.`,
+          );
+        }
+      }
+      for (const s of staleJoinHostQuestions({
+        repo,
+        open: everyTarget.filter((q) => q.state === "open" && isJoinHostQuestion(q)),
+        drafted: joinHostAsked,
+        ...(result.join ? { join: result.join } : {}),
+        // Beta.25: a hosts question the join raised retires too once it no longer asks it.
+        hostsOpen: (await listQuestions(root, { step: HOSTS_STEP, state: "open", repo })).questions,
+        stillAsked: new Set([...hosts.raised, ...hosts.reasked, ...hosts.open].map((q) => q.id)),
+      })) {
+        await retireQuestion(root, s.id, {
+          why: s.why,
+          at,
+          ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+        });
+        lines.push(`Retired ${s.id}: ${s.why}.`);
+      }
+      if (refreshed.length)
+        lines.push(
+          `Refreshed ${refreshed.length === 1 ? "1 open question" : `${refreshed.length} open questions`} asked before (${refreshed.map((q) => q.id).join(", ")}): the same id, with today's options, ranked by the estate as read now, each saying why it is suggested.`,
+        );
+      // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
+      // of the profile names: who owns it (a system or a team, from the picker).
+      const topicDrafts = topicQuestionDrafts(repo, result.records);
+      for (const t of topicDrafts) {
+        const r = await raiseQuestions(root, [t.draft], {
+          step: TOPICS_STEP_ID,
+          repo,
+          command: o.command,
+          rerun,
+          at,
+        });
+        for (const q of r.raised) {
+          raised.push(q);
+          lines.push(
+            `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's topics in the profile, for review), then ${rerun}.`,
+          );
+        }
+      }
+      // Round 49: an open topic question whose topic is no longer a loose end (the other side is
+      // read and joined, or the profile names its owner) retires the same way, saying why.
+      for (const s of staleTopicQuestions({
+        repo,
+        open: (await listQuestions(root, { step: TOPICS_STEP_ID, state: "open", repo })).questions,
+        drafted: topicDrafts,
+      })) {
+        await retireQuestion(root, s.id, {
+          why: s.why,
+          at,
+          ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+        });
+        lines.push(`Retired ${s.id}: ${s.why}.`);
+      }
+      // J6: an open question the code now answers (the call names its target, or the manifest's
+      // hosts and base paths join it) retires, saying how; one asked another way now (Q1) names
+      // the question that asks it. An answered question is never retired.
+      for (const s of staleTargetQuestions({
+        repo,
+        facts,
+        open: answered.filter((q) => q.state === "open"),
+        drafted,
+        asked,
+        ruled,
+        ...(result.join ? { join: result.join } : {}),
+      })) {
+        await retireQuestion(root, s.id, {
+          why: s.why,
+          at,
+          ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+        });
+        lines.push(`Retired ${s.id}: ${s.why}.`);
+      }
+      // ADR 0162 (F8): an answer the code read since disagrees with (the repo it names is read,
+      // and no route of it serves the call) opens its question again, saying why.
+      const reopened = new Set<string>();
+      const unsettled = new Map<string, string | undefined>();
+      for (const m of result.answerMisses ?? []) {
+        const callerFacts =
+          m.call.repo === repo ? facts : estate.repos.find((x) => x.repo === m.call.repo)?.facts;
+        const q = callerFacts
+          ? answeredQuestionOfCall(m.call.repo, callerFacts, everyTarget, m.call.fact)
+          : undefined;
+        if (!q || reopened.has(q.id)) continue;
+        // Review item 2: the person gave the same answer again after it reopened: their word holds.
+        if (answerReconfirmed(q)) continue;
+        // Review item 9: only a read of the repo named that is whole and fresh disagrees.
+        const named = repoOfTarget(op, m.target);
+        if (!unsettled.has(named)) unsettled.set(named, await readNotSettled(root, named));
+        const notYet = unsettled.get(named);
+        if (notYet) {
+          lines.push(
+            `${m.target} is read, but ${notYet}: ${q.id}'s answer is checked against it once the read is whole and fresh.`,
+          );
+          continue;
+        }
+        reopened.add(q.id);
+        reopenedInRun++;
+        const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
+        await reopenQuestion(root, q.id, { why, at });
+        lines.push(
+          `Asked again ${q.id}: ${why}. Answer it again: atticus questions answer ${q.id} --option <n> | --target <id>, then atticus verify ${m.call.repo} --write.`,
+        );
+      }
+      // ADR 0162 (F8): the same answer in several repos offers to become one rule.
+      const typeOf = new Map(estateRepos(op).map((r) => [r.id, r.type] as const));
+      for (const offer of answerRuleOffers({
+        repos: [{ repo, facts }, ...estate.repos].map((r) => ({
+          ...r,
+          ...(typeOf.get(r.repo) ? { type: typeOf.get(r.repo)! } : {}),
+        })),
+        questions: everyTarget.filter((q) => !reopened.has(q.id)),
+      }))
+        if (offer.repos.includes(repo)) lines.push(offer.line);
+
+      // ADR 0163: the organisation's terms: access against calls, possible links, a question per
+      // unknown term, and what the accepted call-security rules find.
+      const termed = await termsWrite(root, repo, {
+        op,
+        terms: result.terms,
+        repos: [{ repo, facts }, ...estate.repos],
+        join: result.join,
         command: o.command,
         rerun,
         at,
+        dirOf: (r) => (r === repo ? Promise.resolve(o.dir) : checkoutOf(root, r)),
       });
-      for (const q of r.raised) {
-        raised.push(q);
-        lines.push(
-          `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's topics in the profile, for review), then ${rerun}.`,
+      raised.push(...termed.raised);
+      lines.push(...termed.lines);
+
+      // A few lines: counts by kind and the flows folder; every record and flow with --verbose
+      // (or --json), so a first write of hundreds of records stays readable.
+      const byKind = countByKind(diff);
+      if (!many) {
+        io.out(
+          `Wrote the catalog for ${repo}: ${written.written} files written, ${written.removed} removed, ${written.unchanged} unchanged.`,
         );
-      }
-    }
-    // Round 49: an open topic question whose topic is no longer a loose end (the other side is
-    // read and joined, or the profile names its owner) retires the same way, saying why.
-    for (const s of staleTopicQuestions({
-      repo,
-      open: (await listQuestions(root, { step: TOPICS_STEP_ID, state: "open", repo })).questions,
-      drafted: topicDrafts,
-    })) {
-      await retireQuestion(root, s.id, {
-        why: s.why,
-        at,
-        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
-      });
-      lines.push(`Retired ${s.id}: ${s.why}.`);
-    }
-    // J6: an open question the code now answers (the call names its target, or the manifest's
-    // hosts and base paths join it) retires, saying how; one asked another way now (Q1) names
-    // the question that asks it. An answered question is never retired.
-    for (const s of staleTargetQuestions({
-      repo,
-      facts,
-      open: answered.filter((q) => q.state === "open"),
-      drafted,
-      asked,
-      ruled,
-      ...(result.join ? { join: result.join } : {}),
-    })) {
-      await retireQuestion(root, s.id, {
-        why: s.why,
-        at,
-        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
-      });
-      lines.push(`Retired ${s.id}: ${s.why}.`);
-    }
-    // ADR 0162 (F8): an answer the code read since disagrees with (the repo it names is read,
-    // and no route of it serves the call) opens its question again, saying why.
-    const reopened = new Set<string>();
-    const unsettled = new Map<string, string | undefined>();
-    for (const m of result.answerMisses ?? []) {
-      const callerFacts =
-        m.call.repo === repo ? facts : estate.repos.find((x) => x.repo === m.call.repo)?.facts;
-      const q = callerFacts
-        ? answeredQuestionOfCall(m.call.repo, callerFacts, everyTarget, m.call.fact)
-        : undefined;
-      if (!q || reopened.has(q.id)) continue;
-      // Review item 2: the person gave the same answer again after it reopened: their word holds.
-      if (answerReconfirmed(q)) continue;
-      // Review item 9: only a read of the repo named that is whole and fresh disagrees.
-      const named = repoOfTarget(op, m.target);
-      if (!unsettled.has(named)) unsettled.set(named, await readNotSettled(root, named));
-      const notYet = unsettled.get(named);
-      if (notYet) {
-        lines.push(
-          `${m.target} is read, but ${notYet}: ${q.id}'s answer is checked against it once the read is whole and fresh.`,
+        io.out(diffIsEmpty(diff) ? "  No catalog changes." : `  Records: ${kindLine(byKind)}.`);
+      } else
+        io.out(
+          diffIsEmpty(diff)
+            ? `  ${repo}: no record of it changed.`
+            : `  ${repo}'s records: ${kindLine(byKind)}.`,
         );
-        continue;
-      }
-      reopened.add(q.id);
-      const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
-      await reopenQuestion(root, q.id, { why, at });
-      lines.push(
-        `Asked again ${q.id}: ${why}. Answer it again: atticus questions answer ${q.id} --option <n> | --target <id>, then atticus verify ${m.call.repo} --write.`,
+      if (o.verbose) for (const l of diffLines(diff).slice(1)) io.out(`    ${l}`);
+      const specsRel = specRelOf(root, repo);
+      io.out(`  Flows: ${flowPaths.length} in ${specsRel}/.`);
+      if (o.verbose) for (const p of flowPaths) io.out(`    ${p}`);
+      else if (!diffIsEmpty(diff) || flowPaths.length)
+        io.out(`  atticus verify ${repo} --write --verbose lists each record and flow.`);
+      io.out(
+        `  Facts snapshot: ${snapshot.path} ${snapshot.status} (${snapshot.facts} ${snapshot.facts === 1 ? "fact" : "facts"} at ${snapshot.commit.slice(0, 7)}).`,
       );
-    }
-    // ADR 0162 (F8): the same answer in several repos offers to become one rule.
-    const typeOf = new Map(estateRepos(op).map((r) => [r.id, r.type] as const));
-    for (const offer of answerRuleOffers({
-      repos: [{ repo, facts }, ...estate.repos].map((r) => ({
-        ...r,
-        ...(typeOf.get(r.repo) ? { type: typeOf.get(r.repo)! } : {}),
-      })),
-      questions: everyTarget.filter((q) => !reopened.has(q.id)),
-    }))
-      if (offer.repos.includes(repo)) lines.push(offer.line);
-
-    // ADR 0163: the organisation's terms: access against calls, possible links, a question per
-    // unknown term, and what the accepted call-security rules find.
-    const termed = await termsWrite(root, repo, {
-      op,
-      terms: result.terms,
-      repos: [{ repo, facts }, ...estate.repos],
-      join: result.join,
-      command: o.command,
-      rerun,
-      at,
-      dirOf: (r) => (r === repo ? Promise.resolve(o.dir) : checkoutOf(root, r)),
-    });
-    raised.push(...termed.raised);
-    lines.push(...termed.lines);
-
-    // A few lines: counts by kind and the flows folder; every record and flow with --verbose
-    // (or --json), so a first write of hundreds of records stays readable.
-    const byKind = countByKind(diff);
-    io.out(
-      `Wrote the catalog for ${repo}: ${written.written} files written, ${written.removed} removed, ${written.unchanged} unchanged.`,
-    );
-    io.out(diffIsEmpty(diff) ? "  No catalog changes." : `  Records: ${kindLine(byKind)}.`);
-    if (o.verbose) for (const l of diffLines(diff).slice(1)) io.out(`    ${l}`);
-    const specsRel = specRelOf(root, repo);
-    io.out(`  Flows: ${flowPaths.length} in ${specsRel}/.`);
-    if (o.verbose) for (const p of flowPaths) io.out(`    ${p}`);
-    else if (!diffIsEmpty(diff) || flowPaths.length)
-      io.out(`  atticus verify ${repo} --write --verbose lists each record and flow.`);
-    io.out(
-      `  Facts snapshot: ${snapshot.path} ${snapshot.status} (${snapshot.facts} ${snapshot.facts === 1 ? "fact" : "facts"} at ${snapshot.commit.slice(0, 7)}).`,
-    );
-    for (const p of result.curated.problems)
-      io.out(`Your change ${p.decision} no longer holds: ${p.message}`);
-    for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
-    for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
-      io.out(l);
-    // J2: the links the write made or unmade, with confidence and how each was found.
-    for (const l of linkLines(links, `${factsRelOf(root)}/${repo}.verify.yaml`, {
-      verbose: o.verbose === true,
-    }))
-      io.out(l);
-    const about = result.linkEvidence
-      ? linkEvidenceAbout(repo, result.linkEvidence, result.join)
-      : undefined;
-    if (about)
-      for (const l of linkEvidenceLines(about, `${factsRelOf(root)}/${repo}.verify.yaml`, {
+      for (const p of result.curated.problems)
+        io.out(`Your change ${p.decision} no longer holds: ${p.message}`);
+      for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
+      for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
+        io.out(l);
+      // J2: the links the write made or unmade, with confidence and how each was found.
+      for (const l of linkLines(links, `${factsRelOf(root)}/${repo}.verify.yaml`, {
         verbose: o.verbose === true,
       }))
         io.out(l);
-    const sharedAbout = result.shared ? sharedReport(result.shared, sharedMaps) : undefined;
-    if (sharedAbout) for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
-    await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
-    for (const l of lines) io.out(l);
-    mark("contracts, specs, flows, questions, report");
-    await progress.step("Rendering the map");
-    const map = await renderRepoMap(root, repo, io, built.catalog);
-    mark("map");
+      const about = result.linkEvidence
+        ? linkEvidenceAbout(repo, result.linkEvidence, result.join)
+        : undefined;
+      if (about)
+        for (const l of linkEvidenceLines(about, `${factsRelOf(root)}/${repo}.verify.yaml`, {
+          verbose: o.verbose === true,
+        }))
+          io.out(l);
+      const sharedAbout = result.shared ? sharedReport(result.shared, sharedMaps) : undefined;
+      if (sharedAbout)
+        for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
+      await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
+      for (const l of lines) io.out(l);
+      mark("contracts, specs, flows, questions, report");
+      await progress.step("Rendering the map");
+      const map = await renderRepoMap(root, repo, io, built.catalog);
+      mark("map");
+      return {
+        written,
+        flows: flowPaths,
+        questions: raised.map((q) => q.id),
+        map: map ?? [],
+        changes: { ...diff, byKind },
+        links,
+        snapshot,
+        ...(run ? { run } : {}),
+        // ADR 0195 point 4: what the build removed, each with what explains it.
+        removed: w.removals.map((x) => ({
+          kind: x.kind,
+          id: x.id,
+          repos: x.repos,
+          explainedBy: x.explainedBy,
+          reasons: x.reasons,
+        })),
+      };
+    };
+    if (!many) {
+      const r = await after(items[0]!, await projectedOf(0), commits[0]!);
+      progress.end({ done: true });
+      gave = true;
+      return [r];
+    }
+    const results: (WriteFactsResult | Error)[] = [];
+    for (const [i, it] of batch.entries()) {
+      let r: WriteFactsResult | Error;
+      try {
+        r = await after(it, await projectedOf(i), commits[i]!);
+      } catch (e) {
+        // The catalog is written whole: a repo whose own files can't be written is that repo's.
+        if (!isFileSystemError(e)) throw e;
+        r = e as Error;
+      }
+      results.push(r);
+      await each!(items.indexOf(it), r);
+    }
+    // An answer the run's questions opened again (ADR 0162, F8) is no answer: the next build
+    // drops what it joined, so the catalog is built again without it now. The repos' own Applies
+    // leave it until the next Apply when the last repo opens it (one-build.md).
+    if (reopenedInRun) {
+      // The review of PR #10: a command a person can run (the guards' lines name it with its
+      // flags), and a refusal or a file error is said and fails the run, never a silent "done".
+      const opened = reopenedInRun === 1 ? "the answer" : `the ${reopenedInRun} answers`;
+      try {
+        const again = await buildAndWrite(root, {
+          command: "atticus catalog build",
+          ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
+          ...(o.discardEdits !== undefined ? { discardEdits: o.discardEdits } : {}),
+          ...(o.cachesAfterResult
+            ? { cachesAfter: (w: () => Promise<void>) => later.push(w) }
+            : {}),
+        });
+        if (again.guard.refused) {
+          io.err(
+            `The catalog was written for every repo, but building it again without ${opened} this run opened again was refused:`,
+          );
+          for (const l of buildLines(root, again)) io.err(l);
+          await refusalEnds(root, again.guard.refused);
+          o.onRefused?.(again);
+          o.onRunFault?.();
+        } else if (again.write && again.write.written + again.write.removed > 0)
+          io.out(
+            `Built the catalog again without ${opened} this run opened again: ${again.write.written} files written, ${again.write.removed} removed. That is a second undo step (atticus catalog undo takes it back first, then the run's write); the repos' specs, flows, report and map above were written before it, and their next Apply writes them again.`,
+          );
+      } catch (e) {
+        if (!isFileSystemError(e)) throw e;
+        io.err(
+          `The catalog was written for every repo, but building it again without ${opened} this run opened again stopped: ${(e as Error).message} Run atticus catalog build when the file is free.`,
+        );
+        o.onRunFault?.();
+      }
+    }
     progress.end({ done: true });
     gave = true;
-    return {
-      written,
-      flows: flowPaths,
-      questions: raised.map((q) => q.id),
-      map: map ?? [],
-      changes: { ...diff, byKind },
-      links,
-      snapshot,
-      // ADR 0195 point 4: what the build removed, each with what explains it.
-      removed: w.removals.map((x) => ({
-        kind: x.kind,
-        id: x.id,
-        repos: x.repos,
-        explainedBy: x.explainedBy,
-        reasons: x.reasons,
-      })),
-    };
+    return results;
   } finally {
     progress.end();
     // ADR 0205 step 2: the caches after the result, then the lock let go. The lock says so
