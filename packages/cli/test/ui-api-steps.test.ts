@@ -315,7 +315,8 @@ describe("a step the app runs says why, and what to press next", () => {
       const printed = srv.jobs.linesOf(j.id)?.lines ?? [];
       expect(printed).toContain("Repo 1 of 2: forge-customers…");
       expect(printed.find((l) => l.startsWith("Repo 2 of 2: forge-web… (1 done in "))).toMatch(
-        / left at this rate\)$/,
+        // v31: the time left is mostly verifying, then the one build of every repo.
+        / left at this rate, then one catalog build\)$/,
       );
       expect(said).not.toMatch(/Repo \d of \d/);
       // The count is of repos finished (never the one under way), with the repo it is on in words.
