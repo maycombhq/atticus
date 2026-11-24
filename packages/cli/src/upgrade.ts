@@ -711,6 +711,21 @@ function gatesRel(root: string): string {
   return packRel(root, "gates.yaml");
 }
 
+/**
+ * beta.32: the lines a write says before it verifies anything when the metarepo needs `atticus
+ * upgrade` first, or undefined. Only the step a write's build refuses without (ADR 0124 addendum
+ * E-ids, beta.30), and only while the stamp doesn't name it: an upgraded metarepo pays one read.
+ */
+export async function upgradeBeforeWrite(root: string): Promise<string[] | undefined> {
+  if ((await readStamp(root))?.migrations.includes(UNRESOLVED_IDS_STEP)) return undefined;
+  const { unresolvedIdsNamedOld } = await import("./upgrade-unresolved-ids.js");
+  if (!(await unresolvedIdsNamedOld(root))) return undefined;
+  return [
+    "Run atticus upgrade first: this metarepo's changes, questions or decisions name loose ends the way Atticus named them before beta.30 (without their repo), and a write's build refuses until they are carried to the new names.",
+    "atticus upgrade --dry-run shows what it changes; atticus upgrade does it, in one build you can undo. Nothing was verified or written.",
+  ];
+}
+
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {
   return (await readStampFile(root)).stamp;
 }
@@ -719,7 +734,7 @@ export async function readStamp(root: string): Promise<MetarepoStamp | undefined
  * Round 49: the stamp, and when the file is there but isn't a stamp this Atticus reads (a newer
  * one added a field, or a schema version), the Atticus it names, read on its own, and why.
  */
-async function readStampFile(
+export async function readStampFile(
   root: string,
 ): Promise<{ stamp?: MetarepoStamp; unread?: { atticus?: string; why: string } }> {
   let text: string;

@@ -205,6 +205,35 @@ describe("the build cache (ADR 0195 point 9)", () => {
   );
 
   it(
+    "wholeOff (beta.32, selfcheck --timing): no build taken whole and none kept, but the last build's texts used, and the build is the uncached one",
+    async () => {
+      const root = await forge();
+      const first = await settled(root);
+      forgetSerializedTexts();
+      const before = await tree(root);
+      const s0 = buildCacheStats();
+      buildCacheHooks.wholeOff = true;
+      let b: Awaited<ReturnType<typeof buildCatalog>>;
+      try {
+        b = await buildCatalog(await loadBuildInputs(root));
+      } finally {
+        delete buildCacheHooks.wholeOff;
+      }
+      const s1 = buildCacheStats();
+      expect(s1.memoHits).toBe(s0.memoHits);
+      expect(s1.textsReused - s0.textsReused).toBeGreaterThan(b.files.size / 2);
+      expect([...b.files]).toEqual([...first.build.files]);
+      // Nothing kept: no file under the metarepo changed, the cache's included.
+      expect(await tree(root)).toEqual(before);
+      // And the next build still takes the last one whole.
+      const s2 = buildCacheStats();
+      await buildCatalog(await loadBuildInputs(root));
+      expect(buildCacheStats().memoHits).toBe(s2.memoHits + 1);
+    },
+    T,
+  );
+
+  it(
     "with one slot changed, the records that didn't change keep their texts, and the files are a build's without the cache",
     async () => {
       const root = await forge();

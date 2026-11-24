@@ -1,5 +1,5 @@
 schemaVersion: 3
-atticus: 2.0.0-beta.31
+atticus: 2.0.0-beta.32
 upgradedAt: 2026-11-19T05:00:00Z
 upgradedBy: pat
 migrations:

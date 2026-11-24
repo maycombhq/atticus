@@ -18,9 +18,16 @@ const REPO = "forge-ledger";
 /** A metarepo with forge-ledger read at one commit, its facts and the lines given after them. */
 async function verifyWith(
   lines: (first: Record<string, unknown>, head: string) => string[],
-  o: { write?: boolean } = {},
+  o: { write?: boolean; stamp?: string } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "verify-newer-"));
+  if (o.stamp) {
+    mkdirSync(join(root, ".atticus"), { recursive: true });
+    writeFileSync(
+      join(root, ".atticus", "metarepo.yaml"),
+      `schemaVersion: 3\natticus: ${o.stamp}\nupgradedAt: 2026-11-23T00:00:00Z\nupgradedBy: pat\nmigrations: []\n`,
+    );
+  }
   cpSync(join(VERIFY, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
   cpSync(join(VERIFY, "metarepo/catalog"), join(root, "catalog"), { recursive: true });
   const repo = join(root, "workspace", REPO);
@@ -81,26 +88,75 @@ async function verifyWith(
   };
 }
 
-it("keeps a newer Atticus's fact in the facts file as written, and says so", async () => {
-  let newer = "";
-  let value = "";
-  let field = "";
-  let lines = "";
-  const r = await verifyWith((first, head) => {
-    newer = JSON.stringify({
+/** The four facts of the test below: a new kind, a new value, a new field, a field `lines`. */
+function fourNew(first: Record<string, unknown>, head: string): string[] {
+  return [
+    JSON.stringify({
       kind: "package",
       id: "package.forge-ledger-ui",
       repo: REPO,
       commit: head,
       cite: { file: "package.json", line: 2, value: "forge-ledger-ui" },
-    });
-    // review of beta.25: a known kind with a value, or a field, this version doesn't know
-    value = JSON.stringify({ ...first, id: "e-get-account-v2", entryType: "carrier-pigeon" });
-    field = JSON.stringify({ ...first, id: "e-get-account-v3", rateLimit: "10/s" });
-    // a field one letter from `line` that is a word of its own (its plural): newer, not a slip
-    lines = JSON.stringify({ ...first, id: "e-get-account-v4", lines: [3, 4] });
-    return [newer, value, field, lines];
+    }),
+    JSON.stringify({ ...first, id: "e-get-account-v2", entryType: "carrier-pigeon" }),
+    JSON.stringify({ ...first, id: "e-get-account-v3", rateLimit: "10/s" }),
+    JSON.stringify({ ...first, id: "e-get-account-v4", lines: [3, 4] }),
+  ];
+}
+
+it("beta.32: with no newer Atticus's stamp on the metarepo, a field or kind it doesn't know is the assistant's, said as such and kept", async () => {
+  let extra: string[] = [];
+  const r = await verifyWith((first, head) => (extra = fourNew(first, head)));
+  try {
+    expect(r.code).toBe(0);
+    expect(r.err).not.toContain("written by a newer Atticus");
+    expect(r.err).toMatch(
+      /^4 facts of facts\/forge-ledger\.jsonl have a field or kind no Atticus up to \S+ writes, and no newer Atticus has upgraded this metarepo, so the assistant most likely added them as it read: kept in the file as written, not read here\. Unless someone on your team uses a newer Atticus, take what is named out of each line \(or read forge-ledger again\), then verify again:$/m,
+    );
+    expect(r.err).toContain("fact e-get-account-v3: field rateLimit is new to the entry fact");
+    expect(r.err).toContain("fact package.forge-ledger-ui: fact kind package");
+    for (const l of extra) expect(r.after).toContain(l);
+  } finally {
+    rmSync(r.root, { recursive: true, force: true });
+  }
+});
+
+it("beta.32 review: a stamp this Atticus can't read is a newer Atticus's, never the assistant's", async () => {
+  const r = await verifyWith((first, head) => fourNew(first, head), {
+    stamp: "9.0.0\nnewField: from beta.99",
   });
+  try {
+    expect(r.err).toContain("written by a newer Atticus");
+    expect(r.err).not.toContain("assistant most likely");
+  } finally {
+    rmSync(r.root, { recursive: true, force: true });
+  }
+});
+
+it("keeps a newer Atticus's fact in the facts file as written, and says so", async () => {
+  let newer = "";
+  let value = "";
+  let field = "";
+  let lines = "";
+  const r = await verifyWith(
+    (first, head) => {
+      newer = JSON.stringify({
+        kind: "package",
+        id: "package.forge-ledger-ui",
+        repo: REPO,
+        commit: head,
+        cite: { file: "package.json", line: 2, value: "forge-ledger-ui" },
+      });
+      // review of beta.25: a known kind with a value, or a field, this version doesn't know
+      value = JSON.stringify({ ...first, id: "e-get-account-v2", entryType: "carrier-pigeon" });
+      field = JSON.stringify({ ...first, id: "e-get-account-v3", rateLimit: "10/s" });
+      // a field one letter from `line` that is a word of its own (its plural): newer, not a slip
+      lines = JSON.stringify({ ...first, id: "e-get-account-v4", lines: [3, 4] });
+      return [newer, value, field, lines];
+      // A newer Atticus has upgraded this metarepo: its stamp says so.
+    },
+    { stamp: "9.0.0" },
+  );
   try {
     expect(r.code).toBe(0);
     expect(r.err).toContain("written by a newer Atticus");

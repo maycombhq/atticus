@@ -43,6 +43,11 @@ import {
 export interface ScanInputsOptions {
   /** The metarepo root. Record paths are relative to it and start with inputs/. */
   root: string;
+  /**
+   * beta.32: told as each stage ends (the build's phase clock, so `selfcheck --timing` shows
+   * where an intake's seconds go: 14 s of one Apply on the owner's estate).
+   */
+  mark?: (stage: string) => void;
   /** Org pack folder (default <root>/org-pack) or an org pack already loaded. */
   orgPack?: string | OrgPack;
   /** Where inputs/ is, when it isn't <root>/inputs (the Forge fixture keeps it beside the metarepo). */
@@ -225,6 +230,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     });
   }
   for (const f of files) f.doc.hash = f.hash;
+  o.mark?.("read, hash and classify");
 
   // ---- duplicates: the copy outside the inbox (then the first by path) is the one kept
   const canonical = [...files].sort((a, b) =>
@@ -338,6 +344,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
   }
   for (const f of kept) if (f.doc.supersededBy) f.doc.status = "superseded";
 
+  o.mark?.("duplicates, ids and versions");
   // ---- names → systems
   const components = new Map(
     records
@@ -599,6 +606,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     f.doc.records = [...new Set(f.doc.records)].sort();
   }
 
+  o.mark?.("names and readers");
   // ---- ingested-content defences (ADR 0042): screen every file kept, flag medium and high risk
   const decisionIds = new Map<string, Rec>();
   for (const r of records)
@@ -648,6 +656,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     });
   }
 
+  o.mark?.("defences");
   // ---- partner specs never overwrite code: disagreements go to triage
   const recs = records as unknown as Rec[];
   const fromCode = (r: Rec) => r.evidence.some((e) => e.source === "code" || e.source === "config");
@@ -743,6 +752,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
         message: `invalid ${r.kind} ${r.id}: ${p.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`,
       });
   }
+  o.mark?.("partner specs and the rest");
   return {
     records: final,
     documents: files.map((f) => f.doc).sort((a, b) => (a.path < b.path ? -1 : 1)),

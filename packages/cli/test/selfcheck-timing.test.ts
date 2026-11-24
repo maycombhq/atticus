@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { buildPhases } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
-import { FACTS_SIDE, TIMING_WORDS, timeWords } from "../src/selfcheck-timing.js";
-import { FACTS_SIDE_FILES, timeLeftWords } from "../src/verify-commands.js";
+import { FACTS_SIDE, TIMING_WORDS } from "../src/selfcheck-timing.js";
+import { FACTS_SIDE_FILES } from "../src/verify-commands.js";
 import type { Shape } from "../src/shape-words.js";
 import { makeFieldEstate, type FieldEstate } from "./field-estate.js";
 
@@ -123,8 +123,21 @@ describe("atticus selfcheck --timing", () => {
       const named = await run(["selfcheck", "--timing", "--names", "--root", e.root]);
       expect(named.code).toBe(0);
       const line = named.out.find((l) => l.startsWith("Repos with facts: "));
-      expect(line).toMatch(
-        /^Repos with facts: \d+\. Apply to every repo, at that each: (under a minute|about \d+ min|about \d+ h( \d+ min)?) or more\.$/,
+      // beta.32: no "at that each" estimate. Since beta.31 Apply to every repo builds once, so
+      // one Apply times the repos was hours too many (1 h 20 min said on the owner's estate).
+      expect(line).toMatch(/^Repos with facts: \d+\.$/);
+      expect(named.out.join("\n")).not.toMatch(/at that each/);
+      // beta.32: how many record files the guards' hash read again, with --names only. The
+      // estate was built by its maker, never hashed with a cache here, so every one is read.
+      expect(named.out).toContainEqual(
+        expect.stringMatching(
+          /^The guards' hash read \d+ of \d+ record files again; the rest were kept by their size and times\.$/,
+        ),
+      );
+      expect(plain.out.join("\n")).not.toMatch(/guards' hash read/);
+      // The intake's stages are timed as phases of their own.
+      expect(plain.out).toContainEqual(
+        expect.stringMatching(/^ {2}intake: read, hash and classify +\d/),
       );
     },
     T,
@@ -198,11 +211,7 @@ describe("atticus selfcheck --timing", () => {
     T,
   );
 
-  it("its time words and its facts-file test are verify's own", () => {
-    for (const m of [0, 0.5, 1, 7, 44, 59.4, 59.6, 61, 64, 89, 119, 121, 177.6, 600])
-      expect(timeWords(m * 60_000), `${m} min`).toBe(timeLeftWords(m * 60_000));
-    expect(timeWords(60 * 1_983)).toBe(timeLeftWords(60 * 1_983));
-    expect(timeWords(118.9 * 60_000)).not.toMatch(/60 min/);
+  it("its facts-file test is verify's own", () => {
     expect(FACTS_SIDE.source).toBe(FACTS_SIDE_FILES.source);
   });
 

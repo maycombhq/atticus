@@ -1204,6 +1204,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       inputsDir: i.inputsDir,
       records: [...merged.records, ...i.curated.records],
       ingestors: listIngestors(),
+      mark: phaseClock("intake: "),
       // Intake stamps what it read; the build gives it no clock of its own (point 8).
       scannedAt: "1970-01-01T00:00:00.000Z",
     });
@@ -1211,7 +1212,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
       problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
     if (inputs.records.length > 0) merged = mergeCatalog(mergeInput([...code, ...inputs.records]));
   }
-  mark("3 intake");
+  mark("3 intake, and the merge again");
   await stage("each repo's records after the merge");
   let records = withoutHeardListeners(merged.records, projection);
   let afterFacts: ReturnType<typeof factsEstateAfterMerge> | undefined;
@@ -1830,7 +1831,7 @@ export async function buildCatalog(i: BuildInputs, progress: BuildProgress = {})
   };
   // Kept only when what the passes read themselves is still what the key hashed: a file changed
   // while they ran may be in the build or not, so the build is no build of either.
-  if (cacheKey && (await cacheKey.unchanged()))
+  if (cacheKey && !buildCacheHooks.wholeOff && (await cacheKey.unchanged()))
     stageKept(build, i.stateDir, cacheKey.key, textKeys);
   mark("kept");
   return build;

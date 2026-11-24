@@ -292,11 +292,8 @@ async function waitingReads(
   return { reads };
 }
 
-/**
- * What the step lists and writes, from one build with no decision applied (what each old id is
- * now). Undefined: no catalog built from slots (the slots' adoption builds it).
- */
-async function planOf(root: string): Promise<Plan | undefined> {
+/** What decides whether the step has anything to do: no build (beta.32's check before a write). */
+async function neededOf(root: string) {
   const before = await builtBefore(root);
   if (before === undefined) return undefined;
   const scanner = await import("@maycombhq/scanner");
@@ -318,6 +315,36 @@ async function planOf(root: string): Promise<Plan | undefined> {
       named = true;
       break;
     }
+  return { before, scanner, op, curatedDir, gen, oldGen, now, repoParts, inputs, texts, named };
+}
+
+/**
+ * beta.32, the owner's Apply of 2026-11-23: a metarepo the step hasn't run in whose changes,
+ * questions or decisions name a loose end the old way. A write's build refuses there, so the
+ * write says so before it verifies anything, not after a minute and a half of work.
+ */
+export async function unresolvedIdsNamedOld(root: string): Promise<boolean> {
+  // First the cheap part (the review of beta.32): no input file mentions a loose end at all.
+  if ((await builtBefore(root)) === undefined) return false;
+  const scanner = await import("@maycombhq/scanner");
+  const op = await loadOrgPack(orgPackDirOf(root));
+  let mentioned = false;
+  for (const f of await scanner.looseEndInputFiles(root, scanner.curatedDirOf(root, op)))
+    if ((await readText(f.path))?.includes(PREFIX)) {
+      mentioned = true;
+      break;
+    }
+  return mentioned && (await neededOf(root))?.named === true;
+}
+
+/**
+ * What the step lists and writes, from one build with no decision applied (what each old id is
+ * now). Undefined: no catalog built from slots (the slots' adoption builds it).
+ */
+async function planOf(root: string): Promise<Plan | undefined> {
+  const n = await neededOf(root);
+  if (n === undefined) return undefined;
+  const { before, scanner, op, curatedDir, oldGen, inputs, texts, named } = n;
   if (!(before && oldGen.length) && !named) return { writes: [], files: [], builds: false };
 
   // ---- the reads verify checked that wait for this step (option b, 2026-11-22)

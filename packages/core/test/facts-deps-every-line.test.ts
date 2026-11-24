@@ -235,6 +235,7 @@ describe("the facts file stays at version 5 (review of beta.25)", () => {
         kind: "package",
         message:
           "fact package.forge-ledger-ui is written by a newer Atticus (fact kind package); install it to read this fact",
+        unknown: "fact kind package",
       },
     ]);
     // the line by line read keeps the line as written, for a writer to keep it

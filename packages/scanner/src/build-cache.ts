@@ -44,6 +44,13 @@ export const BUILD_CACHE_FORMAT = 2;
  */
 export const buildCacheHooks: {
   off?: boolean;
+  /**
+   * beta.32, `atticus selfcheck --timing`: never take the last build whole, and keep nothing, but
+   * use the last build's texts and parses as an Apply's build does (its facts slot is new, so it
+   * never takes the last build whole either). With `off`, every record was serialized again: on
+   * the owner's estate 51 s an Apply doesn't spend.
+   */
+  wholeOff?: boolean;
   stamp?: string | null;
   /** ADR 0205 step 4's proof: each kept text a build uses is checked against its record's serialization, or a throw. */
   checkTexts?: boolean;
@@ -744,7 +751,12 @@ export async function loadKept<B>(
   // ADR 0205 step 4: another build's texts from memory, in the app's server (a build of the same
   // key is the last build whole, read from disk as before).
   const mem = textsInMemory;
-  if (mem && mem.stamp === codeStamp() && key !== mem.key && appMemoryInUse()) {
+  if (
+    mem &&
+    mem.stamp === codeStamp() &&
+    (key !== mem.key || buildCacheHooks.wholeOff) &&
+    appMemoryInUse()
+  ) {
     if (mem.manifest) written.set(mem.manifest.path, mem.manifest.sha256);
     stats.memoMisses++;
     stats.textsFromMemory++;
@@ -759,7 +771,7 @@ export async function loadKept<B>(
     if (lines.length < 2 + h.records + h.files) return {};
     if (h.manifest) written.set(h.manifest.path, h.manifest.sha256);
     const fileLines = lines.slice(2 + h.records, 2 + h.records + h.files);
-    if (key !== undefined && h.key === key) {
+    if (key !== undefined && h.key === key && !buildCacheHooks.wholeOff) {
       const meta = decodeKept(lines[1]!) as Record<string, unknown>;
       if ("manifest" in meta) meta.manifest = unpackManifest(meta.manifest);
       const records = lines.slice(2, 2 + h.records).map((l) => decodeKept(l));
