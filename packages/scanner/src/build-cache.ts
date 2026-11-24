@@ -751,7 +751,12 @@ export async function loadKept<B>(
   // ADR 0205 step 4: another build's texts from memory, in the app's server (a build of the same
   // key is the last build whole, read from disk as before).
   const mem = textsInMemory;
-  if (mem && mem.stamp === codeStamp() && key !== mem.key && appMemoryInUse()) {
+  if (
+    mem &&
+    mem.stamp === codeStamp() &&
+    (key !== mem.key || buildCacheHooks.wholeOff) &&
+    appMemoryInUse()
+  ) {
     if (mem.manifest) written.set(mem.manifest.path, mem.manifest.sha256);
     stats.memoMisses++;
     stats.textsFromMemory++;

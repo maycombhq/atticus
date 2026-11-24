@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +69,12 @@ describe("an upgrade owed is said before a write verifies anything (beta.32)", (
         expect(q.err.join("\n")).not.toMatch(/Repo 1 of|don't verify|facts verified/i);
         expect(await tree(root)).toEqual(before);
       }
+      // --json: the refusal as data too.
+      const j = quiet();
+      expect(
+        await main(["verify", "forge-notify", "--write", "--json", "--root", root], j.io),
+      ).toBe(1);
+      expect(JSON.parse(j.out.join("\n"))).toEqual({ written: false, upgradeFirst: true });
       // The map's Apply (the app's "Apply 1 change to the map") too.
       const m = quiet();
       const r = await applyMapEdits(root, { edits: [] }, m.io);
@@ -89,6 +95,26 @@ describe("an upgrade owed is said before a write verifies anything (beta.32)", (
     async () => {
       const root = await metarepo();
       expect(await upgradeCommand(root, { by: "pat", yes: true }, quiet().io, B30)).toBe(0);
+      expect(await upgradeBeforeWrite(root)).toBeUndefined();
+      // Even with a change naming a loose end the old way again, nothing is read: the stamp says.
+      await writeFile(
+        join(root, "catalog", "curated", "curateddecision", "dec-b32-old-name.yaml"),
+        [
+          "schemaVersion: 5",
+          "kind: CuratedDecision",
+          "id: dec-b32-old-name",
+          "status: current",
+          "confidence: asserted",
+          "action: suppress",
+          "at: 2026-11-23T00:00:00Z",
+          "by: sam",
+          "evidence: []",
+          "reason: an old name",
+          "target: unresolved.c-7",
+          "value: null",
+          "",
+        ].join("\n"),
+      );
       expect(await upgradeBeforeWrite(root)).toBeUndefined();
     },
     T,

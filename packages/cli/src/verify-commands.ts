@@ -356,8 +356,8 @@ export async function verifyAllCommand(
   }
   const repos = only ? read.filter((r) => only.includes(r)) : read;
   // beta.32: an upgrade owed is said once, before any repo is verified.
-  if (each.write && each.plan === undefined && (await upgradeRefusal(root, io, each.json)))
-    return 1;
+  const upgradeChecked = each.write === true && each.plan === undefined;
+  if (upgradeChecked && (await upgradeRefusal(root, io, each.json))) return 1;
   const failed: string[] = [];
   // v31 (one build for many repos): with --write over two repos or more, each repo is verified as
   // before and its write held; the held writes are then one build, one guard and one undo step,
@@ -410,7 +410,7 @@ export async function verifyAllCommand(
         repo,
         {
           ...each,
-          upgradeChecked: true,
+          ...(upgradeChecked ? { upgradeChecked: true } : {}),
           onLeftOut: (l) => (leftOut = l.length),
           ...(oneBuild ? { writeFacts: holdWrite } : {}),
         },
@@ -709,18 +709,24 @@ export async function verifyCommand(
   if (parsed.newer.length) {
     const many = parsed.newer.length === 1 ? "fact" : "facts";
     // beta.32 (the owner's estate, 2026-11-23): an assistant added `note` to calls and `secret` to
-    // config facts, and this said "a newer Atticus" wrote them. Only a newer Atticus's own stamp
-    // on the metarepo says one has worked here; without it, the assistant added them.
-    const { readStamp } = await import("./upgrade.js");
-    const stamped = (await readStamp(root).catch(() => undefined))?.atticus;
-    if (stamped && newerThan(stamped, VERSION)) {
+    // config facts, and this said "a newer Atticus" wrote them. A newer Atticus's stamp on the
+    // metarepo, or one this Atticus can't read (only a newer one writes that), says one has
+    // worked here; without it, the assistant most likely added them. A teammate on a newer
+    // Atticus who never ran the upgrade leaves no stamp, so the words keep that open.
+    const { readStampFile } = await import("./upgrade.js");
+    const st = await readStampFile(root).catch(
+      () => ({}) as Awaited<ReturnType<typeof readStampFile>>,
+    );
+    const stamped = st.stamp?.atticus;
+    if ((stamped && newerThan(stamped, VERSION)) || st.unread) {
       io.err(
         `${parsed.newer.length} ${many} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "is" : "are"} written by a newer Atticus: kept in the file as written, not read here. Install that version (a team upgrades together):`,
       );
       for (const n of parsed.newer.slice(0, SHOWN)) io.err(`  line ${n.line}: ${n.message}`);
     } else {
+      const one = parsed.newer.length === 1;
       io.err(
-        `${parsed.newer.length} ${many} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "has" : "have"} a field or kind no Atticus up to ${VERSION} writes, so the assistant most likely added it as it read: kept in the file as written, not read here. Take what is named out of each line (or read ${repo} again), then verify again:`,
+        `${parsed.newer.length} ${many} of ${rel}/${repo}.jsonl ${one ? "has" : "have"} a field or kind no Atticus up to ${VERSION} writes, and no newer Atticus has upgraded this metarepo, so the assistant most likely added ${one ? "it" : "them"} as it read: kept in the file as written, not read here. Unless someone on your team uses a newer Atticus, take what is named out of each line (or read ${repo} again), then verify again:`,
       );
       for (const n of parsed.newer.slice(0, SHOWN))
         io.err(`  line ${n.line}: fact ${n.factId}: ${n.unknown ?? n.message}`);

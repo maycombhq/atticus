@@ -46,7 +46,7 @@ export const TIMING_WORDS = {
   notWritten:
     "Not timed: the writes, the guards' other checks and the compare, which need a written build. The figure is a floor for one repo's Apply.",
   apply:
-    "Apply to every repo verifies each repo, then runs these steps and one build once for the whole run (since beta.31).",
+    "Apply to every repo verifies each repo, then runs these steps and one build for the whole run (since beta.31).",
   total: (ms: number, cpuMs: number) =>
     `One Apply, before its writes: ${sec(ms)} s wall, ${sec(cpuMs)} s CPU.`,
   repos: (n: number) => `Repos with facts: ${n}.`,

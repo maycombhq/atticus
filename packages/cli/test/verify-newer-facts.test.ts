@@ -109,13 +109,25 @@ it("beta.32: with no newer Atticus's stamp on the metarepo, a field or kind it d
   const r = await verifyWith((first, head) => (extra = fourNew(first, head)));
   try {
     expect(r.code).toBe(0);
-    expect(r.err).not.toContain("newer Atticus");
+    expect(r.err).not.toContain("written by a newer Atticus");
     expect(r.err).toMatch(
-      /^4 facts of facts\/forge-ledger\.jsonl have a field or kind no Atticus up to \S+ writes, so the assistant most likely added it as it read: kept in the file as written, not read here\. Take what is named out of each line \(or read forge-ledger again\), then verify again:$/m,
+      /^4 facts of facts\/forge-ledger\.jsonl have a field or kind no Atticus up to \S+ writes, and no newer Atticus has upgraded this metarepo, so the assistant most likely added them as it read: kept in the file as written, not read here\. Unless someone on your team uses a newer Atticus, take what is named out of each line \(or read forge-ledger again\), then verify again:$/m,
     );
     expect(r.err).toContain("fact e-get-account-v3: field rateLimit is new to the entry fact");
     expect(r.err).toContain("fact package.forge-ledger-ui: fact kind package");
     for (const l of extra) expect(r.after).toContain(l);
+  } finally {
+    rmSync(r.root, { recursive: true, force: true });
+  }
+});
+
+it("beta.32 review: a stamp this Atticus can't read is a newer Atticus's, never the assistant's", async () => {
+  const r = await verifyWith((first, head) => fourNew(first, head), {
+    stamp: "9.0.0\nnewField: from beta.99",
+  });
+  try {
+    expect(r.err).toContain("written by a newer Atticus");
+    expect(r.err).not.toContain("assistant most likely");
   } finally {
     rmSync(r.root, { recursive: true, force: true });
   }

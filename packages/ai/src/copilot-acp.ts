@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -755,15 +755,20 @@ export function programOnPath(
     ? (Object.entries(env).find(([k]) => k.toUpperCase() === "PATH")?.[1] ?? "")
     : (env.PATH ?? "");
   const exts = win ? [".exe", ".cmd"] : [""];
-  for (const dir of path.split(win ? ";" : ":")) {
+  for (const entry of path.split(win ? ";" : ":")) {
+    // Windows allows a PATH entry in double quotes.
+    const dir = win ? entry.replace(/^"(.*)"$/, "$1") : entry;
     if (!dir) continue;
     for (const ext of exts) {
       // The host's own join: the PATH is this machine's.
       const full = join(dir, `${name}${ext}`);
       try {
-        if (statSync(full).isFile()) return full;
+        if (!statSync(full).isFile()) continue;
+        // On POSIX a file without the execute bit isn't a program: npx then runs as written.
+        if (!win) accessSync(full, fsConstants.X_OK);
+        return full;
       } catch {
-        // not here
+        // not here, or not a program
       }
     }
   }
@@ -793,7 +798,19 @@ export function startProblemOf(o: {
   failure: StartFailure;
 }): AcpStartProblem {
   const p = describeStart(o);
-  return { kind: p.kind ?? o.failure.kind, problem: p.problem, advice: p.advice };
+  // beta.32 review: when the installed server ran in place of the line's npx, the words say so,
+  // so a person isn't left checking a line that names another program.
+  let written: string | undefined;
+  try {
+    written = commandLineOf(o.line).command;
+  } catch {
+    written = undefined;
+  }
+  const swapped =
+    written !== undefined && isNpx(written) && !isNpx(o.command)
+      ? ` Atticus ran the installed server (${o.command}) in place of runtime.yaml's npx line, since it is on the PATH: update it (npm i -g ${NPM_PACKAGE}), or name a version in the line (${NPM_PACKAGE}@<version>) to have npx run that one instead.`
+      : "";
+  return { kind: p.kind ?? o.failure.kind, problem: p.problem, advice: `${p.advice}${swapped}` };
 }
 
 /** The program a shell said it didn't find, from cmd.exe's (English) or a shell's words. */

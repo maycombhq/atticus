@@ -219,8 +219,8 @@ describe("stopping the app", { timeout: 60_000 }, () => {
 describe("the atticus found against the one the extension needs", () => {
   it("tells an older atticus from a newer one, betas before the release, and gives an unreadable one the benefit of the doubt", () => {
     // The bundled app is beta.28's and needs its API (3.13+: /api/map/edits, /api/links/delete).
-    expect(versionAtLeast("2.0.0-beta.31", MIN_CLI)).toBe(true);
-    expect(versionAtLeast("2.0.0-beta.30", MIN_CLI)).toBe(false);
+    expect(versionAtLeast("2.0.0-beta.32", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.31", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.28.5", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.27.1", MIN_CLI)).toBe(false);
     expect(versionAtLeast("2.0.0-beta.22", MIN_CLI)).toBe(false);
@@ -248,7 +248,7 @@ describe("the atticus found against the one the extension needs", () => {
     expect(versionAtLeast("v2.0.0-beta.28.4\n", MIN_CLI)).toBe(false);
     // What `atticus --version` prints around it doesn't change the answer.
     expect(versionAtLeast("atticus 2.0.0-beta.28.4 (node 22)", MIN_CLI)).toBe(false);
-    expect(versionAtLeast("2.0.0-beta.31+build.7", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.32+build.7", MIN_CLI)).toBe(true);
   });
 
   it("reads the whole version from what atticus --version printed, so the installed patch isn't cut short", () => {
@@ -258,7 +258,7 @@ describe("the atticus found against the one the extension needs", () => {
     expect(versionIn("2.0.0-beta.29\n")).toBe("2.0.0-beta.29");
     expect(versionIn("2.0.0\n")).toBe("2.0.0");
     expect(versionIn("dev")).toBeUndefined();
-    expect(versionAtLeast(versionIn("2.0.0-beta.31\n")!, MIN_CLI)).toBe(true);
+    expect(versionAtLeast(versionIn("2.0.0-beta.32\n")!, MIN_CLI)).toBe(true);
   });
 
   it("orders the prerelease words alpha, beta, rc, then the release (review round 46)", () => {

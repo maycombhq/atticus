@@ -734,7 +734,7 @@ export async function readStamp(root: string): Promise<MetarepoStamp | undefined
  * Round 49: the stamp, and when the file is there but isn't a stamp this Atticus reads (a newer
  * one added a field, or a schema version), the Atticus it names, read on its own, and why.
  */
-async function readStampFile(
+export async function readStampFile(
   root: string,
 ): Promise<{ stamp?: MetarepoStamp; unread?: { atticus?: string; why: string } }> {
   let text: string;
