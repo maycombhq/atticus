@@ -10,10 +10,12 @@ import {
   factsRelOf,
   listQuestions,
   loadOrgPack,
+  newerThan,
   orgPackDirOf,
   releaseCurrent,
   stackHelpersOff,
 } from "@maycombhq/core";
+import { VERSION } from "./version.js";
 import {
   dirSource,
   frameworkFacts,
@@ -705,10 +707,24 @@ export async function verifyCommand(
   parsed = { facts: repaired.facts, bad: repaired.bad, newer: parsed.newer };
   // Beta.25 (ADR 0192 addendum): a fact of a kind a newer Atticus wrote is kept as written, unread.
   if (parsed.newer.length) {
-    io.err(
-      `${parsed.newer.length} ${parsed.newer.length === 1 ? "fact" : "facts"} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "is" : "are"} written by a newer Atticus: kept in the file as written, not read here. Install that version (a team upgrades together):`,
-    );
-    for (const n of parsed.newer.slice(0, SHOWN)) io.err(`  line ${n.line}: ${n.message}`);
+    const many = parsed.newer.length === 1 ? "fact" : "facts";
+    // beta.32 (the owner's estate, 2026-11-23): an assistant added `note` to calls and `secret` to
+    // config facts, and this said "a newer Atticus" wrote them. Only a newer Atticus's own stamp
+    // on the metarepo says one has worked here; without it, the assistant added them.
+    const { readStamp } = await import("./upgrade.js");
+    const stamped = (await readStamp(root).catch(() => undefined))?.atticus;
+    if (stamped && newerThan(stamped, VERSION)) {
+      io.err(
+        `${parsed.newer.length} ${many} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "is" : "are"} written by a newer Atticus: kept in the file as written, not read here. Install that version (a team upgrades together):`,
+      );
+      for (const n of parsed.newer.slice(0, SHOWN)) io.err(`  line ${n.line}: ${n.message}`);
+    } else {
+      io.err(
+        `${parsed.newer.length} ${many} of ${rel}/${repo}.jsonl ${parsed.newer.length === 1 ? "has" : "have"} a field or kind no Atticus up to ${VERSION} writes, so the assistant most likely added it as it read: kept in the file as written, not read here. Take what is named out of each line (or read ${repo} again), then verify again:`,
+      );
+      for (const n of parsed.newer.slice(0, SHOWN))
+        io.err(`  line ${n.line}: fact ${n.factId}: ${n.unknown ?? n.message}`);
+    }
   }
   const slips = repaired.slips;
   if (!parsed.facts.length && parsed.bad.length) {

@@ -46,6 +46,12 @@ export interface NewerFact {
   factId: string;
   kind: string;
   message: string;
+  /**
+   * beta.32: what this Atticus doesn't know of the fact, without who wrote it (`field note is new
+   * to the call fact`): verify says it as the assistant's addition when no newer Atticus has
+   * worked in the metarepo.
+   */
+  unknown?: string;
   /** The line as written (a line-by-line read), for a writer to keep it as it is. */
   raw?: string;
 }
@@ -71,6 +77,7 @@ export function newerFactOf(json: unknown, line?: number): NewerFact | undefined
     factId: id,
     kind,
     message: `fact ${id} is written by a newer Atticus (fact kind ${kind}); install it to read this fact`,
+    unknown: `fact kind ${kind}`,
   };
 }
 
@@ -215,6 +222,7 @@ export function newerShapeOf(
     factId: id,
     kind,
     message: `fact ${id} is written by a newer Atticus (${said.join("; ")}); install it to read this fact`,
+    unknown: said.join("; "),
   };
 }
 

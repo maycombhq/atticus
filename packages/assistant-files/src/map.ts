@@ -188,7 +188,7 @@ export type RuleSet = (typeof RULE_SETS)[number];
 export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
-      text: "One JSON object per line and nothing else on the line. A field marked `?` may be left out.",
+      text: "One JSON object per line and nothing else on the line. A field marked `?` may be left out; a field the kind doesn't list is never added (no `note`, no `secret`): Atticus can't read a fact that has one.",
     },
   ],
   [
