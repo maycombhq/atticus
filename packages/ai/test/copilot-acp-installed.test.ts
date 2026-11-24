@@ -33,14 +33,24 @@ async function binWith(names: string[]): Promise<string> {
 const DEFAULT = "npx --yes @github/copilot-language-server --stdio";
 
 describe("the installed Copilot server in place of npx (beta.32)", () => {
-  it("the default line runs the installed server, with the words after the package", async () => {
-    const bin = await binWith(["copilot-language-server"]);
-    const got = installedInsteadOfNpx(commandLineOf(DEFAULT), { PATH: `/nowhere:${bin}` }, "linux");
-    expect(got).toEqual({
-      command: join(bin, "copilot-language-server"),
-      args: ["--stdio", "--acp"],
-    });
-  });
+  // POSIX paths and PATH (the Windows test below runs on every host).
+  const posix = it.skipIf(process.platform === "win32");
+
+  posix(
+    "the default line runs the installed server, with the words after the package",
+    async () => {
+      const bin = await binWith(["copilot-language-server"]);
+      const got = installedInsteadOfNpx(
+        commandLineOf(DEFAULT),
+        { PATH: `/nowhere:${bin}` },
+        "linux",
+      );
+      expect(got).toEqual({
+        command: join(bin, "copilot-language-server"),
+        args: ["--stdio", "--acp"],
+      });
+    },
+  );
 
   it("on Windows, the server's .cmd on Path (any case of the name)", async () => {
     const bin = await binWith(["copilot-language-server.cmd"]);
@@ -67,7 +77,7 @@ describe("the installed Copilot server in place of npx (beta.32)", () => {
     same(`${join(bin, "copilot-language-server")} --stdio`);
   });
 
-  it("npx without --yes, or with -y, is the default too", async () => {
+  posix("npx without --yes, or with -y, is the default too", async () => {
     const bin = await binWith(["copilot-language-server"]);
     for (const line of [
       "npx @github/copilot-language-server",

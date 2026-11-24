@@ -193,7 +193,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // written as a build token was told to keep the token or cite where it is set (beta.28.1;
     // only for config and deploy files: an 8000-token batch of code has no room for it).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "9aaadd2e4465cbda7809658c088890cabc4792bd91f899782ae3d60e0620c5b0",
+      "28cd55d4c135e1d90dc5977d4a1e4c4cfb9be61380d1ab43f88a021259cbff62",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
