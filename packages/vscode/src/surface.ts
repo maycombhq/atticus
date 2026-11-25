@@ -108,10 +108,8 @@ export const APP_HOME = "#/home";
  * command lists show the commands under these words first and the legacy ones after.
  */
 export const TOP_COMMANDS = [
+  "sync",
   "init",
-  "map",
-  "verify",
-  "join",
   "change",
   "critic",
   "stories",

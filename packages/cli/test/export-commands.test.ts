@@ -18,7 +18,7 @@ const io = () => {
 
 describe("atticus change export", () => {
   it("stays under change: the twelve top commands are as ADR 0124's D-cli set them", () => {
-    expect(TOP_WORDS).toHaveLength(12);
+    expect(TOP_WORDS).toHaveLength(10);
     expect(TOP_WORDS).not.toContain("export");
   });
 

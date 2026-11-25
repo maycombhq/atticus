@@ -317,11 +317,11 @@ describe("the Next view's beta.10 steps", () => {
 });
 
 describe("Map the estate (ADR 0161)", () => {
-  it("runs atticus map --all at the limit given, in a terminal the person types into", () => {
+  it("runs atticus sync in a terminal (ADR 0210 part 8)", () => {
     const j = jobByCommand("atticus.mapEstate")!;
     expect(j.how).toBe("terminal");
-    expect(j.needs).toBe("limit");
-    expect(jobArgv(j, { maxTokens: "128000" })).toEqual(["map", "--all", "--max-tokens", "128000"]);
+    expect(j.needs).toBeUndefined();
+    expect(jobArgv(j, {})).toEqual(["sync"]);
   });
 
   it("offers runtime.yaml's maxInput, and takes a whole number of tokens", () => {

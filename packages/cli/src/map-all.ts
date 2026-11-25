@@ -20,10 +20,9 @@ import {
   type AiRuntime,
 } from "@maycombhq/ai";
 import {
-  CancelledError,
   ensureLocalIgnore,
-  isFileSystemError,
   setHeldWaitSignal,
+  withSignal,
   factsDirOf,
   factsRelOf,
   headFromFiles,
@@ -59,8 +58,7 @@ import {
 import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
-import { factsRepos, timeLeftWords, verifyCommand } from "./verify-commands.js";
-import { durationWords } from "./write-progress.js";
+import { verifyCommand } from "./verify-commands.js";
 
 /**
  * `atticus map --all` (ADR 0161): one command that maps or re-maps the whole estate. It plans
@@ -116,6 +114,8 @@ export interface MapAllOptions {
    * the facts on file stay, as already kept, as `atticus map <repo> --force` keeps them.
    */
   force?: boolean;
+  /** ADR 0210 part 8: false leaves the estate's one write to the caller (`atticus sync`). */
+  join?: false;
   /** The command that carries on, as said when the run stops; `atticus map --all` and its flags by default. */
   resumeAs?: string;
   /**
@@ -486,7 +486,11 @@ function jsonOf<T>(lines: readonly string[]): T | undefined {
   return undefined;
 }
 
-async function commitOf(root: string, repo: string, f?: FreshRepo): Promise<string | undefined> {
+export async function commitOf(
+  root: string,
+  repo: string,
+  f?: FreshRepo,
+): Promise<string | undefined> {
   if (f?.head) return f.head;
   const dir = await checkoutOf(root, repo).catch(() => undefined);
   if (!dir || !existsSync(dir)) return undefined;
@@ -1090,7 +1094,7 @@ function rejectionOf(l: string): Rejection {
  * only the lines written since: the ones the run put back before the session started (the
  * session before this one's, told in its opening note) aren't this session's own.
  */
-async function rejectionsOf(
+export async function rejectionsOf(
   root: string,
   repo: string,
   since?: RejectedAt,
@@ -1675,79 +1679,22 @@ async function mapAllRun(
           : "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
       );
     }
-  } else if (totals.parts || totals.repos.size) {
-    // The estate join, once, so every link is re-joined with every repo read (verify --all --write).
+  } else if (o.join !== false && (totals.parts || totals.repos.size)) {
+    // The estate join, once: verify --all --write's own run (one build, the pairing inside it).
     io.out("");
     io.out("Joining the estate: atticus verify --all --write.");
-    const repos = await factsRepos(root);
-    let passed = 0;
-    // Beta.28.5 (the owner's field report: the join of forty repos ran two hours, said nothing
-    // of where it was, and ended whole on one file another program held).
-    const notApplied: string[] = [];
-    const toFix: string[] = [];
-    const began = clock.now();
-    let stoppedAt: number | undefined;
-    for (const [i, repo] of repos.entries()) {
-      // Ctrl+C (or the app's Stop): heard between two repos, the one before applied whole.
-      if (stopped()) {
-        stoppedAt = i;
-        break;
-      }
-      // Where the join is, as verify --all says it: the repo's place and, once one is done, the
-      // time left at the rate so far. A progress line, never standard output.
-      if (repos.length > 1) {
-        const spent = clock.now() - began;
-        (io.progress ?? io.err)(
-          `Repo ${i + 1} of ${repos.length}: ${repo}…${i ? ` (${i} done in ${durationWords(spent)}; ${timeLeftWords((spent / i) * (repos.length - i))} left at this rate)` : ""}`,
-        );
-      }
-      const c = capturedStep(io);
-      let code: number;
-      try {
-        code = await verifyCommand(
-          root,
-          repo,
-          {
-            write: true,
-            json: true,
-            ...(deps.onBuildRefused ? { onBuildRefused: deps.onBuildRefused } : {}),
-          },
-          c,
-        );
-      } catch (e) {
-        // One repo that can't be applied (a file of it open in another program, say) never ends
-        // the join: said with its own command, and the other repos are applied.
-        if (e instanceof CancelledError) {
-          stoppedAt = i;
-          break;
-        }
-        // The review: only an error of the file system's; a bug is thrown, as before.
-        if (!isFileSystemError(e)) throw e;
-        notApplied.push(repo);
-        io.out(
-          `${repo}: not applied: ${firstLine(e)} Apply it once that is put right: atticus verify ${repo} --write`,
-        );
-        continue;
-      }
-      const v = jsonOf<VerifyJson>(c.lines);
-      if (code === 0) passed++;
-      else toFix.push(repo);
-      if (v?.written?.links) {
-        totals.added += v.written.links.added.length;
-        totals.removed += v.written.links.removed.length;
-      }
-      if (v) totals.rejected.set(repo, v.rejected);
-    }
-    if (stoppedAt !== undefined) {
-      joinStopped = true;
-      io.out(
-        `Stopped after ${stoppedAt} of ${repos.length} repos of the join. Not applied: ${[...notApplied, ...repos.slice(stoppedAt)].sort().join(", ")}. atticus verify --all --write joins the rest.`,
+    const { verifyAllCommand } = await import("./verify-commands.js");
+    const join = () =>
+      verifyAllCommand(
+        root,
+        {
+          write: true,
+          ...(deps.onBuildRefused ? { onBuildRefused: deps.onBuildRefused } : {}),
+          onStopped: () => (joinStopped = true),
+        },
+        io,
       );
-    } else
-      io.out(
-        `Verified ${plural(repos.length, "repo")}: ${passed} passed${toFix.length ? `, ${toFix.length} with something to fix (${toFix.join(", ")})` : ""}${notApplied.length ? `, ${notApplied.length} not applied (${notApplied.join(", ")})` : ""}.`,
-      );
-    joinFailed = notApplied.length > 0;
+    joinFailed = (await (deps.signal ? withSignal(deps.signal, join) : join())) !== 0;
   }
   await save();
   await summary(interrupted || joinStopped);

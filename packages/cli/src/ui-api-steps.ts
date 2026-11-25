@@ -96,7 +96,8 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
   return (
     r
       .add("POST", "/api/facts/apply-all", async ({ body }) => {
-        const { factsRepos, oneBuildFor, verifyAllCommand } = await import("./verify-commands.js");
+        const { factsRepos, oneBuildFor } = await import("./verify-commands.js");
+        const { syncCommand } = await import("./sync-command.js");
         const { APPLIED_WITH_LEFT_OUT } = await import("./verify-left-out.js");
         // Beta.28.4 (ADR 0198): the repos to apply, when the page lists them (the map's bar: the
         // repos whose corrections wait). Each is checked against the facts on file before a job
@@ -141,14 +142,12 @@ export function uiStepRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Ro
             let leftOutRepos = 0;
             let total = 0;
             let stopped = false;
+            // ADR 0210 part 8: Apply is `atticus sync`: what changed is read first, then written.
             const ran = await captured((io) =>
-              verifyAllCommand(
+              syncCommand(
                 root,
                 {
-                  write: true,
-                  verbose: false,
-                  json: false,
-                  ...(only ? { only } : {}),
+                  apply: only ?? "all",
                   // Beta.28.4: the job's own progress counts the repos finished, when there are
                   // several, and says the repo it is on (the strip under the top bar shows both).
                   onStart: (repo, done, of) => {

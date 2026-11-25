@@ -8,10 +8,8 @@
 
 /** The twelve, in the order the help shows them. `scripts/help-text.mjs` reads this list. */
 export const TOP_WORDS = [
+  "sync",
   "init",
-  "map",
-  "verify",
-  "join",
   "change",
   "critic",
   "stories",
@@ -32,10 +30,8 @@ export const isLegacy = (first: string | undefined): boolean =>
  * What `atticus help` prints under its first line: the twelve, one line each, then how to reach
  * the rest. `pnpm docs:commands` reads it from this file too, so the reference can't drift.
  */
-export const TOP_HELP = `  atticus init <folder> --platform <p>  Start your team's metarepo (atticus adopt <path> uses Atticus inside one repo)
-  atticus map <repo>                    Your assistant reads a repo into facts, each citing its file and line (/atticus-map does it in one session)
-  atticus verify <repo> [--write]       Check the facts against the code; --write puts them in the catalog and renders the map
-  atticus join [--json]                 Follow flows from repo to repo through the calls the facts join; writes specs/estate.yaml
+export const TOP_HELP = `  atticus sync [--json]                 Read what changed (recipe, then model), verify, write, pair the loose calls and say what is open
+  atticus init <folder> --platform <p>  Start your team's metarepo (atticus adopt <path> uses Atticus inside one repo)
   atticus change new "<title>"          Start a change; atticus help change lists its stages and the rest
   atticus critic <change>               Review a change: rule checks, then four questions (is it true, complete, safe, can it ship)
   atticus stories <change>              The stories stage: stories with acceptance criteria and tasks, from the design
@@ -46,7 +42,7 @@ export const TOP_HELP = `  atticus init <folder> --platform <p>  Start your team
   atticus ui [--open]                   Open the app on this machine
 
   atticus help <command>                What one command takes (atticus explain <command> says it in plain words)
-  atticus legacy                        Every other command (scan, plan, release, estate and more); each still runs by its own name
+  atticus legacy                        Every other command (map, verify, join, scan, plan, release and more); each still runs by its own name
   atticus help --all                    Every command, grouped by area`;
 
 /** `atticus help`: the version line, the twelve and the way to the rest. */

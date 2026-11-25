@@ -360,7 +360,7 @@ describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-
       { ...cmd("ui"), legacy: false },
       { ...cmd("change status"), legacy: false },
       { ...cmd("change new"), legacy: false },
-      top("map", "repos", "ai", "Your assistant reads a repo into facts"),
+      top("sync", "repos", "ai", "Read what changed into facts"),
       top("init", "start", "local", "Start your team's metarepo"),
       top("legacy", "start", "local", "Every other command"),
       { ...top("bench run", "developer", "local", "Bench"), legacy: true },
@@ -372,8 +372,8 @@ describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-
   it("lists the twelve first, in the help's order, then each area's legacy commands under Legacy", () => {
     expect(shape(marked)).toEqual([
       "# The twelve commands",
+      "sync",
       "init",
-      "map",
       // Within one of the twelve, the catalogue's own order.
       "change status",
       "change new",
@@ -388,9 +388,9 @@ describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-
       "intake add",
     ]);
     // Each item still says what it does first, the command and how it runs beside it.
-    expect(pickList(marked).find((i) => i.id === "map")).toMatchObject({
-      label: "Your assistant reads a repo into facts",
-      description: "map · with Copilot",
+    expect(pickList(marked).find((i) => i.id === "sync")).toMatchObject({
+      label: "Read what changed into facts",
+      description: "sync · with Copilot",
     });
     // The developers' commands only when asked, under Legacy too.
     expect(shape(marked, { developer: true })).toContain("# Legacy · For Atticus's own quality");
@@ -419,7 +419,7 @@ describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-
     );
     const list = pickList(real, { developer: true });
     expect(list[0]).toMatchObject({ label: "The twelve commands", separator: true });
-    expect(list[1]!.id).toBe("init");
+    expect(list[1]!.id).toBe("sync");
     const firstLegacy = list.findIndex((i) => i.separator && i.label.startsWith("Legacy · "));
     const head = list.slice(1, firstLegacy);
     expect(head.every((i) => !i.separator)).toBe(true);

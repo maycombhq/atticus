@@ -22,10 +22,8 @@ const run = async (argv: string[]) => {
 };
 
 const TWELVE = [
+  "sync",
   "init",
-  "map",
-  "verify",
-  "join",
   "change",
   "critic",
   "stories",
@@ -223,7 +221,8 @@ describe("the new names are the commands that exist", () => {
     for (const id of ["join", "stories", "task", "legacy"]) expect(byId.has(id), id).toBe(true);
     expect(byId.get("stories")).toMatchObject({ runs: "ai", legacy: false });
     expect(byId.get("task")).toMatchObject({ legacy: false, area: "plan" });
-    expect(byId.get("join")).toMatchObject({ legacy: false, area: "repos" });
+    expect(byId.get("join")).toMatchObject({ legacy: true, area: "repos" });
+    expect(byId.get("sync")).toMatchObject({ legacy: false, area: "repos" });
     expect(byId.get("change new")!.legacy).toBe(false);
     expect(byId.get("scan")!.legacy).toBe(true);
     expect(byId.get("plan stories")!.legacy).toBe(true);

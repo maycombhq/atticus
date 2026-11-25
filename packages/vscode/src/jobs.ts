@@ -88,9 +88,8 @@ export function limitOf(typed: string): string | undefined {
 export const JOBS: readonly Job[] = [
   {
     command: "atticus.mapEstate",
-    title: "Map the estate, one part at a time (map --all)",
-    needs: "limit",
-    argv: (a) => ["map", "--all", "--max-tokens", req(a.maxTokens, "model limit")],
+    title: "Sync the map: read what changed, verify, write and pair (atticus sync)",
+    argv: () => ["sync"],
     how: "terminal",
   },
   {
