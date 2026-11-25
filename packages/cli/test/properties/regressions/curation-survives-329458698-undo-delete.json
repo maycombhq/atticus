@@ -1,0 +1,74 @@
+{
+  "invariant": "curation-survives",
+  "note": "curation-survives: ledger-api is suppressed by the suppress drafted from a hand edit of ledger-api, yet verify-write wrote it (an undo back past a discard brings a hand deletion back over a beta.28.1 build.json)",
+  "seed": 329458698,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/accounts"
+            }
+          ],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "scan"
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": true
+    },
+    {
+      "t": "as-beta-28-1"
+    },
+    {
+      "t": "hand-edit",
+      "pick": 0,
+      "how": "delete"
+    },
+    {
+      "t": "discard-edits",
+      "wrong": false
+    },
+    {
+      "t": "curate",
+      "action": "suppress",
+      "pick": 0
+    },
+    {
+      "t": "apply-app",
+      "slot": 0
+    },
+    {
+      "t": "undo",
+      "n": 3,
+      "yes": true,
+      "back": false
+    },
+    {
+      "t": "verify-write",
+      "slot": 0,
+      "ok": false
+    }
+  ]
+}

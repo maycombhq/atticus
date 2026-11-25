@@ -553,7 +553,7 @@ async function verify(
     m.handEdits.length &&
     m.handEdits.every((e) => e.how !== "add")
   ) {
-    for (const e of m.handEdits) curateInModel(m, e);
+    for (const e of m.handEdits) curateInModel(m, e, true);
     m.handEdits = [];
   }
   const facts = { code: r.code, commit: r.commit, id: r.id };
@@ -579,7 +579,7 @@ async function verify(
 }
 
 /** A hand edit made a curated decision, as `atticus catalog edits --curate` makes it. */
-function curateInModel(m: Model, e: HandEdit): void {
+function curateInModel(m: Model, e: HandEdit, byWrite = false): void {
   const common = {
     target: e.id,
     kind: e.kind,
@@ -590,7 +590,7 @@ function curateInModel(m: Model, e: HandEdit): void {
     e.how === "delete"
       ? { action: "suppress", ...common, since: m.writes, from: "edits" }
       : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
-  m.curated.push(dec);
+  m.curated.push(byWrite ? { ...dec, byWrite: true } : dec);
   m.changes.curated.add(e.id);
 }
 
@@ -1181,7 +1181,12 @@ export async function act(
               (h) => expected.generated.get(h.path) === e.before.generated.get(h.path),
             ),
           ),
-      ].filter((h, i, all) => all.findIndex((x) => x.path === h.path) === i);
+      ]
+        .filter((h, i, all) => all.findIndex((x) => x.path === h.path) === i)
+        // An undo back before any build.json (the upgrade's first build) leaves a catalog in
+        // which no file is a hand edit yet, as `atticus catalog edits` says of one: the files are
+        // the catalog as it was then, and the next write's upgrade takes them as they are.
+        .filter(() => expected.sources.has("build.json"));
       const outcome = await sut().undo(w.root, { n: k, yes: true });
       const afterUndo = await w.snap();
       // Undoing a discard brings its hand edits back, and undo refuses over hand edits.
@@ -1230,6 +1235,8 @@ export async function act(
           m.legacyJoins = restored.legacyJoins;
           m.beta26 = restored.beta26;
           m.handEdits = handEdits;
+          // The decisions an undone write made of its hand edits go with it (its undo copy).
+          m.curated = m.curated.filter((x) => !x.byWrite || x.since < restored.writes);
         },
       };
     }
