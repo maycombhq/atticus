@@ -50,11 +50,11 @@ Sizes are estimates.
 | 4   | **The model pairs what is loose, as part of Apply.** After a write, the calls the join left loose go to the model with the candidate repos' entries; a pairing that passes the citation check on both lines is drawn, marked as the AI's, and a person can move it. Stored per commit: a call is paired again only when a file it cites changes. With AI off or the budget spent, the calls stay listed and nothing fails.                                                                           | yes          | about 300        |
 | 5   | **Recipes.** One engine in core (the experiment's is 47 lines) applies a rule's `extract`: a file glob, a pattern, the fact's fields, or every leaf key of a YAML file. Its facts are `by: reader` and pass the same verifier. A model read ends by writing or correcting the type's recipe; it is active once it reproduces the verified facts of every repo of the type already read. A repo of a type with an active recipe is read by it, and the model is given only the files no rule matched. | yes          | about 600        |
 | 6   | **A budget, said before it is spent.** `runtime.yaml` names how much a run may use; every run that calls the model says first what it will cost and checks that its result can be written (no upgrade owed, no lock, the facts read) before the first request.                                                                                                                                                                                                                                       | no           | about 150        |
-| 7   | **The deterministic readers off by default.** A repo is read by its recipe or the model. The package stays one more release, then is deleted (24,187 lines); the join is deleted when item 4 scores above it on the owner's estate.                                                                                                                                                                                                                                                                  | no           | a default        |
+| 7   | **The deterministic readers off by default.** A repo is read by its recipe or the model. The package stays one more release, then is deleted (24,187 lines); the join is deleted when item 4 scores above it on the fixture and the public estates.                                                                                                                                                                                                                                                  | no           | a default        |
 | 8   | **Smaller.** The size check turns from "at most 3,500 more" to "no more than the last release".                                                                                                                                                                                                                                                                                                                                                                                                      | no           | a number         |
 
-Items 2, 3, 6, 7 and 8 need no model and are built first. Items 4 and 5 are tested in CI with the
-recorded model and on public code here; on the owner's estate they wait for his quota.
+Items 2, 3, 6, 7 and 8 need no model and are built first. Items 4 and 5 are proven in CI with the
+recorded model, and on the fixture and public code with a strong and a small model.
 
 ## Reviewed 2026-11-24: what the eight items leave undone
 
@@ -66,8 +66,8 @@ what the owner asked for. Measured on main:
 | Nothing blocks at every step | The map's write: four of seven refusals go                           | The change path: `packages/changes` and `packages/planner` speak of refusing in 148 lines, and the naysayers and hand-offs block at their gates. Untouched. |
 | Much less code               | About 1,200 lines added; the readers only switched off               | The 24,187 lines of readers and the 5,424 of the join are deleted a release later. beta.33 is at best a little smaller.                                     |
 | The ease of OpenSpec         | Nothing                                                              | 286 commands. No single path from a repo to a drawn map.                                                                                                    |
-| Efficient                    | A budget for tokens                                                  | The guards' hash (22 s) and the intake (14 s) of each Apply on the owner's estate.                                                                          |
-| Proven                       | Public Spring services, read by the model this plan was written with | The owner's shapes (item 0 is a fixture, not his repos), and his office's assistant, whose model may read less well.                                        |
+| Efficient                    | A budget for tokens                                                  | The guards' hash (22 s) and the intake (14 s) of each Apply on an estate of 41 repos.                                                                       |
+| Proven                       | Public Spring services, read by the model this plan was written with | The gateway shape (item 0's fixture), larger public repos, and a small model as well as a strong one.                                                       |
 
 So four more items, after the eight:
 
@@ -75,11 +75,13 @@ So four more items, after the eight:
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | 9   | **The change path doesn't block either.** A count of every gate on the way from a request to merged tasks, each kept (hard rule 6) or turned into a listed item. The ADR of item 1 names them. | no           |
 | 10  | **One command.** `atticus sync`: read what changed (recipe, then model), verify, write, pair, say what is open. Every other map command keeps working and leaves the first page of help.       | no           |
-| 11  | **The two slow steps of an Apply**, once `selfcheck --timing --names` from the owner's estate says which part of each.                                                                         | no           |
+| 11  | **The two slow steps of an Apply** (the guards' hash and the intake), measured and fixed on the generated 60-repo estate on Windows CI.                                                        | no           |
 | 12  | **Delete the readers in this release**, not the next, if the suites hold with them off (item 7). Seven files import them.                                                                      | no           |
 
-And one test that only the owner can run, when his quota returns: items 4 and 5 on his estate,
-with his office's assistant. Until then they are proven on public code and a fixture only.
+Nothing in this plan depends on one user's machine, estate or assistant quota: Atticus is a
+product for any estate. Every proof runs on invented fixtures and public code, in CI and a cloud
+workspace, with a strong model and the smallest one available. A user's own estate is that
+user's acceptance, not a step of this plan.
 
 ## Every surface each item changes
 
@@ -117,7 +119,7 @@ These replace what the tables above say where they differ.
 | Keeping a hand edit by itself could turn a change of line endings into a decision on every file | The write goes ahead; the edited text is saved and listed with the one command that makes it a decision. Whether the guard ignores line endings today is not checked yet.                                                                            |
 | Writing removals was unsafe: a model can leave a fact out on a second read                      | A fact that still holds on its line is kept when a new read leaves it out; a fact goes only when its line no longer holds. Then the removals guard is not needed.                                                                                    |
 | A recipe proven on the repo it was written from proves nothing                                  | Active once it reproduces the model's verified facts of two repos it was not written from. An estate already read has those facts, so proving costs no new read: one session a kind of repo, to write the recipe.                                    |
-| The office assistant is billed by the prompt, not the token                                     | Item 6's budget is in requests, and a read packs more files into a prompt. How many prompts a repo's read sends today is measured first.                                                                                                             |
+| Some assistants are billed by the prompt, not the token                                         | Item 6's budget is each user's, in requests or tokens as their provider bills, and a read packs more files into a prompt. How many prompts a repo's read sends today is measured first.                                                              |
 | Repo types are detected by the readers package (`scanner/src/repo-types.ts`)                    | Item 12 moves that out first, or waits.                                                                                                                                                                                                              |
 | The change path's gates were a promise to count                                                 | Five places decide what blocks: the naysayers' findings at each gate, the plan hand-off's checks, `changes/src/lifecycle.ts`, `planner/src/stages/accept.ts`, `knowledge/src/standard-checks.ts`. The ADR lists every gate. Constitution rules stay. |
 
