@@ -356,14 +356,13 @@ export async function rulesLearnCommand(
   const { gitUser } = await import("@maycombhq/workspace");
   let r: Api.LearnCorrectionsResultT;
   try {
-    r = await learnFromCorrections(
-      root,
-      {
-        by: o.by ?? (await gitUser(root)).handle,
-        runner: o.runner ?? (await acpStepRunner(root, { op })),
-      },
-      io,
-    );
+    const d = {
+      by: o.by ?? (await gitUser(root)).handle,
+      runner: o.runner ?? (await acpStepRunner(root, { op })),
+    };
+    r = await learnFromCorrections(root, d, io);
+    const { learnRecipes } = await import("./learn-recipes.js");
+    await learnRecipes(root, d, o.json ? { out: io.err, err: io.err } : io);
   } catch (e) {
     io.err((e as Error).message);
     return 1;

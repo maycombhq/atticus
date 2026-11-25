@@ -89,6 +89,26 @@ export const READ_WORDS = {
     'The deterministic readers are off (ADR 0210): a repo is read by its recipe or by the model. An org pack turns them on with readers: "on" in conventions.yaml (schemaVersion: 3).',
 };
 
+/** ADR 0210 part 2: the words of Learn's recipes, said by `atticus rules learn` and the app's job. */
+export const RECIPE_WORDS = {
+  what: "Learn's recipes",
+  need: (t: string, n: number) =>
+    `${t} has ${n} read ${n === 1 ? "repo" : "repos"}: Learn needs ${3 - n} more to write its recipe (one to write it from, two to prove it on).`,
+  off: (why: string) => `${why} No recipe was asked for.`,
+  wrote: (t: string, r: readonly string[]) =>
+    `Wrote a recipe for ${t}, proven on ${r.join(" and ")}.`,
+  revised: (k: string, t: string, r: readonly string[]) =>
+    `Revised the recipe ${k} for ${t}, proven on ${r.join(", ")}: it finds all the old one found.`,
+  draft: (t: string, why: string) =>
+    `Wrote a draft recipe for ${t}: ${why}. Edit it and run atticus rules learn again: a draft is proven before the model is asked.`,
+  kept: (k: string, t: string, why: string) =>
+    `Kept the recipe ${k} for ${t}: the revision ${why}.`,
+  less: (n: number) => `finds less than the old one (${n} of its facts missing)`,
+  differ: (d: readonly string[]) => `its facts differ: ${d.join("; ") || "none found"}`,
+  notRule: (why: string) => `the answer isn't a reading rule with an extract and files: ${why}`,
+  failed: (t: string, why: string) => `The recipe for ${t} wasn't learned: ${why}`,
+} as const;
+
 /**
  * ADR 0210 part 4: the words of Apply's pairing, here for the same reason (no imports): the
  * command line's lines after Apply and the app's Decided by AI (`COPY.applyPairs`) say them alike.

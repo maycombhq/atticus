@@ -7872,7 +7872,7 @@ export const COPY = {
     learn: {
       title: "Learn from my corrections",
       intro:
-        "Your assistant reads every pairing you made that no proven rule covers yet, with the lines it cites, and drafts reading rules so a read gets them right by itself. Each rule is tested by re-reading every file it names, checking the re-read on its lines and joining the estate with it: a rule the join draws your corrections from by itself, moving no arrow a person set or deleted, is written active for the repos it was proven on; any other stays a draft and says why. The rules file is reviewed in a pull request like code.",
+        "Your assistant reads every pairing you made that no proven rule covers yet, with the lines it cites, and drafts reading rules so a read gets them right by itself. Each rule is tested by re-reading every file it names, checking the re-read on its lines and joining the estate with it: a rule the join draws your corrections from by itself, moving no arrow a person set or deleted, is written active for the repos it was proven on; any other stays a draft and says why. Then, for each repo type with three read repos, it writes the type's recipe from one and proves it on two others (Recipes, below), or improves it when a later read finds what it missed. The rules file is reviewed in a pull request like code.",
       run: "Learn from my corrections",
       off: "Learn runs your assistant unattended: runtime.yaml must have AI on and allow copilot-acp with Copilot (Set up › AI).",
       running: "Learning: the assistant drafts rules, then each is re-read and joined…",

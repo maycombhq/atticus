@@ -7,6 +7,7 @@ export {
   limitWords,
   normalizePath,
   PAIR_WORDS,
+  RECIPE_WORDS,
   READ_WORDS,
   stripParamConstraints,
 } from "./paths.js";

@@ -1,0 +1,28 @@
+# v33 notes: item 5b, the model writes and improves a recipe per kind of repo (ADR 0210 part 2)
+
+What the shared files should say for the `b33/item5b-model-writes-recipes` branch. The integrator copies these in; this builder did not edit `CHANGELOG.md`, `docs/build-status.md` or `docs/codebase-map.md`.
+
+## CHANGELOG.md (beta.33, Added)
+
+- **Learn writes and improves a recipe per kind of repo (ADR 0210 part 2, through ADR 0208's Learn).** After Learn from my corrections (`atticus rules learn` and the button on Map › Decided by AI), each repo type with at least three repos the model has read (facts on file, a checkout) gets a recipe: the model is handed the type's rule file, one repo's verified facts and the lines they cite (as data) and answers one reading rule with an `extract` (YAML, in `proposals/recipes/<type>.yaml`, the only file the session may write; it runs no command). Atticus runs it with the one engine in core (`runRecipe`) and proves it with `proveRecipe` on two other read repos of the type, their verified facts the reference; on a mismatch the proof's diff (each `file:line field: want …, got …`, missing and extra) goes back as the next request's note, at most 3 rounds. A proven recipe is written to `reading-rules/types/<type>.yaml` `status: active` with `learned.proof` (its two repos and the digest), as ADR 0208 writes a proven rule; one that isn't proven is written a draft with `learned.why`, and the next run proves that draft first with no model (so a person's fix to it is tested before the model is asked again). **Must improve:** when an active recipe misses or gets wrong a fact a read verified in any read repo of the type, the model is asked for a revision from that repo, with the recipe in the file; it replaces the old one (same key) only when it matches the old proof's repos and the new one and still reproduces every fact the old one did across all read repos, else the old one is kept, saying why ("finds less than the old one"). With fewer than three read repos and no recipe it says how many more are needed; with AI off, no copilot-acp, or inside a Copilot session it says no recipe was asked for; the sessions and tokens are planned first with item 6's `planRun` (types × 3 rounds), and a budget stop is said, not a failure. The lines: `Wrote a recipe for <type>, proven on A and B.`, `Wrote a draft recipe for <type>: <why>. …`, `Revised the recipe <key> for <type>, proven on A, B, C: …`, `Kept the recipe <key> …`. The app's Recipes list (Decided by AI) shows a learned recipe's proof repos, and a learned draft's why.
+
+## CHANGELOG.md (beta.33, Contracts)
+
+- None new. A learned recipe is reading rules schema 3 as item 5 and item 7 defined it (`learned` with `corrections: []` and `proof.digest`); Learn moves a type's file to version 3 when it writes a recipe there (`migrateReadingRulesText(text, 3)`), so beta.32 refuses that file whole, as for any recipe. `GET /api/reading-rules/recipes` and `POST /api/reading-rules/learn` are unchanged in shape (the job's lines carry the recipe lines; `why` of a learned draft is now its `learned.why`).
+
+## docs/build-status.md
+
+The model writes and improves a recipe per kind of repo (2026-11-25; ADR 0210 part 2 with ADR 0208; item 5 of `docs/plan/ai-first.md`). **Works:** `learnRecipes` after Learn in the CLI and the app's job; the prompt (rule file, source facts, cited lines, as data); proof on two other read repos with the diff as feedback, 3 rounds; active with proof, else a draft with why that is proven first next time; revision on a later read's misses, kept only when proven on the old proof's repos plus the new one and finding at least what the old one found; the count message under three read repos; AI off and budget stop said, nothing failing. Tests: `cli/test/learn-recipes.test.ts` (gateway-shape: item 0's wrong-path recipe first, its diff sent back, the right one proven on both modules and written active; a draft when no round passes; a revision for a HEAD the recipe missed; a revision finding less refused, the file unchanged; under three repos; AI off). **Open:** the rounds are a constant (`RECIPE_ROUNDS`, 3), not runtime.yaml (that would be a C5 change); Learn asks for one recipe per type (one fact kind); a type's second kind (say its settings) needs a person's or a later run's recipe; the source repo is the first read repo by id, not the one with most facts; a read (`atticus map`) doesn't start Learn by itself: the improvement is found the next time Learn runs.
+
+## docs/codebase-map.md
+
+| What                                         | Where                                                                                                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Learn writes and improves recipes (ADR 0210) | `packages/cli/src/learn-recipes.ts` (`learnRecipes`, `RECIPE_ROUNDS`), called from `learn-corrections.ts` (`rulesLearnCommand`) and `ui-api-decisions.ts` (the Learn job) |
+| Its words                                    | `packages/core/src/paths.ts` (`RECIPE_WORDS`), `ui/src/copy.ts` (`decisions.learn.intro`)                                                                                 |
+
+## Open, for the next step
+
+- **Size.** +200 non-test lines, the whole allowance.
+- An active recipe a person set by hand (no `learned`) is revised the same way; its revision is written with `learned` and a proof.
+- A revision's proof names the old proof's two repos (the recipe is written from the new one); the line names all three.

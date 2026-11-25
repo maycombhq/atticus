@@ -187,7 +187,9 @@ export async function typeRecipes(root: string, op: OrgPack) {
     const { file } = await readLayer(root, `types/${f}`);
     for (const r of file?.rules.filter((x) => x.extract) ?? []) {
       const why =
-        r.status === "draft" ? "a draft" : recipeDraftWhy(r, "type", type, op) || undefined;
+        r.status === "draft"
+          ? (r.learned?.why ?? "a draft")
+          : recipeDraftWhy(r, "type", type, op) || undefined;
       out.push({
         type,
         key: r.key,
