@@ -817,6 +817,9 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     );
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
+    // ADR 0210 part 3: a person's verify --write with no confirm writes the removals and lists
+    // them (nothing-removed-unexplained holds it to the list); only catalog build waits for one.
+    if (n === undefined && s.desc.t === "verify-write" && !s.confirmOf) return;
     if (n === undefined)
       fail(
         "large-removals-confirmed",
@@ -958,6 +961,14 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       return;
     }
     if (s.desc.t === "curate-edits" && s.pre?.wrote) return;
+    // ADR 0210 part 3: a person's verify --write with no confirm keeps the edits as curated (as
+    // curate-edits does) before it writes: kept, not lost, when its curated files changed.
+    if (
+      s.desc.t === "verify-write" &&
+      s.confirm?.discardEdits === undefined &&
+      changedPaths(s.before.curated, s.after.curated).length > 0
+    )
+      return;
     const d = [
       ...changedPaths(s.before.generated, s.after.generated).map((p) => `catalog/generated/${p}`),
       ...(s.desc.t === "prune"
