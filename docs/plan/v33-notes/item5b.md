@@ -21,8 +21,17 @@ The model writes and improves a recipe per kind of repo (2026-11-25; ADR 0210 pa
 | Learn writes and improves recipes (ADR 0210) | `packages/cli/src/learn-recipes.ts` (`learnRecipes`, `RECIPE_ROUNDS`), called from `learn-corrections.ts` (`rulesLearnCommand`) and `ui-api-decisions.ts` (the Learn job) |
 | Its words                                    | `packages/core/src/paths.ts` (`RECIPE_WORDS`), `ui/src/copy.ts` (`decisions.learn.intro`)                                                                                 |
 
+## The review's changes
+
+- **The model's answer is data only.** Atticus reads `files` and `extract` from it and nothing else: the key is `recipe-<type>-<fact>`, the rule's words are Atticus's own (`RECIPE_WORDS.rule`), `learned.by` is the person who ran Learn, and the model's `key`, `rule`, `by` and `example` are dropped. A key that any layer already holds (org, type, repo, imported) is refused, nothing written, unless it is a learned rule of the type's own file. A rule with an `extract` is never put into a read's prompt (`readingRulesText`): a recipe is data the engine runs, not an instruction.
+- **Only a learned rule is replaced.** A person's recipe (no `learned`) stays as written; the model's proven recipe is then written beside it as a draft, saying so. Only a learned draft is proven first, with no model.
+- **A revision** must keep the old recipe's fact kind and fill every field the old one fills; otherwise it is refused and the reason goes back as feedback.
+- **A YAML parse error** in the answer goes back as the next round's note, as a schema refusal does.
+- **The session reads only its answer's folder** (`readRoots`): the brief carries all the data.
+- Tests added: key collisions (a person's type rule, an org rule), the forged `by`, `rule` and `example` dropped and no recipe in a prompt, a person's draft kept, a dropped field and a changed fact kind refused, a YAML parse error fed back, a budget stop.
+
 ## Open, for the next step
 
-- **Size.** +200 non-test lines, the whole allowance.
+- **Size.** About +235 non-test lines with the review's changes (+36).
 - An active recipe a person set by hand (no `learned`) is revised the same way; its revision is written with `learned` and a proof.
 - A revision's proof names the old proof's two repos (the recipe is written from the new one); the line names all three.

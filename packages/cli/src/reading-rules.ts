@@ -226,7 +226,8 @@ export function readingRulesText(
   e: Pick<EffectiveRules, "rules" | "builtinOff">,
   only?: ReadonlySet<string>,
 ): string {
-  const rules = only ? e.rules.filter((r) => only.has(r.id)) : e.rules;
+  // A recipe (ADR 0210) is data the engine runs, never words in a prompt.
+  const rules = (only ? e.rules.filter((r) => only.has(r.id)) : e.rules).filter((r) => !r.extract);
   if (!rules.length && !e.builtinOff.length) return "";
   return [
     "## The organisation's reading rules for this repo",

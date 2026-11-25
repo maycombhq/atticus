@@ -103,6 +103,12 @@ export const RECIPE_WORDS = {
     `Wrote a draft recipe for ${t}: ${why}. Edit it and run atticus rules learn again: a draft is proven before the model is asked.`,
   kept: (k: string, t: string, why: string) =>
     `Kept the recipe ${k} for ${t}: the revision ${why}.`,
+  rule: (t: string) => `The recipe Learn wrote for ${t} repos: data the engine in core runs.`,
+  taken: (k: string, f: string) => `the key ${k} is taken in reading-rules/${f}`,
+  beside: (t: string, k: string) =>
+    `Wrote ${t}'s proven recipe as a draft: ${k}, a person's, stays.`,
+  narrower: (f: string, x: string[]) =>
+    `must read ${f} facts and fill ${x.join(", ")}, as the old one`,
   less: (n: number) => `finds less than the old one (${n} of its facts missing)`,
   differ: (d: readonly string[]) => `its facts differ: ${d.join("; ") || "none found"}`,
   notRule: (why: string) => `the answer isn't a reading rule with an extract and files: ${why}`,
