@@ -108,6 +108,21 @@ What is still not known, said plainly: item 9's list. Nobody has counted the gat
 change path, so its row above is a promise to count, not a list. Until that count is in this
 file, this plan can't claim nothing is left out there.
 
+## The last review before the build (2026-11-24): six corrections
+
+These replace what the tables above say where they differ.
+
+| Found                                                                                           | Now                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keeping a hand edit by itself could turn a change of line endings into a decision on every file | The write goes ahead; the edited text is saved and listed with the one command that makes it a decision. Whether the guard ignores line endings today is not checked yet.                                                                            |
+| Writing removals was unsafe: a model can leave a fact out on a second read                      | A fact that still holds on its line is kept when a new read leaves it out; a fact goes only when its line no longer holds. Then the removals guard is not needed.                                                                                    |
+| A recipe proven on the repo it was written from proves nothing                                  | Active once it reproduces the model's verified facts of two repos it was not written from. An estate already read has those facts, so proving costs no new read: one session a kind of repo, to write the recipe.                                    |
+| The office assistant is billed by the prompt, not the token                                     | Item 6's budget is in requests, and a read packs more files into a prompt. How many prompts a repo's read sends today is measured first.                                                                                                             |
+| Repo types are detected by the readers package (`scanner/src/repo-types.ts`)                    | Item 12 moves that out first, or waits.                                                                                                                                                                                                              |
+| The change path's gates were a promise to count                                                 | Five places decide what blocks: the naysayers' findings at each gate, the plan hand-off's checks, `changes/src/lifecycle.ts`, `planner/src/stages/accept.ts`, `knowledge/src/standard-checks.ts`. The ADR lists every gate. Constitution rules stay. |
+
+The order to build in: 0, 1, 2, 3, 9, 6, 10, 11, 7, then 4, 5, 12, 8.
+
 ## What does not change
 
 Every fact cites file, line, value and quote, and the verifier checks it. Results are stored
