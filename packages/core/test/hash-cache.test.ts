@@ -1,9 +1,21 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  cacheDirKey,
   hashCacheHooks,
+  hashCacheWriteProblem,
   hashFilesIn,
   hashFilesKept,
   RACY_MS,
@@ -22,6 +34,7 @@ let dirs: string[] = [];
 afterEach(async () => {
   delete recordCacheHooks.now;
   delete hashCacheHooks.onHashed;
+  delete hashCacheHooks.onWriteFailed;
   for (const d of dirs) await rm(d, { recursive: true, force: true });
   dirs = [];
 });
@@ -193,5 +206,80 @@ describe("hashes kept by size and time (hash-cache.ts)", () => {
       await hashFilesIn(dir, files),
     );
     expect(calls).toEqual([1]);
+  });
+});
+
+/**
+ * Item 11 of beta.33, the review of the owner's 22 s: what on a Windows laptop makes every Apply
+ * read every record file again although none changed.
+ */
+describe("hashes kept on a machine that moves change times and holds files (item 11)", () => {
+  it("hashes a file whose change time alone moved once, not on every read after", async () => {
+    // OneDrive, a backup or Git's autocrlf moves NTFS's change time (an attribute), not the bytes.
+    const { root, dir, files } = await folder();
+    const old = new Date(Date.now() - 60_000);
+    for (const f of files) await utimes(join(dir, f), old, old);
+    later(10 * RACY_MS);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    await new Promise((r) => setTimeout(r, 30));
+    await chmod(join(dir, files[1]!), 0o600);
+    const calls = counting();
+    // The next Apply, a moment after the change time moved: that file is hashed, and its new
+    // change time kept; the one after opens nothing.
+    later(300);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    later(600);
+    expect(await hashFilesKept({ dir, files, cacheRoot: root })).toEqual(
+      await hashFilesIn(dir, files),
+    );
+    expect(calls).toEqual([1, 0]);
+  });
+
+  it("keys one folder by one name whatever the case of its drive letter", () => {
+    // VS Code says c:\, a terminal C:\: one cache, not two each filled again.
+    expect(cacheDirKey("c:\\forge\\catalog\\generated")).toBe(
+      cacheDirKey("C:\\forge\\catalog\\generated"),
+    );
+    expect(cacheDirKey("C:\\forge\\catalog\\generated")).not.toBe(
+      cacheDirKey("C:\\forge\\catalog\\branches"),
+    );
+  });
+
+  it("writes each generation under a new name, never over the last, and reads the newest that reads", async () => {
+    const { root, dir, files } = await folder();
+    const cache = join(root, ".atticus", "cache");
+    later(10 * RACY_MS);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    const first = (await readdir(cache)).filter((n) => n.startsWith("hashes-"));
+    await writeFile(join(dir, files[0]!), "id: changed\n");
+    later(20 * RACY_MS);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    const second = (await readdir(cache)).filter((n) => n.startsWith("hashes-"));
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0]).not.toBe(first[0]);
+    // A newer generation cut short (a write that was stopped): the one before it is read.
+    const n = Number(/\.(\d+)\.json$/.exec(second[0]!)![1]);
+    await writeFile(join(cache, second[0]!.replace(/\.\d+\.json$/, `.${n + 1}.json`)), '{"v":');
+    const calls = counting();
+    await hashFilesKept({ dir, files, cacheRoot: root, keep: false });
+    expect(calls).toEqual([0]);
+  });
+
+  it("says a cache it couldn't write, and selfcheck's probe says why", async () => {
+    const { root, dir, files } = await folder();
+    await mkdir(join(root, ".atticus"), { recursive: true });
+    // Where the cache's folder should be, a file: nothing can be written in it.
+    await writeFile(join(root, ".atticus", "cache"), "");
+    const failed: string[] = [];
+    hashCacheHooks.onWriteFailed = (code) => failed.push(code);
+    later(10 * RACY_MS);
+    await hashFilesKept({ dir, files, cacheRoot: root });
+    expect(failed).toHaveLength(1);
+    expect(await hashCacheWriteProblem(root)).toMatch(/^E[A-Z]+$/);
+    await rm(join(root, ".atticus", "cache"));
+    await mkdir(join(root, ".atticus", "cache"));
+    expect(await hashCacheWriteProblem(root)).toBeUndefined();
+    expect(await readdir(join(root, ".atticus", "cache"))).toEqual([]);
   });
 });

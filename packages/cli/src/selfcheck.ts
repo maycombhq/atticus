@@ -577,7 +577,14 @@ export async function selfcheckCommand(
     try {
       const t = await timeOneBuild(root);
       if (o.json) {
-        io.out(JSON.stringify({ phases: t.phases, totalMs: t.totalMs, cpuMs: t.cpuMs }, null, 2));
+        const { phases, totalMs, cpuMs, hashCacheWrite } = t;
+        io.out(
+          JSON.stringify(
+            { phases, totalMs, cpuMs, ...(hashCacheWrite ? { hashCacheWrite } : {}) },
+            null,
+            2,
+          ),
+        );
         return 0;
       }
       const repos = o.names ? await factsRepoCount(root) : undefined;

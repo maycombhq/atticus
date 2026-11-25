@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,9 +86,12 @@ describe("atticus selfcheck --timing", () => {
       const phases = r.out.filter((l) => PHASE_LINE.test(l));
       // The read-only steps of one Apply, in its order (the hash is where antivirus shows),
       // then the build's own phases.
-      expect(phases.slice(0, 5).map((l) => l.trim().split(/ {2,}/)[0])).toEqual([
+      // Item 11: the hash's own two phases (where its seconds go) come before its total.
+      expect(phases.slice(0, 7).map((l) => l.trim().split(/ {2,}/)[0])).toEqual([
         "read: the org pack",
         "read: the catalog on disk",
+        "hash: walk",
+        "hash: read and sha256",
         "guards: hash the catalog on disk",
         "read: the questions",
         "join: every repo's facts",
@@ -156,7 +159,7 @@ describe("atticus selfcheck --timing", () => {
       };
       expect(j.phases.length).toBeGreaterThan(3);
       expect(j.phases[1]!.phase).toBe("read: the catalog on disk");
-      expect(j.phases[2]!.phase).toBe("guards: hash the catalog on disk");
+      expect(j.phases[4]!.phase).toBe("guards: hash the catalog on disk");
       for (const p of j.phases) {
         expect(p.ms).toBeGreaterThanOrEqual(0);
         expect(p.cpuMs).toBeGreaterThanOrEqual(0);
@@ -181,6 +184,28 @@ describe("atticus selfcheck --timing", () => {
         expect(names, pass).toContain(pass);
       // With a kept build and kept parses on disk, still nothing is written.
       expect(await tree(e.root)).toEqual(before);
+    },
+    T,
+  );
+
+  it(
+    "says when the guards' hash can't keep what it read (item 11)",
+    async () => {
+      const e = await estate();
+      const cache = join(e.root, ".atticus", "cache");
+      await rm(cache, { recursive: true, force: true });
+      await mkdir(dirname(cache), { recursive: true });
+      // Where the cache's folder should be, a file: nothing can be kept in it.
+      await writeFile(cache, "");
+      const r = await run(["selfcheck", "--timing", "--root", e.root]);
+      expect(r.code, [...r.out, ...r.err].join("\n")).toBe(0);
+      expect(r.out).toContainEqual(
+        expect.stringMatching(/^The guards' hash couldn't keep what it read \(E[A-Z]+\)/),
+      );
+      const j = JSON.parse(
+        (await run(["selfcheck", "--timing", "--json", "--root", e.root])).out.join("\n"),
+      ) as { hashCacheWrite?: string };
+      expect(j.hashCacheWrite).toMatch(/^E[A-Z]+$/);
     },
     T,
   );
