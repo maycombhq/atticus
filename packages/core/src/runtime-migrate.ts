@@ -67,3 +67,6 @@ export const migrateRuntimeV4Text = (text: string) =>
 /** To version 5 (ADR 0210 parts 4 and 5), for a file that sets `budgets.limits` or `apply`. */
 export const migrateRuntimeV5Text = (text: string) =>
   liftRuntimeText(text, 5, (d) => d.hasIn(["budgets", "limits"]) || d.has("apply"));
+/** conventions.yaml to version 3 (ADR 0210 part 6), for a file that sets `readers`. */
+export const migrateConventionsV3Text = (text: string) =>
+  liftRuntimeText(text, 3, (d) => d.has("readers"));

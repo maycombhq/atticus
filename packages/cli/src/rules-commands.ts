@@ -114,6 +114,14 @@ export async function saveDoc(
 }
 
 /** atticus rules list [<repo>]: the layers' rules, or what a repo's reads are given. */
+/** ADR 0210 part 2: a rule's recipe, its proof, and that it reads with no model. */
+const recipeNote = (r: ReadingRule) =>
+  !r.extract
+    ? ""
+    : r.status === "active"
+      ? ` [a recipe for ${r.extract.fact} facts, proven on ${r.learned?.proof?.repos.join(" and ")}: it reads its files with no model]`
+      : ` [a recipe for ${r.extract.fact} facts, not proven: the model reads its files]`;
+
 export async function rulesListCommand(
   root: string,
   repo: string | undefined,
@@ -135,12 +143,14 @@ export async function rulesListCommand(
     io.out(`${repo}: the organisation's reading rules its reads are given (${e.rules.length}):`);
     for (const r of e.rules)
       io.out(
-        `  ${r.key} (${r.layer}, ${r.file})${r.files?.length ? ` for ${r.files.join(", ")}` : ""}: ${r.rule.replace(/\s+/g, " ")}`,
+        `  ${r.key} (${r.layer}, ${r.file})${r.files?.length ? ` for ${r.files.join(", ")}` : ""}: ${r.rule.replace(/\s+/g, " ")}${recipeNote(r)}`,
       );
     if (e.drafts.length) {
       io.out(`Drafts, not given to reads until set active (${e.drafts.length}):`);
       for (const r of e.drafts)
-        io.out(`  ${r.key} (${r.layer}, ${r.file}): ${r.rule.replace(/\s+/g, " ")}`);
+        io.out(
+          `  ${r.key} (${r.layer}, ${r.file}): ${r.rule.replace(/\s+/g, " ")}${recipeNote(r)}`,
+        );
     }
     for (const x of e.off) io.out(`Switched off by ${x.layer} (${x.file}): ${x.key}: ${x.reason}`);
     return e.problems.length ? 1 : 0;

@@ -11,6 +11,8 @@ import {
   joinConventions,
   joinFacts,
   loadOrgPack,
+  migrateConventionsV3Text,
+  readersOn,
   orgPackJsonSchemas,
   parseFacts,
   underFolders,
@@ -113,7 +115,7 @@ describe("conventions.yaml (ADR 0147)", () => {
       false,
     );
     expect(Conventions.safeParse({ schemaVersion: 1, readEverything: true }).success).toBe(false);
-    expect(Conventions.safeParse({ schemaVersion: 3 }).success).toBe(false);
+    expect(Conventions.safeParse({ schemaVersion: 4 }).success).toBe(false);
     expect(
       Conventions.safeParse({ schemaVersion: 1, frameworks: [{ declares: "a b", name: "x" }] })
         .success,
@@ -187,5 +189,31 @@ describe("the join reads the bundle folders and facing words from the convention
       through(joinFacts({ repos: estate() })),
     );
     expect(through(joinFacts({ repos: estate(), bundleFolders: ["proxy-bundles"] }))).toBe(0);
+  });
+});
+
+describe("readers: on (ADR 0210 part 6)", () => {
+  it("is off by default, on only where the pack says so, and needs version 3", () => {
+    expect(readersOn({ conventions: DEFAULT_CONVENTIONS })).toBe(false);
+    expect(readersOn(undefined)).toBe(false);
+    const on = Conventions.parse({ schemaVersion: 3, readers: "on" });
+    expect(readersOn({ conventions: on })).toBe(true);
+    expect(
+      readersOn({ conventions: Conventions.parse({ schemaVersion: 3, readers: "off" }) }),
+    ).toBe(false);
+    const old = Conventions.safeParse({ schemaVersion: 2, readers: "on" });
+    expect(old.success).toBe(false);
+    expect(old.error?.issues[0]?.message).toMatch(/readers needs schemaVersion 3/);
+    // A version 1 or 2 file reads as it did, as version 2.
+    expect(Conventions.parse({ schemaVersion: 1 }).schemaVersion).toBe(2);
+  });
+
+  it("migrates a file that sets readers to 3, the number only, and leaves any other as it is", () => {
+    const text = '# ours\nschemaVersion: 2 # kept\nreaders: "on"\n';
+    expect(migrateConventionsV3Text(text)).toEqual({
+      text: '# ours\nschemaVersion: 3 # kept\nreaders: "on"\n',
+      changed: true,
+    });
+    expect(migrateConventionsV3Text("schemaVersion: 2\n").changed).toBe(false);
   });
 });

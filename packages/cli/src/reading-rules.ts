@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   isAdopted,
   loadOrgPack,
+  recipeDigest,
   orgPackDirOf,
   ReadingRulesFile,
   type OrgPack,
@@ -138,9 +139,13 @@ export async function effectiveRules(
     }
     for (const r of file.rules) {
       const e: EffectiveRule = { ...r, layer, file: at, id: ruleId(r) };
-      // ADR 0208: a learned rule is active only for the repos its re-read proved it on.
-      if (r.status === "draft" || (r.learned?.proof && !r.learned.proof.repos.includes(repo)))
-        drafts.push(e);
+      // ADR 0208: a learned rule is active only for the repos its re-read proved it on; a recipe
+      // (ADR 0210 part 2) is proven for its type, so it holds for every repo of it.
+      const unproven = r.learned?.proof && !r.extract && !r.learned.proof.repos.includes(repo);
+      const recipeWhy = r.status === "active" && r.extract && recipeDraftWhy(r, layer, type, op);
+      if (recipeWhy)
+        problems.push(`${at}: the recipe ${r.key} ${recipeWhy}: it is a draft until proven again.`);
+      if (r.status === "draft" || unproven || recipeWhy) drafts.push(e);
       else {
         const had = byKey.get(r.key);
         // Two teams' copies with one key: the later team's is used, and that is said.
@@ -159,6 +164,43 @@ export async function effectiveRules(
     problems,
     builtinOff: [...builtinOff].sort(),
   };
+}
+
+/**
+ * Why an active recipe doesn't read here (review of item 7): only its type's layer holds one for
+ * the type, its proof is of what it is now, and every repo its proof names is of the type.
+ */
+function recipeDraftWhy(r: ReadingRule, layer: Layer, type?: string, op?: OrgPack) {
+  if (layer !== "type") return "reads only from reading-rules/types/<type>.yaml";
+  if (r.learned?.proof?.digest !== recipeDigest(r)) return "has changed since its proof";
+  const types = new Map(op ? estateRepos(op).map((x) => [x.id, x.type]) : []);
+  const other = r.learned.proof.repos.find((x) => types.get(x) !== type);
+  return other ? `is proven on ${other}, which isn't of type ${type}` : undefined;
+}
+
+/** ADR 0210 part 2: each repo type's recipes, and whether each reads (the app's view). */
+export async function typeRecipes(root: string, op: OrgPack) {
+  const files = await readdir(join(rulesDirOf(root), "types")).catch(() => [] as string[]);
+  const out = [];
+  for (const f of files.filter((x) => x.endsWith(".yaml")).sort()) {
+    const type = f.slice(0, -".yaml".length);
+    const { file } = await readLayer(root, `types/${f}`);
+    for (const r of file?.rules.filter((x) => x.extract) ?? []) {
+      const why =
+        r.status === "draft" ? "a draft" : recipeDraftWhy(r, "type", type, op) || undefined;
+      out.push({
+        type,
+        key: r.key,
+        file: `${relDir(root)}/types/${f}`,
+        fact: r.extract!.fact,
+        files: r.files ?? [],
+        proven: !why,
+        repos: r.learned?.proof?.repos ?? [],
+        ...(why ? { why } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /** Whether a rule is about a file: its globs, or every file when it names none. */

@@ -56,6 +56,8 @@ async function estate(): Promise<string> {
     join(op, "pack.yaml"),
     "schemaVersion: 1\nname: harbor\nversion: 0.1.0\nowner: team-platform\n",
   );
+  // ADR 0210 part 6: the scan's framework models are the readers', so this pack turns them on.
+  await writeFile(join(op, "conventions.yaml"), 'schemaVersion: 3\nreaders: "on"\n');
   await writeFile(
     join(op, "profiles/harbor/repos.manifest.yaml"),
     [

@@ -347,6 +347,25 @@ describe("what a scan observes of each repo: a full read, or nothing (ADR 0195 p
   );
 
   it(
+    "the readers are off by default (ADR 0210 part 6): an org pack without readers: on observes nothing",
+    async () => {
+      const pack = await mkdtemp(join(tmpdir(), "atticus-readers-off-"));
+      try {
+        await cp(join(FORGE, "metarepo/org-pack"), pack, { recursive: true });
+        await rm(join(pack, "conventions.yaml"));
+        const off = await scanFixture({ fixture: FORGE, orgPack: pack });
+        expect(new Set(Object.values(byRepo(off.observations)))).toEqual(new Set(["readers-off"]));
+        // The fixture's own pack says readers: "on": every repo is read in full.
+        const on = await scanFixture({ fixture: FORGE });
+        expect(Object.values(byRepo(on.observations))).not.toContain("readers-off");
+      } finally {
+        await rm(pack, { recursive: true, force: true });
+      }
+    },
+    T,
+  );
+
+  it(
     "the readers switched off (ATTICUS_HELPERS_OFF=readers) observe nothing: no slot over a good one",
     async () => {
       const was = process.env.ATTICUS_HELPERS_OFF;

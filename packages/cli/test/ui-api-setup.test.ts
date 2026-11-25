@@ -99,8 +99,9 @@ describe("set up from the app (ADR 0190)", () => {
       decide: { links: "auto", questions: "propose", minPrecision: 0.9 },
     });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
+    // ADR 0210 part 5 (item 6): a new metarepo's runtime.yaml is written at 5.
     expect(parse(await pack("runtime.yaml"))).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       decide: { links: "auto" },
     });
     expect((await upgradeCheck(root)).pending).toEqual([]);

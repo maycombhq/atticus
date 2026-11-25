@@ -35,6 +35,14 @@ export const LearnedFrom = z.strictObject({
       reread: z.array(z.string().min(1)).min(1).max(2000),
       /** The corrections the estate join drew again from the re-read alone, as in `corrections`. */
       reproduced: z.array(z.string().min(1)).min(1).max(500),
+      /**
+       * ADR 0210 part 2 (schema 3, review of item 7): a recipe's `recipeDigest` when it was
+       * proven; a recipe edited since is a draft again.
+       */
+      digest: z
+        .string()
+        .regex(/^[0-9a-f]{16}$/)
+        .optional(),
     })
     .optional(),
   /** Why it stays a draft: a correction it didn't reproduce, or an arrow a person touched it moved. */
@@ -300,6 +308,18 @@ export const ReadingRulesFile = z
           code: "custom",
           path: ["rules", i, "extract"],
           message: "extract needs schemaVersion: 3 (ADR 0210)",
+        });
+      if (r.extract && !r.files?.length)
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", i, "files"],
+          message: "a recipe names the files it reads (ADR 0210)",
+        });
+      if (r.extract && r.status === "active" && r.learned?.proof && !r.learned.proof.digest)
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", i, "learned", "proof"],
+          message: "an active recipe's proof carries the digest of what it proved (ADR 0210)",
         });
       // ADR 0210 part 2: a recipe reads only once proven on two repos it wasn't written from.
       if (r.extract && r.status === "active" && (r.learned?.proof?.repos.length ?? 0) < 2)

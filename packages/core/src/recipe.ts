@@ -39,6 +39,13 @@ function yamlScalar(raw: string): string | undefined {
   return raw.replace(/(^|\s)#.*$/, "").trim();
 }
 
+/** What a recipe's proof is of: its extract and its files (review of item 7). */
+export const recipeDigest = (r: { extract?: unknown; files?: readonly string[] }): string =>
+  createHash("sha256")
+    .update(JSON.stringify([r.extract ?? null, r.files ?? []]))
+    .digest("hex")
+    .slice(0, 16);
+
 export function runRecipe(
   rule: ReadingRule,
   files: readonly RecipeFile[],
@@ -234,7 +241,7 @@ export function proveRecipe(
   opts: { writtenFrom?: readonly string[] } = {},
 ): {
   repos: RecipeRepoProof[];
-  proof?: { repos: string[]; reread: string[]; reproduced: string[] };
+  proof?: { repos: string[]; reread: string[]; reproduced: string[]; digest: string };
 } {
   const e = rule.extract;
   const globs = (rule.files ?? []).map((g) => globMatcher(g));
@@ -297,6 +304,11 @@ export function proveRecipe(
   });
   return {
     repos,
-    proof: { repos: by.map((p) => p.repo), reread, reproduced: by.flatMap((p) => p.reproduced) },
+    proof: {
+      repos: by.map((p) => p.repo),
+      reread,
+      reproduced: by.flatMap((p) => p.reproduced),
+      digest: recipeDigest(rule),
+    },
   };
 }

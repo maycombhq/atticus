@@ -3,7 +3,7 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
-import { limitWords, PAIR_WORDS } from "@maycombhq/core/paths";
+import { limitWords, PAIR_WORDS, READ_WORDS } from "@maycombhq/core/paths";
 
 /**
  * The one command that installs Atticus, at the exact version where it is known (beta.30): a
@@ -1502,12 +1502,16 @@ export const COPY = {
       "not-asked": "left out of this scan",
       "run-failed": "a reader run failed",
       "plugin-refused": "a plugin that applies to it isn't used",
-      "readers-off": "the readers are switched off",
+      // ADR 0210 part 6: off unless the org pack turns them on.
+      "readers-off":
+        'the readers are off: an org pack turns them on with readers: "on" in conventions.yaml',
       dirty: "its clone has changes not committed",
       refused: "the scan wrote nothing",
       "dry-run": "a dry run writes nothing",
     } as Record<string, string>,
     factsStale: "its facts cite files changed since: read it again on Map › Read status",
+    /** ADR 0210 part 6: a scan with the readers off and no facts: no failure, a next step. */
+    readersOffNothing: READ_WORDS.scanNothing,
     refusedBuild: "The scan read these repos, and its build waits for you:",
     confirmScan: (n: number) => `Scan again, removing ${n} ${n === 1 ? "record" : "records"}`,
     links: "The cross-check, and the catalog's builds:",
@@ -5017,6 +5021,11 @@ export const COPY = {
       ls?.length
         ? `Limits: ${ls.map(limitWords).join(", ")}.`
         : "No spend limit is set: each run says what it plans, then runs.",
+    /** ADR 0210 part 6: the deterministic readers, on or off. */
+    readers: (r: "on" | "off") =>
+      r === "on"
+        ? 'The deterministic readers run here (readers: "on" in conventions.yaml): a cross-check beside the recipes and the model.'
+        : READ_WORDS.readersOff,
     spendHint:
       "Set in runtime.yaml (budgets.limits): a run, a day or a month, in sessions or tokens, as your provider bills. A run past a limit asks, or stops where nobody can answer. atticus doctor shows what you have used.",
     badDefaultTokens: "The tokens for a step must be a whole number above 0, such as 200000.",
@@ -7845,6 +7854,20 @@ export const COPY = {
    * correction spreads to everything like it; every batch is one Undo away.
    */
   decisions: {
+    /** ADR 0210 part 2: each repo type's recipes, and whether each reads with no model. */
+    recipes: {
+      title: "Recipes",
+      none: "No repo type has a recipe yet: the model reads every file.",
+      what: (type: string, fact: string, files: readonly string[]) =>
+        `(${type}): ${fact} facts from ${files.join(", ")}`,
+      proven: (repos: readonly string[]) =>
+        `proven on ${repos.join(" and ")}: reads its files with no model`,
+      draft: (why: string) => `a draft (${why}): the model reads its files`,
+      readers: (r: "on" | "off") =>
+        r === "on"
+          ? 'The deterministic readers run here too (readers: "on" in conventions.yaml).'
+          : READ_WORDS.readersOff,
+    },
     /** ADR 0208: Learn from my corrections, one button over every correction since the last run. */
     learn: {
       title: "Learn from my corrections",

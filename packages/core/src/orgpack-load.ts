@@ -715,6 +715,10 @@ export async function loadEstimates(
 export const conventionsOf = (op: Pick<OrgPack, "conventions"> | undefined): Conventions =>
   op?.conventions ?? DEFAULT_CONVENTIONS;
 
+/** ADR 0210 part 6: whether the deterministic readers run here: only where the org pack says `on`. */
+export const readersOn = (op: Pick<OrgPack, "conventions"> | undefined): boolean =>
+  op?.conventions?.readers === "on";
+
 /** What the estate join takes from a pack's conventions (ADR 0147): its facing words and bundle folders. */
 export function joinConventions(op: Pick<OrgPack, "conventions"> | undefined): {
   facing: { internal: readonly string[]; external: readonly string[] };

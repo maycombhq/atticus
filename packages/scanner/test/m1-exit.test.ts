@@ -33,6 +33,11 @@ describe(`M1 exit on the synthetic estate (${SIZE} repos)`, () => {
       await cp(join(FORGE, "repos/forge-ledger"), join(top, "repos/forge-ledger"), {
         recursive: true,
       });
+      // ADR 0210 part 6: this test times the readers, so the pack turns them on.
+      await cp(
+        join(FORGE, "metarepo/org-pack/conventions.yaml"),
+        join(root, "org-pack/conventions.yaml"),
+      );
 
       const commits = new Map(
         estate.repos.map((r) => [r.id, createHash("sha1").update(r.id).digest("hex")]),
