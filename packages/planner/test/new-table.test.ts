@@ -279,17 +279,15 @@ describe("a person's fix of a stopped stage is never drafted over (P1)", () => {
   const dropPinnedAt = (d: Doc) => {
     d.steps[1]!.fields.sends = d.steps[1]!.fields.sends.filter((f: string) => f !== "pinnedAt");
   };
-  /** The stage stopped on a drafting finding the assistant kept getting wrong. */
+  /** The stage went on with a drafting finding the assistant kept getting wrong (ADR 0210 part 7). */
   async function stoppedStage() {
     const root = await pinRoot();
-    const e = await architectureStage(root, CHANGE, {
+    const r = await architectureStage(root, CHANGE, {
       runtime: assistant([draft("sends-extra")]),
       now: NOW,
-    }).then(
-      () => undefined,
-      (x: Error) => x,
-    );
-    expect(e?.message).toContain("kept getting this wrong");
+    });
+    expect(r.state).toBe("done");
+    expect(r.notes.join("\n")).toContain("kept getting this wrong");
     return root;
   }
   const counting = (prompts: string[]) => assistant([draft("sends-extra")], prompts);
@@ -325,7 +323,8 @@ describe("a person's fix of a stopped stage is never drafted over (P1)", () => {
     ).toContain("# Fixed by pat");
   });
 
-  it("a person's fix that still fails stops with what fails, file and line, and leaves their file as it is; --force drafts from it", async () => {
+  // ADR 0210 part 7: their edit is their draft, taken as it is; what fails is an open item.
+  it("a person's fix that still fails goes on with what fails, file and line, and leaves their file as it is; --force drafts from it", async () => {
     const root = await stoppedStage();
     await edit(root, (d) => {
       dropPinnedAt(d);
@@ -333,22 +332,25 @@ describe("a person's fix of a stopped stage is never drafted over (P1)", () => {
     });
     const theirs = await readFile(file(root), "utf8");
     const prompts: string[] = [];
-    const e = await architectureStage(root, CHANGE, { runtime: counting(prompts), now: NOW }).then(
-      () => undefined,
-      (x: Error) => x,
-    );
+    const r = await architectureStage(root, CHANGE, { runtime: counting(prompts), now: NOW });
+    expect(r.state).toBe("done");
+    const e = { message: r.notes.join("\n") };
     expect(prompts).toEqual([]);
-    expect(e?.message).toContain(
-      `The architecture stage checked your edit of openspec/changes/${CHANGE}/${FILE} as its draft, and found a problem; it stopped rather than draft over your work.`,
+    expect(e.message).toContain(
+      `The architecture stage took your edit of openspec/changes/${CHANGE}/${FILE} as its draft, and found a problem; it went on, with it open for the hand-off.`,
     );
-    expect(e?.message).toMatch(
+    expect(e.message).toMatch(
       new RegExp(
         `classifies column pinned_by as personal.*\\(rule delta\\.bad-classification; at openspec/changes/${CHANGE}/target-flows/forge-orders\\.pin-note\\.yaml:\\d+\\)`,
       ),
     );
-    expect(e?.message).toContain(`atticus change architecture ${CHANGE} --force`);
+    expect(e.message).not.toContain("--force");
+    const loop = parse(
+      await readFile(join(root, "openspec/changes", CHANGE, "stage/architecture.yaml"), "utf8"),
+    );
+    expect(loop.openItems.join("\n")).toMatch(/rule delta\.bad-classification/);
     expect(await readFile(file(root), "utf8")).toBe(theirs);
-    // Run again without fixing: it stops again, and still never drafts over the file.
+    // Run again without fixing: it goes on again, and still never drafts over the file.
     await architectureStage(root, CHANGE, { runtime: counting(prompts), now: NOW }).catch(
       () => undefined,
     );

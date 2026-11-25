@@ -39,6 +39,14 @@ export interface GateStatus {
    * unreadable file; and no AI lens still waiting for the person's assistant.
    */
   mayProceed: boolean;
+  /**
+   * ADR 0210 part 7: whether the gate's hand-off goes ahead: nothing but open items is open (org
+   * and team findings and gaps, an assistant's proposal); a constitution finding, a round that
+   * didn't finish and a lens still out or failed hold it.
+   */
+  goesAhead?: boolean;
+  /** ADR 0210 part 7: what the hand-off goes ahead with, which its PR lists as open items. */
+  openItems?: string[];
   /** The rounds are used up and something still blocks: a person decides (waive, fix by hand, or return). */
   humanDecides: boolean;
   /**
@@ -123,6 +131,11 @@ export async function gateStatusOf(
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
+    goesAhead: waiting.length === 0 && checked.every((r) => r.openItem),
+    openItems: [
+      ...checked.filter((r) => r.openItem).map((r) => r.message),
+      ...reasons.slice(blocking.length, blocking.length + proposed.length),
+    ],
     // An open gap with nothing blocking waits on its owner, not on a person's decision.
     humanDecides:
       blocking.length > 0 &&

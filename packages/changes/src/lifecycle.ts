@@ -16,7 +16,7 @@ import {
 } from "@maycombhq/core";
 import { BUILT_IN_AGENTS } from "./assistant-names.js";
 import type { ChangeContext } from "./context.js";
-import type { Reason } from "./errors.js";
+import { asOpenItem, type Reason } from "./errors.js";
 import type { Footprint } from "./footprint.js";
 import { isWritePattern, writeMatches, type StageStep } from "./policy.js";
 import { isFilled } from "./markdown.js";
@@ -158,7 +158,7 @@ export async function checkStage(
     if (writesPlanning(step) && (await personWrittenPlanning(dir)).length) return [];
     return reason(`The ${step.stage} stage hasn't run yet: run ${run}.`);
   }
-  let loop: { state?: unknown; run?: unknown; questions?: unknown } | null;
+  let loop: { state?: unknown; run?: unknown; questions?: unknown; openItems?: unknown } | null;
   try {
     loop = parse(text) as typeof loop;
   } catch {
@@ -186,11 +186,12 @@ export async function checkStage(
         if (!asked.some((q) => open.has(q)))
           return reason(
             `The ${step.stage} stage's questions are answered: run it again so it reads the answers (${run}).`,
-          );
+          ).map(asOpenItem);
       }
+      // ADR 0210 part 7: open questions are an open item; the hand-off goes ahead with them.
       return reason(
         `The ${step.stage} stage waits for a person to answer its questions: answer them on Questions (or atticus questions), then run the stage again (${run}).`,
-      );
+      ).map(asOpenItem);
     }
     case "waiting":
       return reason(
@@ -201,7 +202,10 @@ export async function checkStage(
     default:
       return reason(`${step.loop} doesn't read as a stage's loop state: run ${run} again.`);
   }
-  const out: Reason[] = [];
+  // ADR 0210 part 7: what the stage went on with (a gate it no longer stops at) rides to the hand-off.
+  const out: Reason[] = (Array.isArray(loop?.openItems) ? loop.openItems : [])
+    .filter((m): m is string => typeof m === "string")
+    .map((message) => asOpenItem({ code: "stage-open-item", message }));
   // A folder, a pattern, the loop's own files and a type's artifact (proposal.md, which the
   // artifacts the stage writes decide) aren't due by name: the stage writes them when it has them.
   const artifactFile = new Set(Object.values(FILE));
@@ -327,9 +331,12 @@ export async function checkArtifacts(
 }
 
 /**
- * Findings that stop a gate: in the newest round of `review/<gate>/<round>/`, open blocking
- * findings and open knowledge gaps. Waived, applied, dismissed and asked findings, risks
- * and ideas never block. A file that isn't a valid finding blocks too: it can't be checked.
+ * Findings on a gate: in the newest round of `review/<gate>/<round>/`, open blocking findings and
+ * open knowledge gaps. Waived, applied, dismissed and asked findings, risks and ideas never count.
+ * ADR 0210 part 7: an org or team finding is an open item (the hand-off goes ahead and its PR lists
+ * it); a constitution finding (the quarantine rule's gaps among them, `layer: constitution`), a
+ * round that didn't finish, a lens that didn't review or is still out, and a file that isn't a
+ * valid finding still stop the gate.
  */
 export async function checkFindings(
   root: string,
@@ -425,29 +432,37 @@ export async function checkFindings(
       if (x.severity === "gap" && x.state === "asked") {
         const q = await readQuestion(root, askedGapQuestionId(change.id, x)).catch(() => undefined);
         if (q?.state === "open")
-          reasons.push({
-            code: "open-gap",
-            finding: x.id,
-            message: `Knowledge gap ${x.id} on the ${gate} gate (round ${round}) was asked of ${q.askedOf ?? x.resolution?.askedOf ?? "its owner"} and waits for the answer (owner question ${q.id}, in Questions, Owner questions): ${x.summary}`,
-          });
+          reasons.push(
+            (x.layer === "constitution" ? (r: Reason) => r : asOpenItem)({
+              code: "open-gap",
+              finding: x.id,
+              message: `Knowledge gap ${x.id} on the ${gate} gate (round ${round}) was asked of ${q.askedOf ?? x.resolution?.askedOf ?? "its owner"} and waits for the answer (owner question ${q.id}, in Questions, Owner questions): ${x.summary}`,
+            }),
+          );
         continue;
       }
       // An assistant's resolution of a blocking finding closes nothing (ADR 0115 addendum,
       // 2026-10-25): only a person's does. A file from before the rule still blocks.
       const byAssistant = x.severity === "blocking" && isAssistantResolution(x.resolution, known);
       if (x.state !== "open" && !byAssistant) continue;
+      // Constitution rules can never be waived (rule 6): their findings keep stopping the gate.
+      const item = x.layer === "constitution" ? (r: Reason) => r : asOpenItem;
       if (x.severity === "blocking")
-        reasons.push({
-          code: "blocking-finding",
-          finding: x.id,
-          message: `Blocking finding ${x.id} on the ${gate} gate (round ${round}): ${x.summary}`,
-        });
+        reasons.push(
+          item({
+            code: "blocking-finding",
+            finding: x.id,
+            message: `Blocking finding ${x.id} on the ${gate} gate (round ${round}): ${x.summary}`,
+          }),
+        );
       else if (x.severity === "gap")
-        reasons.push({
-          code: "open-gap",
-          finding: x.id,
-          message: `Knowledge gap ${x.id} on the ${gate} gate (round ${round}) needs an answer or a fix: ${x.summary}`,
-        });
+        reasons.push(
+          item({
+            code: "open-gap",
+            finding: x.id,
+            message: `Knowledge gap ${x.id} on the ${gate} gate (round ${round}) needs an answer or a fix: ${x.summary}`,
+          }),
+        );
     }
   }
   return reasons;
@@ -476,11 +491,14 @@ export async function checkMandatoryRounds(
       (ds) => ds.filter((d) => d.isDirectory() && /^\d+$/.test(d.name)),
       () => [],
     );
+    // ADR 0210 part 7: an open item; the hand-off's PR says no critic reviewed the gate.
     if (rounds.length === 0)
-      reasons.push({
-        code: "critic-round-missing",
-        message: `The ${gate} gate is mandatory on this platform and the critic hasn't reviewed it yet: run atticus critic ${change.id} --gate ${gate}.`,
-      });
+      reasons.push(
+        asOpenItem({
+          code: "critic-round-missing",
+          message: `The ${gate} gate is mandatory on this platform and the critic hasn't reviewed it yet: run atticus critic ${change.id} --gate ${gate}.`,
+        }),
+      );
   }
   return reasons;
 }

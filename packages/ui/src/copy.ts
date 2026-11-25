@@ -3212,6 +3212,10 @@ export const COPY = {
     /** Sixth UX walk: on a manual Git host, the PR waits on a person to open it. */
     handOffManual: (phase: string) => `${phase} HAND-OFF · WAITS ON A MANUAL STEP`,
     whatBlocksTheHand: "What blocks the hand-off",
+    /** ADR 0210 part 7: what the hand-off goes ahead with; its PR lists them for its approver. */
+    openItems: "Open items",
+    openItemsSaid: (n: number) =>
+      `${n === 1 ? "1 open item goes" : `${n} open items go`} with the hand-off: its PR lists ${n === 1 ? "it" : "them"}, and the person who approves it decides.`,
     /** UX review: Raise hand-off waits until nothing blocks it, and says why. */
     blockedBy: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,

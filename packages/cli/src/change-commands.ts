@@ -737,6 +737,11 @@ export async function changeStatus(
     io.out("Blocked by:");
     for (const x of r.reasons) io.out(`  - ${x.message}`);
   }
+  // ADR 0210 part 7: what the hand-off goes ahead with, which its PR lists for its approver.
+  if (r.openItems.length > 0) {
+    io.out("Open items (the hand-off's PR lists them; its approver decides them):");
+    for (const x of r.openItems) io.out(`  - ${x.message}`);
+  }
   // ADR 0206: notes, never refusals.
   for (const n of r.notes ?? []) io.out(`Note: ${n}`);
   // A gate whose critic rounds are used up: what a person does next, in the critic's words.
@@ -851,6 +856,10 @@ async function handoffPreview(root: string, id: string, by: string, io: Output):
     return 1;
   }
   const open = r.handoff && r.handoff.phase === r.phase;
+  if (r.openItems.length) {
+    io.out("Open items, which the PR lists for the person who approves it:");
+    for (const x of r.openItems) io.out(`  - ${x.message}`);
+  }
   io.out(
     open
       ? `Would update hand-off PR #${r.handoff!.pr.number} (${r.handoff!.pr.url}) with the ${r.phase} files, as ${by}.`

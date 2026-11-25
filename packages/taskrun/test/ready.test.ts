@@ -194,7 +194,9 @@ describe("waves: what holds a task for ever is named", () => {
 });
 
 describe("atticus task run of a task held by (after …)", () => {
-  it("is refused, naming what must be ticked first; a task that only comes later in its repo runs as before", async () => {
+  // ADR 0210 part 7: a task waiting on tasks it names goes ahead when a person runs it, with that
+  // as an open item; one whose (after …) can never be met (tasks.md to fix) is still refused.
+  it("is refused when tasks.md can never let it run, and goes ahead naming what isn't ticked; a task that only comes later in its repo runs as before", async () => {
     const { root } = await speckitRoot({ repos: ["forge-ledger"] });
     const file = join(root, "openspec/changes", CHANGE, "tasks.md");
     const text = await readFile(file, "utf8");
@@ -232,10 +234,9 @@ describe("atticus task run of a task held by (after …)", () => {
         "- [ ] 2.1 Expose the remaining limit, with tests (story s2-show-remaining) (after 1.1)",
       ),
     );
-    await expect(previewTaskRun(root, CHANGE, "2.1")).rejects.toMatchObject({
-      message:
-        "Task 2.1 isn't ready: it waits for task 1.1 (after) to be done first. It runs once that is ticked in tasks.md.",
-    });
+    expect((await previewTaskRun(root, CHANGE, "2.1")).openItems).toEqual([
+      "Open item: task 2.1 runs before what it names in (after …): it waits for task 1.1 (after) to be done first.",
+    ]);
     // 1.2 comes after 1.1 in its repo and names nothing: a person may still run it by itself.
     expect((await previewTaskRun(root, CHANGE, "1.2")).task).toBe("1.2");
   }, 180_000);

@@ -801,19 +801,23 @@ export interface TaskRunPreview {
   branch: string;
   /** For the pr level: whether a Git host is connected to push and open the PR. */
   gitHost: boolean;
+  /** ADR 0210 part 7: what the run goes ahead with (a task its (after …) names, not ticked). */
+  openItems?: string[];
 }
 
 /**
- * ADR 0201 (waves): a task its `(after …)` holds isn't run by itself either. There is no flag
- * that overrides it: the person ticks the tasks it names, or fixes tasks.md. The order of its own
- * repo's tasks doesn't refuse a task a person chose to run, as before.
+ * ADR 0201 (waves): a task whose `(after …)` can never be met (a cycle, a task tasks.md doesn't
+ * have) isn't run by itself: the person fixes tasks.md. ADR 0210 part 7: a task waiting on tasks
+ * it names that aren't ticked runs when a person chooses, and says so: an open item, returned.
  */
-function refuseIfAfterHolds(t: TaskContext): void {
+function refuseIfAfterHolds(t: TaskContext): string | undefined {
   const tasks = readChangeTasks(t.files);
   const me = tasks.find((x) => x.id === t.task.id && x.line === t.task.line);
   const hold = me && afterHold(tasks, me);
-  if (hold)
+  if (!hold) return undefined;
+  if (hold.never)
     throw new TaskRunError("refused", `Task ${t.task.id} isn't ready: ${hold.why}. ${hold.fix}`);
+  return `Open item: task ${t.task.id} runs before what it names in (after …): ${hold.why}.`;
 }
 
 /**
@@ -828,7 +832,7 @@ export async function previewTaskRun(
   o: { level?: RunLevel; gitHost?: GitHost; skipGitHost?: boolean } = {},
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
-  refuseIfAfterHolds(t);
+  const after = refuseIfAfterHolds(t);
   const level = levelOf(t, o.level);
   await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t), createGit());
   return {
@@ -838,6 +842,7 @@ export async function previewTaskRun(
     level,
     branch: taskBranch(t.change.id, t.task.id),
     gitHost: level === "pr" && !o.skipGitHost ? gitHostConnected(root, t, o.gitHost) : false,
+    ...(after ? { openItems: [after] } : {}),
   };
 }
 
@@ -935,7 +940,7 @@ async function runTaskHeld(
   const now = o.now ?? (() => new Date());
   const git = o.git ?? createGit();
   let t = await loadTask(root, changeId, taskId);
-  refuseIfAfterHolds(t);
+  const after = refuseIfAfterHolds(t);
   const rt = t.ctx.orgPack.runtime;
   const level = levelOf(t, o.level);
   // A run of this task still waits on the person's assistant: a second one would write over
@@ -956,7 +961,7 @@ async function runTaskHeld(
   const changeDir = await changeWorktree(root, t.change.id, t.repo.id);
   const handed =
     engine === "speckit" ? `specs/${t.task.id}/plan.md` : `.atticus/tasks/${t.task.id}.md`;
-  const notes: string[] = [...earlier.notes];
+  const notes: string[] = [...earlier.notes, ...(after ? [after] : [])];
   // Seventh UX walk: a new task branch starts from the tasks already merged on the Git host.
   try {
     const caught = await catchUpChangeBranch(

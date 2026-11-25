@@ -327,8 +327,13 @@ export async function act(
         "refused",
         `${f.id} (rule ${f.rule}) can't be accepted. ${f.fix.text.replace(/^.*?It can't be accepted: /s, "")}`,
       );
+    // ADR 0210 part 7: it can't be waived, but it doesn't hold the hand-off either: its PR lists it
+    // as an open item, for the person who approves the hand-off to decide.
     if (!f.waivable)
-      throw new CriticError("refused", `Rule ${f.rule} says its findings can't be waived. Fix it.`);
+      throw new CriticError(
+        "refused",
+        `Rule ${f.rule} says its findings can't be waived. Fix it, or hand off with it: the hand-off's PR lists it as an open item.`,
+      );
     if (!o.reason?.trim()) throw new CriticError("invalid", "Waive needs a reason (--reason).");
   }
   const askedOf = act === "ask" ? o.askedOf?.trim() || f.question?.owner : undefined;

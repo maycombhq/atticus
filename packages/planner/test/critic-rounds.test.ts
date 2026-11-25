@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { act, gateStatus } from "@maycombhq/naysayer";
-import { featureStage, PlannerError } from "../src/index.js";
+import { featureStage } from "../src/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "../../../fixtures/stages");
@@ -225,13 +225,15 @@ describe("a finding the drafting assistant calls not relevant", () => {
     });
     expect(said.finding.state).toBe("open");
     await h.answer(d3.waiting!.runId, "feature-answer.yaml", PLACED);
-    const stop = await h.step(d3.waiting!.runId).then(
-      () => undefined,
-      (e: unknown) => e as PlannerError,
+    // ADR 0210 part 7: the stage goes on, the proposal an open item on its hand-off.
+    const went = await h.step(d3.waiting!.runId);
+    expect(went.state).toBe("done");
+    expect(went.notes.join("\n")).toContain("only a person's decision closes it");
+    const loop = await readFile(
+      join(root, "openspec/changes", CHANGE, "stage/feature.yaml"),
+      "utf8",
     );
-    expect(stop).toBeInstanceOf(PlannerError);
-    expect(stop!.message).toContain("only a person's decision closes it");
-    expect(stop!.message).toContain("Proposed by the assistant (claude), waiting on a person");
+    expect(loop).toContain("Proposed by the assistant (claude), waiting on a person");
     // Nothing changed since round 1, so round 2 called no lens and doesn't count; the finding is
     // carried, still open, with the proposal.
     const r2 = await roundMeta(root, 2);
@@ -246,7 +248,10 @@ describe("a finding the drafting assistant calls not relevant", () => {
     expect(open.finding.state).toBe("open");
     expect(open.proposal).toMatchObject({ by: "claude", claim: "not-relevant" });
     // Running the stage again doesn't draft over the decision a person owes.
-    await expect(h.step()).rejects.toThrow(/waiting on a person/);
+    expect((await h.step()).state).toBe("done");
+    // The proposal is an open item; the constitution rule's owner gap still holds the hand-off.
+    expect((s.openItems ?? []).join("\n")).toContain("waiting on a person");
+    expect(s.goesAhead).toBe(false);
 
     // A person decides: the stage finishes, and the record says whose reason it was.
     const decided = await act(root, CHANGE, open.finding.id, "not-relevant", { by: "pat" });

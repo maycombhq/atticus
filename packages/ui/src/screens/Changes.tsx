@@ -79,6 +79,8 @@ export interface Status {
   handoff?: { pr: { number: number; url: string }; state: string; phase: string };
   blockers: Reason[];
   reasons: Reason[];
+  /** ADR 0210 part 7 (additive): what the hand-off goes ahead with, listed on its PR. */
+  openItems?: Reason[];
 }
 export interface Task {
   id: string;
@@ -689,6 +691,16 @@ function Detail({ id }: { id: string }) {
                           <li key={b.message}>{b.message}</li>
                         ))}
                       </ul>
+                    )}
+                    {(s.openItems?.length ?? 0) > 0 && (
+                      <>
+                        <p className="cw-held">{T.openItemsSaid(s.openItems!.length)}</p>
+                        <ul className="cw-blockers" aria-label={T.openItems}>
+                          {s.openItems!.map((b) => (
+                            <li key={b.message}>{b.message}</li>
+                          ))}
+                        </ul>
+                      </>
                     )}
                     {/* Beta.27 review: why Raise hand-off waits, in words on the page, not a title. */}
                     {(s.blockers.length > 0 || s.stepFirst) && (

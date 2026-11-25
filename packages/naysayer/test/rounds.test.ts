@@ -154,8 +154,9 @@ describe("rounds, gates and actions", () => {
     expect(r2.status.humanDecides).toBe(true);
 
     // The lifecycle's hand-off check reads the newest round the same way.
+    // ADR 0210 part 7: as reasons (constitution) and open items (org and team) together.
     const ready = await canAdvance(CHANGE, root);
-    const blockers = ready.reasons
+    const blockers = [...ready.reasons, ...ready.openItems]
       .filter((x) => x.code === "blocking-finding" || x.code === "open-gap")
       .map((x) => x.finding);
     // Ninth UX walk: an asked gap waits for its owner question's answer, so it blocks too.
@@ -166,8 +167,10 @@ describe("rounds, gates and actions", () => {
         (f.finding.state === "asked" && f.finding.severity === "gap"),
     );
     expect(blockers.sort()).toEqual(open.map((f) => f.finding.id).sort());
-    expect(r2.status.reasons).toEqual(
-      ready.reasons.filter((x) => x.code !== "no-handoff").map((x) => x.message),
+    expect([...r2.status.reasons].sort()).toEqual(
+      [...ready.reasons.filter((x) => x.code !== "no-handoff"), ...ready.openItems]
+        .map((x) => x.message)
+        .sort(),
     );
 
     // A third round is refused: a person decides now.

@@ -142,9 +142,11 @@ describe("the critic on the seeded fixture change (M3 exit)", () => {
     // The gate is closed, and the lifecycle reads the same answer from the files.
     expect(r.status.mayProceed).toBe(false);
     expect(r.status.open.blocking).toBe(blocking.length);
+    // ADR 0210 part 7: its org and team findings as open items, its constitution ones as reasons.
     const ready = await canAdvance(CHANGE, root);
-    expect(ready.reasons.filter((x) => x.code === "blocking-finding").length).toBe(blocking.length);
-    expect(ready.reasons.filter((x) => x.code === "open-gap").length).toBe(gaps.length);
+    const all = [...ready.reasons, ...ready.openItems];
+    expect(all.filter((x) => x.code === "blocking-finding").length).toBe(blocking.length);
+    expect(all.filter((x) => x.code === "open-gap").length).toBe(gaps.length);
   });
 
   it("layer 1 alone catches every seeded problem marked deterministic", async () => {
