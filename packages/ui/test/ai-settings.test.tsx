@@ -71,6 +71,36 @@ describe("AI decides first, set on the AI tab (ADR 0181, ninth UX walk)", () => 
   });
 });
 
+describe("the budget, shown on the AI tab of Set up (ADR 0210 part 5)", () => {
+  const limits = [
+    { per: "day" as const, sessions: 40 },
+    { per: "month" as const, tokens: 2000000 },
+  ];
+  it("shows runtime.yaml's limits, or that none is set, where the budgets are", () => {
+    const set = html(<AiSettingsForm data={{ ...DATA, budgets: { ...DATA.budgets, limits } }} />);
+    expect(set).toContain(T.spendLabel);
+    expect(set).toContain(esc("Limits: 40 sessions a day, 2,000,000 tokens a month."));
+    expect(set).toContain(esc(T.spendHint));
+    expect(html(<AiSettingsForm data={DATA} />)).toContain(esc(T.spendLimits()));
+  });
+  it("keeps the limits as they are when the tab saves its budgets", () => {
+    const form = {
+      ai: "on",
+      modes: { allowed: ["hand-off"], default: "hand-off" },
+      assistants: { allowed: ["copilot"], default: "copilot" },
+      provider: "",
+      settings: {},
+      limits: { models: "", recommended: {}, defaultTokens: "200000", perAgent: "", spend: limits },
+    };
+    expect(toSave(form)).toMatchObject({
+      budgets: { defaultTokens: 200000, perAgent: {}, limits },
+    });
+    expect(
+      toSave({ ...form, limits: { ...form.limits, spend: undefined } }).budgets,
+    ).not.toHaveProperty("limits");
+  });
+});
+
 describe("the AI tab (ADR 0121)", () => {
   it("is a tab of Set up", () => {
     expect(screenOf("#/ai")).toMatchObject({ id: "ai", section: "SetUp" });

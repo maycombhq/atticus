@@ -37,41 +37,33 @@ function namesCopilotAcp(doc: ReturnType<typeof parseDocument>): boolean {
 }
 
 /**
- * runtime.yaml to version 3 (ADR 0171), for a file that names copilot-acp (a mode, or the
- * copilotAcp section): the number only, every other line as the person wrote it. A file that
- * doesn't name it means the same at version 1 or 2, so it is left as it is.
+ * runtime.yaml to version `to` for a file that `needs` it: the number only, every other line as
+ * the person wrote it. A file that doesn't need it means the same at its own number.
  */
-export function migrateRuntimeV3Text(text: string): { text: string; changed: boolean } {
+function liftRuntimeText(
+  text: string,
+  to: number,
+  needs: (d: ReturnType<typeof parseDocument>) => boolean,
+) {
   const doc = parseDocument(text);
   if (doc.errors.length || !isMap(doc.contents)) return { text, changed: false };
   const v = doc.get("schemaVersion");
-  if ((v !== 1 && v !== 2) || !namesCopilotAcp(doc)) return { text, changed: false };
-  const line = /^schemaVersion:[ \t]*[12][ \t]*(#.*)?$/m;
+  if (typeof v !== "number" || v < 1 || v >= to || !needs(doc)) return { text, changed: false };
+  const line = new RegExp(`^schemaVersion:[ \\t]*${v}[ \\t]*(#.*)?$`, "m");
   if (line.test(text))
     return {
-      text: text.replace(line, (_m, c?: string) => `schemaVersion: 3${c ? ` ${c}` : ""}`),
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: ${to}${c ? ` ${c}` : ""}`),
       changed: true,
     };
-  doc.set("schemaVersion", 3);
+  doc.set("schemaVersion", to);
   return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }
 
-/**
- * runtime.yaml to version 4 (ADR 0181), for a file that sets `decide` (whether the AI decides
- * pairings and option questions itself): the number only, every other line as the person wrote
- * it. A file without it means the same at version 1 to 3, so it is left as it is.
- */
-export function migrateRuntimeV4Text(text: string): { text: string; changed: boolean } {
-  const doc = parseDocument(text);
-  if (doc.errors.length || !isMap(doc.contents)) return { text, changed: false };
-  const v = doc.get("schemaVersion");
-  if ((v !== 1 && v !== 2 && v !== 3) || !doc.has("decide")) return { text, changed: false };
-  const line = /^schemaVersion:[ \t]*[123][ \t]*(#.*)?$/m;
-  if (line.test(text))
-    return {
-      text: text.replace(line, (_m, c?: string) => `schemaVersion: 4${c ? ` ${c}` : ""}`),
-      changed: true,
-    };
-  doc.set("schemaVersion", 4);
-  return { text: doc.toString({ lineWidth: 0 }), changed: true };
-}
+/** To version 3 (ADR 0171), for a file that names copilot-acp (a mode, or its section). */
+export const migrateRuntimeV3Text = (text: string) => liftRuntimeText(text, 3, namesCopilotAcp);
+/** To version 4 (ADR 0181), for a file that sets `decide`. */
+export const migrateRuntimeV4Text = (text: string) =>
+  liftRuntimeText(text, 4, (d) => d.has("decide"));
+/** To version 5 (ADR 0210 part 5), for a file that sets `budgets.limits`. */
+export const migrateRuntimeV5Text = (text: string) =>
+  liftRuntimeText(text, 5, (d) => d.hasIn(["budgets", "limits"]));

@@ -15,6 +15,7 @@ import {
   STOPPED_BY_PERSON,
   AcpSignInError,
   currentPromptLimit,
+  planRun,
   type AiRequest,
   type AiRuntime,
 } from "@maycombhq/ai";
@@ -1407,6 +1408,20 @@ async function mapAllRun(
   // for a run that starts (re-review: not one the assistant files refused).
   if (lim.from === "flag") await saveLastLimit(root, limit, clock.now());
   for (const l of planLines(plan)) io.out(l);
+  // ADR 0210 part 5: the whole estate's plan, said and checked once, before its first session.
+  if (mode === "model" || mode === "copilot-acp") {
+    const sum = (f: (i: PlanItem) => number) => plan.items.reduce((n, i) => n + f(i), 0);
+    const sessions = sum(
+      (i) => (i.parts.length && mode === "model" && i.batches) || i.parts.length,
+    );
+    const tokens = sum((i) => (i.parts.length ? i.tokens : 0));
+    const what = { what: "The estate's read", sessions, tokens, writes: true };
+    const stop = await planRun({ root, limits: op.runtime.budgets.limits }, what);
+    if (stop) {
+      io.err(stop);
+      return 2;
+    }
+  }
   const emit = (e: MapAllEvent) => {
     try {
       deps.onEvent?.(e);

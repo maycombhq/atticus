@@ -354,20 +354,17 @@ describe("the removal guard and a move (ADR 0195)", () => {
     expect((await run()).code).toBe(0);
     expect(await g.arrows()).toEqual({ [B]: 6, [VENDOR]: 1 });
     // The corrections file reverted by hand, as a bad merge would: the guard can't tell that
-    // from six Undos, so the six arrows wait for a confirm, and none is said moved by a person.
+    // from six Undos. ADR 0210 part 3: a person's write no longer waits for a confirm; it writes
+    // the removals and lists each with its true reason, and none is said moved by a person.
     writeFileSync(file, seeded);
     const r = await run();
-    expect(r.code, r.said).toBe(1);
-    const count = Number(/--allow-removals (\d+)\./.exec(r.said)?.[1]);
-    const would = r.out.filter((l) => l.includes("would remove Interface/"));
-    expect(would).toHaveLength(6);
-    expect(count).toBeGreaterThanOrEqual(6);
-    for (const l of would) expect(l).toContain("an input changed (facts/*.corrections.jsonl)");
-    expect(r.said).toMatch(/\d+ of forge-orders's \d+/);
-    expect(await g.arrows()).toEqual({ [B]: 6, [VENDOR]: 1 });
-    // Confirmed with the count listed, it writes.
-    const ok = await run(count);
-    expect(ok.code, ok.said).toBe(0);
+    expect(r.code, r.said).toBe(0);
+    const listed = r.out.filter((l) => /^ {2}Interface\//.test(l));
+    expect(listed).toHaveLength(6);
+    for (const l of listed) expect(l).toContain("an input changed (facts/*.corrections.jsonl)");
+    // None is said moved by a person's pairing: each goes back where the code places it.
+    expect(listed.filter((l) => l.includes(`its call goes to ${B}`))).toEqual([]);
+    expect(r.said).toMatch(/^Removed \d+ records the new read no longer has/m);
     expect(await g.arrows()).toEqual({ [C]: 5, [VENDOR]: 1 });
   }, 180_000);
 });
@@ -401,6 +398,7 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
     // Line 8 now makes three calls to forge-billing's host; the facts gain the two new ones.
     const src = join(h.root, "workspace", A, ...FILE.split("/"));
     const lines = readFileSync(src, "utf8").split("\n");
+    const original = lines[7]!;
     lines[7] =
       '  Object call0(Object id, Object e, Object c) { http.get("https://billing.forge.example/fees/{id}", id); http.post("https://billing.forge.example/charges", c); return http.get("https://billing.forge.example/holds/{id}", id); }';
     writeFileSync(src, lines.join("\n"));
@@ -438,20 +436,21 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
       pairs: [{ ...CALLS.host, reason: WHY }],
     });
     expect(w.status, JSON.stringify(w.body)).toBe(200);
+    // The code loses the other two: line 8 makes one call again. ADR 0210 part 3: a re-read that
+    // only leaves a fact out keeps it while its file is unchanged, so the line itself changes.
+    lines[7] = original;
+    writeFileSync(src, lines.join("\n"));
     writeFileSync(factsFile(), was);
     const r = await run(h);
-    // Refused. Five records go: the moved arrow, the two lost arrows and their two features.
-    // The four losses count against forge-orders; the move is the pairing's own and doesn't.
-    expect(r.code, r.said).toBe(1);
-    expect(r.said).toContain("This would remove 5 records (");
-    expect(r.said).toContain("4 of forge-orders's 17, and adds 1)");
-    const would = r.out.filter((l) => l.includes("would remove Interface/"));
-    expect(would).toHaveLength(3);
-    expect(would.filter((l) => l.includes(`its call goes to ${B} now`))).toHaveLength(1);
-    expect(await h.arrows()).toEqual({ [C]: 7, [VENDOR]: 1 });
-    // Confirmed with the count listed, it writes.
-    const ok = await run(h, 5);
-    expect(ok.code, ok.said).toBe(0);
+    // Five records go: the moved arrow, the two lost arrows and their two features. A person's
+    // write writes them and lists each with its reason (ADR 0210 part 3), the move as the
+    // pairing's own.
+    expect(r.code, r.said).toBe(0);
+    expect(r.said).toMatch(/^Removed 5 records the new read no longer has/m);
+    const listed = r.out.filter((l) => /^ {2}Interface\//.test(l));
+    expect(listed).toHaveLength(3);
+    expect(listed.filter((l) => l.includes(`its call goes to ${B} now`))).toHaveLength(1);
+    expect(r.said).not.toMatch(/^Kept \d+ facts? of the last read/m);
     expect(await h.arrows()).toEqual({ [C]: 4, [B]: 1, [VENDOR]: 1 });
   }, 120_000);
 
@@ -463,6 +462,13 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
     });
     expect(w.status, JSON.stringify(w.body)).toBe(200);
     const was = readFileSync(factsFile(), "utf8");
+    // The call goes from the code (line 12 changes), and the read with it. ADR 0210 part 3: a
+    // read that only left the fact out would keep it, its file unchanged.
+    const src = join(h.root, "workspace", A, ...FILE.split("/"));
+    const code = readFileSync(src, "utf8");
+    const lines = code.split("\n");
+    lines[11] = "  Object call2(Object id, Object e, Object c) { return null; }";
+    writeFileSync(src, lines.join("\n"));
     writeFileSync(
       factsFile(),
       was
@@ -484,6 +490,7 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
       `call https://fees.forge.internal/fees/{id} (${FILE}:12) goes to GET /fees/{id} on ${B} (its call isn't in the last read)`,
     ]);
     // Read again, the call is paired as the person said.
+    writeFileSync(src, code);
     writeFileSync(factsFile(), was);
     const again = await run(h);
     expect(again.code, again.said).toBe(0);
@@ -497,16 +504,13 @@ describe("a move beside real removals, and moves that go stale (the review)", ()
       manifest,
       text.replace("    owner: team-ledger\n", "    owner: team-ledger\n    archived: true\n"),
     );
-    const r = await run(h);
-    // The arrows to the archived box go with it: counted, said, and waiting for a confirm.
-    expect(r.code, r.said).toBe(1);
-    expect(r.said).toContain(`${B} is archived`);
-    const count = /--allow-removals (\d+)\./.exec(r.said)?.[1];
-    expect(count, r.said).toBeTruthy();
-    expect(r.out.filter((l) => l.includes("would remove Interface/")).length).toBe(2);
-    expect(await h.arrows()).toEqual({ [C]: 4, [B]: 2, [VENDOR]: 1 });
-    const ok = await run(h, Number(count));
+    // The arrows to the archived box go with it: a person's write writes them and lists each
+    // with why (ADR 0210 part 3), where it used to wait for a confirm.
+    const ok = await run(h);
     expect(ok.code, ok.said).toBe(0);
+    expect(ok.said).toMatch(/^Removed \d+ records the new read no longer has/m);
+    expect(ok.said).toContain(`${B} is archived`);
+    expect(ok.out.filter((l) => /^ {2}Interface\//.test(l)).length).toBeGreaterThan(0);
     // No arrow to the archived box; the call its line's host places goes back to forge-billing,
     // and the pairing is kept and said not joined until the box is read again.
     expect(await h.arrows()).toEqual({ [C]: 5, [VENDOR]: 1 });

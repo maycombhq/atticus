@@ -34,3 +34,18 @@ export function printToCurrent(line: string, o?: PrintOptions): void {
     // printing never fails the work
   }
 }
+
+/**
+ * ADR 0210 part 5: a command's budget line goes to `say`; `ask` only where a person answers;
+ * `yes`, --yes; `preflight`, what a run that writes checks first. Its runs share one budget.
+ */
+export interface RunIo {
+  say(line: string): void;
+  ask?(question: string): Promise<string | undefined>;
+  yes?: boolean;
+  preflight?(root: string): Promise<string | undefined>;
+}
+
+const runIo = new AsyncLocalStorage<RunIo>();
+export const withRunIo = <T>(io: RunIo, work: () => T): T => runIo.run(io, work);
+export const currentRunIo = (): RunIo | undefined => runIo.getStore();

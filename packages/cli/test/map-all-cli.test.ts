@@ -1008,6 +1008,36 @@ describe("atticus map --all in model mode: unattended (ADR 0161)", () => {
     expect(text).toMatch(/Done: 1 repo read, 1 part \(\d+ prompts?\)/);
   });
 
+  it("says and checks the whole estate's plan once, and stops before any prompt past the budget (ADR 0210 part 5)", async () => {
+    const { root } = ledgerEstate();
+    writeFileSync(
+      join(root, "org-pack", "runtime.yaml"),
+      "schemaVersion: 5\nassistants: { allowed: [copilot], default: copilot }\nbudgets: { limits: [{ per: run, tokens: 10 }] }\n",
+    );
+    const prompts: string[] = [];
+    const runtime = new MockRuntime((r) => (prompts.push(r.change), ""), { now: NOW });
+    const o = io();
+    const { withRunIo } = await import("@maycombhq/core");
+    const code = await withRunIo({ say: o.io.err }, () =>
+      mapAllCommand(
+        root,
+        { maxTokens: LIMIT, mode: "model" },
+        o.io,
+        deps(fakeClock(), { runtime }),
+      ),
+    );
+    expect(code, o.text()).toBe(2);
+    expect(prompts).toEqual([]);
+    const said = o.out.filter((l) => l.startsWith("ERR Budget: "));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(
+      /^ERR Budget: The estate's read plans \d+ sessions? and about [\d,]+ tokens; limits: 10 tokens a run\.$/,
+    );
+    expect(o.out.at(-1)).toMatch(
+      /^ERR This run would pass 10 tokens a run: 0 used and [\d,]+ planned\. Nothing was sent\./,
+    );
+  });
+
   it("retries a provider error with backoff, carrying on from the part that failed", async () => {
     const { root } = ledgerEstate();
     const clock = fakeClock();

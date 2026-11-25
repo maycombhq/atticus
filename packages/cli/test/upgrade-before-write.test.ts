@@ -1,8 +1,9 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { acquireLock } from "@maycombhq/core";
 import { applyMapEdits } from "../src/catalog-build-commands.js";
 import { main } from "../src/main.js";
 import { upgradeBeforeWrite, upgradeCommand } from "../src/upgrade.js";
@@ -43,49 +44,108 @@ async function tree(dir: string): Promise<Record<string, string>> {
   await walk(dir);
   return out;
 }
+/** A checkout of a repo whose lines are what its facts cite (as upgrade-unresolved-ids.test.ts). */
+async function checkoutFromFacts(root: string, repo: string): Promise<void> {
+  const files = new Map<string, string[]>();
+  for (const l of (await readFile(join(root, "facts", `${repo}.jsonl`), "utf8")).split("\n")) {
+    if (!l.trim()) continue;
+    const f = JSON.parse(l) as {
+      cite?: { file: string; line: number; quote?: string; value: string };
+    };
+    if (!f.cite) continue;
+    const lines = files.get(f.cite.file) ?? [];
+    while (lines.length < f.cite.line) lines.push("");
+    lines[f.cite.line - 1] = f.cite.quote ?? f.cite.value;
+    files.set(f.cite.file, lines);
+  }
+  for (const [file, lines] of files) {
+    const to = join(root, "workspace", repo, ...file.split("/"));
+    await mkdir(dirname(to), { recursive: true });
+    await writeFile(to, lines.join("\n") + "\n");
+  }
+}
 const quiet = () => {
   const out: string[] = [];
   const err: string[] = [];
   return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) } };
 };
-const FIRST = /^Run atticus upgrade first: /;
 
-describe("an upgrade owed is said before a write verifies anything (beta.32)", () => {
+describe("an upgrade owed is run before a write (ADR 0210 part 3; beta.32 said it and stopped)", () => {
   it(
-    "verify <repo> --write and verify --all --write: refused at once, the upgrade's commands said, nothing written",
+    "verify <repo> --write runs atticus upgrade first, says so, and writes (exit 0); --json says upgraded",
     async () => {
       const root = await metarepo();
+      await checkoutFromFacts(root, "forge-notify");
       expect(await unresolvedIdsNamedOld(root)).toBe(true);
-      const before = await tree(root);
-      for (const argv of [
-        ["verify", "forge-notify", "--write"],
-        ["verify", "--all", "--write"],
-      ]) {
-        const q = quiet();
-        expect(await main([...argv, "--root", root], q.io), argv.join(" ")).toBe(1);
-        expect(q.err[0]).toMatch(FIRST);
-        expect(q.err.join("\n")).toContain("atticus upgrade --dry-run");
-        // Nothing was verified: no repo's line, no verify words.
-        expect(q.err.join("\n")).not.toMatch(/Repo 1 of|don't verify|facts verified/i);
-        expect(await tree(root)).toEqual(before);
-      }
-      // --json: the refusal as data too.
-      const j = quiet();
-      expect(
-        await main(["verify", "forge-notify", "--write", "--json", "--root", root], j.io),
-      ).toBe(1);
-      expect(JSON.parse(j.out.join("\n"))).toEqual({ written: false, upgradeFirst: true });
-      // The map's Apply (the app's "Apply 1 change to the map") too.
+      const q = quiet();
+      const code = await main(["verify", "forge-notify", "--write", "--root", root], q.io);
+      expect(code, [...q.out, ...q.err].join("\n")).toBe(0);
+      expect(q.err[0]).toMatch(/^Ran atticus upgrade first, which this metarepo still needed/);
+      expect(await upgradeBeforeWrite(root)).toBeUndefined();
+
+      const j = await metarepo();
+      await checkoutFromFacts(j, "forge-notify");
+      const jq = quiet();
+      const jc = await main(["verify", "forge-notify", "--write", "--json", "--root", j], jq.io);
+      expect(jc, jq.err.join("\n")).toBe(0);
+      expect(JSON.parse(jq.out.join("\n")).upgraded).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "verify --all --write and the map's Apply do the same; a verify that doesn't write doesn't",
+    async () => {
+      const all = await metarepo();
+      // forge-notify's read alone (the others' facts don't fit a checkout made from them).
+      for (const r of ["forge-ledger", "forge-payments"])
+        await rm(join(all, "facts", `${r}.jsonl`));
+      await checkoutFromFacts(all, "forge-notify");
+      const q = quiet();
+      const code = await main(["verify", "--all", "--write", "--root", all], q.io);
+      expect(q.err[0]).toMatch(/^Ran atticus upgrade first/);
+      expect(code, [...q.out, ...q.err].join("\n")).toBe(0);
+      expect(await upgradeBeforeWrite(all)).toBeUndefined();
+
+      const map = await metarepo();
       const m = quiet();
-      const r = await applyMapEdits(root, { edits: [] }, m.io);
-      expect(r.code).toBe(1);
-      expect(r.built).toBe(false);
-      expect(m.err[0]).toMatch(FIRST);
-      expect(await tree(root)).toEqual(before);
-      // A verify that doesn't write is untouched by it.
-      const read = quiet();
-      await main(["verify", "forge-notify", "--root", root], read.io);
-      expect(read.err.join("\n")).not.toMatch(FIRST);
+      const r = await applyMapEdits(map, { edits: [] }, m.io);
+      expect(m.err[0]).toMatch(/^Ran atticus upgrade first/);
+      expect(r.code, [...m.out, ...m.err].join("\n")).toBe(0);
+      expect(r.built).toBe(true);
+      expect(await upgradeBeforeWrite(map)).toBeUndefined();
+
+      // The upgrade it runs first stops (another writer holds the lock): no change is tried, and
+      // it says so, with one outcome per change.
+      const held = await metarepo();
+      const lock = await acquireLock(held, "scan", "another writer");
+      try {
+        const hq = quiet();
+        const h = await applyMapEdits(
+          held,
+          {
+            edits: [
+              { kind: "delete", delete: { interfaces: ["interface.x"], from: "a", to: "b" } },
+            ],
+            by: "pat",
+          },
+          hq.io,
+        );
+        expect(h.code).toBe(1);
+        expect(h.built).toBe(false);
+        expect(h.edits.map((e) => e.state)).toEqual(["not-tried"]);
+        expect(hq.err.join("\n")).toContain("Nothing was saved and nothing was built.");
+        expect(await upgradeBeforeWrite(held)).toBeDefined();
+      } finally {
+        await lock.release();
+      }
+
+      const read = await metarepo();
+      const before = await tree(read);
+      const v = quiet();
+      await main(["verify", "forge-notify", "--root", read], v.io);
+      expect(v.err.join("\n")).not.toMatch(/upgrade/);
+      expect(await tree(read)).toEqual(before);
     },
     T,
   );

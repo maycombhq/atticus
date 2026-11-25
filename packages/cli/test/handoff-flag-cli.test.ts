@@ -57,7 +57,8 @@ describe("atticus scan survey --handoff", () => {
     await cp(join(FIXTURES, "scan-settings/repos"), join(root, "workspace"), { recursive: true });
 
     const first = await run(["scan", "survey", "forge-notes", "--handoff", "--root", root]);
-    expect(first.err).toEqual([]);
+    // ADR 0210 part 5: a run that hands a prompt off says its plan first, on standard error.
+    expect(first.err).toEqual([expect.stringMatching(/^Budget: dialect-drafter plans 1 session/)]);
     expect(first.code).toBe(0);
     const b = block(first.out);
     expect(b.prompt).toBe(`.runs/survey-forge-notes/${b.runId}/prompt.md`);

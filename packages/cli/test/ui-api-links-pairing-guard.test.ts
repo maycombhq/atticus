@@ -143,9 +143,17 @@ describe("a person's pairing and the removal guard (field hunt G1)", () => {
     }
   });
 
-  it("over the limit, the preview's confirm is what Apply asks, and its command writes", async () => {
+  it("over the limit, Apply goes past what the preview lists and writes it (ADR 0210 part 3)", async () => {
     const file = join(root, "facts", `${PROXY}.jsonl`);
     const was = readFileSync(file, "utf8");
+    // The routes go from the code (lines 10 and 13 change), and from the read with them. ADR 0210
+    // part 3: a read that only left the facts out would keep them, their file unchanged.
+    const xml = join(root, "workspace", PROXY, "apiproxy", "proxies", "default.xml");
+    const code = readFileSync(xml, "utf8");
+    const lines = code.split("\n");
+    lines[9] = "      <Condition>false</Condition>";
+    lines[12] = "      <Condition>false</Condition>";
+    writeFileSync(xml, lines.join("\n"));
     writeFileSync(
       file,
       was
@@ -166,20 +174,29 @@ describe("a person's pairing and the removal guard (field hunt G1)", () => {
       const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) };
       // The pairing as a preview's extra: on file only for this check, then taken back.
       const corr = join(root, "facts", `${PROXY}.corrections.jsonl`);
-      const lines = Api.ConnectLinksResult.parse(p.body).lines;
-      writeFileSync(corr, lines.map((l) => `${l}\n`).join(""));
+      const lines2 = Api.ConnectLinksResult.parse(p.body).lines;
+      writeFileSync(corr, lines2.map((l) => `${l}\n`).join(""));
       try {
-        expect(await verifyCommand(root, PROXY, { ...opts(PROXY), write: false }, io)).toBe(0);
-        const refused = await verifyCommand(root, PROXY, opts(PROXY), io);
-        expect(refused).not.toBe(0);
-        const n = Number(/--allow-removals (\d+)\./.exec(out.join("\n"))?.[1]);
-        expect(pv?.confirm?.removals).toBe(n);
-        expect(pv?.confirm?.command).toBe(`atticus verify ${PROXY} --write --allow-removals ${n}`);
+        // The preview lists what is over the limit; Apply writes it with no count to type, and
+        // says each removal (the count the preview listed).
+        expect(pv?.confirm?.removals).toBeGreaterThan(0);
+        const said = await verifyCommand(root, PROXY, opts(PROXY), io);
+        expect(said, out.join("\n")).toBe(0);
+        const n = Number(
+          /^Removed (\d+) records? the new read no longer has/m.exec(out.join("\n"))?.[1],
+        );
+        expect(n).toBe(pv?.confirm?.removals);
+        expect(out.join("\n")).not.toContain("--allow-removals");
       } finally {
         rmSync(corr, { force: true });
       }
     } finally {
       writeFileSync(file, was);
+      writeFileSync(xml, code);
+      // Back as it was before this check, for the tests after it.
+      expect(await verifyCommand(root, PROXY, opts(PROXY), { out: () => {}, err: () => {} })).toBe(
+        0,
+      );
     }
   });
 

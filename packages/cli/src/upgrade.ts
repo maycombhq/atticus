@@ -41,6 +41,7 @@ import {
   migrateRuntimeText,
   migrateRuntimeV3Text,
   migrateRuntimeV4Text,
+  migrateRuntimeV5Text,
   migrateCorrections,
   migrateSourcesText,
   orgPackDirOf,
@@ -329,27 +330,13 @@ export const MIGRATIONS: Migration[] = [
       return [rel];
     },
   },
-  {
-    // ADR 0171: a runtime.yaml that names copilot-acp (a mode or its copilotAcp section) needs
-    // version 3; any other file means the same at 1 or 2 and is left as it is.
-    id: "runtime-v3",
-    summary:
-      "runtime.yaml at version 3 where it names copilot-acp: GitHub Copilot driven unattended through its Agent Client Protocol (ADR 0171); the number only",
-    async pending(root) {
-      const rel = packRel(root, "runtime.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      return text !== undefined && migrateRuntimeV3Text(text).changed ? [rel] : [];
-    },
-    async apply(root) {
-      const rel = packRel(root, "runtime.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      if (text === undefined) return [];
-      const r = migrateRuntimeV3Text(text);
-      if (!r.changed) return [];
-      await writeFileAtomic(join(root, rel), r.text);
-      return [rel];
-    },
-  },
+  // ADR 0171: a runtime.yaml that names copilot-acp (a mode or its copilotAcp section) needs
+  // version 3; any other file means the same at 1 or 2 and is left as it is.
+  runtimeStep(
+    "runtime-v3",
+    "runtime.yaml at version 3 where it names copilot-acp: GitHub Copilot driven unattended through its Agent Client Protocol (ADR 0171); the number only",
+    migrateRuntimeV3Text,
+  ),
   {
     id: "roles-v2",
     summary:
@@ -435,27 +422,20 @@ export const MIGRATIONS: Migration[] = [
     "Catalog records at schema version 5: a link can be the AI's, with the run that decided it (ADR 0181)",
     [4],
   ),
-  {
-    // ADR 0181: a runtime.yaml that sets `decide` needs version 4; any other file means the same
-    // at 1 to 3 and is left as it is.
-    id: "runtime-v4",
-    summary:
-      "runtime.yaml at version 4 where it sets decide: whether the AI decides pairings and option questions itself (ADR 0181); the number only",
-    async pending(root) {
-      const rel = packRel(root, "runtime.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      return text !== undefined && migrateRuntimeV4Text(text).changed ? [rel] : [];
-    },
-    async apply(root) {
-      const rel = packRel(root, "runtime.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      if (text === undefined) return [];
-      const r = migrateRuntimeV4Text(text);
-      if (!r.changed) return [];
-      await writeFileAtomic(join(root, rel), r.text);
-      return [rel];
-    },
-  },
+  // ADR 0181: a runtime.yaml that sets `decide` needs version 4; any other file means the same
+  // at 1 to 3 and is left as it is.
+  runtimeStep(
+    "runtime-v4",
+    "runtime.yaml at version 4 where it sets decide: whether the AI decides pairings and option questions itself (ADR 0181); the number only",
+    migrateRuntimeV4Text,
+  ),
+  // ADR 0210 part 5: a runtime.yaml that sets budgets.limits needs version 5; any other file
+  // means the same at 1 to 4 and is left as it is.
+  runtimeStep(
+    "runtime-v5",
+    "runtime.yaml at version 5 where it sets budgets.limits: what a run, a day or a month may spend (ADR 0210); the number only",
+    migrateRuntimeV5Text,
+  ),
   {
     // ADR 0181: a corrections line that uses version 2's fields (ai, batch, rule, match, unlink)
     // but says version 1 (written by hand) says 2; every other line means the same at 1.
@@ -609,6 +589,35 @@ const WHOLE_FOLDER = /^\/?\.atticus\/?[ \t]*$/m;
 const stampIgnored = (text: string) =>
   WHOLE_FOLDER.test(text) && !/^!\/?\.atticus\/metarepo\.yaml\s*$/m.test(text);
 
+/** A runtime.yaml step that writes its number only, for the files `migrate` changes. */
+function runtimeStep(
+  id: string,
+  summary: string,
+  migrate: (text: string) => { text: string; changed: boolean },
+): Migration {
+  const read = (root: string) => {
+    const rel = packRel(root, "runtime.yaml");
+    return readFile(join(root, rel), "utf8").then(
+      (t) => ({ rel, ...migrate(t) }),
+      () => undefined,
+    );
+  };
+  return {
+    id,
+    summary,
+    pending: async (root) => {
+      const r = await read(root);
+      return r?.changed ? [r.rel] : [];
+    },
+    async apply(root) {
+      const r = await read(root);
+      if (!r?.changed) return [];
+      await writeFileAtomic(join(root, r.rel), r.text);
+      return [r.rel];
+    },
+  };
+}
+
 /**
  * A step that rewrites the catalog's record files (generated and curated) at some older schema
  * versions, in canonical form at the current version. Each version has its own step, so a file
@@ -724,6 +733,36 @@ export async function upgradeBeforeWrite(root: string): Promise<string[] | undef
     "Run atticus upgrade first: this metarepo's changes, questions or decisions name loose ends the way Atticus named them before beta.30 (without their repo), and a write's build refuses until they are carried to the new names.",
     "atticus upgrade --dry-run shows what it changes; atticus upgrade does it, in one build you can undo. Nothing was verified or written.",
   ];
+}
+
+/**
+ * ADR 0210 part 3: runs `atticus upgrade --yes` for a write that needs it, saying one line, and
+ * true when it upgraded; on a failure, its words and false.
+ */
+export async function runUpgradeFirst(root: string, io: Output): Promise<boolean> {
+  const { gitUser } = await import("@maycombhq/workspace");
+  const { LockHeldError } = await import("@maycombhq/core");
+  const lines: string[] = [];
+  // Another writer holding the lock is an upgrade that stopped, said in its words (the files
+  // as they were are kept, and the upgrade says where); any other error is thrown as before.
+  const code = await upgradeCommand(
+    root,
+    { yes: true, by: (await gitUser(root)).handle },
+    { out: (l) => lines.push(l), err: (l) => lines.push(l) },
+  ).catch((e: unknown) => {
+    if (!(e instanceof LockHeldError) && !((e as Error)?.cause instanceof LockHeldError)) throw e;
+    lines.push((e as Error).message);
+    return 1;
+  });
+  if (code !== 0) {
+    io.err("This metarepo needed atticus upgrade first, and it stopped:");
+    for (const l of lines) io.err(`  ${l}`);
+    return false;
+  }
+  io.err(
+    "Ran atticus upgrade first, which this metarepo still needed (its own undo step: atticus catalog undo takes it back after this write's).",
+  );
+  return true;
 }
 
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {

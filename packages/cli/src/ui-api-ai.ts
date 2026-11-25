@@ -12,6 +12,7 @@ import {
   loadOrgPack,
   orgPackDirOf,
   migrateRuntimeV4Text,
+  migrateRuntimeV5Text,
   Runtime,
   RUNTIME_SCHEMA_VERSION,
   eolOf,
@@ -223,10 +224,14 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         // file sets decide: before, only a version 3 file was lifted, so a fresh metarepo
         // (version 2) was told to upgrade while `upgrade --check` had nothing to do.
         const liftedDecide =
-          b.decide !== undefined &&
+          b.decide !== undefined && typeof raw.schemaVersion === "number" && raw.schemaVersion < 4;
+        if (liftedDecide) raw.schemaVersion = 4;
+        // ADR 0210 part 5: budgets.limits lifts the file to 5, upgrade's runtime-v5 step.
+        const liftedLimits =
+          (b.budgets as { limits?: unknown } | undefined)?.limits !== undefined &&
           typeof raw.schemaVersion === "number" &&
           raw.schemaVersion < RUNTIME_SCHEMA_VERSION;
-        if (liftedDecide) raw.schemaVersion = RUNTIME_SCHEMA_VERSION;
+        if (liftedLimits) raw.schemaVersion = RUNTIME_SCHEMA_VERSION;
         const checked = Runtime.safeParse(raw);
         if (!checked.success)
           throw unprocessable(
@@ -244,7 +249,8 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
           if (lifted) doc.set("schemaVersion", 3);
           const written = doc.toString({ lineWidth: 0 });
           // The number only, every other line as the person wrote it: upgrade's own step.
-          return liftedDecide ? migrateRuntimeV4Text(written).text : written;
+          const decided = liftedDecide ? migrateRuntimeV4Text(written).text : written;
+          return liftedLimits ? migrateRuntimeV5Text(decided).text : decided;
         })();
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
         // line endings.

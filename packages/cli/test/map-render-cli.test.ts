@@ -670,7 +670,18 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
       /left out: e-post-entry \([a-z-]+\): fix it in facts\/forge-ledger\.jsonl, reading src\/main\/java\/forge\/ledger\/EntryController\.java:3 again \(its earlier copy stays in the catalog\)/,
     );
     expect(files(generated)).toEqual(before);
-    // The contrast: the same fact gone from the read (no rejection) is a removal the build makes.
+    // The contrast: the same fact gone from the read (no rejection) and from the code is a
+    // removal the build makes. ADR 0210 part 3: a fact a re-read only leaves out is kept while
+    // every file it cites is unchanged, so its line changes too.
+    const ctl = join(
+      root,
+      "workspace",
+      "forge-ledger",
+      "src/main/java/forge/ledger/EntryController.java",
+    );
+    const ctlLines = readFileSync(ctl, "utf8").split("\n");
+    ctlLines[21] = "  // moved";
+    writeFileSync(ctl, ctlLines.join("\n"));
     writeFileSync(
       join(root, "facts", "forge-ledger.jsonl"),
       lines.filter((_, i) => i !== at).join("\n") + "\n",

@@ -20,13 +20,16 @@ export interface AiSettings {
   model: { type: string; settings: Record<string, unknown> } | null;
   keySet: boolean;
   models: { allowed: string[]; recommended: Record<string, string> };
-  budgets: { defaultTokens: number; perAgent: Record<string, number> };
+  budgets: { defaultTokens: number; perAgent: Record<string, number>; limits?: SpendLimit[] };
   /** Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it. */
   decide?: Decide;
   /** runtime.yaml's own version (decide needs 4; an older file is lifted on save, ADR 0190). */
   schemaVersion?: number;
   path: string;
 }
+
+/** runtime.yaml version 5's budgets.limits (ADR 0210 part 5): shown, kept, not edited here. */
+export type SpendLimit = { per: "run" | "day" | "month"; sessions?: number; tokens?: number };
 
 export interface Decide {
   links: "auto" | "propose";
@@ -62,6 +65,8 @@ export interface AiLimits {
   recommended: Record<string, string>;
   defaultTokens: string;
   perAgent: string;
+  /** Kept as they are (ADR 0210 part 5): the tab shows them and saves them back. */
+  spend?: SpendLimit[] | undefined;
 }
 
 const lines = (text: string) =>
@@ -74,7 +79,7 @@ const lines = (text: string) =>
 export function limitsOf(l: AiLimits):
   | {
       models: { allowed: string[]; recommended: Record<string, string> };
-      budgets: { defaultTokens: number; perAgent: Record<string, number> };
+      budgets: { defaultTokens: number; perAgent: Record<string, number>; limits?: SpendLimit[] };
     }
   | { error: string } {
   const tokens = /^\d+$/.test(l.defaultTokens.trim()) ? Number(l.defaultTokens.trim()) : NaN;
@@ -87,7 +92,7 @@ export function limitsOf(l: AiLimits):
   }
   return {
     models: { allowed: lines(l.models), recommended: l.recommended },
-    budgets: { defaultTokens: tokens, perAgent },
+    budgets: { defaultTokens: tokens, perAgent, ...(l.spend ? { limits: l.spend } : {}) },
   };
 }
 
@@ -154,6 +159,7 @@ const formOf = (d: AiSettings): AiForm => ({
     perAgent: Object.entries(d.budgets.perAgent)
       .map(([a, n]) => `${a}: ${n}`)
       .join("\n"),
+    spend: d.budgets.limits,
   },
 });
 
@@ -481,6 +487,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
             value={f.limits.perAgent}
             onChange={(e) => setF({ ...f, limits: { ...f.limits!, perAgent: e.target.value } })}
           />
+          <span className="stack">
+            <span>{T.spendLabel}</span>
+            <span>{T.spendLimits(f.limits.spend)}</span>
+            <span className="muted">{T.spendHint}</span>
+          </span>
         </fieldset>
       )}
 

@@ -168,7 +168,7 @@ describe("atticus todo", () => {
     const step = (await store.get("request-firewall-rule"))!;
     const sha = inputsSha256(step.inputs);
     expect(show.out.at(-1)).toBe(
-      `To approve exactly these inputs: atticus todo run request-firewall-rule --with ref --approve <you> --inputs ${sha}`,
+      `To approve exactly these inputs: atticus todo run request-firewall-rule --with ref --approve --inputs ${sha}`,
     );
     expect(show.out).toContain("  sourceApp: gw-northwind-v2");
     const wrong = io();

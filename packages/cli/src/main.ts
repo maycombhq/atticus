@@ -12,6 +12,8 @@ import {
   SCHEMA_VERSION,
   startTerminalRun,
   TITLE_VALUE_FLAGS,
+  currentRunIo,
+  withRunIo,
 } from "@maycombhq/core/light";
 import { titleSlotsOf, titleWordsByHelp, type TitleSlot } from "./command-catalog.js";
 import { basename, join, resolve } from "node:path";
@@ -500,7 +502,7 @@ Usage:
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
-  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session). Where runtime.yaml's reader is Copilot (or reads by a pasted line), it runs map --all's waiting loop for this one repo instead, --force reading it whole again (ADR 0170) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--idle minutes] [--dir path] [--commit sha] [--json]
+  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session). Where runtime.yaml's reader is Copilot (or reads by a pasted line), it runs map --all's waiting loop for this one repo instead, --force reading it whole again (ADR 0170) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--idle minutes] [--dir path] [--commit sha] [--yes: past the AI budget, unattended] [--json]
           [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit; with housePrefixes in conventions.yaml, it warns of house packages the repo imports that no taught framework covers, with the frameworks learn command for each (ADR 0147); with --part n, names that part for the session to read whole (ADR 0170)
           [--gaps]                     Plan a second pass on what the last verify left (files no fact cites, skipped lines, spec operations, entries no flow follows) for a new chat, sized to the session: writes facts/<repo>.gaps.md (ADR 0157)
           [--copy]                     Print the next batch's prompt to paste into a chat
@@ -511,7 +513,7 @@ Usage:
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
   atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended; with --mode copilot-acp (runtime.yaml version 3, ADR 0171) Atticus drives Copilot itself through its Agent Client Protocol, one new session per part, unattended. Then the estate is joined once. A part is done when verify's coverage leaves no file under it unaccounted; after --idle minutes (30) with nothing written it stops waiting, saying how to carry on; --force reads the repos (all, or --repos) whole again, the facts on file kept as already kept (ADR 0170) [--max-tokens n] [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off|copilot-acp] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
-          [--write]                    When nothing is rejected: take the facts snapshot (catalog/sources/facts/<repo>.jsonl), build the catalog from every stored read, write the flows in specs/<repo>/, ask about calls nothing joins, and render the map [--allow-removals <n>] [--discard-edits <n>]
+          [--write]                    When nothing is rejected: take the facts snapshot (catalog/sources/facts/<repo>.jsonl), build the catalog from every stored read, write the flows in specs/<repo>/, ask about calls nothing joins, and render the map; it runs an upgrade owed first, keeps hand edits as yours and lists removals rather than stopping (ADR 0210) [--discard-edits <n>]
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
   atticus verify --here                Check facts.jsonl in this read folder against its copy: the claim on each cited line, rejected facts to rejected.jsonl, the coverage and the lines no fact cites to verify.yaml; exits 1 while any is rejected or a line doesn't read [--facts file] [--skipped]
@@ -1016,13 +1018,26 @@ export async function main(
     // A Copilot step's progress (printProgress) goes to this run's log too.
     // ADR 0202 point 8: a refusal in the command ends with where the metarepo stands, said last.
     const { refusalScope } = await import("./standing.js");
+    // ADR 0210 part 5: a model run's budget line is an err line; it asks where io can.
+    // A run that writes checks first that its result can be (run-preflight); a job's own
+    // RunIo (the app's run panel) hears the line too. --yes counts before `--` only.
+    const outer = currentRunIo();
+    const end = argv.indexOf("--");
+    const runIo = {
+      say: (l: string) => (io.err(l), outer?.say(l)),
+      ...(io.ask ? { ask: io.ask } : {}),
+      yes: (end < 0 ? argv : argv.slice(0, end)).includes("--yes"),
+      preflight: async (at: string) => (await import("./standing.js")).runPreflight(at),
+    };
     const code = await refusalScope(io, () =>
-      said
-        ? withRunLine(
-            (l) => said.line(l),
-            () => dispatch(argv, io),
-          )
-        : dispatch(argv, io),
+      withRunIo(runIo, () =>
+        said
+          ? withRunLine(
+              (l) => said.line(l),
+              () => dispatch(argv, io),
+            )
+          : dispatch(argv, io),
+      ),
     );
     // Review of beta.23: a run this command resumed is done with; the resume the app kept for it
     // is forgotten, so the app's own check or its next start never resumes it again.
@@ -1308,6 +1323,18 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     if (why) {
       io.err(
         `This runs inside a Copilot session that Atticus started, so it is refused: ${why}. The person runs it, in the app or their own terminal.`,
+      );
+      return 2;
+    }
+  }
+  // ADR 0210 part 7 (the sweep's gap): an approval is a person's. In a coding assistant's own
+  // terminal `--approve` was recorded under the Git user; it is refused there as a waive is. So is
+  // the digest's `--send`, which posts through the notify adapter on the person's say.
+  if (values.approve === true || values.send === true) {
+    const { underAssistant } = await import("./assistant-env.js");
+    if (underAssistant(process.env)) {
+      io.err(
+        "Approve in a terminal of your own, or in the app: this terminal is a coding assistant's, and only a person approves a write to a shared system. Nothing was sent.",
       );
       return 2;
     }
@@ -2101,7 +2128,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate [--part n] | --gaps [--part n] | --rules] [--models entries|reachable|all] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--max-tokens n] [--idle minutes]",
+        "Usage: atticus map <repo> [--estimate [--part n] | --gaps [--part n] | --rules] [--models entries|reachable|all] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force] [--yes], or atticus map --all [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--max-tokens n] [--idle minutes]",
       );
       return 2;
     }

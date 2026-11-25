@@ -19,6 +19,7 @@ import {
   type StepClass,
   orgPackDirOf,
 } from "@maycombhq/core";
+import { budgetRuntime } from "./budget.js";
 import { modelsByClass, stepClassOf } from "./step-class.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
@@ -846,6 +847,8 @@ export async function runtimeForCli(
     env,
     onNote: o.onNote ?? sayOnce,
   });
+  // ADR 0210 part 5: every run but a replay says its plan first and keeps to the budget.
+  budgetRuntime(runtime, { root, limits: op.runtime.budgets.limits });
   const describe =
     runtime.kind === "hand-off"
       ? "AI steps are handed to your assistant: Atticus writes the prompt and checks the answer once your assistant has written it."

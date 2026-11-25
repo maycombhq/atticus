@@ -24,6 +24,7 @@ import {
   type Run,
 } from "./runtime.js";
 import { stepClassOf } from "./step-class.js";
+import { pruneUsage } from "./budget.js";
 
 export interface HandoffOptions {
   /** The metarepo root; runs go to .runs/<change>/<runId>/ (under .atticus/ when adopted) and output to the change folder. */
@@ -539,5 +540,7 @@ export async function pruneRuns(
       }
     }
   }
+  // ADR 0210 part 5: each person's count keeps this month and the last.
+  if (!only) await pruneUsage(root, now).catch(() => undefined);
   return removed;
 }

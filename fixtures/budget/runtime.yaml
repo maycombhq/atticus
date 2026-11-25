@@ -1,0 +1,13 @@
+# ADR 0210 part 5: a budget, said before it is spent. Forge's team pays its provider by the
+# prompt (sessions) and watches tokens a month.
+schemaVersion: 5
+assistants: { allowed: [copilot], default: copilot }
+modes: { allowed: [hand-off, model], default: model }
+adapters:
+  model: { type: mock, settings: { model: mock-model } }
+budgets:
+  defaultTokens: 150000
+  limits:
+    - { per: run, sessions: 6 }
+    - { per: day, sessions: 10 }
+    - { per: month, tokens: 100000 }

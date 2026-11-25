@@ -216,6 +216,22 @@ interface RefusalRun {
 const runs = new AsyncLocalStorage<RefusalRun>();
 
 /**
+ * ADR 0210 part 3: what the command's scope holds before a write that may go past a refusal.
+ * The restore it returns puts that back (refusalTakenBack, then the saved state), so a refusal
+ * the write went past ends no line and a job's result carries none, while a refusal said
+ * before the write (another repo's, in verify --all) still does.
+ */
+export function refusalSaved(): () => void {
+  const run = runs.getStore();
+  if (!run) return () => undefined;
+  const saved: RefusalRun = { ...run };
+  return () => {
+    refusalTakenBack();
+    Object.assign(run, saved);
+  };
+}
+
+/**
  * Run one command (the command line's `main`, a route's job) so that a refusal in it ends with
  * the standing line: `done` prints it, last, on standard error, when the command refused.
  */
@@ -263,4 +279,16 @@ export function refusalTakenBack(): void {
     delete run.line;
     delete run.build;
   }
+}
+
+/**
+ * ADR 0210 part 5: before a run that writes spends anything, that its result can be written: no
+ * other write holds the metarepo's lock, and no upgrade is owed (the build's `not-upgraded`).
+ */
+export async function runPreflight(root: string): Promise<string | undefined> {
+  const { LockHeldError, lockFileOf, readLock } = await import("@maycombhq/core");
+  const held = await readLock(root, "scan");
+  if (held && !held.stale) return new LockHeldError(held, lockFileOf(root, "scan")).message;
+  if (await slotsStepWaits(root))
+    return "The catalog waits for atticus upgrade, so this run's result can't be written: run atticus upgrade --yes first.";
 }

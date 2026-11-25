@@ -606,6 +606,12 @@ export interface VerifyOptions {
   carry?: CarryChanges;
   /** Files the reader opened through Atticus-routed tools (ADR 0118), repo-relative. */
   routed?: readonly string[];
+  /**
+   * ADR 0210 part 3: facts an earlier read stored that this read left out, kept while the files
+   * they cite are unchanged. They are checked like any fact, but no file counts as read because
+   * of them: coverage is this read's alone.
+   */
+  heldOver?: ReadonlySet<string>;
   /** Accepted exclusion globs: generated code, vendored copies (ADR 0075 scan settings). */
   exclude?: readonly string[];
   /**
@@ -1855,7 +1861,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // steps and error paths: A-read, problem 1, as `citedFiles` lists them for the carry), or the
   // reader opened it through Atticus's tools.
   const touched = new Set<string>(o.routed ?? []);
-  for (const f of accepted) for (const p of citedFiles(f)) touched.add(p);
+  for (const f of accepted)
+    if (!o.heldOver?.has(f.id)) for (const p of citedFiles(f)) touched.add(p);
   // A-read, problem 2: what the reader says it read and found nothing in, each path checked.
   const allFiles = o.source.list();
   const isSource = new Set(sources);

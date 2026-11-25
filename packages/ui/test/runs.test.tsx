@@ -466,6 +466,44 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
     );
   });
 
+  it("shows the run's budget line, the job's first word, as the panel's start line (ADR 0210 part 5)", async () => {
+    const line =
+      "Budget: The read of forge-ledger plans 3 sessions and about 21,554 tokens; limits: 40 sessions a day (12 used).";
+    const lines: string[] = [];
+    let n = 0;
+    await runOnServer(["map", "forge-ledger"], {
+      call: async <R,>(path: string) => {
+        if (path === "/api/runs") return { jobId: "job-9", model: "anthropic" } as R;
+        n++;
+        return (
+          n === 1
+            ? {
+                state: "running",
+                startedAt: "2026-11-24T00:00:00Z",
+                errors: [],
+                progress: { done: 0, total: 1, message: line },
+              }
+            : {
+                state: "done",
+                startedAt: "2026-11-24T00:00:00Z",
+                errors: [],
+                result: { code: 0, lines: [] },
+              }
+        ) as R;
+      },
+      wait: async () => undefined,
+      onLine: (l) => lines.push(l),
+    });
+    expect(lines).toEqual([S.started("anthropic"), line]);
+    const shown = html(
+      <RunStepView
+        choice={{ kind: "model", model: "anthropic" }}
+        state={{ phase: "running", lines }}
+      />,
+    );
+    expect(shown).toContain(esc(line));
+  });
+
   it("tells the page the server job's id, so it can cancel it", async () => {
     let told: string | undefined;
     const calls: string[] = [];
