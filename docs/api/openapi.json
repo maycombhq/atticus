@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.20.0",
+    "version": "3.21.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -43264,6 +43264,95 @@
               "configured",
               "now",
               "precision"
+            ],
+            "additionalProperties": false
+          },
+          "applyPairs": {
+            "type": "object",
+            "properties": {
+              "paired": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "call": {
+                      "type": "string"
+                    },
+                    "entry": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "call",
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "dropped": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "call": {
+                      "type": "string"
+                    },
+                    "entry": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "call",
+                    "entry",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "withdrawn": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "call": {
+                      "type": "string"
+                    },
+                    "entry": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "call",
+                    "entry",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "loose": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "why": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "paired",
+              "dropped",
+              "withdrawn",
+              "loose"
             ],
             "additionalProperties": false
           },

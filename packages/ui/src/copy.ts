@@ -3,7 +3,7 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
-import { limitWords } from "@maycombhq/core/paths";
+import { limitWords, PAIR_WORDS } from "@maycombhq/core/paths";
 
 /**
  * The one command that installs Atticus, at the exact version where it is known (beta.30): a
@@ -8031,6 +8031,21 @@ export const COPY = {
     batchesIntro:
       "Every batch the AI or a person's rule wrote, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
     batchesEmpty: "No batch yet: nothing has been written by AI or by a correction's rule.",
+    /** ADR 0210 part 4: what the last Apply's pairing did (the command line says the same words). */
+    applyPairs: {
+      ...PAIR_WORDS,
+      title: "Paired by Apply",
+      intro:
+        "After each Apply, the calls the map left loose go to the model; a pairing is drawn only when both its lines, and each line it rests on, are in the code.",
+      empty: "No Apply has paired anything yet.",
+      at: (day: string) => `Last Apply that paired: ${day}`,
+      lists: {
+        drawn: "Drawn as the AI's",
+        dropped: "Dropped",
+        withdrawn: "Withdrawn: their lines changed",
+        loose: "Left loose",
+      },
+    },
     batchesCaption: "Batches written, newest first, each with Undo",
     batchKind: {
       ai: "By AI",
