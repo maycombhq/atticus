@@ -41,6 +41,7 @@ import {
   type RepoDescription,
   type RepoDescriptionCite,
   stackHelpersOff,
+  READ_WORDS,
   type BadFactLine,
 } from "@maycombhq/core";
 import {
@@ -110,7 +111,8 @@ import {
 } from "./facts-files.js";
 import { componentTypeIds, componentTypesAt, componentTypesText } from "./component-types.js";
 import { notesAt } from "./org-notes.js";
-import { effectiveRules, readingRulesText, ruleIds } from "./reading-rules.js";
+import { effectiveRules, readingRulesText, ruleIds, type EffectiveRule } from "./reading-rules.js";
+import { recipeFacts, recipeFiles, recipesOf, withoutFiles } from "./recipe-read.js";
 import {
   loadReadPlan,
   saveReadPlan,
@@ -198,7 +200,13 @@ export interface MapDeps {
   now?: () => Date;
   /** The git runner the diff since the facts' commit is read with (tests mock it). */
   git?: GitRunner;
+  /** Why there is no runtime (runtime.yaml's words), said when a read needs the model. */
+  noRuntime?: string;
 }
+
+/** ADR 0167: a read with nothing left for the model was given the rules there are now. */
+const recordRules = async (root: string, repo: string, commit: string) =>
+  (await import("./map-rules.js")).recordRulesNow(root, repo, commit);
 
 /** The step's agent: the org pack's own `repo-reader`, else this one. */
 export const REPO_READER = "repo-reader";
@@ -1061,6 +1069,10 @@ export async function mapCommand(
   const repoNotes = await notesAt(root, repo, dir, op);
   // G4 (ADR 0176): the organisation's reading rules for this repo, after its notes.
   const orgRules = await effectiveRules(root, repo, { dir, op });
+  // ADR 0210 part 2: recipe first. The files the active recipes read are never the model's.
+  const recipes = recipesOf(orgRules);
+  const byRecipe = recipeFiles(source, exclude, recipes);
+  const modelSource = withoutFiles(source, byRecipe);
   const notesPrompt = [
     notesText(repoNotes.notes, repoNotes.type),
     readingRulesText(orgRules),
@@ -1132,17 +1144,54 @@ export async function mapCommand(
     return estimate(
       root,
       repo,
-      { o, op, dir, commit, source, exclude, factsFile, ...(deps.git ? { git: deps.git } : {}) },
+      {
+        o,
+        op,
+        dir,
+        commit,
+        source: modelSource,
+        byRecipe: byRecipe.length,
+        exclude,
+        factsFile,
+        ...(deps.git ? { git: deps.git } : {}),
+      },
       io,
     );
 
   const runtime = deps.runtime;
+  const continuing = o.next || o.resume !== undefined || (o.copy && o.answer !== undefined);
+  const recipeRead = () =>
+    readByRecipes(root, repo, {
+      commit,
+      source,
+      exclude,
+      dir,
+      recipes,
+      files: byRecipe,
+      ...(deps.git ? { git: deps.git } : {}),
+    });
+  if (!runtime && recipes.length && !continuing) {
+    // With AI off, the recipes still read; the model's files wait for a read with AI on.
+    const r = await recipeRead();
+    if (typeof r === "string") return (io.err(r), 2);
+    const left = readPathsOf(modelSource, exclude, conventions).length;
+    io.out(READ_WORDS.split(byRecipe.length, left));
+    for (const l of r.lines) io.out(l);
+    if (left)
+      io.out(
+        `The model's ${plural(left, "file")} wait for a read with AI on: atticus map ${repo} --handoff, --copy or --mode <mode>.`,
+      );
+    else if (!r.rejected) await recordRules(root, repo, commit);
+    return r.rejected ? 1 : 0;
+  }
   if (!runtime) {
-    io.err("atticus map needs an AI runtime: run it with --handoff, --copy or --mode <mode>.");
+    io.err(
+      deps.noRuntime ??
+        "atticus map needs an AI runtime: run it with --handoff, --copy or --mode <mode>.",
+    );
     return 2;
   }
   let s = await readState(root, repo);
-  const continuing = o.next || o.resume !== undefined || (o.copy && o.answer !== undefined);
 
   if (continuing) {
     if (!s || s.done || (!s.waiting && o.answer !== undefined)) {
@@ -1202,6 +1251,14 @@ export async function mapCommand(
       }
       return 0;
     }
+    const byRecipes = recipes.length ? await recipeRead() : undefined;
+    if (typeof byRecipes === "string") return (io.err(byRecipes), 2);
+    /** The read's first lines: who reads which files, and what the recipes kept. */
+    const said = (model: number) => {
+      if (!byRecipes) return;
+      io.out(READ_WORDS.split(byRecipe.length, model));
+      for (const l of byRecipes.lines) io.out(l);
+    };
     const existing = await readFactsFile(root, repo);
     if (typeof existing === "string") {
       io.err(existing);
@@ -1250,6 +1307,8 @@ export async function mapCommand(
         io.err(t.error);
         return 2;
       }
+      if (byRecipe.length) t.files = t.files.filter((f) => !byRecipe.includes(f.path));
+      said(t.files.length);
       if (!t.lacking.length) {
         io.out(`${repo} was read under the reading rules there are now: nothing to top up.`);
         return 0;
@@ -1304,10 +1363,11 @@ export async function mapCommand(
         `Topping up ${repo} at ${commit.slice(0, 12)} for the reading rules added since it was read (${sets.join(", ")}): ${plural(plan.files, "source file")} in ${batches(plan.batches.length)}; facts go to ${factsFile}.`,
       );
     } else {
-      const re = await rereadOf(dir, existing, commit, source, exclude, deps.git, conventions);
+      const re = await rereadOf(dir, existing, commit, modelSource, exclude, deps.git, conventions);
       const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
       const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
       if (reread && !reread.files.length && !reread.reread.length) {
+        said(0);
         io.out(
           `Nothing ${repo}'s facts cite changed since ${since}, and no source file did: atticus verify ${repo} carries its ${plural(reread.carried, "fact")} to ${commit.slice(0, 12)}.`,
         );
@@ -1319,7 +1379,7 @@ export async function mapCommand(
       const rp = reread
         ? undefined
         : reachPlanOf({
-            paths: readPathsOf(source, exclude, conventions),
+            paths: readPathsOf(modelSource, exclude, conventions),
             source,
             facts: existing,
             mode,
@@ -1330,7 +1390,7 @@ export async function mapCommand(
               source,
               reread.files.map((f) => f.path),
             )
-          : source,
+          : modelSource,
         {
           room,
           exclude,
@@ -1343,6 +1403,11 @@ export async function mapCommand(
       );
       // A file whose topic rules leave too little room beside them (A-lean).
       if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
+      said(plan.files);
+      if (!plan.batches.length && !reread && byRecipes && byRecipe.length) {
+        if (!byRecipes.rejected) await recordRules(root, repo, commit);
+        return byRecipes.rejected ? 1 : 0;
+      }
       if (!plan.batches.length && !reread) {
         io.out(
           `${repo} has no source files to read${plan.excluded.length ? ` (${plural(plan.excluded.length, "file")} excluded)` : ""}.`,
@@ -1496,6 +1561,131 @@ async function printCopy(s: MapState, runtime: AiRuntime, io: Output) {
   return 0;
 }
 
+/** The verifier as a read runs it, on the facts on file with what a batch or a recipe adds. */
+async function verifyRead(
+  root: string,
+  repo: string,
+  commit: string,
+  facts: Fact[],
+  c: {
+    source: FileSource;
+    exclude: string[];
+    carry: Awaited<ReturnType<typeof carryOf>>["carry"];
+    reviewed: Awaited<ReturnType<typeof readReviewed>>["entries"];
+    dir: string;
+  },
+) {
+  const estate = await estateComponentsOf(root);
+  const off = stackHelpersOff();
+  return verifyFacts({
+    facts,
+    source: c.source,
+    commit,
+    // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
+    ...(off.has("derived-names") ? { derivedNames: false } : {}),
+    ...(off.has("readers") ? { readers: false } : {}),
+    carry: c.carry,
+    exclude: c.exclude,
+    // ADR 0124 addendum D-app: a person's corrections hold through every batch of a read.
+    corrections: (await readCorrections(root, repo)).corrections,
+    // ADR 0124 addendum A-read: files the reader read and found nothing in, if it wrote any.
+    reviewed: c.reviewed,
+    // J1 (ADR 0143): an exposure names a component the manifest lists.
+    ...(estate ? { estate } : {}),
+    conventions: await conventionsAt(root),
+    // ADR 0163: a term's note is one of those the batch was handed.
+    notes: (await notesAt(root, repo, c.dir)).notes,
+    // ADR 0180: a component's type is one of the organisation's.
+    componentTypes: componentTypeIds(await componentTypesAt(root)),
+    // ADR 0169: the model files the read leaves out, counted apart.
+    notReached: (await loadReadPlan(root, repo))?.notReached?.files ?? [],
+  });
+}
+
+/**
+ * ADR 0210 part 2: the active recipes read their files with no model; their facts go through
+ * the verifier with the facts on file, as a batch's do, and are written the same way.
+ */
+export async function readByRecipes(
+  root: string,
+  repo: string,
+  c: {
+    commit: string;
+    source: FileSource;
+    exclude: string[];
+    dir: string;
+    recipes: EffectiveRule[];
+    files: string[];
+    git?: GitRunner;
+  },
+): Promise<{ lines: string[]; rejected: number } | string> {
+  const existing = await readFactsFile(root, repo);
+  if (typeof existing === "string") return existing;
+  const r = recipeFacts(c.recipes, c.files, c.source, { repo, commit: c.commit }, existing);
+  const merged = new Map(r.kept.map((f) => [f.id, f]));
+  for (const f of r.facts) merged.set(f.id, f);
+  const { carry } = await carryOf(c.dir, [...merged.values()], c.commit, c.git);
+  const reviewed = await readReviewed(root, repo);
+  const report = await verifyRead(root, repo, c.commit, [...merged.values()], {
+    ...c,
+    carry,
+    reviewed: reviewed.entries,
+  });
+  await writeVerifyFiles(
+    root,
+    repo,
+    report,
+    c.commit,
+    [],
+    [],
+    reviewedProblemsOf(reviewed.bad, report),
+    [],
+    await newerLinesOf(root, repo),
+  );
+  const fresh = new Set(r.facts.map((f) => f.id));
+  const kept = report.accepted.filter((f) => fresh.has(f.id)).length;
+  const rejected = report.rejected.filter((x) => fresh.has(x.fact.id)).length;
+  const d = r.dropped;
+  return {
+    rejected,
+    lines: [
+      `By recipe: ${plural(kept, "fact")} kept, ${rejected} rejected by the verifier${rejected ? ` (in ${factsRelOf(root)}/${repo}.rejected.jsonl)` : ""}${d.length ? `; ${plural(d.length, "line")} matched and wrote no fact:` : "."}`,
+      ...d.slice(0, 20).map((x) => `  ${x.file}:${x.line}: ${x.reason}`),
+      ...(d.length > 20 ? [`  and ${d.length - 20} more`] : []),
+    ],
+  };
+}
+
+/**
+ * ADR 0210 part 2 for `map --all`: a repo's recipes read before any session is planned for it,
+ * said as a read says it. Nothing when its type has no active recipe.
+ */
+export async function recipeStep(
+  root: string,
+  repo: string,
+  commit: string,
+  io: Output,
+  git?: GitRunner,
+): Promise<number> {
+  const dir = await checkoutOf(root, repo).catch(() => undefined);
+  if (!dir || !existsSync(dir)) return 0;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const recipes = recipesOf(await effectiveRules(root, repo, { dir, op }));
+  if (!recipes.length) return 0;
+  const source = dirSource(dir);
+  const exclude = await excludesOf(root, repo);
+  const files = recipeFiles(source, exclude, recipes);
+  const r = await readByRecipes(root, repo, {
+    ...{ commit, source, exclude, dir, recipes, files },
+    ...(git ? { git } : {}),
+  });
+  if (typeof r === "string") return (io.err(`${repo}: ${r}`), 2);
+  const model = readPathsOf(withoutFiles(source, files), exclude, conventionsOf(op)).length;
+  io.out(`${repo}: ${READ_WORDS.split(files.length, model)}`);
+  for (const l of r.lines) io.out(l);
+  return r.rejected ? 1 : 0;
+}
+
 /** One answer: its facts merged into the facts file and verified at once, its questions raised. */
 async function takeAnswer(
   root: string,
@@ -1529,30 +1719,12 @@ async function takeAnswer(
   // Facts of an earlier commit whose files are unchanged are carried (ADR 0124 addendum A-incremental).
   const { carry } = await carryOf(at.dir, [...merged.values()], s.commit, at.git);
   const reviewed = await readReviewed(root, s.repo);
-  const estate = await estateComponentsOf(root);
-  const off = stackHelpersOff();
-  const report = await verifyFacts({
-    facts: [...merged.values()],
+  const report = await verifyRead(root, s.repo, s.commit, [...merged.values()], {
     source,
-    commit: s.commit,
-    // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
-    ...(off.has("derived-names") ? { derivedNames: false } : {}),
-    ...(off.has("readers") ? { readers: false } : {}),
-    carry,
     exclude,
-    // ADR 0124 addendum D-app: a person's corrections hold through every batch of a read.
-    corrections: (await readCorrections(root, s.repo)).corrections,
-    // ADR 0124 addendum A-read: files the reader read and found nothing in, if it wrote any.
+    carry,
     reviewed: reviewed.entries,
-    // J1 (ADR 0143): an exposure names a component the manifest lists.
-    ...(estate ? { estate } : {}),
-    conventions: await conventionsAt(root),
-    // ADR 0163: a term's note is one of those the batch was handed.
-    notes: (await notesAt(root, s.repo, at.dir)).notes,
-    // ADR 0180: a component's type is one of the organisation's.
-    componentTypes: componentTypeIds(await componentTypesAt(root)),
-    // ADR 0169: the model files the read leaves out, counted apart.
-    notReached: (await loadReadPlan(root, s.repo))?.notReached?.files ?? [],
+    dir: at.dir,
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,
@@ -1691,7 +1863,10 @@ async function estimate(
     op: OrgPack;
     dir: string;
     commit: string;
+    /** The source the model reads: the recipes' files left out (ADR 0210 part 2). */
     source: FileSource;
+    /** How many files the recipes read. */
+    byRecipe: number;
     exclude: string[];
     factsFile: string;
     git?: GitRunner;
@@ -1889,6 +2064,8 @@ async function estimate(
           batches: plan?.batches.length ?? null,
           // ADR 0169: what the read plans to read (the model classes it leaves out, out).
           read: { files: estimate.files, tokens: estimate.tokens },
+          // ADR 0210 part 2: the files the recipes read, never the model's.
+          recipe: { files: c.byRecipe },
           order: whole.batches.flat().map((x) => x.path),
           // ADR 0128: what a person says the repo is, and whether that eased the proposals.
           about: about
@@ -1967,6 +2144,7 @@ async function estimate(
     return 0;
   }
   io.out(`${repo} at ${c.commit} in ${c.dir}`);
+  if (c.byRecipe) io.out(READ_WORDS.split(c.byRecipe, estimate.files));
   // ADR 0128: what the repo is, for the reader to orient by — a note, not a finding.
   io.out(
     about

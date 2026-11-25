@@ -3,7 +3,7 @@ import { normalizePath } from "./paths.js";
 
 // Review of beta.24: the path normaliser lives in a module of its own, with no imports, so the
 // app's screens (a browser bundle) use the very function the join does (`@maycombhq/core/paths`).
-export { limitWords, normalizePath, stripParamConstraints } from "./paths.js";
+export { limitWords, normalizePath, READ_WORDS, stripParamConstraints } from "./paths.js";
 
 /** Code-unit string order, the same in every locale (`localeCompare` is not: ICU orders `_`/`-`
  * and, in `da`, `aa` differently), for every sort that feeds records, ids, hashes or a merge. */

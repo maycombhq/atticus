@@ -71,3 +71,14 @@ export const limitWords = (l: { per: string; sessions?: number; tokens?: number 
     .filter(Boolean)
     .join(" and ") + ` a ${l.per}`;
 const plural = (x: number, w: string) => `${x.toLocaleString("en-US")} ${w}${x === 1 ? "" : "s"}`;
+
+/**
+ * ADR 0210 parts 2 and 6, said alike by the command line and the app: who read a repo's files,
+ * and that the deterministic readers are off.
+ */
+export const READ_WORDS = {
+  split: (recipe: number, model: number) =>
+    `Read by recipe ${plural(recipe, "file")}, by the model ${plural(model, "file")}.`,
+  readersOff:
+    'The deterministic readers are off (ADR 0210): a repo is read by its recipe or by the model. An org pack turns them on with readers: "on" in conventions.yaml (schemaVersion: 3).',
+};

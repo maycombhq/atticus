@@ -75,7 +75,8 @@ describe("the contracts (ADR 0163)", () => {
   it("bumps the facts, repo type and conventions versions", () => {
     expect(FACTS_SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
     expect(REPO_TYPE_SCHEMA_VERSION).toBe(2);
-    expect(CONVENTIONS_SCHEMA_VERSION).toBe(2);
+    // ADR 0210 part 6: version 3 adds readers.
+    expect(CONVENTIONS_SCHEMA_VERSION).toBe(3);
   });
 
   it("reads a version-1 repo type and conventions file as they are, as version 2", () => {
@@ -85,7 +86,7 @@ describe("the contracts (ADR 0163)", () => {
     expect(old.schemaVersion).toBe(2);
     expect(old.notes).toBeUndefined();
     expect(Conventions.parse({ schemaVersion: 1 }).notes).toBeUndefined();
-    expect(Conventions.safeParse({ schemaVersion: 3 }).success).toBe(false);
+    expect(Conventions.safeParse({ schemaVersion: 4 }).success).toBe(false);
   });
 
   it("holds notes as plain text on a type and org-wide", () => {

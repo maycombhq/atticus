@@ -42,6 +42,7 @@ import {
   migrateRuntimeV3Text,
   migrateRuntimeV4Text,
   migrateRuntimeV5Text,
+  migrateConventionsV3Text,
   migrateCorrections,
   migrateSourcesText,
   orgPackDirOf,
@@ -436,6 +437,13 @@ export const MIGRATIONS: Migration[] = [
     "runtime.yaml at version 5 where it sets budgets.limits: what a run, a day or a month may spend (ADR 0210); the number only",
     migrateRuntimeV5Text,
   ),
+  // ADR 0210 part 6: a conventions.yaml that sets readers needs version 3.
+  runtimeStep(
+    "conventions-v3",
+    "conventions.yaml at version 3 where it sets readers: whether the deterministic readers run (ADR 0210); the number only",
+    migrateConventionsV3Text,
+    "conventions.yaml",
+  ),
   {
     // ADR 0181: a corrections line that uses version 2's fields (ai, batch, rule, match, unlink)
     // but says version 1 (written by hand) says 2; every other line means the same at 1.
@@ -594,9 +602,10 @@ function runtimeStep(
   id: string,
   summary: string,
   migrate: (text: string) => { text: string; changed: boolean },
+  file = "runtime.yaml",
 ): Migration {
   const read = (root: string) => {
-    const rel = packRel(root, "runtime.yaml");
+    const rel = packRel(root, file);
     return readFile(join(root, rel), "utf8").then(
       (t) => ({ rel, ...migrate(t) }),
       () => undefined,

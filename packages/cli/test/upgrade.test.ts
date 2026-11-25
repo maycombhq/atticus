@@ -253,6 +253,8 @@ describe("atticus upgrade", () => {
         "runtime-v4",
         // ADR 0210 part 5: nothing here sets budgets.limits: recorded as done.
         "runtime-v5",
+        // ADR 0210 part 6: nothing here sets readers: recorded as done.
+        "conventions-v3",
         "corrections-v2",
         // ADR 0124 addendum E-ids: a catalog never built from slots has no loose end to rename.
         "unresolved-ids-repo",

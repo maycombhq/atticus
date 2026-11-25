@@ -216,6 +216,11 @@ describe("atticus adopt, other commands with --root, and unadopt", () => {
     // Other commands against the adopted repo (--root). The org pack validates where it is.
     const v = io();
     expect(await orgPackValidate(join(dir, ".atticus/org-pack"), v.io)).toBe(0);
+    // ADR 0210 part 6: no facts yet, so the catalog comes from the readers, turned on.
+    await writeFile(
+      join(dir, ".atticus/org-pack/conventions.yaml"),
+      'schemaVersion: 3\nreaders: "on"\n',
+    );
     const s = io();
     expect(await scanCommand(dir, {}, s.io)).toBe(0);
     expect(s.out[0]).toMatch(/^Scanned 1 repos/);

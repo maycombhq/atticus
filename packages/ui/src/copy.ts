@@ -1502,7 +1502,9 @@ export const COPY = {
       "not-asked": "left out of this scan",
       "run-failed": "a reader run failed",
       "plugin-refused": "a plugin that applies to it isn't used",
-      "readers-off": "the readers are switched off",
+      // ADR 0210 part 6: off unless the org pack turns them on.
+      "readers-off":
+        'the readers are off: an org pack turns them on with readers: "on" in conventions.yaml',
       dirty: "its clone has changes not committed",
       refused: "the scan wrote nothing",
       "dry-run": "a dry run writes nothing",

@@ -12,10 +12,17 @@ import { OrgNotes } from "./repo-type.js";
  * Version 2 (ADR 0163) adds `notes`, the organisation-wide notes every read is handed beside its
  * repo type's. A version-1 file reads as it is and comes back as version 2 in memory.
  */
-export const CONVENTIONS_SCHEMA_VERSION = 2 as const;
-const ConventionsSchemaVersion = z
-  .union([z.literal(1), z.literal(CONVENTIONS_SCHEMA_VERSION)])
-  .overwrite((): 2 => CONVENTIONS_SCHEMA_VERSION);
+/**
+ * Version 3 (ADR 0210 part 6) adds `readers`, whether the deterministic readers run; a version 1
+ * or 2 file reads as it did (as version 2), and only a file that sets `readers` needs 3.
+ */
+export const CONVENTIONS_SCHEMA_VERSION = 3 as const;
+/** The version a note needs (ADR 0163): a note's write keeps a file at 2, so beta.32 reads it. */
+export const CONVENTIONS_NOTES_VERSION = 2 as const;
+const ConventionsSchemaVersion = z.union([
+  z.union([z.literal(1), z.literal(CONVENTIONS_NOTES_VERSION)]).overwrite((): 2 => 2),
+  z.literal(CONVENTIONS_SCHEMA_VERSION),
+]);
 
 /** A folder name or a short folder path (`src/test`), matched as whole path segments anywhere. */
 const Folder = z
@@ -123,44 +130,54 @@ const HousePrefix = z
   .min(2)
   .regex(/^@?[\w.-]+(\/[\w.-]*)*$/, "a package or module prefix, such as com.forge. or @forge/");
 
-export const Conventions = z.strictObject({
-  schemaVersion: ConventionsSchemaVersion,
-  /** Folders whose YAML and JSON are API specs: code whatever their size, and read for routes. */
-  apiSpecFolders: z.array(Folder).default([...DEFAULT_API_SPEC_FOLDERS]),
-  /** Folders of a gateway's proxy bundles: an entry cited in one is a gateway route. */
-  gatewayBundleFolders: z.array(Folder).default([...DEFAULT_GATEWAY_BUNDLE_FOLDERS]),
-  /** The words that say which side a gateway faces (A-gateway2); internal is read first. */
-  facing: z
-    .strictObject({
-      internal: z.array(Word).default([...DEFAULT_FACING_WORDS.internal]),
-      external: z.array(Word).default([...DEFAULT_FACING_WORDS.external]),
-    })
-    .default({
-      internal: [...DEFAULT_FACING_WORDS.internal],
-      external: [...DEFAULT_FACING_WORDS.external],
-    }),
-  /** Frameworks the house builds on, looked at before the built-in table. */
-  frameworks: z.array(ConventionFramework).default([]),
-  /** Folders coverage doesn't count: tests, mocks, fixtures. */
-  notProductFolders: z.array(Folder).default([...DEFAULT_NOT_PRODUCT_FOLDERS]),
-  /** Folders verify doesn't look in for skipped paths, URLs and topics (R1). */
-  notReadFolders: z.array(Folder).default([...DEFAULT_NOT_READ_FOLDERS]),
-  /**
-   * Import prefixes of the house's own packages. A repo importing one that no taught framework
-   * (org-pack/frameworks/) covers is warned of before its first read (R3). None by default.
-   */
-  housePrefixes: z.array(HousePrefix).default([]),
-  /**
-   * Notes for every repo (ADR 0163), in the organisation's own words: what its terms mean and
-   * what must hold, as a repo type's `notes` say for its repos. Plain text, never parsed.
-   */
-  notes: OrgNotes.optional(),
-});
+export const Conventions = z
+  .strictObject({
+    schemaVersion: ConventionsSchemaVersion,
+    /**
+     * ADR 0210 part 6 (version 3): the deterministic readers and dialects run in a scan only when
+     * `on`; off (the default), a repo is read by its recipe or by the model.
+     */
+    readers: z.enum(["on", "off"]).optional(),
+    /** Folders whose YAML and JSON are API specs: code whatever their size, and read for routes. */
+    apiSpecFolders: z.array(Folder).default([...DEFAULT_API_SPEC_FOLDERS]),
+    /** Folders of a gateway's proxy bundles: an entry cited in one is a gateway route. */
+    gatewayBundleFolders: z.array(Folder).default([...DEFAULT_GATEWAY_BUNDLE_FOLDERS]),
+    /** The words that say which side a gateway faces (A-gateway2); internal is read first. */
+    facing: z
+      .strictObject({
+        internal: z.array(Word).default([...DEFAULT_FACING_WORDS.internal]),
+        external: z.array(Word).default([...DEFAULT_FACING_WORDS.external]),
+      })
+      .default({
+        internal: [...DEFAULT_FACING_WORDS.internal],
+        external: [...DEFAULT_FACING_WORDS.external],
+      }),
+    /** Frameworks the house builds on, looked at before the built-in table. */
+    frameworks: z.array(ConventionFramework).default([]),
+    /** Folders coverage doesn't count: tests, mocks, fixtures. */
+    notProductFolders: z.array(Folder).default([...DEFAULT_NOT_PRODUCT_FOLDERS]),
+    /** Folders verify doesn't look in for skipped paths, URLs and topics (R1). */
+    notReadFolders: z.array(Folder).default([...DEFAULT_NOT_READ_FOLDERS]),
+    /**
+     * Import prefixes of the house's own packages. A repo importing one that no taught framework
+     * (org-pack/frameworks/) covers is warned of before its first read (R3). None by default.
+     */
+    housePrefixes: z.array(HousePrefix).default([]),
+    /**
+     * Notes for every repo (ADR 0163), in the organisation's own words: what its terms mean and
+     * what must hold, as a repo type's `notes` say for its repos. Plain text, never parsed.
+     */
+    notes: OrgNotes.optional(),
+  })
+  .refine((c) => c.readers === undefined || c.schemaVersion >= 3, {
+    path: ["readers"],
+    message: "readers needs schemaVersion 3: set schemaVersion: 3, nothing else changes",
+  });
 export type Conventions = z.infer<typeof Conventions>;
 
 /** The conventions of a pack without conventions.yaml: the built-in lists. */
 export const DEFAULT_CONVENTIONS: Conventions = Conventions.parse({
-  schemaVersion: CONVENTIONS_SCHEMA_VERSION,
+  schemaVersion: CONVENTIONS_NOTES_VERSION,
 });
 
 const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

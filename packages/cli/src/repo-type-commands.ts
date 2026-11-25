@@ -4,7 +4,7 @@ import { Document, isScalar, parse, parseDocument, visit } from "yaml";
 import {
   ChecklistPack,
   Conventions,
-  CONVENTIONS_SCHEMA_VERSION,
+  CONVENTIONS_NOTES_VERSION,
   loadOrgPack,
   noteRuleDrafts,
   noteKey,
@@ -190,7 +190,7 @@ export async function repoTypeNote(
   }
   const doc = exists
     ? parseDocument(await readFile(file, "utf8"))
-    : new Document({ schemaVersion: CONVENTIONS_SCHEMA_VERSION });
+    : new Document({ schemaVersion: CONVENTIONS_NOTES_VERSION });
   const notes = ((doc.toJS() as { notes?: unknown } | null)?.notes ?? []) as unknown[];
   if (o.add === undefined) {
     if (!notes.length)
@@ -211,7 +211,12 @@ export async function repoTypeNote(
     io.out(`${noteRel(type)} already has that note.`);
     return 0;
   }
-  doc.set("schemaVersion", type ? REPO_TYPE_SCHEMA_VERSION : CONVENTIONS_SCHEMA_VERSION);
+  // A note needs conventions 2; a file at 3 (it sets readers) stays at 3.
+  const was = Number(doc.get("schemaVersion"));
+  doc.set(
+    "schemaVersion",
+    type ? REPO_TYPE_SCHEMA_VERSION : Math.max(was || 0, CONVENTIONS_NOTES_VERSION),
+  );
   doc.set("notes", [...notes.map(String), note.data]);
   const check = (type ? RepoType : Conventions).safeParse(doc.toJS());
   if (!check.success) {

@@ -138,9 +138,10 @@ export async function effectiveRules(
     }
     for (const r of file.rules) {
       const e: EffectiveRule = { ...r, layer, file: at, id: ruleId(r) };
-      // ADR 0208: a learned rule is active only for the repos its re-read proved it on.
-      if (r.status === "draft" || (r.learned?.proof && !r.learned.proof.repos.includes(repo)))
-        drafts.push(e);
+      // ADR 0208: a learned rule is active only for the repos its re-read proved it on; a recipe
+      // (ADR 0210 part 2) is proven for its type, so it holds for every repo of it.
+      const unproven = r.learned?.proof && !r.extract && !r.learned.proof.repos.includes(repo);
+      if (r.status === "draft" || unproven) drafts.push(e);
       else {
         const had = byKey.get(r.key);
         // Two teams' copies with one key: the later team's is used, and that is said.

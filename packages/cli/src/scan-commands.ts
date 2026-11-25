@@ -173,7 +173,8 @@ function keptWhy(s: Pick<ScanSource, "reason" | "detail">): string {
     case "plugin-refused":
       return `a plugin that applies to it isn't used (${s.detail ?? "a plugin"})`;
     case "readers-off":
-      return "the readers are switched off (ATTICUS_HELPERS_OFF=readers)";
+      // ADR 0210 part 6: off by default; an org pack turns them on.
+      return 'the readers are off (an org pack turns them on with readers: "on" in conventions.yaml; ATTICUS_HELPERS_OFF=readers switches them off for a run)';
     case "dirty":
       return "its clone has changes not committed (commit or stash them, then scan again)";
     case "refused":
