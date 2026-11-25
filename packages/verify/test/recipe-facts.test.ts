@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { ReadingRulesFile, runRecipe, type RecipeFile } from "@maycombhq/core";
 import { verifyFacts, type FileSource } from "../src/index.js";
 
@@ -23,41 +24,20 @@ const filesOf = (repo: string): RecipeFile[] => {
   walk(root);
   return out;
 };
-/** The fixture's `org-pack/reading-rules/types/integration-module.yaml`, as data (no YAML reader here). */
-const rules = ReadingRulesFile.parse({
-  schemaVersion: 3,
-  rules: [
-    {
-      key: "blueprint-rest-entries",
-      status: "draft",
-      rule: "Each verb element under a <rest> block is an entry.",
-      files: ["src/main/resources/OSGI-INF/blueprint/*.xml"],
-      extract: {
-        fact: "entry",
-        pattern: '<(?<verb>get|post|put|delete|patch)(?: uri="(?<uri>[^"]*)")?',
-        scopes: [
-          { name: "context", pattern: 'contextPath="(?<context>[^"]*)"' },
-          { name: "rest", pattern: '<rest path="(?<rest>[^"]*)"', end: "</rest>" },
-        ],
-        optional: ["uri"],
-        fields: { method: "{verb}", path: "{context}{rest}{uri}" },
-      },
-    },
-    {
-      key: "deploy-settings",
-      status: "draft",
-      rule: "Each leaf key of a deploy file is a setting.",
-      files: ["deploy/*.yaml"],
-      extract: { fact: "config", yaml: "leaves" },
-    },
-  ],
-}).rules;
+const rules = ReadingRulesFile.parse(
+  parse(
+    readFileSync(
+      join(FIX, "org-pack", "reading-rules", "types", "integration-module.yaml"),
+      "utf8",
+    ),
+  ),
+).rules;
 
 describe("a recipe's facts pass the verifier (ADR 0210 part 2)", () => {
   for (const repo of ["forge-wallets-module", "forge-ledger-module"])
     it(repo, async () => {
       const files = filesOf(repo);
-      const facts = rules.flatMap((r) => runRecipe(r, files, { repo, commit: "5d6e7f8" }));
+      const facts = rules.flatMap((r) => runRecipe(r, files, { repo, commit: "5d6e7f8" }).facts);
       const byPath = new Map(files.map((f) => [f.path, f.text]));
       const source: FileSource = { list: () => [...byPath.keys()], read: (p) => byPath.get(p) };
       const r = await verifyFacts({ facts, source, commit: "5d6e7f8" });

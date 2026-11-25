@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RE2JS } from "re2js";
 import { Fact, FACT_KINDS } from "./facts.js";
 
 /**
@@ -94,73 +95,36 @@ const TEMPLATE = /^\{[A-Za-z_][A-Za-z0-9_]*\}(?:[/.:\-_]?\{[A-Za-z_][A-Za-z0-9_]
 export function templateNames(t: string): string[] {
   return [...t.matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!);
 }
-/** The named groups of a pattern (`(?<name>`), not its lookbehinds. */
-export function groupNames(p: string): string[] {
-  return [...p.matchAll(/\(\?<([A-Za-z_$][\w$]*)>/g)].map((m) => m[1]!);
-}
-
 /**
- * Whether a pattern repeats a group that itself repeats (`(a+)+`, `(a*)*`, `(.*)*`, `(a|b+){2,}`):
- * the shape that backtracks without end on a line that nearly matches. Escapes and character
- * classes are skipped; a group quantified by `?` or `{0,1}` repeats nothing.
+ * A recipe's pattern, compiled by RE2 (`re2js`): matching takes time linear in the line, however
+ * the pattern is written (a model drafts it; the lines come from repos). What RE2 can't express
+ * (a backreference, a lookaround) is refused.
  */
-export function nestedQuantifier(p: string): boolean {
-  const repeats = (j: number): boolean => {
-    const c = p[j];
-    if (c === "*" || c === "+") return true;
-    const m = c === "{" ? /^\{(\d*)(,(\d*))?\}/.exec(p.slice(j)) : null;
-    if (!m) return false;
-    return m[2] !== undefined ? m[3] === "" || Number(m[3]) > 1 : Number(m[1]) > 1;
-  };
-  const stack: boolean[] = [];
-  let inner = false;
-  let i = 0;
-  while (i < p.length) {
-    const c = p[i]!;
-    if (c === "\\") i += 2;
-    else if (c === "[") {
-      i++;
-      if (p[i] === "^") i++;
-      if (p[i] === "]") i++;
-      while (i < p.length && p[i] !== "]") i += p[i] === "\\" ? 2 : 1;
-      i++;
-    } else if (c === "(") {
-      stack.push(inner);
-      inner = false;
-      i++;
-      if (p[i] === "?")
-        i +=
-          p[i + 1] === "<" && p[i + 2] !== "=" && p[i + 2] !== "!" ? p.indexOf(">", i) + 1 - i : 2;
-      continue;
-    } else if (c === ")") {
-      const had = inner;
-      inner = stack.pop() ?? false;
-      i++;
-      if (had && repeats(i)) return true;
-      if (had) inner = true;
-    } else i++;
-    if (repeats(i)) inner = true;
-  }
-  return false;
+export function recipeRegExp(p: string): RE2JS {
+  return RE2JS.compile(p);
 }
-
-const compiles = (p: string) => {
+/** The named groups of a pattern. */
+export function groupNames(p: string): string[] {
   try {
-    new RegExp(p);
-    return true;
+    return Object.keys(recipeRegExp(p).namedGroups());
   } catch {
-    return false;
+    return [];
   }
-};
+}
 const Pattern = z
   .string()
   .min(1)
   .max(2000)
-  .refine(compiles, "not a regular expression")
-  .refine(
-    (p) => !nestedQuantifier(p),
-    "a nested quantifier (a repeated group that repeats) is refused",
-  );
+  .superRefine((p, ctx) => {
+    try {
+      recipeRegExp(p);
+    } catch (e) {
+      ctx.addIssue({
+        code: "custom",
+        message: `not a pattern a recipe can use (RE2 syntax: no backreferences or lookarounds): ${(e as Error).message}`,
+      });
+    }
+  });
 
 export const RecipeScope = z.strictObject({
   name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
@@ -172,7 +136,9 @@ export const RecipeScope = z.strictObject({
 
 /** The fields of the fact, each a template of `{group}` references. */
 const Fields = z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/), z.string().min(1).max(300));
-/** A choice field (`entryType`, `op`, `settingKind`) set to one of its choices: a kind, not a value read off a line. */
+/** The choice fields a recipe may set: what kind of entry, call or setting, not a claim read off a line. */
+export const RECIPE_SET_FIELDS = ["entryType", "callType", "settingKind", "tableKind"] as const;
+/** A choice field of `RECIPE_SET_FIELDS` set to one of its choices. */
 const Set_ = z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/), z.string().min(1).max(60));
 
 /**
@@ -193,7 +159,7 @@ export const RecipeExtract = z
       optional: z.array(z.string().min(1)).max(24).optional(),
       /** Each field of the fact as `{group}` references, at most one of `/ . : - _` between two, nothing else. */
       fields: Fields,
-      /** A choice field (`entryType`, `op`) set to one of its choices; an entry's `entryType` is `rest` when unset. */
+      /** A choice field (`entryType`, `callType`, `settingKind`, `tableKind`) set to one of its choices; an entry's `entryType` is `rest` when unset. */
       set: Set_.optional(),
     }),
     z.strictObject({
@@ -234,8 +200,12 @@ export const RecipeExtract = z
     }
     for (const [f, v] of Object.entries(e.set ?? {})) {
       const info = kind[f];
-      if (info?.type !== "enum" || !info.choices?.includes(v))
-        issue(["set", f], `${f}: set takes a choice field and one of its choices`);
+      if (!(RECIPE_SET_FIELDS as readonly string[]).includes(f) || info?.type !== "enum")
+        issue(
+          ["set", f],
+          `${f}: set takes only ${RECIPE_SET_FIELDS.join(", ")} (a ${e.fact} fact's)`,
+        );
+      else if (!info.choices?.includes(v)) issue(["set", f], `${f}: ${v} is none of its choices`);
       if (f in fields) issue(["set", f], `${f} is both set and a template`);
     }
     for (const [f, info] of Object.entries(kind))
@@ -247,7 +217,10 @@ export const RecipeExtract = z
       )
         issue(["fields"], `a ${e.fact} fact needs ${f}`);
     if (!("yaml" in e)) {
+      const own = new Set(groupNames(e.pattern));
       e.scopes?.forEach((s, i) => {
+        if (own.has(s.name))
+          issue(["scopes", i, "name"], `scope ${s.name} has the name of a group of the pattern`);
         if (!groupNames(s.pattern).includes(s.name))
           issue(["scopes", i, "pattern"], `scope ${s.name}'s pattern has no group named ${s.name}`);
       });

@@ -58,10 +58,11 @@ const golden = (name: string, got: unknown) => {
 };
 const plain = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const at = (repo: string, commit: string) => ({ repo, commit });
+const run = (...a: Parameters<typeof runRecipe>) => runRecipe(...a).facts;
 
 describe("runRecipe (ADR 0210 part 2)", () => {
   it("reads the module it wasn't written from as its golden file says, every fact valid", () => {
-    const got = runRecipe(rule("blueprint-rest-entries"), filesOf(LEDGER), at(LEDGER, "5d6e7f8"));
+    const got = run(rule("blueprint-rest-entries"), filesOf(LEDGER), at(LEDGER, "5d6e7f8"));
     expect(plain(got)).toEqual(golden("recipe-ledger.yaml", plain(got)));
     for (const f of got) expect(Fact.safeParse(f).success).toBe(true);
     expect(got.map((f) => (f.kind === "entry" ? `${f.method} ${f.path}` : ""))).toEqual([
@@ -74,7 +75,7 @@ describe("runRecipe (ADR 0210 part 2)", () => {
   it("cites the line with a value on it, and each scope it used in with", () => {
     const files = filesOf(WALLETS);
     const lines = files.find((f) => f.path === XML)!.text.split("\n");
-    const got = runRecipe(rule("blueprint-rest-entries"), files, at(WALLETS, "1a2b3c4"));
+    const got = run(rule("blueprint-rest-entries"), files, at(WALLETS, "1a2b3c4"));
     expect(got.map((f) => f.cite.line)).toEqual([6, 9, 12, 15]);
     for (const f of got) {
       expect(lines[f.cite.line - 1]).toContain(f.cite.value);
@@ -100,11 +101,11 @@ describe("runRecipe (ADR 0210 part 2)", () => {
     const r = rule("blueprint-rest-entries");
     const text =
       '<get uri="/a">\n<rest path="/r">\n<get uri="/b">\n</rest>\n<get uri="/c">\n<post>\n';
-    const got = runRecipe(r, [{ path: XML, text }], at(WALLETS, "1a2b3c4"));
+    const got = run(r, [{ path: XML, text }], at(WALLETS, "1a2b3c4"));
     // No context anywhere: every fact drops.
     expect(got).toEqual([]);
     const opt = { ...r, extract: { ...r.extract!, optional: ["uri", "context"] } } as ReadingRule;
-    const kept = runRecipe(opt, [{ path: XML, text }], at(WALLETS, "1a2b3c4"));
+    const kept = run(opt, [{ path: XML, text }], at(WALLETS, "1a2b3c4"));
     // The rest scope holds from line 2 until `</rest>` on line 4; outside it the fact drops.
     expect(kept.map((f) => [f.cite.line, f.kind === "entry" && f.path])).toEqual([[3, "/r/b"]]);
   });
@@ -113,11 +114,9 @@ describe("runRecipe (ADR 0210 part 2)", () => {
     const r = rule("blueprint-rest-entries");
     const head = '<restConfiguration contextPath="/x"/>\n<rest path="/r">\n';
     const long = `<get uri="/${"a".repeat(2000)}">\n<get uri="/ok">\n`;
-    const got = runRecipe(r, [{ path: XML, text: head + long }], at(WALLETS, "1a2b3c4"));
+    const got = run(r, [{ path: XML, text: head + long }], at(WALLETS, "1a2b3c4"));
     expect(got.map((f) => f.cite.line)).toEqual([4]);
-    expect(
-      runRecipe(r, [{ path: "other.xml", text: head + long }], at(WALLETS, "1a2b3c4")),
-    ).toEqual([]);
+    expect(run(r, [{ path: "other.xml", text: head + long }], at(WALLETS, "1a2b3c4"))).toEqual([]);
   });
 
   it("orders facts by file then line, and the same input gives the same ids", () => {
@@ -128,9 +127,9 @@ describe("runRecipe (ADR 0210 part 2)", () => {
       { path: `${dir}b.xml`, text: t },
       { path: `${dir}a.xml`, text: t },
     ];
-    const one = runRecipe(r, files, at(WALLETS, "1a2b3c4"));
+    const one = run(r, files, at(WALLETS, "1a2b3c4"));
     expect(one.map((f) => f.cite.file)).toEqual([`${dir}a.xml`, `${dir}b.xml`]);
-    expect(runRecipe(r, [...files].reverse(), at(WALLETS, "1a2b3c4"))).toEqual(one);
+    expect(run(r, [...files].reverse(), at(WALLETS, "1a2b3c4"))).toEqual(one);
     expect(new Set(one.map((f) => f.id)).size).toBe(2);
   });
 
@@ -146,7 +145,7 @@ describe("runRecipe (ADR 0210 part 2)", () => {
       "  - one",
       "",
     ].join("\n");
-    const got = runRecipe(
+    const got = run(
       rule("deploy-settings"),
       [{ path: "deploy/prod.yaml", text }],
       at(LEDGER, "5d6e7f8"),
@@ -176,9 +175,100 @@ describe("runRecipe (ADR 0210 part 2)", () => {
       ],
     ]);
     // The fixture's deploy files read too.
-    expect(runRecipe(rule("deploy-settings"), filesOf(LEDGER), at(LEDGER, "5d6e7f8")).length).toBe(
-      6,
+    expect(run(rule("deploy-settings"), filesOf(LEDGER), at(LEDGER, "5d6e7f8")).length).toBe(6);
+  });
+});
+
+describe("runRecipe, review of PR 19", () => {
+  const r = (extract: object) =>
+    ({
+      key: "t",
+      status: "draft",
+      rule: "A test rule, ten letters.",
+      extract,
+    }) as ReadingRule;
+  const one = (extract: object, text: string) =>
+    runRecipe(r(extract), [{ path: "a.txt", text }], at(WALLETS, "1a2b3c4"));
+
+  it("fills a template in one pass: a capture is text, never a code or a template", () => {
+    const e = {
+      fact: "entry",
+      pattern: 'path="(?<p>[^"]*)"(?: b="(?<b>[^"]*)")?',
+      optional: ["b"],
+      fields: { path: "{p}{b}" },
+    };
+    const path = (text: string) => one(e, text).facts.map((f) => f.kind === "entry" && f.path);
+    expect(path(`path="x$'y"`)).toEqual(["x$'y"]);
+    expect(path('path="a$&b"')).toEqual(["a$&b"]);
+    expect(path('path="/{b}" b="/z"')).toEqual(["/{b}/z"]);
+  });
+
+  it("matches in linear time: the shapes a backtracking engine takes seconds on finish at once", () => {
+    for (const [pattern, line] of [
+      ["(?<p>(a|aa)+$)", `${"a".repeat(41)}b`],
+      ["(?<p>(a|a)*)b", "a".repeat(1999)],
+      ["(?<p>(a?){30}a{30})", "a".repeat(30)],
+      ["(?<p>.*a.*a.*a.*a.*=)", "a".repeat(1999)],
+    ] as const) {
+      expect(
+        ReadingRulesFile.safeParse({
+          schemaVersion: 3,
+          rules: [{ ...r({ fact: "entry", pattern, fields: { path: "{p}" } }) }],
+        }).success,
+        pattern,
+      ).toBe(true);
+      const t = performance.now();
+      one({ fact: "entry", pattern, fields: { path: "{p}" } }, `${line}\n`.repeat(20));
+      expect(performance.now() - t, pattern).toBeLessThan(1000);
+    }
+  });
+
+  it("yaml leaves: skips block scalars and list items, and reads quotes and comments as YAML does", () => {
+    const text = [
+      "script: |",
+      "  run: this",
+      "  more: text",
+      "fold: >-",
+      "  also: text",
+      "items:",
+      "  - name: a",
+      "    port: 1",
+      "  - b",
+      'q: "x #y" # a comment',
+      "s: 'it''s' ",
+      "plain: v # note",
+      "after: 2",
+      "",
+    ].join("\n");
+    const got = one({ fact: "config", yaml: "leaves" }, text).facts;
+    expect(got.map((f) => f.kind === "config" && [f.cite.line, f.key, f.value])).toEqual([
+      [10, "q", "x #y"],
+      [11, "s", "it's"],
+      [12, "plain", "v"],
+      [13, "after", "2"],
+    ]);
+  });
+
+  it("returns the facts it dropped, and why: a value shaped like a secret is never written", () => {
+    const got = one(
+      { fact: "config", yaml: "leaves" },
+      "db:\n  password: hunter2hunter2\nport: 1\n",
     );
+    expect(got.facts.map((f) => f.cite.line)).toEqual([3]);
+    expect(got.dropped).toEqual([
+      { file: "a.txt", line: 2, reason: expect.stringMatching(/secret/) as string },
+    ]);
+    expect(JSON.stringify(got.dropped)).not.toContain("hunter2");
+    const missing = one(
+      {
+        fact: "entry",
+        pattern: '<get uri="(?<u>[^"]*)"',
+        scopes: [{ name: "s", pattern: 'p="(?<s>[^"]*)"' }],
+        fields: { path: "{s}{u}" },
+      },
+      '<get uri="/a">\n',
+    );
+    expect(missing.dropped).toEqual([{ file: "a.txt", line: 1, reason: "nothing matched {s}" }]);
   });
 });
 
@@ -260,6 +350,15 @@ describe("proveRecipe (ADR 0210 part 2, ADR 0208's proof)", () => {
         got: "/cxf/api/{statementId}",
       },
     ]);
+  });
+
+  it("compares the fields a recipe sets or defaults, not only its templates", () => {
+    const r = rule("blueprint-rest-entries");
+    const [w] = reads();
+    const grpc = { ...r, extract: { ...r.extract!, set: { entryType: "grpc" } } } as ReadingRule;
+    const got = proveRecipe(grpc, [w!]).repos[0]!;
+    expect(got.same).toBe(false);
+    expect(got.differ.filter((d) => d.field === "entryType").length).toBe(4);
   });
 
   it("a fact the read has and the recipe doesn't, or the other way, is a difference", () => {

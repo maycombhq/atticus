@@ -82,19 +82,32 @@ describe("reading rules version 3 (ADR 0210 part 2)", () => {
     expect(withExtract({ fact: "nothing" }).success).toBe(false);
   });
 
-  it("refuses a pattern with a nested quantifier", () => {
-    for (const p of ["(?<verb>a+)+", "(?<verb>a*)*", "(?<verb>.*)*", "((?<verb>a|b+)){2,}"])
-      expect(withExtract({ pattern: p, optional: [], fields: { path: "{verb}" } }).success, p).toBe(
-        false,
-      );
+  it("refuses a pattern RE2 can't run in linear time: a backreference or a lookaround", () => {
+    for (const p of ["(?<verb>a)\\1", "(?=a)(?<verb>a)", "(?<verb>a)(?!b)", "(?<=x)(?<verb>a)"]) {
+      const r = withExtract({ pattern: p, optional: [], fields: { path: "{verb}" } });
+      expect(r.success, p).toBe(false);
+      expect(messages(r).join(" ")).toMatch(/RE2/);
+    }
     expect(
-      withExtract({ scopes: [{ name: "context", pattern: '(?<context>[^"]+)+' }] }).success,
+      withExtract({ scopes: [{ name: "context", pattern: "(?<context>a)\\1" }] }).success,
     ).toBe(false);
-    // A quantified group with nothing quantified inside, an escaped paren and a class are fine.
-    for (const p of ["(?<verb>ab)+", "\\((?<verb>a+)\\)+", "(?<verb>[(a+)]+)", "(?<verb>a+)?"])
-      expect(withExtract({ pattern: p, optional: [], fields: { path: "{verb}" } }).success, p).toBe(
-        true,
-      );
+  });
+
+  it("sets only a kind field (entryType, callType, settingKind, tableKind), never a claim", () => {
+    expect(withExtract({ set: { entryType: "grpc" } }).success).toBe(true);
+    const auth = withExtract({ set: { auth: "mtls" } });
+    expect(auth.success).toBe(false);
+    expect(messages(auth).join(" ")).toMatch(/set takes only/);
+    expect(withExtract({ set: { entryType: "nothing" } }).success).toBe(false);
+  });
+
+  it("refuses a scope named like a group of the pattern", () => {
+    const r = withExtract({
+      scopes: [{ name: "uri", pattern: 'contextPath="(?<uri>[^"]*)"' }],
+      fields: { method: "{verb}", path: "{uri}" },
+    });
+    expect(r.success).toBe(false);
+    expect(messages(r).join(" ")).toMatch(/name of a group/);
   });
 
   it("refuses a value of more than six cited parts", () => {
