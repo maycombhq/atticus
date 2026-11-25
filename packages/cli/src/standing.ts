@@ -216,6 +216,19 @@ interface RefusalRun {
 const runs = new AsyncLocalStorage<RefusalRun>();
 
 /**
+ * ADR 0210 part 3: a refusal the write went past (it kept hand edits as the person's, ran an
+ * upgrade, or listed removals, then wrote): the run forgets it, so `done` ends no line for it and
+ * a job's result carries no refusal.
+ */
+export function refusalResolved(): void {
+  const run = runs.getStore();
+  if (!run) return;
+  delete run.build;
+  delete run.line;
+  delete run.said;
+}
+
+/**
  * Run one command (the command line's `main`, a route's job) so that a refusal in it ends with
  * the standing line: `done` prints it, last, on standard error, when the command refused.
  */

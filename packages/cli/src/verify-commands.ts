@@ -11,6 +11,7 @@ import {
   listQuestions,
   loadOrgPack,
   newerThan,
+  type Fact,
   orgPackDirOf,
   releaseCurrent,
   stackHelpersOff,
@@ -644,12 +645,30 @@ export async function verifiedReadOf(
   };
 }
 
-/** beta.32: says the upgrade a write needs first, when one is owed; true when it said it. */
+/** The facts the repo's stored read has and this read doesn't (by id, and by kind, file and line). */
+async function leftOutOfThisRead(
+  root: string,
+  repo: string,
+  now: readonly Fact[],
+): Promise<Fact[]> {
+  const { readFactsSlot } = await import("@maycombhq/scanner");
+  const last = await readFactsSlot(root, repo).catch(() => undefined);
+  if (!last?.ok) return [];
+  const ids = new Set(now.map((f) => f.id));
+  const at = (f: Fact) => `${f.kind}\u0000${f.cite.file}\u0000${f.cite.line}`;
+  const where = new Set(now.map(at));
+  return last.facts.filter((f) => !ids.has(f.id) && !where.has(at(f)));
+}
+
+/**
+ * ADR 0210 part 3 (beta.32 said it and stopped): an upgrade a write needs first is run, and said;
+ * true only when it was owed and failed, so the write stops on the upgrade's own words.
+ */
 async function upgradeRefusal(root: string, io: Output, json?: boolean): Promise<boolean> {
-  const { upgradeBeforeWrite } = await import("./upgrade.js");
-  const lines = await upgradeBeforeWrite(root);
-  if (!lines) return false;
-  for (const l of lines) io.err(l);
+  const { upgradeBeforeWrite, runUpgradeFirst } = await import("./upgrade.js");
+  if (!(await upgradeBeforeWrite(root))) return false;
+  const ran = await runUpgradeFirst(root, io);
+  if (ran) return false;
   if (json) io.out(JSON.stringify({ written: false, upgradeFirst: true }, null, 2));
   return true;
 }
@@ -755,6 +774,11 @@ export async function verifyCommand(
     );
   const commit = o.commit ?? (ownGit ? await headOf(dir) : undefined);
   const source = dirSource(dir);
+  // ADR 0210 part 3: a write keeps what the last read stored and this one left out, while every
+  // file it cites is unchanged (the carry below checks its lines again): a second read that
+  // misses a fact doesn't remove its record. A fact in a changed file goes with the change.
+  const keptFromLast = o.write ? await leftOutOfThisRead(root, repo, parsed.facts) : [];
+  if (keptFromLast.length) parsed.facts.push(...keptFromLast);
   // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
   // where every file they cite is unchanged since, and read again where one changed.
   const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
@@ -792,6 +816,21 @@ export async function verifyCommand(
     if (!(e instanceof NoRoomError)) throw e;
     io.err(`atticus verify ${repo}: ${e.message}`);
     return 2;
+  }
+  if (keptFromLast.length) {
+    const ids = new Set(keptFromLast.map((f) => f.id));
+    const kept = report.accepted.filter((f) => ids.has(f.id));
+    if (kept.length)
+      io.err(
+        `Kept ${kept.length} ${kept.length === 1 ? "fact" : "facts"} of the last read that this read left out, every file ${kept.length === 1 ? "it cites" : "they cite"} unchanged: ${kept
+          .slice(0, 5)
+          .map((f) => f.id)
+          .join(
+            ", ",
+          )}${kept.length > 5 ? ` and ${kept.length - 5} more` : ""}. To remove one, delete it on the map.`,
+      );
+    // The rest (a cited file changed) are not this read's: they go, and aren't rejections of it.
+    report.rejected = report.rejected.filter((x) => !ids.has(x.fact.id));
   }
   // ADR 0208: a person's correction gone stale under a learned rule refuses the write.
   if (o.write) {

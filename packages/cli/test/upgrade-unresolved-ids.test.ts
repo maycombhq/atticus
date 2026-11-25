@@ -17,6 +17,7 @@ import { main } from "../src/main.js";
 import { statusCommand } from "../src/standing.js";
 import { upgradeCheck, upgradeCommand, type UpgradeStepRefusal } from "../src/upgrade.js";
 import { unresolvedIdsApply, unresolvedIdsPending } from "../src/upgrade-unresolved-ids.js";
+import { writeFactsHooks } from "../src/map-render-commands.js";
 
 /**
  * ADR 0124 addendum E-ids (the owner, 2026-11-19): an Unresolved record's id carries its repo,
@@ -1067,7 +1068,14 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       // unchanged.
       const catalogBefore = await files(join(root, "catalog"));
       const v = quiet();
-      expect(await main(["verify", "forge-notify", "--write", "--root", root], v.io)).toBe(1);
+      // ADR 0210 part 3: a write a person runs now runs the step itself; this checks the step's
+      // own work, so the write here waits as `atticus catalog build` does.
+      writeFactsHooks.strict = true;
+      try {
+        expect(await main(["verify", "forge-notify", "--write", "--root", root], v.io)).toBe(1);
+      } finally {
+        delete writeFactsHooks.strict;
+      }
       expect(saidBy(v, root)).toContain(RENAMES(2));
       expect(await files(join(root, "catalog"))).toEqual(catalogBefore);
       // The step has work: the read verify checked, as forge-notify's facts slot, and the carry.

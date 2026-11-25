@@ -89,6 +89,7 @@ import {
   topicQuestionDrafts,
   sourcesRelOf,
   type BuildAndWrite,
+  type BuildRefusal,
   type CatalogDiff,
   type SlotWrite,
 } from "@maycombhq/scanner";
@@ -101,9 +102,9 @@ import {
   trustOf,
   type RenderMapInput,
 } from "@maycombhq/verify";
-import { baseClonePath, isInPlace, loadRepos } from "@maycombhq/workspace";
+import { baseClonePath, gitUser, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { refusalEnds } from "./standing.js";
+import { refusalEnds, refusalResolved } from "./standing.js";
 import { askHosts } from "./host-questions.js";
 import { termsWrite } from "./term-lines.js";
 import { checkoutOf } from "./facts-files.js";
@@ -706,6 +707,8 @@ export const writeFactsHooks: {
   fullDiff?: boolean;
   /** The equivalence tests: each write's comparison of its changed files and of the whole catalog. */
   onDiffs?: (changed: CatalogDiff, whole: CatalogDiff) => void;
+  /** Tests of the guard's own refusals: a write refuses as `atticus catalog build` does. */
+  strict?: boolean;
 } = {};
 
 /** What a write of a repo's verified facts into the catalog is told. */
@@ -748,8 +751,148 @@ export async function writeFactsIntoCatalog(
   o: WriteFactsOptions,
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
-  const r = await writeFactsOf(root, [{ repo, facts, o }], o, io);
-  return r?.[0] instanceof Error ? undefined : r?.[0];
+  const once = async (oo: WriteFactsOptions, out: Output) => {
+    const r = await writeFactsOf(root, [{ repo, facts, o: oo }], oo, out);
+    return r?.[0] instanceof Error ? undefined : r?.[0];
+  };
+  // A write the person confirmed a plan or a count for runs as asked: the app's confirm, or
+  // the flags. So does one a test asks to stay strict.
+  if (
+    o.plan !== undefined ||
+    o.allowRemovals !== undefined ||
+    o.discardEdits !== undefined ||
+    writeFactsHooks.strict
+  )
+    return once(o, io);
+  return writeGoingOn(root, (oo, out) => once({ ...o, ...oo }, out), o.onRefused, io);
+}
+
+/** The refusals a write goes past (ADR 0210 part 3), and how. */
+export function goesPast(r: BuildRefusal): boolean {
+  return (
+    r.reasons.length > 0 &&
+    r.reasons.every(
+      (x) =>
+        x === "large-removals" ||
+        (x === "hand-edits" && !r.unreadableManifest) ||
+        x === "not-upgraded",
+    )
+  );
+}
+
+/**
+ * ADR 0210 part 3: a write that doesn't block. It writes; if its build refuses only for removals
+ * over the limit, hand edits or an upgrade owed, it runs the upgrade, keeps the hand edits as the
+ * person's (as `atticus catalog edits --curate` does), and writes again with the removals the
+ * build listed, saying each. Any other refusal (nothing read, an empty catalog, a newer Atticus,
+ * a removal no input explains, a build.json that doesn't read) stays, said as before.
+ */
+export async function writeGoingOn<T>(
+  root: string,
+  write: (
+    o: { allowRemovals?: number; onRefused: (r: BuildAndWrite) => void },
+    io: Output,
+  ) => Promise<T | undefined>,
+  onRefused: ((r: BuildAndWrite) => void) | undefined,
+  io: Output,
+): Promise<T | undefined> {
+  const said: string[] = [];
+  let allow: number | undefined;
+  for (let round = 0; round < 4; round++) {
+    let refused: BuildAndWrite | undefined = undefined;
+    const held: string[] = [];
+    const quiet: Output = {
+      ...io,
+      out: (l) => held.push(`\u0001${l}`),
+      err: (l) => held.push(l),
+    };
+    const flush = () => {
+      for (const l of held) {
+        if (l.startsWith("\u0001")) io.out(l.slice(1));
+        else io.err(l);
+      }
+    };
+    const r = await write(
+      {
+        ...(allow !== undefined ? { allowRemovals: allow } : {}),
+        onRefused: (b) => (refused = b),
+      },
+      {
+        ...quiet,
+        ...(io.progress ? { progress: io.progress } : {}),
+      },
+    ).catch((e: unknown) => {
+      flush();
+      throw e;
+    });
+    const why = (refused as BuildAndWrite | undefined)?.guard.refused;
+    if (!why || !goesPast(why) || round === 3) {
+      for (const l of said) io.out(l);
+      flush();
+      if (why && refused) onRefused?.(refused);
+      return r;
+    }
+    if (why.reasons.includes("not-upgraded")) {
+      const { upgradeCommand } = await import("./upgrade.js");
+      const up: string[] = [];
+      const code = await upgradeCommand(
+        root,
+        { yes: true, by: (await gitUser(root)).handle },
+        { out: (l) => up.push(l), err: (l) => up.push(l) },
+      );
+      if (code !== 0) {
+        for (const l of said) io.out(l);
+        flush();
+        for (const l of up) io.err(l);
+        if (refused) onRefused?.(refused);
+        return r;
+      }
+      said.push(
+        "Ran atticus upgrade first, which this metarepo still needed (its own undo step: atticus catalog undo takes it back after this write's).",
+      );
+    }
+    if (why.reasons.includes("hand-edits")) {
+      const { catalogEdits } = await import("./catalog-build-commands.js");
+      const n = why.edits?.length ?? 0;
+      const notKept: string[] = [];
+      const code = await catalogEdits(
+        root,
+        { curate: true, by: (await gitUser(root)).handle },
+        { out: () => undefined, err: (l) => notKept.push(l) },
+      );
+      // An edit curate can't keep (a file that doesn't read as a record, one the build no longer
+      // makes) would be lost to the write: the refusal stands, with curate's words.
+      if (code !== 0 || notKept.length) {
+        for (const l of said) io.out(l);
+        flush();
+        for (const l of notKept) io.err(l);
+        if (refused) onRefused?.(refused);
+        return r;
+      }
+      said.push(
+        `Kept ${n} hand ${n === 1 ? "edit" : "edits"} of the catalog as yours (curated, as atticus catalog edits --curate does): ${(
+          why.edits ?? []
+        )
+          .slice(0, 5)
+          .map((e) => e.path)
+          .join(
+            ", ",
+          )}${n > 5 ? ` and ${n - 5} more` : ""}. To discard instead: atticus catalog undo, then write again with --discard-edits ${n}.`,
+      );
+    }
+    if (why.reasons.includes("large-removals") && why.allowRemovals !== undefined) {
+      allow = why.allowRemovals;
+      said.push(
+        `Removed ${allow} ${allow === 1 ? "record" : "records"} the new read no longer has (atticus catalog undo takes the write back):`,
+        ...(why.removals ?? [])
+          .slice(0, 20)
+          .map((x) => `  ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...((why.removals?.length ?? 0) > 20 ? [`  and ${why.removals!.length - 20} more`] : []),
+      );
+    }
+    refusalResolved();
+  }
+  return undefined;
 }
 
 /** One repo of a write over many: its kept facts and its own write's options. */

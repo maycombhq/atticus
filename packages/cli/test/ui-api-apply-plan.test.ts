@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, recordPath, type CatalogRecord } from "@maycombhq/core";
 import {
@@ -18,6 +18,16 @@ import { catalogBuild } from "../src/catalog-build-commands.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import { seedReadersSlots } from "./seed-slots.js";
+import { writeFactsHooks } from "../src/map-render-commands.js";
+
+// ADR 0210 part 3: these test the guard's refusals and their confirm (catalog build, the app's
+// confirm), which a write a person runs now goes past: the writes here stay strict.
+beforeAll(() => {
+  writeFactsHooks.strict = true;
+});
+afterAll(() => {
+  delete writeFactsHooks.strict;
+});
 
 /**
  * ADR 0195 point 4, the review of beta.27: a confirm is of the list shown. Apply (POST

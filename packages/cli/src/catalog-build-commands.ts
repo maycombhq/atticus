@@ -1492,14 +1492,11 @@ export async function applyMapEdits(
   }));
   const n = o.edits.length;
   let built = false;
+  // ADR 0210 part 3: an upgrade owed runs first, before the lock it takes itself.
+  const up = await import("./upgrade.js");
+  if ((await up.upgradeBeforeWrite(root)) && !(await up.runUpgradeFirst(root, io)))
+    return { code: 1, edits: [], built: false, wrote: [] };
   const code = await locked(root, o.what ?? "Edit the map", io, async () => {
-    // beta.32: an upgrade owed is said before anything is written (the owner's Apply of
-    // 2026-11-23 ran its build to the guard's refusal first).
-    const owed = await (await import("./upgrade.js")).upgradeBeforeWrite(root);
-    if (owed) {
-      for (const l of owed) io.err(l);
-      return 1;
-    }
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
     const stamp = at.replace(/\D/g, "").slice(0, 14);
