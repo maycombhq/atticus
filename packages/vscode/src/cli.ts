@@ -190,6 +190,14 @@ export function runCli(
 }
 
 /** The one JSON object a command printed, or undefined when it printed none. */
+/** ADR 0210 part 5: a run's budget line ("Budget: ...") is never why it stopped: it goes last. */
+export const reasonFirst = (stderr: string) =>
+  stderr
+    .trim()
+    .split("\n")
+    .sort((a, b) => +a.startsWith("Budget:") - +b.startsWith("Budget:"))
+    .join("\n");
+
 export function parseJson<T>(stdout: string): T | undefined {
   const text = stdout.trim();
   for (const t of [text, text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)])

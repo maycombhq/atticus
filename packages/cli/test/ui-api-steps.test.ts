@@ -377,6 +377,55 @@ describe("a step the app runs says why, and what to press next", () => {
     }
   });
 
+  it("a run's budget line is its job's progress, the run panel's start line (ADR 0210 part 5)", async () => {
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-steps-budget-"));
+    await cp(join(FORGE, "org-pack"), join(r2, "org-pack"), { recursive: true });
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      join(r2, "org-pack", "runtime.yaml"),
+      "schemaVersion: 1\nadapters:\n  model: { type: anthropic }\n",
+    );
+    const { currentRunIo } = await import("@maycombhq/core");
+    const line = "Budget: scan-survey plans 1 session and about 900 tokens; no limit is set.";
+    let go = () => undefined as void;
+    const s = await startServer({
+      root: r2,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) =>
+        uiModelRunRoutes(r, ctx, {
+          runStep: async () => {
+            currentRunIo()?.say(line);
+            await new Promise<void>((done) => (go = done));
+            return { code: 0, out: [], err: [line] };
+          },
+        }),
+    });
+    try {
+      const p = await fetch(s.url + "/api/runs", {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ args: ["scan", "survey", "forge-ledger"] }),
+      });
+      const id = String(((await p.json()) as { jobId: string }).jobId);
+      let said = "";
+      for (let n = 0; n < 100 && said !== line; n++) {
+        await new Promise((r) => setTimeout(r, 20));
+        const j = await fetch(`${s.url}/api/jobs/${id}`, {
+          headers: { "X-Atticus-Token": s.token },
+        });
+        said = ((await j.json()) as { progress?: { message?: string } }).progress?.message ?? "";
+      }
+      expect(said).toBe(line);
+      go();
+      await s.jobs.settle(id);
+    } finally {
+      await s.close();
+      await rm(r2, { recursive: true, force: true });
+    }
+  });
+
   it("a read run with the server's model is put on the map: verify --write after it", async () => {
     const r2 = await mkdtemp(join(tmpdir(), "atticus-steps-model-"));
     await cp(join(FORGE, "org-pack"), join(r2, "org-pack"), { recursive: true });

@@ -61,3 +61,13 @@ export function stripParamConstraints(path: string): string {
   }
   return out;
 }
+
+/**
+ * ADR 0210 part 5: a budget limit in words ("40 sessions a day"), here for the same reason (no
+ * imports): the app's AI tab and the command line say a limit alike.
+ */
+export const limitWords = (l: { per: string; sessions?: number; tokens?: number }) =>
+  [l.sessions && plural(l.sessions, "session"), l.tokens && plural(l.tokens, "token")]
+    .filter(Boolean)
+    .join(" and ") + ` a ${l.per}`;
+const plural = (x: number, w: string) => `${x.toLocaleString("en-US")} ${w}${x === 1 ? "" : "s"}`;

@@ -751,6 +751,34 @@ describe("default branches (ADR 0123)", () => {
   });
 });
 
+describe("the AI budget (ADR 0210 part 5)", () => {
+  it("shows runtime.yaml's limits and what this person used, and warns once one is spent", async () => {
+    const { usageFileOf } = await import("@maycombhq/ai");
+    const here = await mkdtemp(join(tmpdir(), "atticus-doctor-budget-"));
+    await cp(root, here, { recursive: true });
+    const none = byId(await doctorChecks(here, healthy()), "budget");
+    expect(none).toMatchObject({ status: "ok", label: "AI budget" });
+    expect(none.detail).toMatch(
+      /^no limit is set \(budgets.limits in runtime.yaml\); used here today: 0 sessions, 0 tokens$/,
+    );
+    const rt = join(here, "org-pack", "runtime.yaml");
+    const text = (await readFile(rt, "utf8")).replace(/^schemaVersion: \d+/m, "schemaVersion: 5");
+    await writeFile(
+      rt,
+      `${text.replace(/^budgets:.*$/m, "")}\nbudgets:\n  limits:\n    - { per: day, sessions: 10 }\n    - { per: month, tokens: 100000 }\n`,
+    );
+    await mkdir(dirname(usageFileOf(here)), { recursive: true });
+    const at = new Date().toISOString();
+    await writeFile(usageFileOf(here), `{"at":"${at}","sessions":10,"tokens":2500}\n`);
+    const spent = byId(await doctorChecks(here, healthy()), "budget");
+    expect(spent.status, spent.detail).toBe("warn");
+    expect(spent.detail).toBe(
+      "10 sessions a day (10 used), 100,000 tokens a month (2,500 used); a limit is used up",
+    );
+    expect(spent.fix).toMatch(/raise budgets.limits in runtime.yaml/);
+  });
+});
+
 describe("outside a metarepo", () => {
   it("says once that the folder isn't a metarepo, leaves the metarepo checks out and still checks the machine", async () => {
     const plain = await mkdtemp(join(tmpdir(), "atticus-doctor-plain-"));

@@ -11,6 +11,7 @@ import {
   type PullRequest,
 } from "@maycombhq/adapters";
 import {
+  budgetRuntime,
   createRuntime,
   HandoffRuntime,
   quarantineItems,
@@ -1015,6 +1016,8 @@ async function runTaskHeld(
         }),
       },
     }));
+  // ADR 0210 part 5: a task's run keeps to runtime.yaml's budget, as every command's does.
+  if (!o.runtime) budgetRuntime(runtime, { root, limits: t.ctx.orgPack.runtime.budgets.limits });
   let gitHost = o.gitHost;
   if (!gitHost && level === "pr") gitHost = gitHostOf(root, t);
   const record: TaskRunRecord = {

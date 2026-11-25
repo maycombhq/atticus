@@ -12,6 +12,8 @@ import {
   type AcpPolicy,
   type AcpSessionResult,
   type AcpSpawner,
+  estimateTokens,
+  withBudget,
 } from "@maycombhq/ai";
 import { ASSISTANT_FORMATS, FINISH, GUARD, metarepoCommands } from "@maycombhq/assistant-files";
 import {
@@ -203,8 +205,12 @@ export async function acpStepRunner(
       (await expandSlashLine(root, s.line, { unattended: true }));
     let result: AcpSessionResult | undefined;
     let error: unknown;
+    // ADR 0210 part 5: a session is one request of the budget: planned, checked, counted.
+    const what = { what: `A Copilot session (${s.change})`, tokens: estimateTokens(prompt) };
+    const budget = { root, limits: op.runtime.budgets.limits };
+    const session: typeof runAcpSession = (a) => withBudget(budget, what, () => runAcpSession(a));
     try {
-      result = await runAcpSession({
+      result = await session({
         command: c.command,
         cwd: root,
         prompt,

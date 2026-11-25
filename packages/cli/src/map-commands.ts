@@ -50,6 +50,7 @@ import {
   defendSource,
   estimateTokens,
   HandoffRuntime,
+  planRun,
   promptBudget,
   PromptTooLong,
   quarantineReason,
@@ -1406,6 +1407,19 @@ export async function mapCommand(
   }
 
   if (!s) return 2;
+  // ADR 0210 part 5: the plan, said before the first prompt: each batch left a session (or the
+  // fix round), with its files and the instructions each prompt carries.
+  const left = s.batches.slice(s.next);
+  const sessions = left.length || (!s.fixRound && s.rejected.length ? 1 : 0);
+  const each = instructionTokens(repo, s.commit) + KEPT_RESERVE;
+  const tokens = left.flat().reduce((n, x) => n + x.tokens, sessions * each);
+  const stop =
+    sessions &&
+    (await planRun(runtime, { what: `The read of ${repo}`, sessions, tokens, writes: true }));
+  if (stop) {
+    io.err(stop);
+    return 2;
+  }
   // Hand batches until one waits on a person's assistant, or every batch is read.
   for (;;) {
     const fixRound = s.next >= s.batches.length;
