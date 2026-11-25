@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 /**
@@ -23,19 +22,6 @@ const kept = new Map<
   string,
   { generation: number; at: number; value: Promise<unknown>; stamp: string }
 >();
-
-/** A stamp of files (size and time each; "-" for one that isn't there), for keptAnswer. */
-export async function stampOfFiles(paths: readonly string[]): Promise<string> {
-  const parts = await Promise.all(
-    paths.map((p) =>
-      stat(p).then(
-        (s) => `${s.size}:${s.mtimeMs}`,
-        () => "-",
-      ),
-    ),
-  );
-  return parts.join("|");
-}
 
 /** The server for `root` follows its files while `following()` says so; the returned function stops it. */
 export function keepAnswersWhileWatched(root: string, following: () => boolean): () => void {
