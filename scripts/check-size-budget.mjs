@@ -28,9 +28,16 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-/** How many non-test lines may be added over the baseline, in all: none (ADR 0210 part 8). */
-export const BUDGET = 0;
 export const BASELINE_TAG = "v2.0.0-beta.32";
+/**
+ * How many non-test lines may be added over the baseline, in all: none (ADR 0210 part 8), with
+ * one allowance the owner set on 2026-11-25. beta.33 builds the AI-first map (items 2 to 11) and
+ * could pay for it only by deleting the readers, which ADR 0210 part 6 leaves to a later ADR;
+ * every unused line outside them was taken out (docs/plan/v33-notes/item8.md). So against
+ * beta.32 alone the allowance is 3,200 lines; it ends by itself when beta.33's baseline is
+ * recorded, and from then on code added is paid for by code taken out.
+ */
+export const BUDGET = BASELINE_TAG === "v2.0.0-beta.32" ? 3200 : 0;
 /**
  * Non-test source lines per package at BASELINE_TAG (0598729), counted on `git archive` of the
  * tag's packages/ and scripts/ with `--record`; `scripts` is the root folder.

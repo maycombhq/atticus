@@ -75,3 +75,7 @@ Smaller (2026-11-25; ADR 0210 part 8; no contract change). **Works:** `scripts/c
 
 - The "Score the public estate or change a lint budget" row: `scripts/check-size-budget.mjs` (`BUDGET` 0, `BASELINE_TAG`, `BASELINE`; `--record`) is unchanged in shape.
 - `packages/intake/src/export-files.ts`: `parseCsv`, `readExports` (the inputs/ walk both export readers share).
+
+## The owner's allowance (2026-11-25)
+
+The rule could not be met for beta.33 without deleting the readers (ADR 0210 part 6 leaves that to a later ADR). Tom chose a one-time allowance: `BUDGET` is 3,200 over beta.32 while `BASELINE_TAG` is beta.32, and 0 once beta.33's baseline is recorded.

@@ -54,7 +54,8 @@ async function repoWith(files: Record<string, number>, eol = "\n"): Promise<stri
 describe("the size budget for non-test source", () => {
   it("is no more lines than the last release, recorded per package", async () => {
     const { BUDGET, BASELINE_TAG, BASELINE } = await lint();
-    expect(BUDGET).toBe(0);
+    // ADR 0210 part 8: none, but for beta.33's one allowance over beta.32, which ends with it.
+    expect(BUDGET).toBe(BASELINE_TAG === "v2.0.0-beta.32" ? 3200 : 0);
     expect(BASELINE_TAG).toBe("v2.0.0-beta.32");
     expect(Object.keys(BASELINE)).toEqual(expect.arrayContaining(["cli", "core", "scripts"]));
     expect(Object.values(BASELINE).every((n) => Number.isInteger(n) && n > 0)).toBe(true);
