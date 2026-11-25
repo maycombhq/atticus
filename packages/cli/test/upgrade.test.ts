@@ -251,6 +251,8 @@ describe("atticus upgrade", () => {
         // ADR 0181: nothing here at catalog 4, naming decide or using corrections v2: recorded as done.
         "catalog-schema-v5",
         "runtime-v4",
+        // ADR 0210 part 5: nothing here sets budgets.limits: recorded as done.
+        "runtime-v5",
         "corrections-v2",
         // ADR 0124 addendum E-ids: a catalog never built from slots has no loose end to rename.
         "unresolved-ids-repo",
@@ -430,6 +432,23 @@ describe("atticus upgrade", () => {
       `${person}\n${hand.replace('"schemaVersion":1', '"schemaVersion":2')}\n`,
     );
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
+  it("moves a runtime.yaml that sets budgets.limits to version 5, the number only (ADR 0210)", async () => {
+    const root = await oldMetarepo();
+    const v4 = [
+      "schemaVersion: 4",
+      "assistants: { allowed: [copilot], default: copilot }",
+      "budgets: { limits: [{ per: day, sessions: 40 }] }",
+      "",
+    ].join("\n");
+    await writeFile(join(root, "org-pack/runtime.yaml"), v4);
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "runtime-v5")?.files).toEqual(["org-pack/runtime.yaml"]);
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    expect(await readFile(join(root, "org-pack/runtime.yaml"), "utf8")).toBe(
+      v4.replace("schemaVersion: 4", "schemaVersion: 5"),
+    );
   });
 
   it("moves version-2 catalog records to the current version in their own step, changing only the number (ADR 0125)", async () => {

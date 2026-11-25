@@ -354,7 +354,7 @@ describe("C1: a pairing by AI is a link line of its own, flagged joined-by-ai wi
 describe("C6 runtime.yaml version 4: decide (ADR 0181)", () => {
   const base = { assistants: { allowed: ["copilot"], default: "copilot" } };
   it("defaults to propose for links and questions, with a bar of 0.95", () => {
-    expect(RUNTIME_SCHEMA_VERSION).toBe(4);
+    expect(RUNTIME_SCHEMA_VERSION).toBeGreaterThanOrEqual(4);
     const r = Runtime.parse({ schemaVersion: 3, ...base });
     expect(decideOf(r)).toEqual({ links: "propose", questions: "propose", minPrecision: 0.95 });
   });

@@ -108,6 +108,22 @@ The app shows the mode in the top bar and on Settings. See ADR 0046.
 
 `runtime.yaml` (version 2) can name a model for each of the five kinds of AI step (`models.read`, `draft`, `critic`, `knowledge`, `quick`), so the critic's lenses and the small checks don't spend the strongest model's requests. [Choosing models at an organisation on Copilot](models.md) has a default table and the reasoning; `atticus doctor` lists what each kind runs on here.
 
+### A budget for AI runs
+
+`runtime.yaml` version 5 can set what a run, a day or a month may spend, in sessions (prompts), tokens or both, whichever your provider bills ([ADR 0210](../adr/0210-ai-first-the-model-reads-and-joins-a-recipe-per-kind-of-repo-and-nothing-blocks-but-a-safety-rule.md) part 5):
+
+```yaml
+schemaVersion: 5
+budgets:
+  defaultTokens: 200000 # a step's room for context, as before
+  limits:
+    - { per: run, sessions: 20 }
+    - { per: day, sessions: 40 }
+    - { per: month, tokens: 2000000 }
+```
+
+Every run that calls a model, in any mode, prints its plan first, on standard error (in the app, as the run panel's start line): `Budget: The read of forge-orders plans 3 sessions and about 36,400 tokens; limits: ...`. A read sends its files in as few sessions as the model's limit allows. A run whose result is written (a read) first checks that it can be: no other write holds the metarepo's lock and no upgrade is owed. A run that would pass a limit asks at a terminal; unattended (CI, no terminal, under an assistant or the app) it stops before its first request, with exit 2, unless it was given `--yes`. Each person's use is counted on their own machine, by UTC day and month (`.runs/.usage/<user>.jsonl`, never in the catalog); `atticus doctor` shows the limits and what is used, and the AI tab of Set up shows the limits. A file written before version 5 reads as it did; `atticus upgrade` moves a file that sets `limits` by hand to 5.
+
 ### Driving Copilot unattended (copilot-acp)
 
 Where Copilot is the assistant, `runtime.yaml` version 3 can let Atticus drive it through the GitHub Copilot language server's Agent Client Protocol mode (ADR 0171): `modes: { allowed: [hand-off, copilot-acp] }` (with no `default`, the first mode listed is the default; add `default: copilot-acp` to run every step that way), with an optional `copilotAcp:` section naming the server's command. Each step, and each part of `atticus map --all`, then runs in a new Copilot session on the person's own Copilot sign-in, which may read the metarepo, write only its step's result and run only `atticus` commands; those rules are not settings. [Running Copilot unattended](copilot-unattended.md) has the details; `atticus doctor` checks the server and its sign-in.

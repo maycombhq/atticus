@@ -65,7 +65,7 @@ const hasRecords = (dir: string) => hasFile(dir, ".yaml");
  * step, the build's `not-upgraded`): record files under catalog/generated, and no build.json or
  * slot under catalog/sources. Told from the folders alone; no record is read.
  */
-async function slotsStepWaits(root: string): Promise<boolean> {
+export async function slotsStepWaits(root: string): Promise<boolean> {
   const sources = join(await catalogDirOf(root), "sources");
   if (
     await stat(join(sources, "build.json")).then(

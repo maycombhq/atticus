@@ -41,6 +41,7 @@ import {
   migrateRuntimeText,
   migrateRuntimeV3Text,
   migrateRuntimeV4Text,
+  migrateRuntimeV5Text,
   migrateCorrections,
   migrateSourcesText,
   orgPackDirOf,
@@ -452,6 +453,26 @@ export const MIGRATIONS: Migration[] = [
       if (text === undefined) return [];
       const r = migrateRuntimeV4Text(text);
       if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
+  {
+    // ADR 0210 part 5: a runtime.yaml that sets budgets.limits needs version 5; any other file
+    // means the same at 1 to 4 and is left as it is.
+    id: "runtime-v5",
+    summary:
+      "runtime.yaml at version 5 where it sets budgets.limits: what a run, a day or a month may spend (ADR 0210); the number only",
+    async pending(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateRuntimeV5Text(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      const r = text === undefined ? undefined : migrateRuntimeV5Text(text);
+      if (!r?.changed) return [];
       await writeFileAtomic(join(root, rel), r.text);
       return [rel];
     },

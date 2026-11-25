@@ -1,0 +1,33 @@
+# v33 notes: item 6, a budget said before it is spent (ADR 0210 part 5)
+
+What the shared files should say for the `b33/item6-budget` branch. The integrator copies these in; this builder did not edit `CHANGELOG.md`, `docs/build-status.md` or `docs/codebase-map.md`.
+
+## CHANGELOG.md (beta.33, Added)
+
+- **A budget, said before it is spent (ADR 0210 part 5).** Every run that calls a model, in any mode but replay (model, headless Claude Code, copilot-acp, hand-off), says first on standard error what it plans: `Budget: The read of forge-orders plans 3 sessions and about 36,400 tokens; limits: 40 sessions a day (12 used), 2,000,000 tokens a month (310,000 used).` The read plans each batch left as a session with its files and instructions; any other run says one session of its first prompt. A run whose result is written (a read) first checks that it can be: no other write holds the metarepo's lock, and no upgrade is owed (the build's `not-upgraded`). Past `budgets.limits` it asks at a terminal (`[y/N]`); unattended (CI, no terminal, an assistant's session, the app) it stops before its first request with exit 2, unless given `--yes`. Each person's use is counted on their machine, one line a request, by UTC day and month, in `.runs/.usage/<user>.jsonl` (never in the catalog). `atticus doctor` gains an AI budget check (the limits and what is used; a warning once one is used up). In the app, the plan line is the run panel's start line (the job's progress), and the AI tab of Set up shows the limits and keeps them when it saves. The read already sent its files in as few sessions as the model's limit allows (next-fit at the limit's room; a larger limit cuts them): unchanged, now tested.
+
+## CHANGELOG.md (beta.33, Contracts)
+
+- C6: runtime.yaml schema version 5: `budgets.limits`, optional, a list of `{ per: run|day|month, sessions?, tokens? }` (at least one of the two, one limit a period). It extends the existing `budgets` (`defaultTokens`, `perAgent` unchanged). A version 1 to 4 file reads as it did; a file at 1 to 4 that sets `limits` is refused with "needs schemaVersion 5", and `atticus upgrade`'s new step `runtime-v5` (`migrateRuntimeV5Text`) writes the number only. A new metarepo's runtime.yaml is written at 5. PUT /api/settings/ai lifts a file to 5 when its `budgets` carries `limits`. beta.32 refuses a version 5 file whole: a team upgrades together. `docs/spec/contracts/c6-org-pack.md` regenerated. C5 unchanged: the budget wraps a runtime's `run` (`budgetRuntime`, `planRun`) without a new method on `AiRuntime`.
+
+## docs/build-status.md
+
+A budget, said before it is spent (2026-11-25; ADR 0210 part 5; item 6 of `docs/plan/ai-first.md`; C6 runtime.yaml schema 5). **Works:** the `limits` schema and its refines, the v5 upgrade step and the app's lift; `budgetRuntime` on every `runtimeForCli` runtime but replay (the plan line before the first request, a stopped plan refusing every request, each request counted: its usage, or a hand-off's prompt tokens); `planRun` with the read's plan (batches left, tokens of slices and instructions) and the preflight (lock, `not-upgraded`) for runs that write; ask at a terminal, stop unattended unless `--yes`; day and month counts by UTC; doctor's `budget` check; the job's progress as the run panel's start line; the AI tab's limits shown and kept. Tests: `core/test/runtime-budgets.test.ts` (fixture `fixtures/budget/`), `ai/test/budget.test.ts` (plan line, counting, ask yes/no, unattended stop and `--yes`, preflight before any request), `cli/test/run-budget.test.ts` (the read's line and sessions, fewer sessions at a larger limit, a read stopped by its budget, the lock refusal, the same line and stop in CI through `main`), `cli/test/doctor.test.ts`, `cli/test/upgrade.test.ts`, `cli/test/ui-api-steps.test.ts`, `ui/test/ai-settings.test.tsx`, `ui/test/runs.test.tsx`. **Open:** see below.
+
+## docs/codebase-map.md
+
+| What                                      | Where                                                                                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A run's budget (ADR 0210 part 5)          | `packages/ai/src/budget.ts` (`budgetRuntime`, `planRun`, `planLine`, `usedIn`, `usageFileOf`, `budgetStatus`, `registerRunPreflight`, `BUDGET_WORDS`), applied in `runtimeForCli` (`ai/src/factory.ts`) |
+| Where its line goes, and the app's hearer | `packages/core/src/printer.ts` (`withRunIo`, `withPlanListener`), set in `cli/src/main.ts` and `cli/src/ui-api-runs.ts`                                                                                 |
+| Its schema and upgrade                    | `packages/core/src/schema/orgpack.ts` (`BudgetLimit`, `budgets.limits`, `RUNTIME_SCHEMA_VERSION` 5), `core/src/runtime-migrate.ts` (`migrateRuntimeV5Text`), `cli/src/upgrade.ts` (`runtime-v5`)        |
+| Its preflight and its surfaces            | `packages/cli/src/run-preflight.ts`, `cli/src/map-commands.ts` (the read's `planRun`), `cli/src/doctor.ts` (`budget`), `ui/src/screens/run/AiSettings.tsx` (the limits line)                            |
+
+## Open, for the next step
+
+- **Runtime version 5 and item 4.** If item 4's `apply.pair` also bumps runtime.yaml, the integrator puts both under one version (5) or makes pair 6; `budgets.limits` is gated on `>= 5` only.
+- **Runs without their own plan** (critic lenses, stages, learn, knowledge) say one session of their first prompt; a run that sends more is counted as it goes, but asked about once. Each can call `planRun` with its count, as the read does. The pairing of item 4 should call it with `writes: true` and add "the facts read" to its own check.
+- `map --all` under copilot-acp plans in the parent and runs each part as its own command, so each part says its own line; the parent says none yet.
+- The `run` limit counts the plan only (a run's use starts at nothing); a run that sends more than it planned is not stopped mid-way.
+- **Size budget.** `scripts/check-size-budget.mjs` was over before this change (main: +331); this change adds about 400 non-test lines with prettier (`ai/src/budget.ts` 195), more than the plan's 150.
+- Hand-off runs now print the plan line on standard error; two tests that expected an empty standard error (`map-cli`, `handoff-flag-cli`) now expect it. Other callers that read standard error of a hand-off as empty would see it too.

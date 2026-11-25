@@ -1130,7 +1130,25 @@ export type StepClass = z.infer<typeof StepClass>;
  * step on the one model; `atticus upgrade` moves it to version 2 (`runtime-v2`), changing nothing
  * else.
  */
-export const RUNTIME_SCHEMA_VERSION = 4 as const;
+export const RUNTIME_SCHEMA_VERSION = 5 as const;
+
+/**
+ * runtime.yaml version 5 (ADR 0210 part 5): a budget a run may spend, whichever the provider
+ * bills: prompts (`sessions`), tokens, or both, a run, a day or a month. Each person's use is
+ * counted on their machine; a run that would pass a limit asks, or unattended stops before it
+ * starts.
+ */
+export const BUDGET_PERIODS = ["run", "day", "month"] as const;
+export const BudgetLimit = z
+  .strictObject({
+    per: z.enum(BUDGET_PERIODS),
+    sessions: z.number().int().positive().optional(),
+    tokens: z.number().int().positive().optional(),
+  })
+  .refine((l) => l.sessions !== undefined || l.tokens !== undefined, {
+    message: "a limit names sessions, tokens or both",
+  });
+export type BudgetLimit = z.infer<typeof BudgetLimit>;
 
 /**
  * runtime.yaml version 4 (ADR 0181): whether the AI decides, itself, what it can (a loose call's
@@ -1228,7 +1246,13 @@ export function copilotAcpOf(
 const StepModel = z.string().min(1).regex(/^\S+$/, "a model name or vendor/family, without spaces");
 
 const RuntimeFields = z.strictObject({
-  schemaVersion: z.union([V, z.literal(2), z.literal(3), z.literal(RUNTIME_SCHEMA_VERSION)]),
+  schemaVersion: z.union([
+    V,
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(RUNTIME_SCHEMA_VERSION),
+  ]),
   assistants: z
     .strictObject({
       allowed: z.array(AssistantId).min(1),
@@ -1290,6 +1314,13 @@ const RuntimeFields = z.strictObject({
     .strictObject({
       defaultTokens: z.number().int().positive().default(200_000),
       perAgent: z.record(RecordId, z.number().int().positive()).default({}),
+      /** Version 5 (ADR 0210 part 5): what a run, a day or a month may spend; one limit a period. */
+      limits: z
+        .array(BudgetLimit)
+        .refine((ls) => new Set(ls.map((l) => l.per)).size === ls.length, {
+          message: "one limit a period (run, day, month)",
+        })
+        .optional(),
     })
     .default({ defaultTokens: 200_000, perAgent: {} }),
   retention: z
@@ -1355,6 +1386,12 @@ const RuntimeFields = z.strictObject({
 });
 
 export const Runtime = RuntimeFields.superRefine((r, ctx) => {
+  if (r.schemaVersion < 5 && r.budgets.limits !== undefined)
+    ctx.addIssue({
+      code: "custom",
+      path: ["budgets", "limits"],
+      message: "budgets.limits needs schemaVersion 5 (ADR 0210): run atticus upgrade",
+    });
   if (r.schemaVersion < 4 && r.decide !== undefined)
     ctx.addIssue({
       code: "custom",

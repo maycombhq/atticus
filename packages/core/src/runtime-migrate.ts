@@ -75,3 +75,23 @@ export function migrateRuntimeV4Text(text: string): { text: string; changed: boo
   doc.set("schemaVersion", 4);
   return { text: doc.toString({ lineWidth: 0 }), changed: true };
 }
+
+/**
+ * runtime.yaml to version 5 (ADR 0210 part 5), for a file that sets `budgets.limits` (written by
+ * hand at an older number): the number only. A file without them means the same at 1 to 4.
+ */
+export function migrateRuntimeV5Text(text: string): { text: string; changed: boolean } {
+  const doc = parseDocument(text);
+  if (doc.errors.length || !isMap(doc.contents)) return { text, changed: false };
+  const v = doc.get("schemaVersion");
+  if (typeof v !== "number" || v < 1 || v > 4 || !doc.hasIn(["budgets", "limits"]))
+    return { text, changed: false };
+  const line = /^schemaVersion:[ \t]*[1-4][ \t]*(#.*)?$/m;
+  if (line.test(text))
+    return {
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: 5${c ? ` ${c}` : ""}`),
+      changed: true,
+    };
+  doc.set("schemaVersion", 5);
+  return { text: doc.toString({ lineWidth: 0 }), changed: true };
+}

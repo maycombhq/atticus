@@ -12,6 +12,7 @@ import {
   SCHEMA_VERSION,
   startTerminalRun,
   TITLE_VALUE_FLAGS,
+  withRunIo,
 } from "@maycombhq/core/light";
 import { titleSlotsOf, titleWordsByHelp, type TitleSlot } from "./command-catalog.js";
 import { basename, join, resolve } from "node:path";
@@ -60,6 +61,8 @@ export async function setUpAi(): Promise<void> {
   // Review round 50 (ADR 0186 addendum): a model run the app or a Copilot session starts sends
   // the key only where the person last confirmed it; a person's own run at a terminal confirms.
   ai.registerModelGuard((o) => address.guardModelAddress(o));
+  // ADR 0210 part 5: a run that writes checks its result can be written before it spends.
+  ai.registerRunPreflight(async (at) => (await import("./run-preflight.js")).runPreflight(at));
   // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   providers.registerBuiltInModelProviders();
@@ -1016,13 +1019,17 @@ export async function main(
     // A Copilot step's progress (printProgress) goes to this run's log too.
     // ADR 0202 point 8: a refusal in the command ends with where the metarepo stands, said last.
     const { refusalScope } = await import("./standing.js");
+    // ADR 0210 part 5: a model run's budget line is an err line; it asks where io can.
+    const runIo = { say: io.err, ...(io.ask ? { ask: io.ask } : {}), yes: argv.includes("--yes") };
     const code = await refusalScope(io, () =>
-      said
-        ? withRunLine(
-            (l) => said.line(l),
-            () => dispatch(argv, io),
-          )
-        : dispatch(argv, io),
+      withRunIo(runIo, () =>
+        said
+          ? withRunLine(
+              (l) => said.line(l),
+              () => dispatch(argv, io),
+            )
+          : dispatch(argv, io),
+      ),
     );
     // Review of beta.23: a run this command resumed is done with; the resume the app kept for it
     // is forgotten, so the app's own check or its next start never resumes it again.

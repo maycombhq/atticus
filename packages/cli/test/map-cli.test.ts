@@ -804,7 +804,12 @@ describe("atticus map <repo> --handoff: the step the editors and /atticus-* loop
     const reader = honestReader();
     const base = ["map", REPO, "--commit", COMMIT, "--max-tokens", "8000", "--root", root];
     let r = await cli([...base, "--handoff"]);
-    expect(r.err).toEqual([]);
+    // ADR 0210 part 5: the read says its plan first, on standard error.
+    expect(r.err).toEqual([
+      expect.stringMatching(
+        /^Budget: The read of forge-ledger plans 7 sessions and about [\d,]+ tokens/,
+      ),
+    ]);
     for (let n = 0; ; n++) {
       expect(n).toBeLessThan(10);
       if (!r.out[0]?.startsWith("Prompt: ")) {

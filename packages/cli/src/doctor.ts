@@ -808,6 +808,15 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
       : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal; or keep it in this machine's credential store with atticus secret set ${keyEnv ?? "<keyEnv>"}.`,
   });
+  // ---- ADR 0210 part 5: runtime.yaml's budget, and what this person used on this machine.
+  const budget = await (await import("@maycombhq/ai")).budgetStatus(root, rt.budgets.limits ?? []);
+  out.push({
+    id: "budget",
+    label: "AI budget",
+    status: budget.spent ? "warn" : "ok",
+    detail: budget.line,
+    fix: "A run past the budget asks at a terminal and stops unattended: wait for the next day or month (UTC), or raise budgets.limits in runtime.yaml in a pull request.",
+  });
   // ---- ADR 0171: Copilot driven through its Agent Client Protocol, where runtime.yaml allows it.
   // The server is started for its version and the handshake only: no prompt, so no run.
   if (rt.ai !== "off" && rt.modes.allowed.includes("copilot-acp")) {
