@@ -29,6 +29,7 @@ import {
 import type { BuildRefusal } from "@maycombhq/scanner";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import type { PairResult } from "./apply-pair.js";
 import { refusalEnds } from "./standing.js";
 import {
   carryOf,
@@ -166,6 +167,8 @@ export interface VerifyCommandOptions {
    * `verify --all --write` holds each repo's write here until every repo is verified. No flag.
    */
   writeFacts?: typeof import("./map-render-commands.js").writeFactsIntoCatalog;
+  /** ADR 0210 part 4: false leaves the pairing after the write to the caller (verify --all). */
+  pair?: boolean;
 }
 
 /**
@@ -417,7 +420,7 @@ export async function verifyAllCommand(
           ...(upgradeChecked ? { upgradeChecked: true } : {}),
           ...(up === "ran" ? { upgradedFirst: true } : {}),
           onLeftOut: (l) => (leftOut = l.length),
-          ...(oneBuild ? { writeFacts: holdWrite } : {}),
+          ...(oneBuild ? { writeFacts: holdWrite, pair: false } : {}),
         },
         io,
       );
@@ -469,6 +472,8 @@ export async function verifyAllCommand(
   let notWritten: string[] | undefined;
   /** A step after every repo's write failed (the review of PR #10): the run exits 1. */
   let runFault = false;
+  /** ADR 0210 part 4: what the one build's pairing did, said at the end. */
+  let paired: PairResult | undefined;
   if (stoppedAt === undefined && held.length) {
     const { writeFactsIntoCatalog, writeManyFactsIntoCatalog } =
       await import("./map-render-commands.js");
@@ -476,6 +481,14 @@ export async function verifyAllCommand(
       if (held.length > 1) {
         (io.progress ?? io.err)(`Writing the catalog once for ${held.length} repos…`);
         const [, , , first, out] = held[0]!.args;
+        // ADR 0210 part 4: the model asked before the one write takes its lock.
+        const pairs = await (
+          await import("./apply-pair.js")
+        ).pairBeforeWrite(
+          root,
+          await loadOrgPack(orgPackDirOf(root)),
+          held.map((h) => ({ repo: h.repo, facts: h.args[2] })),
+        );
         try {
           await writeManyFactsIntoCatalog(
             root,
@@ -484,6 +497,7 @@ export async function verifyAllCommand(
               ...first,
               command: "atticus verify --all --write",
               onRunFault: () => (runFault = true),
+              ...(pairs ? { pairs, onPaired: (r: PairResult) => (paired ??= r) } : {}),
             },
             out,
             (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
@@ -534,10 +548,17 @@ export async function verifyAllCommand(
     return 1;
   }
   const passed = repos.length - failed.length;
+  if (paired) await sayPaired(paired, each.json ? io.err : io.out);
   io.out(
     `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
   );
   return failed.length || runFault ? 1 : 0;
+}
+
+/** ADR 0210 part 4: the lines of the write's pairing, when it did or said anything. */
+async function sayPaired(r: PairResult, say: (l: string) => void) {
+  if (!r.paired.length && !r.loose.length && !r.dropped.length && !r.withdrawn.length) return;
+  for (const l of (await import("./apply-pair.js")).pairLines(r)) say(l);
 }
 
 /**
@@ -988,6 +1009,16 @@ export async function verifyCommand(
     ...(partial?.facts ?? report.accepted),
     ...kept.filter((f) => !ownIds.has(f.id)),
   ];
+  /** ADR 0210 part 4: the write pairs the loose calls before its build (the first round's said). */
+  let paired: PairResult | undefined;
+  // The model is asked before the write takes its lock; what it said is applied inside it.
+  const pairing = async () => {
+    if (o.pair === false) return {};
+    const { pairBeforeWrite } = await import("./apply-pair.js");
+    const op = await loadOrgPack(orgPackDirOf(root));
+    const pairs = await pairBeforeWrite(root, op, [{ repo, facts: toCatalog }]);
+    return pairs ? { pairs, onPaired: (r: PairResult) => (paired ??= r) } : {};
+  };
   /** ADR 0210 part 3: what the write went past to write (--json says it). */
   let went: import("./map-render-commands.js").WentPast | undefined;
   // N2: a partial write refused (guards, the lock) says the facts it would have left out.
@@ -1013,6 +1044,7 @@ export async function verifyCommand(
         {
           dir,
           command: `atticus verify ${repo} --write`,
+          ...(await pairing()),
           ...(o.now ? { now: o.now() } : {}),
           onWentPast: (w) => (went = w),
           ...(commit ? { commit } : {}),
@@ -1030,6 +1062,7 @@ export async function verifyCommand(
       );
       if (!written) for (const l of refusedLeftOut()) io.err(l);
       if (!written && !refusedBuild) return 1;
+      if (paired) await sayPaired(paired, io.err);
     } else if (o.write) io.err(rejectedNote);
     io.out(
       JSON.stringify(
@@ -1336,6 +1369,7 @@ export async function verifyCommand(
     {
       dir,
       command: `atticus verify ${repo} --write`,
+      ...(await pairing()),
       ...(o.now ? { now: o.now() } : {}),
       verbose: o.verbose === true,
       ...(commit ? { commit } : {}),
@@ -1353,6 +1387,7 @@ export async function verifyCommand(
     },
     io,
   );
+  if (paired) await sayPaired(paired, io.out);
   if (written && partial) {
     for (const l of leftOutLines(
       repo,

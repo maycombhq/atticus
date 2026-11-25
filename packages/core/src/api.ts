@@ -795,6 +795,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 // local job, its result LearnCorrectionsResult. Additive only.
 // 3.21.0 (ADR 0210, beta.33): GET /api/reading-rules/recipes, the recipes and whether each is
 // proven; GET /api/settings/ai's `readers`. Additive only.
+// Also in 3.21.0 (ADR 0210 part 4, beta.33): GET /api/decisions gives `applyPairs`, what the
+// last Apply's pairing drew, dropped (with why), withdrew and left loose. Additive only.
 export const API_VERSION = "3.21.0";
 export const DEFAULT_PORT = 4321;
 
@@ -6171,8 +6173,22 @@ export const DecideStateView = z.object({
   decideIn: z.array(z.enum(AI_RUNTIMES)).optional(),
 });
 /** GET /api/decisions: the AI's decisions, the counts split three ways, the batches, the pause. */
+/** ADR 0210 part 4: what an Apply's pairing did, each call and entry as `<repo> <fact id>`. */
+const PairEnd = z.object({ call: z.string(), entry: z.string() });
+export const ApplyPairing = z.object({
+  paired: z.array(PairEnd),
+  dropped: z.array(PairEnd.extend({ why: z.string() })),
+  withdrawn: z.array(PairEnd.extend({ why: z.string() })),
+  loose: z.array(z.string()),
+  /** Why nothing was sent, when nothing was. */
+  why: z.string().optional(),
+  at: z.string().optional(),
+});
+export type ApplyPairingT = z.infer<typeof ApplyPairing>;
 export const DecisionsView = z.object({
   decide: DecideStateView,
+  /** 3.21.0: the last Apply's pairing (ADR 0210 part 4); left out before any. */
+  applyPairs: ApplyPairing.optional(),
   /** `counts`: the Interfaces of the map as last applied (the catalog), by how each was joined. */
   links: z.object({
     counts: DecisionCounts,

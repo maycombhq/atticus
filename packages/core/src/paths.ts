@@ -88,3 +88,29 @@ export const READ_WORDS = {
   readersOff:
     'The deterministic readers are off (ADR 0210): a repo is read by its recipe or by the model. An org pack turns them on with readers: "on" in conventions.yaml (schemaVersion: 3).',
 };
+
+/**
+ * ADR 0210 part 4: the words of Apply's pairing, here for the same reason (no imports): the
+ * command line's lines after Apply and the app's Decided by AI (`COPY.applyPairs`) say them alike.
+ */
+export const PAIR_WORDS = {
+  what: "Apply's pairing",
+  line: (paired: number, loose: number) =>
+    `Paired ${paired} ${paired === 1 ? "call" : "calls"}; ${loose} left loose.`,
+  withdrew: (n: number) =>
+    `Withdrew ${n} AI ${n === 1 ? "pairing" : "pairings"} whose lines changed.`,
+  dropped: (call: string, entry: string, why: string) => `Dropped ${call} → ${entry}: ${why}`,
+  loose: (call: string) => `Left loose: ${call}`,
+  notSent: "the call wasn't sent: no entry could serve it",
+  notCandidate: "the entry isn't one of the call's candidates",
+  notCallLine: "it doesn't cite the call's line",
+  notEntryLine: "it doesn't cite the entry's line",
+  gone: "the call or the entry is no longer in the facts this Apply writes",
+  failed: (why: string) => `The pairing session failed: ${why}`,
+  aiOff: "AI is off (runtime.yaml ai): the loose calls stay listed.",
+  off: "runtime.yaml apply.pair is off: the loose calls stay listed.",
+  noRuntime: "No runtime here may decide (runtime.yaml modes): the loose calls stay listed.",
+  handOff:
+    "Under hand-off Apply pairs nothing: the loose calls stay listed, and Connect's Match pairs them.",
+  session: "Inside an assistant's session nothing is paired (ADR 0115).",
+} as const;
