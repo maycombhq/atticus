@@ -8571,6 +8571,21 @@ export const COPY = {
       declare: (a: string, b: string, name: string) =>
         `Atticus found no call in ${a}'s code that goes to ${b}. You can still draw the arrow: it will be your word, drawn dashed and marked "declared by ${name}".`,
       needs: "Something is missing before these two boxes can be connected:",
+      /** ADR 0210: why there was no call to offer, said under the declare line. */
+      whyNone: {
+        "no-calls": (a: string, command: string, unverified: boolean, gateway: boolean) =>
+          unverified
+            ? `Why: ${a}'s facts aren't all verified, so the join leaves its calls out. Verify them: ${command}`
+            : gateway
+              ? `Why: ${a}'s read has no call at all. For a gateway proxy that usually means its routes were read and its forwarding calls to its targets weren't. Read it again: ${command}`
+              : `Why: ${a}'s read has no call at all. Read it again: ${command}`,
+        "none-open": (a: string) =>
+          `Why: ${a}'s read has calls, and none of them is open to pair with this box.`,
+        "all-inside": (a: string, n: number) =>
+          `Why: ${n === 1 ? "its one call stays" : `all ${n} of its calls stay`} inside ${a}'s own component.`,
+        "outside-unknown": (b: string) =>
+          `Why: Connect matches calls only to outside systems the profiles name, and ${b} isn't one. Name it in a profile, or declare the arrow.`,
+      },
     },
     noneOfThese: "None of these: declare the arrow instead",
     why: "Why is it so? (your words, kept with the arrow)",

@@ -116,10 +116,16 @@ export async function connectView(
             : `atticus map --all --repos ${x.repo}`,
       });
   const d = declared ? await declaredPart() : undefined;
-  if (!from.repo || state(from.repo) || (to.system && !knownOutside(op, to.system)))
+  if (!from.repo || state(from.repo) || (to.system && !knownOutside(op, to.system))) {
+    // A's read is there and B is an outside system the profiles don't name: say that (the review).
+    const unknown =
+      !!from.repo && !state(from.repo) && !!to.system
+        ? { whyNone: { why: "outside-unknown" as const, calls: 0 } }
+        : {};
     return d
       ? { ...base, mechanism: "declared", needs, ...d, ...routes }
-      : { ...base, mechanism: "declare", needs, ...routes };
+      : { ...base, mechanism: "declare", needs, ...routes, ...unknown };
+  }
   const { view } = await candidatesOf(root, from.repo, to, s);
   // B.1: any call of A's not inside A that doesn't go to B already could be B's. A declared
   // arrow never hides them (the review): `calls` wins, the declared arrow said beside it.
@@ -141,7 +147,38 @@ export async function connectView(
     candidates: view,
     ...routes,
     ...(d ?? {}),
+    ...(mechanism === "declare"
+      ? {
+          whyNone: whyNoneOf(
+            view,
+            /^gateway(-|$)/.test(estateRepos(op).find((r) => r.id === from.repo)?.type ?? ""),
+          ),
+        }
+      : {}),
   };
+}
+
+/**
+ * ADR 0210: why Connect has no call of A's to offer, from the candidates it read. In "declare"
+ * no call is here, paired or open, so what's left is a read with no call, calls that all stay
+ * inside A's component, or call facts the candidates didn't list at all.
+ */
+export function whyNoneOf(
+  view: Api.LinkCandidatesViewT,
+  gateway: boolean,
+): NonNullable<Api.ConnectViewT["whyNone"]> {
+  if (view.noCalls)
+    return {
+      why: "no-calls",
+      calls: 0,
+      command: view.noCalls.command,
+      ...(view.noCalls.why === "unverified" ? { unverified: true } : {}),
+      ...(gateway ? { gateway: true } : {}),
+    };
+  const n = view.calls.length;
+  return n && view.calls.every((c) => !!c.inside)
+    ? { why: "all-inside", calls: n }
+    : { why: "none-open", calls: n };
 }
 
 /** An outside system of the profiles: Connect's candidates know only those by id. */

@@ -204,6 +204,22 @@ function Mechanism(p: {
   return (
     <div className="stack">
       <p className="ev-say">{said}</p>
+      {v.mechanism === "declare" && v.whyNone && (
+        <p className="ev-say" data-testid="why-none">
+          {v.whyNone.why === "no-calls"
+            ? W.mechanism.whyNone["no-calls"](
+                a,
+                v.whyNone.command ?? "",
+                !!v.whyNone.unverified,
+                !!v.whyNone.gateway,
+              )
+            : v.whyNone.why === "outside-unknown"
+              ? W.mechanism.whyNone["outside-unknown"](b)
+              : v.whyNone.why === "all-inside"
+                ? W.mechanism.whyNone["all-inside"](a, v.whyNone.calls)
+                : W.mechanism.whyNone["none-open"](a)}
+        </p>
+      )}
       {v.needs.map((n) => (
         <Need key={`${n.need}:${n.end}`} n={n} v={v} pick={p.pick} reload={p.reload} io={p.io} />
       ))}
