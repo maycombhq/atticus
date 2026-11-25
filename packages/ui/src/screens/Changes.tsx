@@ -3,6 +3,7 @@ import { api, ApiError, callAsJob, useApi, useLiveEvents, type Loaded } from "..
 import { confirmed } from "../api/confirm.js";
 import { NewChange } from "./work/NewChange.js";
 import { nextStepWords } from "../app/app-words.js";
+import { OpenItems } from "../app/open-items.js";
 import { BringIn } from "../app/propose.js";
 import { RunStep } from "../app/runstep.js";
 import { artifactStatusWord } from "../app/artifact-status.js";
@@ -610,7 +611,7 @@ export function HandoffChip({
   );
 }
 
-function Detail({ id }: { id: string }) {
+export function Detail({ id }: { id: string }) {
   const aiOn = useAiOn();
   const detail = useApi<ChangeDetail>(`/api/changes/${id}`);
   const status = useApi<Status>(`/api/changes/${id}/status`);
@@ -687,21 +688,12 @@ function Detail({ id }: { id: string }) {
                     )}
                     {s.blockers.length > 0 && (
                       <ul className="cw-blockers" aria-label={T.whatBlocksTheHand}>
-                        {s.blockers.map((b) => (
-                          <li key={b.message}>{b.message}</li>
+                        {s.blockers.map((b, i) => (
+                          <li key={i}>{b.message}</li>
                         ))}
                       </ul>
                     )}
-                    {(s.openItems?.length ?? 0) > 0 && (
-                      <>
-                        <p className="cw-held">{T.openItemsSaid(s.openItems!.length)}</p>
-                        <ul className="cw-blockers" aria-label={T.openItems}>
-                          {s.openItems!.map((b) => (
-                            <li key={b.message}>{b.message}</li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
+                    <OpenItems items={s.openItems} quiet />
                     {/* Beta.27 review: why Raise hand-off waits, in words on the page, not a title. */}
                     {(s.blockers.length > 0 || s.stepFirst) && (
                       <p id={heldId} className="cw-held">

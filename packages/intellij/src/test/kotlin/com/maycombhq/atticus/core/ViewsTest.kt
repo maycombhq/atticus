@@ -140,6 +140,22 @@ class ViewsTest {
     }
 
     @Test
+    fun `a change's open items are said beside it, each once (ADR 0210 part 7)`() {
+        val row = Changes.rows("""[ { "id": "add-transfer-limit", "title": "Add transfer limit", "state": "design" } ]""").single()
+        val status =
+            """
+            { "state": "design", "openItems": [
+                { "code": "blocking-finding", "message": "Blocking finding f1: No retry budget." },
+                { "code": "blocking-finding", "message": "Blocking finding f1: No retry budget." },
+                { "code": "task-not-merged", "message": "Task 1.1 isn't merged." } ] }
+            """.trimIndent()
+        val full = Changes.withStatus(row, status)
+        assertEquals(listOf("Blocking finding f1: No retry budget.", "Task 1.1 isn't merged."), full.openItems)
+        assertTrue(full.detail.contains("2 open items for its hand-off's approver"), full.detail)
+        assertEquals(emptyList<String>(), Changes.withStatus(row, """{ "state": "design" }""").openItems)
+    }
+
+    @Test
     fun `an OpenSpec store's change is marked read-only with its tasks`() {
         val list =
             """

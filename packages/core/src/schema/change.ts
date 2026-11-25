@@ -53,6 +53,11 @@ export const ChangeHistoryEntry = z.strictObject({
   /** The hand-off PR whose merge or closing made this transition. */
   pr: z.number().int().positive().optional(),
   reason: z.string().min(1).optional(),
+  /**
+   * ADR 0210 part 7 (optional, additive): the open items the transition went ahead with (a
+   * hand-off's merge, an archive), each as its words, so they outlive the PR.
+   */
+  openItems: z.array(z.string().min(1)).optional(),
 });
 export type ChangeHistoryEntry = z.infer<typeof ChangeHistoryEntry>;
 
@@ -81,6 +86,17 @@ export const ChangeHandoff = z.strictObject({
   artifacts: z
     .array(z.strictObject({ path: z.string().min(1), sha256: z.string().regex(/^[0-9a-f]{64}$/) }))
     .default([]),
+  /**
+   * ADR 0210 part 7 (optional, additive): the open items the PR last showed (its body, or the
+   * comment Atticus posted), and how many reviews it had then: only an approval after them
+   * approves the hand-off with them.
+   */
+  openItems: z
+    .strictObject({
+      items: z.array(z.string().min(1)),
+      afterReview: z.number().int().min(0),
+    })
+    .optional(),
 });
 export type ChangeHandoff = z.infer<typeof ChangeHandoff>;
 

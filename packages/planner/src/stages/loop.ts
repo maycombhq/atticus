@@ -2707,7 +2707,7 @@ async function criticRound(
         stop: {
           message: `The ${spec.stage} stage went on: draft ${draftNo} can't have a critic round. ${e.message}`,
           lines: [
-            `  - Draft ${draftNo} is in the change folder without a review at the ${gate} gate; atticus findings ${change.id} shows the newest round's.`,
+            `  - Draft ${draftNo} had no critic round at the ${gate} gate, so the constitution's rules and the gate's other rules were not checked against it: atticus findings ${change.id} shows the newest round's, which reviewed an earlier draft.`,
           ],
           goesOn: true,
         },

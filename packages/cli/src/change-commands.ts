@@ -684,6 +684,8 @@ export async function changeStatus(
           nextStep: said.nextStep,
           ...(said.stepFirst ? { stepFirst: true } : {}),
           reasons: r.reasons,
+          // ADR 0210 part 7 (additive): what the hand-off goes ahead with, listed on its PR.
+          openItems: r.openItems,
           ...(r.notes?.length ? { notes: r.notes } : {}),
           risk: r.risk,
           tests: r.tests,

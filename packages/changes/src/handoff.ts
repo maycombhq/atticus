@@ -229,6 +229,23 @@ function nextRoleOf(c: ChangeLifecycle, phase: PhaseId, person: string): string 
 const nextRoleName = (phase: PhaseId): string =>
   (nextOwnersOf(phase, {})?.role ?? "reviewer").replace(/-/g, " ");
 
+/** ADR 0210 part 7: open items as their words, once each. */
+const openItemMessages = (items: readonly Reason[]): string[] => [
+  ...new Set(items.map((r) => r.message)),
+];
+const sameItems = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((x) => b.includes(x));
+/** The lines a comment says the open items in; none when there are none. */
+const openItemsComment = (items: readonly string[]): string[] =>
+  items.length
+    ? [
+        "",
+        "Open items (approving this pull request accepts them as they stand):",
+        "",
+        ...items.map((m) => `- ${m}`),
+      ]
+    : [];
+
 function prBody(
   a: Assessment,
   phase: PhaseId,
@@ -383,6 +400,18 @@ export async function handoff(
     .sort();
 
   const live = change.state === "returned" ? undefined : liveHandoff(change);
+  // ADR 0210 part 7: the PR's body, its Open items as they are now (on a raise and on an update).
+  const bodyNow = async () =>
+    prBody(
+      a,
+      phase,
+      change.state === "returned" ? nextAfterResubmit(a, phase) : a.next!,
+      [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
+      reviewers,
+      typeof opts.review === "function" ? await opts.review() : opts.review,
+      open,
+    );
+  const shown = openItemMessages(open);
   if (live && live.phase === phase) {
     const pr = await handoffPr(opts.gitHost, repo, id, live);
     if (pr.state === "open" || pr.state === "draft") {
@@ -399,11 +428,21 @@ export async function handoff(
       const unchanged = published
         ? published.changed === false
         : sameArtifacts(hashed, live.artifacts);
-      if (!unchanged)
+      // ADR 0210 part 7: the body's Open items rewritten, where the host can, and said in the
+      // update's comment; an approval counts for them only after it.
+      const itemsMoved = !sameItems(shown, live.openItems?.items ?? []);
+      if (opts.gitHost.updatePullRequest)
+        await opts.gitHost.updatePullRequest(
+          repo,
+          pr.number,
+          { body: await bodyNow() },
+          opts.approval,
+        );
+      if (!unchanged || itemsMoved)
         await opts.gitHost.comment(
           repo,
           pr.number,
-          `${by} updated the hand-off for another review.`,
+          [`${by} updated the hand-off for another review.`, ...openItemsComment(shown)].join("\n"),
           opts.approval,
         );
       const updated: ChangeHandoff = {
@@ -413,6 +452,9 @@ export async function handoff(
         reviewers,
         artifacts: hashed,
         approvals: [],
+        ...(shown.length || live.openItems
+          ? { openItems: { items: shown, afterReview: pr.reviews.length } }
+          : {}),
       };
       await changeStore(root).write({
         ...change,
@@ -444,7 +486,6 @@ export async function handoff(
     }
   }
   const base = opts.base ?? (await opts.gitHost.getRepo(repo)).defaultBranch;
-  const next = a.next!;
   await opts.publisher?.publish({
     root,
     branch,
@@ -461,15 +502,7 @@ export async function handoff(
         head: branch,
         base,
         title: `${change.title}: ${handoffName(a.type, phase)}`,
-        body: prBody(
-          a,
-          phase,
-          change.state === "returned" ? nextAfterResubmit(a, phase) : next,
-          [...files.map((f) => `${rel}/${id}/${f}`), ...questionFiles],
-          reviewers,
-          typeof opts.review === "function" ? await opts.review() : opts.review,
-          open,
-        ),
+        body: await bodyNow(),
       },
       opts.approval,
     );
@@ -493,6 +526,7 @@ export async function handoff(
     reviewers,
     approvals: [],
     artifacts: hashed,
+    ...(shown.length ? { openItems: { items: shown, afterReview: 0 } } : {}),
   };
   const history = [...change.history];
   let state = change.state;
@@ -626,6 +660,9 @@ export async function syncHandoff(
     .sort();
   const counted = prApprovers(live, approvers);
   const approvals = counted.map((by) => ({ by, at: now }));
+  // ADR 0210 part 7: the open items now, and those the PR last showed with the review count then.
+  const itemsNow = openItemMessages(a.openItems);
+  const shownBefore = live.openItems ?? { items: [], afterReview: 0 };
 
   const advance = async (by: string) => {
     const h: ChangeHandoff = { ...current, state: "merged", updatedAt: now, approvals };
@@ -639,6 +676,8 @@ export async function syncHandoff(
         by,
         pr: pr.number,
         reason: `${handoffName(a.type, live.phase)} merged`,
+        // ADR 0210 part 7: what the merge went ahead with, kept past the PR.
+        ...(itemsNow.length ? { openItems: itemsNow } : {}),
       },
     ];
     let state: LifecycleState = next;
@@ -692,7 +731,6 @@ export async function syncHandoff(
     };
   }
 
-  const h: ChangeHandoff = { ...current, state: "open", updatedAt: now, approvals };
   const reasons: Reason[] = [];
   if (counted.length === 0)
     reasons.push(
@@ -711,6 +749,44 @@ export async function syncHandoff(
     // Artifacts or findings may have changed since the hand-off was raised.
     reasons.push(...a.blockers);
   }
+  // ADR 0210 part 7: an approval approves the open items it saw. One the PR hasn't shown is
+  // posted on it first, and only an approval after that merges the hand-off.
+  let shownNow = shownBefore;
+  if (reasons.length === 0) {
+    const unseen = itemsNow.filter((m) => !shownBefore.items.includes(m));
+    if (unseen.length) {
+      if (opts.approval) {
+        await opts.gitHost.comment(
+          repo,
+          pr.number,
+          [
+            `The hand-off's open items changed since this pull request showed them (${unseen.length} new).`,
+            ...openItemsComment(itemsNow),
+          ].join("\n"),
+          opts.approval,
+        );
+        shownNow = { items: itemsNow, afterReview: pr.reviews.length };
+      }
+      reasons.push({
+        code: "open-items-changed",
+        message: opts.approval
+          ? `PR #${pr.number}'s open items changed since its approval, so they are posted on it now (${pr.url}): its approver approves it again with them, then Sync merges it.`
+          : `PR #${pr.number}'s open items changed since its approval: sync with your approval to post them on it, then its approver approves it again.`,
+      });
+    } else {
+      const since = new Set(
+        pr.reviews
+          .slice(shownBefore.afterReview)
+          .filter((r) => r.state === "approved")
+          .map((r) => strip(r.by)),
+      );
+      if (!counted.some((p) => since.has(p)))
+        reasons.push({
+          code: "open-items-unseen",
+          message: `PR #${pr.number}'s open items were posted after its approval: an approval given after them merges it (${pr.url}).`,
+        });
+    }
+  }
   if (reasons.length === 0) {
     const blockers = mergeBlockers(pr);
     if (blockers.length > 0)
@@ -719,6 +795,13 @@ export async function syncHandoff(
         message: `The Git host won't merge PR #${pr.number} yet: ${blockers.join("; ")}.`,
       });
   }
+  const h: ChangeHandoff = {
+    ...current,
+    state: "open",
+    updatedAt: now,
+    approvals,
+    ...(shownNow.items.length || live.openItems ? { openItems: shownNow } : {}),
+  };
   if (reasons.length > 0 || !opts.approval) {
     await save(h);
     return { merged: false, ready: reasons.length === 0, state: change.state, handoff: h, reasons };
@@ -859,10 +942,14 @@ export async function archiveChange(
     throw new ChangeError("refused", `${id} can't be archived yet.`, a.reasons);
   // ADR 0006 addendum: OpenSpec's own gate before its archive merges the specs. ADR 0210 part 7:
   // its warnings, post-release findings and unticked tasks are open items the archive records.
+  // Every open item the change carried: those its hand-offs went ahead with, then these.
   const open = [
-    ...a.openItems.map((r) => r.message),
-    ...(opts.openspec ? await requireValid(opts.openspec, id) : []).map((r) => r.message),
-    ...(await untickedTasks(root, id)),
+    ...new Set([
+      ...change.history.flatMap((h) => h.openItems ?? []),
+      ...a.openItems.map((r) => r.message),
+      ...(opts.openspec ? await requireValid(opts.openspec, id) : []).map((r) => r.message),
+      ...(await untickedTasks(root, id)),
+    ]),
   ];
   const now = opts.now ?? nowIso();
   const updated: ChangeLifecycle = {
@@ -876,6 +963,7 @@ export async function archiveChange(
         at: now,
         by: strip(opts.by),
         reason: open.length ? `Archived with open items: ${open.join(" ")}` : "Archived",
+        ...(open.length ? { openItems: open } : {}),
       },
     ],
   };

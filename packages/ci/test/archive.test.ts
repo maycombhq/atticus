@@ -3,22 +3,29 @@ import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Finding, parseFacts, toCanonicalYaml } from "@maycombhq/core";
+import { changeStore } from "@maycombhq/changes";
 import { writeChangeRepos } from "@maycombhq/workspace";
 import { archiveGate, repoDrift } from "../src/index.js";
 import { CHANGE, metarepo, put, repoDir } from "./helpers.js";
 
 const COMMIT = "b".repeat(40);
 
-async function trace(root: string, state: "open" | "dismissed") {
+async function trace(
+  root: string,
+  state: "open" | "dismissed",
+  o: { layer?: "constitution" | "org"; gate?: string } = {},
+) {
+  const layer = o.layer ?? "constitution";
+  const gate = o.gate ?? "trace";
   const f = Finding.parse({
     schemaVersion: 1,
     id: "story-without-test-s2-show-remaining",
     kind: "issue",
     change: CHANGE,
-    gate: "trace",
+    gate,
     round: 1,
-    rule: "trace.story-without-test",
-    layer: "constitution",
+    rule: layer === "org" ? "forge-trace.story-test" : "trace.story-without-test",
+    layer,
     lens: "code-and-test",
     severity: "blocking",
     artifact: "stories/s2-show-remaining.md",
@@ -27,7 +34,7 @@ async function trace(root: string, state: "open" | "dismissed") {
     why: "Every story needs a test.",
     fix: { text: "Generate or write a test." },
     evidence: [{ source: "artifact", path: "stories/s2-show-remaining.md", line: 1 }],
-    waivable: false,
+    waivable: layer === "org",
     state,
     ...(state === "dismissed"
       ? {
@@ -43,7 +50,7 @@ async function trace(root: string, state: "open" | "dismissed") {
   });
   await put(
     join(root, "openspec/changes", CHANGE),
-    `review/trace/1/${f.id}.yaml`,
+    `review/${gate}/1/${f.id}.yaml`,
     toCanonicalYaml(f),
   );
 }
@@ -372,6 +379,57 @@ describe("archive gate", () => {
     expect(r.blockers[1]!.message).toBe(
       "forge-ledger: release PR #7 is open; a person merges it on the Git host before archiving.",
     );
+  });
+
+  // ADR 0210 part 7: an org finding is an open item, said as a note; a constitution one blocks.
+  it("splits the findings: an org one is an open item noted, a constitution one blocks", async () => {
+    const run = async (layer: "org" | "constitution") => {
+      const root = await metarepo({ change: "released" });
+      await repos(root, "passed");
+      await facts(root, COMMIT);
+      await trace(root, "open", { layer });
+      return archiveGate(root, CHANGE, {
+        commit: COMMIT,
+        repoDir: (id) => (id === "forge-ledger" ? repoDir(root, "forge-ledger") : undefined),
+      });
+    };
+    const org = await run("org");
+    expect(org.pass).toBe(true);
+    expect(org.notes).toContain(
+      "Open item: Blocking finding story-without-test-s2-show-remaining on the trace gate (round 1): Story s2-show-remaining has no test.",
+    );
+    const constitution = await run("constitution");
+    expect(constitution.pass).toBe(false);
+    expect(constitution.blockers.map((b) => b.code)).toEqual(["finding"]);
+  });
+
+  it("a constitution post-release finding blocks the archive; an org one goes with it", async () => {
+    const run = async (layer: "org" | "constitution") => {
+      const root = await metarepo({ change: "released" });
+      const store = changeStore(root);
+      const c = await store.read(CHANGE);
+      await store.write({
+        ...c,
+        state: "post-release-review",
+        history: [
+          ...c.history,
+          { from: "released", to: "post-release-review", at: "2026-11-09T10:00:00Z", by: "tia" },
+        ],
+      });
+      await repos(root, "passed");
+      await facts(root, COMMIT);
+      await trace(root, "open", { layer, gate: "post-release-review" });
+      return archiveGate(root, CHANGE, {
+        commit: COMMIT,
+        repoDir: (id) => (id === "forge-ledger" ? repoDir(root, "forge-ledger") : undefined),
+      });
+    };
+    const constitution = await run("constitution");
+    expect(constitution.pass).toBe(false);
+    expect(constitution.blockers.map((b) => b.code)).toEqual(["finding"]);
+    const org = await run("org");
+    expect(org.blockers).toEqual([]);
+    expect(org.notes.filter((n) => n.startsWith("Open item:"))).toHaveLength(1);
   });
 
   it("notes a merged release PR the Git host reported no build on", async () => {

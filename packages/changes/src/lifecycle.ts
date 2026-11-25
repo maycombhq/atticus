@@ -330,6 +330,15 @@ export async function checkArtifacts(
   return reasons;
 }
 
+/** What an assistant's resolution did, in words (ADR 0115 addendum: it closes nothing). */
+const DONE_WORDS: Record<string, string> = {
+  apply: "applied",
+  "edit-and-apply": "applied",
+  "not-relevant": "dismissed",
+  waive: "waived",
+  ask: "asked",
+};
+
 /**
  * Findings on a gate: in the newest round of `review/<gate>/<round>/`, open blocking findings and
  * open knowledge gaps. Waived, applied, dismissed and asked findings, risks and ideas never count.
@@ -452,7 +461,7 @@ export async function checkFindings(
           item({
             code: "blocking-finding",
             finding: x.id,
-            message: `Blocking finding ${x.id} on the ${gate} gate (round ${round}): ${x.summary}`,
+            message: `Blocking finding ${x.id} on the ${gate} gate (round ${round}): ${x.summary}${byAssistant ? `${/[.!?]$/.test(x.summary) ? "" : "."} An assistant (${x.resolution!.by}) ${DONE_WORDS[x.resolution!.action] ?? "resolved"} it, which closes nothing: only a person's decision does.` : ""}`,
           }),
         );
       else if (x.severity === "gap")

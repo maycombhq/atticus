@@ -46,6 +46,12 @@ object Copy {
 
     fun tasksLine(done: Int, total: Int) = "$done/$total tasks"
 
+    /** ADR 0210 part 7: what a change's hand-off goes ahead with, which its PR lists. */
+    fun openItemsLine(n: Int) = if (n == 1) "1 open item for its hand-off's approver" else "$n open items for its hand-off's approver"
+
+    /** One open item, as a row under its change. */
+    fun openItem(message: String) = "Open item: $message"
+
     // A task's knowledge (B-task-knowledge)
     const val TASK_KNOWLEDGE = "Knowledge for this task"
     const val KNOWLEDGE_VERIFIED = "verified"

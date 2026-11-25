@@ -25,6 +25,10 @@ export type ReasonCode =
   | "pr-closed"
   /** `openspec validate --strict` refused the change (ADR 0006 addendum). */
   | "openspec-invalid"
+  /** ADR 0210 part 7: the hand-off's open items changed since its PR showed them. */
+  | "open-items-changed"
+  /** ADR 0210 part 7: the PR's approval came before the open items it last showed. */
+  | "open-items-unseen"
   /** ADR 0184: a repo the change touched has no release PR into its default branch. */
   | "release-pr-missing"
   /** ADR 0184: a repo's release PR isn't merged yet (unless the org pack doesn't require it). */

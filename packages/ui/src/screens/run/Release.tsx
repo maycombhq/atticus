@@ -13,6 +13,7 @@ import {
 } from "./ReleaseViews.js";
 import { Note, plural, useAction } from "./shared.js";
 import { COPY } from "../../copy.js";
+import { OpenItems } from "../../app/open-items.js";
 import { isManualLink, ManualHandoff, MANUAL_STEPS_HREF } from "../know/task-pr.js";
 import "../work/cw.css";
 
@@ -84,6 +85,8 @@ interface ReleaseDetail {
     risk: { level: string; score: number };
     blockers: Reason[];
     reasons: Reason[];
+    /** ADR 0210 part 7 (additive): what go/no-go goes ahead with, listed on its PR. */
+    openItems?: Reason[];
   };
   /** The release hand-off PR: merging it is the go (ADR 0073). */
   handoff?: { state: string; pr: string; approvals: { by: string }[] };
@@ -412,17 +415,27 @@ export function Detail({ id }: { id: string }) {
       <Panel title={T.whatStopsIt} span="span 6">
         <View
           of={d}
-          empty={(r) => r.status.blockers.length + r.status.reasons.length === 0}
+          empty={(r) =>
+            r.status.blockers.length +
+              r.status.reasons.length +
+              (r.status.openItems?.length ?? 0) ===
+            0
+          }
           emptyText={T.nothingStopsThisChange}
         >
           {(r) => (
-            <ul className="run-steps">
-              {[...r.status.blockers, ...r.status.reasons]
-                .filter((x, i, a) => a.findIndex((y) => y.message === x.message) === i)
-                .map((x) => (
-                  <li key={x.message}>{x.message}</li>
-                ))}
-            </ul>
+            <div className="stack">
+              {r.status.blockers.length + r.status.reasons.length > 0 && (
+                <ul className="run-steps">
+                  {[...r.status.blockers, ...r.status.reasons]
+                    .filter((x, i, a) => a.findIndex((y) => y.message === x.message) === i)
+                    .map((x) => (
+                      <li key={x.message}>{x.message}</li>
+                    ))}
+                </ul>
+              )}
+              <OpenItems items={r.status.openItems} />
+            </div>
           )}
         </View>
       </Panel>

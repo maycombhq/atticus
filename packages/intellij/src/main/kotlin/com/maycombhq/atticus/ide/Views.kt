@@ -536,8 +536,10 @@ class ChangesPanel(project: Project, parent: Disposable) :
     /** A change opens to its tasks, and a task to the knowledge pages that apply to it. */
     override fun children(row: Row): List<Row> =
         when {
+            // ADR 0210 part 7: its open items first, then its tasks.
             row is Row.Change && row.change.store == null ->
-                Reads(project).metarepo?.let { Lists.tasks(it, row.change.id) }.orEmpty().map { Row.Task(row.change.id, it) }
+                row.change.openItems.map<String, Row> { Row.Note(Copy.openItem(it)) } +
+                    Reads(project).metarepo?.let { Lists.tasks(it, row.change.id) }.orEmpty().map { Row.Task(row.change.id, it) }
             else -> emptyList()
         }
 

@@ -37,6 +37,8 @@ export type Expand =
   | { kind: "find"; slug: string }
   /** A change's needs from the organisation (ADR 0101). */
   | { kind: "needs"; change: string }
+  /** ADR 0210 part 7: what a change's hand-off goes ahead with, its PR listing them. */
+  | { kind: "open-items"; change: string; items: string[] }
   | { kind: "kind"; recordKind: string }
   /** One model run, opening to its prompt, its answer and the app's screen (ADR 0106). */
   | { kind: "run"; run: RunEntry }
@@ -676,4 +678,32 @@ export function questionGroups<Q extends { repo: string }>(
   const by = new Map<string, Q[]>();
   for (const q of qs) by.set(q.repo, [...(by.get(q.repo) ?? []), q]);
   return [...by.keys()].sort().map((repo) => ({ repo, questions: by.get(repo)! }));
+}
+
+/**
+ * ADR 0210 part 7: a change's open items, the gates its hand-off goes ahead with; its PR lists
+ * them for the person who approves it. None: no row. Each is said once.
+ */
+export function openItemsNode(change: string, items: readonly { message: string }[] = []): Item[] {
+  const list = [...new Set(items.map((i) => i.message))];
+  if (!list.length) return [];
+  return [
+    {
+      id: `open-items:${change}`,
+      label: `Open items (${list.length})`,
+      tooltip: `${list.length === 1 ? "1 open item goes" : `${list.length} open items go`} with ${change}'s hand-off: its PR lists ${list.length === 1 ? "it" : "them"}, and the person who approves it decides.`,
+      icon: "checklist",
+      expand: { kind: "open-items", change, items: list },
+    },
+  ];
+}
+
+/** One row a change's open item. */
+export function openItemRows(change: string, items: readonly string[]): Item[] {
+  return items.map((m, i) => ({
+    id: `open-item:${change}:${i}`,
+    label: m.length > 120 ? `${m.slice(0, 117)}...` : m,
+    tooltip: m,
+    icon: "circle-small",
+  }));
 }

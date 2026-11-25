@@ -148,6 +148,23 @@ describe("open items (ADR 0210 part 7)", () => {
     ).toMatchObject({ merged: true, state: "plan" });
   });
 
+  it("an assistant's resolution of a blocking finding leaves it an open item that says so", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await inDesign(root, gh);
+    await writeFinding(
+      root,
+      finding({
+        state: "waived",
+        resolution: { action: "waive", by: "story-writer", at: T("12:10"), reason: "Fine." },
+      }),
+    );
+    const r = await changeReport(root, ID);
+    expect(r.openItems.map((x) => x.message)).toEqual([
+      "Blocking finding f1 on the design gate (round 2): The Ledger call has no retry budget. An assistant (story-writer) waived it, which closes nothing: only a person's decision does.",
+    ]);
+  });
+
   it("a constitution finding still stops the hand-off", async () => {
     const root = await forgeMetarepo();
     const gh = host();
@@ -373,5 +390,100 @@ describe("open items (ADR 0210 part 7)", () => {
     expect(reason).toMatch(/^Archived with open items: /);
     expect(reason).toContain("Blocking finding slow-limit on the post-release-review gate");
     expect(reason).toMatch(/tasks? (isn't|aren't) ticked in tasks\.md\./);
+  });
+});
+
+describe("open items the approver has seen (ADR 0210 part 7, review of PR #21)", () => {
+  const raise = (root: string, gh: ReturnType<typeof host>, at: string) =>
+    handoff(root, ID, {
+      gitHost: gh,
+      repo: REPO,
+      by: "ari",
+      approval: approval("ari", T(at)),
+      now: T(at),
+    });
+  const sync = (root: string, gh: ReturnType<typeof host>, at: string) =>
+    syncHandoff(root, ID, {
+      gitHost: gh,
+      repo: REPO,
+      approval: approval("avery", T(at)),
+      now: T(at),
+    });
+  const comments = (gh: ReturnType<typeof host>) =>
+    gh.journal.filter((j) => j.method === "comment").map((j) => String(j.args[2]));
+  const later = finding({ id: "f2", summary: "The limit has no audit trail." });
+
+  it("an open item raised after the approval is posted on the PR and needs a new approval before the merge", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await inDesign(root, gh);
+    await writeFinding(root, finding({}));
+    const h = await raise(root, gh, "12:30");
+    expect(h.openItems?.items.join("\n")).toContain("Blocking finding f1");
+    gh.review(REPO, 2, "avery", "approved");
+    // A new org finding after the approver looked: not merged unseen.
+    await writeFinding(root, later);
+    const s1 = await sync(root, gh, "13:00");
+    expect(s1.merged).toBe(false);
+    expect(s1.reasons.map((r) => r.code)).toEqual(["open-items-changed"]);
+    const posted = comments(gh).at(-1)!;
+    expect(posted).toContain("Open items");
+    expect(posted).toContain(
+      "Blocking finding f2 on the design gate (round 2): The limit has no audit trail.",
+    );
+    expect(posted).toContain("Blocking finding f1");
+    // The approval from before the list was posted doesn't count for it.
+    const s2 = await sync(root, gh, "13:10");
+    expect(s2.merged).toBe(false);
+    expect(s2.reasons.map((r) => r.code)).toEqual(["open-items-unseen"]);
+    gh.review(REPO, 2, "avery", "approved");
+    const s3 = await sync(root, gh, "13:20");
+    expect(s3).toMatchObject({ merged: true, state: "plan" });
+    // Durable: the merge's history entry keeps what it went ahead with.
+    const merged = (await changeStore(root).read(ID)).history.at(-1)!;
+    expect(merged.openItems?.join("\n")).toContain("Blocking finding f2");
+    expect(merged.openItems?.join("\n")).toContain("Blocking finding f1");
+  });
+
+  it("an updated hand-off rewrites its PR's Open items and says them in its update comment", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await inDesign(root, gh);
+    await writeFinding(root, finding({}));
+    await raise(root, gh, "12:30");
+    gh.review(REPO, 2, "avery", "changes-requested");
+    await sync(root, gh, "13:00");
+    await writeFinding(root, later);
+    const h = await raise(root, gh, "13:30");
+    const pr = await gh.getPullRequest(REPO, 2);
+    expect(pr.body).toContain("### Open items");
+    expect(pr.body).toContain("Blocking finding f2");
+    expect(comments(gh).at(-1)).toContain("Blocking finding f2");
+    expect(h.openItems?.items.join("\n")).toContain("Blocking finding f2");
+  });
+
+  it("archive records every open item the change carried, not only the post-release ones", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await inDesign(root, gh);
+    await writeFinding(root, finding({}));
+    await raise(root, gh, "12:30");
+    gh.review(REPO, 2, "avery", "approved");
+    await sync(root, gh, "13:00");
+    const store = changeStore(root);
+    const c = await store.read(ID);
+    const path = ["plan", "build", "qa", "release-ready", "released"];
+    await store.write({
+      ...c,
+      state: "released",
+      history: [
+        ...c.history,
+        ...path.slice(1).map((to, i) => ({ from: path[i]!, to, at: T("14:00"), by: "tia" })),
+      ] as typeof c.history,
+    });
+    const done = await archiveChange(root, ID, { by: "dana", now: T("15:00") });
+    const entry = done.history.at(-1)!;
+    expect(entry.openItems?.join("\n")).toContain("Blocking finding f1 on the design gate");
+    expect(entry.reason).toContain("Blocking finding f1 on the design gate");
   });
 });

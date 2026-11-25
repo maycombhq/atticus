@@ -337,7 +337,10 @@ gates:
     expect(e.message).toContain("the most it allows");
     const loop = (await loopOf(root)) as { state: string; openItems?: string[] };
     expect(loop.state).toBe("done");
-    expect(loop.openItems?.join("\n")).toContain("without a review at the define gate");
+    // Said plainly: the last draft had no critic round, so its constitution rules weren't checked.
+    expect(loop.openItems?.join("\n")).toContain(
+      "Draft 2 had no critic round at the define gate, so the constitution's rules and the gate's other rules were not checked against it",
+    );
   });
 
   it("doesn't count a round in which no lens reviewed (Claude Code missing, a timeout) toward the limit", async () => {
