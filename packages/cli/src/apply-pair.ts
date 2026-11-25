@@ -128,34 +128,45 @@ export function pairNot(rt: OrgPack["runtime"], env?: NodeJS.ProcessEnv): string
   return decideIn(rt).includes("hand-off") ? PAIR_WORDS.handOff : PAIR_WORDS.noRuntime;
 }
 
-export async function pairLoose(
-  root: string,
-  o: {
-    runner?: AcpStepRunner;
-    env?: NodeJS.ProcessEnv;
-    now?: Date;
-    signal?: AbortSignal;
-    op?: OrgPack;
-    /** The facts the write under way keeps, in place of these repos' snapshots. */
-    applied?: Applied;
-  } = {},
-): Promise<PairResult> {
+type Opts = {
+  runner?: AcpStepRunner;
+  env?: NodeJS.ProcessEnv;
+  now?: Date;
+  signal?: AbortSignal;
+  op?: OrgPack;
+  /** The facts the write about to run keeps, in place of these repos' snapshots. */
+  applied?: Applied;
+};
+type Drawn = { line: string; entry: Entry; quotes: string[]; cites: Cite[] };
+/** What the model said, before the write: applied under its lock by `pairApply`. */
+export type Asked = Awaited<ReturnType<typeof pairAsk>>;
+
+/** Ask the model, with no lock held; then apply what it said inside the write. */
+export const pairLoose = async (root: string, o: Opts = {}) =>
+  pairApply(root, await pairAsk(root, o), o.applied);
+
+/** The facts an Apply keeps of a repo: its snapshot's (or this write's), never a rejected one. */
+async function keptIds(root: string, repo: string, applied?: Applied) {
+  const mine = applied?.find((a) => a.repo === repo)?.facts;
+  const { factsSlotPaths } = await import("@maycombhq/scanner");
+  const kept = mine
+    ? { ok: true as const, facts: mine }
+    : parseFacts(await readFile(factsSlotPaths(root, repo).facts, "utf8").catch(() => ""));
+  return new Set(kept.ok ? kept.facts.map((f) => f.id) : []);
+}
+
+export async function pairAsk(root: string, o: Opts = {}) {
   const op = o.op ?? (await loadOrgPack(orgPackDirOf(root)));
-  const { estateFacts, factsSlotPaths } = await import("@maycombhq/scanner");
+  const { estateFacts } = await import("@maycombhq/scanner");
   const { estateJoinOnFile } = await import("./contract-check-files.js");
   const estate = await estateFacts(root, op, "");
   const join0 = await estateJoinOnFile(root, op, estate);
   const done = new Set(
     [...join0.joins, ...(join0.outside ?? [])].map((j) => `${j.call.repo} ${j.call.fact}`),
   );
-  // Only what an Apply keeps: each repo's snapshot (or this write's), never a rejected fact.
   const repos: { repo: string; facts: Fact[] }[] = [];
   for (const r of estate.repos) {
-    const mine = o.applied?.find((a) => a.repo === r.repo)?.facts;
-    const kept = mine
-      ? { ok: true as const, facts: mine }
-      : parseFacts(await readFile(factsSlotPaths(root, r.repo).facts, "utf8").catch(() => ""));
-    const ids = new Set(kept.ok ? kept.facts.map((f) => f.id) : []);
+    const ids = await keptIds(root, r.repo, o.applied);
     if (ids.size) repos.push({ repo: r.repo, facts: r.facts.filter((f) => ids.has(f.id)) });
   }
   const entries = repos.flatMap((r) =>
@@ -164,11 +175,11 @@ export async function pairLoose(
   const store = await readPairings(root);
   const out: PairResult = { paired: [], dropped: [], withdrawn: [], loose: [] };
   const send: { id: string; call: Call; cands: Entry[]; was?: string }[] = [];
+  const gone = new Map<string, string[]>();
   for (const r of repos) {
     const corrections = parseCorrections(
       await readFile(join(factsDirOf(root), `${r.repo}.corrections.jsonl`), "utf8").catch(() => ""),
     ).corrections;
-    const gone: string[] = [];
     for (const f of r.facts) {
       if (f.kind !== "call" || !JOINABLE.has(f.callType)) continue;
       const id = `${r.repo} ${f.id}`;
@@ -182,7 +193,7 @@ export async function pairLoose(
         : undefined;
       const entry = `${newest?.link?.repo} ${newest?.link?.entry}`;
       if (bad) {
-        gone.push(s!.line!);
+        gone.set(r.repo, [...(gone.get(r.repo) ?? []), s!.line!]);
         out.withdrawn.push({ call: id, entry, why: bad });
         delete store.calls[id];
         ours = false;
@@ -196,20 +207,16 @@ export async function pairLoose(
         send.push({ id, call: f, cands, ...(ours ? { was: s!.line! } : {}) });
       else out.loose.push(id);
     }
-    if (gone.length) await rewriteCorrections(root, r.repo, { remove: gone });
   }
-  const finish = async (why?: string) => {
-    out.loose = [...out.loose, ...send.filter((s) => !s.was).map((s) => s.id)].sort();
-    const r = { ...out, ...(why ? { why } : {}), at: (o.now ?? new Date()).toISOString() };
-    // The last Apply that did or said something stays the one Decided by AI shows.
-    if (asked || out.withdrawn.length || why) store.last = r;
-    await mkdir(runsDirOf(root), { recursive: true });
-    await writeFileAtomic(storeFile(root), JSON.stringify(store, null, 1));
-    return r;
-  };
+  const at = (o.now ?? new Date()).toISOString();
+  const batch = newBatchId(o.now ?? new Date());
+  const drawn = new Map<string, Drawn>();
+  let run = "";
   const asked = send.length > 0;
+  const said = (why?: string) =>
+    ({ store, out, send, gone, drawn, repos, at, batch, run, asked, why, done: false }) as const;
   const no = asked ? pairNot(op.runtime, o.env) : undefined;
-  if (!send.length || no) return finish(no);
+  if (!send.length || no) return said(no);
   // As few requests as the model's limit allows, none over it; a call alone over it waits.
   const limit = op.runtime.budgets.defaultTokens;
   const answer = (i: number) => `${proposalsRelOf(root)}/matching/apply-pairs-${i + 1}.yaml`;
@@ -227,14 +234,10 @@ export async function pairLoose(
   const tokens = briefs.reduce((n, b) => n + estimateTokens(b), 0);
   const budget = { root, limits: op.runtime.budgets.limits };
   const stop = await planRun(budget, { what: PAIR_WORDS.what, sessions: briefs.length, tokens });
-  if (stop) return finish(stop);
+  if (stop) return said(stop);
   await mkdir(join(proposalsDirOf(root), "matching"), { recursive: true });
   const runner =
     o.runner ?? (await (await import("./copilot-acp-steps.js")).acpStepRunner(root, { op }));
-  const at = (o.now ?? new Date()).toISOString();
-  const batch = newBatchId(o.now ?? new Date());
-  const drawn = new Map<string, { line: string; entry: string; cites: Cite[] }>();
-  let run = "";
   for (const [i, brief] of briefs.entries()) {
     const file = join(root, ...answer(i).split("/"));
     await rm(file, { force: true });
@@ -242,12 +245,12 @@ export async function pairLoose(
     try {
       run = (await runner({ ...step, ...(o.signal ? { signal: o.signal } : {}) })).runId;
     } catch (e) {
-      return finish(PAIR_WORDS.failed((e as Error).message));
+      return said(PAIR_WORDS.failed((e as Error).message));
     }
-    const said = (parse((await readFile(file, "utf8").catch(() => "")) || "{}") ?? {}) as {
+    const reply = (parse((await readFile(file, "utf8").catch(() => "")) || "{}") ?? {}) as {
       pairs?: Said[];
     };
-    for (const p of said.pairs ?? []) {
+    for (const p of reply.pairs ?? []) {
       const s = send.find((x) => x.id === p.call);
       if (s && drawn.has(s.id)) continue;
       const e = s?.cands.find((x) => `${x.repo} ${x.id}` === p.entry);
@@ -292,8 +295,35 @@ export async function pairLoose(
           batch,
         }),
       );
-      drawn.set(s.id, { line, entry: `${e.repo} ${e.id}`, cites });
+      drawn.set(s.id, { line, entry: e, quotes, cites });
     }
+  }
+  return said();
+}
+
+/**
+ * Inside the write, under its lock, before its build: each pairing the model gave checked again
+ * on the code and the facts as they are now, the withdrawn lines taken away, the drawn written
+ * (a person's line written meanwhile wins), then the batch and the stored verdicts. Once a write.
+ */
+export async function pairApply(root: string, a: Asked, applied?: Applied): Promise<PairResult> {
+  const { store, out, send, drawn, repos, at, batch, run } = a;
+  if (a.done) return { ...out, paired: [], dropped: [], withdrawn: [] };
+  (a as { done: boolean }).done = true;
+  for (const [repo, lines] of a.gone) await rewriteCorrections(root, repo, { remove: lines });
+  for (const s of send) {
+    const d = drawn.get(s.id);
+    if (!d) continue;
+    const ids = await keptIds(root, s.call.repo, applied);
+    const there =
+      ids.has(s.call.id) && (await keptIds(root, d.entry.repo, applied)).has(d.entry.id);
+    const why = !there
+      ? PAIR_WORDS.gone
+      : (pathProblem(s.call, d.entry, d.quotes) ??
+        (await Promise.all(d.cites.map((c) => lineProblem(root, c)))).find(Boolean));
+    if (!why) continue;
+    out.dropped.push({ call: s.id, entry: `${d.entry.repo} ${d.entry.id}`, why });
+    drawn.delete(s.id);
   }
   // Under the corrections file's lock: a person's line written meanwhile is never overwritten.
   const items: BatchItemT[] = [];
@@ -313,7 +343,7 @@ export async function pairLoose(
       const d = drawn.get(s.id)!;
       if (!w.picked?.includes(d.line)) continue;
       items.push({ kind: "link", repo: r.repo, fact: s.call.id, line: d.line });
-      out.paired.push({ call: s.id, entry: d.entry });
+      out.paired.push({ call: s.id, entry: `${d.entry.repo} ${d.entry.id}` });
       const files = d.cites.map((c) => `${c.repo} ${c.file}`);
       store.calls[s.id] = { key: await keyOf(root, files), files, line: d.line, cites: d.cites };
     }
@@ -335,17 +365,20 @@ export async function pairLoose(
       applied: items,
       reverted: [],
     });
-  return finish();
+  out.loose = [...out.loose, ...send.filter((s) => !s.was).map((s) => s.id)].sort();
+  const r = { ...out, ...(a.why ? { why: a.why } : {}), at };
+  // The last Apply that did or said something stays the one Decided by AI shows.
+  if (a.asked || out.withdrawn.length || a.why) store.last = r;
+  await mkdir(runsDirOf(root), { recursive: true });
+  await writeFileAtomic(storeFile(root), JSON.stringify(store, null, 1));
+  return r;
 }
 
-/** Inside a write: nothing read where nothing may be sent and no AI line of it is on file. */
-export const pairInWrite = (root: string, op: OrgPack, applied: Applied) =>
+/** Before a write, no lock held: nothing read where nothing may be sent and no AI line is on file. */
+export const pairBeforeWrite = (root: string, op: OrgPack, applied: Applied) =>
   pairNot(op.runtime) && !existsSync(storeFile(root))
     ? undefined
-    : pairLoose(root, { op, applied, ...applyPairHooks }).catch((e: unknown) => ({
-        ...{ paired: [], dropped: [], withdrawn: [], loose: [] },
-        why: PAIR_WORDS.failed((e as Error).message),
-      }));
+    : pairAsk(root, { op, applied, ...applyPairHooks }).catch(() => undefined);
 
 /** One request: its calls with their lines, the entries that could serve them, the answer's file. */
 function pairBrief(send: readonly { id: string; call: Call; cands: Entry[] }[], answer: string) {

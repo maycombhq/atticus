@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
+  acquireLock,
   estimateTokens,
+  readLock,
   linksFor,
   listBatches,
   parseCorrections,
@@ -14,7 +16,15 @@ import {
   withRunIo,
 } from "@maycombhq/core";
 import { undoDirOf } from "@maycombhq/scanner";
-import { applyPairHooks, pairLines, pairLoose, pairNot, pathProblem } from "../src/apply-pair.js";
+import {
+  applyPairHooks,
+  pairApply,
+  pairAsk,
+  pairLines,
+  pairLoose,
+  pairNot,
+  pathProblem,
+} from "../src/apply-pair.js";
 import { makeBigEstate } from "./big-estate.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
@@ -370,6 +380,22 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
     expect(newest.by).toBe("pat@forge.example");
   });
 
+  it("what the model said is checked again before it is written: a line changed meanwhile is dropped", async () => {
+    const asked = await pairAsk(root, { runner });
+    expect(await lines()).toEqual([]);
+    const file = join(root, "workspace", LM, CAMEL);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace('<get uri="/{statementId}">', '<get uri="/{id}">'),
+    );
+    const r = await pairApply(root, asked);
+    expect(r.paired.map((p) => p.call)).not.toContain(`${W} call.get.statement`);
+    expect(r.paired).toHaveLength(3);
+    expect(r.dropped.some((d) => d.call === `${W} call.get.statement` && /quote/.test(d.why))).toBe(
+      true,
+    );
+  });
+
   it("a person's line written while the model runs wins", async () => {
     during = () =>
       appendFile(
@@ -464,6 +490,12 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
 
   it("Apply pairs inside its one write: the line, the arrows in the catalog, one undo copy each", async () => {
     applyPairHooks.runner = runner;
+    // The model runs before the write takes its lock: another write takes it and lets it go.
+    const free: boolean[] = [];
+    during = async () => {
+      free.push((await readLock(root, "scan")) === undefined);
+      await (await acquireLock(root, "scan", "another write")).release();
+    };
     await rm(join(root, "catalog"), { recursive: true });
     const out: string[] = [];
     const err: string[] = [];
@@ -479,6 +511,7 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
     }
     expect(out).toContain("Paired 4 calls; 1 left loose.");
     expect(prompts).toHaveLength(1);
+    expect(free).toEqual([true]);
     const dir = join(root, "catalog/generated/interface");
     const texts = await Promise.all(
       (await readdir(dir)).map((n) => readFile(join(dir, n), "utf8")),

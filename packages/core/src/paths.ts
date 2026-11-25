@@ -88,6 +88,7 @@ export const PAIR_WORDS = {
   notCandidate: "the entry isn't one of the call's candidates",
   notCallLine: "it doesn't cite the call's line",
   notEntryLine: "it doesn't cite the entry's line",
+  gone: "the call or the entry is no longer in the facts this Apply writes",
   failed: (why: string) => `The pairing session failed: ${why}`,
   aiOff: "AI is off (runtime.yaml ai): the loose calls stay listed.",
   off: "runtime.yaml apply.pair is off: the loose calls stay listed.",

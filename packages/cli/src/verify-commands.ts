@@ -481,6 +481,14 @@ export async function verifyAllCommand(
       if (held.length > 1) {
         (io.progress ?? io.err)(`Writing the catalog once for ${held.length} repos…`);
         const [, , , first, out] = held[0]!.args;
+        // ADR 0210 part 4: the model asked before the one write takes its lock.
+        const pairs = await (
+          await import("./apply-pair.js")
+        ).pairBeforeWrite(
+          root,
+          await loadOrgPack(orgPackDirOf(root)),
+          held.map((h) => ({ repo: h.repo, facts: h.args[2] })),
+        );
         try {
           await writeManyFactsIntoCatalog(
             root,
@@ -489,8 +497,7 @@ export async function verifyAllCommand(
               ...first,
               command: "atticus verify --all --write",
               onRunFault: () => (runFault = true),
-              pair: true,
-              onPaired: (r) => (paired ??= r),
+              ...(pairs ? { pairs, onPaired: (r: PairResult) => (paired ??= r) } : {}),
             },
             out,
             (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
@@ -1004,8 +1011,14 @@ export async function verifyCommand(
   ];
   /** ADR 0210 part 4: the write pairs the loose calls before its build (the first round's said). */
   let paired: PairResult | undefined;
-  const pairing =
-    o.pair === false ? {} : { pair: true, onPaired: (r: PairResult) => (paired ??= r) };
+  // The model is asked before the write takes its lock; what it said is applied inside it.
+  const pairing = async () => {
+    if (o.pair === false) return {};
+    const { pairBeforeWrite } = await import("./apply-pair.js");
+    const op = await loadOrgPack(orgPackDirOf(root));
+    const pairs = await pairBeforeWrite(root, op, [{ repo, facts: toCatalog }]);
+    return pairs ? { pairs, onPaired: (r: PairResult) => (paired ??= r) } : {};
+  };
   /** ADR 0210 part 3: what the write went past to write (--json says it). */
   let went: import("./map-render-commands.js").WentPast | undefined;
   // N2: a partial write refused (guards, the lock) says the facts it would have left out.
@@ -1031,7 +1044,7 @@ export async function verifyCommand(
         {
           dir,
           command: `atticus verify ${repo} --write`,
-          ...pairing,
+          ...(await pairing()),
           ...(o.now ? { now: o.now() } : {}),
           onWentPast: (w) => (went = w),
           ...(commit ? { commit } : {}),
@@ -1356,7 +1369,7 @@ export async function verifyCommand(
     {
       dir,
       command: `atticus verify ${repo} --write`,
-      ...pairing,
+      ...(await pairing()),
       ...(o.now ? { now: o.now() } : {}),
       verbose: o.verbose === true,
       ...(commit ? { commit } : {}),
