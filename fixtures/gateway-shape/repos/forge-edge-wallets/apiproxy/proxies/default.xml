@@ -1,0 +1,47 @@
+<ProxyEndpoint name="default">
+  <HTTPProxyConnection>
+    <BasePath>/wallets/v1</BasePath>
+  </HTTPProxyConnection>
+  <PreFlow name="PreFlow">
+    <Request>
+      <Step>
+        <Name>VerifyAPIKey</Name>
+      </Step>
+    </Request>
+  </PreFlow>
+  <Flows>
+    <Flow name="get-account">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="open-account">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="list-holds">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*/holds") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="get-statement">
+      <Condition>(proxy.pathsuffix MatchesPath "/statements/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="set-limits">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*/limits") and (request.verb = "PUT")</Condition>
+    </Flow>
+    <Flow name="unknown-resource">
+      <Request>
+        <Step>
+          <Name>RF-NotFound</Name>
+        </Step>
+      </Request>
+    </Flow>
+  </Flows>
+  <RouteRule name="to-ledger">
+    <Condition>proxy.pathsuffix MatchesPath "/statements/**"</Condition>
+    <TargetEndpoint>ledger</TargetEndpoint>
+  </RouteRule>
+  <RouteRule name="to-core">
+    <Condition>proxy.pathsuffix MatchesPath "/accounts/*/limits"</Condition>
+    <TargetEndpoint>core</TargetEndpoint>
+  </RouteRule>
+  <RouteRule name="default">
+    <TargetEndpoint>wallets</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

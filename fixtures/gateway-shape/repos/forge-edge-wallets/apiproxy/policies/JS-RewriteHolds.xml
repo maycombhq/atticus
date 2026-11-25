@@ -1,0 +1,3 @@
+<Javascript name="JS-RewriteHolds" timeLimit="200">
+  <ResourceURL>jsc://rewrite-holds.js</ResourceURL>
+</Javascript>

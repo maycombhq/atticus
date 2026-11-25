@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0">
+  <camelContext id="wallets" xmlns="http://camel.apache.org/schema/blueprint">
+    <restConfiguration component="servlet" contextPath="/cxf/api" bindingMode="json"/>
+    <rest path="/accounts">
+      <get uri="/{accountId}">
+        <to uri="direct:getAccount"/>
+      </get>
+      <post>
+        <to uri="direct:openAccount"/>
+      </post>
+      <get uri="/{accountId}/blocks">
+        <to uri="direct:listBlocks"/>
+      </get>
+      <delete uri="/{accountId}">
+        <to uri="direct:closeAccount"/>
+      </delete>
+    </rest>
+    <route id="getAccount">
+      <from uri="direct:getAccount"/>
+      <to uri="sql:select * from wallet_account where id = :#${header.accountId}"/>
+    </route>
+    <route id="openAccount">
+      <from uri="direct:openAccount"/>
+      <to uri="sql:insert into wallet_account (owner, currency) values (:#${body[owner]}, :#${body[currency]})"/>
+    </route>
+    <route id="listBlocks">
+      <from uri="direct:listBlocks"/>
+      <to uri="sql:select * from wallet_block where account_id = :#${header.accountId}"/>
+    </route>
+    <route id="closeAccount">
+      <from uri="direct:closeAccount"/>
+      <to uri="sql:update wallet_account set closed = true where id = :#${header.accountId}"/>
+    </route>
+  </camelContext>
+  <bean id="camelServlet" class="org.apache.camel.component.servlet.CamelHttpTransportServlet"/>
+  <service interface="javax.servlet.Servlet" ref="camelServlet">
+    <service-properties>
+      <entry key="alias" value="/cxf/api/*"/>
+      <entry key="servlet-name" value="CamelServlet"/>
+    </service-properties>
+  </service>
+  <reference id="dataSource" interface="javax.sql.DataSource" filter="(osgi.jndi.service.name=jdbc/forge)"/>
+</blueprint>

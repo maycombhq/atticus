@@ -1,0 +1,8 @@
+<TargetEndpoint name="ledger">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="ledger-fuse"/>
+    </LoadBalancer>
+    <Path>/cxf/api</Path>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -1,0 +1,3 @@
+service: forge-ledger-module
+host: ledger.prod.forge.example
+port: 8443
