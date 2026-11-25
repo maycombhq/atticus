@@ -56,6 +56,31 @@ Sizes are estimates.
 Items 2, 3, 6, 7 and 8 need no model and are built first. Items 4 and 5 are tested in CI with the
 recorded model and on public code here; on the owner's estate they wait for his quota.
 
+## Reviewed 2026-11-24: what the eight items leave undone
+
+The eight items make the map AI first: reading, pairing and writing. They are not the whole of
+what the owner asked for. Measured on main:
+
+| Asked for                    | What the eight items do                                              | What is left                                                                                                                                                |
+| ---------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nothing blocks at every step | The map's write: four of seven refusals go                           | The change path: `packages/changes` and `packages/planner` speak of refusing in 148 lines, and the naysayers and hand-offs block at their gates. Untouched. |
+| Much less code               | About 1,200 lines added; the readers only switched off               | The 24,187 lines of readers and the 5,424 of the join are deleted a release later. beta.33 is at best a little smaller.                                     |
+| The ease of OpenSpec         | Nothing                                                              | 286 commands. No single path from a repo to a drawn map.                                                                                                    |
+| Efficient                    | A budget for tokens                                                  | The guards' hash (22 s) and the intake (14 s) of each Apply on the owner's estate.                                                                          |
+| Proven                       | Public Spring services, read by the model this plan was written with | The owner's shapes (item 0 is a fixture, not his repos), and his office's assistant, whose model may read less well.                                        |
+
+So four more items, after the eight:
+
+| #   | What                                                                                                                                                                                           | Model needed |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 9   | **The change path doesn't block either.** A count of every gate on the way from a request to merged tasks, each kept (hard rule 6) or turned into a listed item. The ADR of item 1 names them. | no           |
+| 10  | **One command.** `atticus sync`: read what changed (recipe, then model), verify, write, pair, say what is open. Every other map command keeps working and leaves the first page of help.       | no           |
+| 11  | **The two slow steps of an Apply**, once `selfcheck --timing --names` from the owner's estate says which part of each.                                                                         | no           |
+| 12  | **Delete the readers in this release**, not the next, if the suites hold with them off (item 7). Seven files import them.                                                                      | no           |
+
+And one test that only the owner can run, when his quota returns: items 4 and 5 on his estate,
+with his office's assistant. Until then they are proven on public code and a fixture only.
+
 ## What does not change
 
 Every fact cites file, line, value and quote, and the verifier checks it. Results are stored
