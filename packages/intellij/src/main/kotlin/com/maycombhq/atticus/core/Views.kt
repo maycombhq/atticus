@@ -219,6 +219,8 @@ data class ChangeRow(
     val store: String? = null,
     val tasksDone: Int? = null,
     val tasksTotal: Int? = null,
+    /** ADR 0210 part 7: what its hand-off goes ahead with (its PR lists them), each once. */
+    val openItems: List<String> = emptyList(),
 ) {
     /** The line beside the title: the state, the work, the risk and the test kinds. */
     val detail: String
@@ -230,6 +232,7 @@ data class ChangeRow(
                 riskLevel?.let { Copy.riskLine(it, riskScore) },
                 testKinds.takeIf { it.isNotEmpty() }?.let { Copy.testKinds(it) },
                 if (tasksTotal != null) Copy.tasksLine(tasksDone ?: 0, tasksTotal) else null,
+                openItems.takeIf { it.isNotEmpty() }?.let { Copy.openItemsLine(it.size) },
             ).joinToString(" · ")
 
     val words: List<String?> get() = listOf(id, title, state, work, store)
@@ -274,6 +277,7 @@ object Changes {
             riskLevel = risk?.str("level") ?: row.riskLevel,
             riskScore = (risk?.get("score") as? Number)?.toInt() ?: row.riskScore,
             testKinds = if (kinds.isNotEmpty()) kinds else row.testKinds,
+            openItems = root.objs("openItems").mapNotNull { it.str("message") }.distinct(),
         )
     }
 

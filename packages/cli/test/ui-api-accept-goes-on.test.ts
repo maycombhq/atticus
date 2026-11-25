@@ -173,16 +173,17 @@ describe("after an Accept the app goes on with a stage started in a terminal", (
   );
 
   it(
-    "stopped for a person in a terminal: run again, and done with no new draft",
+    // ADR 0210 part 7: the stage went on in the terminal, the finding open on its hand-off.
+    "gone on in a terminal with a finding a person may accept: accepted, and done with no new draft",
     async () => {
       const root = await metarepo();
       const run = await started(root, ANSWER);
       await terminal(root, "handoff", "done", run);
       await terminal(root, "change", "feature", CHANGE, "--handoff", "--resume", run);
-      expect(await loopState(root)).toBe("stopped");
+      expect(await loopState(root)).toBe("done");
       const a = await app(root);
       expect((await a.thread()).headline).toBe(
-        "The stage stopped for a person: its draft has a finding below that you may accept. Accept it with a reason, or tell the assistant how to fix the draft.",
+        "The stage went on: its draft has a finding below that you may accept, open on its hand-off. Accept it with a reason, or tell the assistant how to fix the draft.",
       );
       const r = await a.accept((await a.open())[0]!.id);
       expect(r.goesOn).toEqual(expect.objectContaining({ kind: "done" }));

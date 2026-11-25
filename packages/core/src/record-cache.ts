@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { CancelledError } from "./cancel.js";
 import { hashFilesIn, statFilesIn, type FileHash, type FileStat } from "./file-pool.js";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
@@ -134,6 +134,15 @@ export async function mapAtOnce<I, O>(
 }
 
 /**
+ * The folder a cache is kept for, as one name: its drive letter upper case (item 11 of beta.33:
+ * VS Code says c:\, a terminal C:\, and each kept a cache of its own, filled again in turn).
+ */
+export function cacheDirKey(dir: string): string {
+  const abs = /^[a-z]:[\\/]/i.test(dir) ? win32.resolve(dir) : resolve(dir);
+  return abs.replace(/^[a-z]:/, (d) => d.toUpperCase());
+}
+
+/**
  * The file a folder's parses are kept in, under the root the caller named, or undefined when it
  * named none — and then nothing is read from a cache and nothing is written anywhere. The key is
  * the folder's absolute path, and the memo names that folder too, so two folders read into one
@@ -146,14 +155,14 @@ function memoFileOf(
 ): { root: string; file: string } | undefined {
   if (!cacheRoot) return undefined;
   const root = resolve(cacheRoot);
-  const key = createHash("sha256").update(resolve(dir)).digest("hex").slice(0, 16);
+  const key = createHash("sha256").update(cacheDirKey(dir)).digest("hex").slice(0, 16);
   return { root, file: join(root, ".atticus", "cache", `${name}-${key}.json`) };
 }
 
 async function readMemo(file: string, v: string, dir: string): Promise<Map<string, Entry>> {
   try {
     const m = JSON.parse(await readFile(file, "utf8")) as Memo | null;
-    if (!m || m.v !== v || m.dir !== resolve(dir) || typeof m.entries !== "object")
+    if (!m || m.v !== v || m.dir !== cacheDirKey(dir) || typeof m.entries !== "object")
       return new Map();
     return new Map(Object.entries(m.entries));
   } catch {
@@ -262,14 +271,14 @@ function remember(
           : { ...e, value: raw.has(rel) ? asKept(e.value) : deepFreeze(e.value) },
     );
   }
-  inMemory.set(file, { v, dir: resolve(dir), entries: out, bytes });
+  inMemory.set(file, { v, dir: cacheDirKey(dir), entries: out, bytes });
 }
 
 /** The memo's entries from memory, when the app keeps them and they are of this shape and folder. */
 function fromMemory(file: string, v: string, dir: string): Map<string, Entry> | undefined {
   if (!appMemory.on) return undefined;
   const m = inMemory.get(file);
-  if (!m || m.v !== v || m.dir !== resolve(dir) || !appMemoryInUse()) return undefined;
+  if (!m || m.v !== v || m.dir !== cacheDirKey(dir) || !appMemoryInUse()) return undefined;
   recordCacheStats.fromMemory++;
   return new Map(m.entries);
 }
@@ -518,7 +527,7 @@ async function writeMemo(
   dir: string,
   entries: Map<string, Entry>,
 ): Promise<void> {
-  const memo: Memo = { v, dir: resolve(dir), entries: Object.fromEntries(entries) };
+  const memo: Memo = { v, dir: cacheDirKey(dir), entries: Object.fromEntries(entries) };
   try {
     // The cache sits in .atticus/, which stays on this machine: make sure Git ignores it.
     await ensureLocalIgnore(at.root);

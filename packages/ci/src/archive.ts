@@ -137,6 +137,8 @@ export async function archiveGate(
     const ctx = await loadChangeContext(root);
     const a = await assess(ctx, change);
     for (const r of a.blockers) blockers.push({ code: "finding", message: r.message });
+    // ADR 0210 part 7: open items go with the archive, said as notes.
+    for (const r of a.openItems) notes.push(`Open item: ${r.message}`);
   } else if (change.state !== "released") {
     blockers.push({
       code: "wrong-state",
@@ -152,7 +154,8 @@ export async function archiveGate(
   // An assistant's resolution closes nothing: Atticus's own agents and the org pack's are known.
   const known = assistantNames(await loadChangeContext(root));
   for (const r of await checkFindings(root, change, gates, known))
-    blockers.push({ code: "finding", message: r.message });
+    if (r.openItem) notes.push(`Open item: ${r.message}`);
+    else blockers.push({ code: "finding", message: r.message });
 
   // ---- repos: release PRs merged (ADR 0184), builds passed
   const repos = (await readChangeRepos(root, change.id))?.repos ?? [];
@@ -302,7 +305,7 @@ export async function archiveGate(
     state: change.state,
     pass: unique.length === 0,
     blockers: unique,
-    notes,
+    notes: [...new Set(notes)],
     drift,
   };
 }

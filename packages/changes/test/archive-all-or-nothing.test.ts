@@ -78,7 +78,7 @@ describe("archive, all or nothing (app-only audit)", () => {
         }),
         ID,
       ),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
   });
 
   it("refuses before archiving, leaving the change released", async () => {

@@ -147,13 +147,15 @@ describe("task branches not merged into the change branch (app-only audit)", () 
     expect(r.rows[0]).toMatchObject({ outcome: "raised" });
   }, 120_000);
 
-  it("holds Build ready while the task's work isn't merged", async () => {
+  // ADR 0210 part 7: an open item on Build ready, which its PR lists, not a refusal.
+  it("says on Build ready that the task's work isn't merged, as an open item", async () => {
     const { root, dir } = await setup("build");
     const rep = await changeReport(root, ID);
-    expect(rep.blockers.map((b) => b.code)).toContain("task-not-merged");
+    expect(rep.blockers.map((b) => b.code)).not.toContain("task-not-merged");
+    expect(rep.openItems.map((b) => b.code)).toContain("task-not-merged");
     git(dir, "merge", "-q", "--ff-only", TASK);
     const after = await changeReport(root, ID);
-    expect(after.blockers.map((b) => b.code)).not.toContain("task-not-merged");
+    expect(after.openItems.map((b) => b.code)).not.toContain("task-not-merged");
   }, 120_000);
 
   it("a person's decision with a reason lets the task go, until its branch moves on", async () => {
@@ -271,13 +273,13 @@ describe("a page load never reaches the Git host (assess reads refs here only)",
       await host.reset();
       const rep = await changeReport(root, ID);
       expect(host.reached()).toBe(false);
-      expect(rep.blockers.map((b) => b.code)).toContain("task-not-merged");
+      expect(rep.openItems.map((b) => b.code)).toContain("task-not-merged");
       // Once fetched (the person's Sync), the host's change branch as last fetched lets it go.
       git(dir, "fetch", "-q", "origin", `+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}`);
       await host.reset();
       const after = await changeReport(root, ID);
       expect(host.reached()).toBe(false);
-      expect(after.blockers.map((b) => b.code)).not.toContain("task-not-merged");
+      expect(after.openItems.map((b) => b.code)).not.toContain("task-not-merged");
     },
     120_000,
   );

@@ -5,7 +5,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import { changeBranch, taskBranch, toCanonicalYaml, type ChangeRepo } from "@maycombhq/core";
 import { baseClonePath, createGit, readChangeRepos, type GitRunner } from "@maycombhq/workspace";
-import { ChangeError, type Reason } from "./errors.js";
+import { asOpenItem, ChangeError, type Reason } from "./errors.js";
 import { changeFolder, writeFileAtomic } from "./store.js";
 
 /**
@@ -244,16 +244,18 @@ export function unmergedTaskWords(id: string, u: UnmergedTask): string {
   return `Task ${u.task}'s branch ${u.branch} in ${u.repo} has ${n} not in ${from}, so its code isn't in the change: ${what}. If its work isn't needed, mark the task done with a reason.`;
 }
 
-/** The reasons unmerged task branches hold Build ready, go/no-go and the release PRs. */
+/**
+ * Unmerged task branches at Build ready and go/no-go: open items (ADR 0210 part 7), which the
+ * hand-off's PR lists. Raising the release PRs still skips a repo whose tasks aren't in.
+ */
 export async function taskBranchReasons(
   root: string,
   id: string,
   o: { git?: GitRunner; remote?: string; offline?: boolean } = {},
 ): Promise<Reason[]> {
-  return (await unmergedTaskBranches(root, id, o)).map((u) => ({
-    code: "task-not-merged" as const,
-    message: unmergedTaskWords(id, u),
-  }));
+  return (await unmergedTaskBranches(root, id, o)).map((u) =>
+    asOpenItem({ code: "task-not-merged", message: unmergedTaskWords(id, u) }),
+  );
 }
 
 /**

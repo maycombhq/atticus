@@ -737,6 +737,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               risk: rep.risk,
               blockers: rep.blockers,
               reasons: rep.reasons,
+              // ADR 0210 part 7 (additive): what the hand-off goes ahead with.
+              openItems: rep.openItems,
             },
             // Go / no-go is the release hand-off PR: merging it is the go (ADR 0073).
             ...(handoff

@@ -6,7 +6,8 @@ import { FEATURE_OWNERS, FIXTURES, copyPhase, forgeMetarepo } from "./helpers.js
 
 /**
  * The platform profile's `gates` are mandatory: before the hand-off that leaves such a gate,
- * the critic must have reviewed it (a round exists) and its newest round must pass.
+ * the critic reviews it (a round exists) and its newest round passes. ADR 0210 part 7: a missing
+ * round and an org finding are open items the hand-off goes ahead with, for its PR to list.
  */
 
 const ID = "add-transfer-limit";
@@ -36,11 +37,11 @@ async function inDesign(): Promise<string> {
   return root;
 }
 
-const missing = (r: { reasons: { code: string; message: string }[] }) =>
-  r.reasons.filter((x) => x.code === "critic-round-missing").map((x) => x.message);
+const missing = (r: { openItems: { code: string; message: string }[] }) =>
+  r.openItems.filter((x) => x.code === "critic-round-missing").map((x) => x.message);
 
 describe("mandatory gates", () => {
-  it("need a critic round before the hand-off that leaves them, and it must pass", async () => {
+  it("say a missing critic round and a failing one as open items on the hand-off that leaves them", async () => {
     const root = await inDesign();
     // Forge's profile makes design and release mandatory.
     expect(missing(await canAdvance(ID, root))).toEqual([
@@ -51,12 +52,13 @@ describe("mandatory gates", () => {
     await cp(join(FIXTURES, ID, "review/design/1"), join(review, "1"), { recursive: true });
     const failing = await canAdvance(ID, root);
     expect(missing(failing)).toEqual([]);
-    expect(failing.reasons.map((r) => r.code)).toContain("blocking-finding");
+    expect(failing.openItems.map((r) => r.code)).toContain("blocking-finding");
+    expect(failing.reasons.map((r) => r.code)).not.toContain("blocking-finding");
 
     await cp(join(FIXTURES, ID, "review/design/2"), join(review, "2"), { recursive: true });
     const passing = await canAdvance(ID, root);
-    expect(passing.reasons.map((r) => r.code)).not.toContain("critic-round-missing");
-    expect(passing.reasons.map((r) => r.code)).not.toContain("blocking-finding");
+    expect(passing.openItems.map((r) => r.code)).not.toContain("critic-round-missing");
+    expect(passing.openItems.map((r) => r.code)).not.toContain("blocking-finding");
   });
 
   it("on the stage path, never send a person to the critic while the stage's own draft isn't done (W4)", async () => {

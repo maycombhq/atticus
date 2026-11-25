@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import {
   factsDirOf,
   hashCacheHooks,
+  hashCacheWriteProblem,
   listQuestions,
   loadOrgPack,
   orgPackDirOf,
@@ -50,6 +51,8 @@ export const TIMING_WORDS = {
   total: (ms: number, cpuMs: number) =>
     `One Apply, before its writes: ${sec(ms)} s wall, ${sec(cpuMs)} s CPU.`,
   repos: (n: number) => `Repos with facts: ${n}.`,
+  notKept: (code: string) =>
+    `The guards' hash couldn't keep what it read (${code}), so every Apply reads every record file again: something holds or blocks the metarepo's .atticus/cache folder (antivirus, a sync tool, its rights).`,
   hashed: (again: number, of: number) =>
     `The guards' hash read ${again} of ${of} record files again; the rest were kept by their size and times.`,
   failed:
@@ -65,6 +68,8 @@ export interface Timing {
   phases: PhaseTime[];
   /** The guards' hash: the record files read again, of all. A count of the estate: `--names` only. */
   hashed?: { again: number; of: number };
+  /** Item 11: why the kept hashes can't be written (an error code), when they can't. */
+  hashCacheWrite?: string;
   totalMs: number;
   cpuMs: number;
 }
@@ -115,6 +120,9 @@ export async function timeOneBuild(root: string): Promise<Timing> {
     onHashed?.(n);
   };
   let disk: Awaited<ReturnType<typeof hashFiles>>;
+  // Item 11: the hash's own phases (the walk; the stats, reads and sha256) are said too.
+  const listening = buildPhases.on;
+  buildPhases.on = (phase, ms, cpuMs) => phases.push({ phase, ms, cpuMs });
   try {
     disk = await timed(phases, HASH_PHASE, () =>
       hashFiles(generatedDirOf(root), { root, keep: false }),
@@ -122,11 +130,13 @@ export async function timeOneBuild(root: string): Promise<Timing> {
   } finally {
     if (onHashed) hashCacheHooks.onHashed = onHashed;
     else delete hashCacheHooks.onHashed;
+    if (listening) buildPhases.on = listening;
+    else delete buildPhases.on;
   }
+  const hashCacheWrite = await hashCacheWriteProblem(root);
   await timed(phases, QUESTIONS_PHASE, () => listQuestions(root));
   await timed(phases, JOIN_PHASE, () => estateFacts(root, op, ""));
 
-  const listening = buildPhases.on;
   buildPhases.on = (phase, ms, cpuMs) => phases.push({ phase, ms, cpuMs });
   // Apply's build has a new facts slot, so it never takes a kept build whole: nor does this one.
   // But it uses the last build's texts and parses, as Apply's does (beta.32: with the cache off,
@@ -145,6 +155,7 @@ export async function timeOneBuild(root: string): Promise<Timing> {
   return {
     phases,
     hashed: { again, of: disk.size },
+    ...(hashCacheWrite ? { hashCacheWrite } : {}),
     totalMs: performance.now() - t0,
     cpuMs: cpuMsNow() - c0,
   };
@@ -165,6 +176,7 @@ export function timingLines(t: Timing, repos?: number): string[] {
       (p) => `  ${p.phase.padEnd(width)}  ${sec(p.ms)} s wall, ${sec(p.cpuMs)} s CPU`,
     ),
     TIMING_WORDS.total(t.totalMs, t.cpuMs),
+    ...(t.hashCacheWrite ? [TIMING_WORDS.notKept(t.hashCacheWrite)] : []),
     ...(repos === undefined
       ? []
       : [

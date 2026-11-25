@@ -1279,6 +1279,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               : {}),
             blockers: rep.blockers,
             reasons: rep.reasons,
+            // ADR 0210 part 7 (additive): what the hand-off goes ahead with.
+            openItems: rep.openItems,
           },
         };
       })

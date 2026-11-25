@@ -53,6 +53,16 @@ export interface GitHost {
    * back to a comment asking a person to close the PR.
    */
   closePullRequest?(repo: string, number: number, approval: Approval): Promise<PullRequest>;
+  /**
+   * Rewrite a PR's body (ADR 0210 part 7: a hand-off's Open items, when it is updated). Optional,
+   * as closePullRequest is: a host without it gets the new list as a comment only.
+   */
+  updatePullRequest?(
+    repo: string,
+    number: number,
+    input: { body: string },
+    approval: Approval,
+  ): Promise<PullRequest>;
 }
 
 /** Whether a PR may be merged, and why not. Shared by mocks and real adapters. */
@@ -193,6 +203,19 @@ export class MockGitHost extends MockBase implements GitHost {
     if (pr.state === "merged")
       throw new AdapterError(this.name, "conflict", `PR ${number} is merged and can't be closed`);
     pr.state = "closed";
+    return structuredClone(pr);
+  }
+
+  async updatePullRequest(
+    repo: string,
+    number: number,
+    input: { body: string },
+    approval: Approval,
+  ) {
+    const a = requireApproval(this.name, approval);
+    this.call("updatePullRequest", [repo, number, input], a);
+    const pr = this.prs.get(this.key(repo, number)) ?? this.notFound(`PR ${repo}#${number}`);
+    pr.body = input.body;
     return structuredClone(pr);
   }
 

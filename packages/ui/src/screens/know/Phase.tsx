@@ -22,6 +22,7 @@ import {
 } from "../Changes.js";
 import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
 import { COPY } from "../../copy.js";
+import { OpenItems } from "../../app/open-items.js";
 import { lensesWaiting, type CriticRan } from "../work/critic-ran.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
@@ -139,6 +140,7 @@ export function GateHeader(p: {
                 ))}
               </ul>
             )}
+            <OpenItems items={s.openItems} />
             {s.handoff && isManualLink(s.handoff.pr.url) ? null : s.handoff ? (
               <span className="muted" style={{ fontSize: 12 }}>
                 {T.approvalMerge}

@@ -54,49 +54,61 @@ export function resolveNames(
   records: CatalogRecord[],
   systems: ProfileSystem[],
 ): Map<string, NameResolution> {
+  const resolve = nameResolver(records, systems);
+  return new Map(names.map((name) => [name, resolve(name)]));
+}
+
+/** Tests hear each read of the catalog for names (one an intake). */
+export const nameResolverHooks: { onCatalogRead?: () => void } = {};
+
+/**
+ * `resolveNames` for one name at a time, with the catalog read once (item 11 of beta.33: intake
+ * resolved each diagram box by reading every record again, 1 s of each Apply at 60 repos).
+ */
+export function nameResolver(
+  records: CatalogRecord[],
+  systems: ProfileSystem[],
+): (name: string) => NameResolution {
+  nameResolverHooks.onCatalogRead?.();
   const curated = curatedAliases(records);
-  const components = records.filter((r) => r.kind === "Component");
-  const ids = new Set([
-    ...components.map((c) => c.id),
-    ...records.filter((r) => r.kind === "System").map((r) => r.id),
-    ...systems.map((s) => s.id),
-  ]);
-  const componentsOf = (sys: string) => components.filter((c) => c.system === sys).map((c) => c.id);
+  const componentsOf = new Map<string, string[]>();
+  const ids = new Set<string>();
+  for (const r of records)
+    if (r.kind === "Component") {
+      ids.add(r.id);
+      const xs = componentsOf.get(r.system) ?? [];
+      componentsOf.set(r.system, xs);
+      xs.push(r.id);
+    }
+  for (const r of records) if (r.kind === "System") ids.add(r.id);
+  for (const s of systems) ids.add(s.id);
+  const idWords = [...ids].map((id) => ({ id, words: words(id) }));
   const profileName = new Map<string, string>();
   for (const s of systems)
     for (const n of [s.name, ...s.aliases]) profileName.set(n.toLowerCase(), s.id);
-  const out = new Map<string, NameResolution>();
-  for (const name of names) {
-    if (out.has(name)) continue;
+  const seen = new Map<string, NameResolution>();
+  const resolve = (name: string): NameResolution => {
     const key = name.toLowerCase();
     const c = curated.get(key);
-    if (c) {
-      out.set(name, { name, id: c, how: "curated", similar: [] });
-      continue;
-    }
-    if (ids.has(slug(name))) {
-      out.set(name, { name, id: slug(name), how: "exact", similar: [] });
-      continue;
-    }
+    if (c) return { name, id: c, how: "curated", similar: [] };
+    if (ids.has(slug(name))) return { name, id: slug(name), how: "exact", similar: [] };
     const sys = profileName.get(key);
     if (sys) {
-      const comps = componentsOf(sys);
-      out.set(name, {
-        name,
-        id: comps.length === 1 ? comps[0]! : sys,
-        how: "profile",
-        similar: [],
-      });
-      continue;
+      const comps = componentsOf.get(sys) ?? [];
+      return { name, id: comps.length === 1 ? comps[0]! : sys, how: "profile", similar: [] };
     }
     const w = words(name);
-    const similar = [...ids]
-      .map((id) => ({ id, score: [...words(id)].filter((x) => w.has(x)).length }))
+    const similar = idWords
+      .map(({ id, words: iw }) => ({ id, score: [...iw].filter((x) => w.has(x)).length }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
       .slice(0, 3)
       .map((x) => x.id);
-    out.set(name, { name, similar });
-  }
-  return out;
+    return { name, similar };
+  };
+  return (name) => {
+    const r = seen.get(name) ?? resolve(name);
+    seen.set(name, r);
+    return r;
+  };
 }
