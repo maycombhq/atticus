@@ -60,7 +60,6 @@ export function workingDays(from: string, to: string): number {
 }
 
 export const laterOf = (a: string, b: string) => (a > b ? a : b);
-export const earlierOf = (a: string, b: string) => (a < b ? a : b);
 
 /**
  * A lead time as written in `Party.typicalLeadTimes`: "10d" or "10 days" (working days),

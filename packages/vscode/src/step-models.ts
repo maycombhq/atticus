@@ -1,4 +1,4 @@
-import { CONFIGURED_MODEL, modelChoice, modelSetting, WORDS, type ModelChoice } from "./words";
+import { CONFIGURED_MODEL, modelChoice, modelSetting, WORDS } from "./words";
 import { readYaml } from "./yaml-lite";
 
 /**
@@ -150,21 +150,6 @@ const COMMAND_CLASS: Record<string, StepClass> = {
   "knowledge ask": "knowledge",
   "change needs": "knowledge",
 };
-
-/**
- * The model a kind of step will run on, in words, before VS Code is asked (the Next view's line):
- * its first choice, or the chat's model when nothing is set.
- */
-export function plannedModel(
-  c: StepClass | undefined,
-  s: ModelSettings,
-  orgModel?: string,
-): string {
-  const first = choicesFor(c, s, orgModel)[0];
-  const m = first ? modelChoice(first.value) : undefined;
-  if (!m) return WORDS.modelChatOrCopilot;
-  return m === "configured" ? WORDS.modelConfigured : modelSetting(m as ModelChoice);
-}
 
 /**
  * runtime.yaml's model for each kind of step (its `models.<kind>`), from the file's text: what

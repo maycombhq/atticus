@@ -68,12 +68,6 @@ export async function filesIn(dir: string): Promise<string[]> {
   return [dir, ...names.sort().map((n) => join(dir, n))];
 }
 
-/** For tests: forget everything kept. */
-export function forgetMemo(): void {
-  kept.clear();
-  asking.clear();
-}
-
 /** Every file under a folder, at any depth (none when it isn't there), folders included. */
 export async function filesUnder(dir: string): Promise<string[]> {
   const out: string[] = [dir];

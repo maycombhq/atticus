@@ -10,7 +10,6 @@ import {
   runIsTheStep,
   TaskRunState,
   taskNext,
-  taskRunsOnly,
 } from "../src/screens/know/task-pr.js";
 
 /**
@@ -172,16 +171,6 @@ describe("a task that has run, on the Task board", () => {
     delete t.taskRun!.commit;
     const html = renderToStaticMarkup(<TaskRunState change={CHANGE} task={t} />);
     expect(html).not.toContain(esc(T.raiseTaskPr));
-  });
-
-  it("AI task runs counts the task runs only, not the critics' and stages' runs", () => {
-    const runs = [
-      { agent: "safe-critic" },
-      { agent: "story-writer-flows" },
-      { agent: "task-runner" },
-      { agent: "task-runner-fix", taskRun: {} },
-    ];
-    expect(taskRunsOnly(runs).map((r) => r.agent)).toEqual(["task-runner", "task-runner-fix"]);
   });
 });
 

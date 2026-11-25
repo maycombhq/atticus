@@ -8,7 +8,6 @@ import {
   slugOf,
   writeCurated,
   type InitiativeRecord,
-  type PartyRecord,
 } from "./store.js";
 
 export interface NewInitiativeOptions {
@@ -66,47 +65,4 @@ export async function newInitiative(
   };
   const written = await writeCurated(root, initiative as CatalogRecord);
   return { initiative, written };
-}
-
-export interface NewPartyOptions {
-  id: string;
-  name: string;
-  partyKind: "internal-team" | "vendor";
-  by: string;
-  owner?: string;
-  contacts?: string[];
-  channel?: string;
-  systems?: string[];
-  typicalLeadTimes?: Record<string, string>;
-}
-
-/** Record a party (an internal team or a vendor) as a curated Party record. */
-export async function addParty(
-  root: string,
-  o: NewPartyOptions,
-): Promise<{ party: PartyRecord; written: string }> {
-  const party: PartyRecord = {
-    schemaVersion: 2,
-    kind: "Party",
-    id: o.id,
-    status: "current",
-    confidence: "asserted",
-    evidence: manualEvidence(o.by),
-    name: o.name,
-    partyKind: o.partyKind,
-    ...(o.owner ? { owner: o.owner } : {}),
-    contacts: o.contacts ?? [],
-    ...(o.channel ? { channel: o.channel } : {}),
-    systems: o.systems ?? [],
-    // ADR 0101's fields for a team or vendor read from a page; a party recorded here has none.
-    responsibilities: [],
-    owns: [],
-    uses: [],
-    aliases: [],
-    tags: [],
-    alsoOn: [],
-    urls: [],
-    typicalLeadTimes: o.typicalLeadTimes ?? {},
-  };
-  return { party, written: await writeCurated(root, party as CatalogRecord) };
 }

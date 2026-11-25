@@ -8,7 +8,6 @@ import {
   chooseStepModel,
   modelEnv,
   orgModelsFrom,
-  plannedModel,
   stepClassOfArgs,
   usesConfigured,
   type ModelSettings,
@@ -161,14 +160,6 @@ describe("what decides a whole step", () => {
     // runtime.yaml's model for the kind comes before atticus.model.
     expect(usesConfigured("draft", { perClass: {}, model: "atticus" }, "copilot/x")).toBe(false);
     expect(usesConfigured("draft", { perClass: {}, model: "atticus" })).toBe(true);
-  });
-
-  it("says the model a kind will run on, before VS Code is asked", () => {
-    expect(plannedModel("draft", none)).toBe(WORDS.modelChatOrCopilot);
-    expect(plannedModel("draft", none, "copilot/claude-opus-4.5")).toBe("copilot/claude-opus-4.5");
-    expect(plannedModel("quick", { perClass: { quick: "atticus" }, model: "" })).toBe(
-      WORDS.modelConfigured,
-    );
   });
 
   it("reads runtime.yaml's models, and passes the person's to the command line", () => {

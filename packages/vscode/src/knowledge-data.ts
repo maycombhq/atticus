@@ -24,19 +24,6 @@ export type KnowledgeKind =
   | "product"
   | "project";
 
-export const KNOWLEDGE_KINDS: KnowledgeKind[] = [
-  "request",
-  "process",
-  "standard",
-  "pattern",
-  "decision",
-  "constraint",
-  "team",
-  "vendor",
-  "product",
-  "project",
-];
-
 /** A person's review of an item, as `knowledge list --json` gives it. */
 export interface Review {
   state: "verified" | "corrected" | "rejected" | "stale";

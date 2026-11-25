@@ -4,11 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import type { FactsView } from "../src/app/evidence.js";
-import {
-  dependencyCorrection,
-  dependencyFactsOf,
-  whatMoved,
-} from "../src/screens/architecture/links.js";
+import { dependencyFactsOf, whatMoved } from "../src/screens/architecture/links.js";
 import { canvasGraph, linkCounts, type Views } from "../src/screens/architecture/model.js";
 import { LinkKinds } from "../src/screens/architecture/Tools.js";
 import {
@@ -179,19 +175,11 @@ describe("why a dependency is linked (ADR 0192)", () => {
     expect(out).not.toContain(esc(W.intro));
   });
 
-  it("finds the dependency fact on the build file's line, and marks it wrong only with why", () => {
+  it("finds the dependency fact on the build file's line", () => {
     expect(dependencyFactsOf(DEP, FACTS).map((f) => f.id)).toEqual([
       "dependency.wallets-api.forge-payments-common",
     ]);
     expect(dependencyFactsOf(CALL_JOIN, FACTS)).toEqual([]);
-    expect(dependencyCorrection(DEP_FACT, "  ")).toEqual({ error: "needReason" });
-    expect(dependencyCorrection(DEP_FACT, "a test helper")).toEqual({
-      body: {
-        fact: "dependency.wallets-api.forge-payments-common",
-        action: "wrong",
-        reason: "a test helper",
-      },
-    });
   });
 
   it("renders This link is wrong on a dependency: loading, error, nothing to correct, the form, done", () => {

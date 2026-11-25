@@ -450,42 +450,6 @@ export function taskItems(change: string, tasks: Api.Task[]): Item[] {
   }));
 }
 
-export function knowledgeItems(items: Api.KnowledgeItem[], p: Paths): Item[] {
-  const rel = p.knowledgeRel ?? "knowledge";
-  return items.map((k) => ({
-    id: `knowledge:${k.kind}:${k.id}`,
-    label: k.name ?? k.title ?? k.id,
-    description: k.kind,
-    tooltip: [k.id, ...k.evidence.map((e) => e.path ?? e.record ?? "").filter(Boolean)].join("\n"),
-    icon: "book",
-    open: {
-      kind: "file",
-      path: join(p.root, rel, "items", k.kind.toLowerCase(), `${k.id}.yaml`),
-    },
-  }));
-}
-
-export function sourceItems(s: Api.Sources, p: Paths): Item[] {
-  return [
-    ...s.wikis.map((w) => ({
-      id: `source:${w.id}`,
-      label: w.id,
-      description: `${w.type} · ${w.location}`,
-      tooltip: `${w.id}: ${w.type} at ${w.location}${w.spaces.length ? ` (${w.spaces.join(", ")})` : ""}${w.owner ? `, owned by ${w.owner}` : ""}`,
-      icon: "library",
-      open: file(p, s.path),
-    })),
-    ...s.absorbed.map((a) => ({
-      id: `absorbed:${a.id}`,
-      label: a.id,
-      description: `absorbed · ${a.format}`,
-      tooltip: a.url,
-      icon: "repo-clone",
-      open: file(p, s.path),
-    })),
-  ];
-}
-
 /** The machine's checks (atticus doctor --json) that aren't ok, with their fix. */
 export function healthProblems(d: Api.Doctor): string[] {
   return (

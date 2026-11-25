@@ -8,7 +8,19 @@ import {
   repoCountsOf,
 } from "../src/app/repo-counts.js";
 import { ExplorerView, systemsHeader } from "../src/app/shell/Explorer.js";
-import { systemItems, treeRepos, type SectionModel } from "../src/app/shell/explorer-model.js";
+import { systemItems, type ExItem, type SectionModel } from "../src/app/shell/explorer-model.js";
+
+/** The repos the tree lists (a repo's row, under a system or not on the map), the manifest's only. */
+const treeRepos = (items: readonly ExItem[]): number =>
+  items.reduce(
+    (n, i) =>
+      n +
+      ((i.id.startsWith("systems/repo:") && !i.offManifest) || i.id.startsWith("systems/manifest:")
+        ? 1
+        : 0) +
+      treeRepos(i.children ?? []),
+    0,
+  );
 import { shellCounts } from "../src/app/shell/Shell.js";
 import { StatusBar } from "../src/app/shell/StatusBar.js";
 

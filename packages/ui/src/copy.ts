@@ -98,7 +98,6 @@ export const COPY = {
     notResent:
       "The Atticus app restarted while you did this, so it wasn't sent: nothing was changed. Do it again.",
     reload: "Reload the page",
-    online: "The server is answering again.",
     /** Review of beta.23: a write run as a job ended without its answer (stopped, or it broke). */
     jobEnded: (state: string, words: string) =>
       words
@@ -1113,7 +1112,6 @@ export const COPY = {
     repoPicker: "Repo",
     empty:
       "No repo has verified facts yet, so there is nothing to check the readers against. Read a repo with your assistant and Apply it on Map › Read status; then scan to compare.",
-    loadingRepo: "Loading the cross-check",
     state: {
       compared: "Compared",
       "no-facts":
@@ -1354,7 +1352,6 @@ export const COPY = {
     confirmDiscard: (n: number) => `Discard ${n} ${n === 1 ? "edit" : "edits"}`,
     upgradeTodo:
       "Review the upgrade below: it shows every file it writes before it writes one. In a terminal:",
-    upgradeElsewhere: "Upgrade from the app on",
     upgradeOn: "Set up › Activity › Catalog builds",
     lastTitle: "The last build here",
     lastNone: "No build has run on this machine yet.",
@@ -1644,8 +1641,6 @@ export const COPY = {
       typeof note === "number" || /^[0-9a-f]{8}$/.test(note)
         ? `note ${note}`
         : `the note "${note}"`,
-    builtOnIntro:
-      "What each repo's build files declare it is built on, each read from the line that declares it. Where a repo declares a framework and its facts show none of that framework's patterns — a Spring Boot service with no route, a React app with no screen — the entry points were probably missed, and that is a question for a person rather than something to be decided here.",
     kept: "Facts kept",
     rejected: "Rejected",
     redacted: (n: number) => `${n} quote${n === 1 ? "" : "s"} redacted`,
@@ -1666,7 +1661,6 @@ export const COPY = {
       nameLabel: "The repo or outside system it is, or a new outside system's name",
       nameHint:
         "A repo or outside system Atticus knows, or a short name: letters, digits, spaces and dashes, up to 40 characters, not a sentence.",
-      needName: "Type the repo or outside system it is, or a new outside system's name.",
       preview: "Preview the change",
       previewing: "Working out the change…",
       willIgnore: (n: number) =>
@@ -3168,8 +3162,6 @@ export const COPY = {
     handOffPrOpened:
       "Hand-off raised. Reviewers approve its PR on the Git host (on a manual Git host, its step on Home says how to open it); merging it approves the gate.",
     syncedWithTheGit: "Synced with the Git host.",
-    criticRoundStartedThe:
-      "The review started: the rule checks ran. Any AI review that waits is in Model runs, where Done checks its answer.",
     theRuleChecksRan: "The rule checks ran. AI is off here, so no AI review waits.",
     checkedTheAnswer: "Checked the answer.",
     readyToTryAgain: "Ready to try again.",
@@ -3178,7 +3170,6 @@ export const COPY = {
     state: "State",
     everyState: "Every state",
     blocked: "Blocked",
-    blocked2: "BLOCKED",
     noChangeMatches: "No change matches.",
     changes: "Changes",
     acrossAllChanges: "Across all changes",
@@ -3419,10 +3410,8 @@ export const COPY = {
     // ADR 0105: what waits on you, by kind, each linking to where it is acted on.
     waitingOnYou: "Waiting on you",
     waitQuestions: "Questions to answer",
-    waitNeeds: "Needs still open",
     waitSteps: "Manual steps to do",
     waitBlocking: "Blocking findings",
-    openNeeds: "Open needs",
     // ADR 0105 addendum: the list of what needs a person, grouped by change.
     byChangeIntro:
       "Grouped by change, changes with something blocking first; then what belongs to no change.",
@@ -3983,7 +3972,6 @@ export const COPY = {
     whenMissingOrInvalid: "When missing or invalid",
     transform: "Transform",
     record: "Record",
-    theStoryWritersPrompt: "The story writer's prompt is ready for your assistant.",
     requirement: "Requirement",
     story2: "Story",
     test: "Test",
@@ -4080,8 +4068,6 @@ export const COPY = {
     noCodeYet: "NO CODE YET",
     noCodeYetWhy: "No task has run yet, so there is no code to compare with the design and plans.",
     storyBar: "Story bar",
-    theStoryWriterDrafts:
-      "The story writer drafts stories, acceptance criteria and repo tasks from the approved design. You edit them before the plan gate.",
     writeStoriesWithAi: "Write stories with AI",
     storiesAndTasks: "Stories and tasks",
     breakdown: "Breakdown",
@@ -4100,7 +4086,6 @@ export const COPY = {
       `${passed} of ${rLength} runs finished`,
     everyWriteIsApproved:
       "Every write is approved by a person; AI never pushes to protected branches.",
-    noRunsYet: "No runs yet.",
     aiTaskRuns: "AI task runs",
     /** Sixth UX walk: the panel counts task runs only, not the critics' and stages' runs. */
     noTaskRunsYet: "No task has run with AI yet: Run with AI on a task starts one.",
@@ -5155,7 +5140,6 @@ export const COPY = {
     yourNotifications: "Your notifications",
     atticusMeYaml: ".atticus/me.yaml",
     settings: "Settings",
-    readOnlySetBy: "Read-only · set by the org pack, changed by PR",
     aiInThisOrganisation: "AI in this organisation",
     default: "DEFAULT",
     allowed: "ALLOWED",
@@ -5560,23 +5544,14 @@ export const COPY = {
     taskContextCopied: "Copied. Paste it into your assistant in the task's repo.",
     taskContextFailed:
       "The browser didn't allow copying. Select the context below and copy it yourself.",
-    taskContextSay: (repo: string) =>
-      `For your assistant in ${repo}: the task, its stories, the design and the knowledge it needs.`,
     historyOn: "Turn recording on",
     historyOff: "Turn recording off",
     historyWorking: "Saving…",
     historyNowOn: "Recording is on on this machine.",
     historyNowOff: "Recording is off on this machine.",
-    readRepoFirst: "Read a repo first",
-    readRepoFirstSay:
-      "Your assistant reads a repo's code and writes its facts; Atticus checks each against its line and draws the map.",
     openTrust: "Read a repo on Map › Read status",
     storiesAgain: "Draft the stories again",
     openArchitecture: "Prepare it on Architecture",
-    findingAsk: "Ask its owner",
-    findingFill: "Fill it in",
-    openChangeFor: "Open it on the change's page",
-    proposeSay: "Then propose it for review: a person approves the pull request.",
     openMap: "Open the map",
     readOnMap: (repo: string) => `${repo} is read and on the map.`,
     setupClones: "Sync the repos: it clones what's missing into the workspace.",
@@ -6087,7 +6062,6 @@ export const COPY = {
     depth: (n: number) => `Depth ${n}`,
     radiusOn: "Show it",
     radiusOff: "Stop",
-    radiusCount: (n: number) => `${n} boxes reached`,
     trace: "Trace from the selected box",
     traceNone: "Nothing goes out from it in this view.",
     hop: (d: number) => `Hop ${d}`,
@@ -6314,24 +6288,12 @@ export const COPY = {
   },
   connect: {
     open: "Connect to…",
-    title: (from: string) => `Connect ${from} to another box`,
-    /** The two ends of the line, as a screen reader says them (the panel draws from → to). */
-    ends: (from: string, to: string) => `From ${from} to ${to}`,
     dropNeedsRepo:
       "A line is drawn from the caller to what it calls, between repos, components and systems: start it on a repo, a component in one, a system that holds one repo, or an outside system, and end it on another. Nothing was connected.",
-    /** ADR 0200: each line that connects nothing says why, by the boxes' names, and what to do. */
-    dropSeveral: (system: string) =>
-      `${system} holds several repos, so the line can't say which one is meant. Open ${system} (double-click it) and draw the line to or from the repo inside.`,
     dropNoRepo: (system: string) =>
       `Add ${system}'s repo with Add to the map…, then draw the line to or from the repo: ${system} is a system of the estate with no repo on the map yet, so there is no call or API of it to connect.`,
-    dropTwoOutside: (a: string, b: string) =>
-      `Neither ${a} nor ${b} has code in the estate, so there is no call to pair and no gateway route to declare between them. To say what ${a} does that the code can't show, pick ${a} and choose Declare a link….`,
     dropSameRepo:
       "Both ends are in the same repo, so there is nothing to connect: a repo's calls inside itself are read from its code.",
-    intro:
-      "Pair this repo's calls that have no arrow with the other box's APIs, or move one that has. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
-    pickBox: "The other box",
-    pickBoxNone: "Pick a repo or a system",
     loading: "Reading the calls and APIs…",
     failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
     /** Why the join left a call, in words (the join's reason codes). */
@@ -6851,7 +6813,6 @@ export const COPY = {
           `It adds Atticus's section to your ${files}, after your own lines, which it keeps as they are.`,
       },
     },
-    notAllowed: "Copilot can't be started from here",
     starting: "Starting…",
     failedToStart: (why: string) => `The run didn't start: ${why}`,
     strip: {
@@ -7370,10 +7331,6 @@ export const COPY = {
       "The critic's findings on this stage's latest draft, each with what you can do about it: make the fix, say it isn't relevant, waive it where the rule allows, or ask its owner. Or leave a comment: the stage's next run gives it to your assistant as your answer, with the next draft.",
     notRun:
       "This stage hasn't run for this change yet, so there is nothing to review. Run it first:",
-    noRound: (gate: string | null) =>
-      gate
-        ? `The critic hasn't reviewed a draft at the ${gate} gate yet. The stage runs it on each draft that passes its checks.`
-        : "No gate in gates.yaml reviews this stage's phase, so the critic doesn't run here.",
     clean: (gate: string, round: number) => `Nothing found at the ${gate} gate, round ${round}.`,
     round: (gate: string, round: number, n: number) =>
       `${n} finding${n === 1 ? "" : "s"} at the ${gate} gate, round ${round}`,
@@ -7404,11 +7361,8 @@ export const COPY = {
     apply: "Make the fix",
     applyFor: (id: string) => `Make the fix for ${id}`,
     dismiss: "Not relevant",
-    dismissFor: (id: string) => `Not relevant: ${id}`,
     waive: "Waive",
-    waiveFor: (id: string) => `Waive ${id}`,
     ask: (owner: string) => `Ask ${owner}`,
-    askFor: (id: string, owner: string) => `Ask ${owner} about ${id}`,
     cantWaive: "This rule can't be waived: fix it, or say it isn't relevant with why.",
     reason: (id: string) => `Why, for ${id} (needed for not relevant and waive)`,
     needReason: "Write why first: not relevant and waive need a reason.",
@@ -7427,11 +7381,6 @@ export const COPY = {
     question: (owner: string) => `The question for ${owner}`,
     comments: "Comments",
     comment: (id: string) => `Your comment on ${id}`,
-    commentHint:
-      "Say what the next draft should do about it. Your words go to the assistant as your answer.",
-    saveComment: "Save the comment",
-    savingComment: "Writing the comment…",
-    needComment: "Write the comment first.",
     read: "read by a draft",
     unread: "not read yet: run the stage",
     commented: (files: string) =>
@@ -7440,10 +7389,7 @@ export const COPY = {
     questions: "The stage's questions",
     noQuestions: "The stage has no question for a person.",
     answered: (words: string) => `Answered: ${words}`,
-    answerIt: (q: string) => `Answer: ${q}`,
     next: "Then run the stage again",
-    nextWhy:
-      "It reads your answers, comments and choices, drafts again where they ask, and the critic checks the new draft.",
     /** Eighth UX walk: a stage that is done offers a fresh run only under a disclosure. */
     runAgain: "Run the stage again",
     runAgainWhy:
@@ -7510,11 +7456,8 @@ export const COPY = {
     makeFix: "Make the fix",
     makeFixFor: (id: string) => `Make the fix for ${id}`,
     fixToAssistant: (fix: string) => `Make the fix: ${fix}`,
-    fixSent:
-      "Sent to the assistant: the next round makes the fix. Start the next round when you're ready.",
     fixInEditor: (file: string) =>
       `The stage's assistant doesn't write ${file}, so the fix is yours: it opens here, at the line.`,
-    fixSaved: "Saved. Recorded as fixed.",
     askOwner: (owner: string) => `Ask ${owner}`,
     askOwnerFor: (id: string, owner: string) => `Ask ${owner} about ${id}`,
     asked: "Asked of its owner.",
@@ -7571,7 +7514,6 @@ export const COPY = {
     detailTokens: (n: number) => `${n} tokens`,
     detailModel: (m: string) => `Model ${m}`,
     detailAttempt: (n: number) => `Round ${n}`,
-    detailFiles: "Files",
     adminView: "Every run, for an administrator: Set up › Activity › Model runs",
     empty: "Nothing has happened at this stage yet.",
     criticRan: (waiting: number) =>
@@ -8075,7 +8017,6 @@ export const COPY = {
     trustBar: (min: number) =>
       `The bar is ${Math.round(min * 100)}%: below it, the AI stops deciding and only proposes.`,
     trustOpen: "Open Decided by AI",
-    trustAudit: "ai decisions",
     /** A change's impact. */
     impactByAi: (n: number) =>
       `${n} of the callers that break ${n === 1 ? "is" : "are"} linked only by AI; confirm or correct ${n === 1 ? "its link" : "their links"} on Decided by AI.`,
@@ -8088,8 +8029,6 @@ export const COPY = {
     matchKept: (n: number) => `${n} kept as proposals for you:`,
     matchPaused: (why: string) => `Not written: AI deciding is paused. ${why}`,
     matchUndo: "Undo or correct them on Decided by AI",
-    /** The Connect panel: what the AI already paired between the two boxes. */
-    betweenTitle: (n: number) => `Paired by AI between these boxes (${n})`,
     /** Why is this linked?: a link the AI decided. */
     whyLinked:
       "The AI paired this call with this entry, from a run Atticus started. No person has confirmed it, so it is inferred until someone does.",
@@ -8190,7 +8129,6 @@ export const COPY = {
         : `The org pack's repo types: ${verdict}.`,
     noType: "Nothing in its files settles a type: set one here.",
     type: "Type",
-    typeFor: (id: string) => `Type of ${id}`,
     setType: "Set the type",
     typeHint:
       "Type it prototype for a prototype repo: Change › Prototypes compares it with the estate.",
@@ -8291,7 +8229,6 @@ export const COPY = {
     wikiPath: "Pages folder (git only)",
     wikiRef: "Branch or tag (git only)",
     // The AI page and Settings.
-    aiAdapters: "Outside systems are set on Set up › Settings, and here:",
     settingsEdit: "Edit, then Propose: each change is a file you propose for review",
     runtimeOnAi: "The modes, assistants, models and AI decides are edited on Set up › AI.",
     openAi: "Open Set up › AI",
@@ -8328,7 +8265,6 @@ export const COPY = {
     accept: "Accept",
     acceptFor: (who: string, role: string) => `Accept ${who} as ${role}`,
     accepted: (who: string, role: string) => `${who} is the ${role} on this change now.`,
-    noSuggestion: "Nobody to suggest:",
     // At a glance: who the change waits on.
     waitsOn: (who: string, role: string) => `Waits on: ${who} (${role})`,
     waitsOnReview: "to review and approve its hand-off",
@@ -8486,9 +8422,6 @@ export const COPY = {
     },
     // Home, by role.
     home: {
-      yourChanges: "Your changes",
-      yourChangesIntro: (role: string) =>
-        `The changes you are on as ${role}, and what waits on you.`,
       waitsOnYou: "waits on you",
       waitsOnOther: (who: string) => `waits on ${who}`,
       noneYours: "No change in flight names you yet.",

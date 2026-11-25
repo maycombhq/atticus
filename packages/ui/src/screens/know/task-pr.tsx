@@ -53,11 +53,6 @@ export function runIsTheStep(t: Pick<Task, "done" | "taskRun">): boolean {
   return !t.done && (!PAST_THE_RUN.has(t.taskRun?.state ?? "") || !!prSettled(t));
 }
 
-/** Only the runs of tasks (Run with AI), not the critics' and stages' runs. */
-export function taskRunsOnly<R extends { agent: string; taskRun?: unknown }>(runs: readonly R[]) {
-  return runs.filter((r) => r.agent === "task-runner" || r.taskRun !== undefined);
-}
-
 /**
  * Ninth UX walk: the AI task runs, with each run a task names as its latest (a task with the
  * assistant waits on a run the run list may not mark as a task's yet): "No task has run with AI

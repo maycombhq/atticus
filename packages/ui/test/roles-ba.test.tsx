@@ -4,7 +4,7 @@ import { COPY } from "../src/copy.js";
 import { holdsPhase, inboxOf, levelsOfRoles } from "../src/app/inbox.js";
 import { parseBrief, renderBrief } from "../src/screens/BriefForm.js";
 import { acceptBody, suggestionFrom } from "../src/screens/change-owners.js";
-import { ChangeWaitsLine, nonAdminRoles } from "../src/screens/HomeRoles.js";
+import { HomeChangeRow, nonAdminRoles } from "../src/screens/HomeRoles.js";
 import { KnowledgeAnswerBlock } from "../src/screens/KnowledgeAnswer.js";
 import { RouteQuestion, asksWords } from "../src/screens/RouteQuestion.js";
 import { WaitsOnLine } from "../src/screens/work/Cockpit.js";
@@ -122,8 +122,9 @@ describe("who a change waits on", () => {
   it("says on Home when it waits on you", () => {
     const html = renderToStaticMarkup(
       <ul>
-        <ChangeWaitsLine
+        <HomeChangeRow
           c={{ id: "add-holds", title: "Ledger holds", state: "define" }}
+          stage="Define"
           waitsOn={{ role: "product-owner", people: ["pat"], because: "phase", phase: "define" }}
           me="@Pat"
         />
