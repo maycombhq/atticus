@@ -98,3 +98,4 @@ export * from "./decision-batches.js";
 export * from "./declared-links.js";
 export * from "./declarable-routes.js";
 export * from "./schema/reading-rules.js";
+export * from "./recipe.js";

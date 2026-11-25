@@ -13,3 +13,7 @@ can't draw:
 `reference.yaml` holds the true arrows, written by hand: four requests reach a module and one
 reaches none (its target server, `legacy-core`, has no host anywhere in the estate).
 `packages/cli/test/gateway-shape-fixture.test.ts` checks every line the reference cites.
+
+Item 5 (ADR 0210 part 2) adds a recipe for the modules (`org-pack/reading-rules/types/integration-module.yaml`),
+each module's entries written by hand (`facts/<repo>.jsonl`) for its proof, and the engine's output on the
+ledger module (`expected/recipe-ledger.yaml`), checked by `packages/core/test/recipe.test.ts`.

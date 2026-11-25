@@ -423,3 +423,70 @@ describe("the declared arrows the code now shows, and a drawn one's panel (ADR 0
     expect(arrowBetween(links, (id) => nodes.get(id), PROXY.box, { system: "x" })).toBeUndefined();
   });
 });
+
+describe("why there is no call to offer (ADR 0210, beta.33)", () => {
+  it("says the read has no call, with the command that reads it again", () => {
+    const h = plain(
+      html(
+        base({
+          whyNone: {
+            why: "no-calls",
+            calls: 0,
+            command: "atticus map --all --gaps --repos forge-edge-proxy",
+            gateway: true,
+          },
+        }),
+      ),
+    );
+    expect(h).toContain(W.mechanism.declare("forge-edge-proxy", "forge-ledger-svc", "you"));
+    expect(h).toContain(
+      W.mechanism.whyNone["no-calls"](
+        "forge-edge-proxy",
+        "atticus map --all --gaps --repos forge-edge-proxy",
+        false,
+        true,
+      ),
+    );
+    expect(h).toContain('data-testid="why-none"');
+  });
+
+  it("says when the facts aren't verified, when every call stays inside, or none is open", () => {
+    const unverified = plain(
+      html(
+        base({
+          whyNone: {
+            why: "no-calls",
+            calls: 0,
+            command: "atticus verify forge-edge-proxy",
+            unverified: true,
+          },
+        }),
+      ),
+    );
+    expect(unverified).toContain(
+      W.mechanism.whyNone["no-calls"](
+        "forge-edge-proxy",
+        "atticus verify forge-edge-proxy",
+        true,
+        false,
+      ),
+    );
+    expect(plain(html(base({ whyNone: { why: "all-inside", calls: 3 } })))).toContain(
+      W.mechanism.whyNone["all-inside"]("forge-edge-proxy", 3),
+    );
+    expect(plain(html(base({ whyNone: { why: "none-open", calls: 0 } })))).toContain(
+      W.mechanism.whyNone["none-open"]("forge-edge-proxy"),
+    );
+    // A non-gateway repo never gets the gateway sentence.
+    const plainRepo = plain(html(base({ whyNone: { why: "no-calls", calls: 0, command: "c" } })));
+    expect(plainRepo).toContain(
+      W.mechanism.whyNone["no-calls"]("forge-edge-proxy", "c", false, false),
+    );
+    expect(plainRepo).not.toContain("gateway proxy");
+    expect(plain(html(base({ whyNone: { why: "outside-unknown", calls: 0 } })))).toContain(
+      W.mechanism.whyNone["outside-unknown"]("forge-ledger-svc"),
+    );
+    // No reason, no line: an older server's answer.
+    expect(plain(html(base({})))).not.toContain('data-testid="why-none"');
+  });
+});

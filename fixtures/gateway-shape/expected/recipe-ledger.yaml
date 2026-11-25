@@ -1,0 +1,66 @@
+- kind: entry
+  id: entry.blueprint-rest-entries.a7f39bf33274
+  repo: forge-ledger-module
+  commit: 5d6e7f8
+  cite:
+    file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+    line: 6
+    value: /{accountId}
+    quote: <get uri="/{accountId}">
+    with:
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 4
+        value: /cxf/api
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 5
+        value: /accounts
+  verified: none
+  by: reader
+  conf: declared
+  entryType: rest
+  method: GET
+  path: /cxf/api/accounts/{accountId}
+- kind: entry
+  id: entry.blueprint-rest-entries.b725b7f7d20a
+  repo: forge-ledger-module
+  commit: 5d6e7f8
+  cite:
+    file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+    line: 9
+    value: /{accountId}/blocks
+    quote: <get uri="/{accountId}/blocks">
+    with:
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 4
+        value: /cxf/api
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 5
+        value: /accounts
+  verified: none
+  by: reader
+  conf: declared
+  entryType: rest
+  method: GET
+  path: /cxf/api/accounts/{accountId}/blocks
+- kind: entry
+  id: entry.blueprint-rest-entries.ad13732e3198
+  repo: forge-ledger-module
+  commit: 5d6e7f8
+  cite:
+    file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+    line: 14
+    value: /{statementId}
+    quote: <get uri="/{statementId}">
+    with:
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 4
+        value: /cxf/api
+      - file: src/main/resources/OSGI-INF/blueprint/camel-context.xml
+        line: 13
+        value: /statements
+  verified: none
+  by: reader
+  conf: declared
+  entryType: rest
+  method: GET
+  path: /cxf/api/statements/{statementId}

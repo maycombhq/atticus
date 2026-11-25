@@ -7015,6 +7015,22 @@ export const ConnectView = z.object({
   find: FindEntryView.optional(),
   /** A.7: after `not-found`, `again` (the clone moved, or a reading rule became active) or `anyway`. */
   findAgain: z.enum(["again", "anyway"]).optional(),
+  /**
+   * ADR 0210 (2.0.0-beta.33): why there is no call to offer, with `declare`: `no-calls`, the
+   * caller's read has no call fact (a gateway's read with routes and no forwarding calls is the
+   * usual case; `command` reads it again, `unverified` when its facts aren't all verified);
+   * `all-inside`, every call of it stays inside its own component; `all-paired`, a person paired
+   * every call of it with another box. `calls`: how many calls the read has.
+   */
+  whyNone: z
+    .object({
+      why: z.enum(["no-calls", "none-open", "all-inside", "outside-unknown"]),
+      calls: z.number().int().nonnegative(),
+      command: z.string().optional(),
+      unverified: z.boolean().optional(),
+      gateway: z.boolean().optional(),
+    })
+    .optional(),
 });
 /**
  * 3.19.0 (ADR 0204 1.6, 1.7): GET /api/declared-links/arrow?interface=<id>, the profile's arrow
