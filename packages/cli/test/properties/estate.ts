@@ -557,6 +557,8 @@ export async function writeOrgPack(root: string, repos: readonly ManifestRepo[])
     join(op, "pack.yaml"),
     "schemaVersion: 1\nname: forge\nversion: 0.1.0\nowner: team-platform\n",
   );
+  // ADR 0210 part 6: the model's scans are the readers', so this pack turns them on.
+  await writeFile(join(op, "conventions.yaml"), 'schemaVersion: 3\nreaders: "on"\n');
   // Every pool system stays in the profile, so a repo removed from the manifest is still a
   // system the profile names (a person removes the repo, not the system).
   await writeFile(

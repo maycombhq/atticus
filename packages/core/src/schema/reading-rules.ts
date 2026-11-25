@@ -108,8 +108,19 @@ export function templateNames(t: string): string[] {
  * the pattern is written (a model drafts it; the lines come from repos). What RE2 can't express
  * (a backreference, a lookaround) is refused.
  */
-export function recipeRegExp(p: string): RE2JS {
+export function recipeRegExp(p: string): RecipePattern {
   return RE2JS.compile(p);
+}
+/**
+ * What a compiled recipe pattern offers the engine: RE2JS's own methods, named here so the
+ * SDK's published types don't import `re2js` (bundled into its JavaScript, not a dependency).
+ */
+export interface RecipePattern {
+  matcher(input: string): {
+    find(): boolean;
+    group(name?: string | number): string | null;
+  };
+  namedGroups(): Record<string, number>;
 }
 /** The named groups of a pattern. */
 export function groupNames(p: string): string[] {

@@ -204,6 +204,23 @@ export function arrowOf(m: Model, r: Rec): string | undefined {
 }
 
 /**
+ * An arrow to a box drawn as its repo's System (an archived repo, seed 331160742), keyed as
+ * `arrowOf` keys one to the repo: `arrowOf` can't tell the System's end apart from no repo.
+ */
+function toSystemArrow(m: Model, r: Rec): string | undefined {
+  if (r.kind !== "Interface") return undefined;
+  const from = m.slotOfEnd(String(r.from));
+  const to = m.repos.find((x) => x.base.system === String(r.to));
+  if (!from || !to || from.slot === to.slot) return undefined;
+  return arrowKey(
+    from.base.component,
+    to.base.component,
+    r.method ?? "EVENT",
+    String(r.normalizedPath),
+  );
+}
+
+/**
  * The repos a join with `slot` can reach: those whose code, at any commit the model knows, calls
  * one of its hosts or is called by it, or publishes a topic the other listens to. A join that
  * forms or stops forming with `slot` changes their loose ends and features too.
@@ -490,7 +507,9 @@ function movedByPairings(models: (Model | undefined)[], slots: ReadonlySet<numbe
         const to = m.repos[x.callee]!.base.component;
         for (const path of new Set([call.path, x.entry.path]))
           out.add(arrowKey(from, to, call.method, path));
-        const host = m.calleeOf(call.host);
+        // The host's repo even when it is archived (seed 331160742): the arrow the pairing moves
+        // off went to its box, drawn as the repo's System once it is archived.
+        const host = m.calleeOf(call.host) ?? m.repos.find((r) => r.hosts.includes(call.host));
         if (host) out.add(arrowKey(from, host.base.component, call.method, call.path));
       }
     }
@@ -527,7 +546,7 @@ function explanations(s: Step, rec: Rec): Set<RemovalReason> {
   // host), which that read explains (property seed 1560234151).
   // Only the paired call's own arrows, while the pairing is in effect (the review).
   for (const slot of c.slots) {
-    const k = arrowOf(m, rec);
+    const k = arrowOf(m, rec) ?? toSystemArrow(m, rec);
     if (k && movedByPairings([s.modelBefore.built, m], new Set([slot])).has(k))
       for (const x of reasonsOf(slot)) out.add(x);
   }
@@ -589,7 +608,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     const ok = (r: Rec | undefined) =>
       involves(s.m, c.slots, r) ||
       (!!r && JOINED.has(r.kind) && involves(s.m, reach, r)) ||
-      (!!r && moved.has(arrowOf(s.m, r) ?? "")) ||
+      (!!r && moved.has(arrowOf(s.m, r) ?? toSystemArrow(s.m, r) ?? "")) ||
       (!!r && listsEntry(r));
     const bad = unchangedSince(s.before.generated, s.after.generated, s.editsBefore).filter(
       (p) => !ok(a.get(p)) && !ok(b.get(p)),

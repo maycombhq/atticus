@@ -62,6 +62,11 @@ export interface Decision {
   /** The write count when it was added: its effect is checked after a later write. */
   since: number;
   from: "person" | "edits";
+  /**
+   * ADR 0210 part 3: made by a person's write going past its hand edits. It is in that write's
+   * undo copy, so an undo of the write takes it back (and the edit is a hand edit again).
+   */
+  byWrite?: true;
   // No `added`: a record a person added by hand is never made a curated decision (ADR 0195
   // addendum, CS2: "an added record can't be a curated decision (one changes or suppresses a
   // record the build makes) and is said"); it stays a hand edit until it is discarded.

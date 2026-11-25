@@ -12,7 +12,7 @@ import {
   federationConflicts,
   resolveMetarepo,
 } from "../src/index.js";
-import { cleanup, COMMIT, copyFixture, fixture, SCANNED_AT } from "./helpers.js";
+import { cleanup, COMMIT, copyFixture, fixture, readersOn, SCANNED_AT } from "./helpers.js";
 
 afterAll(cleanup);
 
@@ -22,6 +22,7 @@ const state = async () => ({ commit: COMMIT, dirty: false });
 async function federatedRepo(): Promise<string> {
   const dir = await copyFixture("openspec-repo", "catalog-service");
   await adopt(dir);
+  await readersOn(dir);
   const r = await absorb(dir, fixture("atticus-metarepo"), { id: "payments" });
   // What the reviewer does with the proposal: add the absorbed entry to sources.yaml.
   const p = await resolveMetarepo(dir);
@@ -138,6 +139,7 @@ describe("federation in the scan", () => {
   it("an explicit federated option works without sources.yaml, and none means no change", async () => {
     const dir = await copyFixture("openspec-repo", "catalog-service");
     await adopt(dir);
+    await readersOn(dir);
     const plain = await scanEstate({
       root: dir,
       repoState: state,

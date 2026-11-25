@@ -553,8 +553,25 @@ async function verify(
     m.handEdits.length &&
     m.handEdits.every((e) => e.how !== "add")
   ) {
-    for (const e of m.handEdits) curateInModel(m, e);
+    for (const e of m.handEdits) curateInModel(m, e, true);
     m.handEdits = [];
+  }
+  // An added record can't be a curated decision: the write's curate keeps the others as decisions
+  // and refuses (seed 332486502), as curate-edits does; they wait for a build, the adds stay.
+  const adds = m.handEdits.filter((e) => e.how === "add");
+  if (
+    !outcome.wrote &&
+    outcome.guard === "hand-edits" &&
+    confirm.discardEdits === undefined &&
+    confirm.allowRemovals === undefined &&
+    adds.length &&
+    adds.length < m.handEdits.length
+  ) {
+    for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+      curateInModel(m, e);
+      m.curatedPending.push(e);
+    }
+    m.handEdits = adds;
   }
   const facts = { code: r.code, commit: r.commit, id: r.id };
   // The hunt of beta.28.1 (F1, seed 1548203660): a read whose every fact is rejected is refused
@@ -579,7 +596,7 @@ async function verify(
 }
 
 /** A hand edit made a curated decision, as `atticus catalog edits --curate` makes it. */
-function curateInModel(m: Model, e: HandEdit): void {
+function curateInModel(m: Model, e: HandEdit, byWrite = false): void {
   const common = {
     target: e.id,
     kind: e.kind,
@@ -590,7 +607,7 @@ function curateInModel(m: Model, e: HandEdit): void {
     e.how === "delete"
       ? { action: "suppress", ...common, since: m.writes, from: "edits" }
       : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
-  m.curated.push(dec);
+  m.curated.push(byWrite ? { ...dec, byWrite: true } : dec);
   m.changes.curated.add(e.id);
 }
 
@@ -1077,7 +1094,23 @@ export async function act(
       // and deleted files are made curated; each added one stays a hand edit, so the command
       // refuses (nothing built, catalog/generated and the slots as they were) until it is
       // discarded.
-      const adds = m.handEdits.filter((e) => e.how === "add");
+      // A record of a repo removed from the manifests is read against the record as the last
+      // build made it, the repo listed again from its readers slot's Component; a repo only ever
+      // read from facts has none, so curate leaves its edit (seed 331299987), said, a hand edit.
+      const was = records(before.generated);
+      const unkeepable = (e: HandEdit) => {
+        const ids = ((was.get(e.path)?.evidence ?? []) as { repo?: string }[]).flatMap((x) =>
+          x.repo ? [x.repo] : [],
+        );
+        return (
+          e.how !== "add" &&
+          ids.length > 0 &&
+          ids.every((id) =>
+            m.repos.some((r) => r.id === id && !r.listed && m.readers.get(r.slot)?.id !== id),
+          )
+        );
+      };
+      const adds = m.handEdits.filter((e) => e.how === "add" || unkeepable(e));
       const pre = await sut().curateEdits(w.root);
       // Seed 1562698156: before the upgrade (an undo took it back) no file is a hand edit yet,
       // and the command refuses as every writer does, writing nothing: an added record must be
@@ -1087,7 +1120,7 @@ export async function act(
       const curate = (e: HandEdit) => curateInModel(m, e);
       if (adds.length) {
         if (pre.refused)
-          for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+          for (const e of m.handEdits.filter((x) => !adds.includes(x))) {
             curate(e);
             m.curatedPending.push(e);
           }
@@ -1181,7 +1214,12 @@ export async function act(
               (h) => expected.generated.get(h.path) === e.before.generated.get(h.path),
             ),
           ),
-      ].filter((h, i, all) => all.findIndex((x) => x.path === h.path) === i);
+      ]
+        .filter((h, i, all) => all.findIndex((x) => x.path === h.path) === i)
+        // An undo back before any build.json (the upgrade's first build) leaves a catalog in
+        // which no file is a hand edit yet, as `atticus catalog edits` says of one: the files are
+        // the catalog as it was then, and the next write's upgrade takes them as they are.
+        .filter(() => expected.sources.has("build.json"));
       const outcome = await sut().undo(w.root, { n: k, yes: true });
       const afterUndo = await w.snap();
       // Undoing a discard brings its hand edits back, and undo refuses over hand edits.
@@ -1230,6 +1268,8 @@ export async function act(
           m.legacyJoins = restored.legacyJoins;
           m.beta26 = restored.beta26;
           m.handEdits = handEdits;
+          // The decisions an undone write made of its hand edits go with it (its undo copy).
+          m.curated = m.curated.filter((x) => !x.byWrite || x.since < restored.writes);
         },
       };
     }

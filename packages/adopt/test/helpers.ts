@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,3 +28,14 @@ export async function cleanup(): Promise<void> {
 
 export const SCANNED_AT = "2026-10-18T12:00:00Z";
 export const COMMIT = "a".repeat(40);
+
+/**
+ * ADR 0210 part 6: an adopted pack has the readers off; these tests scan with them, so the pack
+ * turns them on (inside .atticus/, which unadopt removes).
+ */
+export async function readersOn(dir: string): Promise<void> {
+  await writeFile(
+    join(dir, ".atticus", "org-pack", "conventions.yaml"),
+    'schemaVersion: 3\nreaders: "on"\n',
+  );
+}

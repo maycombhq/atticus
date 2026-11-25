@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { CancelledError } from "./cancel.js";
 import { hashFilesIn, statFilesIn, type FileHash } from "./file-pool.js";
 import { ensureLocalIgnore } from "./fs.js";
@@ -166,7 +166,10 @@ export async function hashCacheWriteProblem(cacheRoot: string): Promise<string |
     return undefined;
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code ?? "EIO";
-    return code === "ENOENT" ? undefined : code;
+    if (code !== "ENOENT") return code;
+    // Windows says ENOENT where a file stands in the folder's place; POSIX says ENOTDIR.
+    const at = await stat(dirname(probe)).catch(() => undefined);
+    return at && !at.isDirectory() ? "ENOTDIR" : undefined;
   }
 }
 

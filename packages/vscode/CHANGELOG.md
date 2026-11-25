@@ -2,6 +2,11 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.38 (pre-release, with Atticus 2.0.0-beta.33)
+
+- **Ships with Atticus 2.0.0-beta.33, and needs it.** Atticus: Sync the map (was Map the estate) runs `atticus sync` in a terminal: recipe first, the model for the rest, one write with Apply's pairing inside it; there is no limit box to type. The Atticus view lists a change's open items under it. The app in its tab shows beta.33: Paired by Apply and the Recipes list on Decided by AI, Connect saying why it has no arrow, open items beside Raise hand-off, and the budget on Set up › AI. Run `atticus upgrade` once in each metarepo: an existing estate keeps the built-in readers on; everyone on a metarepo upgrades together, since beta.32 refuses a version 5 runtime.yaml and a version 3 conventions or reading rules file.
+- A missing or an old command line is given one install command at the exact version, `npm install -g @maycombhq/atticus@2.0.0-beta.33`.
+
 ## 0.7.37 (pre-release, with Atticus 2.0.0-beta.32)
 
 - **Ships with Atticus 2.0.0-beta.32, and needs it.** Copilot starts from the installed language server rather than through npx; an `atticus upgrade` still owed is said before an Apply verifies anything; a fact field the assistant made up is named as the assistant's, not "a newer Atticus"'s.

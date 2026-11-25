@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { appMemory, forgetFactsParses } from "@maycombhq/core";
 import { main } from "../../src/main.js";
+import { writeFactsHooks } from "../../src/map-render-commands.js";
 import { git, writeRead } from "./estate.js";
 import type { CatalogSystem, Outcome } from "./seam.js";
 import { cs2Writers } from "./system-cs2.js";
@@ -69,7 +70,12 @@ export const todaysWriters: CatalogSystem = {
   async verify(root, repo, o) {
     if (confirming(o)) return unsupported("atticus verify --allow-removals/--discard-edits");
     if (o.crash) return unsupported("a crash part way through a write");
-    const r = await run(["verify", repo, "--root", root, ...(o.write ? ["--write"] : [])]);
+    // beta.26's verify --write stopped on every refusal; this release's goes past an upgrade owed,
+    // hand edits and removals (ADR 0210 part 3), which beta.26's never did: the strict hook.
+    writeFactsHooks.strict = true;
+    const r = await run(["verify", repo, "--root", root, ...(o.write ? ["--write"] : [])]).finally(
+      () => delete writeFactsHooks.strict,
+    );
     const refused = o.write && r.err.some((l) => l.startsWith("Nothing written"));
     return { ...r, wrote: o.write && r.code === 0, refused };
   },

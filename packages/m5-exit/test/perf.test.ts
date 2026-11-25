@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cp, mkdtemp, readdir, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,8 @@ beforeAll(async () => {
   root = join(top, "metarepo");
   const estate = generateEstate({ repos: REPOS });
   await writeEstate(estate, root);
+  // ADR 0210 part 6: the readers are off for a new pack; these budgets are the readers' scan.
+  await writeFile(join(root, "org-pack", "conventions.yaml"), 'schemaVersion: 3\nreaders: "on"\n');
   await cp(join(FIXTURES, "forge-change/openspec"), join(root, "openspec"), { recursive: true });
   const t = performance.now();
   const scan = await scanEstate({

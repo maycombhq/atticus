@@ -16,7 +16,7 @@ import {
   unadopt,
   zeroInstallFiles,
 } from "../src/index.js";
-import { cleanup, COMMIT, copyFixture, SCANNED_AT } from "./helpers.js";
+import { cleanup, COMMIT, copyFixture, readersOn, SCANNED_AT } from "./helpers.js";
 
 afterAll(cleanup);
 
@@ -147,6 +147,7 @@ describe("removal leaves the repo byte-identical", () => {
     const before = await hashTree(dir);
 
     await adopt(dir);
+    await readersOn(dir);
     // A scan with defaults: the org pack, cache and inputs resolve inside .atticus/.
     const scan = await scanEstate({ root: dir, repoState: state, scannedAt: SCANNED_AT });
     expect(scan.problems).toEqual([]);

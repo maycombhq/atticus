@@ -257,7 +257,7 @@ test.describe("a correction on the canvas, applied from the app", () => {
     }
   });
 
-  test("the same pairing with a removal over the limit still waits for the person's count", async ({
+  test("the same pairing with a removal over the limit is written, not held for a count (ADR 0210 part 3)", async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -278,27 +278,13 @@ test.describe("a correction on the canvas, applied from the app", () => {
       expect(said.status(), await said.text()).toBeLessThan(300);
       const { form, apply } = await correctOnCanvas(page, a);
       await apply.click();
-      // Two counted removals (the setting and the feature) are more than a tenth of 12: Apply
-      // lists them and waits for their count before it writes anything.
-      const review = form.getByRole("button", { name: /^Review the \d+ removals$/ });
-      await expect(review).toBeVisible({ timeout: 90_000 });
-      const n = Number(/\d+/.exec((await review.textContent()) ?? "")?.[0]);
-      await review.click();
-      const dialog = page.getByRole("dialog");
-      // Each removal says what explains it: the person's own corrections.
-      await expect(
-        dialog.getByRole("cell", { name: /^A pairing changed \(facts\/\*\.corrections\.jsonl\)/ }),
-      ).toHaveCount(n);
-      await expect(dialog.getByRole("row").filter({ hasText: "Setting/" })).toHaveCount(1);
-      await expect(
-        dialog.getByRole("row").filter({ hasText: "its call goes to northwind-notes now" }),
-      ).toHaveCount(1);
-      await dialog.getByLabel(`Type ${n} to confirm exactly these`).fill(String(n));
-      await accessible(page, "a correction's removals, waiting for their count");
-      await dialog.getByRole("button", { name: `Apply, removing ${n} records` }).click();
+      // ADR 0210 part 3 (beta.33): two counted removals (the setting and the feature) are more
+      // than a tenth of 12, and Apply no longer waits for their count: it writes them, each
+      // listed with what explains it, and one undo takes the write back.
       await expect(page.getByText("Applied the correction to forge-studio's map.")).toBeVisible({
         timeout: 90_000,
       });
+      await expect(form.getByRole("button", { name: /^Review the \d+ removals$/ })).toHaveCount(0);
     } finally {
       await stopApp(a);
       await rm(dirname(a.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

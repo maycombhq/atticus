@@ -998,7 +998,12 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         "unresolved.forge-notify.on-forge-payments-settled",
       ]);
       const adopted = await tree(root);
-      expect(ins(adopted)).toEqual(ins(before));
+      // ADR 0210 part 6: the readers built this catalog, so the same upgrade keeps them on.
+      const kept = ins(adopted).filter(([f]) => f !== "org-pack/conventions.yaml");
+      expect(kept).toEqual(ins(before));
+      expect(ins(adopted).find(([f]) => f === "org-pack/conventions.yaml")?.[1]).toContain(
+        'readers: "on"',
+      );
       expect(curatedOf(adopted)).toEqual(curatedOf(before));
       // A decision of a suppressed loose end waits for the read, and says so (not "run atticus
       // upgrade", which has nothing to carry yet).
@@ -1043,7 +1048,11 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
         const now = await tree(x);
         const want = await tree(direct);
         expect(unresolvedIds(await generated(x))).toEqual(unresolvedIds(await generated(direct)));
-        expect(ins(now)).toEqual(ins(want));
+        // The readers built `root` before its slots (kept on by its first upgrade); the rest of
+        // the inputs are what a direct upgrade gives.
+        const notConventions = (m: Map<string, string>) =>
+          ins(m).filter(([f]) => f !== "org-pack/conventions.yaml");
+        expect(notConventions(now)).toEqual(notConventions(want));
         expect(curatedOf(now)).toEqual(curatedOf(want));
         // And a build after it changes nothing.
         const g = await generated(x);

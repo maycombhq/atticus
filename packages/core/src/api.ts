@@ -796,7 +796,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 // 3.21.0 (ADR 0210, beta.33): GET /api/reading-rules/recipes, the recipes and whether each is
 // proven; GET /api/settings/ai's `readers`. Additive only.
 // Also in 3.21.0 (ADR 0210 part 4, beta.33): GET /api/decisions gives `applyPairs`, what the
-// last Apply's pairing drew, dropped (with why), withdrew and left loose. Additive only.
+// last Apply's pairing drew, dropped (with why), withdrew and left loose (Decided by AI's Paired
+// by Apply). Additive only.
+// Also in 3.21.0 (ADR 0210, beta.33): GET /api/connect's `whyNone`, why there is no call to
+// offer. Additive only.
+// Also in 3.21.0 (ADR 0210 part 7, beta.33): GET /api/changes/{id}/status and GET
+// /api/release/{id} (`status`) carry `openItems` (reasons, as `blockers`; a reason may carry
+// `openItem: true`); a gate with only open items goes ahead (`GateStatus.goesAhead`, said by
+// `atticus critic`, not served here). Additive only.
 export const API_VERSION = "3.21.0";
 export const DEFAULT_PORT = 4321;
 
@@ -7057,9 +7064,10 @@ export const ConnectView = z.object({
   /**
    * ADR 0210 (2.0.0-beta.33): why there is no call to offer, with `declare`: `no-calls`, the
    * caller's read has no call fact (a gateway's read with routes and no forwarding calls is the
-   * usual case; `command` reads it again, `unverified` when its facts aren't all verified);
-   * `all-inside`, every call of it stays inside its own component; `all-paired`, a person paired
-   * every call of it with another box. `calls`: how many calls the read has.
+   * usual case; `command` reads it again, `unverified` when its facts aren't all verified,
+   * `gateway` for a gateway repo); `none-open`, it has call facts but none listed to offer;
+   * `all-inside`, every call of it stays inside its own component; `outside-unknown`, the callee
+   * is an outside system the profiles don't name. `calls`: how many calls the read has.
    */
   whyNone: z
     .object({
