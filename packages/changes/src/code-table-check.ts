@@ -9,7 +9,7 @@ import {
   type CodeTable,
 } from "./code-table.js";
 import type { ChangeContext } from "./context.js";
-import type { Reason } from "./errors.js";
+import { asOpenItem, type Reason } from "./errors.js";
 import { checkQuickTasks } from "./quick-tasks.js";
 import { decodeRequirements, parseRequirements, REQUIREMENTS_FILE } from "./requirements.js";
 import { changeFolder } from "./store.js";
@@ -71,15 +71,16 @@ export async function codeTableState(
   const planned = req ? parseRequirements(decodeRequirements(req)).planned : [];
   const has = mapHas(ctx);
   const table = parseCodeTable(design);
-  const reasons: Reason[] = checkCodeTable(table, { tasks, specs, has, planned }).map((r) => ({
-    code: "design.code-table",
-    artifact: "design",
-    message: r.message,
-  }));
+  // ADR 0210 part 7: the table and the criteria are open items the plan hand-off's PR lists.
+  const reasons: Reason[] = checkCodeTable(table, { tasks, specs, has, planned }).map((r) =>
+    asOpenItem({ code: "design.code-table", artifact: "design", message: r.message }),
+  );
   // v31 (WP-05): each task checked as the stories stage checks a story's; only none blocks.
   const found = checkQuickTasks({ tasks, table, specs, has, planned });
   for (const f of found.filter((x) => x.blocking))
-    reasons.push({ code: "stories.no-criteria", artifact: "tasks", message: f.message });
+    reasons.push(
+      asOpenItem({ code: "stories.no-criteria", artifact: "tasks", message: f.message }),
+    );
   const notes = [
     ...(table.found
       ? specNamesNotInRows(table, specs, (id) => has(id) || planned.includes(id))

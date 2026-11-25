@@ -175,7 +175,8 @@ describe("atticus change release-prs", () => {
       expect(raised.body.lines[0]).toMatch(/^forge-ledger: release PR #1 from change\//);
       d = await call(`/api/release/${ID}`);
       expect(d.body.repos[0].pr).toMatchObject({ number: 1, state: "open" });
-      expect(d.body.status.blockers.map((b: { code: string }) => b.code)).toContain(
+      // ADR 0210 part 7: an open item on go/no-go, which its PR lists.
+      expect(d.body.status.openItems.map((b: { code: string }) => b.code)).toContain(
         "release-pr-not-merged",
       );
       // Raised again: nothing new to open, still 201.

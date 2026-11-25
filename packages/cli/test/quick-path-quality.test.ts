@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -99,13 +99,16 @@ async function quickChange(): Promise<string> {
 
 describe("the quick path's plan hand-off (v31, WP-05)", () => {
   it(
-    "is refused while a task has no acceptance criteria, with its line and what to add",
+    // ADR 0210 part 7: an open item the plan hand-off's PR lists, with its line and what to add.
+    "goes ahead while a task has no acceptance criteria, its PR listing it with its line and what to add",
     async () => {
       const root = await quickChange();
       const s = capture();
       await changeStatus(root, ID, {}, s.io);
-      const blocked = s.out.slice(s.out.indexOf("Blocked by:"));
-      expect(blocked).toContain(
+      const open = s.out.slice(
+        s.out.indexOf("Open items (the hand-off's PR lists them; its approver decides them):"),
+      );
+      expect(open).toContain(
         "  - tasks.md:5: task t2 (Write the limit's runbook) has no acceptance criteria. Add one under its line, indented: \"- Given …, when …, then …\". Or name, in its row of design.md's ## In the code, a requirement of its spec delta that has a #### Scenario:.",
       );
       // t1 has a criterion of its own: it is not named.
@@ -117,12 +120,12 @@ describe("the quick path's plan hand-off (v31, WP-05)", () => {
           gitHost: gh,
           now: NOW,
         }),
-      ).toBe(1);
-      expect(c.err.join("\n")).toContain("task t2 (Write the limit's runbook)");
-      expect(gh.journal).toHaveLength(0);
-      // Refused: nothing is written, the knowledge list neither.
-      expect(c.out.join("\n")).not.toContain("Knowledge:");
-      expect(existsSync(join(root, "openspec/changes", ID, "knowledge.yaml"))).toBe(false);
+      ).toBe(0);
+      const pr = gh.journal.find((j) => j.method === "createPullRequest")!.args[0] as {
+        body: string;
+      };
+      expect(pr.body).toContain("### Open items");
+      expect(pr.body).toContain("task t2 (Write the limit's runbook) has no acceptance criteria");
     },
     T,
   );

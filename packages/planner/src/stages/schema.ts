@@ -601,6 +601,13 @@ export const StageLoop = z.strictObject({
    */
   handedBack: z.array(z.string()).optional(),
   /**
+   * ADR 0210 part 7 (optional, additive): what the stage went on with instead of stopping (a
+   * finding its drafts kept repeating, findings a person may accept, a person's edit failing its
+   * checks, a checking round's findings, a gate with no round left, an assistant's proposal). The
+   * phase's hand-off PR lists them as open items. A new draft clears them.
+   */
+  openItems: z.array(z.string()).optional(),
+  /**
    * An answer that didn't read, copied into the change folder when the loop stopped on it (S5),
    * change-folder relative: the file the stop tells a person to fix, read back on the next run.
    */

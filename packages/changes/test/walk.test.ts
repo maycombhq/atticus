@@ -110,19 +110,15 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
     });
     expect(s1).toMatchObject({ merged: true, state: "design" });
 
-    // ---- Design: a blocking finding in the newest round stops the hand-off
+    // ---- Design: an org blocking finding in the newest round is an open item (ADR 0210 part 7):
+    // the hand-off would go ahead, its PR listing it for the person who approves it.
     await copyPhase(root, ID, `${ID}/design`);
     await cp(join(FIXTURES, ID, "review/design/1"), join(dir, "review/design/1"), {
       recursive: true,
     });
-    const blocked = await handoff(root, ID, {
-      ...base,
-      by: "ari",
-      approval: approval("ari", "2026-10-19T12:00:00Z"),
-      now: "2026-10-19T12:00:00Z",
-    }).catch((e: unknown) => e);
-    expect(blocked).toMatchObject({ code: "refused" });
-    expect((blocked as { reasons: { code: string; finding?: string }[] }).reasons).toEqual([
+    const open = await changeReport(root, ID);
+    expect(open.blockers).toEqual([]);
+    expect(open.openItems).toEqual([
       expect.objectContaining({ code: "blocking-finding", finding: "row-lock-missing" }),
     ]);
 

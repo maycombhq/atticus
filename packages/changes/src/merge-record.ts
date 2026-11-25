@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import {
   ChangeLifecycle,
+  changeSchemaVersionFor,
   type ChangeHandoff,
   type ChangeHistoryEntry,
   type ChangeLifecycleInput,
@@ -142,7 +143,11 @@ export function mergeChangeRecords(
     }
     const template = three("template", at("template"), o.template, t.template);
     const value = {
-      schemaVersion: o.schemaVersion,
+      schemaVersion: changeSchemaVersionFor({
+        schemaVersion: o.schemaVersion === 2 || t.schemaVersion === 2 ? 2 : 1,
+        history,
+        handoffs: mergeHandoffs(o.handoffs, t.handoffs),
+      }),
       id: three("id", at("id"), o.id, t.id),
       title: three("title", at("title"), o.title, t.title),
       type: three("type", at("type"), o.type, t.type),

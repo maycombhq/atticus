@@ -34,6 +34,8 @@ import { parseRuns, runChildren, runItems } from "./runs-data";
 import type { Service } from "./service";
 import {
   artifactItems,
+  openItemRows,
+  openItemsNode,
   changeDirOf,
   changeItems,
   evidenceItems,
@@ -282,8 +284,15 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
         }
         const at = rows.findIndex((r) => r.id.startsWith("tasks:"));
         rows.splice(at < 0 ? rows.length : at, 0, needs);
+        // ADR 0210 part 7: what its hand-off goes ahead with, first; a status that won't read, none.
+        const status = await api
+          .get<{ openItems?: { message: string }[] }>(`/api/changes/${enc(d.id)}/status`)
+          .catch(() => undefined);
+        rows.unshift(...openItemsNode(d.id, status?.openItems));
         return rows;
       }
+      case "open-items":
+        return openItemRows(x.change, x.items);
       case "needs": {
         const d =
           this.details.get(x.change) ??

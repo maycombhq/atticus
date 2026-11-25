@@ -218,7 +218,9 @@ export async function stageThreadView(
     if (!present)
       replyWhy = `The ${stage} stage hasn't run for ${change} yet: start it, then reply to its assistant here.`;
     if (present) state = loop.state === "waiting" ? "waiting" : loop.state;
-    if (present && loop.state === "stopped") {
+    // ADR 0210 part 7: a stage that went on with findings a person may accept says so too.
+    const wentOn = loop.state === "done" && !!loop.openItems?.length;
+    if (present && (loop.state === "stopped" || wentOn)) {
       const stopped = loop.findings.filter(
         (f) => f.stoppedAt === loop.iteration && f.seenIn.at(-1) === loop.iteration,
       );
@@ -351,13 +353,15 @@ export async function stageThreadView(
             ? "Your assistant's last answer didn't pass its checks: the problems are below. Tell the assistant, or fix the file and the app checks it again."
             : state === "questions"
               ? `The stage waits on ${questions === 1 ? "the question" : `${questions} questions`} below.`
-              : state === "stopped" && forAPerson
-                ? `The stage stopped for a person: its draft has ${forAPerson === 1 ? "a finding" : `${forAPerson} findings`} below that you may accept. Accept ${forAPerson === 1 ? "it" : "each"} with a reason, or tell the assistant how to fix the draft.`
-                : state === "stopped"
-                  ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
-                  : state === "done"
-                    ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
-                    : "Ready for the next round: tell the assistant what to change, or start the round.";
+              : state === "done" && forAPerson
+                ? `The stage went on: its draft has ${forAPerson === 1 ? "a finding" : `${forAPerson} findings`} below that you may accept, open on its hand-off. Accept ${forAPerson === 1 ? "it" : "each"} with a reason, or tell the assistant how to fix the draft.`
+                : state === "stopped" && forAPerson
+                  ? `The stage stopped for a person: its draft has ${forAPerson === 1 ? "a finding" : `${forAPerson} findings`} below that you may accept. Accept ${forAPerson === 1 ? "it" : "each"} with a reason, or tell the assistant how to fix the draft.`
+                  : state === "stopped"
+                    ? "The stage stopped: its assistant couldn't fix what was found. Fix the file it names, or tell the assistant."
+                    : state === "done"
+                      ? `The stage is done${open ? `, with ${open} open finding${open === 1 ? "" : "s"}` : ""}.`
+                      : "Ready for the next round: tell the assistant what to change, or start the round.";
   if (dropped)
     items.push({
       kind: "note",

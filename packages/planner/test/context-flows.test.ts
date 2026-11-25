@@ -13,7 +13,6 @@ import {
   criticRuleChecks,
   EXPAND_AGENT,
   featureStage,
-  PlannerError,
   stageRuleKind,
   storiesStage,
 } from "../src/index.js";
@@ -93,13 +92,11 @@ const READ_ONLY = [
   "forge-stock.release-stock",
 ];
 
-async function stopOf(p: Promise<unknown>): Promise<PlannerError> {
-  const e = await p.then(
-    () => undefined,
-    (x: unknown) => x,
-  );
-  expect(e).toBeInstanceOf(PlannerError);
-  return e as PlannerError;
+/** ADR 0210 part 7: a finding repeated three drafts: the stage goes on, the finding an open item. */
+async function wentOnOf(p: Promise<{ state: string; notes: string[] }>) {
+  const r = await p;
+  expect(r.state).toBe("done");
+  return { message: r.notes.join("\n") };
 }
 
 describe("a flow the change only reads", () => {
@@ -135,18 +132,17 @@ describe("a flow the change only reads", () => {
     expect(design).not.toContain("### forge-orders.cancel-order");
   });
 
-  it("stops with a plain message, not a question, when the assistant keeps writing empty deltas; nothing empty is on disk", async () => {
+  it("goes on with a plain message, not a question, when the assistant keeps writing empty deltas; nothing empty is on disk", async () => {
     const root = await estateRoot();
     await featured(root);
-    const e = await stopOf(
+    const e = await wentOnOf(
       architectureStage(root, CHANGE, {
         runtime: assistant([fixture("architecture-empty-deltas.yaml")]),
         now: NOW,
       }),
     );
-    expect(e.code).toBe("stopped");
     expect(e.message).toContain(
-      "The architecture stage stopped after 3 drafts: your assistant kept getting these wrong, and they aren't questions for a person to decide.",
+      "The architecture stage went on after 3 drafts: your assistant kept getting these wrong, so they go on the hand-off as open items.",
     );
     expect(e.message).toContain(
       `  - Flow forge-orders.cancel-order is marked modify but adds, changes and removes no step. A flow the change only reads or relies on is context, not a target flow: list it under reads with why. If the change does change it, give the steps. (rule delta.empty; in ${REL}/target-flows/)`,
@@ -154,13 +150,13 @@ describe("a flow the change only reads", () => {
     expect(e.message).toContain(
       `Fix ${REL}/target-flows/, or tell your assistant how; then run atticus change architecture ${CHANGE} again.`,
     );
-    expect(e.problems).toHaveLength(5);
     expect((await listQuestions(root, { state: "open" })).questions).toEqual([]);
     expect(await readdir(join(dir(root), "target-flows"))).toEqual([
       "forge-orders.place-order.yaml",
     ]);
     const loop = parse(await readFile(join(dir(root), "stage/architecture.yaml"), "utf8"));
-    expect(loop.state).toBe("stopped");
+    expect(loop.state).toBe("done");
+    expect(loop.openItems).toHaveLength(5);
     expect(loop.findings.filter((f: { rule: string }) => f.rule === "delta.empty")).toHaveLength(4);
     // A rerun checks what is on file before drafting: the target flows there are right, so
     // the stage is done without a draft.
@@ -226,7 +222,7 @@ describe("stories from a change that reads more flows than it changes", () => {
     expect((await listQuestions(root, { state: "open" })).questions).toEqual([]);
   });
 
-  it("stops with the finding and the file to fix when the criteria keep missing; no question is raised", async () => {
+  it("goes on with the finding and the file to fix when the criteria keep missing; no question is raised", async () => {
     const root = await estateRoot();
     await architected(root);
     const missing = STORIES.replace(
@@ -239,10 +235,11 @@ describe("stories from a change that reads more flows than it changes", () => {
         criteria: []
 `,
     );
-    const e = await stopOf(storiesStage(root, CHANGE, { runtime: assistant([missing]), now: NOW }));
-    expect(e.code).toBe("stopped");
+    const e = await wentOnOf(
+      storiesStage(root, CHANGE, { runtime: assistant([missing]), now: NOW }),
+    );
     expect(e.message).toContain(
-      "The stories stage stopped after 3 drafts: your assistant kept getting this wrong, and it isn't a question for a person to decide.",
+      "The stories stage went on after 3 drafts: your assistant kept getting this wrong, so it goes on the hand-off as an open item.",
     );
     expect(e.message).toContain(
       `  - Task 1.2 (id 1.3) (Change the write step: The order is inserted with the screen's verdict) has no acceptance criteria. (rule stories.no-criteria; in ${REL}/stage/stories-answer.yaml)`,
@@ -269,7 +266,7 @@ describe("stories from a change that reads more flows than it changes", () => {
 });
 
 describe("a critic finding about drafting quality", () => {
-  it("stops the loop with the story file and the answer file to fix, not a question", async () => {
+  it("goes on with the story file and the answer file to fix, not a question", async () => {
     const root = await estateRoot();
     await architected(root);
     // Criteria that name the fields but aren't Given/When/Then: the stage's check passes, the
@@ -279,8 +276,7 @@ describe("a critic finding about drafting quality", () => {
       '"it is refused with 422',
       '"an order with a rejected verdict is refused with 422',
     );
-    const e = await stopOf(storiesStage(root, CHANGE, { runtime: assistant([plain]), now: NOW }));
-    expect(e.code).toBe("stopped");
+    const e = await wentOnOf(storiesStage(root, CHANGE, { runtime: assistant([plain]), now: NOW }));
     // The finding says what to fix (ADR 0115 addendum, 2026-10-25), as the drafter was told.
     expect(e.message).toMatch(
       new RegExp(

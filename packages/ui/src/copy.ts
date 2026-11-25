@@ -3049,6 +3049,13 @@ export const COPY = {
     repo: "Repo",
     allRepos: "All repos",
   },
+  /** ADR 0210 part 7: what a hand-off goes ahead with; its PR lists them for its approver. */
+  openItems: {
+    title: "Open items",
+    said: (n: number) =>
+      `${n === 1 ? "1 open item goes" : `${n} open items go`} with the hand-off: its PR lists ${n === 1 ? "it" : "them"}, and the person who approves it decides.`,
+    none: "No open items: nothing goes with the hand-off for its approver to decide.",
+  },
   common: {
     nothingHereYet: "Nothing here yet.",
     of: (label: string | number, value: string | number, max: string | number) =>

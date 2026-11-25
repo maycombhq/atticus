@@ -229,7 +229,8 @@ describe("the feature stage", () => {
   });
 
   // P1: a person's edit of a stage's file is that stage's draft, in every stage.
-  it("checks a person's edit of feature.yaml as their draft and stops on what fails, never drafting over it", async () => {
+  // ADR 0210 part 7: what fails goes on the hand-off as an open item; their file is kept as it is.
+  it("checks a person's edit of feature.yaml as their draft and goes on with what fails, never drafting over it", async () => {
     const root = await estateRoot();
     expect(
       (await featureStage(root, CHANGE, { runtime: assistant([PLACED]), now: NOW })).state,
@@ -241,18 +242,13 @@ describe("the feature stage", () => {
     );
     await writeFile(f, theirs);
     const prompts: string[] = [];
-    const e = await featureStage(root, CHANGE, {
-      runtime: assistant([PLACED], prompts),
-      now: NOW,
-    }).then(
-      () => undefined,
-      (x: Error) => x,
-    );
+    const r = await featureStage(root, CHANGE, { runtime: assistant([PLACED], prompts), now: NOW });
+    expect(r.state).toBe("done");
     expect(prompts).toEqual([]);
-    expect(e?.message).toContain(
-      `The feature stage checked your edit of openspec/changes/${CHANGE}/feature.yaml as its draft`,
+    expect(r.notes.join("\n")).toContain(
+      `The feature stage took your edit of openspec/changes/${CHANGE}/feature.yaml as its draft`,
     );
-    expect(e?.message).toContain("forge-stock.hold-stock");
+    expect(r.notes.join("\n")).toContain("forge-stock.hold-stock");
     expect(await readFile(f, "utf8")).toBe(theirs);
   });
 

@@ -116,15 +116,16 @@ export function afterWaits<T extends WaveTask>(tasks: readonly T[], t: T): strin
 
 /**
  * Why `(after …)` holds one task, for a person who runs it by itself (`atticus task run`): what
- * never lets it run, else the named tasks to tick first. Undefined when nothing it names holds
+ * never lets it run (`never`, a tasks.md to fix), else the named tasks to tick first, which the
+ * run goes ahead with as an open item (ADR 0210 part 7). Undefined when nothing it names holds
  * it; the order of its own repo's tasks doesn't hold a task a person chose to run.
  */
 export function afterHold<T extends WaveTask>(
   tasks: readonly T[],
   t: T,
-): { why: string; fix: string } | undefined {
+): { why: string; fix: string; never?: true } | undefined {
   const never = neverReady(tasks).get(t);
-  if (never) return { why: never, fix: "Fix tasks.md, then run it again." };
+  if (never) return { why: never, fix: "Fix tasks.md, then run it again.", never: true };
   const waits = afterWaits(tasks, t);
   if (!waits.length) return undefined;
   return {
