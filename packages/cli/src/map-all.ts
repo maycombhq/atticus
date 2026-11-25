@@ -58,7 +58,7 @@ import {
 import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
-import { verifyCommand } from "./verify-commands.js";
+import { factsRepos, verifyAllCommand, verifyCommand } from "./verify-commands.js";
 
 /**
  * `atticus map --all` (ADR 0161): one command that maps or re-maps the whole estate. It plans
@@ -1552,7 +1552,7 @@ async function mapAllRun(
         item.repo,
         {
           commit: item.commit,
-          write: true,
+          write: o.join !== false, // atticus sync writes once, after every read
           whole: true,
           json: true,
           ...(deps.onBuildRefused ? { onBuildRefused: deps.onBuildRefused } : {}),
@@ -1683,7 +1683,6 @@ async function mapAllRun(
     // The estate join, once: verify --all --write's own run (one build, the pairing inside it).
     io.out("");
     io.out("Joining the estate: atticus verify --all --write.");
-    const { verifyAllCommand } = await import("./verify-commands.js");
     const join = () =>
       verifyAllCommand(
         root,
@@ -1695,6 +1694,8 @@ async function mapAllRun(
         io,
       );
     joinFailed = (await (deps.signal ? withSignal(deps.signal, join) : join())) !== 0;
+    for (const r of await factsRepos(root))
+      totals.rejected.set(r, (await rejectionsOf(root, r)).items.length);
   }
   await save();
   await summary(interrupted || joinStopped);

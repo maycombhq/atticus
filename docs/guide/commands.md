@@ -28,7 +28,7 @@ What `atticus help` shows. Install and first steps: [installing Atticus](install
 Every command under the twelve, with its options.
 
 ```text
-  atticus sync [--json]                Read what changed (recipe, then model), verify, write once, pair the loose calls, then say what is open and the one next step (ADR 0210); unattended, it stops before a budget is passed
+  atticus sync [--json] [--max-tokens n]  Read what changed (recipe, then model), verify, write once, pair the loose calls, then say what is open and the one next step (ADR 0210); unattended, it stops before a budget is passed
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them

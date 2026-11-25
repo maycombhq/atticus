@@ -43,7 +43,7 @@ const diffOf = (ps: RecipeRepoProof[]) =>
 
 export async function learnRecipes(
   root: string,
-  d: { by: string; now?: Date; runner?: AcpStepRunner; signal?: AbortSignal },
+  d: { by: string; now?: Date; runner?: AcpStepRunner; signal?: AbortSignal; types?: string[] },
   io: Output,
 ): Promise<void> {
   const op = await loadOrgPack(orgPackDirOf(root));
@@ -55,6 +55,7 @@ export async function learnRecipes(
   const jobs: (Job & { reads: Read[]; brief: string; answer: string })[] = [];
   const all = estateRepos(op).sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const type of [...new Set(all.flatMap((r) => (r.type ? [r.type] : [])))].sort()) {
+    if (d.types && !d.types.includes(type)) continue; // atticus sync: the types it read
     const rs: Read[] = [];
     for (const r of all.filter((x) => x.type === type)) {
       const facts = await factsOf(root, r.id);

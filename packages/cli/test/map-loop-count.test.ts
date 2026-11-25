@@ -361,7 +361,7 @@ describe("the estate join after a map (beta.28.5)", () => {
     );
     // The notifier is applied all the same.
     expect(n.applies.slice(s.seen.length)).toEqual(["forge-notify"]);
-    expect(text).toContain("Verified 2 repos: 1 passed, 1 with something to fix (forge-ledger).");
+    expect(text).toContain("Verified 2 repos: 1 passed, 1 not applied (forge-ledger).");
     expect(text).toContain("ERR Repo 2 of 2: forge-notify…");
     expect(text).not.toMatch(/EPERM|\.tmp/);
   }, 120_000);

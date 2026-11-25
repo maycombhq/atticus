@@ -48,15 +48,7 @@ class EstateJobsTest {
     }
 
     @Test
-    fun `Map the Estate runs map --all at the limit typed, pre-filled from runtime yaml`() {
-        assertEquals(listOf("map", "--all", "--max-tokens", "128000"), Commands.mapAllArgv(" 128,000 "))
-        assertNull(Commands.mapAllArgv("12"))
-        assertNull(Commands.mapAllArgv("a lot"))
-        val op = Files.createTempDirectory("atticus-orgpack")
-        assertNull(Commands.runtimeMaxInput(op))
-        Files.writeString(op.resolve("runtime.yaml"), "schemaVersion: 2\nadapters:\n  model:\n    type: anthropic\n    settings:\n      maxInput: 200000 # the window\n")
-        assertEquals("200000", Commands.runtimeMaxInput(op))
-        assertNull(Commands.runtimeMaxInput(null))
+    fun `Map the Estate is the editors' atticus sync`() {
         assertEquals(InIntelliJ.Action("Atticus.MapEstate"), Parity.MAP["atticus.mapEstate"])
     }
 

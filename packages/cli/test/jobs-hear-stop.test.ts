@@ -28,12 +28,7 @@ const JOBS: [string, string, boolean | "caller", string][] = [
   ["ui-api.ts", '"Bringing in what merged"', true, "checks the signal until the tree changes"],
   ["ui-api.ts", "`Setting the upstream to", false, "two git calls, no signal"],
   ["ui-api.ts", "code against its design`", false, "the conformance check reads no signal"],
-  [
-    "ui-api-steps.ts",
-    "syncCommand",
-    true,
-    "atticus sync: verify --all --write, Stop between repos",
-  ],
+  ["ui-api-steps.ts", "verifyAllCommand", true, "verify --all --write: Stop between repos"],
   ["ui-api-steps.ts", '"Joining the estate\'s flows"', false, "estate join reads no signal"],
   ["ui-api-steps.ts", '"Syncing every wiki"', false, "sources sync reads no signal"],
   ["ui-api-steps.ts", "worktrees", false, "workspace prune reads no signal"],

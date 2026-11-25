@@ -384,7 +384,9 @@ export async function verifyAllCommand(
   const holdWrite: WriteFacts = (...args) =>
     new Promise((resolve, reject) => reached?.({ args, resolve, reject }));
   /** A repo the file system kept from being verified or written: said with its own command. */
+  const gone = new Set<string>();
   const notDone = (repo: string, e: unknown) => {
+    gone.add(repo);
     io.err(
       `${repo}: not ${each.write ? "applied" : "verified"}: ${e instanceof Error ? e.message.split("\n")[0] : String(e)} Run it once that is put right: atticus verify ${repo}${each.write ? " --write" : ""}`,
     );
@@ -549,8 +551,9 @@ export async function verifyAllCommand(
   }
   const passed = repos.length - failed.length;
   if (paired) await sayPaired(paired, each.json ? io.err : io.out);
+  const fix = failed.filter((r) => !gone.has(r));
   io.out(
-    `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
+    `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${fix.length ? `, ${fix.length} with something to fix (${fix.join(", ")})` : ""}${gone.size ? `, ${gone.size} not ${each.write ? "applied" : "verified"} (${[...gone].join(", ")})` : ""}.`,
   );
   return failed.length || runFault ? 1 : 0;
 }

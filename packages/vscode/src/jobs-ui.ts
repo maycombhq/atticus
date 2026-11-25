@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import * as vscode from "vscode";
 import { answerQuestion } from "./atticus";
@@ -18,7 +18,7 @@ import {
 import { showReadOnly, type CommandUi } from "./command-ui";
 import { commandText } from "./cli";
 import { agentFilePath, agentForStep, openForStep, promptFilePath } from "./copilot-agent";
-import { JOBS, limitOf, runtimeMaxInput, TRAFFIC_SOURCES, type Job, type JobArgs } from "./jobs";
+import { JOBS, TRAFFIC_SOURCES, type Job, type JobArgs } from "./jobs";
 import { proposalWhat } from "./waiting-data";
 import type { Service } from "./service";
 import type { OpenQuestion } from "./types";
@@ -277,30 +277,6 @@ export function registerJobs(d: JobsDeps) {
           if (!n) return undefined;
           a.note = n;
         }
-        return a;
-      }
-      case "limit": {
-        if (a.maxTokens) return a;
-        const read = (rel: string) => {
-          try {
-            return readFileSync(join(root, ...rel.split("/")), "utf8");
-          } catch {
-            return undefined;
-          }
-        };
-        const preset =
-          runtimeMaxInput(read("org-pack/runtime.yaml")) ??
-          runtimeMaxInput(read(".atticus/org-pack/runtime.yaml"));
-        const v = await vscode.window.showInputBox({
-          title,
-          prompt: WORDS.mapEstateLimit,
-          ...(preset ? { value: preset } : {}),
-          ignoreFocusOut: true,
-          validateInput: (x) => (limitOf(x) ? undefined : WORDS.mapEstateBadLimit),
-        });
-        const n = v === undefined ? undefined : limitOf(v);
-        if (!n) return undefined;
-        a.maxTokens = n;
         return a;
       }
       default:

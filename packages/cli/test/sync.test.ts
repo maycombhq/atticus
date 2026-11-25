@@ -24,7 +24,13 @@ import {
   type RecipeFile,
 } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { syncCommand, syncHooks } from "../src/sync-command.js";
+import { withSignal } from "@maycombhq/core";
+import { listUndo, undoDirOf } from "@maycombhq/scanner";
+import { startServer, type RunningServer } from "@maycombhq/server";
+import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
+import { writeFactsHooks } from "../src/map-render-commands.js";
+import { syncCommand } from "../src/sync-command.js";
+import { extendUiRoutes } from "../src/ui-commands.js";
 
 /**
  * ADR 0210 part 8: `atticus sync` reads what changed (recipe, then model), verifies, writes once,
@@ -35,10 +41,16 @@ const FIX = join(__dirname, "..", "..", "..", "fixtures", "gateway-shape");
 const LEDGER = "forge-ledger-module";
 const WALLETS = "forge-wallets-module";
 const COMMIT = "5d6e7f8";
+const CARDS = "forge-cards-module";
 const temps: string[] = [];
-afterAll(() => {
+const servers: RunningServer[] = [];
+afterAll(async () => {
+  for (const s of servers) await s.close();
   for (const d of temps) rmSync(d, { recursive: true, force: true });
 });
+/** runtime.yaml letting Copilot decide unattended (Learn and the pairing may run; no model). */
+const ACP =
+  "schemaVersion: 4\nassistants: { allowed: [copilot], default: copilot }\nmodes: { allowed: [hand-off, copilot-acp], default: copilot-acp }\n";
 const write = (root: string, path: string, text: string) => {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), text);
@@ -91,10 +103,12 @@ const git = (dir: string, ...a: string[]) =>
     stdio: "pipe",
   });
 /** A Forge metarepo with both modules cloned under workspace/, each at its first commit. */
-function metarepo(): string {
+function metarepo(o: { runtime?: string; cards?: boolean } = {}): string {
   const root = mkdtempSync(join(tmpdir(), "atticus-sync-"));
   temps.push(root);
+  const repos = o.cards ? [CARDS, LEDGER, WALLETS] : [LEDGER, WALLETS];
   write(root, "org-pack/pack.yaml", "schemaVersion: 1\nname: forge\n");
+  if (o.runtime) write(root, "org-pack/runtime.yaml", o.runtime);
   write(
     root,
     "org-pack/profiles/forge/repos.manifest.yaml",
@@ -102,7 +116,7 @@ function metarepo(): string {
       "schemaVersion: 2",
       "platform: forge",
       "repos:",
-      ...[LEDGER, WALLETS].map(
+      ...repos.map(
         (id) =>
           `  - { id: ${id}, url: https://git.example.com/forge/${id}.git, type: integration-module, owner: team-payments }`,
       ),
@@ -110,9 +124,9 @@ function metarepo(): string {
     ].join("\n"),
   );
   write(root, "org-pack/reading-rules/types/integration-module.yaml", activeRules());
-  for (const repo of [LEDGER, WALLETS]) {
+  for (const repo of repos) {
     const dir = join(root, "workspace", repo);
-    cpSync(join(FIX, "repos", repo), dir, { recursive: true });
+    cpSync(join(FIX, "repos", repo === CARDS ? LEDGER : repo), dir, { recursive: true });
     git(dir, "init", "-q");
     git(dir, "add", ".");
     git(dir, "commit", "-qm", "init");
@@ -170,17 +184,94 @@ describe("atticus sync (ADR 0210 part 8)", () => {
     expect(r.out.match(/^Next: /gm)).toHaveLength(1);
   });
 
-  it("after the write, Learn is given the repo types this sync read, and nothing when none", async () => {
+  it("after the write, Learn proves the recipes of the types read, asking no model when they hold", async () => {
+    const root = metarepo({ runtime: ACP, cards: true });
+    const asked: unknown[] = [];
+    const learnRunner: AcpStepRunner = async (step) => (asked.push(step), { runId: "" }) as never;
+    const out: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) };
+    expect(await syncCommand(root, {}, io, { learnRunner })).toBe(0);
+    expect(out.join("\n")).toContain(`Read: ${CARDS} (by recipe), ${LEDGER} (by recipe)`);
+    expect(asked).toEqual([]);
+  });
+
+  it("Learn says in one line when it can't run, and not at all when nothing was written", async () => {
     const root = metarepo();
-    const told: string[][] = [];
-    syncHooks.learn = async (_root, types) => void told.push(types);
-    try {
-      await sync(root);
-      await sync(root);
-    } finally {
-      delete syncHooks.learn;
+    const first = await sync(root);
+    expect(first.err.match(/No recipe was asked for\./g)).toHaveLength(1);
+    expect((await sync(root)).err).not.toContain("No recipe was asked for.");
+  });
+
+  it("two moved clones read by the model are written once: one build, one undo copy", async () => {
+    const root = metarepo();
+    expect((await sync(root)).code).toBe(0);
+    for (const repo of [LEDGER, WALLETS]) {
+      const dir = join(root, "workspace", repo);
+      write(dir, "src/main/java/forge/Audit.java", "package forge;\n");
+      git(dir, "add", ".");
+      git(dir, "commit", "-qm", "audit");
     }
-    expect(told).toEqual([["integration-module"]]);
+    const copies = (await listUndo(await undoDirOf(root))).length;
+    const wrote: string[] = [];
+    writeFactsHooks.onWrite = (repo) => void wrote.push(repo);
+    try {
+      const r = await sync(root);
+      expect(r.prompts.length).toBeGreaterThan(1);
+      expect(r.out).toContain(`Read: ${LEDGER} (by model), ${WALLETS} (by model).`);
+      expect(r.out).toMatch(/^Written to the catalog once\.$/m);
+    } finally {
+      delete writeFactsHooks.onWrite;
+    }
+    expect(wrote.sort()).toEqual([LEDGER, WALLETS]);
+    expect((await listUndo(await undoDirOf(root))).length).toBe(copies + 1);
+  });
+
+  it("Stop (or Ctrl+C) before the read: no prompt, nothing written", async () => {
+    const root = metarepo();
+    expect((await sync(root)).code).toBe(0);
+    const dir = join(root, "workspace", LEDGER);
+    write(dir, "src/main/java/forge/Audit.java", "package forge;\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-qm", "audit");
+    const before = catalogOf(root);
+    const stop = new AbortController();
+    stop.abort();
+    const r = await withSignal(stop.signal, () => sync(root));
+    expect(r.prompts).toEqual([]);
+    expect(r.code).not.toBe(0);
+    expect(catalogOf(root)).toEqual(before);
+  });
+
+  it("the app's Apply writes only the repos listed, reading nothing, a moved clone too", async () => {
+    const root = metarepo();
+    expect((await sync(root)).code).toBe(0);
+    const dir = join(root, "workspace", LEDGER);
+    write(dir, "deploy/prod.yaml", "service: forge-ledger-module\nhost: moved.example\nport: 1\n");
+    git(dir, "commit", "-qam", "move");
+    const facts = readFileSync(join(root, "facts", `${LEDGER}.jsonl`), "utf8");
+    const s = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: extendUiRoutes,
+    });
+    servers.push(s);
+    const wrote: string[] = [];
+    writeFactsHooks.onWrite = (repo) => void wrote.push(repo);
+    try {
+      const res = await fetch(s.url + "/api/facts/apply-all", {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ repos: [WALLETS] }),
+      });
+      const { jobId } = (await res.json()) as { jobId: string };
+      await s.jobs.settle(jobId, 120_000);
+    } finally {
+      delete writeFactsHooks.onWrite;
+    }
+    expect(wrote).toEqual([WALLETS]);
+    expect(readFileSync(join(root, "facts", `${LEDGER}.jsonl`), "utf8")).toBe(facts);
   });
 
   it("a second sync with nothing changed sends no prompt and writes nothing", async () => {
@@ -206,7 +297,7 @@ describe("atticus sync (ADR 0210 part 8)", () => {
     git(dir, "commit", "-qm", "audit");
     const r = await sync(root, { ai: false });
     expect(r.code, r.err).toBe(0);
-    expect(r.out).toContain(`Waiting for the model (AI is off here): ${LEDGER}.`);
+    expect(r.out).toContain(`Read: ${LEDGER} (by recipe, the rest waiting for the model)`);
     expect(Object.keys(catalogOf(root)).length).toBeGreaterThan(0);
   });
 
@@ -226,7 +317,7 @@ describe("atticus sync (ADR 0210 part 8)", () => {
     const root = metarepo();
     const out: string[] = [];
     const code = await main(
-      ["sync", "--json", "--root", root],
+      ["sync", "--json", "--max-tokens", "200000", "--root", root],
       { out: (l) => out.push(l), err: () => undefined },
       { quiet: true },
     );
