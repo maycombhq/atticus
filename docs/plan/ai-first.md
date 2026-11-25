@@ -4,6 +4,10 @@ Status: the plan to build, 2026-11-24. The owner asked for it for "v32"; 2.0.0-b
 published that morning, so it is the next release. It changes hard rule 4 of `CLAUDE.md` ("no
 scanner is generated") and the C6 reading rules, so it starts with one new ADR.
 
+Built: 2.0.0-beta.33 (2026-11-25) built items 0 to 11, all but item 12 (the readers' removal,
+left to the later ADR of ADR 0210 part 6); what each item built and left open is in
+[the v33 notes](v33-notes/).
+
 ## Why
 
 Two days on the owner's estate with beta.31 and beta.32: each step tried met a refusal or an

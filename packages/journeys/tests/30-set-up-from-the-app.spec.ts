@@ -89,7 +89,7 @@ test("an empty folder: the app offers to create the metarepo here", async ({ pag
   await expect(page).toHaveURL(/#\/home$/);
   await expect(page.getByRole("heading", { name: "Set up Atticus here" })).toHaveCount(0);
   const rt = parse(await pack("runtime.yaml")) as { schemaVersion: number; adapters: unknown };
-  expect(rt.schemaVersion).toBe(4);
+  expect(rt.schemaVersion).toBe(5);
   expect(rt.adapters).toEqual({
     gitHost: { type: "manual", settings: { metarepo: "forge-payments-metarepo" } },
   });
@@ -160,7 +160,7 @@ test("AI decides turned on in the fresh metarepo, with no upgrade to run", async
     schemaVersion: number;
     decide: { links: string };
   };
-  expect(rt.schemaVersion).toBe(4);
+  expect(rt.schemaVersion).toBe(5);
   expect(rt.decide.links).toBe("auto");
   expect(atticus(app.root, "upgrade", "--check")).toMatch(/Up to date/);
 });

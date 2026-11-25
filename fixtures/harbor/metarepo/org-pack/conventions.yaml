@@ -1,0 +1,4 @@
+# ADR 0210 part 6: this fixture tests the deterministic readers (the scan stage of the Harbor
+# estate), so it turns them on.
+schemaVersion: 3
+readers: "on"

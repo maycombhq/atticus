@@ -72,7 +72,9 @@ describe("M3 exit step 4: the adopt bar", () => {
         expect(v.code, v.text).toBe(0);
         const s = await atticus(dir, "scan");
         expect(s.code, s.text).toBe(0);
-        expect(s.out[0]).toMatch(/^Scanned \d+ repos/);
+        // ADR 0210 part 6: an adopted pack has the readers off, so a scan with no facts read yet
+        // builds nothing, exits 0 and says the next step.
+        expect(s.out[0]).toMatch(/^The readers are off and no repo has verified facts yet/);
         const z = await atticus(dir, "assistant-files");
         expect(z.code, z.text).toBe(0);
         expect(Date.now() - started).toBeLessThan(ADOPT_BAR_MS);

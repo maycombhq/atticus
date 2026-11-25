@@ -14,7 +14,7 @@ import {
   listDirs,
   resolveMetarepo,
 } from "../src/index.js";
-import { cleanup, COMMIT, copyFixture, SCANNED_AT } from "./helpers.js";
+import { cleanup, COMMIT, copyFixture, readersOn, SCANNED_AT } from "./helpers.js";
 
 afterAll(cleanup);
 
@@ -47,6 +47,7 @@ async function estates(): Promise<{ ours: string; theirs: string }> {
   const theirs = await copyFixture("atticus-metarepo", "payments-meta");
   const ours = await copyFixture("openspec-repo", "catalog-service");
   await adopt(ours);
+  await readersOn(ours);
   return { ours, theirs };
 }
 

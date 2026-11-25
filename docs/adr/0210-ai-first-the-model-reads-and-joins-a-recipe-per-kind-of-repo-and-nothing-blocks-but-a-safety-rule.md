@@ -5,7 +5,7 @@
 - Release: 2.0.0-beta.33
 - Amends: `CLAUDE.md` hard rule 4 ("no scanner is generated": a recipe written by the model is data run by one engine, part 2); ADR 0176 and ADR 0208 (a reading rule may carry a recipe, and a recipe is proven like a learned rule); ADR 0178 and ADR 0181 (a pairing both of whose sides the verifier checks is drawn as the AI's inside Apply, whatever the shapes rank, part 4); ADR 0197 (four of the build's refusals become listed items, part 3)
 - Supersedes: the deterministic readers as a path to the map (ADR 0074 already made them a cross-check only; part 6 turns them off by default; their removal is a later decision)
-- Contracts: C6 reading rules go to schema version 3 (a rule's optional `extract`), with a migration; C5 `runtime.yaml`: `budgets` gains optional session and token limits per run, day or month, and an optional `apply.pair`; C4 gains optional fields on the answers named in parts 3 to 5 and a minor version; the facts file (ADR 0124) is unchanged: a recipe's fact is `by: reader`, which it already allows, and a fact with a field or kind this Atticus doesn't know is still kept and not read; C1 is unchanged; C2 (dialect rules) is unchanged in this release
+- Contracts: C6 reading rules go to schema version 3 (a rule's optional `extract`), with a migration; C6 `runtime.yaml` (documented in `docs/spec/contracts/c6-org-pack.md`) goes to schema version 5: `budgets` gains optional session and token limits per run, day or month, and an optional `apply.pair`; C5 (the runtime interface) is unchanged; C4 gains optional fields on the answers named in parts 3 to 5 and a minor version; the facts file (ADR 0124) is unchanged: a recipe's fact is `by: reader`, which it already allows, and a fact with a field or kind this Atticus doesn't know is still kept and not read; C1 is unchanged; C2 (dialect rules) is unchanged in this release
 
 ## Context
 
@@ -65,7 +65,12 @@ model.
   facts a model read for two repos of the type it wasn't written from: ADR 0208's proof, its
   `repos` naming those two. Reading rules go to schema version 3: a rule's `extract` is optional,
   a version 2 file reads as it did, and a refine requires a proof of an active extract, as it
-  does of an active learned rule. Otherwise it stays a draft, saying which facts differ.
+  does of an active learned rule. Otherwise it stays a draft, saying which facts differ. The
+  reference is the verified facts of the proof repos: each checked on its line in the code, so
+  a recipe is proven against the code, not against another model's say-so.
+- **The model's answer is data only.** Of a recipe the model writes, Atticus reads its `files`
+  and `extract` and nothing else: the key (`recipe-<type>-<fact>`) and the rule's words are
+  Atticus's own, and a rule with an `extract` is never put into a read's prompt.
 - **Recipe first, model on request.** A repo whose type has an active recipe is read by it
   alone. The model reads a repo when its type has none, when a person asks, or when the join's
   misses name it; the end of that read writes or corrects the type's recipe. The files no rule
@@ -77,15 +82,15 @@ model.
 On the writes a person runs as part of the work (verify --write, Apply to every repo, the map's
 Apply, `atticus sync`):
 
-| Today's refusal (ADR 0197)                        | From this release                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `not-upgraded`                                    | `atticus upgrade --yes` runs first, and the write goes on. Its catalog changes are its own undo step; its org-pack changes are in the metarepo's history, as every upgrade's are                                                                                                                                     |
-| `hand-edits`                                      | The edits are kept as the person's (curated, as `atticus catalog edits --curate` does), listed, and the write goes on. `--discard-edits` stays, to discard them on purpose                                                                                                                                           |
-| `large-removals`                                  | Rarely reached: a fact the last read stored that a new read leaves out is kept while every file it cites is unchanged (verify's carry checks its lines again), and listed; a person removes one on the map. The removals left (their files changed) are written and listed with what explains each. No count to type |
-| `unexplained-removals`                            | Stays: a record removed with no cause is a fault of the build, reported as one                                                                                                                                                                                                                                       |
-| `nothing-read`, `empty`                           | Stay: they guard against a read that failed                                                                                                                                                                                                                                                                          |
-| `newer-atticus`, and a fact a newer Atticus wrote | Stay: this Atticus can't read them. A fact with a field or kind no Atticus writes is kept and not read, and named as the assistant's (beta.32)                                                                                                                                                                       |
-| A `build.json` that doesn't read                  | Stays: there is nothing to keep. It is reported under `hand-edits` today; the write tells it apart (`unreadableManifest`) and doesn't go past it                                                                                                                                                                     |
+| Today's refusal (ADR 0197)                        | From this release                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not-upgraded`                                    | `atticus upgrade --yes` runs first, and the write goes on. Its catalog changes are its own undo step; its org-pack changes are in the metarepo's history, as every upgrade's are                                                                                                                                                                                                                                                        |
+| `hand-edits`                                      | The edits are kept as the person's (curated, as `atticus catalog edits --curate` does), listed, and the write goes on. `--discard-edits` stays, to discard them on purpose                                                                                                                                                                                                                                                              |
+| `large-removals`                                  | Rarely reached: a fact the last read stored that a new read leaves out is checked again on its lines and, while every file it cites is unchanged and its lines hold, kept in the catalog's slot (never in the read's facts file, coverage or completeness) and listed; a person removes one on the map. One whose file changed goes with the change. The removals left are written and listed with what explains each. No count to type |
+| `unexplained-removals`                            | Stays: a record removed with no cause is a fault of the build, reported as one                                                                                                                                                                                                                                                                                                                                                          |
+| `nothing-read`, `empty`                           | Stay: they guard against a read that failed                                                                                                                                                                                                                                                                                                                                                                                             |
+| `newer-atticus`, and a fact a newer Atticus wrote | Stay: this Atticus can't read them. A fact with a field or kind no Atticus writes is kept and not read, and named as the assistant's (beta.32)                                                                                                                                                                                                                                                                                          |
+| A `build.json` that doesn't read                  | Stays: there is nothing to keep. It is reported under `hand-edits` today; the write tells it apart (`unreadableManifest`) and doesn't go past it                                                                                                                                                                                                                                                                                        |
 
 A write that confirmed a plan or a count (the app's confirm, `--allow-removals`,
 `--discard-edits`) runs as asked. `atticus catalog build` keeps every refusal and its flags: it
@@ -102,10 +107,11 @@ call's, the entry's and each line it rests on. That replaces ADR 0181's bar for 
 never meet. A person can move it, and their correction spreads as ADR 0208 says. Stored per
 commit: a call is paired again only when a file its claim cites changes.
 
-It runs where a model may decide in a run (`decideIn`: today `copilot-acp`; no runtime is added);
-through the `hand-off` runtime, the calls become one prompt and its answer is read as Match's is
-today. Inside an assistant's own session it proposes and decides nothing (ADR 0115).
-`runtime.yaml`: `apply.pair: true|false`, default true where AI is allowed; it decides for these
+It runs where a model may decide in a run (`decideIn`: today `copilot-acp`; no runtime is added).
+Under the `hand-off` runtime Apply pairs nothing, and says so (Connect's Match pairs them); a
+hand-off path is left for later. Inside an assistant's own session it proposes and decides
+nothing (ADR 0115). `runtime.yaml`: `apply.pair: on|off`, absent meaning on for `copilot-acp`;
+it decides for these
 calls in place of `decide.links`, whose default stays `propose` for the rest. With AI off, a
 runtime that may not decide, or the budget spent, the calls stay listed and the Apply ends
 normally.
@@ -171,8 +177,8 @@ One gap the sweep found is closed: outside an ACP session, an assistant's termin
 ### 8. One command, and smaller releases
 
 `atticus sync` reads what changed (recipe, then model), verifies, writes, pairs and says what is
-open; the app's Apply button and both editors run it, and every other map command keeps working
-off the first page of help. The size check (`scripts/check-size-budget.mjs`) becomes: no more
+open; both editors run it, and every other map command keeps working off the first page of
+help. The app's Apply stays apply-only: it writes the repos it lists and never reads. The size check (`scripts/check-size-budget.mjs`) becomes: no more
 lines of source than the last release. For beta.33 alone the owner set an allowance of 3,200 lines over beta.32
 (2026-11-25): every unused line outside the readers was taken out, and the readers wait for the
 later ADR of part 6. It ends when beta.33's baseline is recorded.
