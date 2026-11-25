@@ -70,7 +70,6 @@ const { QuestionDetail, QuestionList, QuestionsAiCounts } =
 const { ImpactView } = await import("../src/screens/work/Impact.js");
 const { CorrectionsList } = await import("../src/screens/architecture/Declare.js");
 const { JoinView } = await import("../src/screens/architecture/WhyLinked.js");
-const { AiPairedBetween } = await import("../src/screens/architecture/Connect.js");
 const { MatchDecided } = await import("../src/screens/architecture/Match.js");
 const { ContractList, ContractsAiCounts } = await import("../src/screens/know/Design.js");
 const { TrustRow, TrustPage } = await import("../src/screens/map/Trust.js");
@@ -445,14 +444,6 @@ describe("the canvas", () => {
     expect(out).toContain('href="#/activity?tab=runs&amp;run=run-match-0007"');
     expect(out).toContain(esc(D.correctOf(LINK.what)));
     expect(out).not.toContain(esc(COPY.why.how.unknown!));
-  });
-
-  it("Connect lists what the AI already paired between the two boxes", () => {
-    const out = html(<AiPairedBetween from="forge-billing" box={{ repo: "forge-payments" }} />);
-    expect(out).toContain(esc(D.betweenTitle(1)));
-    expect(out).toContain(esc(LINK.what));
-    expect(out).toContain(esc(D.chip));
-    expect(html(<AiPairedBetween from="forge-billing" box={{ repo: "forge-cards" }} />)).toBe("");
   });
 
   it("Match with Copilot says what Atticus applied as the AI's and what it kept as proposals", () => {

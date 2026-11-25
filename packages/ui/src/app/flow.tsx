@@ -230,11 +230,6 @@ export function flowLayout(v: FlowViewData): FlowLayout {
   };
 }
 
-/** The boxes of a laid-out view, with their ids, for fitting, finding and the minimap. */
-export function layoutRects(l: FlowLayout): { id: string; r: Rect }[] {
-  return [...l.nodes.entries()].map(([id, b]) => ({ id, r: { x: b.x, y: b.y, w: b.w, h: b.h } }));
-}
-
 /** The smallest zoom a plain picture opens at: below it a box's words are too small to read. */
 export const FLOW_FIT_MIN = 0.6;
 /** The width assumed before the picture is measured (the server render, the first paint). */

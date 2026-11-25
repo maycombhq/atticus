@@ -19,12 +19,6 @@ const O = COPY.questions.ownerQuestions;
 
 export type QuestionsKind = "steps" | "owner";
 
-/** #/questions?kind=owner opens the owner questions; anything else the steps' questions. */
-export function questionsKind(hash: string): QuestionsKind {
-  const query = hash.split("?")[1] ?? "";
-  return new URLSearchParams(query).get("kind") === "owner" ? "owner" : "steps";
-}
-
 /** The kind the address asks for (`?kind=steps` or `?kind=owner`), or none. */
 export function askedKind(hash: string): QuestionsKind | undefined {
   const k = new URLSearchParams(hash.split("?")[1] ?? "").get("kind");

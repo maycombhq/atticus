@@ -5,9 +5,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The lint script `scripts/check-size-budget.mjs` (v31, WP-11), tested as a module: non-test
- * source may grow by at most the budget over the recorded baseline of 2.0.0-beta.30, and every
- * run says the total and the packages that grew most.
+ * The lint script `scripts/check-size-budget.mjs` (ADR 0210 part 8), tested as a module: no more
+ * lines of non-test source than the recorded baseline of the last release, 2.0.0-beta.32, and
+ * every run says the total and the packages that grew most.
  */
 
 interface Pkg {
@@ -26,6 +26,7 @@ interface Result {
 }
 interface Lint {
   BUDGET: number;
+  BASELINE_TAG: string;
   EXCLUDE: Record<string, string>;
   BASELINE: Record<string, number>;
   count(root?: string): Record<string, number>;
@@ -51,9 +52,11 @@ async function repoWith(files: Record<string, number>, eol = "\n"): Promise<stri
 }
 
 describe("the size budget for non-test source", () => {
-  it("is 3,500 lines over a baseline recorded per package", async () => {
-    const { BUDGET, BASELINE } = await lint();
-    expect(BUDGET).toBe(3500);
+  it("is no more lines than the last release, recorded per package", async () => {
+    const { BUDGET, BASELINE_TAG, BASELINE } = await lint();
+    // ADR 0210 part 8: none, but for beta.33's one allowance over beta.32, which ends with it.
+    expect(BUDGET).toBe(BASELINE_TAG === "v2.0.0-beta.32" ? 3200 : 0);
+    expect(BASELINE_TAG).toBe("v2.0.0-beta.32");
     expect(Object.keys(BASELINE)).toEqual(expect.arrayContaining(["cli", "core", "scripts"]));
     expect(Object.values(BASELINE).every((n) => Number.isInteger(n) && n > 0)).toBe(true);
   });
@@ -114,7 +117,7 @@ describe("the size budget for non-test source", () => {
     const ok = check(at, { baseline, budget: 30 });
     expect(ok).toMatchObject({ total: 330, baseline: 300, grew: 30, over: false });
     expect(report(ok)).toEqual([
-      "Non-test source: 330 lines, +30 over v2.0.0-beta.30 (300); budget +30, 0 left.",
+      "Non-test source: 330 lines, +30 over v2.0.0-beta.32 (300); budget +30, 0 left.",
       "Grew most: core +20, cli +10.",
     ]);
     const over = await repoWith({

@@ -74,9 +74,6 @@ export const WORDS = {
   scopeEveryDetail:
     "The setting atticus.model: the model for each kind of step that names none of its own.",
   scopeOne: "For one kind of step",
-  scopeOneDetail:
-    "atticus.models.read, .draft, .critic, .knowledge or .quick: for example the strongest model for drafts, a smaller one for quick checks.",
-  pickClass: "Which kind of step?",
   pickClassModel: (label: string) => `Which model runs Atticus's ${label} steps in VS Code?`,
   classNow: (what: string) => `now: ${what}`,
   classFallback: "The next choice",
@@ -134,7 +131,6 @@ export const WORDS = {
       : "Atticus now offers every view and command but Atticus 1's legacy ones; the app its six entries, with every other page under More pages.",
   // ADR 0121 addendum (2026-10-26): a step handed to Copilot's agent mode, which edits files and
   // runs commands, instead of to the @atticus chat participant, which answers.
-  copilotAgentPick: "Hand which step to Copilot's agent mode?",
   copilotAgentButton: "Run it in Copilot's agent mode",
   copilotAgentNoStep:
     "Atticus has no next step to hand to Copilot. Atticus: What's next says what is waiting.",

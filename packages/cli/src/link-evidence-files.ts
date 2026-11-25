@@ -2,13 +2,11 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { parse, stringify } from "yaml";
+import { stringify } from "yaml";
 import {
-  ContractsFile,
   evidenceDirOf,
   evidenceRelOf,
   factsDirOf,
-  factsRelOf,
   loadOrgPack,
   orgPackDirOf,
   readTrafficFile,
@@ -18,7 +16,6 @@ import {
   type Fact,
   type FactsJoinResult,
   type LinkEvidenceResult,
-  type TrafficOnFile,
 } from "@maycombhq/core";
 import { TRAFFIC_SOURCES } from "@maycombhq/ingestors";
 import { aggregateTraffic, readContractFiles } from "@maycombhq/intake";
@@ -79,38 +76,6 @@ export async function writeRepoContracts(
   if (file.entries.length) await writeFileAtomic(path, stringify(file, { lineWidth: 0 }));
   else await rm(path, { force: true });
   return file;
-}
-
-/** Every repo's contract companion and every traffic aggregate on file; a file that doesn't read is said. */
-export async function loadLinkEvidence(
-  root: string,
-): Promise<{ contracts: ContractsFileT[]; traffic: TrafficOnFile[]; problems: string[] }> {
-  const problems: string[] = [];
-  const contracts: ContractsFileT[] = [];
-  const fRel = factsRelOf(root);
-  for (const n of (await readdir(factsDirOf(root)).catch(() => [] as string[])).sort()) {
-    if (!n.endsWith(".contracts.yaml")) continue;
-    let v: unknown;
-    try {
-      v = parse(await readFile(join(factsDirOf(root), n), "utf8"));
-    } catch (e) {
-      problems.push(`${fRel}/${n} isn't YAML (${(e as Error).message}); it is left out.`);
-      continue;
-    }
-    const p = ContractsFile.safeParse(v);
-    if (p.success) contracts.push(p.data);
-    else problems.push(`${fRel}/${n} isn't a contracts file; it is left out.`);
-  }
-  const traffic: TrafficOnFile[] = [];
-  const tDir = join(evidenceDirOf(root), "traffic");
-  const tRel = `${evidenceRelOf(root)}/traffic`;
-  for (const n of (await readdir(tDir).catch(() => [] as string[])).sort()) {
-    if (!/\.ya?ml$/.test(n)) continue;
-    const r = readTrafficFile(`${tRel}/${n}`, await readFile(join(tDir, n), "utf8"));
-    if (r.ok) traffic.push(r.traffic);
-    else problems.push(`${r.message}; it is left out.`);
-  }
-  return { contracts, traffic, problems };
 }
 
 /** The components a repo's write is about: its calls' and its entries' in the join, and the repo's own name. */

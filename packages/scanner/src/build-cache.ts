@@ -577,11 +577,6 @@ const MEMO = "last-build.jsonl";
 /** The build's own field order, in the kept meta. */
 const ORDER = "\u0000order";
 
-export interface KeptBuild<B> {
-  key: string;
-  build: B;
-}
-
 interface MemoHeader {
   format: number;
   stamp: string;

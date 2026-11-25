@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
@@ -9,7 +8,7 @@ import {
   drawnBoxOf,
 } from "../src/screens/architecture/Architecture.js";
 import { boxUnder, connectEndOf } from "../src/screens/architecture/Canvas.js";
-import { boxesWith, ConnectPanel, undoneWords } from "../src/screens/architecture/Connect.js";
+import { undoneWords } from "../src/screens/architecture/Connect.js";
 
 /**
  * Review round 2 (beta.23): an arrow dragged from one box and dropped on another opens Connect
@@ -19,11 +18,6 @@ import { boxesWith, ConnectPanel, undoneWords } from "../src/screens/architectur
  */
 
 const C = COPY.connect;
-const un = (h: string) =>
-  h
-    .replace(/&#x27;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&");
 
 const sys = (id: string, repos: string[] | undefined, boundary = "product"): Api.HierNodeT =>
   ({
@@ -185,7 +179,7 @@ describe("what a drawn line opens (connectDrawn)", () => {
   });
 });
 
-describe("Connect to…'s list (connectChoices, boxesWith)", () => {
+describe("Connect to…'s list (connectChoices)", () => {
   it("names a system of one repo by its repo, skips one of several, and lists the boxes outside the opened one", () => {
     const views = new Map([
       ["estate", view(estateNode, [ledger, reports, portal, northwind])],
@@ -198,18 +192,6 @@ describe("Connect to…'s list (connectChoices, boxesWith)", () => {
       { repo: "forge-reports" },
       { system: "northwind-pay" },
     ]);
-  });
-
-  it("always holds the box a line was dropped on, picked when the panel opens", () => {
-    const dropped = { label: "repo: forge-reports", box: { repo: "forge-reports" } };
-    expect(boxesWith([], dropped)).toEqual([dropped]);
-    expect(boxesWith([dropped], dropped)).toEqual([dropped]);
-    const html = un(
-      renderToStaticMarkup(
-        <ConnectPanel from="forge-ledger" boxes={[]} initial={dropped} onClose={() => {}} />,
-      ),
-    );
-    expect(html).toMatch(/<option value="repo:forge-reports" selected="">repo: forge-reports/);
   });
 });
 

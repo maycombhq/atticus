@@ -16,7 +16,6 @@ export const WORDS = {
   canvasLabel: "The Map of this part of the estate",
   canvasHelp:
     "Drag a box to move it; its links follow. Double-click a box to open it here. Scroll or use the buttons to zoom. The outline below has the same boxes for keyboards.",
-  layingOut: "Laying out the map",
   layingOutBoxes: COPY.architecture.layingOutBoxes,
   readingEstate: COPY.architecture.readingEstate,
   joiningEstate: COPY.architecture.joiningEstate,
@@ -65,8 +64,6 @@ export const WORDS = {
   close: "Close",
   focus: "Show in focus",
   focusOff: "Back to the whole view",
-  focusHint: "Tables are clearer one at a time. Open one in focus to see who reads and writes it.",
-  groupHint: "This view has more boxes than can be read at once. Open a part of it instead.",
   empty: "Nothing to show here in this lens.",
   emptyEstate:
     "The catalog is empty. Read a repo first: your assistant reads its code, and Atticus checks each fact against its line and draws the map.",

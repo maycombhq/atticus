@@ -10,7 +10,7 @@ import {
 } from "@maycombhq/core";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { ChangeContext } from "./context.js";
-import { phaseArtifacts, phaseStage, sha256 } from "./lifecycle.js";
+import { changeFolderFiles, phaseArtifacts, phaseStage, sha256 } from "./lifecycle.js";
 import { writeMatches, type StageStep } from "./policy.js";
 import { changeFolder, changeStore, writeFileAtomic } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
@@ -160,22 +160,6 @@ const sameText = (text: string, recorded: string) =>
   sha256(text) === recorded ||
   sha256(text.replace(/\r?\n/g, "\r\n")) === recorded ||
   sha256(text.replace(/\r\n/g, "\n")) === recorded;
-
-async function walk(dir: string, rel = ""): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(join(dir, rel), { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const out: string[] = [];
-  for (const e of entries) {
-    const p = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...(await walk(dir, p)));
-    else out.push(p);
-  }
-  return out.sort();
-}
 
 interface LogEntry {
   sha: string;
@@ -469,7 +453,7 @@ export interface DraftPair {
 
 async function readFolderFiles(dir: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  for (const f of await walk(dir))
+  for (const f of await changeFolderFiles(dir))
     out.set(f, (await readFile(join(dir, ...f.split("/")), "utf8")).replace(/\r\n/g, "\n"));
   return out;
 }

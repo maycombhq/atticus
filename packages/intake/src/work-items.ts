@@ -1,6 +1,5 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
+import { parseCsv, readExports } from "./export-files.js";
 
 /**
  * Exported work items: Azure DevOps (and Jira-like) exports dropped into inputs/ (ADR 0032).
@@ -161,44 +160,6 @@ function itemOf(
   };
 }
 
-/** RFC 4180 CSV: quoted fields, doubled quotes, commas and line breaks inside quotes. */
-function parseCsv(s: string): { cells: string[]; line: number }[] {
-  const rows: { cells: string[]; line: number }[] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  let line = 1;
-  let rowLine = 1;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]!;
-    if (quoted) {
-      if (c === '"' && s[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else if (c === '"') quoted = false;
-      else {
-        if (c === "\n") line++;
-        cell += c;
-      }
-    } else if (c === '"') quoted = true;
-    else if (c === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (c === "\n" || c === "\r") {
-      if (c === "\r" && s[i + 1] === "\n") i++;
-      row.push(cell);
-      if (row.some((x) => x.trim())) rows.push({ cells: row, line: rowLine });
-      row = [];
-      cell = "";
-      line++;
-      rowLine = line;
-    } else cell += c;
-  }
-  row.push(cell);
-  if (row.some((x) => x.trim())) rows.push({ cells: row, line: rowLine });
-  return rows;
-}
-
 function fromCsv(textIn: string, path: string): ExportedWorkItem[] | undefined {
   const rows = parseCsv(textIn.replace(/^\uFEFF/, ""));
   const header = rows[0]?.cells.map((h) => h.trim());
@@ -270,42 +231,6 @@ export async function readWorkItemExports(o: { root: string; inputsDir?: string 
   files: string[];
   problems: { path: string; message: string }[];
 }> {
-  const dir = o.inputsDir ?? join(o.root, "inputs");
-  const files: string[] = [];
-  async function walk(d: string) {
-    let entries;
-    try {
-      entries = await readdir(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (e.name.startsWith(".")) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      // Files only: an export that is a link to a file elsewhere isn't read.
-      else if (e.isFile() && /\.(json|ya?ml|csv)$/i.test(e.name)) files.push(full);
-    }
-  }
-  await walk(dir);
-  const out = {
-    items: [] as ExportedWorkItem[],
-    files: [] as string[],
-    problems: [] as { path: string; message: string }[],
-  };
-  for (const full of files) {
-    const path = `inputs/${relative(dir, full).split(sep).join("/")}`;
-    let bytes: Uint8Array;
-    try {
-      bytes = new Uint8Array(await readFile(full));
-    } catch (e) {
-      out.problems.push({ path, message: `can't read it: ${(e as Error).message}` });
-      continue;
-    }
-    const items = readWorkItemExport(path, bytes);
-    if (!items) continue;
-    out.files.push(path);
-    out.items.push(...items);
-  }
-  return out;
+  const { found, files, problems } = await readExports(o, readWorkItemExport);
+  return { items: found, files, problems };
 }

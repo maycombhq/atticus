@@ -10,7 +10,6 @@ import {
 import { RecordId, type ChangeLifecycle, type IntegrationPattern } from "@maycombhq/core";
 import {
   docOf,
-  parseDoc,
   readChangeFiles,
   readDataChanges,
   readHops,
@@ -357,5 +356,3 @@ export function mappingSections(
     })
     .filter((x): x is NonNullable<typeof x> => !!x);
 }
-
-export const reparse = (path: string, text: string) => parseDoc(path, text);

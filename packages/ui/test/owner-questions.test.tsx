@@ -40,7 +40,7 @@ vi.mock("../src/api/client.js", async () => ({
 }));
 const { COPY } = await import("../src/copy.js");
 const { Propose } = await import("../src/app/propose.js");
-const { OwnerQuestionCard, OwnerQuestionList, questionsKind, waitingQuestions } =
+const { OwnerQuestionCard, OwnerQuestionList, waitingQuestions } =
   await import("../src/screens/OwnerQuestions.js");
 const { SetupChecklist } = await import("../src/screens/CommandCenter.js");
 const O = COPY.questions.ownerQuestions;
@@ -62,9 +62,6 @@ it("counts what the Questions page shows, and links to the kind that waits", () 
   expect(waitingQuestions(2, 3)).toEqual({ n: 5, href: "#/questions" });
   expect(waitingQuestions(0, 3)).toEqual({ n: 3, href: "#/questions?kind=owner" });
   expect(waitingQuestions(undefined, 3)).toEqual({ n: undefined, href: "#/questions" });
-  expect(questionsKind("#/questions?kind=owner")).toBe("owner");
-  expect(questionsKind("#/questions")).toBe("steps");
-  expect(questionsKind("#/questions/q-0123456789ab")).toBe("steps");
 });
 
 it("answers an owner question, then offers Propose for review of owner answers", async () => {

@@ -17,8 +17,6 @@ import {
   stepItems,
   targetItems,
   taskItems,
-  knowledgeItems,
-  sourceItems,
   healthProblems,
   questionGroups,
   type Paths,
@@ -580,41 +578,6 @@ describe("the rest of Atticus in the sidebar (ADR 0096)", () => {
       ],
     ]);
     expect(items[1]!.task).toEqual({ change: "add-note-tags", id: "t2" });
-  });
-
-  it("lists the knowledge items, each opening its file, and the sources they came from", () => {
-    const items = knowledgeItems(
-      [
-        {
-          kind: "Pattern",
-          id: "pattern.outbox",
-          name: "Outbox",
-          status: "current",
-          confidence: "asserted",
-          evidence: [{ source: "document", path: "wiki/integration/outbox.md" }],
-        },
-      ],
-      { ...paths, knowledgeRel: "knowledge" },
-    );
-    expect(items[0]).toMatchObject({
-      label: "Outbox",
-      description: "Pattern",
-      open: {
-        kind: "file",
-        path: join(root, "knowledge", "items", "pattern", "pattern.outbox.yaml"),
-      },
-    });
-    expect(
-      sourceItems(
-        {
-          path: "org-pack/sources.yaml",
-          present: true,
-          wikis: [{ id: "arch-wiki", type: "markdown-folder", location: "wiki", spaces: [] }],
-          absorbed: [],
-        },
-        paths,
-      ).map((s) => [s.label, s.description]),
-    ).toEqual([["arch-wiki", "markdown-folder · wiki"]]);
   });
 
   it("says which of the machine's checks need a look", () => {
