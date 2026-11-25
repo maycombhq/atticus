@@ -274,7 +274,13 @@ export interface NextState {
      * findings and open knowledge gaps), once the state's own drafting stage is done and no
      * hand-off is raised: the hand-off would be refused, so the finding is the step.
      */
-    gate?: { code: "blocking-finding" | "open-gap"; finding?: string; message: string }[];
+    gate?: {
+      code: "blocking-finding" | "open-gap";
+      finding?: string;
+      message: string;
+      /** ADR 0210 part 7: an org or team finding, which the hand-off goes ahead with. */
+      openItem?: true;
+    }[];
     /**
      * Round 49: a released change's archive gate (`atticus ci archive-gate`): what stops its
      * archive (the released repos' facts not of the merged commit, an open release PR), or none.
@@ -791,7 +797,10 @@ async function draftMissing(
  */
 async function blockingOf(ctx: () => Promise<ChangeContext>, c: ChangeLifecycle): Promise<number> {
   const a = await assess(await ctx(), c);
-  return a.blockers.filter((b) => b.code === "blocking-finding" || b.code === "open-gap").length;
+  // ADR 0210 part 7: an org or team finding is an open item now, still what blocks it for a person.
+  return [...a.blockers, ...a.openItems].filter(
+    (b) => b.code === "blocking-finding" || b.code === "open-gap",
+  ).length;
 }
 
 /** Round 49: the gate's blocking findings and open gaps, as the hand-off's check lists them. */
@@ -800,9 +809,16 @@ async function gateFindingsOf(
   c: ChangeLifecycle,
 ): Promise<NonNullable<NextState["changes"][number]["gate"]>> {
   const a = await assess(await ctx(), c);
-  return a.blockers.flatMap((b) =>
+  return [...a.blockers, ...a.openItems].flatMap((b) =>
     b.code === "blocking-finding" || b.code === "open-gap"
-      ? [{ code: b.code, ...(b.finding ? { finding: b.finding } : {}), message: b.message }]
+      ? [
+          {
+            code: b.code,
+            ...(b.finding ? { finding: b.finding } : {}),
+            message: b.message,
+            ...(b.openItem ? { openItem: true as const } : {}),
+          },
+        ]
       : [],
   );
 }
@@ -816,11 +832,12 @@ function gateBlockedStep(
   stage: string,
   gate: string,
 ): NextStep | undefined {
-  const first = c.gate?.[0];
+  const first = c.gate?.find((g) => !g.openItem) ?? c.gate?.[0];
   if (!first) return undefined;
   const id = c.id;
   const more = c.gate!.length - 1;
-  const head = `${c.quick ? `${id}'s files are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate is blocked, so its hand-off would be refused: ${first.message.replace(/\.?$/, ".")}`;
+  // ADR 0210 part 7: an open item doesn't refuse the hand-off; its PR would list it.
+  const head = `${c.quick ? `${id}'s files are written` : `${id}'s ${stage} stage is done`}, but the ${gate} gate ${c.gate!.every((g) => g.openItem) ? "has open findings, which its hand-off's PR would list as open items for its approver" : "is blocked, so its hand-off would be refused"}: ${first.message.replace(/\.?$/, ".")}`;
   const tail = more ? `; ${more} more after it.` : ".";
   const asked = /\(owner question (q-[0-9a-f]+)[,)]/.exec(first.message)?.[1];
   if (asked)

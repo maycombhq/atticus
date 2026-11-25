@@ -78,14 +78,15 @@ describe("a change on the stage path", () => {
         `schemaVersion: 1\nchange: add-transfer-limit\nstage: feature\niteration: 2\nstate: questions\n${extra}updatedAt: 2026-10-19T10:00:00Z\n`,
       );
     await loop("questions:\n  - q-aaaaaaaaaaaa\n");
+    // ADR 0210 part 7: open questions are an open item on the hand-off, said the same way.
     const answered = await changeReport(root, ID);
-    expect(answered.blockers[0]!.message).toBe(
+    expect(answered.openItems[0]!.message).toBe(
       "The feature stage's questions are answered: run it again so it reads the answers (atticus change feature add-transfer-limit).",
     );
     // A loop that names no questions still says it waits for them.
     await loop("");
     const asking = await changeReport(root, ID);
-    expect(asking.blockers[0]!.message).toContain(
+    expect(asking.openItems[0]!.message).toContain(
       "The feature stage waits for a person to answer its questions",
     );
   });

@@ -94,6 +94,9 @@ export function statusLine(s: GateStatus, change = "<change>"): string {
   // An open gap with nothing blocking waits on its owner, as the stage's done says.
   const owner = ownerWaitsLine(s, change);
   if (owner) return owner;
+  // ADR 0210 part 7: only open items (org and team findings): the hand-off goes ahead with them.
+  if (s.goesAhead)
+    return `The ${s.gate} gate has open items (${counts}): its hand-off goes ahead with them, and its PR lists them for the person who approves it.${s.humanDecides ? ` ${capital(roundsUsed(s))}.` : ""} Act on any with atticus finding ${change} <id> <action>.`;
   if (s.humanDecides)
     return `The ${s.gate} gate is closed (${counts}) and ${roundsUsed(s)}: a person decides now. Once a person acts on round ${s.round}'s findings, ${checkRoundRule(s.round)}.`;
   return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding ${change} <id> <action>.`;

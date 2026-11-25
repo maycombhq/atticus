@@ -11,10 +11,25 @@ import { ChangeArtifact, Phase } from "./orgpack.js";
  * `@maycombhq/changes`; people read it but change it only through Atticus, because every
  * transition is checked (artifacts, blocking findings, approvals) and recorded in `history`.
  *
- * A contract file at version 1 (see the change-lifecycle ADR). Changing it needs an ADR and
- * a version bump with a migration, like every other contract.
+ * A contract file (see the change-lifecycle ADR). Changing it needs an ADR and a version bump
+ * with a migration, like every other contract. Version 2 (ADR 0210 part 7) adds the open items a
+ * hand-off showed and a transition went ahead with; a version 1 file reads as it is (the migration
+ * is the number only), and a file is written at 2 only once it carries one, so a change without
+ * any stays at 1 and an older Atticus keeps reading it.
  */
-export const CHANGE_SCHEMA_VERSION = 1 as const;
+export const CHANGE_SCHEMA_VERSION = 2 as const;
+
+/** The version a change's file is written at: 2 once it carries open items, else as it was. */
+export function changeSchemaVersionFor(c: {
+  schemaVersion: 1 | 2;
+  history: readonly { openItems?: unknown }[];
+  handoffs: readonly { openItems?: unknown }[];
+}): 1 | 2 {
+  const v2 =
+    c.history.some((h) => h.openItems !== undefined) ||
+    c.handoffs.some((h) => h.openItems !== undefined);
+  return v2 ? 2 : c.schemaVersion;
+}
 
 /**
  * Where a change is. The phase states share their phase's name, except release, whose
@@ -53,6 +68,11 @@ export const ChangeHistoryEntry = z.strictObject({
   /** The hand-off PR whose merge or closing made this transition. */
   pr: z.number().int().positive().optional(),
   reason: z.string().min(1).optional(),
+  /**
+   * ADR 0210 part 7 (optional, additive): the open items the transition went ahead with (a
+   * hand-off's merge, an archive), each as its words, so they outlive the PR.
+   */
+  openItems: z.array(z.string().min(1)).optional(),
 });
 export type ChangeHistoryEntry = z.infer<typeof ChangeHistoryEntry>;
 
@@ -81,6 +101,17 @@ export const ChangeHandoff = z.strictObject({
   artifacts: z
     .array(z.strictObject({ path: z.string().min(1), sha256: z.string().regex(/^[0-9a-f]{64}$/) }))
     .default([]),
+  /**
+   * ADR 0210 part 7 (optional, additive): the open items the PR last showed (its body, or the
+   * comment Atticus posted), and how many reviews it had then: only an approval after them
+   * approves the hand-off with them.
+   */
+  openItems: z
+    .strictObject({
+      items: z.array(z.string().min(1)),
+      afterReview: z.number().int().min(0),
+    })
+    .optional(),
 });
 export type ChangeHandoff = z.infer<typeof ChangeHandoff>;
 
@@ -104,7 +135,7 @@ export type ChangeTouches = z.infer<typeof ChangeTouches>;
 
 export const ChangeLifecycle = z
   .strictObject({
-    schemaVersion: z.literal(CHANGE_SCHEMA_VERSION),
+    schemaVersion: z.union([z.literal(1), z.literal(CHANGE_SCHEMA_VERSION)]),
     id: RecordId,
     title: z.string().min(1).max(200),
     /** A change type id from change-types.yaml. */
@@ -133,6 +164,17 @@ export const ChangeLifecycle = z
   .superRefine((c, ctx) => {
     const add = (path: (string | number)[], message: string) =>
       ctx.addIssue({ code: "custom", path, message });
+    // ADR 0210 part 7: open items are version 2's.
+    if (c.schemaVersion < 2) {
+      c.history.forEach((h, i) => {
+        if (h.openItems !== undefined)
+          add(["history", i, "openItems"], "openItems needs schemaVersion 2 (ADR 0210)");
+      });
+      c.handoffs.forEach((h, i) => {
+        if (h.openItems !== undefined)
+          add(["handoffs", i, "openItems"], "openItems needs schemaVersion 2 (ADR 0210)");
+      });
+    }
     let at: LifecycleState = "draft";
     c.history.forEach((h, i) => {
       if (h.from !== at) add(["history", i, "from"], `history goes from ${at}, not ${h.from}`);

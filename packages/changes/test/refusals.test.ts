@@ -118,7 +118,7 @@ describe("refusals", () => {
     expect(gh.journal).toEqual([]);
   });
 
-  it("lets waived blocking findings and risks through, but stops open blocking findings and gaps", async () => {
+  it("lets waived blocking findings and risks through, and says open blocking findings and gaps as open items", async () => {
     const root = await forgeMetarepo();
     const gh = host();
     await inDesign(root, gh);
@@ -150,11 +150,10 @@ describe("refusals", () => {
         question: { text: "What is the Ledger timeout?", owner: "team-ledger" },
       }),
     );
+    // ADR 0210 part 7: an org gap is an open item the hand-off's PR lists, never a refusal.
     const r = await canAdvance(ID, root);
-    expect(r.reasons.map((x) => [x.code, x.finding])).toEqual([
-      ["open-gap", "gap"],
-      ["no-handoff", undefined],
-    ]);
+    expect(r.reasons.map((x) => [x.code, x.finding])).toEqual([["no-handoff", undefined]]);
+    expect(r.openItems.map((x) => [x.code, x.finding])).toEqual([["open-gap", "gap"]]);
   });
 
   it("reports an unreadable finding file instead of ignoring it", async () => {

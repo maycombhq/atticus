@@ -431,7 +431,8 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
     );
 
     it(
-      "without design.md's In the code, next asks for it and the plan hand-off is refused with what to fix (ADR 0206)",
+      // ADR 0210 part 7: the plan hand-off goes ahead with it as an open item its PR lists.
+      "without design.md's In the code, next asks for it and the plan hand-off lists it as an open item (ADR 0206)",
       async () => {
         await writeChangeFiles(m.root, a.id, {
           ...a.files,
@@ -444,11 +445,13 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         expect(status.out).toContain(
           "  - design.md doesn't say what the code will have: add ## In the code with the columns Repo, Task, Has, What, Spec, a row for each thing a repo's code or deployment will have. A repo whose work no scan can see gets a row with Has other.",
         );
-        const h = await run(["change", "handoff", a.id, "--root", m.root]);
-        expect(h.code).not.toBe(0);
-        expect([...h.out, ...h.err].join("\n")).toContain(
-          "design.md doesn't say what the code will have",
+        expect(status.out).toContain(
+          "Open items (the hand-off's PR lists them; its approver decides them):",
         );
+        const h = await run(["change", "handoff", a.id, "--root", m.root]);
+        expect(h.code).toBe(0);
+        expect(h.out).toContain("Open items, which the PR lists for the person who approves it:");
+        expect(h.out.join("\n")).toContain("design.md doesn't say what the code will have");
       },
       T,
     );
@@ -996,8 +999,8 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
         `Check it by hand, then say how: atticus finding ${a.id} ${id} waive --reason "<how it was checked>".`,
       );
 
-      // The Go/no-go hand-off itself: held by the cut-over until a named person says how it was
-      // checked, then held only by what the code still lacks.
+      // The Go/no-go hand-off itself: the cut-over an open item on it until a named person says
+      // how it was checked, then only what the code still lacks (ADR 0210 part 7: open items).
       const store = changeStore(m.root);
       const was = await store.read(a.id);
       // As if it were built and through QA: its Go/no-go is what the test reads.
@@ -1011,7 +1014,7 @@ describe("the quick path: from a requirements file to ordered task runs (ADR 020
       });
       try {
         const held = async () =>
-          (await changeReport(m.root, a.id)).blockers.flatMap((b) =>
+          (await changeReport(m.root, a.id)).openItems.flatMap((b) =>
             "finding" in b && b.finding ? [b.finding] : [],
           );
         expect(await held()).toContain(id);
@@ -1782,7 +1785,8 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
       await change(e, "feature");
       expect((await stage(["change", "feature", e.id], e.feature)).result.state).toBe("done");
 
-      // The architecture stage stops on it: three drafts had it, and nothing knows forge-ghost.
+      // The architecture stage goes on with it as an open item (ADR 0210 part 7): three drafts
+      // had it, and nothing knows forge-ghost.
       const first = assistant(ghost);
       const c1 = capture();
       expect(
@@ -1790,8 +1794,10 @@ describe("the staged path on the same three changes (ADR 0201 part 8, ADR 0203 p
           runtime: first.runtime,
           now: new Date(NOW),
         }),
-      ).toBe(1);
-      expect(c1.err.join("\n")).toContain(`lists consumer ${GHOST}, which isn't in the catalog`);
+      ).toBe(0);
+      expect([...c1.out, ...c1.err].join("\n")).toContain(
+        `lists consumer ${GHOST}, which isn't in the catalog`,
+      );
       const [projected] = await Promise.all(await gateFindings(e.id, "stage-architecture"));
       expect(projected).toMatchObject({
         rule: "delta.unknown-consumer",

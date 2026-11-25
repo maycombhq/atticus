@@ -468,7 +468,7 @@ export const stagePr = (change: string) => `atticus change handoff ${change} --a
 /**
  * Refuse a stage while an earlier stage of the path isn't finished (ADR 0087, ADR 0115
  * addendum): each stage reads what the one before wrote, so the earlier stage's loop must be
- * done and nothing may block its gate (an open knowledge gap waits for its owner and doesn't). A stage may still run before the earlier phase's hand-off PR
+ * done and nothing but open items (ADR 0210 part 7) may sit on its gate. A stage may still run before the earlier phase's hand-off PR
  * merges (the stage says so); a merged hand-off means a person approved that gate. An earlier
  * stage that never ran here (its file written by a person, or the change-draft path) is the
  * earlier stage's own check: the later stage refuses when its input is missing.
@@ -491,13 +491,16 @@ export async function refuseWhileEarlierStuck(
     );
     if (!ran) continue;
     const gate = phaseGates(ctx, earlier.phase)[0];
-    const why = (await checkStage(root, change, earlier)).map((r) => r.message);
-    // What stops the gate: an open blocking finding, a lens not in or that didn't review. A
-    // knowledge gap waits for its owner's answer and doesn't hold the next stage up.
+    // ADR 0210 part 7: an open item (open questions, an org or team finding or gap) doesn't hold
+    // the next stage up; it goes on the earlier phase's hand-off PR. What still stops the gate:
+    // the earlier stage not done, a constitution finding, a lens not in or that didn't review.
+    const why = (await checkStage(root, change, earlier))
+      .filter((r) => !r.openItem)
+      .map((r) => r.message);
     if (gate)
       why.push(
         ...(await checkFindings(root, change, [gate], assistantNames(ctx)))
-          .filter((r) => r.code !== "open-gap")
+          .filter((r) => r.code !== "open-gap" && !r.openItem)
           .map((r) => r.message),
       );
     if (!why.length) continue;
@@ -512,7 +515,31 @@ export async function refuseWhileEarlierStuck(
   }
 }
 
+/**
+ * ADR 0210 part 7: how a stage goes on past a gate it used to stop at. The loop is done with what
+ * it found kept as open items (stage/<stage>.yaml `openItems`), which the phase's hand-off PR lists.
+ */
+class WentOn extends Error {
+  constructor(readonly result: StageResult<unknown>) {
+    super("went on");
+  }
+}
+
 export async function runStageLoop<A>(
+  root: string,
+  changeId: string,
+  spec: StageSpec<A>,
+  o: StageOptions,
+): Promise<StageResult<A>> {
+  try {
+    return await stageLoop(root, changeId, spec, o);
+  } catch (e) {
+    if (e instanceof WentOn) return e.result as StageResult<A>;
+    throw e;
+  }
+}
+
+async function stageLoop<A>(
   root: string,
   changeId: string,
   spec: StageSpec<A>,
@@ -624,6 +651,11 @@ async function runLoop<A>(
         }`,
       );
   }
+  // ADR 0210 part 7: a stage that went on past a gate runs again as a stopped one did: what is on
+  // file is checked and reviewed, and drafted again only if that finds something. What the earlier
+  // run went on with is that run's; this run says its own.
+  if (loop.state === "done" && loop.openItems?.length) loop.state = "stopped";
+  delete loop.openItems;
   // The change's run records past runtime.yaml's retention go (ADR 0115 addendum, 2026-10-25):
   // .runs/ keeps every prompt and answer on this machine, but not for ever. A run the stage waits
   // on that is pruned is drafted or reviewed again, as for any run that is gone.
@@ -734,14 +766,28 @@ async function runLoop<A>(
     throw new PlannerError("stopped", [message, ...lines].join("\n"), lines);
   };
 
+  // ADR 0210 part 7: a gate the stage used to stop at. It is done, and what it found goes on the
+  // phase's hand-off PR as open items: the message, then each of its "  - " lines.
+  const goOn = async (message: string, lines: string[] = []): Promise<never> => {
+    loop.state = "done";
+    delete loop.review;
+    delete loop.run;
+    loop.openItems = [message, ...lines.filter((l) => l.startsWith("  - ")).map((l) => l.slice(4))];
+    loop.updatedAt = at;
+    await writeLoop(dir, loop);
+    notes.push(message, ...lines);
+    throw new WentOn(await result("done"));
+  };
+
   // ADR 0115 addendum (2026-10-25): a blocking finding an assistant proposed is not relevant
-  // waits on a person. Drafting again won't decide it, and the stage isn't done while it waits.
+  // waits on a person; drafting again won't decide it. ADR 0210 part 7: the stage goes on, and
+  // the proposal is an open item on its hand-off until a person decides it.
   const stopOnProposed = async (found: StageIssue[], n: number): Promise<void> => {
     const proposed = found.filter((i) => i.blocking && i.proposed);
     if (!proposed.length) return;
     const one = proposed.length === 1;
-    await stopNow(
-      `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: an assistant proposed that ${one ? "a blocking finding" : `${proposed.length} blocking findings`} of the critic ${one ? "is" : "are"} not relevant, and only a person's decision closes ${one ? "it" : "them"}.`,
+    await goOn(
+      `The ${spec.stage} stage went on after ${n} draft${n === 1 ? "" : "s"}: an assistant proposed that ${one ? "a blocking finding" : `${proposed.length} blocking findings`} of the critic ${one ? "is" : "are"} not relevant, and only a person's decision closes ${one ? "it" : "them"}.`,
       [
         ...proposed.map(
           (i) =>
@@ -827,6 +873,18 @@ async function runLoop<A>(
       lines.push(`  - ${i.message} (rule ${i.rule.replace(/^critic:/, "")}; at ${where})`);
     }
     const n = failing.length + problems.length;
+    // ADR 0210 part 7: a person's edit that reads but fails the checks is their draft, taken as
+    // it is; what fails goes on the hand-off as open items (no --force needed). An edit that
+    // doesn't read has nothing to go ahead with, and still stops.
+    if (!problems.length) {
+      lines.push(
+        `Fix ${n === 1 ? "it" : "them"} in your files and run ${rerunOf(spec.stage, change.id)} again to check them, or hand off with ${n === 1 ? "it" : "them"} open. A copy of your files as they are now is in ${kept}.`,
+      );
+      return goOn(
+        `The ${spec.stage} stage took your edit of ${edited.map((f) => `${rel}/${f}`).join(", ")} as its draft${by === "critic" ? ", and the critic found" : ", and found"} ${n === 1 ? "a problem" : `${n} problems`}; it went on, with ${n === 1 ? "it" : "them"} open for the hand-off.`,
+        lines,
+      );
+    }
     lines.push(
       `Fix ${n === 1 ? "it" : "them"} in your files and run ${rerunOf(spec.stage, change.id)} again: Atticus checks your files again and never drafts over them. A copy of your files as they are now is in ${kept}. To have your assistant draft again from your edited files instead, run ${rerunOf(spec.stage, change.id)} --force; it starts from your files.`,
     );
@@ -989,7 +1047,7 @@ async function runLoop<A>(
         files,
         sources: reviewSources(cur!),
       });
-      if (c.stop) await stopNow(c.stop.message, c.stop.lines);
+      if (c.stop) await (c.stop.goesOn ? goOn : stopNow)(c.stop.message, c.stop.lines);
       if (c.waiting)
         return handedToLens(
           c.waiting,
@@ -1069,7 +1127,7 @@ async function runLoop<A>(
           files,
           sources: reviewSources(cur),
         });
-        if (c.stop) await stopNow(c.stop.message, c.stop.lines);
+        if (c.stop) await (c.stop.goesOn ? goOn : stopNow)(c.stop.message, c.stop.lines);
         if (c.waiting)
           return handedToLens(c.waiting, { files, issues: [] }, { files, answer: cur });
         // Still waiting on a person's decision: stop again rather than draft over it.
@@ -1140,7 +1198,7 @@ async function runLoop<A>(
           ...review.issues,
           ...lenses.issues,
         ]);
-        await stopNow(stop.message, stop.lines);
+        await goOn(stop.message, stop.lines);
       }
       // A person's draft the lenses blocked goes back to that person, never to a redraft (P1).
       const blockingLens = [...review.issues, ...lenses.issues].filter((i) => i.blocking);
@@ -1418,7 +1476,7 @@ async function runLoop<A>(
           files,
           sources: reviewSources(answer),
         });
-        if (c.stop) await stopNow(c.stop.message, c.stop.lines);
+        if (c.stop) await (c.stop.goesOn ? goOn : stopNow)(c.stop.message, c.stop.lines);
         if (c.waiting)
           return handedToLens(
             c.waiting,
@@ -1722,6 +1780,13 @@ async function runLoop<A>(
       // With questions open too, the stop is one end report (stageEnd): the questions first,
       // then these findings, which the next draft is handed with the answers.
       if (!open.length) {
+        // ADR 0210 part 7: a draft that reads, with a finding repeated three drafts, goes on, the
+        // findings open items on the hand-off. An answer that doesn't read still stops.
+        if (!failed)
+          await goOn(
+            `The ${spec.stage} stage went on after ${n} draft${n === 1 ? "" : "s"}: your assistant kept getting ${toStop.length === 1 ? "this" : "these"} wrong, so ${toStop.length === 1 ? "it goes on the hand-off as an open item" : "they go on the hand-off as open items"}.`,
+            stop.lines,
+          );
         loop.state = "stopped";
         await writeLoop(dir, loop);
         throw new PlannerError("stopped", [stop.message, ...stop.lines].join("\n"), stop.lines);
@@ -1746,7 +1811,7 @@ async function runLoop<A>(
     }
     // ADR 0203 A (addendum 2026-11-22): in hand-off mode a draft whose every blocking finding a
     // person may accept goes to a person, not back to the assistant: another draft can't say the
-    // map is behind. The stage stops; accepted, it is done on its next run with no new draft.
+    // map is behind. ADR 0210 part 7: the stage is done with them as open items.
     if (
       o.runtime.kind === "hand-off" &&
       blocking.length > 0 &&
@@ -1756,8 +1821,9 @@ async function runLoop<A>(
       for (const f of blocking) f.stoppedAt = n;
       const one = blocking.length === 1;
       const rerun = rerunOf(spec.stage, change.id);
-      await stopNow(
-        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"} for a person: its draft has ${one ? "1 finding" : `${blocking.length} findings`} a person may accept.`,
+      // ADR 0210 part 7: the stage goes on; the findings wait for a person on its hand-off.
+      await goOn(
+        `The ${spec.stage} stage went on after ${n} draft${n === 1 ? "" : "s"}: its draft has ${one ? "1 finding" : `${blocking.length} findings`} a person may accept, open on its hand-off.`,
         [
           ...blocking.map(
             (f) =>
@@ -2608,7 +2674,8 @@ async function criticRound(
 ): Promise<{
   issues: StageIssue[];
   waiting?: LensWait;
-  stop?: { message: string; lines: string[] };
+  /** goesOn (ADR 0210 part 7): a gate the stage goes on past, its findings open items. */
+  stop?: { message: string; lines: string[]; goesOn?: true };
 }> {
   const gate = spec.gate === undefined ? stageGate(ctx, spec.stage) : spec.gate;
   if (!gate) {
@@ -2638,10 +2705,11 @@ async function criticRound(
       return {
         issues: [],
         stop: {
-          message: `The ${spec.stage} stage stopped: draft ${draftNo} can't have a critic round. ${e.message}`,
+          message: `The ${spec.stage} stage went on: draft ${draftNo} can't have a critic round. ${e.message}`,
           lines: [
-            `  - Draft ${draftNo} is in the change folder without a review at the ${gate} gate; atticus findings ${change.id} shows the newest round's.`,
+            `  - Draft ${draftNo} had no critic round at the ${gate} gate, so the constitution's rules and the gate's other rules were not checked against it: atticus findings ${change.id} shows the newest round's, which reviewed an earlier draft.`,
           ],
+          goesOn: true,
         },
       };
     notes.push(`The critic didn't run at the ${gate} gate: ${(e as Error).message}`);
@@ -2677,11 +2745,17 @@ async function criticRound(
   // A checking round past the limit reviewed what a person did: what it finds goes to a person,
   // not to another draft no round is left to review (ADR 0115 addendum).
   if (r.checkRound && issues.some((i) => i.blocking))
-    return { issues, stop: checkRoundStop(spec.stage, change.id, gate, r.round, issues) };
+    return {
+      issues,
+      stop: { ...checkRoundStop(spec.stage, change.id, gate, r.round, issues), goesOn: true },
+    };
   return { issues };
 }
 
-/** The stop when a checking round past a gate's limit finds something blocking: a person decides. */
+/**
+ * A checking round past a gate's limit found something blocking: a person decides. ADR 0210 part
+ * 7: the stage goes on, the findings open items on its hand-off.
+ */
 function checkRoundStop(
   stage: Stage,
   change: string,
@@ -2691,7 +2765,7 @@ function checkRoundStop(
 ): { message: string; lines: string[] } {
   const blocking = issues.filter((i) => i.blocking);
   return {
-    message: `The ${stage} stage stopped: round ${round} at the ${gate} gate, the checking round past its limit, found ${blocking.length === 1 ? "a blocking finding" : `${blocking.length} blocking findings`} in what was done. A person decides now.`,
+    message: `The ${stage} stage went on: round ${round} at the ${gate} gate, the checking round past its limit, found ${blocking.length === 1 ? "a blocking finding" : `${blocking.length} blocking findings`} in what was done; a person decides them on its hand-off.`,
     lines: [
       ...blocking.map((i) => `  - ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
       `See atticus findings ${change}. Fix each by hand and apply it, waive it with a reason, or dismiss it as not relevant; once every one is acted on, ${checkRoundRule(round)}: run ${rerunOf(stage, change)} again. Or return the change.`,

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { HandoffRuntime } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { featureStage, PlannerError } from "@maycombhq/planner";
+import { featureStage } from "@maycombhq/planner";
 import { findingAction } from "../src/critic-commands.js";
 import { handoffDone } from "../src/workspace-commands.js";
 
@@ -158,20 +158,21 @@ describe("handoff done and a draft whose every blocking finding a person may acc
     ]);
   });
 
-  it("not yet accepted: the stage stops for a person on its first draft, and is done once it is accepted, with no new draft", async () => {
+  // ADR 0210 part 7: the stage goes on, the finding an open item on its hand-off for a person.
+  it("not yet accepted: the stage goes on with it open for a person on its first draft, and is done once it is accepted, with no new draft", async () => {
     const root = await estate();
     const run = await handedOff(root, NEW_REPO);
     expect(await handoffDone(root, run, io().io)).toBe(0);
-    const stopped = await stage(root, { resume: run }).catch((e: unknown) => e);
-    expect(stopped).toBeInstanceOf(PlannerError);
-    const msg = (stopped as PlannerError).message;
+    const went = await stage(root, { resume: run });
+    expect(went.state).toBe("done");
+    const msg = went.notes.join("\n");
     expect(msg).toContain(
-      "The feature stage stopped after 1 draft for a person: its draft has 1 finding a person may accept.",
+      "The feature stage went on after 1 draft: its draft has 1 finding a person may accept, open on its hand-off.",
     );
     expect(msg).toContain(
       `a person accepts it in the app, or with: atticus finding ${CHANGE} stage-`,
     );
-    expect(await loopState(root)).toBe("stopped");
+    expect(await loopState(root)).toBe("done");
     // No second prompt went to the assistant.
     expect(await readdir(join(root, ".runs", CHANGE))).toEqual([run]);
     const g = await gate(root);

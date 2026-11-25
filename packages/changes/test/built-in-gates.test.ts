@@ -84,13 +84,14 @@ async function finding(
   );
 }
 
+// ADR 0210 part 7: an org finding on a built-in gate is an open item the hand-off's PR lists.
 const codes = async (root: string) =>
-  (await canAdvance(ID, root)).reasons.filter(
+  (await canAdvance(ID, root)).openItems.filter(
     (r) => r.code === "blocking-finding" || r.code === "open-gap",
   );
 
 describe("built-in gates in the lifecycle", () => {
-  it("an open blocking trace finding stops the Build, QA and Go/no-go hand-offs", async () => {
+  it("an open blocking trace finding is an open item on the Build, QA and Go/no-go hand-offs", async () => {
     for (const state of ["build", "qa", "release-ready"] as const) {
       const root = await inState(state);
       expect(await codes(root), state).toEqual([]);
@@ -106,7 +107,7 @@ describe("built-in gates in the lifecycle", () => {
     }
   });
 
-  it("the drift and hand-up gates stop them too, and an open gap counts like a blocking finding", async () => {
+  it("the drift and hand-up gates add open items too, and an open gap counts like a blocking finding", async () => {
     const root = await inState("build");
     await finding(root, "drift", { id: "drift-1" });
     await finding(root, "hand-up", { id: "lens-1", severity: "gap" });
@@ -117,7 +118,7 @@ describe("built-in gates in the lifecycle", () => {
     ]);
   });
 
-  it("the conform gate (ADR 0114) stops the Build hand-off, until a person dismisses the finding", async () => {
+  it("the conform gate (ADR 0114) adds an open item to the Build hand-off, until a person dismisses the finding", async () => {
     const root = await inState("build");
     await finding(root, "conform", { id: "conform-missing-call-ledger-api-create-transfer-2" });
     expect((await codes(root)).map((x) => x.message.match(/on the (\S+) gate/)![1])).toEqual([

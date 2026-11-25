@@ -5,7 +5,7 @@ import type { ChangeHandoff, ChangeLifecycle, ChangeType, LifecycleState } from 
 import { prApprovers, privacyImpact, type PrivacyImpact } from "./approvals.js";
 import { assistantNames } from "./assistant-names.js";
 import { changeTypeOf, loadChangeContext, type ChangeContext } from "./context.js";
-import type { Reason } from "./errors.js";
+import { splitOpenItems, type Reason } from "./errors.js";
 import { codeTableState } from "./code-table-check.js";
 import { changeFootprint, type Footprint } from "./footprint.js";
 import {
@@ -50,8 +50,18 @@ export interface Assessment {
   progress?: WorkProgress;
   /** The open hand-off PR, if any. Merging it approves the phase's gate (ADR 0073). */
   handoff?: ChangeHandoff;
-  /** What stops a hand-off from being raised: artifacts, findings, critic rounds. */
+  /**
+   * What stops a hand-off from being raised: artifacts, a constitution finding, an unfinished
+   * critic round, a safety rule, an error.
+   */
   blockers: Reason[];
+  /**
+   * ADR 0210 part 7: the change's open items, the gates a hand-off goes ahead with (org and team
+   * findings and gaps, open questions, a mandatory gate with no round, the quick path's table,
+   * release PRs and task branches not merged, what a stage went on with). Its PR lists them under
+   * "Open items"; the person who approves it decides them. Never in `reasons`.
+   */
+  openItems: Reason[];
   /** What stops the change from advancing: blockers, then the hand-off PR until it merges. */
   reasons: Reason[];
   /**
@@ -101,15 +111,13 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const phase = change.state === "returned" ? type.phases[0]! : statePhase(change.state);
   if (!phase) {
     if (change.state === "released")
-      return { ...base, next: "archived", blockers: [], reasons: [] };
+      return { ...base, next: "archived", blockers: [], openItems: [], reasons: [] };
     if (change.state === "post-release-review") {
-      const blockers = await checkFindings(
-        ctx.root,
-        change,
-        ["post-release-review"],
-        assistantNames(ctx),
+      // ADR 0210 part 7: post-release findings are open items at archive, but a constitution one.
+      const { stops, open } = splitOpenItems(
+        await checkFindings(ctx.root, change, ["post-release-review"], assistantNames(ctx)),
       );
-      return { ...base, next: "archived", blockers, reasons: blockers };
+      return { ...base, next: "archived", blockers: stops, openItems: open, reasons: stops };
     }
     const reasons: Reason[] = [
       {
@@ -120,7 +128,7 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
             : `${change.id} is a draft; create it with atticus change new.`,
       },
     ];
-    return { ...base, blockers: reasons, reasons };
+    return { ...base, blockers: reasons, openItems: [], reasons };
   }
 
   // On the stage path (ADR 0087) a phase is due what its stage writes and its stage done; the
@@ -131,20 +139,21 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   );
   // W4: while the phase's stage isn't done, its draft hasn't passed its own checks; the stage runs
   // the gate's critic round itself once it does, so a person is never sent to run the critic on
-  // a refused draft (its findings would only repeat the stage's).
+  // a refused draft (its findings would only repeat the stage's). Open items don't hold it back.
   const stageReasons = stage ? await checkStage(ctx.root, change, stage) : [];
+  const stageStops = stageReasons.some((r) => !r.openItem);
   // ADR 0206: a quick change's plan hand-off needs design.md's In the code, read for sure.
   const table =
     phase === "plan" && due.includes("design")
       ? await codeTableState(ctx, change, type)
       : { reasons: [] as Reason[], notes: [] as string[] };
   const notes = [...table.notes, ...(await unconfirmedNotes(ctx.root, change.id, phase))];
-  const blockers: Reason[] = [
+  const { stops: blockers, open: openItems } = splitOpenItems([
     ...stageReasons,
     ...(await checkArtifacts(ctx.root, change, due)),
     ...table.reasons,
     ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase), assistantNames(ctx))),
-    ...(stageReasons.length
+    ...(stageStops
       ? []
       : await checkMandatoryRounds(
           ctx.root,
@@ -158,7 +167,7 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     ...(phase === "release" ? await releasePrReasons(ctx.root, change.id, { offline: true }) : []),
     // App-only audit: Build ready waits for every task's work to be in the change branch.
     ...(phase === "build" ? await taskBranchReasons(ctx.root, change.id, { offline: true }) : []),
-  ];
+  ]);
   const next = change.state === "returned" ? phaseState(phase) : nextState(type, phase);
   const live = change.state === "returned" ? undefined : liveHandoff(change);
   const reasons = [...blockers];
@@ -193,6 +202,7 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     next,
     ...(live ? { handoff: live } : {}),
     blockers,
+    openItems,
     reasons,
     ...(notes.length ? { notes } : {}),
   };
@@ -226,6 +236,8 @@ export interface Readiness {
   phase?: PhaseId;
   next?: LifecycleState;
   reasons: Reason[];
+  /** ADR 0210 part 7: what the change goes ahead with, for its PR's approver to decide. */
+  openItems: Reason[];
 }
 
 /**
@@ -247,6 +259,7 @@ export async function canAdvance(
     ...(a.phase ? { phase: a.phase } : {}),
     ...(a.next ? { next: a.next } : {}),
     reasons: a.reasons,
+    openItems: a.openItems,
   };
 }
 
@@ -299,7 +312,9 @@ function nextStep(
       return not(
         a.reasons.length
           ? "Resolve the post-release review findings, then archive the change."
-          : "Review the skipped lenses, then archive the change.",
+          : a.openItems.length
+            ? `Archive the change: ${a.openItems.length === 1 ? "1 post-release finding is" : `${a.openItems.length} post-release findings are`} open, and the archive records ${a.openItems.length === 1 ? "it" : "them"}.`
+            : "Review the skipped lenses, then archive the change.",
       );
     case "returned":
       return not(`Revise the work, then hand off ${a.phase} again.`);
@@ -311,9 +326,15 @@ function nextStep(
       return not(
         `Finish the ${a.phase} work (${tasks.done} of ${tasks.total} tasks ticked in tasks.md), then raise "${name}".`,
       );
+    const n = a.openItems.length;
     return a.blockers.length
       ? not(`Finish the ${a.phase} work, then raise "${name}".`)
-      : { text: `Ready to raise "${name}".`, ready: true };
+      : {
+          text: n
+            ? `Ready to raise "${name}": its PR lists ${n === 1 ? "1 open item" : `${n} open items`} for the person who approves it.`
+            : `Ready to raise "${name}".`,
+          ready: true,
+        };
   }
   if (a.handoff.state === "changes-requested")
     return not(`Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`);

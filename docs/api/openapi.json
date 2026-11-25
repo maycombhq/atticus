@@ -45237,6 +45237,39 @@
               "again",
               "anyway"
             ]
+          },
+          "whyNone": {
+            "type": "object",
+            "properties": {
+              "why": {
+                "type": "string",
+                "enum": [
+                  "no-calls",
+                  "none-open",
+                  "all-inside",
+                  "outside-unknown"
+                ]
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "command": {
+                "type": "string"
+              },
+              "unverified": {
+                "type": "boolean"
+              },
+              "gateway": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "why",
+              "calls"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

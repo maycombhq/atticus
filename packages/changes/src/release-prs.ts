@@ -24,7 +24,7 @@ import {
   writeChangeRepos,
   type GitRunner,
 } from "@maycombhq/workspace";
-import { ChangeError, type Reason } from "./errors.js";
+import { asOpenItem, ChangeError, type Reason } from "./errors.js";
 import { changeFolder, changeStore } from "./store.js";
 import { taskBranchReasons, unmergedTaskBranches, unmergedTaskWords } from "./task-branches.js";
 
@@ -687,9 +687,10 @@ export async function requireMergedPrs(root: string): Promise<boolean> {
 }
 
 /**
- * What stops go/no-go on the release PRs: each repo the change touched needs its release PR, and
- * (unless the org pack says `archive.requireMergedPrs: false`) merged, so go/no-go is over what
- * reached the default branch. No repos.yaml: no code repo, nothing to stop. `offline` (a gate's
+ * What go/no-go says of the release PRs: each repo the change touched needs its release PR (a
+ * missing one stops it), and (unless the org pack says `archive.requireMergedPrs: false`) merged,
+ * else an open item (ADR 0210 part 7), as a stale one and a task branch not merged are; so
+ * go/no-go's PR says what hasn't reached the default branch. No repos.yaml: no code repo, nothing to stop. `offline` (a gate's
  * assessment, a page load) reads refs here only, the host's branches as last fetched.
  */
 export async function releasePrReasons(
@@ -706,11 +707,14 @@ export async function releasePrReasons(
   const out: Reason[] = await taskBranchReasons(root, id, o);
   for (const r of cr.repos) {
     if (!r.pr && nothing.has(r.id)) continue;
+    // ADR 0210 part 7: a stale or unmerged release PR is an open item the go/no-go PR lists.
     if (r.pr?.state === "merged" && stale.has(r.id)) {
-      out.push({
-        code: "release-pr-stale",
-        message: `${r.id}: ${r.branch} has commits since release PR #${r.pr.number} merged, so they haven't reached its default branch: raise the release PRs again (Release › Raise the release PRs, or atticus change release-prs ${id} --approve).`,
-      });
+      out.push(
+        asOpenItem({
+          code: "release-pr-stale",
+          message: `${r.id}: ${r.branch} has commits since release PR #${r.pr.number} merged, so they haven't reached its default branch: raise the release PRs again (Release › Raise the release PRs, or atticus change release-prs ${id} --approve).`,
+        }),
+      );
       continue;
     }
     if (!r.pr || r.pr.state === "closed")
@@ -719,10 +723,12 @@ export async function releasePrReasons(
         message: `${r.id}: no release PR from ${r.branch} into its default branch${r.pr ? ` (PR #${r.pr.number} was closed)` : ""}: raise the release PRs (Release › Raise the release PRs, or atticus change release-prs ${id} --approve).`,
       });
     else if (merged && r.pr.state !== "merged")
-      out.push({
-        code: "release-pr-not-merged",
-        message: `${r.id}: release PR #${r.pr.number} is ${r.pr.state}: a person merges it on the Git host (${r.pr.url}), then Sync records it.`,
-      });
+      out.push(
+        asOpenItem({
+          code: "release-pr-not-merged",
+          message: `${r.id}: release PR #${r.pr.number} is ${r.pr.state}: a person merges it on the Git host (${r.pr.url}), then Sync records it.`,
+        }),
+      );
   }
   return out;
 }

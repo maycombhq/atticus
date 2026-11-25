@@ -86,17 +86,19 @@ describe("a change made from a requirements file", () => {
     ).toEqual(["proposal", "specs", "design", "tasks"]);
     for (const f of ["proposal.md", "design.md", "tasks.md", "specs"])
       await cp(join(FORGE_CHANGE, f), join(dir, f), { recursive: true });
-    // ADR 0206: a quick change's design.md says what the code will have before its plan hand-off.
-    const refused = await assess(await loadChangeContext(root), c);
-    expect(refused.blockers.map((b) => b.code)).toContain("design.code-table");
+    // ADR 0206: a quick change's design.md says what the code will have; ADR 0210 part 7: until
+    // it does, that is an open item the plan hand-off's PR lists, not a refusal.
+    const open = await assess(await loadChangeContext(root), c);
+    expect(open.blockers.map((b) => b.code)).not.toContain("design.code-table");
+    expect(open.openItems.map((b) => b.code)).toContain("design.code-table");
     await writeFile(
       join(dir, "design.md"),
       (await readFile(join(dir, "design.md"), "utf8")) + IN_THE_CODE,
     );
-    // v31 (WP-05): a task with no acceptance criteria at all refuses the hand-off, with its line.
+    // v31 (WP-05): a task with no acceptance criteria at all is an open item, with its line.
     const bare = await assess(await loadChangeContext(root), c);
-    expect(bare.blockers.filter((b) => b.code === "stories.no-criteria").length).toBe(5);
-    expect(bare.blockers.find((b) => b.code === "stories.no-criteria")?.message).toMatch(
+    expect(bare.openItems.filter((b) => b.code === "stories.no-criteria").length).toBe(5);
+    expect(bare.openItems.find((b) => b.code === "stories.no-criteria")?.message).toMatch(
       /^tasks\.md:5: task 1\.1 \(Add V3__add_daily_limit\.sql\) has no acceptance criteria\./,
     );
     const tasks = await readFile(join(dir, "tasks.md"), "utf8");

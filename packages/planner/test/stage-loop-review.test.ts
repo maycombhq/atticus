@@ -170,6 +170,13 @@ const stopped = async (p: Promise<unknown>): Promise<PlannerError> => {
   return e as PlannerError;
 };
 
+// ADR 0210 part 7: a gate the stage used to stop at: it is done, what it found an open item.
+const wentOn = async (p: Promise<{ state: string; notes: string[] }>) => {
+  const r = await p;
+  expect(r.state).toBe("done");
+  return { message: r.notes.join("\n") };
+};
+
 // B2 (the knowledge walk): the stories stage's judged doubt (holdOnce, locateText, judged, ask,
 // options) waited in the loop file while the critic's lenses were handed off, and the loop
 // file refused it: `plan stories --handoff --resume` crashed with "Unrecognized key: locateText".
@@ -314,7 +321,7 @@ gates:
     );
   }
 
-  it("stops for a person when the gate has no critic round left, rather than say nothing blocks", async () => {
+  it("goes on for a person when the gate has no critic round left, rather than say nothing blocks", async () => {
     const root = await estateRoot({ lenses: true });
     await limited(root);
     const rt = new MockRuntime(
@@ -326,9 +333,14 @@ gates:
             : PLACED,
       { now: () => NOW },
     );
-    const e = await stopped(featureStage(root, CHANGE, { runtime: rt, now: NOW }));
+    const e = await wentOn(featureStage(root, CHANGE, { runtime: rt, now: NOW }));
     expect(e.message).toContain("the most it allows");
-    expect((await loopOf(root)).state).toBe("stopped");
+    const loop = (await loopOf(root)) as { state: string; openItems?: string[] };
+    expect(loop.state).toBe("done");
+    // Said plainly: the last draft had no critic round, so its constitution rules weren't checked.
+    expect(loop.openItems?.join("\n")).toContain(
+      "Draft 2 had no critic round at the define gate, so the constitution's rules and the gate's other rules were not checked against it",
+    );
   });
 
   it("doesn't count a round in which no lens reviewed (Claude Code missing, a timeout) toward the limit", async () => {
@@ -378,7 +390,7 @@ gates:
     };
     const stuck = async (root: string) => {
       await limited(root, 2);
-      const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      const e = await wentOn(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
       expect(e.message).toContain("the most it allows");
       const s = await gateStatus(root, CHANGE, "define");
       expect(s.round).toBe(2);
@@ -418,19 +430,19 @@ gates:
       const id = await stuck(root);
       // Marked applied, but the placement on file wasn't fixed.
       await act(root, CHANGE, id, "apply", { by: "pat" });
-      const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      const e = await wentOn(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
       expect(e.message).toContain("the checking round past its limit, found a blocking finding");
       // The stop states the checking round's rule as the status does (ADR 0087 addendum).
       expect(e.message).toContain(
         "once every one is acted on, a person acted since round 3, so one more checking round is due",
       );
-      expect((await loopOf(root)).state).toBe("stopped");
+      expect((await loopOf(root)).state).toBe("done");
       const s = await gateStatus(root, CHANGE, "define");
       expect(s.round).toBe(3);
       expect(s.humanDecides).toBe(true);
       expect(s.checkRound).toBe(false);
-      // Bounded: a further run is refused until a person acts on round 3's finding.
-      const again = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      // Bounded: a further run reviews nothing until a person acts on round 3's finding.
+      const again = await wentOn(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
       expect(again.message).toContain("the most it allows, and a checking round past it");
       // A waiver is a person's decision too, recorded with a reason, never silent.
       const id3 = s.findings.find((f) => f.finding.rule === "flow-use-matches-estate")!.finding.id;
@@ -841,28 +853,24 @@ gates:
       { now: () => NOW },
     );
 
-  it("the stories stage refuses, naming the architecture stage and the design gate to finish first", async () => {
+  // ADR 0210 part 7: the design gate's org finding is an open item on its hand-off, so the
+  // stories stage goes ahead; only an earlier stage not done (or a constitution finding) holds it.
+  it("the stories stage goes ahead while the design gate's org finding is an open item", async () => {
     const root = await estateRoot({ lenses: true });
     await designLimited(root);
     expect((await featureStage(root, CHANGE, { runtime: rt(PLACED), now: NOW })).state).toBe(
       "done",
     );
-    const e = await stopped(architectureStage(root, CHANGE, { runtime: rt(DELTAS), now: NOW }));
+    const e = await wentOn(architectureStage(root, CHANGE, { runtime: rt(DELTAS), now: NOW }));
     expect(e.message).toContain("the most it allows");
-    const refused = await storiesStage(root, CHANGE, { runtime: rt("stories: []"), now: NOW }).then(
-      () => undefined,
-      (x: unknown) => x as PlannerError,
+    const ran = await storiesStage(root, CHANGE, { runtime: rt("stories: []"), now: NOW }).then(
+      () => "ran",
+      (x: unknown) => (x as Error).message,
     );
-    expect(refused).toBeInstanceOf(PlannerError);
-    expect(refused!.code).toBe("refused");
-    expect(refused!.message).toContain(
-      "The stories stage can't run yet: the architecture stage isn't finished at the design gate.",
-    );
-    expect(refused!.message).toContain("atticus change architecture add-fraud-check");
-    // Nothing of the stories stage was written.
+    expect(ran).not.toContain("can't run yet");
     await expect(
       readFile(join(root, "openspec/changes", CHANGE, "stage/stories.yaml"), "utf8"),
-    ).rejects.toThrow();
+    ).resolves.toContain("stage: stories");
   });
 
   it("the architecture stage refuses while the feature stage is stopped", async () => {
