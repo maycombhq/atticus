@@ -15,6 +15,7 @@ import { parse, stringify } from "yaml";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
   factsDirOf,
+  loadOrgPack,
   parseFacts,
   proveRecipe,
   ReadingRulesFile,
@@ -26,7 +27,7 @@ import { execFileSync } from "node:child_process";
 import { main } from "../src/main.js";
 import { mapAllCommand } from "../src/map-all.js";
 import { mapCommand } from "../src/map-commands.js";
-import { effectiveRules } from "../src/reading-rules.js";
+import { effectiveRules, typeRecipes } from "../src/reading-rules.js";
 
 /**
  * ADR 0210 part 2, "recipe first, model on request": a repo whose type has active recipes is
@@ -106,7 +107,7 @@ function activeRules(): string {
 }
 
 /** A Forge metarepo whose manifest makes the modules (and a third) integration modules. */
-function metarepo(): string {
+function metarepo(o: { walletsType?: string; layer?: string; rules?: string } = {}): string {
   const root = temp("meta");
   write(root, "org-pack/pack.yaml", "schemaVersion: 1\nname: forge\n");
   write(
@@ -118,12 +119,16 @@ function metarepo(): string {
       "repos:",
       ...[LEDGER, WALLETS, "forge-cards-module"].map(
         (id) =>
-          `  - { id: ${id}, url: https://git.example.com/forge/${id}.git, type: integration-module, owner: team-payments }`,
+          `  - { id: ${id}, url: https://git.example.com/forge/${id}.git, type: ${id === WALLETS ? (o.walletsType ?? "integration-module") : "integration-module"}, owner: team-payments }`,
       ),
       "",
     ].join("\n"),
   );
-  write(root, "org-pack/reading-rules/types/integration-module.yaml", activeRules());
+  write(
+    root,
+    `org-pack/reading-rules/${o.layer ?? "types/integration-module.yaml"}`,
+    o.rules ?? activeRules(),
+  );
   return root;
 }
 /** A checkout of the ledger module, changed by `edit`. */
@@ -133,6 +138,20 @@ function checkout(edit?: (dir: string) => void): string {
   edit?.(dir);
   return dir;
 }
+/** Facts on file before the read: the ledger module's hand-written entries, and more. */
+const onFile = (root: string, more: object[] = []) =>
+  write(
+    root,
+    `facts/${LEDGER}.jsonl`,
+    [
+      ...readFileSync(join(FIX, "facts", `${LEDGER}.jsonl`), "utf8")
+        .trim()
+        .split("\n"),
+      ...more.map((f) => JSON.stringify(f)),
+    ].join("\n") + "\n",
+  );
+const BEANS = "src/main/resources/OSGI-INF/blueprint/beans.xml";
+
 async function read(root: string, dir: string, o: { runtime?: boolean } = {}) {
   const prompts: AiRequest[] = [];
   const out: string[] = [];
@@ -149,7 +168,15 @@ async function read(root: string, dir: string, o: { runtime?: boolean } = {}) {
   const text = readFileSync(join(factsDirOf(root), `${LEDGER}.jsonl`), "utf8");
   const facts = parseFacts(text);
   if (!facts.ok) throw new Error(JSON.stringify(facts.issues));
-  return { root, code, prompts, out, err, facts: facts.facts };
+  return {
+    root,
+    code,
+    prompts,
+    out,
+    err,
+    facts: facts.facts,
+    said: prompts.map((p) => p.pack.prompt).join("\n"),
+  };
 }
 const shape = (f: Fact) => {
   const { verified: _v, ...rest } = f as Fact & { verified?: unknown };
@@ -259,6 +286,114 @@ describe("recipe first (ADR 0210 part 2)", () => {
     expect(out.join("\n")).toMatch(/read by its recipes alone \(3 files\): nothing for the model/);
     const facts = parseFacts(readFileSync(join(factsDirOf(root), `${LEDGER}.jsonl`), "utf8"));
     expect(facts.ok && facts.facts.filter((f) => f.kind === "entry")).toHaveLength(3);
+  });
+});
+
+describe("a recipe's proof holds for what was proven (review of item 7)", () => {
+  const draftedWhy = async (root: string) => {
+    const e = await effectiveRules(root, LEDGER, { dir: checkout() });
+    return {
+      drafts: e.drafts.map((r) => r.key).sort(),
+      problems: e.problems.join("\n"),
+    };
+  };
+  it("a recipe edited after its proof is a draft again, and that is said", async () => {
+    const edited = activeRules().replace("optional:\n        - uri", "optional: []");
+    expect(edited).not.toBe(activeRules());
+    const r = await draftedWhy(metarepo({ rules: edited }));
+    expect(r.drafts).toEqual(["blueprint-rest-entries"]);
+    expect(r.problems).toMatch(/blueprint-rest-entries .*changed since its proof/);
+  });
+  it("the app's view lists each recipe, proven or a draft and why", async () => {
+    const edited = activeRules().replace("optional:\n        - uri", "optional: []");
+    const root = metarepo({ rules: edited });
+    const op = await loadOrgPack(join(root, "org-pack"));
+    expect(
+      (await typeRecipes(root, op)).map((r) => [r.key, r.fact, r.proven, r.why ?? ""]),
+    ).toEqual([
+      ["blueprint-rest-entries", "entry", false, "has changed since its proof"],
+      ["deploy-settings", "config", true, ""],
+    ]);
+  });
+
+  it("a proof on a repo of another type proves nothing for this one", async () => {
+    const r = await draftedWhy(metarepo({ walletsType: "gateway-proxy" }));
+    expect(r.drafts).toEqual(["blueprint-rest-entries", "deploy-settings"]);
+    expect(r.problems).toMatch(/forge-wallets-module, which isn't of type integration-module/);
+  });
+  it("a recipe reads type-wide only from its type's layer", async () => {
+    const r = await draftedWhy(metarepo({ layer: "org.yaml" }));
+    expect(r.drafts).toEqual(["blueprint-rest-entries", "deploy-settings"]);
+    expect(r.problems).toMatch(/reads only from reading-rules\/types\/<type>\.yaml/);
+  });
+});
+
+describe("what the model is still given (review of item 7)", () => {
+  it("a file a recipe names but writes nothing from goes to the model", async () => {
+    const r = await read(
+      metarepo(),
+      checkout((d) =>
+        write(d, BEANS, '<blueprint>\n  <bean id="audit" class="forge.Audit"/>\n</blueprint>\n'),
+      ),
+    );
+    expect(r.out[0]).toBe("Read by recipe 3 files, by the model 1 file.");
+    expect(r.said).toContain('<bean id="audit"');
+  });
+
+  it("a route file whose last read had calls goes to the model whole, and the recipe writes nothing there", async () => {
+    const root = metarepo();
+    onFile(root, [
+      {
+        kind: "call",
+        id: "call.direct.ledger-account",
+        repo: LEDGER,
+        commit: COMMIT,
+        callType: "rest",
+        method: "GET",
+        path: "direct:getLedgerAccount",
+        cite: {
+          file: XML,
+          line: 7,
+          value: "direct:getLedgerAccount",
+          quote: '<to uri="direct:getLedgerAccount"/>',
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      },
+    ]);
+    const r = await read(root, checkout());
+    expect(r.out[0]).toBe("Read by recipe 2 files, by the model 1 file.");
+    expect(r.said).toContain('<rest path="/accounts">');
+    expect(r.facts.filter((f) => f.kind === "entry" && f.by === "reader")).toEqual([]);
+  });
+
+  it("a repo the model read before gets one entry a line, the recipe's", async () => {
+    const root = metarepo();
+    onFile(root);
+    const r = await read(root, checkout());
+    expect(r.prompts).toEqual([]);
+    const entries = r.facts.filter((f) => f.kind === "entry");
+    expect(entries.map((f) => `${f.cite.line} ${f.by}`).sort()).toEqual([
+      "14 reader",
+      "6 reader",
+      "9 reader",
+    ]);
+  });
+
+  it("a recipe whose key is renamed replaces its facts, leaving none under the old key", async () => {
+    const root = metarepo();
+    const dir = checkout();
+    await read(root, dir);
+    const file = join(root, "org-pack/reading-rules/types/integration-module.yaml");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace("key: blueprint-rest-entries", "key: camel-rest"),
+    );
+    const r = await read(root, dir);
+    const entries = r.facts.filter((f) => f.kind === "entry");
+    expect(entries).toHaveLength(3);
+    expect(entries.every((f) => f.id.startsWith("entry.camel-rest."))).toBe(true);
   });
 });
 

@@ -1,3 +1,0 @@
-# ADR 0210 part 6: this fixture tests the deterministic readers, so it turns them on.
-schemaVersion: 3
-readers: "on"

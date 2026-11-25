@@ -112,7 +112,7 @@ import {
 import { componentTypeIds, componentTypesAt, componentTypesText } from "./component-types.js";
 import { notesAt } from "./org-notes.js";
 import { effectiveRules, readingRulesText, ruleIds, type EffectiveRule } from "./reading-rules.js";
-import { recipeFacts, recipeFiles, recipesOf, withoutFiles } from "./recipe-read.js";
+import { recipePlan, recipesOf, withoutFiles, type RecipePlan } from "./recipe-read.js";
 import {
   loadReadPlan,
   saveReadPlan,
@@ -1071,7 +1071,9 @@ export async function mapCommand(
   const orgRules = await effectiveRules(root, repo, { dir, op });
   // ADR 0210 part 2: recipe first. The files the active recipes read are never the model's.
   const recipes = recipesOf(orgRules);
-  const byRecipe = recipeFiles(source, exclude, recipes);
+  const rplan = await recipesAt(root, repo, recipes, source, exclude, commit);
+  if (typeof rplan === "string") return (io.err(rplan), 2);
+  const byRecipe = rplan?.files ?? [];
   const modelSource = withoutFiles(source, byRecipe);
   const notesPrompt = [
     notesText(repoNotes.notes, repoNotes.type),
@@ -1166,8 +1168,7 @@ export async function mapCommand(
       source,
       exclude,
       dir,
-      recipes,
-      files: byRecipe,
+      plan: rplan!,
       ...(deps.git ? { git: deps.git } : {}),
     });
   if (!runtime && recipes.length && !continuing) {
@@ -1602,6 +1603,21 @@ async function verifyRead(
   });
 }
 
+/** The recipes' plan against the facts on file: none without recipes, words when it can't be read. */
+async function recipesAt(
+  root: string,
+  repo: string,
+  recipes: EffectiveRule[],
+  source: FileSource,
+  exclude: string[],
+  commit: string,
+): Promise<RecipePlan | string | undefined> {
+  if (!recipes.length) return undefined;
+  const existing = await readFactsFile(root, repo);
+  if (typeof existing === "string") return existing;
+  return recipePlan(recipes, source, exclude, { repo, commit }, existing);
+}
+
 /**
  * ADR 0210 part 2: the active recipes read their files with no model; their facts go through
  * the verifier with the facts on file, as a batch's do, and are written the same way.
@@ -1614,14 +1630,11 @@ export async function readByRecipes(
     source: FileSource;
     exclude: string[];
     dir: string;
-    recipes: EffectiveRule[];
-    files: string[];
+    plan: RecipePlan;
     git?: GitRunner;
   },
 ): Promise<{ lines: string[]; rejected: number } | string> {
-  const existing = await readFactsFile(root, repo);
-  if (typeof existing === "string") return existing;
-  const r = recipeFacts(c.recipes, c.files, c.source, { repo, commit: c.commit }, existing);
+  const r = c.plan;
   const merged = new Map(r.kept.map((f) => [f.id, f]));
   for (const f of r.facts) merged.set(f.id, f);
   const { carry } = await carryOf(c.dir, [...merged.values()], c.commit, c.git);
@@ -1674,12 +1687,16 @@ export async function recipeStep(
   if (!recipes.length) return 0;
   const source = dirSource(dir);
   const exclude = await excludesOf(root, repo);
-  const files = recipeFiles(source, exclude, recipes);
-  const r = await readByRecipes(root, repo, {
-    ...{ commit, source, exclude, dir, recipes, files },
-    ...(git ? { git } : {}),
-  });
+  const plan = await recipesAt(root, repo, recipes, source, exclude, commit);
+  const r =
+    typeof plan === "object"
+      ? await readByRecipes(root, repo, {
+          ...{ commit, source, exclude, dir, plan },
+          ...(git ? { git } : {}),
+        })
+      : plan!;
   if (typeof r === "string") return (io.err(`${repo}: ${r}`), 2);
+  const files = plan && typeof plan === "object" ? plan.files : [];
   const model = readPathsOf(withoutFiles(source, files), exclude, conventionsOf(op)).length;
   io.out(`${repo}: ${READ_WORDS.split(files.length, model)}`);
   for (const l of r.lines) io.out(l);

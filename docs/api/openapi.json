@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "3.20.0",
+    "version": "3.21.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -15878,6 +15878,37 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reading-rules/recipes": {
+      "get": {
+        "operationId": "readingRecipes",
+        "summary": "Each repo type's recipes (ADR 0210 part 2): what a recipe reads, whether it is proven (and on which repos) or a draft and why, and whether the deterministic readers run here",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "The recipes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingRecipesView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -45237,6 +45268,39 @@
               "again",
               "anyway"
             ]
+          },
+          "whyNone": {
+            "type": "object",
+            "properties": {
+              "why": {
+                "type": "string",
+                "enum": [
+                  "no-calls",
+                  "none-open",
+                  "all-inside",
+                  "outside-unknown"
+                ]
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "command": {
+                "type": "string"
+              },
+              "unverified": {
+                "type": "boolean"
+              },
+              "gateway": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "why",
+              "calls"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -47045,6 +47109,71 @@
           "active",
           "draft",
           "untaught"
+        ],
+        "additionalProperties": false
+      },
+      "ReadingRecipesView": {
+        "type": "object",
+        "properties": {
+          "readers": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "recipes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "fact": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "proven": {
+                  "type": "boolean"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "key",
+                "file",
+                "fact",
+                "files",
+                "proven",
+                "repos"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "readers",
+          "recipes"
         ],
         "additionalProperties": false
       },

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
-import { parse, stringify } from "yaml";
+import { parse, parseDocument, stringify } from "yaml";
 import {
   ATTICUS_FOLDER_IGNORE,
   CHECKLISTS_README,
@@ -43,6 +43,7 @@ import {
   migrateRuntimeV4Text,
   migrateRuntimeV5Text,
   migrateConventionsV3Text,
+  READ_WORDS,
   migrateCorrections,
   migrateSourcesText,
   orgPackDirOf,
@@ -52,7 +53,7 @@ import {
   writeFileAtomic,
   newerThan,
 } from "@maycombhq/core";
-import { NEWER_ATTICUS_COMMAND } from "@maycombhq/scanner";
+import { NEWER_ATTICUS_COMMAND, sourcesDirOf } from "@maycombhq/scanner";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { CONFIRM_WORDS, confirmOnce } from "./confirm-once.js";
@@ -444,6 +445,9 @@ export const MIGRATIONS: Migration[] = [
     migrateConventionsV3Text,
     "conventions.yaml",
   ),
+  // ADR 0210 part 6 (review of item 7): readers off is the default for a new pack; a team whose
+  // catalog the readers wrote keeps them on, said in the step's words.
+  readersKeptOn(),
   {
     // ADR 0181: a corrections line that uses version 2's fields (ai, batch, rule, match, unlink)
     // but says version 1 (written by hand) says 2; every other line means the same at 1.
@@ -621,6 +625,37 @@ function runtimeStep(
     async apply(root) {
       const r = await read(root);
       if (!r?.changed) return [];
+      await writeFileAtomic(join(root, r.rel), r.text);
+      return [r.rel];
+    },
+  };
+}
+
+function readersKeptOn(): Migration {
+  const read = async (root: string) => {
+    const slots = await readdir(join(sourcesDirOf(root), "readers")).catch(() => []);
+    if (!slots.some((f) => f.endsWith(".json"))) return undefined;
+    const rel = packRel(root, "conventions.yaml");
+    const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+    const doc = parseDocument(text ?? "schemaVersion: 3\n");
+    if (doc.errors.length || doc.has("readers")) return undefined;
+    if (Number(doc.get("schemaVersion")) < 3) doc.set("schemaVersion", 3);
+    const on = doc.createNode("on");
+    on.type = "QUOTE_DOUBLE";
+    doc.set("readers", on);
+    return { rel, text: doc.toString({ lineWidth: 0 }) };
+  };
+  return {
+    id: "readers-kept-on",
+    summary: READ_WORDS.keptOn,
+    creates: true,
+    pending: async (root) => {
+      const r = await read(root);
+      return r ? [r.rel] : [];
+    },
+    async apply(root) {
+      const r = await read(root);
+      if (!r) return [];
       await writeFileAtomic(join(root, r.rel), r.text);
       return [r.rel];
     },

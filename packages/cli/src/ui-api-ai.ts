@@ -19,6 +19,7 @@ import {
   inEol,
   writeFileIfUnchanged,
   type OrgPack,
+  readersOn,
 } from "@maycombhq/core";
 import {
   COMMON_SETTINGS,
@@ -160,6 +161,8 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
             // Ninth UX walk (ADR 0181): whether the AI decides first, and the bar that pauses it.
             decide: decideOf(rt),
             schemaVersion: rt.schemaVersion,
+            // ADR 0210 part 6 (additive): whether the deterministic readers run here.
+            readers: readersOn(op) ? "on" : "off",
             path: rel(),
           },
         };

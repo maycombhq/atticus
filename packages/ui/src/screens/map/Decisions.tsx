@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import type { Loaded } from "../../api/client.js";
+import { useApi, type Loaded } from "../../api/client.js";
 import { followJob } from "../../app/job.js";
 import {
   AiChip,
@@ -407,7 +407,43 @@ export function DecisionsPage(p: {
           }}
         </View>
       </Panel>
+      <RecipesPanel />
     </div>
+  );
+}
+
+/** ADR 0210 part 2: each repo type's recipes, proven (reads with no model) or a draft and why. */
+export function RecipesView({ v }: { v: Api.ReadingRecipesViewT }) {
+  const R = D.recipes;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <p className="muted" style={{ margin: 0 }}>
+        {R.readers(v.readers)}
+      </p>
+      {!v.recipes.length ? (
+        <div className="state">{R.none}</div>
+      ) : (
+        <ul style={{ margin: 0 }}>
+          {v.recipes.map((r) => (
+            <li key={`${r.file}#${r.key}`}>
+              <span className="mono">{r.key}</span> {R.what(r.type, r.fact, r.files)}{" "}
+              <span className={`chip ${r.proven ? "done" : "dim"}`}>
+                {r.proven ? R.proven(r.repos) : R.draft(r.why ?? "")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RecipesPanel() {
+  const of = useApi<Api.ReadingRecipesViewT>("/api/reading-rules/recipes");
+  return (
+    <Panel title={D.recipes.title} span="1 / -1">
+      <View of={of}>{(v) => <RecipesView v={v} />}</View>
+    </Panel>
   );
 }
 

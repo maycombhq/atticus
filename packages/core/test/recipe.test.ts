@@ -7,6 +7,7 @@ import {
   parseFacts,
   proveRecipe,
   ReadingRulesFile,
+  recipeDigest,
   runRecipe,
   type ReadingRule,
   type RecipeFile,
@@ -185,6 +186,7 @@ describe("runRecipe, review of PR 19", () => {
       key: "t",
       status: "draft",
       rule: "A test rule, ten letters.",
+      files: ["a.txt"],
       extract,
     }) as ReadingRule;
   const one = (extract: object, text: string) =>
@@ -291,6 +293,8 @@ describe("proveRecipe (ADR 0210 part 2, ADR 0208's proof)", () => {
       reproduced: [6, 9, 12, 15]
         .map((l) => `${WALLETS} ${XML}:${l}`)
         .concat([6, 9, 14].map((l) => `${LEDGER} ${XML}:${l}`)),
+      // Review of item 7: what was proven, so an edit after the proof is a draft again.
+      digest: recipeDigest(r),
     });
     // Written from the wallets module: only one repo left, so no proof; the rule stays a draft.
     expect(proveRecipe(r, reads(), { writtenFrom: [WALLETS] }).proof).toBeUndefined();

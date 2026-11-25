@@ -1388,6 +1388,7 @@ async function mapAllRun(
     else for (const l of planLines(plan)) io.out(l);
     return 0;
   }
+  let recipeRejected = false;
   // ADR 0210 part 2: recipe first. Each repo's recipes read before its sessions (a model-mode
   // read runs its own), and a repo they read whole has none.
   for (const r of [
@@ -1395,7 +1396,10 @@ async function mapAllRun(
     ...plan.skipped.filter((x) => x.recipe),
   ]) {
     const commit = "commit" in r ? r.commit : await commitOf(root, r.repo);
-    if (commit) await recipeStep(root, r.repo, commit, io, deps.git);
+    // A facts file that can't be read stops the run; a recipe fact refused ends it with 1.
+    const code = commit ? await recipeStep(root, r.repo, commit, io, deps.git) : 0;
+    if (code === 2) return 2;
+    recipeRejected ||= code === 1;
   }
   // beta.27: never start sessions that each end at once: the assistant files they read are
   // checked first, and written when only out of date (generated files, as atticus
@@ -1748,7 +1752,7 @@ async function mapAllRun(
   }
   await save();
   await summary(interrupted || joinStopped);
-  return signIn || serverGone || joinFailed || joinStopped ? 1 : 0;
+  return signIn || serverGone || joinFailed || joinStopped || recipeRejected ? 1 : 0;
 
   // ------------------------------------------------------------ one part, read by Copilot
 

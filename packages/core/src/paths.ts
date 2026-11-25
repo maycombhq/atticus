@@ -79,6 +79,12 @@ const plural = (x: number, w: string) => `${x.toLocaleString("en-US")} ${w}${x =
 export const READ_WORDS = {
   split: (recipe: number, model: number) =>
     `Read by recipe ${plural(recipe, "file")}, by the model ${plural(model, "file")}.`,
+  /** A scan with the readers off and nothing to build from: no failure (review of item 7). */
+  scanNothing:
+    'The readers are off and no repo has verified facts yet, so there is nothing to build: read the repos with atticus map --all (or atticus map <repo>), then scan again. An org pack turns the readers on with readers: "on" in conventions.yaml.',
+  /** What `atticus upgrade` says it keeps for a team whose catalog the readers wrote. */
+  keptOn:
+    'The readers stay on where they wrote the catalog (ADR 0210): conventions.yaml gets readers: "on" (schemaVersion 3); set readers: "off" to read with recipes and the model only',
   readersOff:
     'The deterministic readers are off (ADR 0210): a repo is read by its recipe or by the model. An org pack turns them on with readers: "on" in conventions.yaml (schemaVersion: 3).',
 };

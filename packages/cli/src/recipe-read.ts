@@ -35,29 +35,54 @@ export function withoutFiles(source: FileSource, paths: readonly string[]): File
   };
 }
 
+/** A fact a recipe wrote: `by: reader`, its id `<kind>.<rule key>.<12 hex>` (any key, renamed too). */
+const byARecipe = (f: Fact) => f.by === "reader" && /^[a-z]+\.[a-z0-9-]+\.[0-9a-f]{12}$/.test(f.id);
+
+/** What the recipes read of a repo, and what is left on file beside it. */
+export interface RecipePlan {
+  /** The files the recipes read, never the model's. */
+  files: string[];
+  facts: Fact[];
+  dropped: RecipeDropped[];
+  /** The facts on file kept: none a recipe wrote, none citing a file the recipes read. */
+  kept: Fact[];
+}
+
 /**
- * The recipes' facts at a commit, and the facts on file they replace: a recipe's own earlier
- * facts (`by: reader`, its id `<kind>.<key>.`), so a line that no longer matches drops its fact.
+ * The recipes' facts at a commit (review of item 7). A file is the recipes' only when they wrote
+ * a fact from it and every fact the last read wrote there is of a kind they write; any other file
+ * a recipe names goes to the model whole, and nothing a recipe found there is written.
  */
-export function recipeFacts(
+export function recipePlan(
   recipes: readonly EffectiveRule[],
-  files: readonly string[],
   source: FileSource,
+  exclude: readonly string[],
   at: { repo: string; commit: string },
   existing: readonly Fact[],
-): { facts: Fact[]; dropped: RecipeDropped[]; kept: Fact[] } {
-  const texts = files.flatMap((path) => {
+): RecipePlan {
+  const named = recipeFiles(source, exclude, recipes);
+  const texts = named.flatMap((path) => {
     const text = source.read(path);
     return text === undefined ? [] : [{ path, text }];
   });
-  const facts: Fact[] = [];
+  const all: Fact[] = [];
   const dropped: RecipeDropped[] = [];
   for (const r of recipes) {
     const got = runRecipe(r, texts, at);
-    facts.push(...got.facts);
+    all.push(...got.facts);
     dropped.push(...got.dropped);
   }
-  const mine = recipes.map((r) => `${r.extract!.fact}.${r.key}.`);
-  const kept = existing.filter((f) => !(f.by === "reader" && mine.some((m) => f.id.startsWith(m))));
-  return { facts, dropped, kept };
+  const kinds = new Set(recipes.map((r) => r.extract!.fact));
+  const wrote = new Set(all.map((f) => f.cite.file));
+  const files = named.filter(
+    (p) =>
+      wrote.has(p) && existing.every((f) => f.cite.file !== p || byARecipe(f) || kinds.has(f.kind)),
+  );
+  const mine = new Set(files);
+  return {
+    files,
+    facts: all.filter((f) => mine.has(f.cite.file)),
+    dropped: dropped.filter((d) => mine.has(d.file)),
+    kept: existing.filter((f) => !byARecipe(f) && !mine.has(f.cite.file)),
+  };
 }

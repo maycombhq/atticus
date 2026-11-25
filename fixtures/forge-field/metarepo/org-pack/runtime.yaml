@@ -1,5 +1,5 @@
 # Built-in default written out by Atticus. Change it through a pull request; delete the file to go back to the default.
-schemaVersion: 4
+schemaVersion: 5
 assistants:
   allowed:
     - copilot

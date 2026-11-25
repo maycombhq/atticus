@@ -1,4 +1,4 @@
-import { Api, loadOrgPack, orgPackDirOf, runsRelOf } from "@maycombhq/core";
+import { Api, loadOrgPack, orgPackDirOf, readersOn, runsRelOf } from "@maycombhq/core";
 import {
   badRequest,
   conflict,
@@ -114,6 +114,16 @@ export function uiDecisionRoutes(
  * (409) where runtime.yaml turns AI off or doesn't allow the assistant's unattended runs.
  */
 export function uiLearnRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): Router {
+  // ADR 0210 part 2 (C4, additive): each type's recipes, proven or a draft and why.
+  r.add("GET", "/api/reading-rules/recipes", async () => {
+    const op = await loadOrgPack(orgPackDirOf(ctx.root));
+    const { typeRecipes } = await import("./reading-rules.js");
+    const body: Api.ReadingRecipesViewT = {
+      readers: readersOn(op) ? "on" : "off",
+      recipes: await typeRecipes(ctx.root, op),
+    };
+    return { status: 200, body };
+  });
   return r.add("POST", "/api/reading-rules/learn", async () => {
     const op = await loadOrgPack(orgPackDirOf(ctx.root));
     const { learnFromCorrections, learnRefusal } = await import("./learn-corrections.js");

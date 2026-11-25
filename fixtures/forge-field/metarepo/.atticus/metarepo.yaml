@@ -27,5 +27,8 @@ migrations:
   - manifest-schema-v3
   - catalog-schema-v5
   - runtime-v4
+  - runtime-v5
+  - conventions-v3
+  - readers-kept-on
   - corrections-v2
   - unresolved-ids-repo
