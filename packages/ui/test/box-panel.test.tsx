@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { Inspector } from "../src/screens/architecture/Architecture.js";
-import { ConnectPanel, Pairing } from "../src/screens/architecture/Connect.js";
+import { Pairing } from "../src/screens/architecture/Connect.js";
 import { popupFocus, type Focusable } from "../src/screens/architecture/popup.js";
 import { WORDS } from "../src/screens/architecture/words.js";
 
@@ -99,21 +99,6 @@ describe("the box's details panel", () => {
 });
 
 describe("the Connect popup", () => {
-  const boxes = [{ label: "repo: forge-accounts", box: { repo: "forge-accounts" } }];
-  it("names both ends, the box picked or what to pick", () => {
-    const picked = un(
-      renderToStaticMarkup(
-        <ConnectPanel from="forge-cards" boxes={boxes} initial={boxes[0]} onClose={() => {}} />,
-      ),
-    );
-    expect(picked).toContain(C.ends("forge-cards", "repo: forge-accounts"));
-    expect(picked).toContain('tabindex="-1" class="h box-pop-title"');
-    const none = un(
-      renderToStaticMarkup(<ConnectPanel from="forge-cards" boxes={boxes} onClose={() => {}} />),
-    );
-    expect(none).toContain(C.ends("forge-cards", C.pickBoxNone));
-  });
-
   it("lists each loose call as a row (method, path, where, now) with Preview and Write at the foot", () => {
     const view: Api.LinkCandidatesViewT = {
       from: "forge-cards",

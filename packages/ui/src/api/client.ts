@@ -89,12 +89,6 @@ let moved = false;
 export const sessionMoved = (): boolean => moved;
 /** Whether the server read again after a restart is the one the page started with. */
 let sameServer: "same" | "other" | "unknown" = "unknown";
-/** Tests: forget the metarepo the page has shown. */
-export function forgetPageRoot(): void {
-  pageRoot = undefined;
-  moved = false;
-  sameServer = "unknown";
-}
 /**
  * The metarepo a /api/health answer names, as one key: its `rootKey` (the server's real path of
  * it, compared exactly), else its `root` (an older server).

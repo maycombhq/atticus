@@ -1,6 +1,5 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
+import { parseCsv, readExports } from "./export-files.js";
 
 /**
  * Exported service-desk requests (closed ServiceNow requests and the like) dropped into
@@ -109,44 +108,6 @@ function requestOf(
   };
 }
 
-/** RFC 4180 CSV rows with the line each starts on. */
-function csvRows(s: string): { cells: string[]; line: number }[] {
-  const rows: { cells: string[]; line: number }[] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  let line = 1;
-  let start = 1;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]!;
-    if (quoted) {
-      if (c === '"' && s[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else if (c === '"') quoted = false;
-      else {
-        if (c === "\n") line++;
-        cell += c;
-      }
-    } else if (c === '"') quoted = true;
-    else if (c === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (c === "\n" || c === "\r") {
-      if (c === "\r" && s[i + 1] === "\n") i++;
-      row.push(cell);
-      if (row.some((x) => x.trim())) rows.push({ cells: row, line: start });
-      row = [];
-      cell = "";
-      line++;
-      start = line;
-    } else cell += c;
-  }
-  row.push(cell);
-  if (row.some((x) => x.trim())) rows.push({ cells: row, line: start });
-  return rows;
-}
-
 /**
  * The requests in one exported file, or undefined when it isn't a service-request export (a
  * work-item export, a document). Never throws.
@@ -162,7 +123,7 @@ export function readServiceRequestExport(
     return undefined;
   }
   if (/\.csv$/i.test(path)) {
-    const rows = csvRows(content);
+    const rows = parseCsv(content);
     const header = rows[0]?.cells.map((h) => h.trim());
     if (!header?.some((h) => norm(h) === "number")) return undefined;
     if (!header.some((h) => ["type", "requesttype", "catitem", "catalogitem"].includes(norm(h))))
@@ -222,42 +183,6 @@ export async function readServiceRequestExports(o: { root: string; inputsDir?: s
   files: string[];
   problems: { path: string; message: string }[];
 }> {
-  const dir = o.inputsDir ?? join(o.root, "inputs");
-  const found: string[] = [];
-  async function walk(d: string) {
-    let entries;
-    try {
-      entries = await readdir(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (e.name.startsWith(".")) continue;
-      const full = join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      // Files only: an export that is a link to a file elsewhere isn't read.
-      else if (e.isFile() && /\.(json|ya?ml|csv)$/i.test(e.name)) found.push(full);
-    }
-  }
-  await walk(dir);
-  const out = {
-    requests: [] as ExportedServiceRequest[],
-    files: [] as string[],
-    problems: [] as { path: string; message: string }[],
-  };
-  for (const full of found) {
-    const path = `inputs/${relative(dir, full).split(sep).join("/")}`;
-    let bytes: Uint8Array;
-    try {
-      bytes = new Uint8Array(await readFile(full));
-    } catch (e) {
-      out.problems.push({ path, message: `can't read it: ${(e as Error).message}` });
-      continue;
-    }
-    const rs = readServiceRequestExport(path, bytes);
-    if (!rs) continue;
-    out.files.push(path);
-    out.requests.push(...rs);
-  }
-  return out;
+  const { found, files, problems } = await readExports(o, readServiceRequestExport);
+  return { requests: found, files, problems };
 }

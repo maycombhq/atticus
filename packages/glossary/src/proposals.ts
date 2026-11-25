@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
@@ -55,11 +55,6 @@ export async function writeDefinitionProposals(
     written.push(file);
   }
   return written;
-}
-
-/** Remove the proposal of a term a person has defined (it would never be used again). */
-export async function dropDefinitionProposal(dir: string, term: string): Promise<void> {
-  await rm(join(dir, "glossaryterm", `${term}.yaml`), { force: true });
 }
 
 export async function readDefinitionProposals(dir: string): Promise<{

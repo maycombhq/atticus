@@ -6,7 +6,6 @@ import {
   callAsJob,
   JobStopped,
   stopJob,
-  useJobRead,
   type JobFollow,
   type JobWaitParts,
   type Loaded,
@@ -21,8 +20,6 @@ import { appStep, WrittenNext } from "../../app/app-step.js";
 import { Command } from "../work/RunNext.js";
 import { COPY } from "../../copy.js";
 import { MatchWithCopilot, type MatchIo } from "./Match.js";
-import { AiMark, readyView, useDecisions } from "../../app/decisions.js";
-import { usePopupFocus } from "./popup.js";
 import { useMe } from "../../app/me.js";
 
 /**
@@ -40,11 +37,6 @@ export interface BoxChoice {
   box: Api.LinkBoxT;
 }
 
-const key = (b: Api.LinkBoxT) => (b.repo ? `repo:${b.repo}` : `system:${b.system}`);
-const candidatesPath = (from: string, b: Api.LinkBoxT) =>
-  `/api/links/candidates?from=${encodeURIComponent(from)}&${
-    b.repo ? `to=${encodeURIComponent(b.repo)}` : `system=${encodeURIComponent(b.system!)}`
-  }`;
 const errorOf = (e: unknown) =>
   e instanceof ApiError
     ? (e.problem.detail ?? e.message)
@@ -152,95 +144,6 @@ export function initialPicks(v: Api.LinkCandidatesViewT): {
     }
   }
   return { picked, ticked };
-}
-
-/**
- * The boxes Connect to… lists: the views' boxes, and the box a line was dropped on when the
- * views loaded don't hold it (review round 2, beta.23: a repo inside a system box on the estate
- * view), so the drop always opens with it picked.
- */
-export function boxesWith(boxes: readonly BoxChoice[], initial?: BoxChoice): BoxChoice[] {
-  if (!initial || boxes.some((b) => key(b.box) === key(initial.box))) return [...boxes];
-  return [...boxes, initial].sort((x, y) => (x.label < y.label ? -1 : 1));
-}
-
-export function ConnectPanel(p: {
-  from: string;
-  boxes: BoxChoice[];
-  /** The box a line was dropped on, picked when the panel opens. */
-  initial?: BoxChoice;
-  onClose(): void;
-}) {
-  const id = useId();
-  const [to, setTo] = useState<string>(p.initial ? key(p.initial.box) : "");
-  const boxes = boxesWith(p.boxes, p.initial);
-  const box = boxes.find((b) => key(b.box) === to)?.box;
-  // Beta.28.1: read as a job, so the wait says each step and has Stop (a join can take minutes).
-  const cands = useJobRead<Api.LinkCandidatesViewT>(box ? candidatesPath(p.from, box) : undefined);
-  const head = usePopupFocus<HTMLHeadingElement>();
-  const toLabel = boxes.find((b) => key(b.box) === to)?.label;
-  return (
-    <section className="stack connect-panel" aria-labelledby={`${id}-t`}>
-      <div className="box-pop-head">
-        <h4 id={`${id}-t`} ref={head} tabIndex={-1} className="h box-pop-title">
-          {C.title(p.from)}
-        </h4>
-        <button type="button" className="btn" onClick={p.onClose}>
-          {C.close}
-        </button>
-      </div>
-      {/* The two ends of the line, named: the repo it starts from and the box picked. */}
-      <p className="box-ends">
-        <span className="sr">{C.ends(p.from, toLabel ?? C.pickBoxNone)}</span>
-        <span aria-hidden="true" className="chip mono">
-          {p.from}
-        </span>
-        <span aria-hidden="true">→</span>
-        <span aria-hidden="true" className={`chip mono ${toLabel ? "" : "dim"}`}>
-          {toLabel ?? C.pickBoxNone}
-        </span>
-      </p>
-      <p className="ev-say">{C.intro}</p>
-      <label htmlFor={`${id}-to`} className="hud">
-        {C.pickBox}
-      </label>
-      <select id={`${id}-to`} className="field" value={to} onChange={(e) => setTo(e.target.value)}>
-        <option value="">{C.pickBoxNone}</option>
-        {boxes.map((b) => (
-          <option key={key(b.box)} value={key(b.box)}>
-            {b.label}
-          </option>
-        ))}
-      </select>
-      {box && <AiPairedBetween from={p.from} box={box} />}
-      {box && <Pairing key={to} from={p.from} box={box} cands={cands} />}
-    </section>
-  );
-}
-
-/**
- * ADR 0181: what the AI already paired from this repo to the picked box, each with its chip, run
- * and Correct; nothing when it paired none.
- */
-export function AiPairedBetween(p: { from: string; box: Api.LinkBoxT }) {
-  const v = readyView(useDecisions());
-  const items = (v?.links.items ?? []).filter(
-    (d) => d.repo === p.from && !!p.box.repo && d.to?.repo === p.box.repo,
-  );
-  if (!items.length) return null;
-  return (
-    <details className="stack">
-      <summary className="hud">{COPY.decisions.betweenTitle(items.length)}</summary>
-      <ul className="stack" style={{ gap: 8, margin: 0, paddingLeft: 18 }}>
-        {items.map((d) => (
-          <li key={d.item} className="stack" style={{ gap: 4 }}>
-            <span>{d.what}</span>
-            <AiMark item={d.item} run={d.run} />
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
 }
 
 /**

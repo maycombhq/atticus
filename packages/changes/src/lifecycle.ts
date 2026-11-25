@@ -229,10 +229,10 @@ export async function checkStage(
 export async function stageFiles(dir: string, step: StageStep): Promise<string[]> {
   const out: string[] = [];
   for (const w of [...step.writes, step.loop]) {
-    if (w.endsWith("/")) out.push(...(await walk(dir, w.slice(0, -1))));
+    if (w.endsWith("/")) out.push(...(await changeFolderFiles(dir, w.slice(0, -1))));
     else if (isWritePattern(w)) {
       const parent = w.split("/").slice(0, -1).join("/");
-      out.push(...(await walk(dir, parent)).filter((p) => writeMatches(w, p)));
+      out.push(...(await changeFolderFiles(dir, parent)).filter((p) => writeMatches(w, p)));
     } else if (
       await readFile(join(dir, ...w.split("/"))).then(
         () => true,
@@ -244,7 +244,8 @@ export async function stageFiles(dir: string, step: StageStep): Promise<string[]
   return [...new Set(out)].sort();
 }
 
-async function walk(dir: string, rel = ""): Promise<string[]> {
+/** Every file under `rel` of a folder (all of it by default), relative to it, sorted. */
+export async function changeFolderFiles(dir: string, rel = ""): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(join(dir, rel), { withFileTypes: true });
@@ -254,7 +255,7 @@ async function walk(dir: string, rel = ""): Promise<string[]> {
   const out: string[] = [];
   for (const e of entries) {
     const p = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...(await walk(dir, p)));
+    if (e.isDirectory()) out.push(...(await changeFolderFiles(dir, p)));
     else out.push(p);
   }
   return out.sort();
@@ -262,10 +263,14 @@ async function walk(dir: string, rel = ""): Promise<string[]> {
 
 /** The files of one artifact that exist, relative to the change folder. */
 export async function artifactFiles(dir: string, artifact: Artifact): Promise<string[]> {
-  if (artifact === "specs") return (await walk(dir, "specs")).filter((f) => f.endsWith(".md"));
+  if (artifact === "specs")
+    return (await changeFolderFiles(dir, "specs")).filter((f) => f.endsWith(".md"));
   if (artifact === "stories") {
-    const index = (await walk(dir)).includes("stories.md") ? ["stories.md"] : [];
-    return [...index, ...(await walk(dir, "stories")).filter((f) => f.endsWith(".md"))];
+    const index = (await changeFolderFiles(dir)).includes("stories.md") ? ["stories.md"] : [];
+    return [
+      ...index,
+      ...(await changeFolderFiles(dir, "stories")).filter((f) => f.endsWith(".md")),
+    ];
   }
   const f = `${artifact}.md`;
   try {

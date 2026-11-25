@@ -485,19 +485,6 @@ export function dependencyFactsOf(j: Join, v: FactsView | undefined): FactCite[]
   return [...seen.values()];
 }
 
-/**
- * ADR 0192: the POST /api/facts/{repo}/corrections body that says a dependency is wrong (with
- * why, which is required): verify then leaves the fact out, and its `depends-on` link goes.
- */
-export function dependencyCorrection(
-  fact: FactCite,
-  reason: string,
-): { body: Record<string, unknown> } | { error: "needReason" } {
-  const why = reason.trim();
-  if (!why) return { error: "needReason" };
-  return { body: { fact: fact.id, action: "wrong", reason: why } };
-}
-
 /** One dependency fact a `depends-on` link rests on, as This link is wrong lists it. */
 export interface LinkDependency {
   repo: string;

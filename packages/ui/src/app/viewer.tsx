@@ -118,16 +118,6 @@ export const LABELS_FROM = 0.5;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 export const clampZoom = (k: number) => clamp(k, ZOOM.min, ZOOM.max);
 
-/** The box around some boxes. */
-export function boundsOf(rects: readonly Rect[]): Rect {
-  if (!rects.length) return { x: 0, y: 0, w: 0, h: 0 };
-  const x = Math.min(...rects.map((r) => r.x));
-  const y = Math.min(...rects.map((r) => r.y));
-  const x2 = Math.max(...rects.map((r) => r.x + r.w));
-  const y2 = Math.max(...rects.map((r) => r.y + r.h));
-  return { x, y, w: x2 - x, h: y2 - y };
-}
-
 /** The viewport that shows `content` whole and centred in `view`, with `pad` pixels round it. */
 export function fitRect(
   content: Rect,
@@ -923,12 +913,3 @@ export const narrowWindow = (): boolean =>
   (typeof window.matchMedia === "function"
     ? window.matchMedia(`(max-width: ${NARROW_FRAME}px)`).matches
     : window.innerWidth <= NARROW_FRAME);
-
-/** A viewport kept in state with the actions the toolbar and keys ask for, on a plain picture. */
-export function useViewport(content: Rect, view: Size) {
-  const [v, setV] = useState<Viewport>(() => fitRect(content, view));
-  const latest = useRef({ content, view });
-  latest.current = { content, view };
-  const fit = useCallback(() => setV(fitRect(latest.current.content, latest.current.view)), []);
-  return { v, setV, fit };
-}

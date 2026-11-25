@@ -173,7 +173,9 @@ One gap the sweep found is closed: outside an ACP session, an assistant's termin
 `atticus sync` reads what changed (recipe, then model), verifies, writes, pairs and says what is
 open; the app's Apply button and both editors run it, and every other map command keeps working
 off the first page of help. The size check (`scripts/check-size-budget.mjs`) becomes: no more
-lines of source than the last release.
+lines of source than the last release. For beta.33 alone the owner set an allowance of 3,200 lines over beta.32
+(2026-11-25): every unused line outside the readers was taken out, and the readers wait for the
+later ADR of part 6. It ends when beta.33's baseline is recorded.
 
 ## What does not change
 

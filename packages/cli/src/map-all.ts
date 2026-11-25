@@ -267,7 +267,6 @@ export interface MapAllState {
   repos: Record<string, RepoState>;
 }
 
-export const MAP_ALL_STATE_REL = ".atticus/map-all/state.json";
 const statePath = (root: string) => join(root, ".atticus", "map-all", "state.json");
 
 /**

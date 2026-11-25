@@ -214,22 +214,6 @@ export function systemItems(
 }
 
 /**
- * Beta.27 review: the repos the tree lists (a repo's row, under a system or not on the map), the
- * manifest's only: a box for a repo it doesn't name isn't one.
- */
-export function treeRepos(items: readonly ExItem[]): number {
-  return items.reduce(
-    (n, i) =>
-      n +
-      ((i.id.startsWith("systems/repo:") && !i.offManifest) || i.id.startsWith("systems/manifest:")
-        ? 1
-        : 0) +
-      treeRepos(i.children ?? []),
-    0,
-  );
-}
-
-/**
  * The open questions per repo, most first (GET /api/questions?state=open), then the owner
  * questions (GET /api/owner-questions) as their own kind. Questions has no address for one
  * repo's questions yet (its repo filter is the page's own), so a repo opens Questions; the

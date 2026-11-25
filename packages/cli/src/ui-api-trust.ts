@@ -33,7 +33,8 @@ import {
 } from "@maycombhq/server";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import { contractCheckOf } from "./contract-check-files.js";
-import { keptAnswer, stampOfFiles } from "./watched-memo.js";
+import { stampOf } from "./file-memo.js";
+import { keptAnswer } from "./watched-memo.js";
 
 /**
  * GET /api/trust (ADR 0124 addendum, C4 2.22.0): how far to trust each repo's map, for the Map's
@@ -459,7 +460,7 @@ export async function checkoutsStamp(root: string): Promise<string> {
   // The files' names too: a branch made or deleted changes the list, not only a file's time.
   const all = files.flat();
   const names = all.map((f) => relative(root, f)).join(",");
-  return `${heads.join("|")}#${names}#${await stampOfFiles(all)}`;
+  return `${heads.join("|")}#${names}#${await stampOf(all)}`;
 }
 
 /** Every ref file under a refs folder, sorted (ref names have slashes; lock files are left out). */

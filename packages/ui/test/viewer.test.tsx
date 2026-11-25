@@ -7,7 +7,6 @@ import { COPY } from "../src/copy.js";
 import { FlowCanvas, flowLayout, FLOW_FIT_MIN, type FlowViewData } from "../src/app/flow.js";
 import {
   availableHeight,
-  boundsOf,
   centreOn,
   DiagramFrame,
   fitRect,
@@ -135,12 +134,6 @@ describe("the viewer's maths (F10)", () => {
     expect(wheelFactor(-100)).toBeGreaterThan(1);
     expect(wheelFactor(100)).toBeLessThan(1);
     expect(wheelFactor(0)).toBe(1);
-    expect(
-      boundsOf([
-        { x: 0, y: 0, w: 10, h: 10 },
-        { x: 20, y: 5, w: 10, h: 20 },
-      ]),
-    ).toEqual({ x: 0, y: 0, w: 30, h: 25 });
   });
 
   it("maps keys to actions, and leaves a key with Ctrl or Cmd to the browser", () => {
