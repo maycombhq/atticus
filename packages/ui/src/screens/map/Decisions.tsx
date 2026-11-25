@@ -44,6 +44,60 @@ export function decideWhere(decide: Api.DecisionsViewT["decide"]): string | unde
         : D.decideIn.none;
 }
 
+/** ADR 0210 part 4: what the last Apply's pairing drew, dropped, withdrew and left loose. */
+export function ApplyPairsView({ r }: { r: Api.ApplyPairingT | undefined }) {
+  const W = D.applyPairs;
+  const why = (x: { call: string; entry: string; why: string }) =>
+    W.dropped(x.call, x.entry, x.why);
+  const lists = r && {
+    drawn: r.paired.map((x) => `${x.call} → ${x.entry}`),
+    dropped: r.dropped.map(why),
+    withdrawn: r.withdrawn.map(why),
+    loose: r.loose,
+  };
+  return (
+    <section className="stack" aria-labelledby="decisions-apply-pairs" style={{ gap: 8 }}>
+      <h3 id="decisions-apply-pairs" className="hud" style={{ margin: 0 }}>
+        {W.title}
+      </h3>
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        {W.intro}
+      </p>
+      {!r || !lists ? (
+        <div className="state">{W.empty}</div>
+      ) : (
+        <>
+          <p role="status" className="ev-say" style={{ margin: 0 }}>
+            {[
+              W.line(r.paired.length, r.loose.length),
+              r.withdrawn.length && W.withdrew(r.withdrawn.length),
+              r.at && W.at(day(r.at)),
+              r.why,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          </p>
+          {(Object.keys(lists) as (keyof typeof lists)[]).map(
+            (k) =>
+              lists[k].length > 0 && (
+                <ul
+                  key={k}
+                  aria-label={`${W.lists[k]} (${lists[k].length})`}
+                  className="mono"
+                  style={{ margin: 0, fontSize: 12.5 }}
+                >
+                  {lists[k].map((t) => (
+                    <li key={t}>{t}</li>
+                  ))}
+                </ul>
+              ),
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** The batch's kind in words: by AI, a person's rule, or a person's correction alone. */
 export const batchKindOf = (b: Api.DecisionBatchViewT): string =>
   b.kind === "ai"
@@ -329,6 +383,7 @@ export function DecisionsPage(p: {
                     </>
                   )}
                 </section>
+                <ApplyPairsView r={v.applyPairs} />
                 <LearnPanel
                   off={!v.decide.decideIn?.includes("copilot-acp")}
                   {...(p.of.reload ? { onDone: p.of.reload } : {})}

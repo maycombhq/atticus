@@ -64,6 +64,6 @@ export const migrateRuntimeV3Text = (text: string) => liftRuntimeText(text, 3, n
 /** To version 4 (ADR 0181), for a file that sets `decide`. */
 export const migrateRuntimeV4Text = (text: string) =>
   liftRuntimeText(text, 4, (d) => d.has("decide"));
-/** To version 5 (ADR 0210 part 5), for a file that sets `budgets.limits`. */
+/** To version 5 (ADR 0210 parts 4 and 5), for a file that sets `budgets.limits` or `apply`. */
 export const migrateRuntimeV5Text = (text: string) =>
-  liftRuntimeText(text, 5, (d) => d.hasIn(["budgets", "limits"]));
+  liftRuntimeText(text, 5, (d) => d.hasIn(["budgets", "limits"]) || d.has("apply"));
