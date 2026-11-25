@@ -420,6 +420,9 @@ describe("open items the approver has seen (ADR 0210 part 7, review of PR #21)",
     await writeFinding(root, finding({}));
     const h = await raise(root, gh, "12:30");
     expect(h.openItems?.items.join("\n")).toContain("Blocking finding f1");
+    // ADR 0210 part 7: a change.yaml that gets open items is written at version 2.
+    const text = await readFile(join(root, "openspec/changes", ID, "change.yaml"), "utf8");
+    expect(text).toMatch(/^schemaVersion: 2$/m);
     gh.review(REPO, 2, "avery", "approved");
     // A new org finding after the approver looked: not merged unseen.
     await writeFinding(root, later);

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   ChangeLifecycle,
+  changeSchemaVersionFor,
   changesDirOf,
   RecordId,
   toCanonicalYaml,
@@ -72,7 +73,8 @@ const describe = (issues: { path: PropertyKey[]; message: string }[]) =>
 
 /** Canonical text of a change file. Throws if the value breaks the schema. */
 export function serializeChange(value: ChangeLifecycle): string {
-  const r = ChangeLifecycle.safeParse(value);
+  // ADR 0210 part 7: a file that carries open items is written at version 2; one without stays.
+  const r = ChangeLifecycle.safeParse({ ...value, schemaVersion: changeSchemaVersionFor(value) });
   if (!r.success) throw new Error(`change ${value.id}: ${describe(r.error.issues)}`);
   return toCanonicalYaml(r.data, LEADING);
 }

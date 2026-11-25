@@ -11,7 +11,7 @@ What the shared files should say for the `b33/item9-change-path` branch. The int
 ## CHANGELOG.md (Contracts)
 
 - C4, additive: `GET /api/changes/{id}/status` and `GET /api/release/{id}` (`status`) carry `openItems` (reasons, as `blockers`); a reason may carry `openItem: true`. No field removed. `API_VERSION` not bumped on this branch (see below).
-- C1 (change.yaml), additive, no version bump: a hand-off's optional `openItems: { items, afterReview }` and a history entry's optional `openItems`. A beta that predates them refuses a change.yaml carrying them (strict objects): a team upgrades together. The integrator decides whether this wants `CHANGE_SCHEMA_VERSION` 2.
+- C4, change.yaml (the change state file) version 2: a hand-off's optional `openItems: { items, afterReview }` and a history entry's optional `openItems`. A version 1 file reads as it is (the migration is the number only); a file is written at 2 only once it carries open items (`changeSchemaVersionFor`, in `serializeChange` and the record merge), so a change without any stays at 1 and an older beta keeps reading it; a version 1 file carrying them is refused ("openItems needs schemaVersion 2 (ADR 0210)"). No `atticus upgrade` step: Atticus writes change.yaml itself, and nothing has a change file to lift. `docs/spec/contracts/c4-plugins-workspace-and-api.md` and `docs/api/openapi.json` regenerated.
 - C4, additive: GitHost's optional `updatePullRequest(repo, number, { body }, approval)` (the mock has it; the manual host doesn't, so it gets the comment only); `atticus change status --json` carries `openItems`.
 - Not C1/C3/C6: `stage/<stage>.yaml` gains optional `openItems` (planner's StageLoop, additive). `GateStatus` gains optional `goesAhead` and `openItems`.
 
@@ -31,7 +31,7 @@ The change path's gates become open items (2026-11-24; ADR 0210 part 7; C4 addit
 - `packages/taskrun/src/run.ts`: `refuseIfAfterHolds` returns the open item; `TaskRunPreview.openItems`.
 - `packages/ui/src/app/open-items.tsx` (new): `OpenItems`, used by `screens/Changes.tsx` (exports `Detail` for its test), `screens/know/Phase.tsx` and `screens/run/Release.tsx`.
 - `packages/changes/src/handoff.ts`: `openItemMessages`, `openItemsComment`; `syncHandoff`'s open-items check (`open-items-changed`, `open-items-unseen`).
-- `packages/core/src/schema/change.ts`: `ChangeHandoff.openItems`, `ChangeHistoryEntry.openItems`.
+- `packages/core/src/schema/change.ts`: `CHANGE_SCHEMA_VERSION` 2, `changeSchemaVersionFor`, `ChangeHandoff.openItems`, `ChangeHistoryEntry.openItems`.
 - `packages/adapters/src/git-host.ts`: `GitHost.updatePullRequest?`, `MockGitHost.updatePullRequest`.
 - `packages/cli/src/critic-commands.ts`: `statusLine` for a gate whose open findings are all open items.
 - `packages/vscode/src/sidebar-data.ts`: `openItemsNode`, `openItemRows` (the change's Open items row).
@@ -54,8 +54,9 @@ Server-side words (inline, as their neighbours): the PR's "### Open items" lead 
 - The Build hand-off still waits for every task ticked (`nextStep`), which the ADR doesn't list.
 - `runCritic`'s own round-limit refusal stays (nothing to run); the stage goes on past it.
 - `GateStatus.mayProceed` keeps its meaning (nothing open at the gate) and `atticus critic`'s exit code with it; `goesAhead` says whether the hand-off goes ahead.
-- `API_VERSION` (3.20.0) is not bumped and `docs/api/openapi.json` not regenerated: the new fields aren't in core's zod contracts; the integrator bumps the minor with the other v33 items.
+- `API_VERSION` (3.20.0) is not bumped; the integrator bumps the minor with the other v33 items.
 - The cockpit (`atticus next`) still offers a gate's finding as the step before the hand-off; it now says the hand-off would go ahead with it.
 - A Git host plugin without `updatePullRequest` (and the manual host) keeps the first raise's PR body; the update comment carries the current list there.
 - The IntelliJ change wasn't compiled here (Gradle can't resolve its plugins offline); its test is in `ViewsTest.kt`.
 - `cli/test/ui-api-setup.test.ts` ("turns AI decides on…") fails on origin/main as merged (expects runtime.yaml schemaVersion 4, gets 5); not this branch's.
+- `conformance/test/size-budget.test.ts` is over on origin/main (this branch adds about 390 net source lines of the 1,770 over) and `npm-layout.test.ts` fails there on `re2js`'s types; neither is fixed here.
