@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// A size budget for non-test source (v31, WP-11; docs/plan/v31.md, "Kept for v31"). beta.30 added
-// about 28,500 non-test lines over beta.28.5, and each large release was followed by field fixes.
-// v31 is held to BUDGET lines over 2.0.0-beta.30 in all; every run prints the total and the
-// packages that grew most. Only the owner raises the budget, by editing the number below in a PR
-// that says why.
+// A size rule for non-test source (ADR 0210 part 8): no more lines of non-test source than the
+// last release. Since 2.0.0-beta.33 the rule is the baseline itself, BUDGET 0: code added is paid
+// for by code taken out. (v31 began it as a budget of 3,500 lines over 2.0.0-beta.30, WP-11.)
+// Every run prints the total and the packages that grew most. Only the owner raises the budget,
+// by editing the number below in a PR that says why.
 //
 // Non-test source: every file under packages/<package>/ and the root scripts/ folder with a code
 // extension (CODE), leaving out node_modules and build output (SKIP_DIR), every folder named
@@ -28,24 +28,24 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-/** How many non-test lines v31 may add over the baseline, in all. */
-export const BUDGET = 3500;
-export const BASELINE_TAG = "v2.0.0-beta.30";
+/** How many non-test lines may be added over the baseline, in all: none (ADR 0210 part 8). */
+export const BUDGET = 0;
+export const BASELINE_TAG = "v2.0.0-beta.32";
 /**
- * Non-test source lines per package at BASELINE_TAG (b6cf4c3), counted on `git archive` of the
+ * Non-test source lines per package at BASELINE_TAG (0598729), counted on `git archive` of the
  * tag's packages/ and scripts/ with `--record`; `scripts` is the root folder.
  */
 export const BASELINE = {
   adapters: 2924,
   adopt: 4571,
-  ai: 7753,
+  ai: 7820,
   "assistant-files": 3945,
   "assistant-kit": 5436,
-  changes: 8764,
+  changes: 9051,
   ci: 1362,
-  cli: 85607,
+  cli: 87455,
   conformance: 1615,
-  core: 50091,
+  core: 50219,
   diagrams: 2703,
   embed: 797,
   evals: 7972,
@@ -56,17 +56,17 @@ export const BASELINE = {
   index: 6335,
   ingestors: 3073,
   initiatives: 2363,
-  intake: 5377,
+  intake: 5387,
   intellij: 7539,
   knowledge: 10592,
   learn: 2453,
   "model-providers": 2244,
-  naysayer: 10275,
+  naysayer: 10276,
   "openspec-adapter": 1408,
-  planner: 33959,
+  planner: 34385,
   reconcile: 820,
   release: 3420,
-  scanner: 17530,
+  scanner: 17546,
   sdk: 1779,
   server: 2490,
   site: 431,
@@ -75,11 +75,11 @@ export const BASELINE = {
   synth: 1704,
   taskrun: 3499,
   testgen: 3478,
-  ui: 85467,
-  verify: 11691,
+  ui: 85597,
+  verify: 11722,
   vscode: 16012,
   workspace: 2079,
-  scripts: 4846,
+  scripts: 5128,
 };
 
 const CODE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|kt|css|vue|py|sh|ps1)$/;
@@ -191,7 +191,7 @@ export function report(r, top = 5) {
       : []),
     ...(r.over
       ? [
-          "Take code out, or ask the owner to raise BUDGET in scripts/check-size-budget.mjs in a PR that says why (docs/plan/v31.md).",
+          "Take code out, or ask the owner to raise BUDGET in scripts/check-size-budget.mjs in a PR that says why (ADR 0210 part 8).",
         ]
       : []),
   ];
