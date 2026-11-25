@@ -423,3 +423,54 @@ describe("the declared arrows the code now shows, and a drawn one's panel (ADR 0
     expect(arrowBetween(links, (id) => nodes.get(id), PROXY.box, { system: "x" })).toBeUndefined();
   });
 });
+
+describe("why there is no call to offer (ADR 0210, beta.33)", () => {
+  it("says the read has no call, with the command that reads it again", () => {
+    const h = plain(
+      html(
+        base({
+          whyNone: {
+            why: "no-calls",
+            calls: 0,
+            command: "atticus map --all --repos forge-edge-proxy",
+          },
+        }),
+      ),
+    );
+    expect(h).toContain(W.mechanism.declare("forge-edge-proxy", "forge-ledger-svc", "you"));
+    expect(h).toContain(
+      W.mechanism.whyNone["no-calls"](
+        "forge-edge-proxy",
+        "atticus map --all --repos forge-edge-proxy",
+        false,
+      ),
+    );
+    expect(h).toContain('data-testid="why-none"');
+  });
+
+  it("says when the facts aren't verified, when every call stays inside, or a person paired them elsewhere", () => {
+    const unverified = plain(
+      html(
+        base({
+          whyNone: {
+            why: "no-calls",
+            calls: 0,
+            command: "atticus verify forge-edge-proxy",
+            unverified: true,
+          },
+        }),
+      ),
+    );
+    expect(unverified).toContain(
+      W.mechanism.whyNone["no-calls"]("forge-edge-proxy", "atticus verify forge-edge-proxy", true),
+    );
+    expect(plain(html(base({ whyNone: { why: "all-inside", calls: 3 } })))).toContain(
+      W.mechanism.whyNone["all-inside"]("forge-edge-proxy", 3),
+    );
+    expect(plain(html(base({ whyNone: { why: "all-paired", calls: 1 } })))).toContain(
+      W.mechanism.whyNone["all-paired"]("forge-edge-proxy", 1),
+    );
+    // No reason, no line: an older server's answer.
+    expect(plain(html(base({})))).not.toContain('data-testid="why-none"');
+  });
+});

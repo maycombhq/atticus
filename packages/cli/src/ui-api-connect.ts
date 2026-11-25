@@ -141,7 +141,26 @@ export async function connectView(
     candidates: view,
     ...routes,
     ...(d ?? {}),
+    ...(mechanism === "declare" ? { whyNone: whyNoneOf(view, from.repo) } : {}),
   };
+}
+
+/** ADR 0210: why Connect has no call of A's to offer, from the candidates it read. */
+export function whyNoneOf(
+  view: Api.LinkCandidatesViewT,
+  repo: string,
+): NonNullable<Api.ConnectViewT["whyNone"]> {
+  if (view.noCalls || view.calls.length === 0)
+    return {
+      why: "no-calls",
+      calls: 0,
+      command: view.noCalls?.command ?? `atticus map --all --repos ${repo}`,
+      ...(view.noCalls?.why === "unverified" ? { unverified: true } : {}),
+    };
+  const inside = view.calls.filter((c) => !!c.inside).length;
+  return inside === view.calls.length
+    ? { why: "all-inside", calls: view.calls.length }
+    : { why: "all-paired", calls: view.calls.length };
 }
 
 /** An outside system of the profiles: Connect's candidates know only those by id. */
