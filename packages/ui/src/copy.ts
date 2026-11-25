@@ -8573,14 +8573,18 @@ export const COPY = {
       needs: "Something is missing before these two boxes can be connected:",
       /** ADR 0210: why there was no call to offer, said under the declare line. */
       whyNone: {
-        "no-calls": (a: string, command: string, unverified: boolean) =>
+        "no-calls": (a: string, command: string, unverified: boolean, gateway: boolean) =>
           unverified
             ? `Why: ${a}'s facts aren't all verified, so the join leaves its calls out. Verify them: ${command}`
-            : `Why: ${a}'s read has no call at all. For a gateway proxy that usually means its routes were read and its forwarding calls to its targets weren't. Read it again: ${command}`,
+            : gateway
+              ? `Why: ${a}'s read has no call at all. For a gateway proxy that usually means its routes were read and its forwarding calls to its targets weren't. Read it again: ${command}`
+              : `Why: ${a}'s read has no call at all. Read it again: ${command}`,
+        "none-open": (a: string) =>
+          `Why: ${a}'s read has calls, and none of them is open to pair with this box.`,
         "all-inside": (a: string, n: number) =>
           `Why: ${n === 1 ? "its one call stays" : `all ${n} of its calls stay`} inside ${a}'s own component.`,
-        "all-paired": (a: string, n: number) =>
-          `Why: a person paired ${n === 1 ? "its one call" : `all ${n} of ${a}'s calls`} with other boxes. Move one here from Connect's list on that box.`,
+        "outside-unknown": (b: string) =>
+          `Why: Connect matches calls only to outside systems the profiles name, and ${b} isn't one. Name it in a profile, or declare the arrow.`,
       },
     },
     noneOfThese: "None of these: declare the arrow instead",

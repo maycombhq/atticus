@@ -7024,10 +7024,11 @@ export const ConnectView = z.object({
    */
   whyNone: z
     .object({
-      why: z.enum(["no-calls", "all-inside", "all-paired"]),
+      why: z.enum(["no-calls", "none-open", "all-inside", "outside-unknown"]),
       calls: z.number().int().nonnegative(),
       command: z.string().optional(),
       unverified: z.boolean().optional(),
+      gateway: z.boolean().optional(),
     })
     .optional(),
 });
