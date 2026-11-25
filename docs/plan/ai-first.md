@@ -225,3 +225,22 @@ What this does and doesn't show:
   must still read to know a recipe missed nothing was not measured, and repos this small are
   mostly fixed overhead.
 - Gate C was not run: it needs the estate's size and the quota's figure.
+
+## The ADR's review (2026-11-24): what changed in the plan
+
+ADR 0210's review found four things the plan had wrong; the ADR is the record, and these replace
+what the plan says above where they differ.
+
+- **Item 9:** constitution-layer findings and the ingested-content quarantine rule keep blocking
+  a hand-off (they are hard rule 6), and an unfinished critic round stays a refusal. Only org and
+  team findings become open items.
+- **Item 4** needs a new bar, not Match as it is: a pairing is drawn when the verifier checks
+  both sides, whatever the shapes rank (ADR 0181 is amended), with every candidate repo at once,
+  and `apply.pair` decides in place of `decide.links`.
+- **Item 12 leaves this release.** About 27 source files import the readers, the verifier among
+  them, and C2 is referenced by the repos manifest and the plugin SDK. Item 7 (off by default)
+  stays; deletion needs its own ADR.
+- **Item 2:** a fact with a field no Atticus writes stays kept and not read (reading it would
+  change the facts contract); `--discard-edits` stays; hand edits are kept as the person's; the
+  metarepo's history is the backstop for removals past the five undo copies.
+- **Item 6** extends the org pack's existing `budgets`.

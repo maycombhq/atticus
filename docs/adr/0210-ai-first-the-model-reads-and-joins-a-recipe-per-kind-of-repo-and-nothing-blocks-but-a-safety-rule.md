@@ -3,9 +3,9 @@
 - Status: accepted (2026-11-24, by the owner: "plan the AI first approach … no more deterministic scanners … efficient and non blocking like the ease of OpenSpec"; the plan, `docs/plan/ai-first.md`, approved with "Start")
 - Date: 2026-11-24
 - Release: 2.0.0-beta.33
-- Amends: `CLAUDE.md` hard rule 4 ("no scanner is generated": a recipe written by the model is data run by one engine, part 2); ADR 0176 and ADR 0208 (a reading rule may carry a recipe, and a recipe is proven like a learned rule); ADR 0178 (Match with Copilot's pairing runs inside Apply, part 4); ADR 0197 (four of the build's refusals become listed items, part 3)
-- Supersedes: the deterministic readers as a path to the map (ADR 0074 already made them a cross-check only; part 6 turns them off and then removes them)
-- Contracts: C6 reading rules go to schema version 3 (a rule's optional `extract`), with a migration; C5 `runtime.yaml` gains two optional keys (`apply.pair`, `budget`); C4 gains optional fields on the answers named in parts 3 to 5 and a minor version; the facts file (ADR 0124) is unchanged: a recipe's fact is `by: reader`, which it already allows; C1 is unchanged
+- Amends: `CLAUDE.md` hard rule 4 ("no scanner is generated": a recipe written by the model is data run by one engine, part 2); ADR 0176 and ADR 0208 (a reading rule may carry a recipe, and a recipe is proven like a learned rule); ADR 0178 and ADR 0181 (a pairing both of whose sides the verifier checks is drawn as the AI's inside Apply, whatever the shapes rank, part 4); ADR 0197 (four of the build's refusals become listed items, part 3)
+- Supersedes: the deterministic readers as a path to the map (ADR 0074 already made them a cross-check only; part 6 turns them off by default; their removal is a later decision)
+- Contracts: C6 reading rules go to schema version 3 (a rule's optional `extract`), with a migration; C6 org pack: `budgets` gains optional session and token limits per run, day or month, and `runtime.yaml` (C5) an optional `apply.pair`; C4 gains optional fields on the answers named in parts 3 to 5 and a minor version; the facts file (ADR 0124) is unchanged: a recipe's fact is `by: reader`, which it already allows, and a fact with a field or kind this Atticus doesn't know is still kept and not read; C1 is unchanged; C2 (dialect rules) is unchanged in this release
 
 ## Context
 
@@ -29,7 +29,7 @@ a full read and still missed facts.
 An arrow is a claim like any fact: this call reaches that entry, citing a line on both sides and
 each line its decision rests on. The verifier checks every cited line. The join stays as a free
 first pass; what it leaves loose goes to the model (part 4). It is deleted when the model's
-pairing scores at least as well on the public estates and the fixtures.
+pairing scores at least as well on the public estates and the fixtures (a later release).
 
 ### 2. A recipe per kind of repo, written by the model
 
@@ -45,19 +45,27 @@ model.
     pattern: '<(?<verb>get|post|put|delete|patch)(?: uri="(?<uri>[^"]*)")?'
     scopes:
       - { name: context, pattern: 'contextPath="(?<context>[^"]*)"' }
-      - { name: rest, pattern: '<rest path="(?<rest>[^"]*)"' }
+      - { name: rest, pattern: '<rest path="(?<rest>[^"]*)"', end: "</rest>" }
+    optional: [uri]
     fields: { method: "{verb}", path: "{context}{rest}{uri}" }
 ```
 
 - **One engine, no generated code.** `pattern` is matched line by line; a scope's value is the
   nearest line above that matches; a `yaml: leaves` extract reads each leaf key. Nothing else.
-- **Every part of a value is a cited capture.** A field template holds only `{group}`
-  references and the separators `/ . : - _`; a scope used is cited in the fact's `with`. The
-  verifier checks each part on its line. (Item 0: both models' first recipes passed every line
-  check with wrong paths built from literals; this rule catches all four.)
+- **Every part of a value is a cited capture.** A field template is `{group}` references with at
+  most one separator (`/ . : - _`) between two of them, and nothing else. A group the template
+  names that matched nothing drops the fact, unless the extract lists it in `optional`. A scope
+  holds from its line until its `end` pattern matches, and is cited in the fact's `with`; a
+  `yaml: leaves` extract cites each parent key. A value of more than six parts (the facts file's
+  `with` limit) is refused when the recipe is checked. A pattern with a nested quantifier is
+  refused, and lines over 2,000 characters aren't matched. (Item 0: the strong model's first
+  recipe built a path from a literal, which this rule refuses. The small model's built one from
+  cited parts with the rest path missing, which only the proof below catches.)
 - **A recipe is proven before it reads.** It is active once its output equals the verified
-  facts a model read for two repos of the type it wasn't written from (ADR 0208's proof, with
-  `reproduced` naming those repos). Otherwise it stays a draft, saying which facts differ.
+  facts a model read for two repos of the type it wasn't written from: ADR 0208's proof, its
+  `repos` naming those two. Reading rules go to schema version 3: a rule's `extract` is optional,
+  a version 2 file reads as it did, and a refine requires a proof of an active extract, as it
+  does of an active learned rule. Otherwise it stays a draft, saying which facts differ.
 - **Recipe first, model on request.** A repo whose type has an active recipe is read by it
   alone. The model reads a repo when its type has none, when a person asks, or when the join's
   misses name it; the end of that read writes or corrects the type's recipe. The files no rule
@@ -66,45 +74,59 @@ model.
 
 ### 3. Nothing blocks but a safety rule
 
-| Today's refusal (ADR 0197)             | From this release                                                                                                                                                                      |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `not-upgraded`                         | The upgrade runs inside the write, in its undo                                                                                                                                         |
-| `hand-edits`                           | The write goes ahead and leaves each edited file as it is; the edits are listed on every write until a person keeps them (`atticus catalog edits --curate`) or discards them           |
-| `large-removals`                       | A fact a new read leaves out is kept while its cited line still holds, and listed; it goes when its line no longer does, or a person removes it. Removals are listed. No count to type |
-| `unexplained-removals`                 | Stays: a record removed with no cause is a fault of the build, reported as one                                                                                                         |
-| A fact field or kind no Atticus writes | The fact is read without it, and the field is listed                                                                                                                                   |
-| `nothing-read`, `empty`                | Stay: they guard against a read that failed                                                                                                                                            |
-| `newer-atticus`                        | Stays: this Atticus can't read the files                                                                                                                                               |
-| A `build.json` that doesn't read       | Stays: there is nothing to keep                                                                                                                                                        |
+On the writes a person runs as part of the work (verify --write, Apply to every repo, the map's
+Apply, `atticus sync`):
 
-`--allow-removals` goes. `--discard-edits` stays, now only to discard listed edits on purpose. One undo takes a write back, as before; an upgrade run inside a write is its own undo step, said so.
+| Today's refusal (ADR 0197)                        | From this release                                                                                                                                                                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not-upgraded`                                    | `atticus upgrade --yes` runs first, and the write goes on. Its catalog changes are its own undo step; its org-pack changes are in the metarepo's history, as every upgrade's are                                        |
+| `hand-edits`                                      | The edits are kept as the person's (curated, as `atticus catalog edits --curate` does), listed, and the write goes on. `--discard-edits` stays, to discard them on purpose                                              |
+| `large-removals`                                  | The removals are written and listed, each with what explains it. No count to type. The list is in the write's output and its job's result; the metarepo's history keeps every removed record, past the five undo copies |
+| `unexplained-removals`                            | Stays: a record removed with no cause is a fault of the build, reported as one                                                                                                                                          |
+| `nothing-read`, `empty`                           | Stay: they guard against a read that failed                                                                                                                                                                             |
+| `newer-atticus`, and a fact a newer Atticus wrote | Stay: this Atticus can't read them. A fact with a field or kind no Atticus writes is kept and not read, and named as the assistant's (beta.32)                                                                          |
+| A `build.json` that doesn't read                  | Stays: there is nothing to keep. It is reported under `hand-edits` today; the write tells it apart (`unreadableManifest`) and doesn't go past it                                                                        |
 
-The change path's stops are listed in part 7: each stays as a safety rule or becomes an open
-item on the change.
+A write that confirmed a plan or a count (the app's confirm, `--allow-removals`,
+`--discard-edits`) runs as asked. `atticus catalog build` keeps every refusal and its flags: it
+is the command for looking at a build before it is written. `--allow-removals` leaves the help
+of the other commands.
 
 ### 4. The model pairs what the join left loose, inside Apply
 
-After a write, each call the join left loose goes to the model with the entries of the repos the
-estate names as candidates (by host, server name or route). A pairing whose every cited line
-holds is drawn as the AI's (ADR 0178), and a person can move it. Stored per commit: a call is
-paired again only when a file its claim cites changes. With AI off, a runtime that may not
-decide (`decideIn`), or the budget spent, the calls stay listed and the Apply ends normally.
-`runtime.yaml`: `apply.pair: true|false` (default true where AI is allowed).
+After a write, each call the join left loose goes to the model with the entries of every repo the
+estate names as a candidate for it (by host, server name or route), not one repo at a time. A
+pairing is drawn as the AI's when the verifier checks every line it cites on both sides: the
+call's, the entry's and each line it rests on. That replaces ADR 0181's bar for these calls
+(that the shapes rank the API first, or a person's rule agrees), which a gateway's targets
+never meet. A person can move it, and their correction spreads as ADR 0208 says. Stored per
+commit: a call is paired again only when a file its claim cites changes.
+
+It runs where a model may decide in a run (`decideIn`: `copilot-acp`, and a provider runtime);
+through the `hand-off` runtime, the calls become one prompt and its answer is read as Match's is
+today. Inside an assistant's own session it proposes and decides nothing (ADR 0115).
+`runtime.yaml`: `apply.pair: true|false`, default true where AI is allowed; it decides for these
+calls in place of `decide.links`, whose default stays `propose` for the rest. With AI off, a
+runtime that may not decide, or the budget spent, the calls stay listed and the Apply ends
+normally.
 
 ### 5. A budget, said before it is spent
 
-`runtime.yaml`: `budget: { per: run|day|month, sessions?: n, tokens?: n }`, whichever the
-provider bills. Every run that calls a model says first how many sessions and tokens it plans,
-and checks that its result can be written (no lock, the facts read, no upgrade owed) before its
-first request. A run that would pass the budget asks, or in an unattended run stops before it
+The org pack's `budgets` gains optional limits: `{ per: run|day|month, sessions?, tokens? }`,
+whichever the provider bills. Every run that calls a model says first how many sessions and
+tokens it plans, and checks that its result can be written (no lock held, the facts read) before
+its first request. A run that would pass the budget asks, or in an unattended run stops before it
 starts. A read sends its files in as few sessions as the model's limit allows.
 
-### 6. The deterministic readers off, then gone
+### 6. The deterministic readers off by default
 
-`atticus framework`, `dialect` and `onboard` say the readers are off by default and how to turn
-them on. When the suites hold with them off, `packages/extractors` is deleted, after repo-type
-detection (`scanner/src/repo-types.ts`) moves out of it. C2 (dialect rules) goes with them: its
-files are read as reading rules where they carry a pattern, and the rest are listed.
+A repo is read by its recipe or by the model. The readers run only where an org pack turns them
+on (`readers: on`), and `atticus framework`, `dialect` and `onboard` say so. Their removal is not
+part of this release: about 27 source files import `packages/extractors`, the verifier among
+them (`verify/src/skipped.ts` reads OpenAPI with it) and the build (`scanner/src/build.ts`), and
+C2 is referenced by the repos manifest and C4's plugin `appliesTo.dialects`, and shares its
+template grammar with C3. A later ADR moves the shared readers (XML, OpenAPI) into core, decides
+C2's end with a migration, and then deletes the package.
 
 ### 7. The change path
 
@@ -114,17 +136,23 @@ commands) found 58. Each is one of three things, and is treated so:
 
 | Kind                        | Count | From this release                                                                                                                                                                                                                                                                                                                   |
 | --------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A safety rule (hard rule 6) | 15    | Stays: a person's approval of every hand-off, sync merge, return, push, task PR, release PR, ADO write and manual-host step; none in an assistant's session; protected and default branches never pushed; only a change's own PR approves its gate; a document never accepted over a verified fact; constitution rules never waived |
-| A gate                      | 17    | Becomes an open item on the change. A hand-off goes ahead with them, and its PR lists them under "Open items" for the person who approves it on the Git host: that approval is the gate. Each is still shown where it arose, and `atticus change status` lists them all                                                             |
+| A safety rule (hard rule 6) | 16    | Stays: a person's approval of every hand-off, sync merge, return, push, task PR, release PR, ADO write and manual-host step; none in an assistant's session; protected and default branches never pushed; only a change's own PR approves its gate; a document never accepted over a verified fact; constitution rules never waived |
+| A gate                      | 16    | Becomes an open item on the change. A hand-off goes ahead with them, and its PR lists them under "Open items" for the person who approves it on the Git host: that approval is the gate. Each is still shown where it arose, and `atticus change status` lists them all                                                             |
 | An error                    | 26    | Stays, and says its one fix: input Atticus can't use (a malformed requirements row, a missing brief, no change of that id, a patch that doesn't apply, an unsupported OpenSpec, a build that fails after its fix rounds). Not a gate: there is nothing to go ahead with                                                             |
 
-The 17 gates: a later stage waits for an earlier one with a blocking finding; open questions on
+Kept as safety rules besides the fifteen the sweep named: a constitution-layer finding, and the
+ingested-content quarantine rule (`naysayer/src/defences.ts`, `layer: constitution`), keep
+blocking a hand-off, whatever its approval; an unfinished or failed critic round (`round-unfinished`)
+stays a refusal, the change path's `nothing-read`. So a hand-off's open blocking findings become
+open items only when they are org or team findings.
+
+The 16 gates: a later stage waits for an earlier one with a blocking finding; open questions on
 a stage or a hand-off; a drafting finding repeated three drafts; a stage's acceptable findings
 waiting for a waiver; an assistant's "not relevant" proposal waiting for a person; a checking
 round past its limit; a person's own edit failing the checks (`--force` goes); open blocking
-findings and gaps at a hand-off (`checkFindings`, `packages/changes/src/lifecycle.ts`); a
-platform's mandatory gate with no critic round; `maxAuthorRounds` used up; a rule marked
-`waivable: false`; the quick path's "In the code" table and acceptance criteria; OpenSpec
+org and team findings and gaps at a hand-off (`checkFindings`, `packages/changes/src/lifecycle.ts`); a
+platform's mandatory gate with no critic round; `maxAuthorRounds` used up; an org or team rule
+marked `waivable: false`; the quick path's "In the code" table and acceptance criteria; OpenSpec
 validation's warnings (its errors stay errors); a task held by `(after …)`; a task branch with
 commits its change branch lacks; a release PR stale or not merged at go/no-go; post-release
 findings and unticked tasks at archive.
@@ -134,8 +162,9 @@ copy is kept); an AI answer still can't write outside its repo, in `.git` or ove
 constitution; and an assistant still can't waive, accept or dismiss for a person (ADR 0115).
 
 One gap the sweep found is closed: outside an ACP session, an assistant's terminal could pass
-`--approve` to `change handoff` and `task run`, recorded under the Git user. The check finding
-actions already make (`packages/naysayer/src/act.ts`) is applied to every `--approve`.
+`--approve` to `change handoff`, `change sync` and `task run`, recorded under the Git user
+(`cli/src/main.ts`). The check the waive command already makes there (`underAssistant`,
+`cli/src/assistant-env.ts`) is applied to every `--approve`.
 
 ### 8. One command, and smaller releases
 
