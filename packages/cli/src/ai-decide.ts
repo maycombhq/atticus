@@ -728,6 +728,7 @@ export async function decideAnswers(
 /** The AI's decisions that stand, the counts three ways, the batches and the pause (GET /api/decisions). */
 export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
   const state = await decideState(root);
+  const applyPairs = (await (await import("./apply-pair.js")).readPairings(root)).last;
   const linkItems: Api.AiDecisionItemT[] = [];
   // Ninth UX walk: the pairings that stand in the corrections now (the newest line per call), the
   // AI's and people's, beside the map's counts as last applied (which Apply brings up to them).
@@ -818,6 +819,8 @@ export async function decisionsView(root: string): Promise<Api.DecisionsViewT> {
     questions: { counts: qCounts, items: questionItems },
     batches: batches.map((b) => batchView(root, b)),
     problems,
+    // ADR 0210 part 4: what the last Apply's pairing did.
+    ...(applyPairs ? { applyPairs } : {}),
   };
 }
 

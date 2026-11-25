@@ -29,6 +29,7 @@ import {
 import type { BuildRefusal } from "@maycombhq/scanner";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import type { PairResult } from "./apply-pair.js";
 import { refusalEnds } from "./standing.js";
 import {
   carryOf,
@@ -419,8 +420,7 @@ export async function verifyAllCommand(
           ...(upgradeChecked ? { upgradeChecked: true } : {}),
           ...(up === "ran" ? { upgradedFirst: true } : {}),
           onLeftOut: (l) => (leftOut = l.length),
-          ...(oneBuild ? { writeFacts: holdWrite } : {}),
-          pair: false,
+          ...(oneBuild ? { writeFacts: holdWrite, pair: false } : {}),
         },
         io,
       );
@@ -472,6 +472,8 @@ export async function verifyAllCommand(
   let notWritten: string[] | undefined;
   /** A step after every repo's write failed (the review of PR #10): the run exits 1. */
   let runFault = false;
+  /** ADR 0210 part 4: what the one build's pairing did, said at the end. */
+  let paired: PairResult | undefined;
   if (stoppedAt === undefined && held.length) {
     const { writeFactsIntoCatalog, writeManyFactsIntoCatalog } =
       await import("./map-render-commands.js");
@@ -487,6 +489,8 @@ export async function verifyAllCommand(
               ...first,
               command: "atticus verify --all --write",
               onRunFault: () => (runFault = true),
+              pair: true,
+              onPaired: (r) => (paired ??= r),
             },
             out,
             (i, r) => finish(held[i]!, r instanceof Error ? r : Promise.resolve(r)),
@@ -537,42 +541,17 @@ export async function verifyAllCommand(
     return 1;
   }
   const passed = repos.length - failed.length;
-  if (each.write && passed) await pairAfterApply(root, each.json ? { ...io, out: io.err } : io);
+  if (paired) await sayPaired(paired, each.json ? io.err : io.out);
   io.out(
     `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
   );
   return failed.length || runFault ? 1 : 0;
 }
 
-/**
- * ADR 0210 part 4: after Apply's write, the loose calls paired by the model; when any is drawn,
- * the catalog is built again so the arrows show. Never fails the Apply: a fault is said.
- */
-async function pairAfterApply(root: string, io: Output): Promise<void> {
-  try {
-    const { pairLoose, pairLines, pairNot, applyPairHooks } = await import("./apply-pair.js");
-    // Quiet where nothing may be sent: the join's own lines list the loose calls.
-    if (pairNot((await loadOrgPack(orgPackDirOf(root))).runtime)) return;
-    const r = await pairLoose(root, {
-      ...(applyPairHooks.runner ? { runner: applyPairHooks.runner } : {}),
-    });
-    if (!r.paired.length && !r.loose.length && !r.dropped.length) return;
-    for (const l of pairLines(r)) io.out(l);
-    if (r.paired.length) {
-      // The arrows drawn: the catalog built again, going past what Apply goes past (part 3).
-      const { catalogBuild } = await import("./catalog-build-commands.js");
-      const { writeGoingOn } = await import("./map-render-commands.js");
-      await writeGoingOn(
-        root,
-        (oo, out) => catalogBuild(root, oo, out).then((c) => (c === 0 ? c : undefined)),
-        undefined,
-        { ...io, out: () => undefined },
-        { removalsSaid: true },
-      );
-    }
-  } catch (e) {
-    io.err(`Pairing after Apply: ${(e as Error).message}`);
-  }
+/** ADR 0210 part 4: the lines of the write's pairing, when it did or said anything. */
+async function sayPaired(r: PairResult, say: (l: string) => void) {
+  if (!r.paired.length && !r.loose.length && !r.dropped.length && !r.withdrawn.length) return;
+  for (const l of (await import("./apply-pair.js")).pairLines(r)) say(l);
 }
 
 /**
@@ -1023,6 +1002,10 @@ export async function verifyCommand(
     ...(partial?.facts ?? report.accepted),
     ...kept.filter((f) => !ownIds.has(f.id)),
   ];
+  /** ADR 0210 part 4: the write pairs the loose calls before its build (the first round's said). */
+  let paired: PairResult | undefined;
+  const pairing =
+    o.pair === false ? {} : { pair: true, onPaired: (r: PairResult) => (paired ??= r) };
   /** ADR 0210 part 3: what the write went past to write (--json says it). */
   let went: import("./map-render-commands.js").WentPast | undefined;
   // N2: a partial write refused (guards, the lock) says the facts it would have left out.
@@ -1048,6 +1031,7 @@ export async function verifyCommand(
         {
           dir,
           command: `atticus verify ${repo} --write`,
+          ...pairing,
           ...(o.now ? { now: o.now() } : {}),
           onWentPast: (w) => (went = w),
           ...(commit ? { commit } : {}),
@@ -1065,7 +1049,7 @@ export async function verifyCommand(
       );
       if (!written) for (const l of refusedLeftOut()) io.err(l);
       if (!written && !refusedBuild) return 1;
-      if (written && o.pair !== false) await pairAfterApply(root, { ...io, out: io.err });
+      if (paired) await sayPaired(paired, io.err);
     } else if (o.write) io.err(rejectedNote);
     io.out(
       JSON.stringify(
@@ -1372,6 +1356,7 @@ export async function verifyCommand(
     {
       dir,
       command: `atticus verify ${repo} --write`,
+      ...pairing,
       ...(o.now ? { now: o.now() } : {}),
       verbose: o.verbose === true,
       ...(commit ? { commit } : {}),
@@ -1389,7 +1374,7 @@ export async function verifyCommand(
     },
     io,
   );
-  if (written && o.pair !== false) await pairAfterApply(root, io);
+  if (paired) await sayPaired(paired, io.out);
   if (written && partial) {
     for (const l of leftOutLines(
       repo,

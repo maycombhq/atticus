@@ -1,11 +1,21 @@
-import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
-import { stringify } from "yaml";
-import { linksFor, listBatches, parseCorrections, parseFacts } from "@maycombhq/core";
-import { applyPairHooks, pairLines, pairLoose } from "../src/apply-pair.js";
+import { parse, stringify } from "yaml";
+import {
+  estimateTokens,
+  linksFor,
+  listBatches,
+  parseCorrections,
+  parseFacts,
+  Runtime,
+  withRunIo,
+} from "@maycombhq/core";
+import { undoDirOf } from "@maycombhq/scanner";
+import { applyPairHooks, pairLines, pairLoose, pairNot, pathProblem } from "../src/apply-pair.js";
+import { makeBigEstate } from "./big-estate.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import type { AcpStepRunner } from "../src/copilot-acp-steps.js";
 
@@ -55,6 +65,12 @@ const flow = (line: number, path: string) => ({
   quote: `MatchesPath "${path}"`,
 });
 const camel = (line: number, quote: string) => ({ file: CAMEL, line, quote });
+const path = (repo: string, file: string, line: number) => ({
+  repo,
+  file,
+  line,
+  quote: "<Path>/cxf/api</Path>",
+});
 const wallets = [
   {
     repo: W,
@@ -62,6 +78,7 @@ const wallets = [
     line: 14,
     quote: '<Server name="wallets-fuse"/>',
   },
+  path(W, "apiproxy/targets/wallets.xml", 16),
   {
     repo: "forge-edge-config",
     file: "env/prod/targetservers.json",
@@ -72,12 +89,37 @@ const wallets = [
 ];
 const ledger = [
   { repo: W, file: "apiproxy/targets/ledger.xml", line: 4, quote: '<Server name="ledger-fuse"/>' },
+  path(W, "apiproxy/targets/ledger.xml", 6),
   { repo: LM, file: "deploy/prod.yaml", line: 2, quote: "host: ledger.prod.forge.example" },
 ];
+const rewrite = {
+  repo: W,
+  file: "apiproxy/resources/jsc/rewrite-holds.js",
+  line: 4,
+  quote: 'suffix.replace(/\\/holds$/, "/blocks")',
+};
 
-/** The model's answer: the four true arrows, one wrong quote and one pairing to no candidate. */
+/**
+ * The model's answer: the four true arrows, and before them two wrong ones for the first call (a
+ * quote not on its line; GET /accounts/* to POST /accounts, which no check lets through), and one
+ * for the request no entry could serve (PUT: no candidate, so never sent).
+ */
 const ANSWER = {
   pairs: [
+    {
+      call: `${W} call.get.account`,
+      entry: `${WM} entry.get.account`,
+      callLine: flow(14, "/accounts/*"),
+      entryLine: camel(6, '<get uri="/{walletId}">'),
+      with: wallets,
+    },
+    {
+      call: `${W} call.get.account`,
+      entry: `${WM} entry.post.accounts`,
+      callLine: flow(14, "/accounts/*"),
+      entryLine: camel(9, "<post>"),
+      with: wallets,
+    },
     {
       call: `${W} call.get.account`,
       entry: `${WM} entry.get.account`,
@@ -97,7 +139,7 @@ const ANSWER = {
       entry: `${WM} entry.get.account-blocks`,
       callLine: flow(20, "/accounts/*/holds"),
       entryLine: camel(12, '<get uri="/{accountId}/blocks">'),
-      with: wallets,
+      with: [...wallets, rewrite],
     },
     {
       call: `${W} call.get.statement`,
@@ -106,28 +148,22 @@ const ANSWER = {
       entryLine: camel(14, '<get uri="/{statementId}">'),
       with: ledger,
     },
-    // Wrong: the ledger module has no limits route; the quote isn't on line 6.
     {
       call: `${W} call.put.limits`,
       entry: `${LM} entry.get.ledger-account`,
       callLine: flow(26, "/accounts/*/limits"),
-      entryLine: camel(6, '<put uri="/{accountId}/limits">'),
-    },
-    // Wrong: an entry no candidate repo has.
-    {
-      call: `${W} call.put.limits`,
-      entry: "forge-edge-config entry.put.limits",
-      callLine: flow(26, "/accounts/*/limits"),
-      entryLine: { file: "env/prod/targetservers.json", line: 2, quote: '"name": "wallets-fuse"' },
+      entryLine: camel(6, '<get uri="/{accountId}">'),
     },
   ],
-  none: [`${W} call.put.limits`],
 };
 
 let root: string;
 let prompts: string[];
+/** Told as the model runs, before it answers (a person's line written meanwhile). */
+let during: (() => Promise<void>) | undefined;
 const runner: AcpStepRunner = async (s) => {
   prompts.push(s.line);
+  await during?.();
   const file = /Write (\S+\.yaml)/.exec(s.line)![1]!;
   await mkdir(dirname(join(root, file)), { recursive: true });
   await writeFile(join(root, file), stringify(ANSWER));
@@ -145,6 +181,7 @@ const RUNTIME = (more: string[] = []) =>
 
 beforeEach(async () => {
   prompts = [];
+  during = undefined;
   root = await mkdtemp(join(tmpdir(), "atticus-apply-pair-"));
   await cp(FORGE, join(root, "org-pack"), { recursive: true });
   await writeFile(join(root, "org-pack/runtime.yaml"), RUNTIME());
@@ -184,22 +221,50 @@ const proxyCalls = async () => {
   return r.facts;
 };
 
+const sentIn = (prompt: string) => (/## The calls[\s\S]*?## The entries/.exec(prompt) ?? [""])[0];
+const personLine = (
+  fact: string,
+  line: number,
+  value: string,
+  to: { repo: string; entry: string; method: string; path: string },
+) =>
+  JSON.stringify({
+    schemaVersion: 2,
+    fact,
+    target: { kind: "call", file: FLOWS, line, value },
+    action: "link",
+    link: to,
+    by: "pat@forge.example",
+    at: "2099-01-01T00:00:00.000Z",
+  }) + "\n";
+const TO_LEDGER = {
+  repo: LM,
+  entry: "entry.get.ledger-account",
+  method: "GET",
+  path: "/cxf/api/accounts/{accountId}",
+};
+
 describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
   it("draws the pairings both of whose sides check as the AI's, drops the rest and lists them", async () => {
     const r = await pairLoose(root, { runner });
     expect(prompts).toHaveLength(1);
-    // Every candidate repo's entries in the one request.
+    // Every candidate repo's entries in the one request; only entries that could serve a call.
     expect(prompts[0]).toContain(`${WM} entry.get.account`);
     expect(prompts[0]).toContain(`${LM} entry.get.ledger-account`);
+    expect(prompts[0]).not.toContain("entry.delete.account");
+    // PUT /accounts/*/limits: no entry could serve it, so it is never sent.
+    expect(sentIn(prompts[0]!)).not.toContain("call.put.limits");
     expect(r.paired.map((p) => p.call).sort()).toEqual([
       `${W} call.get.account`,
       `${W} call.get.holds`,
       `${W} call.get.statement`,
       `${W} call.post.accounts`,
     ]);
-    expect(r.dropped).toHaveLength(2);
-    expect(r.dropped.map((d) => d.why).join("\n")).toMatch(/quote/);
-    expect(r.dropped.map((d) => d.why).join("\n")).toMatch(/candidate/);
+    expect(r.dropped.map((d) => [d.call, d.why])).toEqual([
+      [`${W} call.get.account`, expect.stringMatching(/quote/)],
+      [`${W} call.get.account`, expect.stringMatching(/candidate/)],
+      [`${W} call.put.limits`, expect.stringMatching(/wasn't sent/)],
+    ]);
     expect(r.loose).toEqual([`${W} call.put.limits`]);
     const c = await lines();
     expect(c).toHaveLength(4);
@@ -213,16 +278,36 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
       repo: WM,
       entry: "entry.get.account-blocks",
     });
-    // One batch, Undo's and Decided by AI's.
     const b = (await listBatches(root)).batches;
     expect(b).toHaveLength(1);
     expect(b[0]!.applied).toHaveLength(4);
     expect(pairLines(r)).toEqual([
       "Paired 4 calls; 1 left loose.",
-      expect.stringMatching(/^ {2}Dropped .*call\.put\.limits/),
+      expect.stringMatching(/^ {2}Dropped .*call\.get\.account/),
+      expect.stringMatching(/^ {2}Dropped .*call\.get\.account/),
       expect.stringMatching(/^ {2}Dropped .*call\.put\.limits/),
       `  Left loose: ${W} call.put.limits`,
     ]);
+  });
+
+  it("the path and method must agree, and a prefix or a rewrite must be on a line it rests on", () => {
+    const call = { method: "GET", path: "/accounts/*" };
+    const entry = (method: string, path: string) => ({ method, path });
+    expect(pathProblem(call, entry("POST", "/limits"))).toMatch(/method/);
+    expect(pathProblem(call, entry("GET", "/cxf/api/accounts/{accountId}"))).toBeUndefined();
+    expect(pathProblem(call, entry("GET", "/cxf/api/accounts/{accountId}"), [])).toMatch(
+      /\/cxf\/api/,
+    );
+    expect(
+      pathProblem(call, entry("GET", "/cxf/api/accounts/{accountId}"), ["<Path>/cxf/api</Path>"]),
+    ).toBeUndefined();
+    const holds = { method: "GET", path: "/accounts/*/holds" };
+    const blocks = entry("GET", "/cxf/api/accounts/{accountId}/blocks");
+    expect(pathProblem(holds, blocks, ["<Path>/cxf/api</Path>"])).toMatch(/blocks/);
+    expect(
+      pathProblem(holds, blocks, ["<Path>/cxf/api</Path>", 'replace(/holds$/, "/blocks")']),
+    ).toBeUndefined();
+    expect(pathProblem({ method: "GET", path: "/a/b/c" }, entry("GET", "/b/c"))).toMatch(/shorter/);
   });
 
   it("a second Apply with no change sends no prompt", async () => {
@@ -239,65 +324,75 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
     await appendFile(join(root, "workspace", LM, CAMEL), "<!-- touched -->\n");
     const r = await pairLoose(root, { runner });
     expect(prompts).toHaveLength(2);
-    const sent = (/## The calls[\s\S]*?## The entries/.exec(prompts[1]!) ?? [""])[0];
+    const sent = sentIn(prompts[1]!);
     expect(sent).toContain("call.get.statement");
-    expect(sent).toContain("call.put.limits");
-    expect(sent).not.toContain("call.get.account");
     expect(sent).not.toContain("call.post.accounts");
     expect(sent).not.toContain("call.get.holds");
     expect(r.paired.map((p) => p.call)).toEqual([`${W} call.get.statement`]);
-    // The old line went with the new: one line a call.
     expect(await lines()).toHaveLength(4);
+  });
+
+  it("an AI line whose cited line no longer says it is withdrawn, and said", async () => {
+    await pairLoose(root, { runner });
+    const file = join(root, "workspace", WM, CAMEL);
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace('<get uri="/{accountId}">', '<get uri="/{id}">'),
+    );
+    const r = await pairLoose(root, { runner });
+    expect(r.withdrawn.map((w) => w.call)).toEqual([`${W} call.get.account`]);
+    expect(pairLines(r)).toContain("Withdrew 1 AI pairing whose lines changed.");
+    const facts = await proxyCalls();
+    const newest = linksFor(
+      facts.find((f) => f.id === "call.get.account")!,
+      await lines(),
+    )[0];
+    expect(newest).toBeUndefined();
+    expect(r.loose).toContain(`${W} call.get.account`);
   });
 
   it("a person's move of an AI arrow is kept on the next Apply", async () => {
     await pairLoose(root, { runner });
-    const ai = (await lines()).find((l) => l.fact === "call.get.account")!;
     await appendFile(
       join(root, `facts/${W}.corrections.jsonl`),
-      JSON.stringify({
-        schemaVersion: 2,
-        fact: ai.fact,
-        target: ai.target,
-        action: "link",
-        link: {
-          repo: LM,
-          entry: "entry.get.ledger-account",
-          method: "GET",
-          path: "/cxf/api/accounts/{accountId}",
-        },
-        by: "pat@forge.example",
-        at: "2099-01-01T00:00:00.000Z",
-      }) + "\n",
+      personLine("call.get.account", 14, "/accounts/*", TO_LEDGER),
     );
     await appendFile(join(root, "workspace", WM, CAMEL), "<!-- touched -->\n");
-    await pairLoose(root, { runner });
+    const r = await pairLoose(root, { runner });
     expect(prompts).toHaveLength(2);
-    expect(/## The calls[\s\S]*?## The entries/.exec(prompts[1]!)![0]).not.toContain(
-      "call.get.account",
-    );
+    expect(sentIn(prompts[1]!)).not.toContain("call.get.account");
+    expect(r.withdrawn).toEqual([]);
     const facts = await proxyCalls();
     const newest = linksFor(
       facts.find((f) => f.id === "call.get.account")!,
       await lines(),
     )[0]!;
     expect(newest.by).toBe("pat@forge.example");
-    expect(newest.link?.repo).toBe(LM);
+  });
+
+  it("a person's line written while the model runs wins", async () => {
+    during = () =>
+      appendFile(
+        join(root, `facts/${W}.corrections.jsonl`),
+        personLine("call.get.holds", 20, "/accounts/*/holds", TO_LEDGER),
+      );
+    const r = await pairLoose(root, { runner });
+    expect(r.paired.map((p) => p.call)).not.toContain(`${W} call.get.holds`);
+    const facts = await proxyCalls();
+    const newest = linksFor(
+      facts.find((f) => f.id === "call.get.holds")!,
+      await lines(),
+    )[0]!;
+    expect(newest.by).toBe("pat@forge.example");
+    expect(await lines()).toHaveLength(4);
   });
 
   it.each([
     ["AI off", ["ai: off"], /AI is off/],
     ["apply.pair off", ["apply: { pair: off }"], /apply\.pair/],
     ["the budget spent", ["budgets: { limits: [{ per: run, tokens: 1 }] }"], /budget|would pass/i],
-    ["no runtime that may decide", [], /copilot-acp/],
   ])("%s: nothing is sent, the calls stay listed, nothing fails", async (_, more, why) => {
-    const rt = more.length
-      ? RUNTIME(more)
-      : RUNTIME().replace(
-          "[hand-off, copilot-acp], default: copilot-acp",
-          "[hand-off], default: hand-off",
-        );
-    await writeFile(join(root, "org-pack/runtime.yaml"), rt);
+    await writeFile(join(root, "org-pack/runtime.yaml"), RUNTIME(more));
     const r = await pairLoose(root, { runner });
     expect(prompts).toEqual([]);
     expect(r.paired).toEqual([]);
@@ -307,23 +402,67 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
     expect(await lines()).toEqual([]);
   });
 
-  it("hand-off with apply.pair on: the calls become one prompt for the person's assistant", async () => {
-    await writeFile(
-      join(root, "org-pack/runtime.yaml"),
-      RUNTIME(["apply: { pair: on }"]).replace(
-        "[hand-off, copilot-acp], default: copilot-acp",
-        "[hand-off], default: hand-off",
+  it.each([
+    ["absent", [], true],
+    ["apply: {}", ["apply: {}"], true],
+    ["apply.pair on", ["apply: { pair: on }"], true],
+  ])("apply %s: on for copilot-acp; hand-off never pairs", async (_, more, acp) => {
+    const rt = Runtime.parse(parse(RUNTIME(more)));
+    expect(pairNot(rt) === undefined).toBe(acp);
+    const handOff = Runtime.parse(
+      parse(
+        RUNTIME(more).replace(
+          "[hand-off, copilot-acp], default: copilot-acp",
+          "[hand-off], default: hand-off",
+        ),
       ),
     );
-    const r = await pairLoose(root, { runner });
-    expect(prompts).toEqual([]);
-    expect(r.prompt).toBe("proposals/matching/apply-pairs.md");
-    const text = await readFile(join(root, r.prompt!), "utf8");
-    for (const [id] of CALLS) expect(text).toContain(id);
-    expect(r.loose).toHaveLength(5);
+    expect(pairNot(handOff)).toMatch(/hand-off/);
   });
 
-  it("Apply says its line after the write, and draws the arrows", async () => {
+  it("calls past the model's limit go in more requests, each within it, planned as one", async () => {
+    const { root: big, repos } = await makeBigEstate(
+      await mkdtemp(join(tmpdir(), "atticus-apply-pair-big-")),
+      { repos: 6, entries: 20, calls: 30, checkouts: 6 },
+    );
+    await writeFile(
+      join(big, "org-pack/runtime.yaml"),
+      RUNTIME(["budgets: { defaultTokens: 450 }"]),
+    );
+    // An entry in each repo that the deploy-token calls (GET /v1/<noun>s/{id}) could reach.
+    for (const repo of repos) {
+      const other = JSON.stringify({
+        kind: "entry",
+        id: "e-other",
+        repo,
+        commit: "1111aaa",
+        entryType: "rest",
+        method: "GET",
+        path: "/v1/others/{id}",
+        cite: { file: "src/Other.java", line: 1, value: "/v1/others/{id}" },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      });
+      for (const f of [`facts/${repo}.jsonl`, `catalog/sources/facts/${repo}.jsonl`])
+        await appendFile(join(big, f), `${other}\n`);
+    }
+    const said: string[] = [];
+    const sizes: number[] = [];
+    const quiet: AcpStepRunner = async (s) => {
+      sizes.push(estimateTokens(s.line));
+      return { stopReason: "end_turn", runId: `r${sizes.length}` } as never;
+    };
+    const r = await withRunIo({ say: (l) => said.push(l) }, () =>
+      pairLoose(big, { runner: quiet }),
+    );
+    expect(sizes.length).toBeGreaterThan(1);
+    for (const n of sizes) expect(n).toBeLessThanOrEqual(450);
+    expect(said[0]).toMatch(new RegExp(`plans ${sizes.length} sessions`));
+    expect(r.paired).toEqual([]);
+  });
+
+  it("Apply pairs inside its one write: the line, the arrows in the catalog, one undo copy each", async () => {
     applyPairHooks.runner = runner;
     await rm(join(root, "catalog"), { recursive: true });
     const out: string[] = [];
@@ -340,13 +479,12 @@ describe("Apply pairs what the join left loose (ADR 0210 part 4)", () => {
     }
     expect(out).toContain("Paired 4 calls; 1 left loose.");
     expect(prompts).toHaveLength(1);
-    // The arrows are in the catalog, marked as the AI's.
-    const { readdir } = await import("node:fs/promises");
     const dir = join(root, "catalog/generated/interface");
     const texts = await Promise.all(
       (await readdir(dir)).map((n) => readFile(join(dir, n), "utf8")),
     );
-    const ai = texts.filter((t) => t.includes("joined-by-ai"));
-    expect(ai).toHaveLength(4);
+    expect(texts.filter((t) => t.includes("joined-by-ai"))).toHaveLength(4);
+    // One undo copy an Apply: the pairing went into the proxy's own write.
+    expect(await readdir(await undoDirOf(root))).toHaveLength(3);
   });
 });

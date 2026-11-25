@@ -745,6 +745,9 @@ export interface WriteFactsOptions {
   plan?: string;
   /** ADR 0210 part 3: told what the write went past to write (only when it wrote). */
   onWentPast?: (w: WentPast) => void;
+  /** ADR 0210 part 4: pair the loose calls before the build, in this write; told what it did. */
+  pair?: boolean;
+  onPaired?: (r: import("./apply-pair.js").PairResult) => void;
 }
 
 export async function writeFactsIntoCatalog(
@@ -1078,6 +1081,12 @@ async function writeFactsOf(
     const batch = many ? items.filter((it) => !isPrototypeRepo(op, it.repo)) : items;
     for (const it of batch) writeFactsHooks.onWrite?.(it.repo);
     if (!batch.length) return [];
+    // ADR 0210 part 4: its lines are corrections the one build reads, under this lock.
+    if (o.pair && !(!many && isPrototypeRepo(op, repo))) {
+      await progress.step("Pairing the loose calls");
+      const paired = await (await import("./apply-pair.js")).pairInWrite(root, op, batch);
+      if (paired) o.onPaired?.(paired);
+    }
     // v31: what the one build's read says waits until the build is written; a refused one says
     // nothing, and each repo's own write says it.
     const said: string[] = [];
