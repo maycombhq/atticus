@@ -811,12 +811,11 @@ export async function verifyCommand(
     io.err(
       `... and ${corrections.bad.length - SHOWN} more lines of ${rel}/${repo}.corrections.jsonl that aren't corrections`,
     );
-  let report;
-  try {
-    report = await verifyFacts({
-      facts: checked,
+  const verifyThese = (facts: readonly Fact[], held: ReadonlySet<string>) =>
+    verifyFacts({
+      facts: [...facts],
       source,
-      ...(keptIds.size ? { heldOver: keptIds } : {}),
+      ...(held.size ? { heldOver: held } : {}),
       // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
       ...(off.has("derived-names") ? { derivedNames: false } : {}),
       ...(off.has("readers") ? { readers: false } : {}),
@@ -833,6 +832,19 @@ export async function verifyCommand(
       componentTypes: inputs.componentTypes,
       notReached: inputs.notReached,
     });
+  let report: Awaited<ReturnType<typeof verifyFacts>>;
+  try {
+    report = await verifyThese(checked, keptIds);
+    // A kept fact that no longer verifies (its file changed) goes; the read is checked again
+    // without it, so nothing of it (a correction it met, a reference) stands in this read.
+    const dropped = new Set([...keptIds].filter((id) => !report.accepted.some((f) => f.id === id)));
+    if (dropped.size) {
+      for (const id of dropped) keptIds.delete(id);
+      report = await verifyThese(
+        checked.filter((f) => !dropped.has(f.id)),
+        keptIds,
+      );
+    }
   } catch (e) {
     if (!(e instanceof NoRoomError)) throw e;
     io.err(`atticus verify ${repo}: ${e.message}`);

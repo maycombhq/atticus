@@ -26,9 +26,16 @@ Writes that go past what they can (2026-11-24; ADR 0210 part 3; item 2 of `docs/
 | Facts a re-read left out, kept                     | `packages/cli/src/verify-commands.ts` (`leftOutOfThisRead`, the kept split in `verifyCommand`), `packages/verify/src/verify.ts` (`VerifyOptions.heldOver`)         |
 | A refusal gone past, out of the command's standing | `packages/cli/src/standing.ts` (`refusalSaved`, `refusalTakenBack`)                                                                                                |
 
+## The re-review (aa4bd3dd)
+
+- Tests that relied on a re-read dropping a fact from an unchanged file now change the cited file instead (the ADR's kept-fact rule stands): `ui-api-reconnect.test.ts` (two now expect the write to go past and list the removals), `ui-api-links-pairing-guard.test.ts`, `policy-tokens-cli.test.ts`, `map-render-cli.test.ts`, each with a comment pointing to ADR 0210 part 3. A kept fact that no longer verifies is dropped and the read verified again without it, so a correction it met says "meets no call in this read" as before.
+- The decisions a write's curate made go into that write's undo copy (`addCreatedToUndoCopy` in `packages/scanner/src/build.ts`), so `atticus catalog undo` takes them back with the write and the advice "atticus catalog undo (it takes the decisions back with the write), then write again with --discard-edits N" is true; it is said only once they are in the copy.
+- The removal count and list said, and `--json`'s `removed`, are the round that wrote (`onWritten`, its `write.removals`), not the last refusal's.
+- The property suite: the hand-edits exemption requires a curated decision targeting every hand-edited record; a crash part way through a person's write is caught up by running the write again (the catalog build after it waits for the removals' count).
+
 ## Words added (copy and help)
 
-- "Kept N hand edit(s) of the catalog as yours (curated, as atticus catalog edits --curate does): … To discard instead: atticus catalog undo, then write again with --discard-edits N."
+- "Kept N hand edit(s) of the catalog as yours (curated, as atticus catalog edits --curate does): …" and, once the decisions are in the write's undo copy, " To discard instead: atticus catalog undo (it takes the decisions back with the write), then write again with --discard-edits N."
 - "Removed N record(s) the new read no longer has (atticus catalog undo takes the write back):" with one line per removal and what explains it (not said by the map's Apply, whose build lists its removals itself).
 - "Kept N fact(s) of the last read that this read left out, every file it cites unchanged: … To remove one, delete it on the map."
 - "Ran atticus upgrade first, which this metarepo still needed (its own undo step: atticus catalog undo takes it back after this write's)." / "This metarepo needed atticus upgrade first, and it stopped:"
@@ -41,6 +48,5 @@ Writes that go past what they can (2026-11-24; ADR 0210 part 3; item 2 of `docs/
 - What the write did to the metarepo before a final refusal (the upgrade it ran, the edits it curated, the decisions a partial curate wrote) is said even when the write ends refused, since those changes stand; only the removal lines wait for a round that wrote. The review asked for "said only when the final round wrote"; this keeps the part that is true either way.
 - The map's Apply's knock-on removals of a teammate's pulled suppress are now written and listed (`ui-api-map-edits-review.test.ts` changed to say so) where they used to leave the build refused for Catalog builds. Bring back a link and the undo of an Apply still build strictly (`goPast` is the Apply's only).
 - `atticus sync` (named by the ADR) is not wrapped here.
-- `ui-api-reconnect.test.ts` has 4 failures on this branch before and after this change (not looked into).
 - `apply-one-build.test.ts` (d) now runs strict: it tests the guard's own refusal and the per-repo fallback.
 - The property model has no map's Apply of its own (its pair and move apply through verify --write); its exemptions cover `verify-write`, `apply-app`, `crash-after-result`, `pair`, `move` and `again` of them, with no confirm.

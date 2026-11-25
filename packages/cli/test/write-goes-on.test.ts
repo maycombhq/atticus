@@ -22,7 +22,7 @@ import { startServer, type RunningServer } from "@maycombhq/server";
 import type { BuildAndWrite, BuildRefusal } from "@maycombhq/scanner";
 import { writeGoingOn, type WentPast } from "../src/map-render-commands.js";
 import { refusalEnds, refusalScope, refusedBuild } from "../src/standing.js";
-import { applyMapEdits, catalogBuild } from "../src/catalog-build-commands.js";
+import { applyMapEdits, catalogBuild, catalogUndo } from "../src/catalog-build-commands.js";
 import { extendUiRoutes } from "../src/ui-commands.js";
 import { verifyAllCommand, verifyCommand } from "../src/verify-commands.js";
 
@@ -221,6 +221,36 @@ describe("a write that goes on (ADR 0210 part 3)", () => {
   );
 
   it(
+    "the decisions a write's curate made are in its undo copy: undo, then --discard-edits discards the edits",
+    async () => {
+      const root = await written();
+      const file = handEdit(root);
+      const edited = readFileSync(file, "utf8");
+      const curated = join(root, "catalog", "curated");
+      const decisions = () =>
+        existsSync(join(curated, "curateddecision"))
+          ? readdirSync(join(curated, "curateddecision")).filter((f) => f.startsWith("cd-edit-"))
+          : [];
+      const q = io();
+      expect(await verifyCommand(root, REPO, opts(root, REPO), q.io)).toBe(0);
+      expect(decisions().length).toBe(1);
+      expect([...q.out, ...q.err].join("\n")).toMatch(
+        /To discard instead: atticus catalog undo \(it takes the decisions back with the write\), then write again with --discard-edits 1\./,
+      );
+      const u = io();
+      expect(await catalogUndo(root, { yes: true }, u.io), u.err.join("\n")).toBe(0);
+      expect(decisions()).toEqual([]);
+      expect(readFileSync(file, "utf8")).toBe(edited);
+      const d = io();
+      const code = await verifyCommand(root, REPO, { ...opts(root, REPO), discardEdits: 1 }, d.io);
+      expect(code, [...d.out, ...d.err].join("\n")).toBe(0);
+      expect(readFileSync(file, "utf8")).not.toMatch(/^runtime: openshift$/m);
+      expect(decisions()).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     "still refuses a removal nothing explains, and a build.json that doesn't read (exit 1)",
     async () => {
       const root = await written();
@@ -392,7 +422,7 @@ describe("writeGoingOn's rounds (ADR 0210 part 3)", () => {
     expect([...q.out, ...q.err].join("\n")).not.toMatch(/Removed/);
   });
 
-  it("says the latest round's removals once, when that round wrote", async () => {
+  it("says the removals of the round that wrote, once, not a refusal's list", async () => {
     const root = metarepo();
     let rounds = 0;
     const q = io();
@@ -415,6 +445,11 @@ describe("writeGoingOn's rounds (ADR 0210 part 3)", () => {
           o.onRefused(removals);
           return undefined;
         }
+        // The round that writes removes only the first of the two the last refusal listed.
+        o.onWritten({
+          guard: { removals: [] },
+          write: { removals: removals.guard.refused!.removals!.slice(1) },
+        } as unknown as BuildAndWrite);
         return "wrote";
       },
       undefined,
@@ -425,8 +460,10 @@ describe("writeGoingOn's rounds (ADR 0210 part 3)", () => {
     expect(rounds).toBe(3);
     const said = q.out.join("\n");
     expect(said.match(/^Removed/gm)).toEqual(["Removed"]);
-    expect(said).toMatch(/^Removed 2 records/m);
-    expect(told).toEqual([{ removed: removals.guard.refused!.removals }]);
+    expect(said).toMatch(/^Removed 1 record the new read no longer has/m);
+    expect(said).toMatch(/^ {2}Endpoint\/payments-api\.put: /m);
+    expect(said).not.toMatch(/payments-api\.post/);
+    expect(told).toEqual([{ removed: removals.guard.refused!.removals!.slice(1) }]);
   });
 
   it("keeps a refusal said before the write in the command's scope, and forgets the one it went past", async () => {

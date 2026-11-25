@@ -726,6 +726,8 @@ export interface WriteFactsOptions {
   discardEdits?: number;
   /** Told the refused build, when a guard refused it (the app's and --json's report). */
   onRefused?: (r: BuildAndWrite) => void;
+  /** ADR 0210 part 3: told the build when it wrote (its removals and its undo copy). */
+  onWritten?: (r: BuildAndWrite) => void;
   /**
    * v31, one build for many repos: told when a step after every repo's write failed (the build
    * again without the answers the run opened again was refused or stopped), so the run exits 1.
@@ -818,7 +820,12 @@ const refusalKey = (r: BuildRefusal) =>
 export async function writeGoingOn<T>(
   root: string,
   write: (
-    o: { allowRemovals?: number; onRefused: (r: BuildAndWrite) => void },
+    o: {
+      allowRemovals?: number;
+      onRefused: (r: BuildAndWrite) => void;
+      /** Told the build the round wrote (its removals, its undo copy). */
+      onWritten: (r: BuildAndWrite) => void;
+    },
     io: Output,
   ) => Promise<T | undefined>,
   onRefused: ((r: BuildAndWrite) => void) | undefined,
@@ -833,13 +840,26 @@ export async function writeGoingOn<T>(
   const restore = refusalSaved();
   /** What it did to the metarepo: said however the write ends. */
   const did: string[] = [];
-  /** The removals of the latest round: said only when that round wrote. */
-  let removed: string[] = [];
   const went: WentPast = {};
+  /** The hand edits curate kept, and the decision files it made for them (none there before). */
+  const keptEdits: string[] = [];
+  const created: string[] = [];
   let allow: number | undefined;
   let last: string | undefined;
+  /** The kept edits' line: the undo advice only once the decisions are in the write's copy. */
+  const keptLine = (undone: boolean) => {
+    const n = keptEdits.length;
+    return `Kept ${n} hand ${n === 1 ? "edit" : "edits"} of the catalog as yours (curated, as atticus catalog edits --curate does): ${keptEdits
+      .slice(0, 5)
+      .join(", ")}${n > 5 ? ` and ${n - 5} more` : ""}.${
+      undone
+        ? ` To discard instead: atticus catalog undo (it takes the decisions back with the write), then write again with --discard-edits ${n}.`
+        : ""
+    }`;
+  };
   for (let round = 0; ; round++) {
     let refused: BuildAndWrite | undefined = undefined;
+    let wrote: BuildAndWrite | undefined = undefined;
     const held: string[] = [];
     const quiet: Output = {
       ...io,
@@ -856,6 +876,7 @@ export async function writeGoingOn<T>(
       {
         ...(allow !== undefined ? { allowRemovals: allow } : {}),
         onRefused: (b) => (refused = b),
+        onWritten: (b) => (wrote = b),
       },
       {
         ...quiet,
@@ -863,12 +884,14 @@ export async function writeGoingOn<T>(
       },
     ).catch((e: unknown) => {
       for (const l of did) io.out(l);
+      if (keptEdits.length) io.out(keptLine(false));
       flush();
       throw e;
     });
     const why = (refused as BuildAndWrite | undefined)?.guard.refused;
     const stop = (extra: readonly string[] = []) => {
       for (const l of did) io.out(l);
+      if (keptEdits.length) io.out(keptLine(false));
       flush();
       for (const l of extra) io.err(l);
       if (refused) onRefused?.(refused);
@@ -876,8 +899,35 @@ export async function writeGoingOn<T>(
     };
     if (!why) {
       for (const l of did) io.out(l);
+      const done = r !== undefined ? (wrote as BuildAndWrite | undefined) : undefined;
+      // The decisions this write's curate made go into the write's own undo copy, so an undo
+      // takes them back with it and the edits are hand edits again (ADR 0210 part 3).
+      let undone = false;
+      const copy = done?.write?.undo;
+      if (created.length && copy !== undefined) {
+        const { addCreatedToUndoCopy, undoDirOf } = await import("@maycombhq/scanner");
+        await addCreatedToUndoCopy(root, await undoDirOf(root), copy, created);
+        undone = true;
+      }
+      if (keptEdits.length) io.out(keptLine(undone));
       if (r !== undefined) {
-        if (!opts.removalsSaid) for (const l of removed) io.out(l);
+        // The removals the round that wrote wrote, as its build lists them.
+        const list = done?.write?.removals ?? [];
+        if (list.length) {
+          went.removed = list.map((x) => ({
+            kind: x.kind,
+            id: x.id,
+            explainedBy: [...x.explainedBy],
+            reasons: [...x.reasons],
+          }));
+          if (round > 0 && !opts.removalsSaid)
+            for (const l of [
+              `Removed ${list.length} ${list.length === 1 ? "record" : "records"} the new read no longer has (atticus catalog undo takes the write back):`,
+              ...list.slice(0, 20).map((x) => `  ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+              ...(list.length > 20 ? [`  and ${list.length - 20} more`] : []),
+            ])
+              io.out(l);
+        }
         // The refusals gone past end no line; one said before this write still does.
         if (round > 0) restore();
         if (round > 0) opts.onWentPast?.(went);
@@ -901,46 +951,46 @@ export async function writeGoingOn<T>(
     if (why.reasons.includes("hand-edits")) {
       const { catalogEdits } = await import("./catalog-build-commands.js");
       const paths = (why.edits ?? []).map((e) => e.path);
-      const n = paths.length;
-      const wrote: string[] = [];
+      const wroteLines: string[] = [];
       const notKept: string[] = [];
+      const curatedDir = join(catalogDirOf(root), "curated");
+      const had = new Set(await filesUnder(curatedDir));
       const code = await catalogEdits(
         root,
         { curate: true, by: (await gitUser(root)).handle, ...(opts.held ? { held: true } : {}) },
-        { out: (l) => wrote.push(l), err: (l) => notKept.push(l) },
+        { out: (l) => wroteLines.push(l), err: (l) => notKept.push(l) },
       );
+      created.push(...(await filesUnder(curatedDir)).filter((f) => !had.has(f)));
       // An edit curate can't keep (a file that doesn't read as a record, one the build no longer
       // makes) would be lost to the write: the refusal stands, with curate's words, and the
       // decisions curate did write for the others are said (they stand, for the next build).
       if (code !== 0 || notKept.length) {
-        did.push(...wrote.filter((l) => !/^atticus catalog build \(or the next scan\)/.test(l)));
+        did.push(
+          ...wroteLines.filter((l) => !/^atticus catalog build \(or the next scan\)/.test(l)),
+        );
         return stop(notKept);
       }
-      went.editsKept = [...(went.editsKept ?? []), ...paths];
-      did.push(
-        `Kept ${n} hand ${n === 1 ? "edit" : "edits"} of the catalog as yours (curated, as atticus catalog edits --curate does): ${paths
-          .slice(0, 5)
-          .join(
-            ", ",
-          )}${n > 5 ? ` and ${n - 5} more` : ""}. To discard instead: atticus catalog undo, then write again with --discard-edits ${n}.`,
-      );
+      keptEdits.push(...paths);
+      went.editsKept = [...keptEdits];
     }
-    if (why.reasons.includes("large-removals") && why.allowRemovals !== undefined) {
+    if (why.reasons.includes("large-removals") && why.allowRemovals !== undefined)
       allow = why.allowRemovals;
-      const list = why.removals ?? [];
-      went.removed = list.map((x) => ({
-        kind: x.kind,
-        id: x.id,
-        explainedBy: [...x.explainedBy],
-        reasons: [...x.reasons],
-      }));
-      removed = [
-        `Removed ${allow} ${allow === 1 ? "record" : "records"} the new read no longer has (atticus catalog undo takes the write back):`,
-        ...list.slice(0, 20).map((x) => `  ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
-        ...(list.length > 20 ? [`  and ${list.length - 20} more`] : []),
-      ];
-    }
   }
+}
+
+/** Every file under a folder, by absolute path (none when it isn't there). */
+async function filesUnder(dir: string): Promise<string[]> {
+  const { readdir } = await import("node:fs/promises");
+  const out: string[] = [];
+  const walk = async (d: string) => {
+    for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) await walk(p);
+      else out.push(p);
+    }
+  };
+  await walk(dir);
+  return out;
 }
 
 /** One repo of a write over many: its kept facts and its own write's options. */
@@ -1206,6 +1256,7 @@ async function writeFactsOf(
       return undefined;
     }
     const w = built.write!;
+    o.onWritten?.(built);
     // ADR 0205 step 1: what the write changed, compared record by record where the catalog read
     // still matched the files; the whole catalog otherwise, or with the hook (the way before).
     // One build, one comparison, whatever the repos.

@@ -1279,8 +1279,17 @@ export async function act(
       const mid = await w.snap();
       // The crash left the slots written: they hold this observation now.
       await first.onSuccess?.();
+      // ADR 0210 part 3: a person's write goes past removals over the limit, so it can stop part
+      // way through writing them; the build that catches up waits for their count, so the person
+      // runs the write again, which goes past them as before.
+      let caught: Acted = await build(w, {});
+      const r = caught.outcome;
+      if (inner.t === "verify-write" && r?.refused && r.guard === "large-removals") {
+        const again = await verify(inner as Desc & { t: "verify-write" }, m, w, confirm);
+        if (again) caught = { ...again, expect: { kind: "succeed" } };
+      }
       return {
-        ...(await build(w, {})),
+        ...caught,
         observed: first.observed ?? [],
         unobserved: first.unobserved ?? [],
         crash: { first: o, mid },

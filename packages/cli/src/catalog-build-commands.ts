@@ -208,6 +208,8 @@ export async function catalogBuild(
     held?: boolean;
     /** ADR 0210 part 3: told the refused build (the map's Apply goes past it). */
     onRefused?: (r: BuildAndWrite) => void;
+    /** ADR 0210 part 3: told the build when it wrote (its removals and its undo copy). */
+    onWritten?: (r: BuildAndWrite) => void;
   },
   io: Output,
 ): Promise<number> {
@@ -245,6 +247,7 @@ export async function catalogBuild(
     if (!o.check && !r.guard.refused && !r.changed) progress.end({ done: true });
     if (!o.check && r.guard.refused) await refusalEnds(root, r.guard.refused);
     if (!o.check && r.guard.refused) o.onRefused?.(r);
+    if (!o.check && r.write) o.onWritten?.(r);
     if (o.check) {
       if (o.json)
         io.out(JSON.stringify({ upToDate: r.upToDate, sources: r.build.sources }, null, 2));
@@ -1407,6 +1410,7 @@ export async function buildAfterDecisions(
           ...(w.allowRemovals !== undefined ? { allowRemovals: w.allowRemovals } : {}),
           held: true,
           onRefused: w.onRefused,
+          onWritten: w.onWritten,
         },
         out,
       );
