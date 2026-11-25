@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A size rule for non-test source (ADR 0210 part 8): no more lines of non-test source than the
 // last release. Since 2.0.0-beta.33 the rule is the baseline itself, BUDGET 0: code added is paid
-// for by code taken out. (v31 began it as a budget of 3,500 lines over 2.0.0-beta.30, WP-11.)
+// for by code taken out (beta.33 alone has the owner's allowance, below). (v31 began it as a budget of 3,500 lines over 2.0.0-beta.30, WP-11.)
 // Every run prints the total and the packages that grew most. Only the owner raises the budget,
 // by editing the number below in a PR that says why.
 //

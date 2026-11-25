@@ -4,18 +4,19 @@ What the shared files should say for the `b33/item8-size` branch. The integrator
 
 ## The rule
 
-`scripts/check-size-budget.mjs`: `BASELINE_TAG` is `v2.0.0-beta.32` (0598729), `BUDGET` is 0: no more non-test lines than the last release. The baseline was recorded as the script's header says: `git fetch origin tag v2.0.0-beta.32`, `git archive v2.0.0-beta.32 packages scripts` into an empty folder, `node scripts/check-size-budget.mjs --record <folder>` (460,915 lines). The per-package report and the owner-raises-it note stay; the note now points at ADR 0210 part 8. `packages/conformance/test/size-budget.test.ts` holds `BUDGET` 0 and the tag.
+`scripts/check-size-budget.mjs`: `BASELINE_TAG` is `v2.0.0-beta.32` (0598729), `BUDGET` is 0 (no more non-test lines than the last release), except beta.33's one allowance the owner set: 3,200 while `BASELINE_TAG` is beta.32. The baseline was recorded as the script's header says: `git fetch origin tag v2.0.0-beta.32`, `git archive v2.0.0-beta.32 packages scripts` into an empty folder, `node scripts/check-size-budget.mjs --record <folder>` (460,915 lines). The per-package report and the owner-raises-it note stay; the note now points at ADR 0210 part 8. `packages/conformance/test/size-budget.test.ts` holds the tag and `BUDGET` (3,200 while the baseline is beta.32, else 0).
 
 ## The counts
 
-|                                                       | Non-test lines | Over beta.32 |
-| ----------------------------------------------------- | -------------- | ------------ |
-| beta.32                                               | 460,915        | 0            |
-| main at d8aa74f8 (before items 4 and 9 merged)        | 463,131        | +2,216       |
-| main after items 4 and 9 (origin/main as merged here) | 463,720        | +2,805       |
-| this branch, origin/main merged in                    | 463,154        | **+2,239**   |
+|                                                       | Non-test lines | Over beta.32                           |
+| ----------------------------------------------------- | -------------- | -------------------------------------- |
+| beta.32                                               | 460,915        | 0                                      |
+| main at d8aa74f8 (before items 4 and 9 merged)        | 463,131        | +2,216                                 |
+| main after items 4 and 9 (origin/main as merged here) | 463,720        | +2,805                                 |
+| this branch, origin/main merged in (before item 7)    | 463,154        | +2,239                                 |
+| this branch with item 7 merged                        | 463,812        | **+2,897** (passes, 303 left of 3,200) |
 
-This branch takes out 566 lines net (cli 55, changes 11, glossary 5, initiatives 45, intake 60, scanner 5, speckit 3, ui 314, vscode 68). **The rule does not pass:** `pnpm lint` (the size check) and the conformance test "the repo as it is is within the budget" fail by 2,239 lines today, and by about 2,790 once item 7 (≈ +300) and the model-writes-recipes item (≈ +250) land. There is no margin; the target (a margin of ~600) needs about 2,840 more lines out.
+This branch takes out 566 lines net (cli 55, changes 11, glossary 5, initiatives 45, intake 60, scanner 5, speckit 3, ui 314, vscode 68). With the owner's allowance the check passes: +2,897 over beta.32 against 3,200, 303 left for the last two items.
 
 ## How dead code was found
 
@@ -65,15 +66,15 @@ Each batch: `turbo run typecheck` for intake, initiatives, glossary, speckit, sc
 
 ## CHANGELOG.md (Changed)
 
-- **The size check is no more lines than the last release (ADR 0210 part 8).** `scripts/check-size-budget.mjs` counts non-test source against 2.0.0-beta.32 (460,915 lines) with a budget of 0, where beta.31 allowed 3,500 over beta.30; each run still prints the total and the packages that grew most, and only the owner raises the budget. 566 lines of code nothing ran came out (the Connect to… panel ConnectAB replaced, Home's old Your changes panel, the sidebar's old knowledge lists, copy no screen used, and duplicate helpers in intake, changes and the CLI); nothing that runs changes.
+- **The size check is no more lines than the last release (ADR 0210 part 8).** `scripts/check-size-budget.mjs` counts non-test source against 2.0.0-beta.32 (460,915 lines) with no budget from beta.34 on and, for beta.33 alone, an allowance of 3,200 the owner set (beta.31 allowed 3,500 over beta.30); each run still prints the total and the packages that grew most, and only the owner raises the budget. 566 lines of code nothing ran came out (the Connect to… panel ConnectAB replaced, Home's old Your changes panel, the sidebar's old knowledge lists, copy no screen used, and duplicate helpers in intake, changes and the CLI); nothing that runs changes.
 
 ## docs/build-status.md
 
-Smaller (2026-11-25; ADR 0210 part 8; no contract change). **Works:** `scripts/check-size-budget.mjs` at `BUDGET` 0 over v2.0.0-beta.32's recorded 460,915 lines (`conformance/test/size-budget.test.ts`); 566 lines of unreached or duplicated code out (list in `docs/plan/v33-notes/item8.md`). **Open:** the check fails, +2,239 over beta.32 with items 4 and 9 merged and about +2,790 with items 7 and the recipes item; only item 12 (the readers) or the owner's `BUDGET` closes it.
+Smaller (2026-11-25; ADR 0210 part 8; no contract change). **Works:** `scripts/check-size-budget.mjs` at `BUDGET` 3,200 (beta.33's one allowance; 0 from beta.34) over v2.0.0-beta.32's recorded 460,915 lines (`conformance/test/size-budget.test.ts`); 566 lines of unreached or duplicated code out (list in `docs/plan/v33-notes/item8.md`). **Open:** the readers (item 12) come out with the later ADR of part 6.
 
 ## docs/codebase-map.md
 
-- The "Score the public estate or change a lint budget" row: `scripts/check-size-budget.mjs` (`BUDGET` 0, `BASELINE_TAG`, `BASELINE`; `--record`) is unchanged in shape.
+- The "Score the public estate or change a lint budget" row: `scripts/check-size-budget.mjs` (`BUDGET` 3,200 while the baseline is beta.32, else 0; `BASELINE_TAG`, `BASELINE`; `--record`) is unchanged in shape.
 - `packages/intake/src/export-files.ts`: `parseCsv`, `readExports` (the inputs/ walk both export readers share).
 
 ## The owner's allowance (2026-11-25)

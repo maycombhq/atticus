@@ -160,8 +160,6 @@ function itemOf(
   };
 }
 
-/** RFC 4180 CSV: quoted fields, doubled quotes, commas and line breaks inside quotes. */
-
 function fromCsv(textIn: string, path: string): ExportedWorkItem[] | undefined {
   const rows = parseCsv(textIn.replace(/^\uFEFF/, ""));
   const header = rows[0]?.cells.map((h) => h.trim());
