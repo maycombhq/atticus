@@ -125,6 +125,40 @@ These replace what the tables above say where they differ.
 
 The order to build in: 0, 1, 2, 3, 9, 6, 10, 11, 7, then 4, 5, 12, 8.
 
+## Item 0's results (2026-11-24): the gateway shape, a small model, and the cost of a check
+
+Fresh agents with none of the answers, on `fixtures/gateway-shape` and public code. "Small" is
+the smallest model available in the workspace. Tokens are each run's report less an empty run's
+61,000: rough.
+
+| Run                                                                                                                      | Strong model                                                       | Small model                                        |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------- |
+| Gate A: pair the proxy's 5 requests from source (two modules on one path; one target with no host)                       | 5 of 5, the hostless one left unpaired, every line held            | 5 of 5, the same                                   |
+| Gate B: a recipe from one module, run on the other                                                                       | Lines right; 1 path wrong (a literal `/accounts` in the template)  | Lines right; 3 paths wrong (the rest path dropped) |
+| The misses given back once, with the engine's block scopes added                                                         | 12 of 12 on the unseen module                                      | 12 of 12                                           |
+| Check a recipe's output for what it missed, against a full read (`spring-petclinic-rest`, 125 files, 10 facts held back) | Check: about 34,000 tokens, 8 of 10 found. Full read: about 10,000 | not run                                            |
+
+What this decides:
+
+1. **Item 4 stands.** Pairing from source held with the small model on the shape that fails a
+   path match.
+2. **Item 5 is "recipe first, model on request"** (the fallback the risks named). A check cost
+   three times a read and still missed two facts, so no routine model check follows a recipe.
+   A repo with an active recipe is read by it alone; the model reads a repo when its type has no
+   recipe, when a person asks, or when the join's misses name that repo. The files no rule
+   matched are counted and shown, not sent.
+3. **A composed value is made only of cited captures.** Both first recipes passed every line
+   check with wrong paths; a value built from parts each cited on its line catches all four.
+   The engine has no uncited capture: the file-wide `prefix` of the experiment goes, block
+   scopes (the nearest match above, cited) replace it.
+4. **A recipe is proven on repos it wasn't written from**, against their model-read facts, as
+   planned: the line check alone passed both wrong recipes.
+
+Two unknowns closed: the edit guard already hashes text with its line ends as LF
+(`scanner/src/build.ts`), so a Windows checkout makes no hand edit; and a read with no model
+limit set is cut into prompts of about 12,000 tokens (`EXAMPLE_LIMIT`, `cli/src/map-commands.ts`),
+one session each, so item 6's estimate counts sessions, and a larger limit cuts them.
+
 ## What does not change
 
 Every fact cites file, line, value and quote, and the verifier checks it. Results are stored

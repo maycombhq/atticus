@@ -1,0 +1,27 @@
+# The true arrows of the gateway-shape fixture (README.md), written by hand. Each request the
+# proxy forwards, cited at its flow's condition, to the module entry that serves it, or to none.
+# A path alone can't tell the two modules apart (both serve /cxf/api/accounts/{accountId}): only
+# the target server's host, in forge-edge-config, matched to a module's deploy host, can.
+arrows:
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:14
+    method: GET
+    path: /wallets/v1/accounts/{id}
+    to: forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:6
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:17
+    method: POST
+    path: /wallets/v1/accounts
+    to: forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:9
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:25
+    method: GET
+    path: /wallets/v1/accounts/{id}/holds
+    # rewritten to /accounts/{id}/blocks by resources/jsc/rewrite-holds.js
+    to: forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:12
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:28
+    method: GET
+    path: /wallets/v1/statements/{id}
+    to: forge-ledger-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:14
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:31
+    method: PUT
+    path: /wallets/v1/accounts/{id}/limits
+    # its target server, legacy-core, has no host in any repo of the estate: no arrow.
+    to: none

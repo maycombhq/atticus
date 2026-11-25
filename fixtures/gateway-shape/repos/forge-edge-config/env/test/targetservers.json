@@ -1,0 +1,14 @@
+[
+  {
+    "name": "wallets-fuse",
+    "host": "wallets.test.forge.example",
+    "port": 8443,
+    "isEnabled": true
+  },
+  {
+    "name": "ledger-fuse",
+    "host": "ledger.test.forge.example",
+    "port": 8443,
+    "isEnabled": true
+  }
+]

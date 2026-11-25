@@ -1,0 +1,11 @@
+<APIProxy name="forge-edge-wallets">
+  <Description>Wallets API for partners</Description>
+  <ProxyEndpoints>
+    <ProxyEndpoint>default</ProxyEndpoint>
+  </ProxyEndpoints>
+  <TargetEndpoints>
+    <TargetEndpoint>wallets</TargetEndpoint>
+    <TargetEndpoint>ledger</TargetEndpoint>
+    <TargetEndpoint>core</TargetEndpoint>
+  </TargetEndpoints>
+</APIProxy>

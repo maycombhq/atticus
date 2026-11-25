@@ -1,0 +1,3 @@
+service: forge-wallets-module
+host: wallets.test.forge.example
+port: 8443
