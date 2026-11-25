@@ -14,7 +14,7 @@ import type { CommandUi } from "./command-ui";
 import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
 import { changeMapMarkdown, type ChangeMapJson } from "./change-map";
 import { agentForStep, stepNameOf } from "./copilot-agent";
-import { parseJson } from "./cli";
+import { parseJson, reasonFirst } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
 import { ChatSessions, promptText, recordChat, recordingStream } from "./history";
 import type { StepEnd } from "./runner";
@@ -433,7 +433,7 @@ function participant(
       const r = await svc.cli(root)(["change", "map", change, "--json", "--root", root], token);
       const m = parseJson<ChangeMapJson>(r.stdout);
       if (!m) {
-        stream.markdown(block([r.stderr.trim() || WORDS.endedWith(r.code)]));
+        stream.markdown(block([reasonFirst(r.stderr) || WORDS.endedWith(r.code)]));
         return;
       }
       stream.markdown(changeMapMarkdown(m));

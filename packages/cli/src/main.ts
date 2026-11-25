@@ -12,6 +12,7 @@ import {
   SCHEMA_VERSION,
   startTerminalRun,
   TITLE_VALUE_FLAGS,
+  currentRunIo,
   withRunIo,
 } from "@maycombhq/core/light";
 import { titleSlotsOf, titleWordsByHelp, type TitleSlot } from "./command-catalog.js";
@@ -61,8 +62,6 @@ export async function setUpAi(): Promise<void> {
   // Review round 50 (ADR 0186 addendum): a model run the app or a Copilot session starts sends
   // the key only where the person last confirmed it; a person's own run at a terminal confirms.
   ai.registerModelGuard((o) => address.guardModelAddress(o));
-  // ADR 0210 part 5: a run that writes checks its result can be written before it spends.
-  ai.registerRunPreflight(async (at) => (await import("./run-preflight.js")).runPreflight(at));
   // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   providers.registerBuiltInModelProviders();
@@ -503,7 +502,7 @@ Usage:
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
-  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session). Where runtime.yaml's reader is Copilot (or reads by a pasted line), it runs map --all's waiting loop for this one repo instead, --force reading it whole again (ADR 0170) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--idle minutes] [--dir path] [--commit sha] [--json]
+  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session). Where runtime.yaml's reader is Copilot (or reads by a pasted line), it runs map --all's waiting loop for this one repo instead, --force reading it whole again (ADR 0170) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--idle minutes] [--dir path] [--commit sha] [--yes: past the AI budget, unattended] [--json]
           [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit; with housePrefixes in conventions.yaml, it warns of house packages the repo imports that no taught framework covers, with the frameworks learn command for each (ADR 0147); with --part n, names that part for the session to read whole (ADR 0170)
           [--gaps]                     Plan a second pass on what the last verify left (files no fact cites, skipped lines, spec operations, entries no flow follows) for a new chat, sized to the session: writes facts/<repo>.gaps.md (ADR 0157)
           [--copy]                     Print the next batch's prompt to paste into a chat
@@ -1020,7 +1019,16 @@ export async function main(
     // ADR 0202 point 8: a refusal in the command ends with where the metarepo stands, said last.
     const { refusalScope } = await import("./standing.js");
     // ADR 0210 part 5: a model run's budget line is an err line; it asks where io can.
-    const runIo = { say: io.err, ...(io.ask ? { ask: io.ask } : {}), yes: argv.includes("--yes") };
+    // A run that writes checks first that its result can be (run-preflight); a job's own
+    // RunIo (the app's run panel) hears the line too. --yes counts before `--` only.
+    const outer = currentRunIo();
+    const end = argv.indexOf("--");
+    const runIo = {
+      say: (l: string) => (io.err(l), outer?.say(l)),
+      ...(io.ask ? { ask: io.ask } : {}),
+      yes: (end < 0 ? argv : argv.slice(0, end)).includes("--yes"),
+      preflight: async (at: string) => (await import("./standing.js")).runPreflight(at),
+    };
     const code = await refusalScope(io, () =>
       withRunIo(runIo, () =>
         said
@@ -2108,7 +2116,7 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate [--part n] | --gaps [--part n] | --rules] [--models entries|reachable|all] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--max-tokens n] [--idle minutes]",
+        "Usage: atticus map <repo> [--estimate [--part n] | --gaps [--part n] | --rules] [--models entries|reachable|all] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force] [--yes], or atticus map --all [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--max-tokens n] [--idle minutes]",
       );
       return 2;
     }

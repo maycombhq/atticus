@@ -3,6 +3,7 @@
  * consistent. New screens take their words from here (CLAUDE.md, definition of done); older
  * screens still hold theirs inline and move here when they are next changed.
  */
+import { limitWords } from "@maycombhq/core/paths";
 
 /**
  * The one command that installs Atticus, at the exact version where it is known (beta.30): a
@@ -5005,15 +5006,10 @@ export const COPY = {
     perAgentHint: "One a line, for example architect: 300000. Others get the tokens for a step.",
     /** ADR 0210 part 5: the budget a run may spend, shown here, set in runtime.yaml. */
     spendLabel: "Spend limits",
-    spendLimit: (l: { per: string; sessions?: number; tokens?: number }) =>
-      [
-        l.sessions && `${l.sessions.toLocaleString("en-US")} session${l.sessions === 1 ? "" : "s"}`,
-        l.tokens && `${l.tokens.toLocaleString("en-US")} token${l.tokens === 1 ? "" : "s"}`,
-      ]
-        .filter(Boolean)
-        .join(" and ") + ` a ${l.per}`,
-    spendLimits: (limits: string) => `Limits: ${limits}.`,
-    noSpendLimit: "No spend limit is set: each run says what it plans, then runs.",
+    spendLimits: (ls?: { per: string }[]) =>
+      ls?.length
+        ? `Limits: ${ls.map(limitWords).join(", ")}.`
+        : "No spend limit is set: each run says what it plans, then runs.",
     spendHint:
       "Set in runtime.yaml (budgets.limits): a run, a day or a month, in sessions or tokens, as your provider bills. A run past a limit asks, or stops where nobody can answer. atticus doctor shows what you have used.",
     badDefaultTokens: "The tokens for a step must be a whole number above 0, such as 200000.",

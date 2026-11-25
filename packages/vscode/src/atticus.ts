@@ -1,5 +1,5 @@
 import { targetArgs } from "./beta11";
-import { parseJson } from "./cli";
+import { parseJson, reasonFirst } from "./cli";
 import type {
   Cancel,
   Cli,
@@ -18,7 +18,7 @@ import type {
 export type Read<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const why = (stderr: string, stdout: string, code: number) =>
-  (stderr.trim() || stdout.trim() || `atticus ended with exit code ${code}`).split("\n")[0]!;
+  (reasonFirst(stderr) || stdout.trim() || `atticus ended with exit code ${code}`).split("\n")[0]!;
 
 export async function readNext(
   cli: Cli,

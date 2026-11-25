@@ -79,9 +79,9 @@ describe("the budget, shown on the AI tab of Set up (ADR 0210 part 5)", () => {
   it("shows runtime.yaml's limits, or that none is set, where the budgets are", () => {
     const set = html(<AiSettingsForm data={{ ...DATA, budgets: { ...DATA.budgets, limits } }} />);
     expect(set).toContain(T.spendLabel);
-    expect(set).toContain(esc(T.spendLimits("40 sessions a day, 2,000,000 tokens a month")));
+    expect(set).toContain(esc("Limits: 40 sessions a day, 2,000,000 tokens a month."));
     expect(set).toContain(esc(T.spendHint));
-    expect(html(<AiSettingsForm data={DATA} />)).toContain(esc(T.noSpendLimit));
+    expect(html(<AiSettingsForm data={DATA} />)).toContain(esc(T.spendLimits()));
   });
   it("keeps the limits as they are when the tab saves its budgets", () => {
     const form = {

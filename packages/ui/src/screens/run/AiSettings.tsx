@@ -29,11 +29,7 @@ export interface AiSettings {
 }
 
 /** runtime.yaml version 5's budgets.limits (ADR 0210 part 5): shown, kept, not edited here. */
-export interface SpendLimit {
-  per: "run" | "day" | "month";
-  sessions?: number;
-  tokens?: number;
-}
+export type SpendLimit = { per: "run" | "day" | "month"; sessions?: number; tokens?: number };
 
 export interface Decide {
   links: "auto" | "propose";
@@ -493,11 +489,7 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
           />
           <span className="stack">
             <span>{T.spendLabel}</span>
-            <span>
-              {f.limits.spend?.length
-                ? T.spendLimits(f.limits.spend.map(T.spendLimit).join(", "))
-                : T.noSpendLimit}
-            </span>
+            <span>{T.spendLimits(f.limits.spend)}</span>
             <span className="muted">{T.spendHint}</span>
           </span>
         </fieldset>

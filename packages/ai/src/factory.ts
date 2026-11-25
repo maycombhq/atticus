@@ -848,11 +848,7 @@ export async function runtimeForCli(
     onNote: o.onNote ?? sayOnce,
   });
   // ADR 0210 part 5: every run but a replay says its plan first and keeps to the budget.
-  if (mode !== "replay")
-    budgetRuntime(runtime, {
-      root,
-      ...(op.runtime.budgets.limits ? { limits: op.runtime.budgets.limits } : {}),
-    });
+  budgetRuntime(runtime, { root, limits: op.runtime.budgets.limits });
   const describe =
     runtime.kind === "hand-off"
       ? "AI steps are handed to your assistant: Atticus writes the prompt and checks the answer once your assistant has written it."

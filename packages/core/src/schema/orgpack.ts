@@ -1132,16 +1132,10 @@ export type StepClass = z.infer<typeof StepClass>;
  */
 export const RUNTIME_SCHEMA_VERSION = 5 as const;
 
-/**
- * runtime.yaml version 5 (ADR 0210 part 5): a budget a run may spend, whichever the provider
- * bills: prompts (`sessions`), tokens, or both, a run, a day or a month. Each person's use is
- * counted on their machine; a run that would pass a limit asks, or unattended stops before it
- * starts.
- */
-export const BUDGET_PERIODS = ["run", "day", "month"] as const;
+/** runtime.yaml version 5 (ADR 0210 part 5): what a run, a day or a month may spend. */
 export const BudgetLimit = z
   .strictObject({
-    per: z.enum(BUDGET_PERIODS),
+    per: z.enum(["run", "day", "month"]),
     sessions: z.number().int().positive().optional(),
     tokens: z.number().int().positive().optional(),
   })
@@ -1246,13 +1240,7 @@ export function copilotAcpOf(
 const StepModel = z.string().min(1).regex(/^\S+$/, "a model name or vendor/family, without spaces");
 
 const RuntimeFields = z.strictObject({
-  schemaVersion: z.union([
-    V,
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-    z.literal(RUNTIME_SCHEMA_VERSION),
-  ]),
+  schemaVersion: z.union([V, z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   assistants: z
     .strictObject({
       allowed: z.array(AssistantId).min(1),
@@ -1314,7 +1302,7 @@ const RuntimeFields = z.strictObject({
     .strictObject({
       defaultTokens: z.number().int().positive().default(200_000),
       perAgent: z.record(RecordId, z.number().int().positive()).default({}),
-      /** Version 5 (ADR 0210 part 5): what a run, a day or a month may spend; one limit a period. */
+      /** Version 5: one limit a period. */
       limits: z
         .array(BudgetLimit)
         .refine((ls) => new Set(ls.map((l) => l.per)).size === ls.length, {

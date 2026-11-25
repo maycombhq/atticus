@@ -36,23 +36,16 @@ export function printToCurrent(line: string, o?: PrintOptions): void {
 }
 
 /**
- * ADR 0210 part 5: where a model run's budget line goes and how it asks, for the command that
- * runs (the command line sets it; the AI runtime reads it). Here, beside the printer, so the
- * command line sets it without loading the runtime.
+ * ADR 0210 part 5: a command's budget line goes to `say`; `ask` only where a person answers;
+ * `yes`, --yes; `preflight`, what a run that writes checks first. Its runs share one budget.
  */
 export interface RunIo {
   say(line: string): void;
-  /** Set only where a person can answer (Output.ask). */
   ask?(question: string): Promise<string | undefined>;
-  /** --yes: an unattended run goes past the budget. */
   yes?: boolean;
+  preflight?(root: string): Promise<string | undefined>;
 }
 
 const runIo = new AsyncLocalStorage<RunIo>();
-const listener = new AsyncLocalStorage<(line: string) => void>();
 export const withRunIo = <T>(io: RunIo, work: () => T): T => runIo.run(io, work);
 export const currentRunIo = (): RunIo | undefined => runIo.getStore();
-/** The app's job hears the plan line, to show it as its run panel's start line. */
-export const withPlanListener = <T>(hear: (line: string) => void, work: () => T): T =>
-  listener.run(hear, work);
-export const currentPlanListener = () => listener.getStore();

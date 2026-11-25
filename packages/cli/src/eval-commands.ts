@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import {
+  budgetRuntime,
   combine,
   createRuntime,
   formatOf,
@@ -77,6 +78,8 @@ export async function evalRun(
         root,
         ...(deps.providers ? { providers: deps.providers } : {}),
       });
+      // ADR 0210 part 5: a live eval calls a real model, so it keeps to the budget too.
+      budgetRuntime(rt, { root, limits: op.runtime.budgets.limits });
       liveRuntime = () => rt;
     } catch (e) {
       io.err(

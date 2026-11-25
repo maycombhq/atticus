@@ -660,6 +660,9 @@ describe("Run with AI: hand-off and headless modes", () => {
       expect(await readFile(paths(root).task("report.md"), "utf8")).toContain(
         "Added TransferLimits.",
       );
+      // ADR 0210 part 5: a task's run keeps to runtime.yaml's budget: its request is counted.
+      const { usedIn } = await import("@maycombhq/ai");
+      expect((await usedIn(root, "day", new Date())).sessions).toBe(1);
     },
     T,
   );

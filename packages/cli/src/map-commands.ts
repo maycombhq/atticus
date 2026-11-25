@@ -1411,16 +1411,11 @@ export async function mapCommand(
   // fix round), with its files and the instructions each prompt carries.
   const left = s.batches.slice(s.next);
   const sessions = left.length || (!s.fixRound && s.rejected.length ? 1 : 0);
+  const each = instructionTokens(repo, s.commit) + KEPT_RESERVE;
+  const tokens = left.flat().reduce((n, x) => n + x.tokens, sessions * each);
   const stop =
     sessions &&
-    (await planRun(runtime, {
-      what: `The read of ${repo}`,
-      sessions,
-      tokens:
-        left.flat().reduce((n, x) => n + x.tokens, 0) +
-        sessions * (instructionTokens(repo, s.commit) + KEPT_RESERVE),
-      writes: true,
-    }));
+    (await planRun(runtime, { what: `The read of ${repo}`, sessions, tokens, writes: true }));
   if (stop) {
     io.err(stop);
     return 2;

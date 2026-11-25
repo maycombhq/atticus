@@ -385,7 +385,7 @@ describe("a step the app runs says why, and what to press next", () => {
       join(r2, "org-pack", "runtime.yaml"),
       "schemaVersion: 1\nadapters:\n  model: { type: anthropic }\n",
     );
-    const { currentPlanListener } = await import("@maycombhq/core");
+    const { currentRunIo } = await import("@maycombhq/core");
     const line = "Budget: scan-survey plans 1 session and about 900 tokens; no limit is set.";
     let go = () => undefined as void;
     const s = await startServer({
@@ -396,7 +396,7 @@ describe("a step the app runs says why, and what to press next", () => {
       extend: (r, ctx) =>
         uiModelRunRoutes(r, ctx, {
           runStep: async () => {
-            currentPlanListener()?.(line);
+            currentRunIo()?.say(line);
             await new Promise<void>((done) => (go = done));
             return { code: 0, out: [], err: [line] };
           },

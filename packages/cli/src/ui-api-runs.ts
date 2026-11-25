@@ -141,16 +141,14 @@ export function uiModelRunRoutes(
             // The run the step made: the newest one that wasn't there before it.
             const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
             // ADR 0210 part 5: the run's plan line is the run panel's start line.
-            const { withPlanListener } = await import("@maycombhq/core");
-            const res = await withPlanListener(
-              (l) => c.progress(0, 1, l),
-              () =>
-                runStep([
-                  ...words,
-                  "--mode",
-                  "model",
-                  ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
-                ]),
+            const { withRunIo } = await import("@maycombhq/core");
+            const res = await withRunIo({ say: (l) => c.progress(0, 1, l) }, () =>
+              runStep([
+                ...words,
+                "--mode",
+                "model",
+                ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
+              ]),
             );
             const made = (await listRuns(root, { limit: 100000 })).find(
               (x) => !before.has(x.runId),

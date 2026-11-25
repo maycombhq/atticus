@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { parseJson } from "./cli";
+import { parseJson, reasonFirst } from "./cli";
 import {
   ModelRefused,
   type Cancel,
@@ -244,9 +244,11 @@ async function loop(
     const h = parseJson<HandoffJson>(r.stdout);
     if (!h || typeof h.state !== "string")
       return failed(
-        (r.stderr.trim() || r.stdout.trim() || `atticus ended with exit code ${r.code}`).split(
-          "\n",
-        )[0]!,
+        (
+          reasonFirst(r.stderr) ||
+          r.stdout.trim() ||
+          `atticus ended with exit code ${r.code}`
+        ).split("\n")[0]!,
         rounds,
       );
     if (h.state !== "handoff")
@@ -331,7 +333,7 @@ async function loop(
     const done = await d.cli(doneArgs, token);
     if (done.cancelled) return { state: "cancelled", ...waiting };
     if (done.code !== 0) {
-      const why = (done.stderr.trim() || done.stdout.trim()).split("\n")[0];
+      const why = (reasonFirst(done.stderr) || done.stdout.trim()).split("\n")[0];
       say(
         `The check of the answer found problems${why ? `: ${why}` : ""}. The step decides what next.`,
       );

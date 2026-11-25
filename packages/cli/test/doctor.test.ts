@@ -759,7 +759,7 @@ describe("the AI budget (ADR 0210 part 5)", () => {
     const none = byId(await doctorChecks(here, healthy()), "budget");
     expect(none).toMatchObject({ status: "ok", label: "AI budget" });
     expect(none.detail).toMatch(
-      /^no limit is set \(budgets.limits in runtime.yaml\); used here today/,
+      /^no limit is set \(budgets.limits in runtime.yaml\); used here today: 0 sessions, 0 tokens$/,
     );
     const rt = join(here, "org-pack", "runtime.yaml");
     const text = (await readFile(rt, "utf8")).replace(/^schemaVersion: \d+/m, "schemaVersion: 5");

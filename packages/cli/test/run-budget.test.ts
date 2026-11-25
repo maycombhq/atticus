@@ -6,7 +6,8 @@ import { budgetRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { acquireLock, withRunIo } from "@maycombhq/core";
 import { mapCommand } from "../src/map-commands.js";
 import { main } from "../src/main.js";
-import { runPreflight } from "../src/run-preflight.js";
+import { runPreflight } from "../src/standing.js";
+import { acpStepRunner } from "../src/copilot-acp-steps.js";
 
 /**
  * ADR 0210 part 5 at the command line: the read says its plan before its first prompt, keeps to
@@ -123,5 +124,34 @@ describe("a read's budget (ADR 0210 part 5)", () => {
       if (was === undefined) delete process.env.CI;
       else process.env.CI = was;
     }
+  });
+
+  it("a Copilot session (copilot-acp) is planned, counted and checked again past its plan", async () => {
+    const root = adoptedRepo(
+      [
+        "schemaVersion: 5",
+        "assistants: { allowed: [copilot], default: copilot }",
+        "budgets: { limits: [{ per: run, sessions: 1 }] }",
+        "",
+      ].join("\n"),
+    );
+    const runner = await acpStepRunner(root, {
+      now: NOW,
+      spawn: () => {
+        throw new Error("no Copilot here");
+      },
+    });
+    const o = lines();
+    const step = { line: "read the ledger", change: "map-forge-ledger", writeRoots: [] };
+    await withRunIo({ say: o.io.err }, async () => {
+      await expect(runner(step)).rejects.toThrow("no Copilot here");
+      await expect(runner(step)).rejects.toThrow(
+        /would pass 1 session a run: 1 used and 1 planned/,
+      );
+    });
+    expect(o.err).toHaveLength(1);
+    expect(o.err[0]).toMatch(/^Budget: A Copilot session \(map-forge-ledger\) plans 1 session/);
+    const { usedIn } = await import("@maycombhq/ai");
+    expect((await usedIn(root, "day", NOW())).sessions).toBe(1);
   });
 });
