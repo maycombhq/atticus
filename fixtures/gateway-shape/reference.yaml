@@ -2,6 +2,7 @@
 # proxy forwards, cited at its flow's condition, to the module entry that serves it, or to none.
 # A path alone can't tell the two modules apart (both serve /cxf/api/accounts/{accountId}): only
 # the target server's host, in forge-edge-config, matched to a module's deploy host, can.
+# Every other request meets the last flow, unknown-resource, and is answered 404 by the proxy.
 arrows:
   - from: forge-edge-wallets apiproxy/proxies/default.xml:14
     method: GET
@@ -11,16 +12,16 @@ arrows:
     method: POST
     path: /wallets/v1/accounts
     to: forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:9
-  - from: forge-edge-wallets apiproxy/proxies/default.xml:25
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:20
     method: GET
     path: /wallets/v1/accounts/{id}/holds
-    # rewritten to /accounts/{id}/blocks by resources/jsc/rewrite-holds.js
+    # rewritten to /accounts/{id}/blocks on the wallets target (targets/wallets.xml, resources/jsc/rewrite-holds.js)
     to: forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:12
-  - from: forge-edge-wallets apiproxy/proxies/default.xml:28
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:23
     method: GET
     path: /wallets/v1/statements/{id}
     to: forge-ledger-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:14
-  - from: forge-edge-wallets apiproxy/proxies/default.xml:31
+  - from: forge-edge-wallets apiproxy/proxies/default.xml:26
     method: PUT
     path: /wallets/v1/accounts/{id}/limits
     # its target server, legacy-core, has no host in any repo of the estate: no arrow.

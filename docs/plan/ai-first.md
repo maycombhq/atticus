@@ -128,8 +128,12 @@ The order to build in: 0, 1, 2, 3, 9, 6, 10, 11, 7, then 4, 5, 12, 8.
 ## Item 0's results (2026-11-24): the gateway shape, a small model, and the cost of a check
 
 Fresh agents with none of the answers, on `fixtures/gateway-shape` and public code. "Small" is
-the smallest model available in the workspace. Tokens are each run's report less an empty run's
-61,000: rough.
+the smallest model available in the workspace. Each gate is one run on a few requests or facts,
+so these are signs, not rates. Tokens are what each agent run reported, less an empty run's
+61,000; the runs kept no token logs, so they are rough and can't be checked from the outputs.
+The review of the fixture then added its catch-all flow (so the proxy forwards these five
+requests and no others) and moved the holds rewrite onto its target; the small model's pairing,
+run again on the corrected fixture, was again 5 of 5.
 
 | Run                                                                                                                      | Strong model                                                       | Small model                                        |
 | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------- |
@@ -148,9 +152,12 @@ What this decides:
    recipe, when a person asks, or when the join's misses name that repo. The files no rule
    matched are counted and shown, not sent.
 3. **A composed value is made only of cited captures.** Both first recipes passed every line
-   check with wrong paths; a value built from parts each cited on its line catches all four.
-   The engine has no uncited capture: the file-wide `prefix` of the experiment goes, block
-   scopes (the nearest match above, cited) replace it.
+   check with wrong paths. A value built only from parts each cited on its line catches the
+   strong model's (a literal path part); it does not catch the small model's, whose path was
+   made of cited parts with one part missing. Only the comparison with model-read facts caught
+   those. So both rules hold: cited parts, and proof against other repos' reads. The engine has
+   no uncited capture: the experiment's file-wide `prefix` goes, and block scopes (the nearest
+   match above, cited) replace it.
 4. **A recipe is proven on repos it wasn't written from**, against their model-read facts, as
    planned: the line check alone passed both wrong recipes.
 

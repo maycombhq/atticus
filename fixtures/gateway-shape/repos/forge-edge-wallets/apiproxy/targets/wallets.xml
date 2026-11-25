@@ -1,4 +1,14 @@
 <TargetEndpoint name="wallets">
+  <Flows>
+    <Flow name="rewrite-holds">
+      <Request>
+        <Step>
+          <Name>JS-RewriteHolds</Name>
+        </Step>
+      </Request>
+      <Condition>proxy.pathsuffix MatchesPath "/accounts/*/holds"</Condition>
+    </Flow>
+  </Flows>
   <HTTPTargetConnection>
     <LoadBalancer>
       <Server name="wallets-fuse"/>

@@ -33,4 +33,12 @@
       <to uri="sql:update wallet_account set closed = true where id = :#${header.accountId}"/>
     </route>
   </camelContext>
+  <bean id="camelServlet" class="org.apache.camel.component.servlet.CamelHttpTransportServlet"/>
+  <service interface="javax.servlet.Servlet" ref="camelServlet">
+    <service-properties>
+      <entry key="alias" value="/cxf/api/*"/>
+      <entry key="servlet-name" value="CamelServlet"/>
+    </service-properties>
+  </service>
+  <reference id="dataSource" interface="javax.sql.DataSource" filter="(osgi.jndi.service.name=jdbc/forge)"/>
 </blueprint>
