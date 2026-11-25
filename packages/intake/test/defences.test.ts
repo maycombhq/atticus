@@ -209,3 +209,22 @@ function storedZip(files: Record<string, string>): Uint8Array {
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, centralBytes, end]);
 }
+
+describe("a file taken in again (item 11 of beta.33: each file's class and screening kept)", () => {
+  it("is screened again once its bytes change, and as it was once they are back", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-defences-again-"));
+    await cp(join(DEF, "inputs"), join(root, "inputs"), { recursive: true });
+    const here = { root: ORG, inputsDir: join(root, "inputs") };
+    const notes = join(root, "inputs/inbox/portal-notes.md");
+    const clean = readFileSync(notes, "utf8");
+    const first = await scanInputs(here);
+    expect(first.triage.map((t) => t.id)).toEqual([ITEM]);
+    // The high-risk file's text with a line of its own: not a duplicate of it.
+    const risky = readFileSync(join(DEF, "inputs/inbox/ledger-handover.md"), "utf8");
+    await writeFile(notes, `${risky}\nPortal notes.\n`);
+    const edited = await scanInputs(here);
+    expect(edited.triage.map((t) => t.records)).toContainEqual(["doc.portal-notes"]);
+    await writeFile(notes, clean);
+    expect(await scanInputs(here)).toEqual(first);
+  });
+});

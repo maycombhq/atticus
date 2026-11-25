@@ -10,7 +10,7 @@ import {
   orgPackDirOf,
 } from "@maycombhq/core";
 import { readMermaid } from "@maycombhq/ingestors";
-import { drawioIngestor, readDrawio, resolveNames, type ProfileSystem } from "@maycombhq/reconcile";
+import { drawioIngestor, nameResolver, readDrawio, type ProfileSystem } from "@maycombhq/reconcile";
 import type { Ingestor, ScanContext } from "@maycombhq/sdk";
 import { classify, type Classification } from "./classify.js";
 import { screenFile } from "./screen-file.js";
@@ -81,6 +81,7 @@ interface File {
   path: string;
   bytes: Uint8Array;
   hash: string;
+  memo: ByBytes;
   stem: string;
   inbox: boolean;
   doc: IntakeDocument;
@@ -89,6 +90,17 @@ interface File {
   text?: string;
   family?: string;
 }
+
+/**
+ * What a file's bytes alone decide (its class and its screening), by its path and hash, kept
+ * from the last intake in this process (item 11 of beta.33: the app's Apply took in every file
+ * of inputs/ again each time). Only the files of the last intake are kept.
+ */
+interface ByBytes {
+  c: ReturnType<typeof classify>;
+  s?: ReturnType<typeof screenFile>;
+}
+let byBytes = new Map<string, ByBytes>();
 
 type Rec = Record<string, unknown> & {
   kind: string;
@@ -196,16 +208,22 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
 
   // ---- read, hash and classify
   const files: File[] = [];
+  const seen = new Map<string, ByBytes>();
   for (const abs of paths) {
     const bytes = new Uint8Array(await readFile(abs));
     const path = `inputs/${posix(relative(inputsDir, abs))}`;
     const name = path.split("/").pop()!;
-    const c = classify(name, bytes);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const k = `${path}\u0000${hash}`;
+    const memo = byBytes.get(k) ?? { c: classify(name, bytes) };
+    seen.set(k, memo);
+    const c = memo.c;
     files.push({
       abs,
       path,
       bytes,
-      hash: createHash("sha256").update(bytes).digest("hex"),
+      hash,
+      memo,
       stem: name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name,
       inbox: path.startsWith("inputs/inbox/"),
       ...(c.data !== undefined ? { data: c.data } : {}),
@@ -230,6 +248,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     });
   }
   for (const f of files) f.doc.hash = f.hash;
+  byBytes = seen;
   o.mark?.("read, hash and classify");
 
   // ---- duplicates: the copy outside the inbox (then the first by path) is the one kept
@@ -352,7 +371,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       .map((r) => [r.id, r as unknown as { id: string; system: string }]),
   );
   const systemOf = (id: string) => components.get(id)?.system ?? id;
-  const resolveName = (name: string) => resolveNames([name], records, systems).get(name)!;
+  const resolveName = nameResolver(records, systems);
   /** The component a spec's endpoints belong to: a system with one component is that component. */
   const componentFor = (id: string) => {
     if (components.has(id)) return id;
@@ -614,7 +633,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       decisionIds.set(r.id, r as unknown as Rec);
   const flags = new Map<string, string[]>();
   for (const f of kept) {
-    const { screening, problem } = screenFile(f.path, f.bytes);
+    const { screening, problem } = (f.memo.s ??= screenFile(f.path, f.bytes));
     if (problem) problems.push({ path: f.path, message: `defences: ${problem}` });
     if (!screening || (screening.risk !== "medium" && screening.risk !== "high")) continue;
     const info = { reason: screening.reason, rules: [...screening.rules] as string[] };
@@ -660,16 +679,31 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
   // ---- partner specs never overwrite code: disagreements go to triage
   const recs = records as unknown as Rec[];
   const fromCode = (r: Rec) => r.evidence.some((e) => e.source === "code" || e.source === "config");
+  // Each code endpoint and sync call once, by what a spec's operation is looked up by (item 11:
+  // read again for each operation, the whole catalog each time).
+  const opKey = (component: unknown, method: unknown, path: unknown) =>
+    `${String(component)}\u0000${String(method)}\u0000${String(path)}`;
+  const codeEndpoints = new Map<string, Rec>();
+  const callsTo = new Map<string, Rec[]>();
+  const at = new Map<Rec, number>();
+  for (const r of recs) {
+    if (r.kind === "Endpoint" && fromCode(r)) {
+      const k = opKey(
+        r.component,
+        String(r.method ?? "").toUpperCase(),
+        normalizePath(String(r.normalizedPath ?? r.pathOrTopic)),
+      );
+      if (!codeEndpoints.has(k)) codeEndpoints.set(k, r);
+    } else if (r.kind === "Interface" && r.sync === "sync" && r.method) {
+      at.set(r, at.size);
+      const xs = callsTo.get(String(r.to)) ?? [];
+      callsTo.set(String(r.to), xs);
+      xs.push(r);
+    }
+  }
   for (const { file, component, system, endpoints } of specOps) {
     for (const e of endpoints.filter((x) => x.endpointType === "rest")) {
-      const code = recs.find(
-        (r) =>
-          r.kind === "Endpoint" &&
-          r.component === component &&
-          String(r.method ?? "").toUpperCase() === e.method &&
-          normalizePath(String(r.normalizedPath ?? r.pathOrTopic)) === e.normalizedPath &&
-          fromCode(r),
-      );
+      const code = codeEndpoints.get(opKey(component, e.method, e.normalizedPath));
       if (code?.auth && e.auth && code.auth !== e.auth) {
         const itemId = `conflict.${slug(`${e.id}-auth`)}`;
         const line = e.evidence[0]?.line as number | undefined;
@@ -698,9 +732,8 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       system,
       ...[...components.values()].filter((c) => c.system === system).map((c) => c.id),
     ]);
-    for (const i of recs.filter(
-      (r) => r.kind === "Interface" && ends.has(String(r.to)) && r.sync === "sync" && r.method,
-    )) {
+    const calls = [...ends].flatMap((to) => callsTo.get(to) ?? []);
+    for (const i of calls.sort((a, b) => at.get(a)! - at.get(b)!)) {
       const has = endpoints.some(
         (e) => e.method === String(i.method).toUpperCase() && e.normalizedPath === i.normalizedPath,
       );
