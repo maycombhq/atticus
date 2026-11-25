@@ -1078,6 +1078,40 @@ describe("atticus upgrade names every loose end again with its repo (ADR 0124 ad
       }
       expect(saidBy(v, root)).toContain(RENAMES(2));
       expect(await files(join(root, "catalog"))).toEqual(catalogBefore);
+      // ADR 0210 part 3, the go-past (the hook off): the write runs the step itself and writes,
+      // as a direct upgrade then the write does: the same decision targets, the same loose ends.
+      {
+        const twin = async () => {
+          const d = await mkdtemp(join(tmpdir(), "b30-ids-twin-"));
+          roots.push(d);
+          await cp(root, join(d, "forge"), { recursive: true });
+          return join(d, "forge");
+        };
+        const past = await twin();
+        const direct = await twin();
+        const p = quiet();
+        expect(
+          await main(["verify", "forge-notify", "--write", "--root", past], p.io),
+          saidBy(p, past),
+        ).toBe(0);
+        expect(saidBy(p, past)).not.toContain(RENAMES(2));
+        expect(await upgradeCommand(direct, { by: "pat" }, quiet().io, B30)).toBe(0);
+        const d = quiet();
+        expect(
+          await main(["verify", "forge-notify", "--write", "--root", direct], d.io),
+          saidBy(d, direct),
+        ).toBe(0);
+        for (const x of [past, direct]) expect((await upgradeCheck(x, B30)).pending).toEqual([]);
+        expect((await yamlOf(past, DEC("dec-suppress-fees"))).target).toBe(
+          (await yamlOf(direct, DEC("dec-suppress-fees"))).target,
+        );
+        expect((await yamlOf(past, DEC("dec-suppress-fees"))).target).toBe(
+          "unresolved.forge-notify.c-7",
+        );
+        expect(unresolvedIds(await generated(past))).toEqual(
+          unresolvedIds(await generated(direct)),
+        );
+      }
       // The step has work: the read verify checked, as forge-notify's facts slot, and the carry.
       const fresh = await clone(root);
       await cp(join(root, "workspace"), join(fresh, "workspace"), { recursive: true });

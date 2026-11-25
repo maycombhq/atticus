@@ -78,7 +78,7 @@ const WITHOUT_THE_APP: Record<ConfirmedWrite, { what: string; cli: string }> = {
   },
   "step-run": {
     what: "Running a step with a team's tool acts on their systems",
-    cli: "atticus todo run <step> --with <executor> --approve <you> --inputs <sha-256>",
+    cli: "atticus todo run <step> --with <executor> --approve --inputs <sha-256>",
   },
   "ai-model": {
     what: "Changing where runtime.yaml sends the model's key (its provider, keyEnv or address)",
@@ -93,7 +93,7 @@ const WITHOUT_THE_APP: Record<ConfirmedWrite, { what: string; cli: string }> = {
   // ADR 0191: the plan's work items written to a live tracker, and an owner question sent.
   "work-items": {
     what: "Putting the plan's stories and tasks in the work tracker writes work items",
-    cli: "atticus ado sync <change> --approve <you>",
+    cli: "atticus ado sync <change> --approve",
   },
   "owner-ask": {
     what: "Sending an owner question posts a message",

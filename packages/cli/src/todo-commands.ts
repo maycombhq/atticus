@@ -251,7 +251,7 @@ export async function todoDone(
 }
 
 /**
- * atticus todo run <step> --with <executor> [--approve <you> --inputs <sha-256>] [--fill-only]
+ * atticus todo run <step> --with <executor> [--approve --inputs <sha-256>] [--fill-only]
  * Without --approve it shows the exact inputs and their sha-256, which the approval must name.
  */
 export async function todoRun(
@@ -263,7 +263,7 @@ export async function todoRun(
 ): Promise<number> {
   if (!stepRef || !o.with) {
     io.err(
-      "Usage: atticus todo run <step> --with <executor> [--approve <you> --inputs <sha-256>] [--fill-only]",
+      "Usage: atticus todo run <step> --with <executor> [--approve --inputs <sha-256>] [--fill-only]",
     );
     return 2;
   }
@@ -279,7 +279,7 @@ export async function todoRun(
       for (const [k, v] of Object.entries(s.inputs))
         io.out(`  ${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
       io.out(
-        `To approve exactly these inputs: atticus todo run ${s.id} --with ${o.with} --approve <you> --inputs ${sha}${o.fillOnly ? " --fill-only" : ""}`,
+        `To approve exactly these inputs: atticus todo run ${s.id} --with ${o.with} --approve --inputs ${sha}${o.fillOnly ? " --fill-only" : ""}`,
       );
       return 1;
     }

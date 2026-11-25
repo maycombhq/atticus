@@ -29,6 +29,8 @@ describe("--approve is a person's", () => {
       ["change", "handoff", "add-wallets", "--approve"],
       ["change", "sync", "add-wallets", "--approve"],
       ["task", "run", "add-wallets", "t1", "--approve"],
+      // The digest's --send posts through the notify adapter: the click is the approval.
+      ["digest", "--send"],
     ]) {
       const r = await run([...argv, "--root", "/nowhere"]);
       expect(r.code, argv.join(" ")).toBe(2);
@@ -46,5 +48,7 @@ describe("--approve is a person's", () => {
     delete process.env.ATTICUS_ASSISTANT;
     const r = await run(["change", "handoff", "add-wallets", "--approve", "--root", "/nowhere"]);
     expect(r.err).not.toMatch(/Approve in a terminal of your own/);
+    const d = await run(["digest", "--send", "--root", "/nowhere"]);
+    expect(d.err).not.toMatch(/Approve in a terminal of your own/);
   });
 });

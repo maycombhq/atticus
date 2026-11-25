@@ -140,6 +140,23 @@ const asVerify = (d: Desc): Desc =>
     ? { t: "verify-write", slot: d.slot, ok: true }
     : d;
 
+/**
+ * ADR 0210 part 3: a write a person runs as part of the work, which goes past hand edits and
+ * removals when no confirm was given: verify --write, the app's Apply (the same write, run as the
+ * server runs it, its stop after the result included), and Connect to…'s pairing or move, whose
+ * Apply is verify --write; `again` of one of them too. The model has no map's Apply of its own.
+ */
+const PERSONS_WRITES = new Set<string>([
+  "verify-write",
+  "apply-app",
+  "crash-after-result",
+  "pair",
+  "move",
+]);
+const personsWrite = (s: Step) =>
+  PERSONS_WRITES.has(s.desc.t) ||
+  (s.desc.t === "again" && !!s.inner && PERSONS_WRITES.has(s.inner.t));
+
 /** The step wrote a build: a command that builds, and it succeeded. */
 const builtOk = (s: Step) =>
   !!s.outcome?.wrote && BUILDS.has(s.desc.t) && !(s.desc.t === "upgrade" && !s.desc.yes);
@@ -817,9 +834,10 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     );
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
-    // ADR 0210 part 3: a person's verify --write with no confirm writes the removals and lists
-    // them (nothing-removed-unexplained holds it to the list); only catalog build waits for one.
-    if (n === undefined && s.desc.t === "verify-write" && !s.confirmOf) return;
+    // ADR 0210 part 3: a person's write with no confirm (verify --write, the app's Apply) writes
+    // the removals and lists them (nothing-removed-unexplained holds it to the list); only
+    // catalog build waits for one.
+    if (n === undefined && personsWrite(s) && !s.confirmOf) return;
     if (n === undefined)
       fail(
         "large-removals-confirmed",
@@ -964,7 +982,7 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     // ADR 0210 part 3: a person's verify --write with no confirm keeps the edits as curated (as
     // curate-edits does) before it writes: kept, not lost, when its curated files changed.
     if (
-      s.desc.t === "verify-write" &&
+      personsWrite(s) &&
       s.confirm?.discardEdits === undefined &&
       changedPaths(s.before.curated, s.after.curated).length > 0
     )

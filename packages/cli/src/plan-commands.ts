@@ -283,7 +283,7 @@ const approver = (by: string | undefined, now: () => Date) =>
     ? (w: PlannedWrite): Approval => ({ by: by.replace(/^@/, ""), at: iso(now()), ref: w.key })
     : undefined;
 
-/** atticus ado sync <change> [--dry-run] [--approve <you>] [--epic <id>] [--json] */
+/** atticus ado sync <change> [--dry-run] [--approve] [--epic <id>] [--json] */
 export async function adoSync(
   root: string,
   changeId: string | undefined,
@@ -292,7 +292,7 @@ export async function adoSync(
   deps: PlanDeps = {},
 ): Promise<number> {
   if (!changeId) {
-    io.err("Usage: atticus ado sync <change> [--dry-run] [--approve <you>] [--epic <id>] [--json]");
+    io.err("Usage: atticus ado sync <change> [--dry-run] [--approve] [--epic <id>] [--json]");
     return 2;
   }
   try {
@@ -332,7 +332,7 @@ export async function adoSync(
   }
 }
 
-/** atticus plan submit <change> [--dry-run] [--approve <you>] [--json]: file snow.md's drafts. */
+/** atticus plan submit <change> [--dry-run] [--approve] [--json]: file snow.md's drafts. */
 export async function snowSubmit(
   root: string,
   changeId: string | undefined,
@@ -341,7 +341,7 @@ export async function snowSubmit(
   deps: PlanDeps = {},
 ): Promise<number> {
   if (!changeId) {
-    io.err("Usage: atticus plan submit <change> [--dry-run] [--approve <you>] [--json]");
+    io.err("Usage: atticus plan submit <change> [--dry-run] [--approve] [--json]");
     return 2;
   }
   try {

@@ -106,6 +106,8 @@ async function frameworksKnownTo(root: string): Promise<string[]> {
 export interface VerifyCommandOptions {
   /** beta.32: `verify --all` checked once that no `atticus upgrade` is owed (upgradeBeforeWrite). */
   upgradeChecked?: boolean;
+  /** ADR 0210 part 3: `verify --all` ran the upgrade owed first (said in --json as `upgraded`). */
+  upgradedFirst?: boolean;
   /** ADR 0205 step 2 (the app's Apply): the write's caches written after its result. */
   cachesAfterResult?: boolean;
   /** The repo's checkout, when not the base clone or (adopted in place) the root itself. */
@@ -358,7 +360,8 @@ export async function verifyAllCommand(
   const repos = only ? read.filter((r) => only.includes(r)) : read;
   // beta.32: an upgrade owed is said once, before any repo is verified.
   const upgradeChecked = each.write === true && each.plan === undefined;
-  if (upgradeChecked && (await upgradeRefusal(root, io, each.json))) return 1;
+  const up = upgradeChecked ? await upgradeRefusal(root, io, each.json) : undefined;
+  if (up === "stopped") return 1;
   const failed: string[] = [];
   // v31 (one build for many repos): with --write over two repos or more, each repo is verified as
   // before and its write held; the held writes are then one build, one guard and one undo step,
@@ -412,6 +415,7 @@ export async function verifyAllCommand(
         {
           ...each,
           ...(upgradeChecked ? { upgradeChecked: true } : {}),
+          ...(up === "ran" ? { upgradedFirst: true } : {}),
           onLeftOut: (l) => (leftOut = l.length),
           ...(oneBuild ? { writeFacts: holdWrite } : {}),
         },
@@ -661,16 +665,20 @@ async function leftOutOfThisRead(
 }
 
 /**
- * ADR 0210 part 3 (beta.32 said it and stopped): an upgrade a write needs first is run, and said;
- * true only when it was owed and failed, so the write stops on the upgrade's own words.
+ * ADR 0210 part 3 (beta.32 said it and stopped): an upgrade a write needs first is run, and said:
+ * "ran" when it ran, "stopped" when it was owed and failed (the write stops on the upgrade's own
+ * words), undefined when none was owed.
  */
-async function upgradeRefusal(root: string, io: Output, json?: boolean): Promise<boolean> {
+async function upgradeRefusal(
+  root: string,
+  io: Output,
+  json?: boolean,
+): Promise<"ran" | "stopped" | undefined> {
   const { upgradeBeforeWrite, runUpgradeFirst } = await import("./upgrade.js");
-  if (!(await upgradeBeforeWrite(root))) return false;
-  const ran = await runUpgradeFirst(root, io);
-  if (ran) return false;
+  if (!(await upgradeBeforeWrite(root))) return undefined;
+  if (await runUpgradeFirst(root, io)) return "ran";
   if (json) io.out(JSON.stringify({ written: false, upgradeFirst: true }, null, 2));
-  return true;
+  return "stopped";
 }
 
 export async function verifyCommand(
@@ -688,6 +696,8 @@ export async function verifyCommand(
     );
     return 2;
   }
+  /** ADR 0210 part 3: this write ran the upgrade owed first (--json's `upgraded`). */
+  let upgradedHere = o.upgradedFirst === true;
   // Beta.28.2 (ADR 0197): a --write over a catalog a newer Atticus built writes nothing, not
   // even the facts file's repairs: it refuses first, as the build's guard does, and says so.
   if (o.write) {
@@ -703,7 +713,11 @@ export async function verifyCommand(
       if (o.json) io.out(JSON.stringify({ written: false, refused: refusal }, null, 2));
       return 1;
     }
-    if (!o.upgradeChecked && (await upgradeRefusal(root, io, o.json))) return 1;
+    if (!o.upgradeChecked) {
+      const up = await upgradeRefusal(root, io, o.json);
+      if (up === "stopped") return 1;
+      if (up === "ran") upgradedHere = true;
+    }
   }
   // A-room: the facts file is read a line at a time, and the read stops itself with a message
   // once the heap is past its ceiling. The same guard is passed to the verifier below, so a big
@@ -777,11 +791,17 @@ export async function verifyCommand(
   // ADR 0210 part 3: a write keeps what the last read stored and this one left out, while every
   // file it cites is unchanged (the carry below checks its lines again): a second read that
   // misses a fact doesn't remove its record. A fact in a changed file goes with the change.
+  // They are checked with this read's facts, but they are not this read's: they go into the
+  // catalog's slot only (never into the facts file the read wrote), and the commits, coverage and
+  // completeness said are this read's alone.
   const keptFromLast = o.write ? await leftOutOfThisRead(root, repo, parsed.facts) : [];
-  if (keptFromLast.length) parsed.facts.push(...keptFromLast);
+  const keptIds = new Set(keptFromLast.map((f) => f.id));
+  const checked = keptFromLast.length ? [...parsed.facts, ...keptFromLast] : parsed.facts;
   // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
   // where every file they cite is unchanged since, and read again where one changed.
-  const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
+  const { carry, missing: missingAll } = await carryOf(dir, checked, commit, o.git);
+  const ownCommits = new Set(parsed.facts.map((f) => f.commit));
+  const missing = missingAll.filter((c) => ownCommits.has(c));
   // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
   const inputs = await verifyInputsOf(root, repo, dir);
   const { corrections, reviewed, estate, conventions } = inputs;
@@ -794,8 +814,9 @@ export async function verifyCommand(
   let report;
   try {
     report = await verifyFacts({
-      facts: parsed.facts,
+      facts: checked,
       source,
+      ...(keptIds.size ? { heldOver: keptIds } : {}),
       // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
       ...(off.has("derived-names") ? { derivedNames: false } : {}),
       ...(off.has("readers") ? { readers: false } : {}),
@@ -817,9 +838,14 @@ export async function verifyCommand(
     io.err(`atticus verify ${repo}: ${e.message}`);
     return 2;
   }
-  if (keptFromLast.length) {
-    const ids = new Set(keptFromLast.map((f) => f.id));
-    const kept = report.accepted.filter((f) => ids.has(f.id));
+  /** The kept facts that still verify: written into the catalog's slot beside this read's. */
+  let kept: Fact[] = [];
+  if (keptIds.size) {
+    const ids = keptIds;
+    kept = report.accepted.filter((f) => ids.has(f.id));
+    // This read's own report: the kept facts are out of what it accepted, rejected or carried.
+    report.accepted = report.accepted.filter((f) => !ids.has(f.id));
+    report.carried = report.carried.filter((c) => !ids.has(c.id));
     if (kept.length)
       io.err(
         `Kept ${kept.length} ${kept.length === 1 ? "fact" : "facts"} of the last read that this read left out, every file ${kept.length === 1 ? "it cites" : "they cite"} unchanged: ${kept
@@ -944,6 +970,14 @@ export async function verifyCommand(
       ? " (every fact of the read was rejected, so nothing of it would be written)"
       : "";
   const rejectedNote = `${leftOut && !leftOut.ok ? `${leftOut.problem}. ` : ""}Nothing written: ${n ? `${n} ${n === 1 ? "fact was" : "facts were"} rejected${whyWhole}` : "some lines of the read were refused"}, so ${rel}/${repo}.jsonl and the catalog are left as they were. Fix them from ${rel}/${repo}.rejected.jsonl and run atticus verify ${repo} --write again.`;
+  /** What goes into the catalog's slot: this read's facts, then the facts kept from the last. */
+  const ownIds = new Set((partial?.facts ?? report.accepted).map((f) => f.id));
+  const toCatalog = [
+    ...(partial?.facts ?? report.accepted),
+    ...kept.filter((f) => !ownIds.has(f.id)),
+  ];
+  /** ADR 0210 part 3: what the write went past to write (--json says it). */
+  let went: import("./map-render-commands.js").WentPast | undefined;
   // N2: a partial write refused (guards, the lock) says the facts it would have left out.
   const refusedLeftOut = () =>
     partial
@@ -963,11 +997,12 @@ export async function verifyCommand(
       written = await writeFactsIntoCatalog(
         root,
         repo,
-        partial?.facts ?? report.accepted,
+        toCatalog,
         {
           dir,
           command: `atticus verify ${repo} --write`,
           ...(o.now ? { now: o.now() } : {}),
+          onWentPast: (w) => (went = w),
           ...(commit ? { commit } : {}),
           ...(complete ? { readComplete: true } : {}),
           ...(o.allowRemovals !== undefined ? { allowRemovals: o.allowRemovals } : {}),
@@ -999,6 +1034,17 @@ export async function verifyCommand(
           ...(reviewedBad.length ? { reviewedProblems: reviewedBad } : {}),
           ...(written ? { written } : {}),
           ...(written && partial ? { leftOut: partial.leftOut } : {}),
+          // ADR 0210 part 3, additive: what the write kept, removed and ran first.
+          ...(kept.length || went?.editsKept?.length
+            ? {
+                kept: {
+                  facts: kept.map((f) => f.id),
+                  edits: went?.editsKept?.length ?? 0,
+                },
+              }
+            : {}),
+          ...(written && went?.removed?.length ? { removed: went.removed } : {}),
+          ...(upgradedHere || went?.upgraded ? { upgraded: true } : {}),
           ...(refusedBuild ? { refused: refusedBuild } : {}),
         },
         null,
@@ -1274,7 +1320,7 @@ export async function verifyCommand(
   const written = await writeFactsIntoCatalog(
     root,
     repo,
-    partial?.facts ?? report.accepted,
+    toCatalog,
     {
       dir,
       command: `atticus verify ${repo} --write`,

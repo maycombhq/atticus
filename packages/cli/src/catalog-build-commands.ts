@@ -206,6 +206,8 @@ export async function catalogBuild(
     plan?: string;
     /** Beta.28: the caller holds the scan's lock already (it wrote what this builds). */
     held?: boolean;
+    /** ADR 0210 part 3: told the refused build (the map's Apply goes past it). */
+    onRefused?: (r: BuildAndWrite) => void;
   },
   io: Output,
 ): Promise<number> {
@@ -242,6 +244,7 @@ export async function catalogBuild(
     });
     if (!o.check && !r.guard.refused && !r.changed) progress.end({ done: true });
     if (!o.check && r.guard.refused) await refusalEnds(root, r.guard.refused);
+    if (!o.check && r.guard.refused) o.onRefused?.(r);
     if (o.check) {
       if (o.json)
         io.out(JSON.stringify({ upToDate: r.upToDate, sources: r.build.sources }, null, 2));
@@ -936,6 +939,8 @@ export async function catalogEdits(
     dropFields?: number;
     /** The app's: GET /api/build's `pending.plan` the confirm is of, checked under the lock. */
     plan?: string;
+    /** ADR 0210 part 3: the caller holds the scan's lock already (the map's Apply goes past). */
+    held?: boolean;
   },
   io: Output,
 ): Promise<number> {
@@ -1016,7 +1021,9 @@ export async function catalogEdits(
     }
     return 1;
   }
-  return locked(root, "atticus catalog edits --curate", io, async () => {
+  const underLock = <T>(f: () => Promise<T>) =>
+    o.held ? f() : locked(root, "atticus catalog edits --curate", io, f);
+  return underLock(async () => {
     // Planned again under the lock: what it writes is what it listed, or nothing.
     const newerNow = await newerCatalogFiles(root, { undoDir });
     if (newerNow.length)
@@ -1346,6 +1353,13 @@ export async function buildAfterDecisions(
     inputs?: ReadonlySet<string>;
     /** What the build would have removed before this run wrote anything: never this run's. */
     pending?: ReadonlySet<string>;
+    /**
+     * ADR 0210 part 3 (the map's Apply, a person's write): a build that would refuse only for
+     * hand edits or removals goes past them as verify --write does (`writeGoingOn`): the edits
+     * kept as the person's, the removals written and listed. A count the confirm gave runs as
+     * asked; `atticus catalog build` itself stays strict.
+     */
+    goPast?: boolean;
   } = {},
 ): Promise<number> {
   const command = "atticus catalog build";
@@ -1373,14 +1387,36 @@ export async function buildAfterDecisions(
   if (ours)
     for (const x of removals.filter((y) => !targets.has(y.id)))
       io.out(`Also takes away ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}.`);
-  return catalogBuild(
+  const { writeFactsHooks, writeGoingOn } = await import("./map-render-commands.js");
+  if (ours || !r || !o.goPast || writeFactsHooks.strict)
+    return catalogBuild(
+      root,
+      {
+        ...(ours ? { allowRemovals: removals.length, plan: buildPlanOf(listed.guard) } : {}),
+        held: true,
+      },
+      io,
+    );
+  let code = 1;
+  await writeGoingOn(
     root,
-    {
-      ...(ours ? { allowRemovals: removals.length, plan: buildPlanOf(listed.guard) } : {}),
-      held: true,
+    async (w, out) => {
+      code = await catalogBuild(
+        root,
+        {
+          ...(w.allowRemovals !== undefined ? { allowRemovals: w.allowRemovals } : {}),
+          held: true,
+          onRefused: w.onRefused,
+        },
+        out,
+      );
+      return code === 0 ? true : undefined;
     },
+    undefined,
     io,
+    { held: true, removalsSaid: true },
   );
+  return code;
 }
 
 /**
@@ -1494,8 +1530,10 @@ export async function applyMapEdits(
   let built = false;
   // ADR 0210 part 3: an upgrade owed runs first, before the lock it takes itself.
   const up = await import("./upgrade.js");
-  if ((await up.upgradeBeforeWrite(root)) && !(await up.runUpgradeFirst(root, io)))
-    return { code: 1, edits: [], built: false, wrote: [] };
+  if ((await up.upgradeBeforeWrite(root)) && !(await up.runUpgradeFirst(root, io))) {
+    io.err("Nothing was saved and nothing was built.");
+    return { code: 1, edits: outcomes, built: false, wrote: [] };
+  }
   const code = await locked(root, o.what ?? "Edit the map", io, async () => {
     const by = o.by ?? (await gitUser(root)).handle;
     const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1832,7 +1870,7 @@ export async function applyMapEdits(
     }
     io.out(`${n} change${n === 1 ? "" : "s"} saved. Building the catalog once, with all of them.`);
     await mapEditHooks.beforeBuild?.();
-    const c = await buildAfterDecisions(root, targets, io, { inputs, pending });
+    const c = await buildAfterDecisions(root, targets, io, { inputs, pending, goPast: true });
     built = c === 0;
     if (c !== 0)
       io.err(

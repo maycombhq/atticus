@@ -1313,8 +1313,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     }
   }
   // ADR 0210 part 7 (the sweep's gap): an approval is a person's. In a coding assistant's own
-  // terminal `--approve` was recorded under the Git user; it is refused there as a waive is.
-  if (values.approve === true) {
+  // terminal `--approve` was recorded under the Git user; it is refused there as a waive is. So is
+  // the digest's `--send`, which posts through the notify adapter on the person's say.
+  if (values.approve === true || values.send === true) {
     const { underAssistant } = await import("./assistant-env.js");
     if (underAssistant(process.env)) {
       io.err(

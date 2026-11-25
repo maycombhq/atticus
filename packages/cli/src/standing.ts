@@ -216,16 +216,19 @@ interface RefusalRun {
 const runs = new AsyncLocalStorage<RefusalRun>();
 
 /**
- * ADR 0210 part 3: a refusal the write went past (it kept hand edits as the person's, ran an
- * upgrade, or listed removals, then wrote): the run forgets it, so `done` ends no line for it and
- * a job's result carries no refusal.
+ * ADR 0210 part 3: what the command's scope holds before a write that may go past a refusal.
+ * The restore it returns puts that back (refusalTakenBack, then the saved state), so a refusal
+ * the write went past ends no line and a job's result carries none, while a refusal said
+ * before the write (another repo's, in verify --all) still does.
  */
-export function refusalResolved(): void {
+export function refusalSaved(): () => void {
   const run = runs.getStore();
-  if (!run) return;
-  delete run.build;
-  delete run.line;
-  delete run.said;
+  if (!run) return () => undefined;
+  const saved: RefusalRun = { ...run };
+  return () => {
+    refusalTakenBack();
+    Object.assign(run, saved);
+  };
 }
 
 /**

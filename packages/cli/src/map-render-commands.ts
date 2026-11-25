@@ -104,7 +104,7 @@ import {
 } from "@maycombhq/verify";
 import { baseClonePath, gitUser, isInPlace, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { refusalEnds, refusalResolved } from "./standing.js";
+import { refusalEnds, refusalSaved } from "./standing.js";
 import { askHosts } from "./host-questions.js";
 import { termsWrite } from "./term-lines.js";
 import { checkoutOf } from "./facts-files.js";
@@ -741,6 +741,8 @@ export interface WriteFactsOptions {
    * out again under the lock; another list writes nothing (the review of beta.27).
    */
   plan?: string;
+  /** ADR 0210 part 3: told what the write went past to write (only when it wrote). */
+  onWentPast?: (w: WentPast) => void;
 }
 
 export async function writeFactsIntoCatalog(
@@ -764,7 +766,9 @@ export async function writeFactsIntoCatalog(
     writeFactsHooks.strict
   )
     return once(o, io);
-  return writeGoingOn(root, (oo, out) => once({ ...o, ...oo }, out), o.onRefused, io);
+  return writeGoingOn(root, (oo, out) => once({ ...o, ...oo }, out), o.onRefused, io, {
+    ...(o.onWentPast ? { onWentPast: o.onWentPast } : {}),
+  });
 }
 
 /** The refusals a write goes past (ADR 0210 part 3), and how. */
@@ -780,12 +784,36 @@ export function goesPast(r: BuildRefusal): boolean {
   );
 }
 
+/** What a write that went past a refusal did (ADR 0210 part 3), for --json and the app. */
+export interface WentPast {
+  /** It ran `atticus upgrade --yes` first. */
+  upgraded?: true;
+  /** The hand edits it kept as the person's (curated), by path. */
+  editsKept?: string[];
+  /** The removals it wrote, each with what explains it. */
+  removed?: { kind: string; id: string; explainedBy: string[]; reasons: string[] }[];
+}
+
+/** A refusal's reasons and counts: a round that refuses the same again made no progress. */
+const refusalKey = (r: BuildRefusal) =>
+  JSON.stringify([
+    [...r.reasons].sort(),
+    r.edits?.length ?? 0,
+    r.removals?.length ?? 0,
+    r.allowRemovals ?? null,
+    r.discardEdits ?? null,
+  ]);
+
 /**
  * ADR 0210 part 3: a write that doesn't block. It writes; if its build refuses only for removals
  * over the limit, hand edits or an upgrade owed, it runs the upgrade, keeps the hand edits as the
  * person's (as `atticus catalog edits --curate` does), and writes again with the removals the
  * build listed, saying each. Any other refusal (nothing read, an empty catalog, a newer Atticus,
- * a removal no input explains, a build.json that doesn't read) stays, said as before.
+ * a removal no input explains, a build.json that doesn't read) stays, said as before; so does a
+ * round that refuses the same as the one before it (no progress). What it did to the metarepo
+ * (the upgrade, the edits kept) is always said; the removals only once a round wrote them.
+ * `held`: the caller holds the scan's lock (the map's Apply): the edits are curated under it,
+ * and an upgrade, which takes the lock itself, isn't run here (the caller ran it before).
  */
 export async function writeGoingOn<T>(
   root: string,
@@ -795,10 +823,22 @@ export async function writeGoingOn<T>(
   ) => Promise<T | undefined>,
   onRefused: ((r: BuildAndWrite) => void) | undefined,
   io: Output,
+  opts: {
+    held?: boolean;
+    onWentPast?: (w: WentPast) => void;
+    /** The write lists the removals it wrote itself (`atticus catalog build`'s lines): not again. */
+    removalsSaid?: boolean;
+  } = {},
 ): Promise<T | undefined> {
-  const said: string[] = [];
+  const restore = refusalSaved();
+  /** What it did to the metarepo: said however the write ends. */
+  const did: string[] = [];
+  /** The removals of the latest round: said only when that round wrote. */
+  let removed: string[] = [];
+  const went: WentPast = {};
   let allow: number | undefined;
-  for (let round = 0; round < 4; round++) {
+  let last: string | undefined;
+  for (let round = 0; ; round++) {
     let refused: BuildAndWrite | undefined = undefined;
     const held: string[] = [];
     const quiet: Output = {
@@ -822,59 +862,64 @@ export async function writeGoingOn<T>(
         ...(io.progress ? { progress: io.progress } : {}),
       },
     ).catch((e: unknown) => {
+      for (const l of did) io.out(l);
       flush();
       throw e;
     });
     const why = (refused as BuildAndWrite | undefined)?.guard.refused;
-    if (!why || !goesPast(why) || round === 3) {
-      for (const l of said) io.out(l);
+    const stop = (extra: readonly string[] = []) => {
+      for (const l of did) io.out(l);
       flush();
-      if (why && refused) onRefused?.(refused);
+      for (const l of extra) io.err(l);
+      if (refused) onRefused?.(refused);
+      return r;
+    };
+    if (!why) {
+      for (const l of did) io.out(l);
+      if (r !== undefined) {
+        if (!opts.removalsSaid) for (const l of removed) io.out(l);
+        // The refusals gone past end no line; one said before this write still does.
+        if (round > 0) restore();
+        if (round > 0) opts.onWentPast?.(went);
+      }
+      flush();
       return r;
     }
+    const key = refusalKey(why);
+    const passable =
+      goesPast(why) && !(opts.held && why.reasons.includes("not-upgraded")) && key !== last;
+    if (!passable || round >= 4) return stop();
+    last = key;
     if (why.reasons.includes("not-upgraded")) {
-      const { upgradeCommand } = await import("./upgrade.js");
+      const { runUpgradeFirst } = await import("./upgrade.js");
       const up: string[] = [];
-      const code = await upgradeCommand(
-        root,
-        { yes: true, by: (await gitUser(root)).handle },
-        { out: (l) => up.push(l), err: (l) => up.push(l) },
-      );
-      if (code !== 0) {
-        for (const l of said) io.out(l);
-        flush();
-        for (const l of up) io.err(l);
-        if (refused) onRefused?.(refused);
-        return r;
-      }
-      said.push(
-        "Ran atticus upgrade first, which this metarepo still needed (its own undo step: atticus catalog undo takes it back after this write's).",
-      );
+      if (!(await runUpgradeFirst(root, { out: (l) => up.push(l), err: (l) => up.push(l) })))
+        return stop(up);
+      went.upgraded = true;
+      did.push(...up);
     }
     if (why.reasons.includes("hand-edits")) {
       const { catalogEdits } = await import("./catalog-build-commands.js");
-      const n = why.edits?.length ?? 0;
+      const paths = (why.edits ?? []).map((e) => e.path);
+      const n = paths.length;
+      const wrote: string[] = [];
       const notKept: string[] = [];
       const code = await catalogEdits(
         root,
-        { curate: true, by: (await gitUser(root)).handle },
-        { out: () => undefined, err: (l) => notKept.push(l) },
+        { curate: true, by: (await gitUser(root)).handle, ...(opts.held ? { held: true } : {}) },
+        { out: (l) => wrote.push(l), err: (l) => notKept.push(l) },
       );
       // An edit curate can't keep (a file that doesn't read as a record, one the build no longer
-      // makes) would be lost to the write: the refusal stands, with curate's words.
+      // makes) would be lost to the write: the refusal stands, with curate's words, and the
+      // decisions curate did write for the others are said (they stand, for the next build).
       if (code !== 0 || notKept.length) {
-        for (const l of said) io.out(l);
-        flush();
-        for (const l of notKept) io.err(l);
-        if (refused) onRefused?.(refused);
-        return r;
+        did.push(...wrote.filter((l) => !/^atticus catalog build \(or the next scan\)/.test(l)));
+        return stop(notKept);
       }
-      said.push(
-        `Kept ${n} hand ${n === 1 ? "edit" : "edits"} of the catalog as yours (curated, as atticus catalog edits --curate does): ${(
-          why.edits ?? []
-        )
+      went.editsKept = [...(went.editsKept ?? []), ...paths];
+      did.push(
+        `Kept ${n} hand ${n === 1 ? "edit" : "edits"} of the catalog as yours (curated, as atticus catalog edits --curate does): ${paths
           .slice(0, 5)
-          .map((e) => e.path)
           .join(
             ", ",
           )}${n > 5 ? ` and ${n - 5} more` : ""}. To discard instead: atticus catalog undo, then write again with --discard-edits ${n}.`,
@@ -882,17 +927,20 @@ export async function writeGoingOn<T>(
     }
     if (why.reasons.includes("large-removals") && why.allowRemovals !== undefined) {
       allow = why.allowRemovals;
-      said.push(
+      const list = why.removals ?? [];
+      went.removed = list.map((x) => ({
+        kind: x.kind,
+        id: x.id,
+        explainedBy: [...x.explainedBy],
+        reasons: [...x.reasons],
+      }));
+      removed = [
         `Removed ${allow} ${allow === 1 ? "record" : "records"} the new read no longer has (atticus catalog undo takes the write back):`,
-        ...(why.removals ?? [])
-          .slice(0, 20)
-          .map((x) => `  ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
-        ...((why.removals?.length ?? 0) > 20 ? [`  and ${why.removals!.length - 20} more`] : []),
-      );
+        ...list.slice(0, 20).map((x) => `  ${x.kind}/${x.id}: ${x.explainedBy.join("; ")}`),
+        ...(list.length > 20 ? [`  and ${list.length - 20} more`] : []),
+      ];
     }
-    refusalResolved();
   }
-  return undefined;
 }
 
 /** One repo of a write over many: its kept facts and its own write's options. */
@@ -919,7 +967,25 @@ export function writeManyFactsIntoCatalog(
   io: Output,
   each: (i: number, r: WriteFactsResult | Error) => Promise<void>,
 ): Promise<unknown[] | undefined> {
-  return writeFactsOf(root, items, o, io, each);
+  // The one build says no refusal of its own (each repo's own write does, after it): the run's
+  // `onRefused` is never told it.
+  const { onRefused: _told, ...run } = o;
+  // ADR 0210 part 3: the one build goes past what one repo's write goes past, so a hand edit or
+  // a removal keeps it one build and one undo step. A confirmed count, or the strict hook, as asked.
+  if (
+    o.plan !== undefined ||
+    o.allowRemovals !== undefined ||
+    o.discardEdits !== undefined ||
+    writeFactsHooks.strict
+  )
+    return writeFactsOf(root, items, run, io, each);
+  return writeGoingOn(
+    root,
+    (oo, out) => writeFactsOf(root, items, { ...run, ...oo }, out, each),
+    undefined,
+    io,
+    { ...(o.onWentPast ? { onWentPast: o.onWentPast } : {}) },
+  );
 }
 
 async function writeFactsOf(
@@ -1129,7 +1195,11 @@ async function writeFactsOf(
     if (built.changed) io.err(pageChanged("what the build would remove or discard"));
     if (built.guard.refused || built.changed) {
       // v31: the one build refused writes nothing and says nothing: each repo's own write does.
-      if (many) return undefined;
+      // Its refusal is told (ADR 0210 part 3: the go-past around it reads it).
+      if (many) {
+        if (built.guard.refused) o.onRefused?.(built);
+        return undefined;
+      }
       if (built.guard.refused) for (const l of buildLines(root, built)) io.err(l);
       if (built.guard.refused) await refusalEnds(root, built.guard.refused);
       if (built.guard.refused) o.onRefused?.(built);

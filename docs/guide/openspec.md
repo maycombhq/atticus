@@ -198,7 +198,7 @@ The stories are worked out from the target flows, one per repo and flow. On the 
 
 ## Putting the stories in the work tracker
 
-The Stories tab lists the change's feature, each story and its tasks as work items, with what `sync.yaml` remembers of each (`GET /api/changes/<id>/work-items`). **Put them in the work tracker** writes them (`POST`), the same as `atticus ado sync <change> --approve <you>`: with `adapters.workTracker: { type: manual }` each is a step on Home › Manual steps with the fields to copy (title, description, acceptance criteria, parent) and where to record the id the tracker gave it; with a live tracker it asks you to confirm first (ADR 0186). The ids are kept under each story's and task's stable key, so a later sync updates those items and never makes second ones.
+The Stories tab lists the change's feature, each story and its tasks as work items, with what `sync.yaml` remembers of each (`GET /api/changes/<id>/work-items`). **Put them in the work tracker** writes them (`POST`), the same as `atticus ado sync <change> --approve`: with `adapters.workTracker: { type: manual }` each is a step on Home › Manual steps with the fields to copy (title, description, acceptance criteria, parent) and where to record the id the tracker gave it; with a live tracker it asks you to confirm first (ADR 0186). The ids are kept under each story's and task's stable key, so a later sync updates those items and never makes second ones.
 
 ## Exporting the stories to Azure DevOps or Jira
 
