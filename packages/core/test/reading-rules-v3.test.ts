@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migrateReadingRulesText, ReadingRulesFile } from "../src/index.js";
+import { migrateReadingRulesText, ReadingRulesFile, recipeDigest } from "../src/index.js";
 
 /** ADR 0210 part 2: reading rules version 3, a rule's `extract` (a recipe), and the migration. */
 
@@ -27,6 +27,7 @@ const PROOF = {
     "forge-ledger-module src/main/resources/OSGI-INF/blueprint/camel-context.xml",
   ],
   reproduced: ["forge-wallets-module src/main/resources/OSGI-INF/blueprint/camel-context.xml:6"],
+  digest: recipeDigest(RULE),
 };
 const LEARNED = { corrections: [], by: "recipe", at: "2026-11-24T10:00:00.000Z" };
 
@@ -138,6 +139,24 @@ describe("reading rules version 3 (ADR 0210 part 2)", () => {
     expect(
       at(3, { learned: { ...LEARNED, why: "forge-ledger-module: 3 facts differ" } }).success,
     ).toBe(true);
+  });
+
+  it("a recipe names its files, and an active one the digest of what was proven (review of item 7)", () => {
+    const { files: _f, ...noFiles } = RULE;
+    expect(
+      ReadingRulesFile.safeParse({ schemaVersion: 3, rules: [noFiles] }).error?.issues[0]?.message,
+    ).toBe("a recipe names the files it reads (ADR 0210)");
+    expect(at(3, { files: [] }).success).toBe(false);
+    const { digest: _d, ...noDigest } = PROOF;
+    expect(
+      messages(at(3, { status: "active", learned: { ...LEARNED, proof: noDigest } })),
+    ).toContain("an active recipe's proof carries the digest of what it proved (ADR 0210)");
+    // The digest is of the extract and the files: an edit to either changes it.
+    expect(recipeDigest(RULE)).toMatch(/^[0-9a-f]{16}$/);
+    expect(recipeDigest({ ...RULE, files: ["deploy/*.yaml"] })).not.toBe(recipeDigest(RULE));
+    expect(recipeDigest({ ...RULE, extract: { ...EXTRACT, optional: [] } })).not.toBe(
+      recipeDigest(RULE),
+    );
   });
 
   it("migrates 1 or 2 to 3 by the number only when asked; Learn's 1 to 2 is as it was", () => {

@@ -74,6 +74,11 @@ describe("commands with --root on an adopted repo", () => {
     );
     const before = await hashTree(dir);
     expect(await adoptCommand(dir, {}, io().io)).toBe(0);
+    // ADR 0210 part 6: this repo has no facts, so its catalog comes from the readers, turned on.
+    await writeFile(
+      join(dir, ".atticus/org-pack/conventions.yaml"),
+      'schemaVersion: 3\nreaders: "on"\n',
+    );
 
     // orgpack validate with no folder resolves the adopted org pack.
     const v = io();

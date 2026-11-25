@@ -1622,6 +1622,7 @@ export function Scans() {
               />
               {added && <span>{added}</span>}
               <ScanSourcesTable sources={sources} />
+              {job.result?.readersOff === true && <p role="note">{SS.readersOffNothing}</p>}
               {buildRefused && (
                 <RefusalView
                   refused={buildRefused}

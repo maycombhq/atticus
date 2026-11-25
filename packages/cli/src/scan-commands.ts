@@ -1,5 +1,11 @@
 import { join, relative, sep } from "node:path";
-import { acquireLock, catalogDirOf, LockHeldError, throwIfCancelled } from "@maycombhq/core";
+import {
+  acquireLock,
+  catalogDirOf,
+  LockHeldError,
+  READ_WORDS,
+  throwIfCancelled,
+} from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
@@ -173,7 +179,8 @@ function keptWhy(s: Pick<ScanSource, "reason" | "detail">): string {
     case "plugin-refused":
       return `a plugin that applies to it isn't used (${s.detail ?? "a plugin"})`;
     case "readers-off":
-      return "the readers are switched off (ATTICUS_HELPERS_OFF=readers)";
+      // ADR 0210 part 6: off by default; an org pack turns them on.
+      return 'the readers are off (an org pack turns them on with readers: "on" in conventions.yaml; ATTICUS_HELPERS_OFF=readers switches them off for a run)';
     case "dirty":
       return "its clone has changes not committed (commit or stash them, then scan again)";
     case "refused":
@@ -423,8 +430,25 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   // A scan the app stopped writes nothing, not even a slot (ADR 0195 point 1).
   throwIfCancelled();
   const command = `atticus scan${o.repos?.length ? ` --repos ${o.repos.join(",")}` : ""}`;
+  // ADR 0210 part 6: with the readers off a scan reads no repo itself; it builds from the facts,
+  // and with none to build from it is no failure but says how a repo is read.
+  const readersOff =
+    scan.observations.length > 0 &&
+    scan.observations.every((x) => !x.full && x.why === "readers-off");
+  if (readersOff && !scan.build.sources.some((x) => x.source !== "none")) {
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          { written: false, readersOff: true, message: READ_WORDS.scanNothing },
+          null,
+          2,
+        ),
+      );
+    else io.out(READ_WORDS.scanNothing);
+    return 0;
+  }
   // ADR 0195 point 4: a scan that read no repo in full writes nothing (no slot, no build).
-  const unreadAll = scanRefusal(scan);
+  const unreadAll = readersOff ? undefined : scanRefusal(scan);
   // CS3: the refusal is the latest build's report too, for the app to show.
   if (unreadAll && !o.dryRun)
     await writeRefusedReport(root, command, {
@@ -568,12 +592,13 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           ? `; ${unread} file${unread === 1 ? " uses" : "s use"} a client library with nothing read (atticus scan --warnings)`
           : ""),
     );
-    for (const c of scan.coverage)
+    for (const c of readersOff ? [] : scan.coverage)
       for (const r of c.redraft)
         io.out(
           `Rule ${r.dialect} on ${c.repo} ${r.why === "tests-fail" ? "fails its own tests, so this scan didn't use it" : "read nothing there"}; have your assistant re-draft it: atticus onboard ${c.repo} --name ${r.dialect} (then onboard accept ${r.dialect} --replace)`,
         );
-    const toOnboard = scan.coverage.filter((c) => c.needsOnboarding);
+    // A dialect is the readers': with them off, the advice is a read (ADR 0210 part 6).
+    const toOnboard = readersOff ? [] : scan.coverage.filter((c) => c.needsOnboarding);
     if (toOnboard.length)
       io.out(
         `Read nothing from ${toOnboard.length === 1 ? "1 repo" : `${toOnboard.length} repos`} whose files no reader knows: ${toOnboard

@@ -793,8 +793,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 // repo is that one (Impact asked of a repo box lists its components). Additive only.
 // 3.20.0 (ADR 0208, beta.31): POST /api/reading-rules/learn, Learn from my corrections as a
 // local job, its result LearnCorrectionsResult. Additive only.
-// 3.21.0 (ADR 0210 part 4, beta.33): GET /api/decisions gives `applyPairs`, what the last Apply's
-// pairing drew, dropped (with why), withdrew and left loose. Additive only.
+// 3.21.0 (ADR 0210, beta.33): GET /api/reading-rules/recipes, the recipes and whether each is
+// proven; GET /api/settings/ai's `readers`. Additive only.
+// Also in 3.21.0 (ADR 0210 part 4, beta.33): GET /api/decisions gives `applyPairs`, what the
+// last Apply's pairing drew, dropped (with why), withdrew and left loose. Additive only.
 export const API_VERSION = "3.21.0";
 export const DEFAULT_PORT = 4321;
 
@@ -6922,6 +6924,27 @@ export const LearnCorrectionsResult = z.object({
   untaught: z.array(z.object({ correction: z.string(), kind: z.enum(["no-type", "not-named"]) })),
 });
 export type LearnCorrectionsResultT = z.infer<typeof LearnCorrectionsResult>;
+/**
+ * ADR 0210 part 2 (additive, 3.21.0): GET /api/reading-rules/recipes, each repo type's recipes:
+ * the fact kind and files a recipe reads, and whether it is proven (on which repos) and so reads
+ * with no model, or a draft and why. `readers`: whether the deterministic readers run here.
+ */
+export const ReadingRecipesView = z.object({
+  readers: z.enum(["on", "off"]),
+  recipes: z.array(
+    z.object({
+      type: z.string(),
+      key: z.string(),
+      file: z.string(),
+      fact: z.string(),
+      files: z.array(z.string()),
+      proven: z.boolean(),
+      repos: z.array(z.string()),
+      why: z.string().optional(),
+    }),
+  ),
+});
+export type ReadingRecipesViewT = z.infer<typeof ReadingRecipesView>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type DeclarableRouteViewT = z.infer<typeof DeclarableRouteView>;
@@ -10153,6 +10176,16 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/reading-rules/recipes": {
+    get: {
+      id: "readingRecipes",
+      summary:
+        "Each repo type's recipes (ADR 0210 part 2): what a recipe reads, whether it is proven (and on which repos) or a draft and why, and whether the deterministic readers run here",
+      tag: "views",
+      ok: { status: 200, schema: "ReadingRecipesView", description: "The recipes" },
+      errors: [],
+    },
+  },
   "/api/reading-rules/learn": {
     post: {
       id: "learnFromCorrections",
@@ -11256,6 +11289,7 @@ export function openApiDocument(): Record<string, unknown> {
     CodeLink,
     RuleFromPairingResult,
     LearnCorrectionsResult,
+    ReadingRecipesView,
     Question,
     QuestionList,
     AnsweredQuestion,

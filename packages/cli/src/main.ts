@@ -2215,10 +2215,16 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     }
     try {
       // A batch's answer may be empty (no fact in those files): any result file is an answer.
-      const { runtime } = await runtimeForCli(root, {
+      const made = await runtimeForCli(root, {
         ...(o.copy ? { mode: "hand-off" } : text(values.mode) ? { mode: text(values.mode)! } : {}),
         handoffValidate: async () => [],
+      }).catch(async (e: unknown) => {
+        // ADR 0210 part 2: with AI off, a repo's recipes still read; else runtime.yaml's words.
+        if (e instanceof (await loadAi()).RuntimeConfigError) return e.message;
+        throw e;
       });
+      if (typeof made === "string") return mapCommand(root, repo, o, io, { noRuntime: made });
+      const { runtime } = made;
       // ADR 0170: the batch hand-off, said plainly for a person who reads with Copilot after all.
       if (
         (starting || (o.copy && o.answer === undefined && !o.next)) &&
@@ -3947,6 +3953,9 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
     }
     return stubCheck(arg, io);
   }
+  // ADR 0210 part 6: what these write is run by the readers, off unless the org pack says on.
+  if (["onboard", "frameworks", "framework", "dialect"].includes(group ?? ""))
+    await readersNote(root, io);
   if (group === "onboard") {
     // Framework models (ADR 0066): onboard framework, onboard check framework, onboard accept framework.
     const list = (v: unknown) =>
@@ -4459,4 +4468,11 @@ export function capturedIo(out: string[], err: string[]): Output {
     err: (l) => err.push(l),
     progress: (l) => printToCurrent(l, { now: true }),
   };
+}
+
+/** ADR 0210 part 6: said by `framework`, `dialect` and `onboard` where the readers are off. */
+async function readersNote(root: string, io: Output): Promise<void> {
+  const { loadOrgPack, orgPackDirOf, readersOn, READ_WORDS } = await import("@maycombhq/core");
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  if (!readersOn(op)) io.err(READ_WORDS.readersOff);
 }

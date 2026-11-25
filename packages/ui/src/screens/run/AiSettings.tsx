@@ -25,6 +25,8 @@ export interface AiSettings {
   decide?: Decide;
   /** runtime.yaml's own version (decide needs 4; an older file is lifted on save, ADR 0190). */
   schemaVersion?: number;
+  /** ADR 0210 part 6: whether the deterministic readers run (conventions.yaml). */
+  readers?: "on" | "off";
   path: string;
 }
 
@@ -493,6 +495,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
             <span className="muted">{T.spendHint}</span>
           </span>
         </fieldset>
+      )}
+      {p.data.readers && (
+        <p className="muted" role="note">
+          {T.readers(p.data.readers)}
+        </p>
       )}
 
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>

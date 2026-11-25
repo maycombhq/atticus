@@ -533,6 +533,8 @@ export async function makeFieldEstate(
   });
   const { root, options } = made;
   const checkouts = given.checkouts ?? 2;
+  // ADR 0210 part 6: the field estate is one the readers scanned before beta.33; they stay on.
+  await writeFile(join(root, "org-pack/conventions.yaml"), 'schemaVersion: 3\nreaders: "on"\n');
 
   // ---- beta.30: repos the manifest lists that nobody read, and the estate's topic
   const listed = [given.emptyRepo, given.unreadRepo].filter((x): x is string => !!x);

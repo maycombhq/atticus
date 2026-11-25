@@ -15889,6 +15889,37 @@
         }
       }
     },
+    "/api/reading-rules/recipes": {
+      "get": {
+        "operationId": "readingRecipes",
+        "summary": "Each repo type's recipes (ADR 0210 part 2): what a recipe reads, whether it is proven (and on which repos) or a draft and why, and whether the deterministic readers run here",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "The recipes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingRecipesView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/reading-rules/learn": {
       "post": {
         "operationId": "learnFromCorrections",
@@ -47167,6 +47198,71 @@
           "active",
           "draft",
           "untaught"
+        ],
+        "additionalProperties": false
+      },
+      "ReadingRecipesView": {
+        "type": "object",
+        "properties": {
+          "readers": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "recipes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "fact": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "proven": {
+                  "type": "boolean"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "key",
+                "file",
+                "fact",
+                "files",
+                "proven",
+                "repos"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "readers",
+          "recipes"
         ],
         "additionalProperties": false
       },

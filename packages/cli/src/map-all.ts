@@ -48,7 +48,7 @@ import {
 } from "./copilot-acp-steps.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
 import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
-import { knownLimitOf, mapCommand, mapStateOf } from "./map-commands.js";
+import { knownLimitOf, mapCommand, mapStateOf, recipeStep } from "./map-commands.js";
 import {
   loadReadPlan,
   partUnaccounted,
@@ -237,7 +237,8 @@ export interface MapAllPlan {
   limitFrom: "flag" | "runtime.yaml" | "probe";
   mode: "copilot" | "model" | "copilot-acp";
   items: PlanItem[];
-  skipped: { repo: string; why: string }[];
+  /** `recipe`: the files its recipes read, when they read it all (ADR 0210 part 2). */
+  skipped: { repo: string; why: string; recipe?: number }[];
 }
 
 /** How a part ended, kept in the state file and said in the summary. */
@@ -497,6 +498,8 @@ interface EstimateJson {
   files: number;
   /** ADR 0169: what the read plans to read, with the model classes it leaves out out. */
   read?: { files: number; tokens: number };
+  /** ADR 0210 part 2: the files the recipes read, never the model's. */
+  recipe?: { files: number };
   batches: number | null;
   parts: {
     parts: { paths: string[]; files: number; tokens: number }[];
@@ -514,7 +517,9 @@ async function partsOf(
   models?: ModelsMode,
   /** ADR 0170 (--force): every part is read again, but those this run's state has done. */
   force?: { done: ReadonlySet<number> },
-): Promise<{ parts: PlanPart[]; total: number; tokens: number; batches?: number } | string> {
+): Promise<
+  { parts: PlanPart[]; total: number; tokens: number; batches?: number; byRecipe?: number } | string
+> {
   const io = capturedStep();
   const code = await mapCommand(
     root,
@@ -527,6 +532,10 @@ async function partsOf(
   if (!r) return io.errs[0] ?? `atticus map ${repo} --estimate didn't plan it`;
   const planned = r.parts.parts;
   const batches = r.batches ?? undefined;
+  const byRecipe = r.recipe?.files;
+  // Every file is a recipe's: no session for the model.
+  if (!planned.length && byRecipe && !(r.read?.files ?? r.files))
+    return { parts: [], total: 0, tokens: 0, byRecipe };
   if (!planned.length)
     return {
       parts: [
@@ -796,6 +805,14 @@ export async function planEstate(
     );
     if (typeof p === "string") {
       skipped.push({ repo: t.repo, why: p });
+      continue;
+    }
+    if (!p.parts.length && p.byRecipe) {
+      skipped.push({
+        repo: t.repo,
+        why: `read by its recipes alone (${plural(p.byRecipe, "file")}): nothing for the model`,
+        recipe: p.byRecipe,
+      });
       continue;
     }
     if (c.mode === "model" && p.batches === undefined) {
@@ -1370,6 +1387,19 @@ async function mapAllRun(
     else for (const l of planLines(plan)) io.out(l);
     return 0;
   }
+  let recipeRejected = false;
+  // ADR 0210 part 2: recipe first. Each repo's recipes read before its sessions (a model-mode
+  // read runs its own), and a repo they read whole has none.
+  for (const r of [
+    ...plan.items.filter((i) => i.kind !== "gaps" && mode !== "model"),
+    ...plan.skipped.filter((x) => x.recipe),
+  ]) {
+    const commit = "commit" in r ? r.commit : await commitOf(root, r.repo);
+    // A facts file that can't be read stops the run; a recipe fact refused ends it with 1.
+    const code = commit ? await recipeStep(root, r.repo, commit, io, deps.git) : 0;
+    if (code === 2) return 2;
+    recipeRejected ||= code === 1;
+  }
   // beta.27: never start sessions that each end at once: the assistant files they read are
   // checked first, and written when only out of date (generated files, as atticus
   // assistant-files writes them); one a person edited refuses the run.
@@ -1721,7 +1751,7 @@ async function mapAllRun(
   }
   await save();
   await summary(interrupted || joinStopped);
-  return signIn || serverGone || joinFailed || joinStopped ? 1 : 0;
+  return signIn || serverGone || joinFailed || joinStopped || recipeRejected ? 1 : 0;
 
   // ------------------------------------------------------------ one part, read by Copilot
 

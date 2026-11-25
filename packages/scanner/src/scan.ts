@@ -23,6 +23,7 @@ import {
   type OrgPack,
   type ScannerPlugin,
   stackHelpersOff,
+  readersOn,
   cmpText,
   canonicalize,
 } from "@maycombhq/core";
@@ -520,6 +521,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   // G4: the stack helpers a run switched off (ATTICUS_HELPERS_OFF): with `readers` off a repo
   // is projected from its verified facts alone, with `framework-models` off no taught model is used.
   const off = stackHelpersOff();
+  // ADR 0210 part 6: the readers are off unless the org pack turns them on (`readers: on`).
+  if (!readersOn(op)) off.add("readers");
   const frameworks = off.has("framework-models") ? [] : await usableFrameworks(op, problems);
   // Scanner plugins (ADR 0080): pinned, re-tested, then run sandboxed after the built-ins.
   const pluginSet = await usablePlugins(op);

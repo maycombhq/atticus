@@ -73,6 +73,23 @@ export const limitWords = (l: { per: string; sessions?: number; tokens?: number 
 const plural = (x: number, w: string) => `${x.toLocaleString("en-US")} ${w}${x === 1 ? "" : "s"}`;
 
 /**
+ * ADR 0210 parts 2 and 6, said alike by the command line and the app: who read a repo's files,
+ * and that the deterministic readers are off.
+ */
+export const READ_WORDS = {
+  split: (recipe: number, model: number) =>
+    `Read by recipe ${plural(recipe, "file")}, by the model ${plural(model, "file")}.`,
+  /** A scan with the readers off and nothing to build from: no failure (review of item 7). */
+  scanNothing:
+    'The readers are off and no repo has verified facts yet, so there is nothing to build: read the repos with atticus map --all (or atticus map <repo>), then scan again. An org pack turns the readers on with readers: "on" in conventions.yaml.',
+  /** What `atticus upgrade` says it keeps for a team whose catalog the readers wrote. */
+  keptOn:
+    'The readers stay on where they wrote the catalog (ADR 0210): conventions.yaml gets readers: "on" (schemaVersion 3); set readers: "off" to read with recipes and the model only',
+  readersOff:
+    'The deterministic readers are off (ADR 0210): a repo is read by its recipe or by the model. An org pack turns them on with readers: "on" in conventions.yaml (schemaVersion: 3).',
+};
+
+/**
  * ADR 0210 part 4: the words of Apply's pairing, here for the same reason (no imports): the
  * command line's lines after Apply and the app's Decided by AI (`COPY.applyPairs`) say them alike.
  */
