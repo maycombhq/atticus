@@ -209,6 +209,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
         await mkdir(join(path, ".atticus", "org-pack", "scan"), { recursive: true });
         await writeFile(join(path, ".atticus", "org-pack", "scan", `${r.id}.yaml`), saved, "utf8");
       }
+      await readersOnFor(path);
       if ((await main(["scan", "--root", path], quiet, { quiet: true })) === 2)
         throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
       const { records } = await readCatalog(join(path, ".atticus", "catalog", "generated"));
@@ -591,6 +592,7 @@ async function estatePass(
     `# The ${estate} estate of the bench, scanned together (ADR 0085). Written by atticus bench run --specs.\n${stringify({ schemaVersion: 1, platform, repos: entries }, { lineWidth: 0 })}`,
     "utf8",
   );
+  await readersOnFor(root);
   if ((await main(["scan", "--root", root], quiet, { quiet: true })) === 2)
     throw new BenchError(
       `atticus scan failed on the ${estate} estate: run atticus scan --root ${root} to see why.`,
@@ -766,6 +768,7 @@ export async function benchVerify(
         await writeFile(join(path, ".atticus", "org-pack", "scan", `${r.id}.yaml`), saved, "utf8");
       }
       if (o.mode) await allowMode(path, o.mode);
+      await readersOnFor(path);
       if ((await main(["scan", "--root", path], quiet, { quiet: true })) === 2)
         throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
       const lines: string[] = [];
@@ -819,4 +822,16 @@ export async function benchResults(o: BenchOptions): Promise<string[]> {
     .filter((f) => f.endsWith(".json"))
     .sort()
     .reverse();
+}
+
+/** Bench scores the readers against their baseline (bench/README.md), so it turns them on (ADR 0210 part 6). */
+async function readersOnFor(root: string): Promise<void> {
+  const p = join(root, ".atticus", "org-pack", "conventions.yaml");
+  const text = await readFile(p, "utf8").catch(() => undefined);
+  const doc = ((text ? parse(text) : undefined) ?? {}) as Record<string, unknown>;
+  if (doc.readers === "on") return;
+  doc.readers = "on";
+  doc.schemaVersion = Math.max(Number(doc.schemaVersion ?? 3), 3);
+  await mkdir(join(root, ".atticus", "org-pack"), { recursive: true });
+  await writeFile(p, stringify(doc), "utf8");
 }

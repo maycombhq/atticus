@@ -633,8 +633,15 @@ function runtimeStep(
 
 function readersKeptOn(): Migration {
   const read = async (root: string) => {
+    // The readers built this catalog: their slots, or a catalog from before the slots (ADR 0195),
+    // which only the readers wrote and which this same upgrade moves into their slots.
     const slots = await readdir(join(sourcesDirOf(root), "readers")).catch(() => []);
-    if (!slots.some((f) => f.endsWith(".json"))) return undefined;
+    const before = async () =>
+      !(await readdir(sourcesDirOf(root)).catch(() => [])).length &&
+      (await readdir(join(root, "catalog", "generated"), { recursive: true }).catch(() => []))
+        .map(String)
+        .some((f) => f.endsWith(".yaml"));
+    if (!slots.some((f) => f.endsWith(".json")) && !(await before())) return undefined;
     const rel = packRel(root, "conventions.yaml");
     const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
     const doc = parseDocument(text ?? "schemaVersion: 3\n");
