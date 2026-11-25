@@ -214,7 +214,7 @@ describe("hashes kept by size and time (hash-cache.ts)", () => {
  * read every record file again although none changed.
  */
 describe("hashes kept on a machine that moves change times and holds files (item 11)", () => {
-  it("hashes a file whose change time alone moved once, not on every read after", async () => {
+  it("hashes a file whose change time alone moved once, not on every read after", async (ctx) => {
     // OneDrive, a backup or Git's autocrlf moves NTFS's change time (an attribute), not the bytes.
     const { root, dir, files } = await folder();
     const old = new Date(Date.now() - 60_000);
@@ -222,7 +222,10 @@ describe("hashes kept on a machine that moves change times and holds files (item
     later(10 * RACY_MS);
     await hashFilesKept({ dir, files, cacheRoot: root });
     await new Promise((r) => setTimeout(r, 30));
-    await chmod(join(dir, files[1]!), 0o600);
+    // An attribute change: on Windows chmod sets only the read-only attribute, so flip it.
+    const was = (await stat(join(dir, files[1]!))).ctimeMs;
+    await chmod(join(dir, files[1]!), process.platform === "win32" ? 0o444 : 0o600);
+    if ((await stat(join(dir, files[1]!))).ctimeMs === was) ctx.skip();
     const calls = counting();
     // The next Apply, a moment after the change time moved: that file is hashed, and its new
     // change time kept; the one after opens nothing.
