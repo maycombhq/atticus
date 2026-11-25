@@ -1,0 +1,22 @@
+schemaVersion: 3
+rules:
+  # ADR 0210 part 2: the recipe a model wrote from one module, as data the engine in core runs.
+  # A draft until proven on two modules it wasn't written from (packages/core/test/recipe.test.ts).
+  - key: blueprint-rest-entries
+    status: draft
+    rule: Each verb element under a <rest> block is an entry; its path is contextPath + rest path + uri.
+    files: ["src/main/resources/OSGI-INF/blueprint/*.xml"]
+    extract:
+      fact: entry
+      pattern: '<(?<verb>get|post|put|delete|patch)(?: uri="(?<uri>[^"]*)")?'
+      scopes:
+        - { name: context, pattern: 'contextPath="(?<context>[^"]*)"' }
+        - { name: rest, pattern: '<rest path="(?<rest>[^"]*)"', end: "</rest>" }
+      optional: [uri]
+      fields: { method: "{verb}", path: "{context}{rest}{uri}" }
+  - key: deploy-settings
+    status: draft
+    rule: Each leaf key of a deploy file is a setting, named by its dotted key.
+    files: ["deploy/*.yaml"]
+    extract: { fact: config, yaml: leaves }
+off: []

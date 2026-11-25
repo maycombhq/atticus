@@ -26,5 +26,8 @@
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/extractors": "workspace:*",
     "@maycombhq/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.1"
   }
 }
