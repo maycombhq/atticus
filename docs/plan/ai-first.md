@@ -66,6 +66,35 @@ anything is built on it.
 Gates A and B need a model key in CI's own sandbox or the owner's own machine at home; they use
 no office quota. Nothing below starts until all three pass.
 
+## First results (2026-11-24, in a cloud workspace, on public code)
+
+The model was a fresh agent each time, with none of the answers in its context. Tokens are what
+each run reported less an empty run's 61,000, so they are rough. The scripts are not in the repo
+yet: an engine of 47 lines that applies a recipe, and a checker.
+
+| Gate | Run                                                                                                                                                                                                                   | Result                                                                                                                | Tokens (about) |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------- |
+| A    | `fixtures/oss-estate`: pair the front end's 31 call facts with the REST API's 37 entry facts, from the facts alone                                                                                                    | 31 of 31 right, none wrong (the join: 31 of 31)                                                                       | 8,000          |
+| A    | `spring-petclinic-microservices` at `81152fa`: from source, every request its gateway and front end make that reaches one of three services, through routes that name a service, not a host, and strip two path parts | 14 of 14 true arrows, both ends and the route quoted on their lines, none false. The join was not run on this estate. | 19,000         |
+| B    | Read the customers service with the model, and have it write a recipe                                                                                                                                                 | 15 facts, all on their lines; the recipe reproduces all 15                                                            | 10,000         |
+| B    | That recipe on the vets and visits services, which its writer never saw                                                                                                                                               | 15 of the 17 facts a separate model read found; none wrong, none extra                                                | 0              |
+| B    | The two misses (nested YAML keys) given back to the model                                                                                                                                                             | It replaced four rules with one; then 32 of 32 across the three services                                              | 2,000          |
+
+What this does and doesn't show:
+
+- Pairing by the model, checked on its lines, held on a gateway that routes by name and rewrites
+  paths: the shape the join needs a host for.
+- A recipe written from one repo read two siblings for no tokens, and the model improved it from
+  its misses. The first fix needed one new rule type in the engine (YAML keys, 12 lines, written
+  by hand); the recipe change was the model's.
+- These are small, tidy Spring services. None makes an outbound call, so the recipe's call rules
+  are untested. No gateway-proxy or integration-module repo was read: a Forge fixture of that
+  shape is still to be written.
+- Gate B's "a fifth of the tokens" is not settled: a recipe run costs nothing, but what a model
+  must still read to know a recipe missed nothing was not measured, and repos this small are
+  mostly fixed overhead.
+- Gate C was not run: it needs the estate's size and the quota's figure.
+
 ## Then, in order (each a release, each smaller than the last)
 
 1. **Non-blocking writes.** Rule 3 for verify, Apply and the map's Apply. No model needed, so it
