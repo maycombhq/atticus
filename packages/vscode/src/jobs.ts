@@ -19,8 +19,6 @@ export interface JobArgs {
   source?: string;
   old?: string;
   new?: string;
-  /** The model's limit, in tokens (map --all, ADR 0161). */
-  maxTokens?: string;
   /** A repo type, or "" for the org-wide notes (repo-type note, ADR 0163). */
   repoType?: string;
   /** A note in the organisation's own words, one line. */
@@ -36,7 +34,6 @@ export type JobNeeds =
   | "sheet"
   | "traffic"
   | "rename"
-  | "limit"
   | "repo-type"
   | "note";
 
@@ -70,27 +67,11 @@ const req = (v: string | undefined, what: string) => {
   return v;
 };
 
-/**
- * ADR 0161: runtime.yaml's `maxInput` (under adapters.model), the limit map --all is offered with;
- * undefined when it names none. A line read, not a YAML parse: the editor only pre-fills a box.
- */
-export function runtimeMaxInput(runtimeYaml: string | undefined): string | undefined {
-  const m = /^\s*maxInput:\s*(\d+)\s*(#.*)?$/m.exec(runtimeYaml ?? "");
-  return m?.[1];
-}
-
-/** A limit as typed: a whole number of tokens, at least 1,000 (commas and spaces allowed). */
-export function limitOf(typed: string): string | undefined {
-  const n = typed.replace(/[,_\s]/g, "");
-  return /^\d+$/.test(n) && Number(n) >= 1000 ? String(Number(n)) : undefined;
-}
-
 export const JOBS: readonly Job[] = [
   {
     command: "atticus.mapEstate",
-    title: "Map the estate, one part at a time (map --all)",
-    needs: "limit",
-    argv: (a) => ["map", "--all", "--max-tokens", req(a.maxTokens, "model limit")],
+    title: "Sync the map: read what changed, verify, write and pair (atticus sync)",
+    argv: () => ["sync"],
     how: "terminal",
   },
   {

@@ -140,7 +140,7 @@ describe("a run over several repos goes on past a repo whose file is held (beta.
     expect(err).toEqual([
       `forge-ledger: not verified: ${at(root, "forge-ledger.verify.yaml")} is open in another program (an editor, an assistant's session or a virus scan) or can't be written, and it stayed so for 45 s. Nothing was lost: the file is as it was. Close it there, then run the command again. Run it once that is put right: atticus verify forge-ledger`,
     ]);
-    expect(out.at(-1)).toBe("Verified 3 repos: 2 passed, 1 with something to fix (forge-ledger).");
+    expect(out.at(-1)).toBe("Verified 3 repos: 2 passed, 1 not verified (forge-ledger).");
   });
 
   // The review of beta.28.5: the old rejected file was removed with a plain rm, which threw
@@ -174,7 +174,7 @@ describe("a run over several repos goes on past a repo whose file is held (beta.
       `forge-ledger: not verified: ${at(root, "forge-ledger.rejected.jsonl")} is open in another program`,
     );
     expect(err[0]).not.toMatch(/EBUSY|unlink/);
-    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 with something to fix (forge-ledger).");
+    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 not verified (forge-ledger).");
   });
 
   it("an error that is no file system's (a bug) ends the run as before: it is not said as a repo not verified", async () => {
@@ -219,7 +219,7 @@ describe("a run over several repos goes on past a repo whose file is held (beta.
     expect(err).toEqual([
       "forge-ledger: not verified: ENOSPC: no space left on device, rename Run it once that is put right: atticus verify forge-ledger",
     ]);
-    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 with something to fix (forge-ledger).");
+    expect(out.at(-1)).toBe("Verified 2 repos: 1 passed, 1 not verified (forge-ledger).");
   });
 
   it("verify sweeps the temporary files an earlier run left for the repo in the facts folder", async () => {

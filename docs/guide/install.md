@@ -114,6 +114,15 @@ atticus probe
 
 It writes a file holding a code it never prints and tells you to run `/atticus-probe` in your assistant. The assistant opens the file, writes the code back and runs `atticus probe answer <code>`; what it managed decides its tier, measured rather than guessed, and `atticus map <repo> --estimate` then says what the first read costs. A chat that can't run commands gives you the line to run with `--pasted`; one that can't open files answers `none`. The result stays on your machine (`.atticus/probe/`).
 
+## The first map: `atticus sync`
+
+```bash
+atticus sync          # read what changed, verify, write once, pair, say what is open
+atticus sync --json   # the same for CI
+```
+
+`atticus sync` is the one command from a repo to a drawn map (ADR 0210 part 8). It finds the repos whose clone moved past their facts, or were never read; reads each with its recipes first and the model (runtime.yaml's) for the rest, as `atticus map --all` plans it; verifies; writes the catalog once (`atticus verify --all --write`: one build, one undo step, the loose calls paired inside it); then runs Learn for the repo types it read (each recipe proved first, the model asked only where one fails or a type of three repos or more has none), then says the loose calls, the rejected facts with why, the open questions and the one next step. Run with nothing changed, it reads nothing, sends no prompt and writes nothing ("Up to date"). With AI off the recipes still read, and what only the model reads is said to wait. It never asks a question; past `budgets.limits` it stops before its first request. `--max-tokens n` gives the model's limit where runtime.yaml names none; Ctrl+C stops it after the step under way. Atticus: Sync the map in VS Code and Tools → Atticus → Map the Estate in IntelliJ run it; the app's Apply still writes only the repos it lists, reading nothing. Every step below is still there for one repo or a pasting assistant (`atticus legacy` lists them).
+
 ## The first map, by tier
 
 Every tier writes the same facts file, each fact citing its file and line, and `atticus verify` checks every claim on its line. Only the speed differs.
@@ -185,7 +194,7 @@ It plans each repo's read at your model's limit (`--max-tokens`, else `maxInput`
 
 When every repo is done it runs `atticus verify --all --write` once, so every link is joined with the whole estate read, and prints what it did: repos and parts read, facts rejected, links added and removed, questions open, what is unfinished with the command for each, and the next steps (`atticus questions list --mine`, `atticus estate fresh`). Where it stands is kept in `.atticus/map-all/state.json` on this machine (never committed), but what is done is always read from the facts, so running `atticus map --all` again after a closed terminal or a reboot carries on where it was. `--stale` re-reads only the repos whose clone moved past their facts and tops up the ones read under older reading rules (below), `--gaps` runs the second pass on the gaps for every read repo, `--force` reads the repos whole again (each part by its number, `/atticus-map <repo> --part n`, at a fresh read plan at the limit; the facts on file stay, as already kept, so the chat names them by id and doesn't write them again), and `--repos a,b` limits it. `--models entries` reads first the model classes the repos' own entry points reach and leaves those only an outbound client reaches for later (ADR 0170; below).
 
-`atticus map <repo>` (and `atticus map <repo> --force`) runs the same waiting loop for that one repo when `runtime.yaml` (or `atticus probe`) says the reader is Copilot, so a person pasting into Copilot never gets batches to copy by hand. When it takes the batch hand-off instead (another assistant is named), it says so plainly: "runtime.yaml says Claude Code; if you use Copilot, run atticus map --all --repos <repo> (it waits and copies each line)". In IntelliJ, Tools → Atticus → Map the Estate… runs it in a console, where you type `s`, `r` and `q`; in VS Code, Atticus: Map the estate runs it in a terminal.
+`atticus map <repo>` (and `atticus map <repo> --force`) runs the same waiting loop for that one repo when `runtime.yaml` (or `atticus probe`) says the reader is Copilot, so a person pasting into Copilot never gets batches to copy by hand. When it takes the batch hand-off instead (another assistant is named), it says so plainly: "runtime.yaml says Claude Code; if you use Copilot, run atticus map --all --repos <repo> (it waits and copies each line)". Run it in a terminal of your own, where you type `s`, `r` and `q` (the editors' Map the Estate runs `atticus sync`).
 
 #### Repos read before new reading rules: the top-up
 

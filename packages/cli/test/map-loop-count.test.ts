@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import type { AcpSessionResult } from "@maycombhq/ai";
 import { forgetHeld, fsHooks } from "@maycombhq/core";
@@ -294,6 +294,14 @@ describe("how many applies and builds one repo's map runs (beta.28.5)", () => {
 });
 
 describe("the estate join after a map (beta.28.5)", () => {
+  // ADR 0210 part 8: the join is verify --all --write's own run; its per-repo loop here, as
+  // ATTICUS_APPLY_ONE_BUILD=0 runs it (the one build's Stop is apply-all-stop.test.ts's).
+  beforeAll(() => {
+    process.env.ATTICUS_APPLY_ONE_BUILD = "0";
+  });
+  afterAll(() => {
+    delete process.env.ATTICUS_APPLY_ONE_BUILD;
+  });
   it("says each repo as it starts, with the time left once one has finished", async () => {
     const { root, head } = estate({ notify: true });
     const item = await planOf(root);
@@ -349,7 +357,7 @@ describe("the estate join after a map (beta.28.5)", () => {
     expect(code, text).toBe(1);
     const file = join(root, "facts", "forge-ledger.verify.yaml");
     expect(text).toContain(
-      `forge-ledger: not applied: ${file} is open in another program (an editor, an assistant's session or a virus scan) or can't be written, and it stayed so for 45 s. Nothing was lost: the file is as it was. Close it there, then run the command again. Apply it once that is put right: atticus verify forge-ledger --write`,
+      `forge-ledger: not applied: ${file} is open in another program (an editor, an assistant's session or a virus scan) or can't be written, and it stayed so for 45 s. Nothing was lost: the file is as it was. Close it there, then run the command again. Run it once that is put right: atticus verify forge-ledger --write`,
     );
     // The notifier is applied all the same.
     expect(n.applies.slice(s.seen.length)).toEqual(["forge-notify"]);
@@ -373,7 +381,8 @@ describe("the estate join after a map (beta.28.5)", () => {
     const r = await run(root, s.runner, { signal: stop.signal });
     expect(n.applies.slice(s.seen.length)).toEqual(["forge-ledger"]);
     expect(r.text).toContain(
-      "Stopped after 1 of 2 repos of the join. Not applied: forge-notify. atticus verify --all --write joins the rest.",
+      // verify --all --write hears Stop before the write begins: neither repo is applied.
+      "Stopped after 0 of 2 repos. Not applied: forge-ledger, forge-notify.",
     );
     expect(r.text).not.toContain("Verified 2 repos");
   }, 120_000);

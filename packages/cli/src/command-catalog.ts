@@ -112,6 +112,7 @@ const AREA_BY_WORD: Record<string, string> = {
   verify: "repos",
   join: "repos",
   map: "repos",
+  sync: "repos",
   spec: "repos",
   estate: "repos",
   // ADR 0196: canaries, beside the sample audit.

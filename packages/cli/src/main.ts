@@ -511,6 +511,7 @@ Usage:
           [--rules]                    Top up a repo read before reading rules added since (estate fresh says rules-changed): only the rule parts its read lacked, over the files they apply to, the facts kept listed by id; writes facts/<repo>.rules.md for a new chat (/atticus-map <repo> --rules), or reads it in batches with --mode or --handoff; once verify passes the read records the rules (ADR 0167)
           [--models entries|reachable|all]  Which model classes (DTOs, requests, responses, schemas) the read, its parts, --gaps and --rules take: those the entry points and calls reach, read right after them (the default), those the repo's own entry points reach (entries: the ones only an outbound client reaches are left for later, ADR 0170), or all; those left out are recorded in the read plan as notReached and said by --estimate and verify (ADR 0169)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
+  atticus sync [--json] [--max-tokens n]  Read what changed (recipe, then model), verify, write once, pair the loose calls, then say what is open and the one next step (ADR 0210); unattended, it stops before a budget is passed
   atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended; with --mode copilot-acp (runtime.yaml version 3, ADR 0171) Atticus drives Copilot itself through its Agent Client Protocol, one new session per part, unattended. Then the estate is joined once. A part is done when verify's coverage leaves no file under it unaccounted; after --idle minutes (30) with nothing written it stops waiting, saying how to carry on; --force reads the repos (all, or --repos) whole again, the facts on file kept as already kept (ADR 0170) [--max-tokens n] [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off|copilot-acp] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: take the facts snapshot (catalog/sources/facts/<repo>.jsonl), build the catalog from every stored read, write the flows in specs/<repo>/, ask about calls nothing joins, and render the map; it runs an upgrade owed first, keeps hand edits as yours and lists removals rather than stopping (ADR 0210) [--discard-edits <n>]
@@ -2066,6 +2067,19 @@ async function dispatchCommand(raw: string[], io: Output): Promise<number> {
       rl?.close();
     }
   };
+  if (group === "sync") {
+    // ADR 0210 part 8. Inside a Copilot session Atticus runs, no read of its own (as map --all).
+    if (process.env.ATTICUS_ACP_SESSION)
+      return (io.err("atticus sync runs outside the Copilot session Atticus started."), 2);
+    const ac = new AbortController(); // Ctrl+C stops it after the step under way, as map --all
+    const offInt = onAtticusSignal("SIGINT", () => ac.abort());
+    const [{ syncCommand }, { withSignal }] = await Promise.all([
+      import("./sync-command.js"),
+      import("@maycombhq/core"),
+    ]);
+    const run = () => syncCommand(root, { json: values.json === true }, io);
+    return await withSignal(ac.signal, run).finally(offInt);
+  }
   if (group === "map" && !command && values.all === true) {
     // ADR 0161: atticus map --all, the whole estate in one command.
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);

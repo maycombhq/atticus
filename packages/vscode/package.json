@@ -738,7 +738,7 @@
       },
       {
         "command": "atticus.mapEstate",
-        "title": "Map the estate, one part at a time (map --all)",
+        "title": "Sync the map: read what changed, verify, write and pair (atticus sync)",
         "category": "Atticus"
       },
       {

@@ -65,23 +65,10 @@ class MapGapsAction : AtticusAction() {
     }
 }
 
-/**
- * ADR 0161: Map the Estate: `atticus map --all --max-tokens <n>` in a console, which prints each
- * part's block, puts its line on the clipboard and waits; the person types s, r or q there.
- * Copilot in IntelliJ gives a plugin no API, so the person pastes each line into a new chat.
- */
+/** ADR 0210 part 8: Map the Estate runs `atticus sync` in a console: what changed read, written once and paired. */
 class MapEstateAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        val flow = CommandFlow(project)
-        val preset = Commands.runtimeMaxInput(Roots.metarepo(project)?.let { com.maycombhq.atticus.core.Metarepo.orgPack(it) })
-        val typed = flow.typedValue(Copy.MAP_ESTATE_TITLE, Copy.MAP_ESTATE_LIMIT, preset) ?: return
-        val argv = Commands.mapAllArgv(typed)
-        if (argv == null) {
-            Notify.show(project, Copy.MAP_ESTATE_BAD_LIMIT, NotificationType.WARNING)
-            return
-        }
-        flow.inConsole("map --all", argv)
+        CommandFlow(e.project ?: return).inConsole("sync", listOf("sync"))
     }
 }
 
