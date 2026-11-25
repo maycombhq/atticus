@@ -1,0 +1,37 @@
+{
+  "invariant": "completeness",
+  "note": "completeness: after upgrade the catalog's repos' own components aren't what the model says the build makes: missing ledger-api",
+  "seed": 331299987,
+  "estate": {
+    "repos": [
+      {
+        "base": "forge-ledger",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      },
+      {
+        "base": "forge-payments",
+        "code": {
+          "endpoints": [],
+          "calls": [],
+          "publishes": [],
+          "consumes": []
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "t": "seed-beta26",
+      "verify": [0]
+    },
+    {
+      "t": "upgrade",
+      "yes": true
+    }
+  ]
+}

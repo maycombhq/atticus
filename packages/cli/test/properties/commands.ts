@@ -556,6 +556,23 @@ async function verify(
     for (const e of m.handEdits) curateInModel(m, e, true);
     m.handEdits = [];
   }
+  // An added record can't be a curated decision: the write's curate keeps the others as decisions
+  // and refuses (seed 332486502), as curate-edits does; they wait for a build, the adds stay.
+  const adds = m.handEdits.filter((e) => e.how === "add");
+  if (
+    !outcome.wrote &&
+    outcome.guard === "hand-edits" &&
+    confirm.discardEdits === undefined &&
+    confirm.allowRemovals === undefined &&
+    adds.length &&
+    adds.length < m.handEdits.length
+  ) {
+    for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+      curateInModel(m, e);
+      m.curatedPending.push(e);
+    }
+    m.handEdits = adds;
+  }
   const facts = { code: r.code, commit: r.commit, id: r.id };
   // The hunt of beta.28.1 (F1, seed 1548203660): a read whose every fact is rejected is refused
   // as before, never written as a read of nothing: the broken fact of a read whose code gives
@@ -1077,7 +1094,23 @@ export async function act(
       // and deleted files are made curated; each added one stays a hand edit, so the command
       // refuses (nothing built, catalog/generated and the slots as they were) until it is
       // discarded.
-      const adds = m.handEdits.filter((e) => e.how === "add");
+      // A record of a repo removed from the manifests is read against the record as the last
+      // build made it, the repo listed again from its readers slot's Component; a repo only ever
+      // read from facts has none, so curate leaves its edit (seed 331299987), said, a hand edit.
+      const was = records(before.generated);
+      const unkeepable = (e: HandEdit) => {
+        const ids = ((was.get(e.path)?.evidence ?? []) as { repo?: string }[]).flatMap((x) =>
+          x.repo ? [x.repo] : [],
+        );
+        return (
+          e.how !== "add" &&
+          ids.length > 0 &&
+          ids.every((id) =>
+            m.repos.some((r) => r.id === id && !r.listed && m.readers.get(r.slot)?.id !== id),
+          )
+        );
+      };
+      const adds = m.handEdits.filter((e) => e.how === "add" || unkeepable(e));
       const pre = await sut().curateEdits(w.root);
       // Seed 1562698156: before the upgrade (an undo took it back) no file is a hand edit yet,
       // and the command refuses as every writer does, writing nothing: an added record must be
@@ -1087,7 +1120,7 @@ export async function act(
       const curate = (e: HandEdit) => curateInModel(m, e);
       if (adds.length) {
         if (pre.refused)
-          for (const e of m.handEdits.filter((x) => x.how !== "add")) {
+          for (const e of m.handEdits.filter((x) => !adds.includes(x))) {
             curate(e);
             m.curatedPending.push(e);
           }
