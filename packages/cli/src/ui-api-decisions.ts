@@ -135,6 +135,8 @@ export function uiLearnRoutes(r: Router, ctx: ServerContext, asJob: LocalJob): R
       const res = await captured(async (io) => {
         const runner = await acpStepRunner(ctx.root, { op });
         extra = await learnFromCorrections(ctx.root, { by: ctx.user, runner }, io);
+        const { learnRecipes } = await import("./learn-recipes.js");
+        await learnRecipes(ctx.root, { by: ctx.user, runner }, io);
         return 0;
       });
       return { ...res, ...(extra ? { extra } : {}) };
