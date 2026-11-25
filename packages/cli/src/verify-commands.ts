@@ -166,6 +166,8 @@ export interface VerifyCommandOptions {
    * `verify --all --write` holds each repo's write here until every repo is verified. No flag.
    */
   writeFacts?: typeof import("./map-render-commands.js").writeFactsIntoCatalog;
+  /** ADR 0210 part 4: false leaves the pairing after the write to the caller (verify --all). */
+  pair?: boolean;
 }
 
 /**
@@ -418,6 +420,7 @@ export async function verifyAllCommand(
           ...(up === "ran" ? { upgradedFirst: true } : {}),
           onLeftOut: (l) => (leftOut = l.length),
           ...(oneBuild ? { writeFacts: holdWrite } : {}),
+          pair: false,
         },
         io,
       );
@@ -534,10 +537,42 @@ export async function verifyAllCommand(
     return 1;
   }
   const passed = repos.length - failed.length;
+  if (each.write && passed) await pairAfterApply(root, each.json ? { ...io, out: io.err } : io);
   io.out(
     `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
   );
   return failed.length || runFault ? 1 : 0;
+}
+
+/**
+ * ADR 0210 part 4: after Apply's write, the loose calls paired by the model; when any is drawn,
+ * the catalog is built again so the arrows show. Never fails the Apply: a fault is said.
+ */
+async function pairAfterApply(root: string, io: Output): Promise<void> {
+  try {
+    const { pairLoose, pairLines, pairNot, applyPairHooks } = await import("./apply-pair.js");
+    // Quiet where nothing may be sent: the join's own lines list the loose calls.
+    if (pairNot((await loadOrgPack(orgPackDirOf(root))).runtime)) return;
+    const r = await pairLoose(root, {
+      ...(applyPairHooks.runner ? { runner: applyPairHooks.runner } : {}),
+    });
+    if (!r.paired.length && !r.loose.length && !r.dropped.length) return;
+    for (const l of pairLines(r)) io.out(l);
+    if (r.paired.length) {
+      // The arrows drawn: the catalog built again, going past what Apply goes past (part 3).
+      const { catalogBuild } = await import("./catalog-build-commands.js");
+      const { writeGoingOn } = await import("./map-render-commands.js");
+      await writeGoingOn(
+        root,
+        (oo, out) => catalogBuild(root, oo, out).then((c) => (c === 0 ? c : undefined)),
+        undefined,
+        { ...io, out: () => undefined },
+        { removalsSaid: true },
+      );
+    }
+  } catch (e) {
+    io.err(`Pairing after Apply: ${(e as Error).message}`);
+  }
 }
 
 /**
@@ -1030,6 +1065,7 @@ export async function verifyCommand(
       );
       if (!written) for (const l of refusedLeftOut()) io.err(l);
       if (!written && !refusedBuild) return 1;
+      if (written && o.pair !== false) await pairAfterApply(root, { ...io, out: io.err });
     } else if (o.write) io.err(rejectedNote);
     io.out(
       JSON.stringify(
@@ -1353,6 +1389,7 @@ export async function verifyCommand(
     },
     io,
   );
+  if (written && o.pair !== false) await pairAfterApply(root, io);
   if (written && partial) {
     for (const l of leftOutLines(
       repo,

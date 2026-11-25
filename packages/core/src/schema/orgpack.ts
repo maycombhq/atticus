@@ -1330,6 +1330,11 @@ const RuntimeFields = z.strictObject({
   copilotAcp: CopilotAcpSettings.optional(),
   /** Version 4 (ADR 0181): whether the AI decides pairings and option questions itself. */
   decide: DecideSettings.optional(),
+  /**
+   * Version 5 (ADR 0210 part 4): whether Apply pairs the calls the join left loose with the model,
+   * in place of `decide.links` for those calls. On where AI is allowed.
+   */
+  apply: z.strictObject({ pair: z.enum(["on", "off"]).default("on") }).optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z
@@ -1379,6 +1384,12 @@ export const Runtime = RuntimeFields.superRefine((r, ctx) => {
       code: "custom",
       path: ["budgets", "limits"],
       message: "budgets.limits needs schemaVersion 5 (ADR 0210): run atticus upgrade",
+    });
+  if (r.schemaVersion < 5 && r.apply !== undefined)
+    ctx.addIssue({
+      code: "custom",
+      path: ["apply"],
+      message: "apply needs schemaVersion 5 (ADR 0210): run atticus upgrade",
     });
   if (r.schemaVersion < 4 && r.decide !== undefined)
     ctx.addIssue({

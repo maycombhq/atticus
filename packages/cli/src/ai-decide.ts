@@ -130,7 +130,7 @@ export async function correctedRepos(root: string): Promise<string[]> {
  * endings, one write at a time (the same lock Connect and Undo take). Round 46: the lock holds
  * across processes, so a line the app server appends while this command rewrites isn't lost.
  */
-async function rewriteCorrections(
+export async function rewriteCorrections(
   root: string,
   repo: string,
   o: {
