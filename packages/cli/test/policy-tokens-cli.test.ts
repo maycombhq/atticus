@@ -162,6 +162,17 @@ const rereadWithout = (id: string) =>
   lines(factsOf(PROXY))
     .filter((l) => !l.includes(`"id":"${id}"`))
     .join("\n") + "\n";
+/**
+ * ADR 0210 part 3: a fact a re-read leaves out is kept while every file it cites is unchanged.
+ * The path-guessed call the earlier write stored cites the route rule's target (line 20); the
+ * proxy's code changes there, so the call that read left out goes, as the code says.
+ */
+const changeRouteRule = (root: string) => {
+  const f = join(root, "workspace", PROXY, "apiproxy", "proxies", "default.xml");
+  const l = readFileSync(f, "utf8").split("\n");
+  l[19] = "    <TargetEndpoint>TE-Edge</TargetEndpoint>";
+  writeFileSync(f, l.join("\n"));
+};
 /** The bundle's descriptor, read and found to have nothing to record. */
 const REVIEWED = `${JSON.stringify({ path: "apiproxy/northwind_pay_1-0.xml", why: "The bundle's descriptor: names and revision only." })}\n`;
 const GUESSED = [
@@ -242,6 +253,7 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
 
     // The read again records the token's settings, and gives another route no forwarding call.
     writeFileSync(join(root, "facts", `${PROXY}.jsonl`), rereadWithout("call.post.payments"));
+    changeRouteRule(root);
     await verify(root, PROXY);
     expect(await fromProxy(root)).toEqual(toVendor("call.get.payments-id", "call.post.refunds"));
     expect(await outsideOf(root)).toEqual(
@@ -286,6 +298,7 @@ describe("a route with no forwarding call draws nothing (beta.27, the user's sec
       `${notACall("call.get.refunds-id", 13, "/refunds/*")}\n`,
     );
     writeFileSync(join(root, "facts", `${PROXY}.jsonl`), rereadWithout("call.post.payments"));
+    changeRouteRule(root);
     // The arrow that lost its caller's line has no file to check the read reached: it leaves
     // only once the read is complete, the bundle's descriptor reviewed with nothing to record.
     writeFileSync(join(root, "facts", `${PROXY}.reviewed.jsonl`), REVIEWED);

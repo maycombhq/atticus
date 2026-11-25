@@ -140,6 +140,25 @@ const asVerify = (d: Desc): Desc =>
     ? { t: "verify-write", slot: d.slot, ok: true }
     : d;
 
+/**
+ * ADR 0210 part 3: a write a person runs as part of the work, which goes past hand edits and
+ * removals when no confirm was given: verify --write, the app's Apply (the same write, run as the
+ * server runs it, its stop after the result included), and Connect to…'s pairing or move, whose
+ * Apply is verify --write; `again` of one of them too. The model has no map's Apply of its own.
+ */
+const PERSONS_WRITES = new Set<string>([
+  "verify-write",
+  "apply-app",
+  "crash-after-result",
+  "pair",
+  "move",
+]);
+const personsWrite = (s: Step) =>
+  PERSONS_WRITES.has(s.desc.t) ||
+  // A crash part way through one, caught up by running it again.
+  (s.desc.t === "crash" && s.desc.via === "verify") ||
+  (s.desc.t === "again" && !!s.inner && PERSONS_WRITES.has(s.inner.t));
+
 /** The step wrote a build: a command that builds, and it succeeded. */
 const builtOk = (s: Step) =>
   !!s.outcome?.wrote && BUILDS.has(s.desc.t) && !(s.desc.t === "upgrade" && !s.desc.yes);
@@ -817,6 +836,10 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
     );
     if (!big.length) return;
     const n = s.confirm?.allowRemovals;
+    // ADR 0210 part 3: a person's write with no confirm (verify --write, the app's Apply) writes
+    // the removals and lists them (nothing-removed-unexplained holds it to the list); only
+    // catalog build waits for one.
+    if (n === undefined && personsWrite(s) && !s.confirmOf) return;
     if (n === undefined)
       fail(
         "large-removals-confirmed",
@@ -958,6 +981,24 @@ export const CHECKS: Partial<Record<Invariant, (s: Step) => void>> = {
       return;
     }
     if (s.desc.t === "curate-edits" && s.pre?.wrote) return;
+    // ADR 0210 part 3: a person's write with no confirm keeps the edits as curated (as
+    // curate-edits does) before it writes: kept, not lost, only when every hand-edited record
+    // has a curated decision of its own among the files the write added or changed.
+    if (personsWrite(s) && s.confirm?.discardEdits === undefined) {
+      const made = changedPaths(s.before.curated, s.after.curated).map(
+        (p) => s.after.curated.get(p) ?? "",
+      );
+      const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const decided = (e: HandEdit) =>
+        made.some((t) => new RegExp(`^target: ['"]?${esc(e.id)}['"]?$`, "m").test(t));
+      const lost = s.handEditsBefore.filter((e) => !decided(e));
+      if (made.length && !lost.length) return;
+      if (made.length && s.outcome.wrote)
+        fail(
+          "hand-edits-never-silently-lost",
+          `${s.desc.t} kept some hand edits as curated, but not ${lost.map((e) => e.path).join(", ")}, and wrote`,
+        );
+    }
     const d = [
       ...changedPaths(s.before.generated, s.after.generated).map((p) => `catalog/generated/${p}`),
       ...(s.desc.t === "prune"

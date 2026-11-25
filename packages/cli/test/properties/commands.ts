@@ -544,6 +544,18 @@ async function verify(
     ...(app ? { app: true, ...(app.die ? { dieAfterResult: true } : {}) } : {}),
   });
   if (!write) return { outcome, expect: { kind: "neutral" } };
+  // ADR 0210 part 3: a person's write with no confirm that wrote over hand edits kept them as
+  // curated first (as `atticus catalog edits --curate` does), and built with them.
+  if (
+    outcome.wrote &&
+    confirm.discardEdits === undefined &&
+    confirm.allowRemovals === undefined &&
+    m.handEdits.length &&
+    m.handEdits.every((e) => e.how !== "add")
+  ) {
+    for (const e of m.handEdits) curateInModel(m, e);
+    m.handEdits = [];
+  }
   const facts = { code: r.code, commit: r.commit, id: r.id };
   // The hunt of beta.28.1 (F1, seed 1548203660): a read whose every fact is rejected is refused
   // as before, never written as a read of nothing: the broken fact of a read whose code gives
@@ -564,6 +576,22 @@ async function verify(
       m.facts.set(r.slot, facts);
     },
   };
+}
+
+/** A hand edit made a curated decision, as `atticus catalog edits --curate` makes it. */
+function curateInModel(m: Model, e: HandEdit): void {
+  const common = {
+    target: e.id,
+    kind: e.kind,
+    ...(e.key ? { key: e.key } : {}),
+    ...(e.arrow ? { arrow: e.arrow } : {}),
+  };
+  const dec: Decision =
+    e.how === "delete"
+      ? { action: "suppress", ...common, since: m.writes, from: "edits" }
+      : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
+  m.curated.push(dec);
+  m.changes.curated.add(e.id);
 }
 
 /** The model with a repo's facts slot holding this read, as a write's build reads it. */
@@ -1056,20 +1084,7 @@ export async function act(
       // refused anyway, and any other is checked as a command that may refuse so only then.
       if (pre.guard === "not-upgraded")
         return { outcome: pre, expect: adds.length ? { kind: "refuse" } : { kind: "succeed" } };
-      const curate = (e: HandEdit) => {
-        const common = {
-          target: e.id,
-          kind: e.kind,
-          ...(e.key ? { key: e.key } : {}),
-          ...(e.arrow ? { arrow: e.arrow } : {}),
-        };
-        const dec: Decision =
-          e.how === "delete"
-            ? { action: "suppress", ...common, since: m.writes, from: "edits" }
-            : { action: "assert", ...common, value: e.value!, since: m.writes, from: "edits" };
-        m.curated.push(dec);
-        m.changes.curated.add(e.id);
-      };
+      const curate = (e: HandEdit) => curateInModel(m, e);
       if (adds.length) {
         if (pre.refused)
           for (const e of m.handEdits.filter((x) => x.how !== "add")) {
@@ -1264,8 +1279,17 @@ export async function act(
       const mid = await w.snap();
       // The crash left the slots written: they hold this observation now.
       await first.onSuccess?.();
+      // ADR 0210 part 3: a person's write goes past removals over the limit, so it can stop part
+      // way through writing them; the build that catches up waits for their count, so the person
+      // runs the write again, which goes past them as before.
+      let caught: Acted = await build(w, {});
+      const r = caught.outcome;
+      if (inner.t === "verify-write" && r?.refused && r.guard === "large-removals") {
+        const again = await verify(inner as Desc & { t: "verify-write" }, m, w, confirm);
+        if (again) caught = { ...again, expect: { kind: "succeed" } };
+      }
       return {
-        ...(await build(w, {})),
+        ...caught,
         observed: first.observed ?? [],
         unobserved: first.unobserved ?? [],
         crash: { first: o, mid },

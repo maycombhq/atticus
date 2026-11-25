@@ -230,7 +230,7 @@ describe("Edit the map, the review of beta.28", () => {
     writeFileSync(PROFILE(), base);
   }, 240_000);
 
-  it("confirms only its own removals: a teammate's pending suppress leaves the build refused", async () => {
+  it("goes past a teammate's pending suppress (ADR 0210 part 3): written and listed with its reason, never confirmed as this run's", async () => {
     // A teammate's suppress of another arrow, pulled in and not built yet.
     mkdirSync(DECISIONS(), { recursive: true });
     const theirs = join(DECISIONS(), "cd-teammate-suppress.yaml");
@@ -250,14 +250,20 @@ describe("Edit the map, the review of beta.28", () => {
     expect(rec.ok).toBe(true);
     writeFileSync(theirs, serializeRecord(recordOf(rec)));
     const ended = await e.job("/api/map/edits", { edits: [del(lined)] });
-    expect(ended.result?.built, ended.result?.lines.join("\n")).toBe(false);
+    const lines = ended.result?.lines.join("\n") ?? "";
+    expect(ended.result?.built, lines).toBe(true);
+    expect(ended.result?.code, lines).toBe(0);
     expect((ended.result?.edits as { state: string }[])[0]!.state).toBe("saved");
-    // The build's own refusal, listed for Catalog builds, the teammate's removal in it.
-    const refused = ended.result?.refused as { removals?: { id: string }[] } | undefined;
-    expect(refused?.removals?.map((x) => x.id)).toContain(lineless.id);
+    expect(ended.result?.refused).toBeUndefined();
+    // The teammate's removal isn't said as this run's ("Also takes away"): it is listed among
+    // the removals the write went past, with what explains it.
+    expect(lines).not.toMatch(new RegExp(`Also takes away \\S+/${lineless.id}`));
+    expect(lines).toMatch(
+      new RegExp(`^removed \\S+/${lineless.id}: a curated suppress; an input changed`, "m"),
+    );
     const now = await e.interfaces();
-    expect(now.some((i) => i.id === lineless.id)).toBe(true);
-    expect(now.some((i) => i.id === lined.id)).toBe(true);
+    expect(now.some((i) => i.id === lineless.id)).toBe(false);
+    expect(now.some((i) => i.id === lined.id)).toBe(false);
     // Back as it was: the teammate's file gone, ours brought back.
     rmSync(theirs);
     const listed = (await e.call("/api/links/deleted")).body.links as {

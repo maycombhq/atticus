@@ -309,8 +309,17 @@ describe("verify --all --write builds the catalog once for many repos (v31 gate 
       const file = join(root, "facts", `${bad}.jsonl`);
       await writeFile(file, (await readFile(file, "utf8")) + '{"kind":"not a fact"}\n');
     };
-    const one = await applyAll(CHANGED, true, { prepare });
-    const each = await applyAll(CHANGED, false, { prepare });
+    // ADR 0210 part 3: a person's write goes past a hand edit now (write-goes-on.test.ts); the
+    // refusal this tests is the guard's own, so the writes stay strict here.
+    writeFactsHooks.strict = true;
+    let one: Awaited<ReturnType<typeof applyAll>>;
+    let each: Awaited<ReturnType<typeof applyAll>>;
+    try {
+      one = await applyAll(CHANGED, true, { prepare });
+      each = await applyAll(CHANGED, false, { prepare });
+    } finally {
+      delete writeFactsHooks.strict;
+    }
     expect(one.code).toBe(each.code);
     expect(one.code).toBe(1);
     // The refused repo is told as it is verified, the others after the one build.
@@ -345,8 +354,17 @@ describe("verify --all --write builds the catalog once for many repos (v31 gate 
       const file = join(dir, kind, (await readdir(join(dir, kind))).sort()[0]!);
       await writeFile(file, (await readFile(file, "utf8")) + "# a hand edit\n");
     };
-    const one = await applyAll(CHANGED, true, { prepare });
-    const each = await applyAll(CHANGED, false, { prepare });
+    // ADR 0210 part 3: a person's write goes past a hand edit now (write-goes-on.test.ts); the
+    // refusal this tests is the guard's own, so the writes stay strict here.
+    writeFactsHooks.strict = true;
+    let one: Awaited<ReturnType<typeof applyAll>>;
+    let each: Awaited<ReturnType<typeof applyAll>>;
+    try {
+      one = await applyAll(CHANGED, true, { prepare });
+      each = await applyAll(CHANGED, false, { prepare });
+    } finally {
+      delete writeFactsHooks.strict;
+    }
     expect(each.code).toBe(1);
     expect(one.code).toBe(each.code);
     // The one build, refused, then each repo's own.
@@ -445,8 +463,17 @@ describe("verify --all --write builds the catalog once for many repos (v31 gate 
         expect(again.guard.refused).toBeUndefined();
       }
     };
-    const one = await applyAll(CHANGED, true, { prepare });
-    const each = await applyAll(CHANGED, false, { prepare });
+    // ADR 0210 part 3: a person's write goes past a hand edit now (write-goes-on.test.ts); the
+    // refusal this tests is the guard's own, so the writes stay strict here.
+    writeFactsHooks.strict = true;
+    let one: Awaited<ReturnType<typeof applyAll>>;
+    let each: Awaited<ReturnType<typeof applyAll>>;
+    try {
+      one = await applyAll(CHANGED, true, { prepare });
+      each = await applyAll(CHANGED, false, { prepare });
+    } finally {
+      delete writeFactsHooks.strict;
+    }
     expect(one.code, one.err.join("\n")).toBe(each.code);
     expect(one.writes, [...one.out, ...one.err].join("\n")).toBe(1);
     expect(one.repos.sort()).toEqual(each.repos.sort());

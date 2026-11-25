@@ -1992,6 +1992,23 @@ describe("coverage: reported, never trusted (ADR 0124)", () => {
     expect(partial.coverage.ratio).toBeLessThan(1);
   });
 
+  it("checks a fact held over from an earlier read like any, and counts no file read for it (ADR 0210 part 3)", async () => {
+    const facts = load("forge-ledger.facts.jsonl");
+    const k8s = facts.filter((f) => f.cite.file === "k8s/ledger-api.yaml");
+    expect(k8s.length).toBeGreaterThan(0);
+    const r = await verifyFacts({
+      facts,
+      source: dirSource(repo),
+      commit: "0123abc",
+      heldOver: new Set(k8s.map((f) => f.id)),
+    });
+    // Still checked and kept, but its file isn't this read's.
+    expect(r.rejected).toEqual([]);
+    expect(r.accepted.map((f) => f.id)).toEqual(expect.arrayContaining(k8s.map((f) => f.id)));
+    expect(r.coverage.read).not.toContain("k8s/ledger-api.yaml");
+    expect(r.coverage.unknown).toContain("k8s/ledger-api.yaml");
+  });
+
   it("is deterministic: the same input gives the same report", async () => {
     const facts = load("forge-ledger.facts.jsonl");
     const a = await verifyFacts({ facts, source: dirSource(repo), commit: "0123abc" });

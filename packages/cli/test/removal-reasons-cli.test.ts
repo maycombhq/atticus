@@ -1,13 +1,23 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, serializeRecord, type CatalogRecord } from "@maycombhq/core";
 import type { BuildRefusal } from "@maycombhq/scanner";
 import { refusalPlanOf } from "../src/build-report.js";
 import { verifyCommand } from "../src/verify-commands.js";
 import { verifyConfirmed } from "./seed-slots.js";
+import { writeFactsHooks } from "../src/map-render-commands.js";
+
+// ADR 0210 part 3: these test the guard's refusals and their confirm (catalog build, the app's
+// confirm), which a write a person runs now goes past: the writes here stay strict.
+beforeAll(() => {
+  writeFactsHooks.strict = true;
+});
+afterAll(() => {
+  delete writeFactsHooks.strict;
+});
 
 const { main } = await import("../src/main.js");
 

@@ -726,6 +726,36 @@ export async function upgradeBeforeWrite(root: string): Promise<string[] | undef
   ];
 }
 
+/**
+ * ADR 0210 part 3: runs `atticus upgrade --yes` for a write that needs it, saying one line, and
+ * true when it upgraded; on a failure, its words and false.
+ */
+export async function runUpgradeFirst(root: string, io: Output): Promise<boolean> {
+  const { gitUser } = await import("@maycombhq/workspace");
+  const { LockHeldError } = await import("@maycombhq/core");
+  const lines: string[] = [];
+  // Another writer holding the lock is an upgrade that stopped, said in its words (the files
+  // as they were are kept, and the upgrade says where); any other error is thrown as before.
+  const code = await upgradeCommand(
+    root,
+    { yes: true, by: (await gitUser(root)).handle },
+    { out: (l) => lines.push(l), err: (l) => lines.push(l) },
+  ).catch((e: unknown) => {
+    if (!(e instanceof LockHeldError) && !((e as Error)?.cause instanceof LockHeldError)) throw e;
+    lines.push((e as Error).message);
+    return 1;
+  });
+  if (code !== 0) {
+    io.err("This metarepo needed atticus upgrade first, and it stopped:");
+    for (const l of lines) io.err(`  ${l}`);
+    return false;
+  }
+  io.err(
+    "Ran atticus upgrade first, which this metarepo still needed (its own undo step: atticus catalog undo takes it back after this write's).",
+  );
+  return true;
+}
+
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {
   return (await readStampFile(root)).stamp;
 }

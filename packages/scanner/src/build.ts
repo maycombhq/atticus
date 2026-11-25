@@ -3610,6 +3610,34 @@ export async function takeUndoCopy(
 }
 
 /**
+ * ADR 0210 part 3: files a command created beside its write (the curated decisions a person's
+ * write made of their hand edits) listed in that write's undo copy as not there before, so
+ * `atticus catalog undo` takes them away with the write. A file already listed is left as it is.
+ */
+export async function addCreatedToUndoCopy(
+  root: string,
+  undoDir: string,
+  n: number,
+  created: readonly string[],
+): Promise<void> {
+  const file = join(undoDir, String(n), "undo.json");
+  const t = await readText(file);
+  if (t === undefined) throw new Error(`addCreatedToUndoCopy: undo copy ${n} has no undo.json`);
+  const entry = JSON.parse(t) as UndoEntry;
+  const listed = new Set(entry.files.map((f) => f.path));
+  for (const p of created) {
+    const path = relOf(root, p);
+    if (listed.has(path)) continue;
+    const now = await readText(p);
+    if (now === undefined) continue;
+    entry.files.push({ path, before: "absent", after: sha(now.replace(/\r\n?/g, "\n")) });
+    listed.add(path);
+  }
+  entry.files.sort((a, b) => cmpText(a.path, b.path));
+  await writeFileAtomic(file, JSON.stringify(entry, null, 2) + "\n");
+}
+
+/**
  * Write a build that passed its guards (point 2: compute, guard, then write): the undo copy
  * first, then the slots the command changed, then the record files (each atomically), then
  * build.json last. Building again with nothing changed writes no file.
