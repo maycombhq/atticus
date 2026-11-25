@@ -58,6 +58,9 @@ export function resolveNames(
   return new Map(names.map((name) => [name, resolve(name)]));
 }
 
+/** Tests hear each read of the catalog for names (one an intake). */
+export const nameResolverHooks: { onCatalogRead?: () => void } = {};
+
 /**
  * `resolveNames` for one name at a time, with the catalog read once (item 11 of beta.33: intake
  * resolved each diagram box by reading every record again, 1 s of each Apply at 60 repos).
@@ -66,6 +69,7 @@ export function nameResolver(
   records: CatalogRecord[],
   systems: ProfileSystem[],
 ): (name: string) => NameResolution {
+  nameResolverHooks.onCatalogRead?.();
   const curated = curatedAliases(records);
   const componentsOf = new Map<string, string[]>();
   const ids = new Set<string>();

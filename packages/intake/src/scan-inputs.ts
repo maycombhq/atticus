@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import {
+  cacheDirKey,
+  keptHolds,
   loadOrgPack,
   normalizePath,
   parseRecord,
   type CatalogRecord,
   type OrgPack,
   orgPackDirOf,
+  recordCacheHooks,
 } from "@maycombhq/core";
 import { readMermaid } from "@maycombhq/ingestors";
 import { drawioIngestor, nameResolver, readDrawio, type ProfileSystem } from "@maycombhq/reconcile";
@@ -92,15 +95,27 @@ interface File {
 }
 
 /**
- * What a file's bytes alone decide (its class and its screening), by its path and hash, kept
- * from the last intake in this process (item 11 of beta.33: the app's Apply took in every file
- * of inputs/ again each time). Only the files of the last intake are kept.
+ * A file of inputs/ as the last intake of the same folder in this process took it in (item 11 of
+ * beta.33: each Apply read, classified and screened every file again, and antivirus scans a
+ * document at each open): its bytes, what they alone decide (its class and its screening), and
+ * its stat then. A file whose stat still holds it (`keptHolds`, the kept hashes' rule) isn't
+ * read again; any other is. Each metarepo's inputs folder has its own, of its last intake's files.
  */
 interface ByBytes {
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  ino: number;
+  at: number;
+  bytes: Uint8Array;
+  hash: string;
   c: ReturnType<typeof classify>;
   s?: ReturnType<typeof screenFile>;
 }
-let byBytes = new Map<string, ByBytes>();
+const takenIn = new Map<string, Map<string, ByBytes>>();
+
+/** Tests hear each file intake read (and classified) again, by its path under the metarepo. */
+export const intakeHooks: { onRead?: (path: string) => void } = {};
 
 type Rec = Record<string, unknown> & {
   kind: string;
@@ -208,16 +223,29 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
 
   // ---- read, hash and classify
   const files: File[] = [];
+  const folder = `${cacheDirKey(o.root)}\u0000${cacheDirKey(inputsDir)}`;
+  const had = takenIn.get(folder) ?? new Map<string, ByBytes>();
   const seen = new Map<string, ByBytes>();
   for (const abs of paths) {
-    const bytes = new Uint8Array(await readFile(abs));
     const path = `inputs/${posix(relative(inputsDir, abs))}`;
     const name = path.split("/").pop()!;
-    const hash = createHash("sha256").update(bytes).digest("hex");
-    const k = `${path}\u0000${hash}`;
-    const memo = byBytes.get(k) ?? { c: classify(name, bytes) };
-    seen.set(k, memo);
-    const c = memo.c;
+    const at = (recordCacheHooks.now ?? Date.now)();
+    const st = await stat(abs);
+    const now = {
+      size: st.size,
+      mtimeMs: Math.floor(st.mtimeMs),
+      ctimeMs: Math.floor(st.ctimeMs),
+      ino: st.ino,
+    };
+    let memo = had.get(path);
+    if (!memo || !keptHolds(memo, now)) {
+      const bytes = new Uint8Array(await readFile(abs));
+      intakeHooks.onRead?.(path);
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      memo = { ...now, at, bytes, hash, c: classify(name, bytes) };
+    }
+    seen.set(path, memo);
+    const { bytes, hash, c } = memo;
     files.push({
       abs,
       path,
@@ -248,7 +276,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     });
   }
   for (const f of files) f.doc.hash = f.hash;
-  byBytes = seen;
+  takenIn.set(folder, seen);
   o.mark?.("read, hash and classify");
 
   // ---- duplicates: the copy outside the inbox (then the first by path) is the one kept
